@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -23,7 +24,26 @@ signals_tbl = dynamodb.Table(SIGNALS_TABLE) if SIGNALS_TABLE else None
 def _resp(status: int, body: Any) -> Dict[str, Any]:
     return {
         "statusCode": status,
+        "headers": {def _json_default(o):
+    # DynamoDB uses Decimal for numbers
+    if isinstance(o, Decimal):
+        # int if whole number, float otherwise
+        if o % 1 == 0:
+            return int(o)
+        return float(o)
+    return str(o)
+
+def _resp(status: int, body: Any) -> Dict[str, Any]:
+    return {
+        "statusCode": status,
         "headers": {
+            "content-type": "application/json",
+            "access-control-allow-origin": "*",
+            "access-control-allow-methods": "GET,POST,OPTIONS",
+            "access-control-allow-headers": "content-type",
+        },
+        "body": json.dumps(body, default=_json_default),
+    }
             "content-type": "application/json",
             "access-control-allow-origin": "*",
             "access-control-allow-methods": "GET,POST,OPTIONS",
