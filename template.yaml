@@ -56,7 +56,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: hello_world/
-      Handler: app.lambda_handler
+      Handler: api.lambda_handler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
@@ -78,7 +78,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: hello_world/
-      Handler: app.scheduler_handler
+      Handler: api.scheduler_handler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
