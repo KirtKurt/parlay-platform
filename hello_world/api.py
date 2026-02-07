@@ -339,7 +339,6 @@ def lambda_handler(event, context):
 def scheduler_handler(event, context):
     run_type = (event or {}).get("run", "unknown")
     return _pull_nba_snapshot(run_type)
-PYimport json
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
