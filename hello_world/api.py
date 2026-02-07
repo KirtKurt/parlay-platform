@@ -18,7 +18,7 @@ from nba_algorithm import rank_nba_b11c1
 dynamodb = boto3.resource("dynamodb")
 
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
-ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
+ODDS_API_KEY = os.environ.get("8ef7fbca52be7b648f8fe284791142f9", "")
 
 snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
 
@@ -82,9 +82,75 @@ def _build_oddsapi_url_nba_h2h() -> str:
 
 
 def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
+    """
+    Keep h2h ML for:
+      - fanduel
+      - draftkings
+      - any key containing 'fanatic' (fanatics variants)
+    Store multi-book odds under `books`.
+    """
     TARGET_KEYS = {"fanduel", "draftkings"}
-    all_keys = set()
-    fanatics_keys = set()
+    fanatics_keys_seen = set()
+    all_keys_seen = set()
+
+    compact = []
+    for g in raw_games:
+        home = g.get("home_team")
+        away = g.get("away_team")
+        gid = g.get("id")
+        ct = g.get("commence_time")
+        bookmakers = g.get("bookmakers") or []
+
+        books_out: Dict[str, Any] = {}
+
+        for b in bookmakers:
+            key = (b.get("key") or "").lower().strip()
+            if not key:
+                continue
+
+            all_keys_seen.add(key)
+            is_fanatics = "fanatic" in key
+
+            if key not in TARGET_KEYS and not is_fanatics:
+                continue
+
+            if is_fanatics:
+                fanatics_keys_seen.add(key)
+
+            markets = b.get("markets") or []
+            h2h = next((m for m in markets if m.get("key") == "h2h"), None)
+            if not h2h:
+                continue
+
+            home_odds = None
+            away_odds = None
+            for o in (h2h.get("outcomes") or []):
+                if o.get("name") == home:
+                    home_odds = o.get("price")
+                elif o.get("name") == away:
+                    away_odds = o.get("price")
+
+            if home_odds is None and away_odds is None:
+                continue
+
+            books_out[key] = {"ml": {"home": home_odds, "away": away_odds}}
+
+        compact.append(
+            {
+                "id": gid,
+                "commence_time": ct,
+                "home_team": home,
+                "away_team": away,
+                "books": books_out,
+            }
+        )
+
+    return {
+        "games": compact,
+        "count": len(compact),
+        "available_book_keys": sorted(all_keys_seen),
+        "fanatics_keys_detected": sorted(fanatics_keys_seen),
+    }
 
     compact = []
 
