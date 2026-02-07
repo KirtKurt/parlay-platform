@@ -6,7 +6,7 @@ from typing import Any, Dict, Optional
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from sports.nba.algorithm import rank_nba_b11c1
+from nba_algorithm import rank_nba_b11c1
 
 dynamodb = boto3.resource("dynamodb")
 
