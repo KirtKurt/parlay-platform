@@ -17,7 +17,65 @@ SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 
 snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
+def _american_to_prob_raw(a: int) -> float:
+    if a < 0:
+        return abs(a) / (abs(a) + 100)
+    return 100 / (a + 100)
 
+
+def _vig_normalize(p_home: float, p_away: float) -> tuple[float, float]:
+    s = p_home + p_away
+    if s <= 0:
+        return 0.5, 0.5
+    return p_home / s, p_away / s
+
+
+def _book_probs(ml: dict) -> dict:
+    ho, ao = ml.get("home"), ml.get("away")
+    if ho is None or ao is None:
+        return {}
+    p_h_raw = _american_to_prob_raw(int(ho))
+    p_a_raw = _american_to_prob_raw(int(ao))
+    p_h, p_a = _vig_normalize(p_h_raw, p_a_raw)
+    return {"home": p_h, "away": p_a}
+
+
+def _steam_resistance_signals(books: dict) -> dict:
+    """
+    Compare DK vs FD vig-normalized favorite probabilities.
+    """
+    fd = books.get("fanduel")
+    dk = books.get("draftkings")
+
+    if not fd or not dk:
+        return {"steam": False, "resistance": False, "coinflip": False, "gap": None}
+
+    fd_p = _book_probs(fd.get("ml", {}))
+    dk_p = _book_probs(dk.get("ml", {}))
+    if not fd_p or not dk_p:
+        return {"steam": False, "resistance": False, "coinflip": False, "gap": None}
+
+    fd_fav_p = max(fd_p["home"], fd_p["away"])
+    dk_fav_p = max(dk_p["home"], dk_p["away"])
+
+    gap = abs(fd_fav_p - dk_fav_p)
+
+    # thresholds (tune later)
+    steam = gap >= 0.03
+    coinflip = max(fd_fav_p, dk_fav_p) < 0.525
+
+    # "resistance": one book is steamier, the other still holds the favorite above 0.50
+    resistance = steam and ((fd_fav_p > dk_fav_p and dk_fav_p > 0.50) or
+                            (dk_fav_p > fd_fav_p and fd_fav_p > 0.50))
+
+    return {
+        "steam": steam,
+        "resistance": resistance,
+        "coinflip": coinflip,
+        "gap": round(gap, 4),
+        "fd_fav_p": round(fd_fav_p, 4),
+        "dk_fav_p": round(dk_fav_p, 4),
+    }
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
