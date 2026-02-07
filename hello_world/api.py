@@ -1,4 +1,4 @@
-impfrom decimal import Decimal
+from decimal import Decimal
 
 def _json_default(o):
     if isinstance(o, Decimal):
