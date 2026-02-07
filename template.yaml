@@ -1,6 +1,12 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: Parlay Platform (v1) - API + Scheduler + DynamoDB
+Description: Parlay Platform (NBA-B1.1C.1) - API + Scheduler + DynamoDB
+
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+    Description: theOddsAPI key (DO NOT COMMIT THIS VALUE)
 
 Globals:
   Function:
@@ -11,6 +17,7 @@ Globals:
       Variables:
         SNAPSHOTS_TABLE: !Ref SnapshotsTable
         SIGNALS_TABLE: !Ref SignalsTable
+        ODDS_API_KEY: !Ref OddsApiKey
 
 Resources:
   SnapshotsTable:
@@ -91,5 +98,5 @@ Resources:
 
 Outputs:
   ApiUrl:
-    Description: API Gateway endpoint
+    Description: API Gateway endpoint base URL
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
