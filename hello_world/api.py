@@ -1,4 +1,25 @@
-import json
+impfrom decimal import Decimal
+
+def _json_default(o):
+    if isinstance(o, Decimal):
+        # convert Decimal cleanly
+        if o % 1 == 0:
+            return int(o)
+        return float(o)
+    return str(o)
+
+def _resp(status: int, body: Any) -> Dict[str, Any]:
+    return {
+        "statusCode": status,
+        "headers": {
+            "content-type": "application/json",
+            "access-control-allow-origin": "*",
+            "access-control-allow-methods": "GET,POST,OPTIONS",
+            "access-control-allow-headers": "content-type",
+        },
+        "body": json.dumps(body, default=_json_default),
+    }
+ort json
 from decimal import Decimal
 import os
 from datetime import datetime, timezone
