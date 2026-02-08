@@ -68,3 +68,24 @@ def scheduler_handler(event, context):
         })
 
     return chosen
+
+def lambda_handler(event, context):
+    method = (event.get("httpMethod") or "").upper()
+    path = event.get("path") or "/"
+
+    if method == "OPTIONS":
+        return _resp(200, {"ok": True})
+
+    if path in ("/health", "/v1/health") and method == "GET":
+        return _resp(200, {"ok": True, "ts": _now_iso()})
+
+    # keep existing routes if your file defines them above; otherwise return 404
+    return _resp(404, {"ok": False, "error": f"Route not found: {method} {path}"})
+
+
+def scheduler_handler(event, context):
+    # keep scheduler alive even if pull function isn't present
+    run_type = (event or {}).get("run", "scheduled")
+    if "_pull_nba_snapshot" in globals():
+        return _pull_nba_snapshot(run_type)
+    return {"ok": True, "run": run_type}
