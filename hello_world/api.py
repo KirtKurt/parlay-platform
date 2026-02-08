@@ -309,8 +309,165 @@ def _choose_best_3(snapshot):
         })
 
     return chosen
+def apply_signal_adjustments(payload: dict) -> dict:
+    """
+    Step 3: signal-weighted ranking (post-process).
+    Uses chosen_games[i].signals + legs[i].favorite to adjust ranked[*].score.
 
+    Rules (strict):
+      +0.75 if combo aligns with >=1 steam favorite
+      +1.25 total if aligns with >=2 steam favorites
+      -0.75 if any resistance leg present
+      -0.50 if any coinflip leg present
+      +0.50 if aligns with strongest steam favorite (if any)
+    """
+    ranked_rows = payload.get("ranked") or []
+    chosen = payload.get("chosen_games") or []
+    legs = payload.get("legs") or []
 
+    # guard
+    if len(chosen) != 3 or len(legs) != 3 or not ranked_rows:
+        return payload
+
+    # strongest steam leg index (by signals.gap)
+    steam_idxs = []
+    for i, cg in enumerate(chosen):
+        sig = (cg.get("signals") or {})
+        if sig.get("steam"):
+            steam_idxs.append(i)
+
+    strongest_steam_idx = None
+    if steam_idxs:
+        strongest_steam_idx = max(
+            steam_idxs,
+            key=lambda i: float((chosen[i].get("signals") or {}).get("gap") or 0.0),
+        )
+
+    # Precompute penalties that are combo-independent
+    any_resistance = any((cg.get("signals") or {}).get("resistance") for cg in chosen)
+    any_coinflip = any((cg.get("signals") or {}).get("coinflip") for cg in chosen)
+
+    for row in ranked_rows:
+        picks = row.get("picks") or []
+        if len(picks) != 3:
+            continue
+
+        base_score = float(row.get("score") or 0.0)
+
+        # Count steam alignments: steam leg AND combo picks that leg's favorite
+        steam_align = 0
+        for i in range(3):
+            sig = (chosen[i].get("signals") or {})
+            fav = legs[i].get("favorite")
+            if sig.get("steam") and fav and picks[i] == fav:
+                steam_align += 1
+
+        adj = 0.0
+
+        # steam bonus
+        if steam_align >= 2:
+            adj += 1.25
+        elif steam_align == 1:
+            adj += 0.75
+
+        # strongest steam favorite bonus
+        if strongest_steam_idx is not None:
+            fav = legs[strongest_steam_idx].get("favorite")
+            if fav and picks[strongest_steam_idx] == fav:
+                adj += 0.50
+
+        # penalties
+        if any_resistance:
+            adj -= 0.75
+        if any_coinflip:
+            adj -= 0.50
+
+        row["base_score"] = round(base_score, 4)
+        row["signal_adj"] = round(adj, 4)
+        row["score_final"] = round(base_score + adj, 4)
+        row["steam_align"] = steam_align
+
+    # Re-rank by score_final then combo_prob
+    ranked_rows.sort(key=lambda r: (float(r.get("score_final") or r.get("score") or 0.0),
+                                    float(r.get("combo_prob") or 0.0)), reverse=True)
+    for idx, row in enumerate(ranked_rows, start=1):
+        row["rank"] = idx
+
+    payload["ranked"] = ranked_rows
+    payload["signals_summary"]["steam_align_threshold"] = 0.03
+    payload["signals_summary"]["scoring_mode"] = "STEP3_SIGNAL_WEIGHTED"
+
+    return payload
+def apply_signal_adjustments(payload: dict) -> dict:
+    ranked_rows = payload.get("ranked") or []
+    chosen = payload.get("chosen_games") or []
+    legs = payload.get("legs") or []
+
+    if len(chosen) != 3 or len(legs) != 3 or not ranked_rows:
+        return payload
+
+    steam_idxs = []
+    for i, cg in enumerate(chosen):
+        sig = (cg.get("signals") or {})
+        if sig.get("steam"):
+            steam_idxs.append(i)
+
+    strongest_steam_idx = None
+    if steam_idxs:
+        strongest_steam_idx = max(
+            steam_idxs,
+            key=lambda i: float((chosen[i].get("signals") or {}).get("gap") or 0.0),
+        )
+
+    any_resistance = any((cg.get("signals") or {}).get("resistance") for cg in chosen)
+    any_coinflip = any((cg.get("signals") or {}).get("coinflip") for cg in chosen)
+
+    for row in ranked_rows:
+        picks = row.get("picks") or []
+        if len(picks) != 3:
+            continue
+
+        base_score = float(row.get("score") or 0.0)
+
+        steam_align = 0
+        for i in range(3):
+            sig = (chosen[i].get("signals") or {})
+            fav = legs[i].get("favorite")
+            if sig.get("steam") and fav and picks[i] == fav:
+                steam_align += 1
+
+        adj = 0.0
+        if steam_align >= 2:
+            adj += 1.25
+        elif steam_align == 1:
+            adj += 0.75
+
+        if strongest_steam_idx is not None:
+            fav = legs[strongest_steam_idx].get("favorite")
+            if fav and picks[strongest_steam_idx] == fav:
+                adj += 0.50
+
+        if any_resistance:
+            adj -= 0.75
+        if any_coinflip:
+            adj -= 0.50
+
+        row["base_score"] = round(base_score, 4)
+        row["signal_adj"] = round(adj, 4)
+        row["score_final"] = round(base_score + adj, 4)
+        row["steam_align"] = steam_align
+
+    ranked_rows.sort(
+        key=lambda r: (float(r.get("score_final") or r.get("score") or 0.0),
+                       float(r.get("combo_prob") or 0.0)),
+        reverse=True
+    )
+    for idx, row in enumerate(ranked_rows, start=1):
+        row["rank"] = idx
+
+    payload["ranked"] = ranked_rows
+    payload["signals_summary"]["scoring_mode"] = "STEP3_SIGNAL_WEIGHTED"
+    return payload
 # =========================
 # LAMBDA HANDLERS
 # =========================
@@ -367,7 +524,8 @@ def lambda_handler(event, context):
         }
         ranked["source_snapshot"] = {"pk": snap.get("PK"), "sk": snap.get("SK")}
 
-        return _resp(200, ranked)
+        ranked = apply_signal_adjustments(ranked)
+return _resp(200, ranked)
 
     return _resp(404, {"ok": False, "error": f"Route not found: {method} {path}"})
 
