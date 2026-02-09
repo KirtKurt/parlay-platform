@@ -11,6 +11,11 @@ from boto3.dynamodb.conditions import Key
 
 from nba_algorithm import rank_nba_b11c1
 
+def _choose_best_3(snapshot: dict) -> List[dict]:
+    # Placeholder implementation
+    # This function should return a list of 3 chosen games based on the snapshot
+    return snapshot.get("data", {}).get("games", [])[:3]
+
 # ======================================================
 # ENV / AWS
 # ======================================================
