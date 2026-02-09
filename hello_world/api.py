@@ -35,28 +35,40 @@ def lambda_handler(event, context):
         body = _parse_json(event.get("body"))
         games_input = body.get("games", [])
         
-        if len(games_input) == 3:
+        if isinstance(games_input, list) and len(games_input) == 3:
             # Manual mode
-            ranked = rank_nba_b11c1(games_input)
-            return _resp(200, {"ranked": ranked, "chosen_games": games_input, "source_snapshot": None})
-        
+            return _resp(200, rank_nba_b11c1(games_input))
+
         # Auto mode
         snapshot = _latest_snapshot()
-        chosen_games = _choose_best_3(snapshot)
-        formatted_games = [
-            {
-                "game_id": game["id"],
-                "home": game["home_team"],
-                "away": game["away_team"],
-                "ml": game["books"].get("ml", {})
-            }
-            for game in chosen_games
-        ]
-        ranked = rank_nba_b11c1(formatted_games)
+        games = snapshot["data"]["games"]
+        chosen_games = []
+
+        for game in games:
+            for book in BOOK_PRIORITY:
+                if book in game["books"]:
+                    ml = game["books"][book]["ml"]
+                    if "home" in ml and "away" in ml:
+                        chosen_games.append({
+                            "game_id": game["id"],
+                            "home": game["home_team"],
+                            "away": game["away_team"],
+                            "ml": {"home": int(ml["home"]), "away": int(ml["away"])},
+                            "book_used": book
+                        })
+                        break
+            if len(chosen_games) == 3:
+                break
+
+        ranked = rank_nba_b11c1(chosen_games)
         return _resp(200, {
-            "ranked": ranked,
-            "chosen_games": formatted_games,
-            "source_snapshot": {"PK": snapshot["PK"], "SK": snapshot["SK"]}
+            "ok": True,
+            "model": ranked.get("model"),
+            "regime": ranked.get("regime"),
+            "legs": ranked.get("legs"),
+            "ranked": ranked.get("ranked"),
+            "chosen_games": chosen_games,
+            "source_snapshot": {"pk": snapshot["PK"], "sk": snapshot["SK"]}
         })
 
     return _resp(404, {"error": "Not Found"})
