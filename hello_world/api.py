@@ -2,6 +2,7 @@ import json
 import os
 import math
 import urllib.request
+import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 from decimal import Decimal
@@ -276,7 +277,10 @@ def apply_signal_adjustments(payload: dict) -> dict:
 # ======================================================
 # LAMBDA HANDLERS (ALWAYS LAST)
 # ======================================================
+logging.basicConfig(level=logging.INFO)
+
 def lambda_handler(event, context):
+    try:
     path = event.get("path", "")
     method = event.get("httpMethod", "")
 
@@ -308,6 +312,8 @@ def lambda_handler(event, context):
         ranked = apply_signal_adjustments(ranked)
         return _resp(200, ranked)
 
-def scheduler_handler(event, context):
+    except Exception as e:
+        logging.error("Error in lambda_handler: %s", str(e))
+        return _resp(500, {"ok": False, "error": "Internal server error"})
     run_type = (event or {}).get("run", "scheduled")
     return _pull_nba_snapshot(run_type)
