@@ -140,10 +140,10 @@ def lambda_handler(event, context):
         games = snapshot["data"]["games"]
         eligible_games = [_classify_game(game) for game in games]
         
-        parlays = []
+        built = []
         used_game_ids = set()
 
-        for _ in range(4):
+        for parlay_index in range(1, 5):
             slate = []
             for game in eligible_games:
                 gid = game.get("game_id") or game.get("id")
@@ -152,13 +152,27 @@ def lambda_handler(event, context):
                 if game["class"] in ["STRONG_SOLID", "SOLID"] and gid not in used_game_ids:
                     slate.append(game)
             if len(slate) < 3:
+                if parlay_index == 1:
+                    return _resp(200, {
+                        "ok": True,
+                        "parlays_requested": 4,
+                        "parlays_built": 0,
+                        "refusal": {"code": "FIRST_SLATE_INELIGIBLE", "reason": "First slate ineligible"}
+                    })
                 break
 
             solid_count = sum(1 for game in slate if game["class"] == "STRONG_SOLID")
             coin_flip_count = sum(1 for game in slate if game["class"] == "COIN_FLIP")
 
             if solid_count < 2 or coin_flip_count > 1:
-                continue
+                if parlay_index == 1:
+                    return _resp(200, {
+                        "ok": True,
+                        "parlays_requested": 4,
+                        "parlays_built": 0,
+                        "refusal": {"code": "FIRST_SLATE_INELIGIBLE", "reason": "First slate ineligible"}
+                    })
+                break
 
             slate.sort(key=lambda x: -x["gap"])
             chosen_games = slate[:3]
@@ -185,8 +199,8 @@ def lambda_handler(event, context):
                     })
             ranked = rank_nba_b11c1(games_for_engine)
 
-            parlays.append({
-                "parlay_index": len(parlays) + 1,
+            built.append({
+                "parlay_index": parlay_index,
                 "structure_tag": structure_tag,
                 "legs": chosen_games,
                 "ranked": ranked["ranked"][:8],
@@ -194,15 +208,15 @@ def lambda_handler(event, context):
             })
 
         refusal = None
-        if len(parlays) < 4:
+        if len(built) < 4:
             refusal = {"code": "INSUFFICIENT_PARLAYS", "reason": "Not enough eligible games to build 4 parlays"}
 
         return _resp(200, {
             "ok": True,
             "parlays_requested": 4,
-            "parlays_built": len(parlays),
+            "parlays_built": len(built),
             "refusal": refusal,
-            "parlays": parlays
+            "parlays": built
         })
 
     return _resp(404, {"error": "Not Found"})
