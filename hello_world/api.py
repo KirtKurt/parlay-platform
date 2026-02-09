@@ -281,39 +281,40 @@ logging.basicConfig(level=logging.INFO)
 
 def lambda_handler(event, context):
     try:
-    path = event.get("path", "")
-    method = event.get("httpMethod", "")
+        path = event.get("path", "")
+        method = event.get("httpMethod", "")
 
-    if path == "/v1/health":
-        return _resp(200, {"ok": True, "ts": _now_iso()})
+        if path == "/v1/health":
+            return _resp(200, {"ok": True, "ts": _now_iso()})
 
-    if path == "/v1/pull/nba" and method == "POST":
-        return _resp(200, _pull_nba_snapshot("manual"))
+        if path == "/v1/pull/nba" and method == "POST":
+            return _resp(200, _pull_nba_snapshot("manual"))
 
-    if path == "/v1/rank/nba" and method == "POST":
-        snap = _latest_snapshot()
-        if not snap:
-            return _resp(400, {"ok": False, "error": "No snapshot found"})
+        if path == "/v1/rank/nba" and method == "POST":
+            snap = _latest_snapshot()
+            if not snap:
+                return _resp(400, {"ok": False, "error": "No snapshot found"})
 
-        chosen = _choose_best_3(snap)
-        if len(chosen) != 3:
-            return _resp(500, {"ok": False, "error": "Unable to choose 3 games", "chosen": chosen})
+            chosen = _choose_best_3(snap)
+            if len(chosen) != 3:
+                return _resp(500, {"ok": False, "error": "Unable to choose 3 games", "chosen": chosen})
 
-        games_for_engine = [
-            {"game_id": g["game_id"], "home": g["home"], "away": g["away"], "ml": g["ml"]}
-            for g in chosen
-        ]
+            games_for_engine = [
+                {"game_id": g["game_id"], "home": g["home"], "away": g["away"], "ml": g["ml"]}
+                for g in chosen
+            ]
 
-        ranked = rank_nba_b11c1(games_for_engine)
+            ranked = rank_nba_b11c1(games_for_engine)
 
-        ranked["chosen_games"] = chosen
-        ranked["source_snapshot"] = {"pk": snap.get("PK"), "sk": snap.get("SK")}
+            ranked["chosen_games"] = chosen
+            ranked["source_snapshot"] = {"pk": snap.get("PK"), "sk": snap.get("SK")}
 
-        ranked = apply_signal_adjustments(ranked)
-        return _resp(200, ranked)
+            ranked = apply_signal_adjustments(ranked)
+            return _resp(200, ranked)
 
     except Exception as e:
         logging.error("Error in lambda_handler: %s", str(e))
         return _resp(500, {"ok": False, "error": "Internal server error"})
+
     run_type = (event or {}).get("run", "scheduled")
     return _pull_nba_snapshot(run_type)
