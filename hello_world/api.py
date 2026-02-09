@@ -286,12 +286,22 @@ def lambda_handler(event, context):
         if not snap:
             return _resp(400, {"ok": False, "error": "No snapshot found"})
 
-        ranked = rank_nba_b11c1(snap)
-        ranked = apply_signal_adjustments(ranked)
-        return _resp(200, ranked)
+        chosen = _choose_best_3(snap)
+if len(chosen) != 3:
+    return _resp(500, {"ok": False, "error": "Unable to choose 3 games", "chosen": chosen})
 
-    return _resp(404, {"ok": False, "error": f"Route not found: {method} {path}"})
+games_for_engine = [
+    {"game_id": g["game_id"], "home": g["home"], "away": g["away"], "ml": g["ml"]}
+    for g in chosen
+]
 
+ranked = rank_nba_b11c1(games_for_engine)
+
+ranked["chosen_games"] = chosen
+ranked["source_snapshot"] = {"pk": snap.get("PK"), "sk": snap.get("SK")}
+
+ranked = apply_signal_adjustments(ranked)
+return _resp(200, ranked)
 
 def scheduler_handler(event, context):
     run_type = (event or {}).get("run", "scheduled")
