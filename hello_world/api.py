@@ -273,8 +273,6 @@ def _resp(status: int, body: Any) -> Dict[str, Any]:
         },
         "body": json.dumps(body, default=_json_default)
     }
-    if t:
-        item["t"] = t
     return result
 
 def _parse_json(body: Optional[str]) -> Dict[str, Any]:
@@ -407,7 +405,6 @@ def _latest_snapshot(t: Optional[str] = None) -> Dict[str, Any]:
         key_expr = key_expr & Key("SK").begins_with(f"{t}#")
     resp = snapshots_tbl.query(
         KeyConditionExpression=key_expr,
-        KeyConditionExpression=Key("PK").eq("SPORT#nba"),
         ScanIndexForward=False,
         Limit=1,
     )
