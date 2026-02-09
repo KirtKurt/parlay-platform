@@ -13,6 +13,35 @@ from boto3.dynamodb.conditions import Key
 from nba_algorithm import rank_nba_b11c1
 
 # =========================
+# HANDLERS
+# =========================
+
+def lambda_handler(event, context):
+    if event.get("httpMethod") == "GET" and event.get("path") == "/v1/health":
+        return _resp(200, {"status": "healthy"})
+
+    if event.get("httpMethod") == "POST" and event.get("path") == "/v1/pull/nba":
+        result = _pull_nba_snapshot("manual")
+        return _resp(200, result)
+
+    if event.get("httpMethod") == "GET" and event.get("path") == "/v1/snapshots":
+        snapshot = _latest_snapshot()
+        return _resp(200, snapshot)
+
+    if event.get("httpMethod") == "POST" and event.get("path") == "/v1/rank/nba":
+        body = _parse_json(event.get("body"))
+        games_input = body.get("games", [])
+        ranked = rank_nba_b11c1(games_input)
+        # Ensure unique game_id values
+        unique_games = {game['id']: game for game in ranked['games']}.values()
+        ranked['games'] = list(unique_games)[:3]  # Select up to 3 unique games
+        return _resp(200, ranked)
+
+    return _resp(404, {"error": "Not Found"})
+
+def scheduler_handler(event, context):
+    result = _pull_nba_snapshot("scheduled")
+    return _resp(200, result)
 # AWS / ENV
 # =========================
 dynamodb = boto3.resource("dynamodb")
@@ -337,5 +366,4 @@ def _classify_game(game: dict) -> dict:
     }
 
 # =========================
-# BUILD 4 PARLAYS (ZERO OVERLAP) + 2 SOLID + 1 CF
 # =========================
