@@ -9,7 +9,7 @@ from decimal import Decimal
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from nba_algorithm import rank_nba_b11c1
+from hello_world.nba_algorithm import rank_nba_b11c1
 
 def _choose_best_3(snapshot: dict) -> List[dict]:
     # Placeholder implementation
