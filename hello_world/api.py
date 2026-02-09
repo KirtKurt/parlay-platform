@@ -316,7 +316,7 @@ def lambda_handler(event, context):
         return _resp(404, {"ok": False, "error": "Not Found"})
 
     except Exception as e:
-        logging.exception("Exception in lambda_handler")
+        logging.exception("Exception in lambda_handler: %s", e)
         return _resp(500, {"ok": False, "error": "Internal server error"})
 
 
