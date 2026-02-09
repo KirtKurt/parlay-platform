@@ -479,7 +479,8 @@ def _classify_game(game: dict) -> dict:
     away_team = game.get("away_team")
     ml_pack = _best_ml_for_engine(game)
     if not ml_pack:
-        return {"class": "INELIGIBLE", "gap": 0.0, "factors": ["NO_ODDS"], "book_used": None}
+        return {"class": "INELIGIBLE", "gap": 0.0, "factors": ["NO_ODDS"], "book_used": None,
+                "game_id": game_id, "home_team": home_team, "away_team": away_team}
 
     ml = {"home": ml_pack["home"], "away": ml_pack["away"]}
     gap = _leader_gap_from_ml(ml)
