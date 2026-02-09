@@ -12,7 +12,10 @@ from boto3.dynamodb.conditions import Key
 
 from nba_algorithm import rank_nba_b11c1
 
-# =========================
+def _choose_best_3(snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
+    games = snapshot.get("data", {}).get("games", [])
+    # Assuming the games are sorted by some criteria, we take the first 3 unique games
+    return games[:3]
 # HANDLERS
 # =========================
 
