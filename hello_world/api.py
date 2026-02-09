@@ -76,19 +76,17 @@ def lambda_handler(event, context):
         ranked = rank_nba_b11c1(games_for_engine)
 
         # Step3 scoring adjustments
-        steam_align = sum(
-            1 for i in range(3)
-            if chosen_games[i]["signals"]["steam"] and ranked["legs"][i]["favorite"] == combo["picks"][i]
-        )
-
-        strongest_steam_idx = max(
-            (i for i, game in enumerate(chosen_games) if game["signals"]["gap"] is not None),
-            key=lambda i: chosen_games[i]["signals"]["gap"],
-            default=None
-        )
-
         for combo in ranked["ranked"]:
-            steam_align = steam_align_count(combo)
+            steam_align = sum(
+                1 for i in range(3)
+                if chosen_games[i]["signals"]["steam"] and ranked["legs"][i]["favorite"] == combo["picks"][i]
+            )
+
+            strongest_steam_idx = max(
+                (i for i, game in enumerate(chosen_games) if game["signals"]["gap"] is not None),
+                key=lambda i: chosen_games[i]["signals"]["gap"],
+                default=None
+            )
             signal_adj = 0.0
 
             if steam_align == 1:
