@@ -144,7 +144,13 @@ def lambda_handler(event, context):
         used_game_ids = set()
 
         for _ in range(4):
-            slate = [game for game in eligible_games if game["class"] in ["STRONG_SOLID", "SOLID"] and (game.get("game_id") or game.get("id")) not in used_game_ids]
+            slate = []
+            for game in eligible_games:
+                gid = game.get("game_id") or game.get("id")
+                if not gid or not game.get("home_team") or not game.get("away_team"):
+                    continue
+                if game["class"] in ["STRONG_SOLID", "SOLID"] and gid not in used_game_ids:
+                    slate.append(game)
             if len(slate) < 3:
                 break
 
@@ -156,13 +162,27 @@ def lambda_handler(event, context):
 
             slate.sort(key=lambda x: -x["gap"])
             chosen_games = slate[:3]
-            used_game_ids.update(game.get("game_id") or game.get("id") for game in chosen_games)
+            for game in chosen_games:
+                gid = game.get("game_id") or game.get("id")
+                if gid:
+                    used_game_ids.add(gid)
 
             structure_tag = "CLEAN_3_SOLID_SLATE" if coin_flip_count == 0 else "MIXED_2_SOLID_1_CF"
             if coin_flip_count == 1 and any(len(game["factors"]) >= 3 for game in chosen_games if game["class"] == "COIN_FLIP"):
                 structure_tag = "MARGINAL_MIXED"
 
-            games_for_engine = [{"game_id": game.get("game_id") or game.get("id"), "home": game["home_team"], "away": game["away_team"], "ml": game["ml"]} for game in chosen_games]
+            games_for_engine = []
+            for game in chosen_games:
+                gid = game.get("game_id") or game.get("id")
+                ht = game.get("home_team") or game.get("home")
+                at = game.get("away_team") or game.get("away")
+                if gid and ht and at:
+                    games_for_engine.append({
+                        "game_id": gid,
+                        "home": ht,
+                        "away": at,
+                        "ml": game["ml"]
+                    })
             ranked = rank_nba_b11c1(games_for_engine)
 
             parlays.append({
@@ -223,7 +243,7 @@ def _json_default(o):
     return str(o)
 
 def _resp(status: int, body: Any) -> Dict[str, Any]:
-    return {
+    result = {
         "statusCode": status,
         "headers": {
             "content-type": "application/json",
@@ -233,6 +253,12 @@ def _resp(status: int, body: Any) -> Dict[str, Any]:
         },
         "body": json.dumps(body, default=_json_default)
     }
+    result.update({
+        "game_id": gid,
+        "home_team": home_team,
+        "away_team": away_team
+    })
+    return result
 
 def _parse_json(body: Optional[str]) -> Dict[str, Any]:
     if not body:
@@ -471,7 +497,7 @@ def _leader_gap_from_ml(ml: dict) -> float:
     return abs(p_h - p_a)
 
 def _classify_game(game: dict) -> dict:
-    game_id = game.get("id")
+    gid = game.get("id")
     home_team = game.get("home_team")
     away_team = game.get("away_team")
     ml_pack = _best_ml_for_engine(game)
@@ -481,7 +507,7 @@ def _classify_game(game: dict) -> dict:
             "gap": 0.0,
             "factors": ["NO_ODDS"],
             "book_used": None,
-            "game_id": game_id,
+            "game_id": gid,
             "home_team": home_team,
             "away_team": away_team,
         }
