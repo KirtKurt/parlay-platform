@@ -277,7 +277,9 @@ def _choose_best_3(snapshot):
             "signals": _steam_resistance_signals(g.get("books", {})),
         })
 
-    return chosendef _choose_best_3(snapshot):
+    return chosen
+
+def _choose_best_3(snapshot):
     scored = []
     for g in snapshot["data"]["games"]:
         books = g.get("books", {}) or {}
