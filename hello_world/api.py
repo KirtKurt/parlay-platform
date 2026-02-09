@@ -318,3 +318,7 @@ def lambda_handler(event, context):
 
     run_type = (event or {}).get("run", "scheduled")
     return _pull_nba_snapshot(run_type)
+
+def scheduler_handler(event, context):
+    # Implement the scheduler handler logic here
+    pass
