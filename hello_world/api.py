@@ -135,6 +135,56 @@ def lambda_handler(event, context):
             "signals_summary": signals_summary
         })
 
+    if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/nba/4":
+        snapshot = _latest_snapshot()
+        games = snapshot["data"]["games"]
+        eligible_games = [_classify_game(game) for game in games]
+        
+        parlays = []
+        used_game_ids = set()
+
+        for _ in range(4):
+            slate = [game for game in eligible_games if game["class"] in ["STRONG_SOLID", "SOLID"] and game["game_id"] not in used_game_ids]
+            if len(slate) < 3:
+                break
+
+            solid_count = sum(1 for game in slate if game["class"] == "STRONG_SOLID")
+            coin_flip_count = sum(1 for game in slate if game["class"] == "COIN_FLIP")
+
+            if solid_count < 2 or coin_flip_count > 1:
+                continue
+
+            slate.sort(key=lambda x: -x["gap"])
+            chosen_games = slate[:3]
+            used_game_ids.update(game["game_id"] for game in chosen_games)
+
+            structure_tag = "CLEAN_3_SOLID_SLATE" if coin_flip_count == 0 else "MIXED_2_SOLID_1_CF"
+            if coin_flip_count == 1 and any(len(game["factors"]) >= 3 for game in chosen_games if game["class"] == "COIN_FLIP"):
+                structure_tag = "MARGINAL_MIXED"
+
+            games_for_engine = [{"game_id": game["game_id"], "home": game["home_team"], "away": game["away_team"], "ml": game["ml"]} for game in chosen_games]
+            ranked = rank_nba_b11c1(games_for_engine)
+
+            parlays.append({
+                "parlay_index": len(parlays) + 1,
+                "structure_tag": structure_tag,
+                "legs": chosen_games,
+                "ranked": ranked["ranked"][:8],
+                "source_snapshot": {"pk": snapshot["PK"], "sk": snapshot["SK"]}
+            })
+
+        refusal = None
+        if len(parlays) < 4:
+            refusal = {"code": "INSUFFICIENT_PARLAYS", "reason": "Not enough eligible games to build 4 parlays"}
+
+        return _resp(200, {
+            "ok": True,
+            "parlays_requested": 4,
+            "parlays_built": len(parlays),
+            "refusal": refusal,
+            "parlays": parlays
+        })
+
     return _resp(404, {"error": "Not Found"})
 
 def scheduler_handler(event, context):
