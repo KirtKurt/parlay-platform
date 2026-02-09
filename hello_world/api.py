@@ -60,7 +60,59 @@ def lambda_handler(event, context):
             if len(chosen_games) == 3:
                 break
 
+        # Compute signals and panel for each chosen game
+        for game in chosen_games:
+            game["signals"] = _steam_resistance_signals(game["books"])
+            game["panel"] = _panel_metrics(game)
+
         ranked = rank_nba_b11c1(chosen_games)
+
+        # Step3 scoring adjustments
+        steam_align_count = lambda combo: sum(
+            1 for i, leg in enumerate(combo["legs"])
+            if chosen_games[i]["signals"]["steam"] and leg["favorite"] == combo["picks"][i]
+        )
+
+        strongest_steam_gap = max((game["signals"]["gap"] for game in chosen_games if game["signals"]["gap"] is not None), default=0)
+
+        for combo in ranked["ranked"]:
+            steam_align = steam_align_count(combo)
+            signal_adj = 0.0
+
+            if steam_align == 1:
+                signal_adj += 0.75
+            elif steam_align >= 2:
+                signal_adj += 1.25
+
+            if any(game["signals"]["gap"] == strongest_steam_gap for game in chosen_games):
+                signal_adj += 0.50
+
+            if any(game["signals"]["resistance"] for game in chosen_games):
+                signal_adj -= 0.75
+
+            if any(game["signals"]["coinflip"] for game in chosen_games):
+                signal_adj -= 0.50
+
+            if any(game["panel"]["panel_disagree"] for game in chosen_games):
+                signal_adj -= 0.50
+
+            combo["base_score"] = combo["score"]
+            combo["signal_adj"] = signal_adj
+            combo["score_final"] = combo["base_score"] + signal_adj
+            combo["steam_align"] = steam_align
+
+        # Re-rank by score_final then combo_prob
+        ranked["ranked"].sort(key=lambda x: (-x["score_final"], -x["combo_prob"]))
+        for i, combo in enumerate(ranked["ranked"], start=1):
+            combo["rank"] = i
+
+        # Signals summary
+        signals_summary = {
+            "steam_games": [game["game_id"] for game in chosen_games if game["signals"]["steam"]],
+            "resistance_games": [game["game_id"] for game in chosen_games if game["signals"]["resistance"]],
+            "coinflip_games": [game["game_id"] for game in chosen_games if game["signals"]["coinflip"]],
+            "scoring_mode": "STEP3_PANEL_WEIGHTED"
+        }
         return _resp(200, {
             "ok": True,
             "model": ranked.get("model"),
@@ -68,7 +120,8 @@ def lambda_handler(event, context):
             "legs": ranked.get("legs"),
             "ranked": ranked.get("ranked"),
             "chosen_games": chosen_games,
-            "source_snapshot": {"pk": snapshot["PK"], "sk": snapshot["SK"]}
+            "source_snapshot": {"pk": snapshot["PK"], "sk": snapshot["SK"]},
+            "signals_summary": signals_summary
         })
 
     return _resp(404, {"error": "Not Found"})
