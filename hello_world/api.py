@@ -43,6 +43,7 @@ def lambda_handler(event, context):
         snapshot = _latest_snapshot()
         games = snapshot["data"]["games"]
         chosen_games = []
+        games_for_engine = []
 
         for game in games:
             for book in BOOK_PRIORITY:
@@ -54,7 +55,14 @@ def lambda_handler(event, context):
                             "home": game["home_team"],
                             "away": game["away_team"],
                             "ml": {"home": int(ml["home"]), "away": int(ml["away"])},
-                            "book_used": book
+                            "book_used": book,
+                            "books_src": game["books"]
+                        })
+                        games_for_engine.append({
+                            "game_id": game["id"],
+                            "home": game["home_team"],
+                            "away": game["away_team"],
+                            "ml": {"home": int(ml["home"]), "away": int(ml["away"])}
                         })
                         break
             if len(chosen_games) == 3:
@@ -62,15 +70,15 @@ def lambda_handler(event, context):
 
         # Compute signals and panel for each chosen game
         for game in chosen_games:
-            game["signals"] = _steam_resistance_signals(game["books"])
-            game["panel"] = _panel_metrics(game)
+            game["signals"] = _steam_resistance_signals(game["books_src"])
+            game["panel"] = _panel_metrics({"books": game["books_src"]})
 
-        ranked = rank_nba_b11c1(chosen_games)
+        ranked = rank_nba_b11c1(games_for_engine)
 
         # Step3 scoring adjustments
         steam_align_count = lambda combo: sum(
             1 for i, leg in enumerate(combo["legs"])
-            if chosen_games[i]["signals"]["steam"] and leg["favorite"] == combo["picks"][i]
+            if chosen_games[i]["signals"]["steam"] and ranked["legs"][i]["favorite"] == combo["picks"][i]
         )
 
         strongest_steam_gap = max((game["signals"]["gap"] for game in chosen_games if game["signals"]["gap"] is not None), default=0)
