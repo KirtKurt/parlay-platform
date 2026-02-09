@@ -144,7 +144,7 @@ def lambda_handler(event, context):
         used_game_ids = set()
 
         for _ in range(4):
-            slate = [game for game in eligible_games if game["class"] in ["STRONG_SOLID", "SOLID"] and game["game_id"] not in used_game_ids]
+            slate = [game for game in eligible_games if game["class"] in ["STRONG_SOLID", "SOLID"] and (game.get("game_id") or game.get("id")) not in used_game_ids]
             if len(slate) < 3:
                 break
 
