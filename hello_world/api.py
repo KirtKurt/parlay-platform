@@ -46,9 +46,10 @@ def lambda_handler(event, context):
         games_for_engine = []
 
         for game in games:
+            books = game.get("books", {})
             for book in BOOK_PRIORITY:
-                if book in game["books_src"]:
-                    ml = game["books_src"][book]["ml"]
+                if book in books:
+                    ml = books[book]["ml"]
                     if "home" in ml and "away" in ml:
                         chosen_games.append({
                             "game_id": game["id"],
