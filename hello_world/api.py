@@ -156,13 +156,13 @@ def lambda_handler(event, context):
 
             slate.sort(key=lambda x: -x["gap"])
             chosen_games = slate[:3]
-            used_game_ids.update(game["game_id"] for game in chosen_games)
+            used_game_ids.update(game.get("game_id") or game.get("id") for game in chosen_games)
 
             structure_tag = "CLEAN_3_SOLID_SLATE" if coin_flip_count == 0 else "MIXED_2_SOLID_1_CF"
             if coin_flip_count == 1 and any(len(game["factors"]) >= 3 for game in chosen_games if game["class"] == "COIN_FLIP"):
                 structure_tag = "MARGINAL_MIXED"
 
-            games_for_engine = [{"game_id": game["game_id"], "home": game["home_team"], "away": game["away_team"], "ml": game["ml"]} for game in chosen_games]
+            games_for_engine = [{"game_id": game.get("game_id") or game.get("id"), "home": game["home_team"], "away": game["away_team"], "ml": game["ml"]} for game in chosen_games]
             ranked = rank_nba_b11c1(games_for_engine)
 
             parlays.append({
@@ -232,6 +232,9 @@ def _resp(status: int, body: Any) -> Dict[str, Any]:
             "access-control-allow-methods": "GET,POST,OPTIONS",
         },
         "body": json.dumps(body, default=_json_default),
+        "game_id": game_id,
+        "home_team": home_team,
+        "away_team": away_team,
     }
 
 def _parse_json(body: Optional[str]) -> Dict[str, Any]:
@@ -476,8 +479,15 @@ def _classify_game(game: dict) -> dict:
     away_team = game.get("away_team")
     ml_pack = _best_ml_for_engine(game)
     if not ml_pack:
-        return {"class": "INELIGIBLE", "gap": 0.0, "factors": ["NO_ODDS"], "book_used": None,
-                "game_id": game_id, "home_team": home_team, "away_team": away_team}
+        return {
+            "class": "INELIGIBLE",
+            "gap": 0.0,
+            "factors": ["NO_ODDS"],
+            "book_used": None,
+            "game_id": game_id,
+            "home_team": home_team,
+            "away_team": away_team,
+        }
 
     ml = {"home": ml_pack["home"], "away": ml_pack["away"]}
     gap = _leader_gap_from_ml(ml)
