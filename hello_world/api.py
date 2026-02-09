@@ -231,10 +231,7 @@ def _resp(status: int, body: Any) -> Dict[str, Any]:
             "access-control-allow-headers": "content-type",
             "access-control-allow-methods": "GET,POST,OPTIONS",
         },
-        "body": json.dumps(body, default=_json_default),
-        "game_id": game_id,
-        "home_team": home_team,
-        "away_team": away_team,
+        "body": json.dumps(body, default=_json_default)
     }
 
 def _parse_json(body: Optional[str]) -> Dict[str, Any]:
