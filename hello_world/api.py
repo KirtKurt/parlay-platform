@@ -31,11 +31,30 @@ def lambda_handler(event, context):
     if event.get("httpMethod") == "POST" and event.get("path") == "/v1/rank/nba":
         body = _parse_json(event.get("body"))
         games_input = body.get("games", [])
-        ranked = rank_nba_b11c1(games_input)
-        # Ensure unique game_id values
-        unique_games = {game['id']: game for game in ranked['games']}.values()
-        ranked['games'] = list(unique_games)[:3]  # Select up to 3 unique games
-        return _resp(200, ranked)
+        
+        if len(games_input) == 3:
+            # Manual mode
+            ranked = rank_nba_b11c1(games_input)
+            return _resp(200, {"ranked": ranked, "chosen_games": games_input, "source_snapshot": None})
+        
+        # Auto mode
+        snapshot = _latest_snapshot()
+        chosen_games = _choose_best_3(snapshot)
+        formatted_games = [
+            {
+                "game_id": game["id"],
+                "home": game["home_team"],
+                "away": game["away_team"],
+                "ml": game["books"].get("ml", {})
+            }
+            for game in chosen_games
+        ]
+        ranked = rank_nba_b11c1(formatted_games)
+        return _resp(200, {
+            "ranked": ranked,
+            "chosen_games": formatted_games,
+            "source_snapshot": {"PK": snapshot["PK"], "SK": snapshot["SK"]}
+        })
 
     return _resp(404, {"error": "Not Found"})
 
