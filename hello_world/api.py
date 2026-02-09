@@ -253,11 +253,6 @@ def _resp(status: int, body: Any) -> Dict[str, Any]:
         },
         "body": json.dumps(body, default=_json_default)
     }
-    result.update({
-        "game_id": gid,
-        "home_team": home_team,
-        "away_team": away_team
-    })
     return result
 
 def _parse_json(body: Optional[str]) -> Dict[str, Any]:
