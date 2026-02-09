@@ -142,10 +142,18 @@ def lambda_handler(event, context):
         })
 
     if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/nba/4":
-        snapshot = _latest_snapshot()
-        games = snapshot["data"]["games"]
+        # Retrieve snapshots T1, T2, T3, T4
+        snapshots = [_latest_snapshot(f"T{i}") for i in range(1, 5)]
+        if any(s is None for s in snapshots):
+            return _resp(200, {
+                "ok": False,
+                "refusal": {"code": "MISSING_SNAPSHOT", "reason": "One or more required snapshots (T1-T4) are missing"}
+            })
+
+        # Use T4 for building, T1-T3 for validation
+        games = snapshots[3]["data"]["games"]
         eligible_games = [_classify_game(game) for game in games]
-        
+
         built = []
         used_game_ids = set()
 
@@ -187,7 +195,7 @@ def lambda_handler(event, context):
                 if gid:
                     used_game_ids.add(gid)
 
-            structure_tag = "CLEAN_3_SOLID_SLATE" if coin_flip_count == 0 else "MIXED_2_SOLID_1_CF"
+            structure_tag = "CLEAN_3_SOLID" if coin_flip_count == 0 else "MIXED_2_SOLID_1_CF"
             if coin_flip_count == 1 and any(len(game["factors"]) >= 3 for game in chosen_games if game["class"] == "COIN_FLIP"):
                 structure_tag = "MARGINAL_MIXED"
 
@@ -210,7 +218,7 @@ def lambda_handler(event, context):
                 "structure_tag": structure_tag,
                 "legs": chosen_games,
                 "ranked": ranked["ranked"][:8],
-                "source_snapshot": {"pk": snapshot["PK"], "sk": snapshot["SK"]}
+                "source_snapshot": {"pk": snapshots[3]["PK"], "sk": snapshots[3]["SK"]}
             })
 
         refusal = None
