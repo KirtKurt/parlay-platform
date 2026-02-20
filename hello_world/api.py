@@ -17,7 +17,35 @@ def _choose_best_3(snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
     # Assuming the games are sorted by some criteria, we take the first 3 unique games
     return games[:3]
 # HANDLERS
-# =========================
+def _calculate_net_delta(game: dict, snapshots: List[Dict[str, Any]]) -> Optional[float]:
+    gid = game.get("game_id") or game.get("id")
+    t4_game = next((g for g in snapshots[3]["data"]["games"] if g.get("id") == gid), None)
+    t1_game = next((g for g in snapshots[0]["data"]["games"] if g.get("id") == gid), None)
+
+    if not t4_game or not t1_game:
+        return None
+
+    def get_fav_p(game: dict) -> Optional[float]:
+        dk = (game.get("books", {}).get("draftkings") or {}).get("ml")
+        fd = (game.get("books", {}).get("fanduel") or {}).get("ml")
+        panel = _panel_metrics(game)
+        if dk:
+            _, fav_p = _fav_side_and_prob(dk)
+            return fav_p
+        elif fd:
+            _, fav_p = _fav_side_and_prob(fd)
+            return fav_p
+        elif panel.get("panel_avg_fav_p") is not None:
+            return panel["panel_avg_fav_p"]
+        return None
+
+    fav_p_t4 = get_fav_p(t4_game)
+    fav_p_t1 = get_fav_p(t1_game)
+
+    if fav_p_t4 is None or fav_p_t1 is None:
+        return None
+
+    return round(fav_p_t4 - fav_p_t1, 4)
 
 def lambda_handler(event, context):
     if event.get("httpMethod") == "GET" and event.get("path") == "/v1/health":
@@ -158,14 +186,18 @@ def lambda_handler(event, context):
         used_game_ids = set()
 
         for parlay_index in range(1, 5):
-            slate = []
-            for game in eligible_games:
-                gid = game.get("game_id") or game.get("id")
-                if not gid or not game.get("home_team") or not game.get("away_team"):
-                    continue
-                if game["class"] in ["STRONG_SOLID", "SOLID"] and gid not in used_game_ids:
-                    slate.append(game)
-            if len(slate) < 3:
+            strong = [g for g in eligible_games if g["class"] == "STRONG_SOLID" and g.get("game_id") not in used_game_ids]
+            coin = [g for g in eligible_games if g["class"] == "COIN_FLIP" and g.get("game_id") not in used_game_ids]
+
+            if len(strong) >= 2:
+                strong.sort(key=lambda x: -x["gap"])
+                s1, s2 = strong[:2]
+                third = coin[0] if coin else strong[2] if len(strong) > 2 else None
+                if third:
+                    slate = [s1, s2, third]
+                else:
+                    slate = []
+            else:
                 if parlay_index == 1:
                     # Calculate pool counts
                     pool_counts = {
@@ -184,12 +216,12 @@ def lambda_handler(event, context):
                     )[:10]
                     top_candidates_info = [
                         {
-                            "game_id": game.get("game_id"),
-                            "home_team": game.get("home_team"),
-                            "away_team": game.get("away_team"),
+                            "game_id": game.get("game_id") or game.get("id"),
+                            "home_team": game.get("home_team") or game.get("home"),
+                            "away_team": game.get("away_team") or game.get("away"),
                             "class": game.get("class"),
                             "factors": game.get("factors"),
-                            "net_delta": game.get("gap")  # Assuming gap represents net delta T4-T1
+                            "net_delta": _calculate_net_delta(game, snapshots)
                         }
                         for game in top_candidates
                     ]
@@ -559,9 +591,9 @@ def _leader_gap_from_ml(ml: dict) -> float:
     return abs(p_h - p_a)
 
 def _classify_game(game: dict) -> dict:
-    gid = game.get("id")
-    home_team = game.get("home_team")
-    away_team = game.get("away_team")
+    gid = game.get("id") or game.get("game_id")
+    home_team = game.get("home_team") or game.get("home")
+    away_team = game.get("away_team") or game.get("away")
     ml_pack = _best_ml_for_engine(game)
     if not ml_pack:
         return {
