@@ -198,6 +198,9 @@ def lambda_handler(event, context):
                 else:
                     slate = []
             else:
+                slate = []
+
+            if not slate:
                 if parlay_index == 1:
                     # Calculate pool counts
                     pool_counts = {
