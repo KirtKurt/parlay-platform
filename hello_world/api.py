@@ -167,11 +167,46 @@ def lambda_handler(event, context):
                     slate.append(game)
             if len(slate) < 3:
                 if parlay_index == 1:
+                    # Calculate pool counts
+                    pool_counts = {
+                        "STRONG_SOLID": sum(1 for game in eligible_games if game["class"] == "STRONG_SOLID"),
+                        "SOLID": sum(1 for game in eligible_games if game["class"] == "SOLID"),
+                        "COIN_FLIP": sum(1 for game in eligible_games if game["class"] == "COIN_FLIP"),
+                        "MARGINAL": sum(1 for game in eligible_games if game["class"] == "MARGINAL"),
+                        "INELIGIBLE": sum(1 for game in eligible_games if game["class"] == "INELIGIBLE"),
+                    }
+
+                    # Determine top candidates
+                    top_candidates = sorted(
+                        eligible_games,
+                        key=lambda x: x.get("gap", 0),
+                        reverse=True
+                    )[:10]
+                    top_candidates_info = [
+                        {
+                            "game_id": game.get("game_id"),
+                            "home_team": game.get("home_team"),
+                            "away_team": game.get("away_team"),
+                            "class": game.get("class"),
+                            "factors": game.get("factors"),
+                            "net_delta": game.get("gap")  # Assuming gap represents net delta T4-T1
+                        }
+                        for game in top_candidates
+                    ]
+
+                    # Include SKs used
+                    sks_used = [snapshot["SK"] for snapshot in snapshots]
+
                     return _resp(200, {
                         "ok": True,
                         "parlays_requested": 4,
                         "parlays_built": 0,
-                        "refusal": {"code": "FIRST_SLATE_INELIGIBLE", "reason": "First slate ineligible"}
+                        "refusal": {"code": "FIRST_SLATE_INELIGIBLE", "reason": "First slate ineligible"},
+                        "debug": {
+                            "pool_counts": pool_counts,
+                            "top_candidates": top_candidates_info,
+                            "sks_used": sks_used
+                        }
                     })
                 break
 
