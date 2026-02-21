@@ -251,6 +251,7 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
                 "ml_pack_present": bool(_best_ml_for_engine(game)),
                 "factors": factors
             }, default=str))
+        classified_game = {
             "game_id": game.get("id"),
             "signals": {},  # Add signal calculations here
             "class": "INELIGIBLE",  # Determine class based on signals
