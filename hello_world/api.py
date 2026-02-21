@@ -456,7 +456,7 @@ def scheduler_handler(event, context):
         return _resp(200, {"ok": True, "sport": sport, "t": t, "run": run, "result": result})
     except Exception as e:
         return _resp(500, {"ok": False, "error": str(e)})
-def _build_ncaam_b1c23(max_parlays: int) -> Dict[str, Any]:
+def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
     # Ensure all required snapshots are available
     snapshots = [_latest_snapshot(f"T{i}", "ncaam") for i in range(1, 5)]
     missing_snapshots = [f"T{i}" for i, s in enumerate(snapshots, 1) if s is None]
