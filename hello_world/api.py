@@ -409,7 +409,7 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
 
     asof = _now_iso()
     slate_id = f"{sport.upper()}_{asof[:10]}_{run_type}"
-    sk_prefix = f"{t}#DATE#{slate_date_et}#" if t else ""
+    sk_prefix = f"{t}#DATE#{slate_date_et}#" if t else f"ASOF#{asof}#DATE#{slate_date_et}#"
     item = {
         "PK": f"SPORT#{sport}",
         "SK": f"{sk_prefix}ASOF#{asof}#SLATE#{slate_id}",
@@ -466,6 +466,24 @@ def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, A
         Limit=1,
     )
     items = resp.get("Items", [])
+    if not items and t:
+        # Try old NBA prefix
+        key_expr_old_nba = Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(f"{slate_date_et}#DATE#{t}#")
+        resp_old_nba = snapshots_tbl.query(
+            KeyConditionExpression=key_expr_old_nba,
+            ScanIndexForward=False,
+            Limit=1,
+        )
+        items = resp_old_nba.get("Items", [])
+    if not items and sport == "ncaam":
+        # For NCAAM, return the newest ASOF# item for today’s slate_date_et
+        key_expr_ncaam = Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(f"ASOF#{slate_date_et}#")
+        resp_ncaam = snapshots_tbl.query(
+            KeyConditionExpression=key_expr_ncaam,
+            ScanIndexForward=False,
+            Limit=1,
+        )
+        items = resp_ncaam.get("Items", [])
     if not items:
         return None
     return items[0]
