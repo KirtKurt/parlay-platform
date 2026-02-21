@@ -250,6 +250,7 @@ def lambda_handler(event, context):
         body = _parse_json(event.get("body"))
         max_parlays = min(int(body.get("max_parlays", 7)), 7)
         coinflip_lite = body.get("coinflip_lite", False)
+        max_parlays = min(int(body.get("max_parlays", 7)), 7)
         result = _build_ncaam_b1c23(max_parlays, coinflip_lite)
         return _resp(200, result)
 
