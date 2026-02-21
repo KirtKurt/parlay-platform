@@ -2,7 +2,7 @@ import json
 import os
 import math
 from datetime import datetime, timezone, timedelta
-import pytz
+from zoneinfo import ZoneInfo
 from decimal import Decimal
 from typing import Any, Dict, Optional, List, Tuple
 import urllib.request
@@ -326,11 +326,11 @@ def _mean_std(vals: List[float]) -> Tuple[float, float]:
 # ODDS API + SNAPSHOT
 # =========================
 def _get_slate_date_et() -> str:
-    eastern = pytz.timezone('America/New_York')
+    eastern = ZoneInfo("America/New_York")
     return datetime.now(eastern).strftime('%Y-%m-%d')
 
 def _filter_games_by_slate_date(games: list, slate_date_et: str) -> list:
-    eastern = pytz.timezone('America/New_York')
+    eastern = ZoneInfo("America/New_York")
     filtered_games = []
     for game in games:
         commence_time = datetime.fromisoformat(game['commence_time'].replace('Z', '+00:00'))
