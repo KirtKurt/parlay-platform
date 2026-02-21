@@ -669,23 +669,6 @@ def _json_default(o):
         return float(o)
     return str(o)
 
-def _log_ineligible_reason(sport: str, t: str, slate_date_et: str, game: dict, factors):
-    try:
-        print(json.dumps({
-            "tag": "INELIGIBLE_REASON",
-            "sport": sport,
-            "t": t,
-            "slate_date_et": slate_date_et,
-            "game_id": game.get("id") or game.get("game_id"),
-            "game_key": game.get("game_key"),
-            "away": game.get("away_team") or game.get("away"),
-            "home": game.get("home_team") or game.get("home"),
-            "commence_time": game.get("commence_time"),
-            "reason": factors
-        }, default=str))
-    except Exception:
-        pass
-
 def _resp(status: int, body: Any) -> Dict[str, Any]:
     return {
         "statusCode": status,
