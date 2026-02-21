@@ -464,22 +464,15 @@ def _pull_nba_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]
 def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Optional[Dict[str, Any]]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
-    key_expr = Key("PK").eq(f"SPORT#{sport}")
-    slate_date_et = _get_slate_date_et()
+    et_date = _get_slate_date_et()
+    key_expr = Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(f"{et_date}#DATE#{t}#")
     resp = snapshots_tbl.query(
         KeyConditionExpression=key_expr,
         ScanIndexForward=False,
-        Limit=25,
+        Limit=1,
     )
     items = resp.get("Items", [])
-
-    if t:
-        # Filter items for the specified 't' and today's slate_date_et
-        today_items = [item for item in items if item.get("t") == t and item.get("slate_date_et") == slate_date_et]
-        if today_items:
-            return today_items[0]
-
-    return None
+    return items[0] if items else None
 
 # =========================
 # PANEL CONSENSUS + SIGNALS
