@@ -117,6 +117,7 @@ def compute_game_signals(sport: str, t: str, slate_date_et: str, snapshots_by_t:
 def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List[Dict[str, Any]], coinflip_lite: bool) -> List[Dict[str, Any]]:
     # Implement signal calculation and classification logic
     # Placeholder implementation
+    t_map = {f"T{i}": {} for i in range(1, 5)}
     classified_games = []
     key_overlap_t1_t4 = 0
     key_overlap_t2_t4 = 0
@@ -186,6 +187,10 @@ def _generate_diagnostics(games_t4: List[Dict[str, Any]], classified: List[Dict[
         "sample_disallowed": sample_disallowed
     }
 def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
+    key_overlap_t1_t4 = 0
+    key_overlap_t2_t4 = 0
+    key_overlap_t3_t4 = 0
+    missing_t_link_count = 0
     built: List[Dict[str, Any]] = []
 
     # Ensure all required snapshots are available
@@ -653,6 +658,7 @@ def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
     all_keys_seen = set()
     games_out = []
 
+    slate_date_et = _get_slate_date_et()
     for g in raw_games:
         home = g.get("home_team")
         away = g.get("away_team")
@@ -706,7 +712,7 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
 
-    asof = _now_iso()
+    asof = datetime.now(timezone.utc).isoformat()
     slate_id = f"{sport.upper()}_{slate_date_et}_{run_type}"
     sk_prefix = f"{t}#DATE#{slate_date_et}#ASOF#{asof}#SLATE#{slate_id}" if t else f"ASOF#{asof}#SLATE#{slate_id}"
     item = {
