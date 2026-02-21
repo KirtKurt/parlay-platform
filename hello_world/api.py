@@ -363,17 +363,16 @@ def lambda_handler(event, context):
         t = body.get("t")
         run_type = body.get("run", "manual")
         result = _pull_nba_snapshot(run_type, t)
-        result = _resp(200, result)
         # Compute and store signals
-        snapshots_by_t = {t: _latest_snapshot(t, "ncaam") for t in ["T1", "T2", "T3", "T4"]}
-        signals = compute_game_signals("ncaam", t, _get_slate_date_et(), snapshots_by_t)
+        snapshots_by_t = {t: _latest_snapshot(t, "nba") for t in ["T1", "T2", "T3", "T4"]}
+        signals = compute_game_signals("nba", t, _get_slate_date_et(), snapshots_by_t)
         for signal in signals:
             signal_ledger_tbl.put_item(Item={
-                "PK": f"LEDGER#ncaam#{_get_slate_date_et()}#{t}",
+                "PK": f"LEDGER#nba#{_get_slate_date_et()}#{t}",
                 "SK": f"GAME#{signal['game_id']}",
                 **signal
             })
-        return result
+        return _resp(200, result)
 
     if event.get("httpMethod") == "GET" and event.get("path") == "/v1/snapshots":
         query_params = event.get("queryStringParameters", {})
@@ -394,17 +393,16 @@ def lambda_handler(event, context):
         t = body.get("t")
         run_type = body.get("run", "manual")
         result = _pull_ncaam_snapshot(run_type, t)
-        result = _resp(200, result)
         # Compute and store signals
-        snapshots_by_t = {t: _latest_snapshot(t, "nba") for t in ["T1", "T2", "T3", "T4"]}
-        signals = compute_game_signals("nba", t, _get_slate_date_et(), snapshots_by_t)
+        snapshots_by_t = {t: _latest_snapshot(t, "ncaam") for t in ["T1", "T2", "T3", "T4"]}
+        signals = compute_game_signals("ncaam", t, _get_slate_date_et(), snapshots_by_t)
         for signal in signals:
             signal_ledger_tbl.put_item(Item={
-                "PK": f"LEDGER#nba#{_get_slate_date_et()}#{t}",
+                "PK": f"LEDGER#ncaam#{_get_slate_date_et()}#{t}",
                 "SK": f"GAME#{signal['game_id']}",
                 **signal
             })
-        return result
+        return _resp(200, result)
 
     if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/ncaam/b1c23":
         body = _parse_json(event.get("body"))
