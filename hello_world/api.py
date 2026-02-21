@@ -972,7 +972,7 @@ def _leader_gap_from_ml(ml: dict) -> float:
     p_h, p_a = _vig_norm(_american_to_prob(ho), _american_to_prob(ao))
     return abs(p_h - p_a)
 
-def _classify_game(game: dict) -> dict:
+def _classify_game(game: Dict[str, Any], snapshots: List[Dict[str, Any]], t_map: Dict[str, Any], coinflip_lite: bool, slate_date_et: str) -> Tuple[str, Any]:
     gid = game.get("id") or game.get("game_id")
     home_team = game.get("home_team") or game.get("home")
     away_team = game.get("away_team") or game.get("away")
@@ -1016,15 +1016,7 @@ def _classify_game(game: dict) -> dict:
         # coin flip requires multiple uncertainty factors (your rule)
         cls = "COIN_FLIP" if len(factors) >= COINFLIP_FACTORS_MIN else "MARGINAL"
 
-    return {
-        "class": cls,
-        "gap": round(gap, 4),
-        "factors": factors,
-        "book_used": ml_pack["book"],
-        "panel": panel,
-        "signals": sig,
-        "ml": {"home": ml_pack["home"], "away": ml_pack["away"]},
-    }
+    return cls, factors
 
 # =========================
 # =========================
