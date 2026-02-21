@@ -685,7 +685,9 @@ def _log_ineligible_reason(sport: str, t: str, slate_date_et: str, game: dict, f
         }, default=str))
     except Exception:
         pass
-    result = {
+
+def _resp(status: int, body: Any) -> Dict[str, Any]:
+    return {
         "statusCode": status,
         "headers": {
             "content-type": "application/json",
@@ -695,9 +697,6 @@ def _log_ineligible_reason(sport: str, t: str, slate_date_et: str, game: dict, f
         },
         "body": json.dumps(body, default=_json_default)
     }
-    return result
-
-def _parse_json(body: Optional[str]) -> Dict[str, Any]:
     if not body:
         return {}
     try:
