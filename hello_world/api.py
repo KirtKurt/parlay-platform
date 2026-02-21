@@ -288,7 +288,25 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
                 refusal = {
                     "code": "FIRST_SLATE_INELIGIBLE",
                     "reason": "First slate ineligible",
-                    "diagnostics": _generate_diagnostics(games, classified_games)
+                    "diagnostics": {
+                        **_generate_diagnostics(games, classified_games),
+                        "missing_t_link_count": missing_t_link_count,
+                        "sample_ineligible": [
+                            {
+                                "game_id": game.get("id") or game.get("game_key"),
+                                "matchup": f"{game.get('home_team')} vs {game.get('away_team')}",
+                                "factors": game.get("factors")
+                            }
+                            for game in classified_games if game["class"] == "INELIGIBLE"
+                        ][:10],
+                        "sample_missing_odds": [
+                            {
+                                "game_id": game.get("id") or game.get("game_key"),
+                                "matchup": f"{game.get('home_team')} vs {game.get('away_team')}"
+                            }
+                            for game in games if _best_ml_for_engine(game) is None
+                        ][:10]
+                    }
                 }
                 return {
                     "ok": True,
