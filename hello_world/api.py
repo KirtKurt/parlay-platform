@@ -248,7 +248,7 @@ def lambda_handler(event, context):
             solid_count = sum(1 for game in slate if game["class"] == "STRONG_SOLID")
             coin_flip_count = sum(1 for game in slate if game["class"] == "COIN_FLIP")
 
-            if solid_count < 2 or coin_flip_count > 1:
+            if solid_count < 2 or coin_flip_count > 1 or len(chosen_games) != 3 or len(games_for_engine) != 3:
                 if parlay_index == 1:
                     return _resp(200, {
                         "ok": True,
@@ -281,7 +281,17 @@ def lambda_handler(event, context):
                         "away": at,
                         "ml": game["ml"]
                     })
-            ranked = rank_nba_b11c1(games_for_engine)
+            if len(games_for_engine) == 3:
+                ranked = rank_nba_b11c1(games_for_engine)
+            else:
+                if parlay_index == 1:
+                    return _resp(200, {
+                        "ok": True,
+                        "parlays_requested": 4,
+                        "parlays_built": 0,
+                        "refusal": {"code": "FIRST_SLATE_INELIGIBLE", "reason": "First slate ineligible"}
+                    })
+                break
 
             built.append({
                 "parlay_index": parlay_index,
