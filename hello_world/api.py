@@ -157,6 +157,7 @@ def _generate_diagnostics(games_t4: List[Dict[str, Any]], classified: List[Dict[
         "missing_odds_count": missing_odds_count,
         "sample_disallowed": sample_disallowed
     }
+def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
     built: List[Dict[str, Any]] = []
 
     # Ensure all required snapshots are available
