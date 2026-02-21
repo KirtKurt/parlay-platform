@@ -450,7 +450,7 @@ def _pull_nba_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]
     stored = _store_snapshot(run_type, compact, t, slate_date_et)
     return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
 
-def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, Any]:
+def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Optional[Dict[str, Any]]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
     key_expr = Key("PK").eq(f"SPORT#{sport}")
@@ -461,7 +461,7 @@ def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, A
         Limit=25,
     )
     items = resp.get("Items", [])
-    
+
     if t:
         # Filter items for the specified 't'
         filtered_items = [item for item in items if item.get("t") == t]
@@ -474,7 +474,7 @@ def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, A
     else:
         if items:
             return items[0]
-    
+
     return None
 
 # =========================
