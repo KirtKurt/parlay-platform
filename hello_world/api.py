@@ -24,6 +24,14 @@ snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
 signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE else None
 outcomes_tbl = dynamodb.Table(OUTCOMES_TABLE) if OUTCOMES_TABLE else None
 
+def _parse_json(body: Optional[str]) -> Dict[str, Any]:
+    if not body:
+        return {}
+    try:
+        return json.loads(body)
+    except Exception:
+        return {}
+
 def _http_get_json(url: str, timeout: int = 20) -> Any:
     req = urllib.request.Request(url, headers={"accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
