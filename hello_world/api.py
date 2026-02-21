@@ -404,7 +404,8 @@ def lambda_handler(event, context):
         limit = int(query_params.get("limit", 10))
 
         key_expr = Key("PK").eq(f"SPORT#{sport}")
-        resp = snapshots_tbl.query(
+        sk_prefix = query_params.get("t", "")
+        key_expr = Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(sk_prefix)
             KeyConditionExpression=key_expr,
             ScanIndexForward=False,
             Limit=limit,
