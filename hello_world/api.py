@@ -352,7 +352,7 @@ def _build_oddsapi_url_nba_h2h() -> str:
     return "https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?" + urllib.parse.urlencode(params)
 
 def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
-    allowed = set(PANEL_BOOKS)
+    # Store all bookmakers returned by OddsAPI
     all_keys_seen = set()
     games_out = []
 
@@ -369,8 +369,6 @@ def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
             if not key:
                 continue
             all_keys_seen.add(key)
-            if key not in allowed:
-                continue
 
             h2h = next((m for m in (b.get("markets") or []) if m.get("key") == "h2h"), None)
             if not h2h:
@@ -409,7 +407,7 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
 
     asof = _now_iso()
     slate_id = f"{sport.upper()}_{slate_date_et}_{run_type}"
-    sk_prefix = f"{t}#DATE#{slate_date_et}#ASOF#{asof}#SLATE#{slate_id}" if t else f"ASOF#{asof}#DATE#{slate_date_et}#"
+    sk_prefix = f"{t}#DATE#{slate_date_et}#ASOF#{asof}#SLATE#{slate_id}" if t else f"ASOF#{asof}#SLATE#{slate_id}"
     item = {
         "PK": f"SPORT#{sport}",
         "SK": sk_prefix,
@@ -421,7 +419,7 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
         "slate_date_et": slate_date_et,
         "meta": {"source": "theOddsAPI", "run_type": run_type, "pulled_at": asof},
     }
-    item["t"] = t if t else "ASOF"
+    item["t"] = t if t else None
     snapshots_tbl.put_item(Item=item)
     return item
     if snapshots_tbl is None:
@@ -465,39 +463,7 @@ def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, A
         Limit=1,
     )
     items = resp.get("Items", [])
-    if not items and t:
-        # Try old NBA prefix
-        key_expr_old_nba = Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(f"{slate_date_et}#DATE#{t}#")
-        resp_old_nba = snapshots_tbl.query(
-            KeyConditionExpression=key_expr_old_nba,
-            ScanIndexForward=False,
-            Limit=1,
-        )
-        items = resp_old_nba.get("Items", [])
-    if not items and sport == "ncaam":
-        # For NCAAM, return the newest ASOF# item for today’s slate_date_et
-        key_expr_ncaam = Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(f"ASOF#{slate_date_et}#")
-        resp_ncaam = snapshots_tbl.query(
-            KeyConditionExpression=key_expr_ncaam,
-            ScanIndexForward=False,
-            Limit=1,
-        )
-        items = resp_ncaam.get("Items", [])
-    if not items:
-        return None
-    return items[0]
-    if snapshots_tbl is None:
-        raise RuntimeError("SNAPSHOTS_TABLE not configured")
-    key_expr = Key("PK").eq(f"SPORT#{sport}")
-    slate_date_et = _get_slate_date_et()
-    if t:
-        key_expr = key_expr & Key("SK").begins_with(f"{t}#DATE#{slate_date_et}#")
-    resp = snapshots_tbl.query(
-        KeyConditionExpression=key_expr,
-        ScanIndexForward=False,
-        Limit=1,
-    )
-    items = resp.get("Items", [])
+    return items[0] if items else None
     if not items:
         return None
     return items[0]
