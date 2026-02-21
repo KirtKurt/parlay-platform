@@ -12,6 +12,11 @@ import boto3
 from boto3.dynamodb.conditions import Key
 
 from nba_algorithm import rank_nba_b11c1
+
+SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
+OUTCOMES_TABLE = os.environ.get("OUTCOMES_TABLE", "")
+signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE else None
+outcomes_tbl = dynamodb.Table(OUTCOMES_TABLE) if OUTCOMES_TABLE else None
 from decimal import Decimal
 
 def _http_get_json(url: str, timeout: int = 20) -> Any:
@@ -75,6 +80,32 @@ def _pull_ncaam_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, An
     stored = _store_snapshot(run_type, compact, slate_date_et, t, sport="ncaam")
     return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
 
+def compute_game_signals(sport: str, t: str, slate_date_et: str, snapshots_by_t: Dict[str, Any]) -> List[Dict[str, Any]]:
+    # Implement the logic to compute signals for each game
+    # This is a placeholder implementation
+    signals = []
+    t4_snapshot = snapshots_by_t.get("T4") or snapshots_by_t.get("T1")
+    if not t4_snapshot:
+        return signals
+
+    for game in t4_snapshot["data"]["games"]:
+        game_id = game.get("id")
+        commence_time = game.get("commence_time")
+        home_team = game.get("home_team")
+        away_team = game.get("away_team")
+        # Compute signals and other required fields
+        signal = {
+            "game_id": game_id,
+            "slate_date_et": slate_date_et,
+            "t": t,
+            "commence_time": commence_time,
+            "home_team": home_team,
+            "away_team": away_team,
+            # Add more fields as needed
+        }
+        signals.append(signal)
+    return signals
+
 def lambda_handler(event, context):
     if event.get("httpMethod") == "GET" and event.get("path") == "/v1/health":
         return _resp(200, {"status": "healthy"})
@@ -84,7 +115,17 @@ def lambda_handler(event, context):
         t = body.get("t")
         run_type = body.get("run", "manual")
         result = _pull_nba_snapshot(run_type, t)
-        return _resp(200, result)
+        result = _resp(200, result)
+        # Compute and store signals
+        snapshots_by_t = {t: _latest_snapshot(t, "ncaam") for t in ["T1", "T2", "T3", "T4"]}
+        signals = compute_game_signals("ncaam", t, _get_slate_date_et(), snapshots_by_t)
+        for signal in signals:
+            signal_ledger_tbl.put_item(Item={
+                "PK": f"LEDGER#ncaam#{_get_slate_date_et()}#{t}",
+                "SK": f"GAME#{signal['game_id']}",
+                **signal
+            })
+        return result
 
     if event.get("httpMethod") == "GET" and event.get("path") == "/v1/snapshots":
         query_params = event.get("queryStringParameters", {})
@@ -105,7 +146,17 @@ def lambda_handler(event, context):
         t = body.get("t")
         run_type = body.get("run", "manual")
         result = _pull_ncaam_snapshot(run_type, t)
-        return _resp(200, result)
+        result = _resp(200, result)
+        # Compute and store signals
+        snapshots_by_t = {t: _latest_snapshot(t, "nba") for t in ["T1", "T2", "T3", "T4"]}
+        signals = compute_game_signals("nba", t, _get_slate_date_et(), snapshots_by_t)
+        for signal in signals:
+            signal_ledger_tbl.put_item(Item={
+                "PK": f"LEDGER#nba#{_get_slate_date_et()}#{t}",
+                "SK": f"GAME#{signal['game_id']}",
+                **signal
+            })
+        return result
 
     if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/ncaam/b1c23":
         body = _parse_json(event.get("body"))
@@ -263,6 +314,53 @@ def lambda_handler(event, context):
             "refusal": refusal,
             "parlays": built
         })
+
+    if event.get("httpMethod") == "GET" and event.get("path") == "/v1/ledger":
+        query_params = event.get("queryStringParameters", {})
+        sport = query_params.get("sport")
+        t = query_params.get("t")
+        date = query_params.get("date")
+        if not sport or not t or not date:
+            return _resp(400, {"error": "Missing required query parameters"})
+
+        key_expr = Key("PK").eq(f"LEDGER#{sport}#{date}#{t}")
+        resp = signal_ledger_tbl.query(
+            KeyConditionExpression=key_expr,
+            ScanIndexForward=False
+        )
+        items = resp.get("Items", [])
+        return _resp(200, {"ok": True, "items": items})
+
+    if event.get("httpMethod") == "POST" and event.get("path") == "/v1/outcomes":
+        body = _parse_json(event.get("body"))
+        sport = body.get("sport")
+        slate_date_et = body.get("slate_date_et")
+        game_id = body.get("game_id")
+        winner_team = body.get("winner_team")
+        home_score = body.get("home_score")
+        away_score = body.get("away_score")
+
+        if not all([sport, slate_date_et, game_id, winner_team, home_score, away_score]):
+            return _resp(400, {"error": "Missing required fields in request body"})
+
+        # Determine if the underdog won
+        ledger_key = f"LEDGER#{sport}#{slate_date_et}#T4"
+        ledger_resp = signal_ledger_tbl.get_item(Key={"PK": ledger_key, "SK": f"GAME#{game_id}"})
+        ledger_item = ledger_resp.get("Item")
+        underdog_won = False
+        if ledger_item:
+            # Logic to determine underdog based on T4 odds
+            underdog_won = True  # Placeholder logic
+
+        outcomes_tbl.put_item(Item={
+            "PK": f"OUTCOME#{sport}#{slate_date_et}",
+            "SK": f"GAME#{game_id}",
+            "winner_team": winner_team,
+            "home_score": home_score,
+            "away_score": away_score,
+            "underdog_won": underdog_won
+        })
+        return _resp(200, {"ok": True})
 
     return _resp(404, {"error": "Not Found"})
 
