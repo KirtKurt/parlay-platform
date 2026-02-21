@@ -193,18 +193,7 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
                 "factors": ["MISSING_T_LINK"],
                 "disallowed": False,
             }
-            print(json.dumps({
-                "tag": "INELIGIBLE_REASON",
-                "sport": "ncaam",
-                "t": "T4",
-                "slate_date_et": slate_date_et,
-                "game_id": game.get("id") or game.get("game_id"),
-                "game_key": game.get("game_key"),
-                "away": game.get("away_team") or game.get("away"),
-                "home": game.get("home_team") or game.get("home"),
-                "commence_time": game.get("commence_time"),
-                "reason": factors,
-            }, default=str))
+            _log_ineligible_reason("ncaam", "T4", slate_date_et, game, factors)
             classified_games.append(classified_game)
             missing_t_link_count += 1
             continue
@@ -216,15 +205,16 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
         if t3_game:
             key_overlap_t3_t4 += 1
         # Calculate signals and classify each game
-        try:
-            _log_ineligible_reason("ncaam", "T4", slate_date_et, game, factors)
-        except Exception as e:
-            print(f"Logging error: {e}")
+        if t1_game:
+            key_overlap_t1_t4 += 1
+        if t2_game:
+            key_overlap_t2_t4 += 1
+        if t3_game:
+            key_overlap_t3_t4 += 1
 
-        try:
+        # Calculate signals and classify each game
+        if cls == "INELIGIBLE":
             _log_ineligible_reason("ncaam", "T4", slate_date_et, game, factors)
-        except Exception as e:
-            print(f"Logging error: {e}")
 
         classified_game = {
             "game_id": game.get("id"),
@@ -693,8 +683,8 @@ def _log_ineligible_reason(sport: str, t: str, slate_date_et: str, game: dict, f
             "commence_time": game.get("commence_time"),
             "reason": factors
         }, default=str))
-    except Exception as e:
-        print(f"Logging error: {e}")
+    except Exception:
+        pass
     result = {
         "statusCode": status,
         "headers": {
