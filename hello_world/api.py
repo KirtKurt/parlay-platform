@@ -47,7 +47,23 @@ def _calculate_net_delta(game: dict, snapshots: List[Dict[str, Any]]) -> Optiona
 
     return round(fav_p_t4 - fav_p_t1, 4)
 
-def lambda_handler(event, context):
+def _build_oddsapi_url_ncaam_h2h() -> str:
+    if not ODDS_API_KEY:
+        raise RuntimeError("ODDS_API_KEY missing")
+    params = {
+        "apiKey": ODDS_API_KEY,
+        "regions": "us",
+        "markets": "h2h",
+        "oddsFormat": "american",
+        "dateFormat": "iso",
+    }
+    return "https://api.the-odds-api.com/v4/sports/basketball_ncaab/odds/?" + urllib.parse.urlencode(params)
+
+def _pull_ncaam_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]:
+    raw = _http_get_json(_build_oddsapi_url_ncaam_h2h())
+    compact = _compact_nba_h2h(raw)
+    stored = _store_snapshot(run_type, compact, t, sport="ncaam")
+    return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
     if event.get("httpMethod") == "GET" and event.get("path") == "/v1/health":
         return _resp(200, {"status": "healthy"})
 
@@ -62,9 +78,18 @@ def lambda_handler(event, context):
         snapshot = _latest_snapshot()
         return _resp(200, snapshot)
 
+    if event.get("httpMethod") == "POST" and event.get("path") == "/v1/pull/ncaam":
+        body = _parse_json(event.get("body"))
+        t = body.get("t")
+        run_type = body.get("run", "manual")
+        result = _pull_ncaam_snapshot(run_type, t)
+        return _resp(200, result)
+
     if event.get("httpMethod") == "GET" and event.get("path") == "/v1/snapshots/latest":
-        t = event.get("queryStringParameters", {}).get("t")
-        snapshot = _latest_snapshot(t)
+        query_params = event.get("queryStringParameters", {})
+        t = query_params.get("t")
+        sport = query_params.get("sport", "nba")
+        snapshot = _latest_snapshot(t, sport)
         return _resp(200, snapshot)
         body = _parse_json(event.get("body"))
         games_input = body.get("games", [])
@@ -463,15 +488,15 @@ def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
         "panel_books": list(PANEL_BOOKS),
     }
 
-def _store_snapshot(run_type: str, data: Dict[str, Any], t: Optional[str] = None) -> Dict[str, Any]:
+def _store_snapshot(run_type: str, data: Dict[str, Any], t: Optional[str] = None, sport: str = "nba") -> Dict[str, Any]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
 
     asof = _now_iso()
-    slate_id = f"NBA_{asof[:10]}_{run_type}"
+    slate_id = f"{sport.upper()}_{asof[:10]}_{run_type}"
     sk_prefix = f"{t}#" if t else ""
     item = {
-        "PK": "SPORT#nba",
+        "PK": f"SPORT#{sport}",
         "SK": f"{sk_prefix}ASOF#{asof}#SLATE#{slate_id}",
         "sport": "nba",
         "slate_id": slate_id,
@@ -489,10 +514,10 @@ def _pull_nba_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]
     stored = _store_snapshot(run_type, compact, t)
     return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
 
-def _latest_snapshot(t: Optional[str] = None) -> Dict[str, Any]:
+def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, Any]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
-    key_expr = Key("PK").eq("SPORT#nba")
+    key_expr = Key("PK").eq(f"SPORT#{sport}")
     if t:
         key_expr = key_expr & Key("SK").begins_with(f"{t}#")
     resp = snapshots_tbl.query(
