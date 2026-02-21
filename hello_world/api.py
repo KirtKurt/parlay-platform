@@ -210,8 +210,8 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
     # Build per-T maps keyed by game_key
     t_map = {f"T{i}": {} for i in range(1, 5)}
     for i, snapshot in enumerate(snapshots, 1):
-        for game in snapshot["data"]["games"]:
-            t_map[f"T{i}"][game["game_key"]] = game
+        for g in snapshot["data"]["games"]:
+            t_map[f"T{i}"][g["game_key"]] = g
     games = snapshots[3]["data"]["games"]  # Use T4 for game list
     classified_games = _calculate_signals_and_classify(games, snapshots, coinflip_lite)
 
