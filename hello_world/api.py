@@ -13,6 +13,11 @@ from boto3.dynamodb.conditions import Key
 
 from nba_algorithm import rank_nba_b11c1
 
+def _http_get_json(url: str, timeout: int = 20) -> Any:
+    req = urllib.request.Request(url, headers={"accept": "application/json"})
+    with urllib.request.urlopen(req, timeout=timeout) as r:
+        return json.loads(r.read().decode("utf-8"))
+
 def _choose_best_3(snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
     games = snapshot.get("data", {}).get("games", [])
     # Assuming the games are sorted by some criteria, we take the first 3 unique games
@@ -333,9 +338,6 @@ def _filter_games_by_slate_date(games: list, slate_date_et: str) -> list:
         if commence_time_et == slate_date_et:
             filtered_games.append(game)
     return filtered_games
-    req = urllib.request.Request(url, headers={"accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
 
 def _build_oddsapi_url_nba_h2h() -> str:
     if not ODDS_API_KEY:
@@ -424,7 +426,9 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
 
 def _pull_nba_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]:
     raw = _http_get_json(_build_oddsapi_url_nba_h2h())
-    compact = _compact_nba_h2h(raw)
+    slate_date_et = _get_slate_date_et()
+    filtered_games = _filter_games_by_slate_date(raw, slate_date_et)
+    compact = _compact_nba_h2h(filtered_games)
     stored = _store_snapshot(run_type, compact, t, slate_date_et)
     return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
 
