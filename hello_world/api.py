@@ -1,7 +1,8 @@
 import json
 import os
 import math
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+import pytz
 from decimal import Decimal
 from typing import Any, Dict, Optional, List, Tuple
 import urllib.request
@@ -61,7 +62,9 @@ def _build_oddsapi_url_ncaam_h2h() -> str:
 
 def _pull_ncaam_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]:
     raw = _http_get_json(_build_oddsapi_url_ncaam_h2h())
-    compact = _compact_nba_h2h(raw)
+    slate_date_et = _get_slate_date_et()
+    filtered_games = _filter_games_by_slate_date(raw, slate_date_et)
+    compact = _compact_nba_h2h(filtered_games)
     stored = _store_snapshot(run_type, compact, t, sport="ncaam")
     return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
 
@@ -317,7 +320,19 @@ def _mean_std(vals: List[float]) -> Tuple[float, float]:
 # =========================
 # ODDS API + SNAPSHOT
 # =========================
-def _http_get_json(url: str, timeout: int = 20) -> Any:
+def _get_slate_date_et() -> str:
+    eastern = pytz.timezone('America/New_York')
+    return datetime.now(eastern).strftime('%Y-%m-%d')
+
+def _filter_games_by_slate_date(games: list, slate_date_et: str) -> list:
+    eastern = pytz.timezone('America/New_York')
+    filtered_games = []
+    for game in games:
+        commence_time = datetime.fromisoformat(game['commence_time'].replace('Z', '+00:00'))
+        commence_time_et = commence_time.astimezone(eastern).strftime('%Y-%m-%d')
+        if commence_time_et == slate_date_et:
+            filtered_games.append(game)
+    return filtered_games
     req = urllib.request.Request(url, headers={"accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read().decode("utf-8"))
@@ -386,13 +401,13 @@ def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
         "panel_books": list(PANEL_BOOKS),
     }
 
-def _store_snapshot(run_type: str, data: Dict[str, Any], t: Optional[str] = None, sport: str = "nba") -> Dict[str, Any]:
+def _store_snapshot(run_type: str, data: Dict[str, Any], t: Optional[str] = None, slate_date_et: str, sport: str = "nba") -> Dict[str, Any]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
 
     asof = _now_iso()
     slate_id = f"{sport.upper()}_{asof[:10]}_{run_type}"
-    sk_prefix = f"{t}#" if t else ""
+    sk_prefix = f"{t}#DATE#{slate_date_et}#" if t else ""
     item = {
         "PK": f"SPORT#{sport}",
         "SK": f"{sk_prefix}ASOF#{asof}#SLATE#{slate_id}",
@@ -401,6 +416,7 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], t: Optional[str] = None
         "asof": asof,
         "created_at": asof,
         "data": data,
+        "slate_date_et": slate_date_et,
         "meta": {"source": "theOddsAPI", "run_type": run_type, "pulled_at": asof},
     }
     snapshots_tbl.put_item(Item=item)
@@ -409,15 +425,16 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], t: Optional[str] = None
 def _pull_nba_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]:
     raw = _http_get_json(_build_oddsapi_url_nba_h2h())
     compact = _compact_nba_h2h(raw)
-    stored = _store_snapshot(run_type, compact, t)
+    stored = _store_snapshot(run_type, compact, t, slate_date_et)
     return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
 
 def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, Any]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
     key_expr = Key("PK").eq(f"SPORT#{sport}")
+    slate_date_et = _get_slate_date_et()
     if t:
-        key_expr = key_expr & Key("SK").begins_with(f"{t}#")
+        key_expr = key_expr & Key("SK").begins_with(f"{t}#DATE#{slate_date_et}#")
     resp = snapshots_tbl.query(
         KeyConditionExpression=key_expr,
         ScanIndexForward=False,
@@ -425,7 +442,7 @@ def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, A
     )
     items = resp.get("Items", [])
     if not items:
-        raise RuntimeError("No NBA snapshots found")
+        return None
     return items[0]
 
 # =========================
