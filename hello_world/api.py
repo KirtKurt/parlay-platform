@@ -79,11 +79,60 @@ def _build_oddsapi_url_ncaam_h2h() -> str:
     }
     return "https://api.the-odds-api.com/v4/sports/basketball_ncaab/odds/?" + urllib.parse.urlencode(params)
 
-def _pull_ncaam_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]:
+def _compact_ncaam_h2h(raw_games: list, slate_date_et: str) -> Dict[str, Any]:
+    all_keys_seen = set()
+    games_out = []
+
+    for g in raw_games:
+        home = g.get("home_team")
+        away = g.get("away_team")
+        gid = g.get("id")
+        ct = g.get("commence_time")
+
+        books_out: Dict[str, Any] = {}
+
+        for b in g.get("bookmakers", []) or []:
+            key = (b.get("key") or "").lower().strip()
+            if not key:
+                continue
+            all_keys_seen.add(key)
+
+            h2h = next((m for m in (b.get("markets") or []) if m.get("key") == "h2h"), None)
+            if not h2h:
+                continue
+
+            ho = ao = None
+            for o in (h2h.get("outcomes") or []):
+                if o.get("name") == home:
+                    ho = o.get("price")
+                elif o.get("name") == away:
+                    ao = o.get("price")
+
+            if ho is None or ao is None:
+                continue
+
+            books_out[key] = {"ml": {"home": int(ho), "away": int(ao)}}
+
+        game_key = _game_key("ncaam", slate_date_et, away, home, ct)
+        games_out.append({
+            "game_key": game_key,
+            "id": gid,
+            "commence_time": ct,
+            "home_team": home,
+            "away_team": away,
+            "books": books_out,
+        })
+
+    return {
+        "games": games_out,
+        "count": len(games_out),
+        "available_book_keys": sorted(all_keys_seen),
+        "panel_books": list(PANEL_BOOKS),
+    }
     raw = _http_get_json(_build_oddsapi_url_ncaam_h2h())
     slate_date_et = _get_slate_date_et()
     filtered_games = _filter_games_by_slate_date(raw, slate_date_et)
-    compact = _compact_nba_h2h(filtered_games)
+    compact = _compact_ncaam_h2h(filtered_games, slate_date_et)
     slate_date_et = _get_slate_date_et()
     stored = _store_snapshot(run_type, compact, slate_date_et, t, sport="ncaam")
     return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
@@ -648,7 +697,7 @@ def _build_oddsapi_url_nba_h2h() -> str:
     }
     return "https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?" + urllib.parse.urlencode(params)
 
-def _compact_ncaam_h2h(raw_games: list) -> Dict[str, Any]:
+def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
     # Store all bookmakers returned by OddsAPI
     all_keys_seen = set()
     games_out = []
