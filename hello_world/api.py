@@ -216,6 +216,16 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
         if t3_game:
             key_overlap_t3_t4 += 1
         # Calculate signals and classify each game
+        try:
+            _log_ineligible_reason("ncaam", "T4", slate_date_et, game, factors)
+        except Exception as e:
+            print(f"Logging error: {e}")
+
+        try:
+            _log_ineligible_reason("ncaam", "T4", slate_date_et, game, factors)
+        except Exception as e:
+            print(f"Logging error: {e}")
+
         classified_game = {
             "game_id": game.get("id"),
             "signals": {},  # Add signal calculations here
@@ -669,7 +679,22 @@ def _json_default(o):
         return float(o)
     return str(o)
 
-def _resp(status: int, body: Any) -> Dict[str, Any]:
+def _log_ineligible_reason(sport: str, t: str, slate_date_et: str, game: dict, factors):
+    try:
+        print(json.dumps({
+            "tag": "INELIGIBLE_REASON",
+            "sport": sport,
+            "t": t,
+            "slate_date_et": slate_date_et,
+            "game_id": game.get("id") or game.get("game_id"),
+            "game_key": game.get("game_key"),
+            "away": game.get("away_team") or game.get("away"),
+            "home": game.get("home_team") or game.get("home"),
+            "commence_time": game.get("commence_time"),
+            "reason": factors
+        }, default=str))
+    except Exception as e:
+        print(f"Logging error: {e}")
     result = {
         "statusCode": status,
         "headers": {
