@@ -70,7 +70,8 @@ def _pull_ncaam_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, An
     slate_date_et = _get_slate_date_et()
     filtered_games = _filter_games_by_slate_date(raw, slate_date_et)
     compact = _compact_nba_h2h(filtered_games)
-    stored = _store_snapshot(run_type, compact, t, sport="ncaam")
+    slate_date_et = _get_slate_date_et()
+    stored = _store_snapshot(run_type, compact, slate_date_et, t, sport="ncaam")
     return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
 
 def lambda_handler(event, context):
@@ -463,17 +464,10 @@ def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Optional[Di
     items = resp.get("Items", [])
 
     if t:
-        # Filter items for the specified 't'
-        filtered_items = [item for item in items if item.get("t") == t]
-        # Prefer today's slate_date_et if available
-        today_items = [item for item in filtered_items if item.get("slate_date_et") == slate_date_et]
+        # Filter items for the specified 't' and today's slate_date_et
+        today_items = [item for item in items if item.get("t") == t and item.get("slate_date_et") == slate_date_et]
         if today_items:
             return today_items[0]
-        if filtered_items:
-            return filtered_items[0]
-    else:
-        if items:
-            return items[0]
 
     return None
 
