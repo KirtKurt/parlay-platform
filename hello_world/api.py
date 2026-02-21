@@ -214,9 +214,12 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
 
     # Build per-T maps keyed by game_key
     t_map = {f"T{i}": {} for i in range(1, 5)}
+    slate_date_et = _get_slate_date_et()
     for i, snapshot in enumerate(snapshots, 1):
         for g in snapshot["data"]["games"]:
-            t_map[f"T{i}"][g["game_key"]] = g
+            gk = g.get("game_key") or _game_key("ncaam", slate_date_et, g.get("away_team"), g.get("home_team"), g.get("commence_time"))
+            g["game_key"] = gk
+            t_map[f"T{i}"][gk] = g
     games = snapshots[3]["data"]["games"]  # Use T4 for game list
     classified_games = _calculate_signals_and_classify(games, snapshots, coinflip_lite)
 
@@ -645,7 +648,7 @@ def _build_oddsapi_url_nba_h2h() -> str:
     }
     return "https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?" + urllib.parse.urlencode(params)
 
-def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
+def _compact_ncaam_h2h(raw_games: list) -> Dict[str, Any]:
     # Store all bookmakers returned by OddsAPI
     all_keys_seen = set()
     games_out = []
@@ -682,7 +685,9 @@ def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
             books_out[key] = {"ml": {"home": int(ho), "away": int(ao)}}
 
         game_key = _game_key("nba", slate_date_et, away, home, ct)
+        game_key = _game_key("ncaam", slate_date_et, away, home, ct)
         games_out.append({
+            "game_key": game_key,
             "game_key": game_key,
             "id": gid,
             "commence_time": ct,
