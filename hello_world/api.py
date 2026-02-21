@@ -113,7 +113,7 @@ def _compact_ncaam_h2h(raw_games: list, slate_date_et: str) -> Dict[str, Any]:
 
             books_out[key] = {"ml": {"home": int(ho), "away": int(ao)}}
 
-        game_key = _game_key("ncaam", slate_date_et, away, home, ct)
+        game_key = _game_key_day("ncaam", slate_date_et, away, home)
         games_out.append({
             "game_key": game_key,
             "id": gid,
@@ -169,9 +169,9 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
     # Placeholder implementation
     t_map = {f"T{i}": {} for i in range(1, 5)}
     classified_games = []
-    key_overlap_t1_t4 = 0
-    key_overlap_t2_t4 = 0
-    key_overlap_t3_t4 = 0
+    key_overlap_t1_t4 = sum(1 for game in games if _game_key_day("ncaam", slate_date_et, game["away_team"], game["home_team"]) in t_map["T1"])
+    key_overlap_t2_t4 = sum(1 for game in games if _game_key_day("ncaam", slate_date_et, game["away_team"], game["home_team"]) in t_map["T2"])
+    key_overlap_t3_t4 = sum(1 for game in games if _game_key_day("ncaam", slate_date_et, game["away_team"], game["home_team"]) in t_map["T3"])
     missing_t_link_count = 0
 
     for game in games:
@@ -262,12 +262,12 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
 
     built: List[Dict[str, Any]] = []
 
-    # Build per-T maps keyed by game_key
+    # Build per-T maps keyed by game_key_day
     t_map = {f"T{i}": {} for i in range(1, 5)}
     slate_date_et = _get_slate_date_et()
     for i, snapshot in enumerate(snapshots, 1):
         for g in snapshot["data"]["games"]:
-            gk = g.get("game_key") or _game_key("ncaam", slate_date_et, g.get("away_team"), g.get("home_team"), g.get("commence_time"))
+            gk = _game_key_day("ncaam", slate_date_et, g.get("away_team"), g.get("home_team"))
             g["game_key"] = gk
             t_map[f"T{i}"][gk] = g
     games = snapshots[3]["data"]["games"]  # Use T4 for game list
@@ -621,10 +621,12 @@ COINFLIP_FACTORS_MIN = 2
 # BASIC HELPERS
 # =========================
 def _normalize_team(s: str) -> str:
-    return s.lower().replace(" ", "").replace(".", "")
+    return ' '.join(s.lower().strip().split())
 
-def _game_key(sport: str, slate_date_et: str, away_team: str, home_team: str, commence_time: str) -> str:
-    return f"{sport}#{slate_date_et}#{_normalize_team(away_team)}#{_normalize_team(home_team)}#{commence_time}"
+def _game_key_day(sport: str, slate_date_et: str, away_team: str, home_team: str) -> str:
+    away_norm = _normalize_team(away_team)
+    home_norm = _normalize_team(home_team)
+    return f"{sport}|{slate_date_et}|{away_norm}|{home_norm}"
     return datetime.now(timezone.utc).isoformat()
 
 def _json_default(o):
