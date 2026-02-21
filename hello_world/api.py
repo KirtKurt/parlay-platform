@@ -225,6 +225,7 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
         if cls == "INELIGIBLE":
             _log_ineligible_reason("ncaam", "T4", slate_date_et, game, factors)
 
+        cls, factors = _classify_game(game, snapshots, t_map, coinflip_lite, slate_date_et)
         classified_game = {
             "game_id": game.get("id"),
             "signals": {},  # Add signal calculations here
