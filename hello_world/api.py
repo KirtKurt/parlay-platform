@@ -64,6 +64,8 @@ def _pull_ncaam_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, An
     compact = _compact_nba_h2h(raw)
     stored = _store_snapshot(run_type, compact, t, sport="ncaam")
     return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
+
+def lambda_handler(event, context):
     if event.get("httpMethod") == "GET" and event.get("path") == "/v1/health":
         return _resp(200, {"status": "healthy"})
 
@@ -91,108 +93,6 @@ def _pull_ncaam_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, An
         sport = query_params.get("sport", "nba")
         snapshot = _latest_snapshot(t, sport)
         return _resp(200, snapshot)
-        body = _parse_json(event.get("body"))
-        games_input = body.get("games", [])
-        
-        if isinstance(games_input, list) and len(games_input) == 3:
-            # Manual mode
-            return _resp(200, rank_nba_b11c1(games_input))
-
-        # Auto mode
-        snapshot = _latest_snapshot()
-        games = snapshot["data"]["games"]
-        chosen_games = []
-        games_for_engine = []
-
-        for game in games:
-            books = game.get("books", {})
-            for book in BOOK_PRIORITY:
-                if book in books:
-                    ml = books[book]["ml"]
-                    if "home" in ml and "away" in ml:
-                        chosen_games.append({
-                            "game_id": game["id"],
-                            "home": game["home_team"],
-                            "away": game["away_team"],
-                            "ml": {"home": int(ml["home"]), "away": int(ml["away"])},
-                            "book_used": book,
-                            "books_src": game["books"]
-                        })
-                        games_for_engine.append({
-                            "game_id": game["id"],
-                            "home": game["home_team"],
-                            "away": game["away_team"],
-                            "ml": {"home": int(ml["home"]), "away": int(ml["away"])}
-                        })
-                        break
-            if len(chosen_games) == 3:
-                break
-
-        # Compute signals and panel for each chosen game
-        for game in chosen_games:
-            game["signals"] = _steam_resistance_signals(game["books_src"])
-            game["panel"] = _panel_metrics({"books": game["books_src"]})
-
-        ranked = rank_nba_b11c1(games_for_engine)
-
-        # Step3 scoring adjustments
-        for combo in ranked["ranked"]:
-            steam_align = sum(
-                1 for i in range(3)
-                if chosen_games[i]["signals"]["steam"] and ranked["legs"][i]["favorite"] == combo["picks"][i]
-            )
-
-            strongest_steam_idx = max(
-                (i for i, game in enumerate(chosen_games) if game["signals"]["gap"] is not None),
-                key=lambda i: chosen_games[i]["signals"]["gap"],
-                default=None
-            )
-            signal_adj = 0.0
-
-            if steam_align == 1:
-                signal_adj += 0.75
-            elif steam_align >= 2:
-                signal_adj += 1.25
-
-            if strongest_steam_idx is not None and ranked["legs"][strongest_steam_idx]["favorite"] == combo["picks"][strongest_steam_idx]:
-                signal_adj += 0.50
-
-            if any(game["signals"]["resistance"] for game in chosen_games):
-                signal_adj -= 0.75
-
-            if any(game["signals"]["coinflip"] for game in chosen_games):
-                signal_adj -= 0.50
-
-            if any(game["panel"]["panel_disagree"] for game in chosen_games):
-                signal_adj -= 0.50
-
-            combo["base_score"] = combo["score"]
-            combo["signal_adj"] = signal_adj
-            combo["score_final"] = combo["base_score"] + signal_adj
-            combo["steam_align"] = steam_align
-
-        # Re-rank by score_final then combo_prob
-        ranked["ranked"].sort(key=lambda x: (-x["score_final"], -x["combo_prob"]))
-        for i, combo in enumerate(ranked["ranked"], start=1):
-            combo["rank"] = i
-
-        # Signals summary
-        signals_summary = {
-            "steam_games": [game["game_id"] for game in chosen_games if game["signals"]["steam"]],
-            "resistance_games": [game["game_id"] for game in chosen_games if game["signals"]["resistance"]],
-            "coinflip_games": [game["game_id"] for game in chosen_games if game["signals"]["coinflip"]],
-            "scoring_mode": "STEP3_PANEL_WEIGHTED"
-        }
-        return _resp(200, {
-            "ok": True,
-            "model": ranked.get("model"),
-            "regime": ranked.get("regime"),
-            "legs": ranked.get("legs"),
-            "ranked": ranked.get("ranked"),
-            "chosen_games": chosen_games,
-            "source_snapshot": {"pk": snapshot["PK"], "sk": snapshot["SK"]},
-            "signals_summary": signals_summary
-        })
 
     if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/nba/4":
         # Retrieve snapshots T1, T2, T3, T4
@@ -211,8 +111,6 @@ def _pull_ncaam_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, An
         used_game_ids = set()
 
         for parlay_index in range(1, 5):
-            chosen_games = []
-            games_for_engine = []
             chosen_games = []
             games_for_engine = []
             strong = [g for g in eligible_games if g["class"] == "STRONG_SOLID" and g.get("game_id") not in used_game_ids]
