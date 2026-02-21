@@ -402,11 +402,14 @@ def lambda_handler(event, context):
         query_params = event.get("queryStringParameters") or {}
         sport = query_params.get("sport", "nba")
         t = query_params.get("t")
+        today_et = _get_slate_date_et()
         limit = int(query_params.get("limit", 10))
 
         key_expr = Key("PK").eq(f"SPORT#{sport}")
         if t:
-            key_expr = key_expr & Key("SK").begins_with(f"{t}#")
+            key_expr = key_expr & Key("SK").begins_with(f"{t}#DATE#{today_et}")
+        else:
+            key_expr = key_expr & Key("SK").begins_with(f"DATE#{today_et}")
 
         resp = snapshots_tbl.query(
             KeyConditionExpression=key_expr,
