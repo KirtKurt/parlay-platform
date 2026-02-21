@@ -160,6 +160,19 @@ def compute_game_signals(sport: str, t: str, slate_date_et: str, snapshots_by_t:
             "away_team": away_team,
             # Add more fields as needed
         }
+        if result["class"] == "INELIGIBLE":
+            print(json.dumps({
+                "tag": "INELIGIBLE_REASON",
+                "sport": "ncaam",
+                "t": "T4",
+                "slate_date_et": _get_slate_date_et(),
+                "game_id": gid,
+                "game_key": game.get("game_key"),
+                "away": away_team,
+                "home": home_team,
+                "commence_time": game.get("commence_time"),
+                "reason": factors,
+            }, default=str))
         signals.append(signal)
     return signals
 
@@ -185,6 +198,7 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
         t3_game = t_map["T3"].get(game_key)
 
         if not t1_game or not t2_game or not t3_game:
+            factors = ["MISSING_T_LINK"]
             classified_game = {
                 "game_id": game.get("id"),
                 "signals": {},  # Add signal calculations here
@@ -192,6 +206,18 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
                 "factors": ["MISSING_T_LINK"],
                 "disallowed": False,
             }
+            print(json.dumps({
+                "tag": "INELIGIBLE_REASON",
+                "sport": "ncaam",
+                "t": "T4",
+                "slate_date_et": slate_date_et,
+                "game_id": game.get("id") or game.get("game_id"),
+                "game_key": game.get("game_key"),
+                "away": game.get("away_team") or game.get("away"),
+                "home": game.get("home_team") or game.get("home"),
+                "commence_time": game.get("commence_time"),
+                "reason": factors,
+            }, default=str))
             classified_games.append(classified_game)
             missing_t_link_count += 1
             continue
@@ -251,7 +277,7 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
     snapshots = [_latest_snapshot(f"T{i}", "ncaam") for i in range(1, 5)]
     missing_snapshots = [f"T{i}" for i, s in enumerate(snapshots, 1) if s is None]
     if missing_snapshots:
-        return {
+        result = {
             "ok": True,
             "model": "NCAAM-B1.1C.2.3",
             "slate_date_et": _get_slate_date_et(),
