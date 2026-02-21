@@ -695,6 +695,12 @@ def _vig_norm(p1: float, p2: float) -> Tuple[float, float]:
     return (p1 / s, p2 / s) if s > 0 else (0.5, 0.5)
 
 def _mean_std(vals: List[float]) -> Tuple[float, float]:
+    vals = [float(x) for x in (vals or []) if x is not None]
+    if not vals:
+        return 0.0, 0.0
+    m = sum(vals) / len(vals)
+    var = sum((x - m) ** 2 for x in vals) / len(vals)
+    return m, var ** 0.5
 
 def _log_ineligible_reason(sport: str, t: str, slate_date_et: str, game: dict, factors):
     try:
