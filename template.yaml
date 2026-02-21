@@ -112,7 +112,15 @@ Resources:
             TableName: !Ref SnapshotsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref SignalsTable
-      Events:
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalLedgerTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
         RootAny:
           Type: Api
           Properties:
@@ -134,7 +142,15 @@ Resources:
             TableName: !Ref SnapshotsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref SignalsTable
-      Events:
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalLedgerTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
         Daily1AM:
           Type: Schedule
           Properties:
