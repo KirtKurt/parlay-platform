@@ -1,3 +1,33 @@
+name: Deploy SAM to AWS
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::735707987003:role/GitHubDeployRole-parlay-platform
+          aws-region: us-east-1
+
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Validate
+        run: sam validate
+
       - name: Build (clean)
         run: |
           rm -rf .aws-sam
@@ -6,6 +36,7 @@
       - name: Deploy (force)
         run: |
           sam deploy \
+            --template-file template.yaml \
             --stack-name parlay-platform-dev \
             --region us-east-1 \
             --capabilities CAPABILITY_IAM \
@@ -13,137 +44,4 @@
             --force-upload \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --parameter-overrides OddsApiKey=${{ secrets.ODDS_API_KEY }}name: Deploy SAM to AWS
-
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
-
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::735707987003:role/GitHubDeployRole-parlay-platform
-          aws-region: us-east-1
-
-      - name: Setup AWS SAM
-        uses: aws-actions/setup-sam@v2
-
-      - name: Build SAM application (clean)
-        run: sam build --clean
-
-      - name: Deploy SAM application
-        run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides OddsApiKey=${{ secrets.ODDS_API_KEY }}
-name: Deploy SAM to AWS
-
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
-
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::735707987003:role/GitHubDeployRole-parlay-platform
-          aws-region: us-east-1
-
-      - name: Setup AWS SAM
-        uses: aws-actions/setup-sam@v2
-
-      - name: Build SAM application (clean)
-        run: sam build --clean
-
-      - name: Deploy SAM application
-        run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset --parameter-overrides OddsApiKey=${{ secrets.ODDS_API_KEY }}nname: Deploy SAM to AWS
-
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
-
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::735707987003:role/GitHubDeployRole-parlay-platform
-          aws-region: us-east-1
-
-      - name: Setup AWS SAM
-        uses: aws-actions/setup-sam@v2
-
-      - name: Build SAM application (clean)
-        run: sam build --clean
-
-      - name: Deploy SAM application
-        run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset Deploy SAM to AWS
-
-on:
-  push:
-    branches:
-      - main
-  workflow_dispatch:
-
-permissions:
-  id-token: write
-  contents: read
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials via OIDC
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::735707987003:role/GitHubDeployRole-parlay-platform
-          aws-region: us-east-1
-
-      - name: Setup AWS SAM
-        uses: aws-actions/setup-sam@v2
-
-      - name: Build SAM application
-        run: sam build
-
-      - name: Deploy SAM application
-        run: sam deploy --no-confirm-changeset --no-fail-on-empty-changeset
+            --parameter-overrides OddsApiKey=${{ secrets.ODDS_API_KEY }}
