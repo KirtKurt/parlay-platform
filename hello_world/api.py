@@ -188,6 +188,8 @@ def lambda_handler(event, context):
         games_for_engine = []
 
         for parlay_index in range(1, 5):
+            chosen_games = []
+            games_for_engine = []
             strong = [g for g in eligible_games if g["class"] == "STRONG_SOLID" and g.get("game_id") not in used_game_ids]
             coin = [g for g in eligible_games if g["class"] == "COIN_FLIP" and g.get("game_id") not in used_game_ids]
 
@@ -250,7 +252,7 @@ def lambda_handler(event, context):
             solid_count = sum(1 for game in slate if game["class"] == "STRONG_SOLID")
             coin_flip_count = sum(1 for game in slate if game["class"] == "COIN_FLIP")
 
-            if solid_count < 2 or coin_flip_count > 1 or len(chosen_games) != 3:
+            if solid_count < 2 or coin_flip_count > 1:
                 if parlay_index == 1:
                     return _resp(200, {
                         "ok": True,
