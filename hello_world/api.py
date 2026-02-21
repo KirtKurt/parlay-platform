@@ -249,8 +249,7 @@ def lambda_handler(event, context):
     if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/ncaam/b1c23":
         body = _parse_json(event.get("body"))
         max_parlays = min(int(body.get("max_parlays", 7)), 7)
-        coinflip_lite = body.get("coinflip_lite", False)
-        max_parlays = min(int(body.get("max_parlays", 7)), 7)
+        coinflip_lite = bool(body.get("coinflip_lite", False))
         result = _build_ncaam_b1c23(max_parlays, coinflip_lite)
         return _resp(200, result)
 
