@@ -448,6 +448,7 @@ def lambda_handler(event, context):
 
 def scheduler_handler(event, context):
     sport = event.get("sport")
+max_parlays = 7
     t = event.get("t")
     run = event.get("run")
 
