@@ -399,17 +399,21 @@ def lambda_handler(event, context):
         return _resp(200, result)
 
     if event.get("httpMethod") == "GET" and event.get("path") == "/v1/snapshots":
-        query_params = event.get("queryStringParameters", {})
+        query_params = event.get("queryStringParameters") or {}
         sport = query_params.get("sport", "nba")
+        t = query_params.get("t")
         limit = int(query_params.get("limit", 10))
 
         key_expr = Key("PK").eq(f"SPORT#{sport}")
-        sk_prefix = query_params.get("t", "")
-        key_expr = Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(sk_prefix)
+        if t:
+            key_expr = key_expr & Key("SK").begins_with(f"{t}#")
+
+        resp = snapshots_tbl.query(
             KeyConditionExpression=key_expr,
             ScanIndexForward=False,
             Limit=limit,
         )
+
         items = resp.get("Items", [])
         return _resp(200, {"ok": True, "items": items})
 
