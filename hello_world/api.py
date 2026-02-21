@@ -463,15 +463,7 @@ def lambda_handler(event, context):
         if len(built) < 4:
             refusal = {"code": "INSUFFICIENT_PARLAYS", "reason": "Not enough eligible games to build 4 parlays"}
 
-        diagnostics = {
-            "key_overlap_t1_t4": key_overlap_t1_t4,
-            "key_overlap_t2_t4": key_overlap_t2_t4,
-            "key_overlap_t3_t4": key_overlap_t3_t4,
-            "missing_t_link_count": missing_t_link_count,
-        }
-
         return _resp(200, {
-            "diagnostics": diagnostics,
             "ok": True,
             "parlays_requested": 4,
             "parlays_built": len(built),
