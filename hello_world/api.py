@@ -979,7 +979,7 @@ def _classify_game(game: Dict[str, Any], snapshots: List[Dict[str, Any]], t_map:
     ml_pack = _best_ml_for_engine(game)
     if not ml_pack:
         return "INELIGIBLE", ["NO_ODDS"]
-ml = {"home": ml_pack["home"], "away": ml_pack["away"]}
+    ml = {"home": ml_pack["home"], "away": ml_pack["away"]}
     gap = _leader_gap_from_ml(ml)
     panel = _panel_metrics(game)
     sig = _steam_resistance_signals(game.get("books", {}))
