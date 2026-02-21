@@ -238,7 +238,19 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
 
         if cls == "INELIGIBLE":
             _log_ineligible_reason("ncaam", "T4", slate_date_et, game, factors)
-        classified_game = {
+        if cls == "INELIGIBLE":
+            print(json.dumps({
+                "tag": "INELIGIBLE_REASON",
+                "sport": "ncaam",
+                "t": "T4",
+                "slate_date_et": slate_date_et,
+                "game_id": game.get("id") or game.get("game_id") or game.get("game_key") or game.get("internal_key"),
+                "home": game.get("home_team") or game.get("home"),
+                "away": game.get("away_team") or game.get("away"),
+                "commence_time": game.get("commence_time"),
+                "ml_pack_present": bool(_best_ml_for_engine(game)),
+                "factors": factors
+            }, default=str))
             "game_id": game.get("id"),
             "signals": {},  # Add signal calculations here
             "class": "INELIGIBLE",  # Determine class based on signals
