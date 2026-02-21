@@ -92,6 +92,9 @@ def _build_oddsapi_url_ncaam_h2h() -> str:
     }
     return "https://api.the-odds-api.com/v4/sports/basketball_ncaab/odds/?" + urllib.parse.urlencode(params)
 
+def _generate_internal_key(home_team: str, away_team: str, game_date: str) -> str:
+    return f"{_normalize_team(home_team)}|{_normalize_team(away_team)}|{game_date}"
+
 def _compact_ncaam_h2h(raw_games: list, slate_date_et: str) -> Dict[str, Any]:
     all_keys_seen = set()
     games_out = []
@@ -102,6 +105,7 @@ def _compact_ncaam_h2h(raw_games: list, slate_date_et: str) -> Dict[str, Any]:
         gid = g.get("id")
         ct = g.get("commence_time")
 
+        internal_key = _generate_internal_key(home, away, slate_date_et)
         books_out: Dict[str, Any] = {}
 
         for b in g.get("bookmakers", []) or []:
@@ -129,7 +133,7 @@ def _compact_ncaam_h2h(raw_games: list, slate_date_et: str) -> Dict[str, Any]:
         game_key = _game_key_day("ncaam", slate_date_et, away, home)
         games_out.append({
             "id": gid,
-            "commence_time": ct,
+            "internal_key": internal_key,
             "home_team": home,
             "away_team": away,
             "books": books_out,
@@ -302,7 +306,9 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
     slate_date_et = _get_slate_date_et()
     for i, snapshot in enumerate(snapshots, 1):
         for g in snapshot["data"]["games"]:
-            gk = _game_key_day("ncaam", slate_date_et, g.get("away_team"), g.get("home_team"))
+            g["internal_key"] = _generate_internal_key(g.get("home_team"), g.get("away_team"), slate_date_et)
+        for g in snapshot["data"]["games"]:
+            gk = g["internal_key"]
             g["game_key"] = gk
             t_map[f"T{i}"][gk] = g
     games = snapshots[3]["data"]["games"]  # Use T4 for game list
