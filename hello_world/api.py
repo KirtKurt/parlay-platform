@@ -8,8 +8,11 @@ from typing import Any, Dict, Optional, List, Tuple
 import urllib.request
 import urllib.parse
 
+from boto3.dynamodb.conditions import Key
 import boto3
 from boto3.dynamodb.conditions import Key
+
+dynamodb = boto3.resource("dynamodb")
 
 
 
@@ -20,7 +23,6 @@ SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
 OUTCOMES_TABLE = os.environ.get("OUTCOMES_TABLE", "")
 signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE else None
 outcomes_tbl = dynamodb.Table(OUTCOMES_TABLE) if OUTCOMES_TABLE else None
-from decimal import Decimal
 
 def _http_get_json(url: str, timeout: int = 20) -> Any:
     req = urllib.request.Request(url, headers={"accept": "application/json"})
