@@ -1,4 +1,19 @@
-name: Deploy SAM to AWS
+      - name: Build (clean)
+        run: |
+          rm -rf .aws-sam
+          sam build --no-cached
+
+      - name: Deploy (force)
+        run: |
+          sam deploy \
+            --stack-name parlay-platform-dev \
+            --region us-east-1 \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides OddsApiKey=${{ secrets.ODDS_API_KEY }}name: Deploy SAM to AWS
 
 on:
   push:
