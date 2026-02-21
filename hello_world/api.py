@@ -160,19 +160,6 @@ def compute_game_signals(sport: str, t: str, slate_date_et: str, snapshots_by_t:
             "away_team": away_team,
             # Add more fields as needed
         }
-        if result["class"] == "INELIGIBLE":
-            print(json.dumps({
-                "tag": "INELIGIBLE_REASON",
-                "sport": "ncaam",
-                "t": "T4",
-                "slate_date_et": _get_slate_date_et(),
-                "game_id": gid,
-                "game_key": game.get("game_key"),
-                "away": away_team,
-                "home": home_team,
-                "commence_time": game.get("commence_time"),
-                "reason": factors,
-            }, default=str))
         signals.append(signal)
     return signals
 
