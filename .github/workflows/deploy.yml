@@ -1,4 +1,7 @@
-name: Deploy SAM to AWS
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'name: Deploy SAM to AWS
 
 on:
   push:
