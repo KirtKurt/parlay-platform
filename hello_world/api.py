@@ -978,17 +978,8 @@ def _classify_game(game: Dict[str, Any], snapshots: List[Dict[str, Any]], t_map:
     away_team = game.get("away_team") or game.get("away")
     ml_pack = _best_ml_for_engine(game)
     if not ml_pack:
-        return {
-            "class": "INELIGIBLE",
-            "gap": 0.0,
-            "factors": ["NO_ODDS"],
-            "book_used": None,
-            "game_id": gid,
-            "home_team": home_team,
-            "away_team": away_team,
-        }
-
-    ml = {"home": ml_pack["home"], "away": ml_pack["away"]}
+        return "INELIGIBLE", ["NO_ODDS"]
+ml = {"home": ml_pack["home"], "away": ml_pack["away"]}
     gap = _leader_gap_from_ml(ml)
     panel = _panel_metrics(game)
     sig = _steam_resistance_signals(game.get("books", {}))
