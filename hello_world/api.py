@@ -12,6 +12,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 
 from nba_algorithm import rank_nba_b11c1
+from decimal import Decimal
 
 def _http_get_json(url: str, timeout: int = 20) -> Any:
     req = urllib.request.Request(url, headers={"accept": "application/json"})
@@ -106,7 +107,11 @@ def lambda_handler(event, context):
         result = _pull_ncaam_snapshot(run_type, t)
         return _resp(200, result)
 
-    if event.get("httpMethod") == "GET" and event.get("path") == "/v1/snapshots/latest":
+    if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/ncaam/b1c23":
+        body = _parse_json(event.get("body"))
+        max_parlays = min(int(body.get("max_parlays", 7)), 7)
+        result = _build_ncaam_b1c23(max_parlays)
+        return _resp(200, result)
         query_params = event.get("queryStringParameters", {})
         t = query_params.get("t")
         sport = query_params.get("sport", "nba")
@@ -277,7 +282,45 @@ def scheduler_handler(event, context):
         return _resp(200, {"ok": True, "sport": sport, "t": t, "run": run, "result": result})
     except Exception as e:
         return _resp(500, {"ok": False, "error": str(e)})
-# AWS / ENV
+def _build_ncaam_b1c23(max_parlays: int) -> Dict[str, Any]:
+    # Ensure all required snapshots are available
+    snapshots = [_latest_snapshot(f"T{i}", "ncaam") for i in range(1, 5)]
+    missing_snapshots = [f"T{i}" for i, s in enumerate(snapshots, 1) if s is None]
+    if missing_snapshots:
+        return {
+            "ok": True,
+            "model": "NCAAM-B1.1C.2.3",
+            "slate_date_et": _get_slate_date_et(),
+            "parlays_requested": max_parlays,
+            "parlays_built": 0,
+            "refusal": {
+                "code": "MISSING_REQUIRED_T_SNAPSHOTS",
+                "reason": "Missing required snapshots",
+                "missing": missing_snapshots
+            }
+        }
+
+    # Implement exclusion rule and signal model
+    # ...
+
+    # Implement parlay construction rules
+    # ...
+
+    # Implement combo ranking
+    # ...
+
+    # Implement audit logging
+    # ...
+
+    return {
+        "ok": True,
+        "model": "NCAAM-B1.1C.2.3",
+        "slate_date_et": _get_slate_date_et(),
+        "parlays_requested": max_parlays,
+        "parlays_built": len(built),
+        "refusal": refusal,
+        "parlays": built
+    }
 # =========================
 dynamodb = boto3.resource("dynamodb")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")

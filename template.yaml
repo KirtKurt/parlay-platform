@@ -52,6 +52,22 @@ Resources:
         - AttributeName: SK
           KeyType: RANGE
 
+  ParlayAuditTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: parlay_audit_table
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
