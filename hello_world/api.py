@@ -455,35 +455,27 @@ def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, A
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
     key_expr = Key("PK").eq(f"SPORT#{sport}")
     slate_date_et = _get_slate_date_et()
+    resp = snapshots_tbl.query(
+        KeyConditionExpression=key_expr,
+        ScanIndexForward=False,
+        Limit=25,
+    )
+    items = resp.get("Items", [])
+    
     if t:
-        # Try new format first
-        key_expr_new = key_expr & Key("SK").begins_with(f"{t}#DATE#{slate_date_et}#")
-        resp = snapshots_tbl.query(
-            KeyConditionExpression=key_expr_new,
-            ScanIndexForward=False,
-            Limit=1,
-        )
-        items = resp.get("Items", [])
+        # Filter items for the specified 't'
+        filtered_items = [item for item in items if item.get("t") == t]
+        # Prefer today's slate_date_et if available
+        today_items = [item for item in filtered_items if item.get("slate_date_et") == slate_date_et]
+        if today_items:
+            return today_items[0]
+        if filtered_items:
+            return filtered_items[0]
+    else:
         if items:
             return items[0]
-        
-        # Fallback to old format
-        key_expr_old = key_expr & Key("SK").begins_with(f"{t}#ASOF#")
-        resp = snapshots_tbl.query(
-            KeyConditionExpression=key_expr_old,
-            ScanIndexForward=False,
-            Limit=1,
-        )
-        items = resp.get("Items", [])
-        return items[0] if items else None
-    else:
-        resp = snapshots_tbl.query(
-            KeyConditionExpression=key_expr,
-            ScanIndexForward=False,
-            Limit=1,
-        )
-        items = resp.get("Items", [])
-        return items[0] if items else None
+    
+    return None
 
 # =========================
 # PANEL CONSENSUS + SIGNALS
