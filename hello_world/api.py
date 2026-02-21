@@ -184,10 +184,10 @@ def lambda_handler(event, context):
 
         built = []
         used_game_ids = set()
-        chosen_games = []
-        games_for_engine = []
 
         for parlay_index in range(1, 5):
+            chosen_games = []
+            games_for_engine = []
             chosen_games = []
             games_for_engine = []
             strong = [g for g in eligible_games if g["class"] == "STRONG_SOLID" and g.get("game_id") not in used_game_ids]
