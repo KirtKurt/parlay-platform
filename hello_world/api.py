@@ -474,9 +474,6 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
             }
         }
 
-    built = []
-    refusal = None
-
     # Implement exclusion rule and signal model
     # ...
 
@@ -488,6 +485,51 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
 
     # Implement audit logging
     # ...
+
+    # Diagnostics and refusal logic
+    total_games = len(snapshots[3]["data"]["games"])
+    disallowed_both_negative = sum(1 for game in snapshots[3]["data"]["games"] if _calculate_net_delta(game, snapshots) is None)
+    strong_solid = sum(1 for game in snapshots[3]["data"]["games"] if _classify_game(game)["class"] == "STRONG_SOLID")
+    coinflip = sum(1 for game in snapshots[3]["data"]["games"] if _classify_game(game)["class"] == "COIN_FLIP")
+    solid = sum(1 for game in snapshots[3]["data"]["games"] if _classify_game(game)["class"] == "SOLID")
+    ineligible = sum(1 for game in snapshots[3]["data"]["games"] if _classify_game(game)["class"] == "INELIGIBLE")
+    missing_odds_games = sum(1 for game in snapshots[3]["data"]["games"] if _best_ml_for_engine(game) is None)
+
+    top_disallowed_samples = [
+        {"game_id": game.get("id"), "reason": "Both negative" if _calculate_net_delta(game, snapshots) is None else "Other"}
+        for game in snapshots[3]["data"]["games"][:5]
+    ]
+
+    refusal = None
+    if len(built) == 0:
+        if missing_snapshots:
+            refusal = {
+                "code": "MISSING_REQUIRED_T_SNAPSHOTS",
+                "reason": "Missing required snapshots",
+                "missing": missing_snapshots
+            }
+        elif total_games == 0 or strong_solid < 2:
+            refusal = {
+                "code": "FIRST_SLATE_INELIGIBLE",
+                "reason": "First slate ineligible"
+            }
+        else:
+            refusal = {
+                "code": "INSUFFICIENT_ELIGIBLE_GAMES",
+                "reason": "Not enough eligible games to build requested parlays",
+                "diagnostics": {
+                    "counts": {
+                        "total_games": total_games,
+                        "disallowed_both_negative": disallowed_both_negative,
+                        "strong_solid": strong_solid,
+                        "coinflip": coinflip,
+                        "solid": solid,
+                        "ineligible": ineligible,
+                        "missing_odds_games": missing_odds_games
+                    },
+                    "top_disallowed_samples": top_disallowed_samples
+                }
+            }
 
     return {
         "ok": True,
