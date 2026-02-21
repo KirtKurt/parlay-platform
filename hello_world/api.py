@@ -129,7 +129,34 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
         classified_games.append(classified_game)
     return classified_games
 
-def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
+def _generate_diagnostics(games_t4: List[Dict[str, Any]], classified: List[Dict[str, Any]]) -> Dict[str, Any]:
+    total_games_t4 = len(games_t4)
+    disallowed_both_negative_t1_t3 = sum(1 for game in classified if game["disallowed"])
+    strong_solid_count = sum(1 for game in classified if game["class"] == "STRONG_SOLID")
+    coinflip_count = sum(1 for game in classified if game["class"] == "COIN_FLIP")
+    solid_count = sum(1 for game in classified if game["class"] == "SOLID")
+    ineligible_count = sum(1 for game in classified if game["class"] == "INELIGIBLE")
+    missing_odds_count = sum(1 for game in games_t4 if _best_ml_for_engine(game) is None)
+
+    sample_disallowed = [
+        {
+            "game_id": game.get("id"),
+            "matchup": f"{game.get('home_team')} vs {game.get('away_team')}",
+            "reason": "Disallowed"
+        }
+        for game in classified if game["disallowed"]
+    ][:10]
+
+    return {
+        "total_games_t4": total_games_t4,
+        "disallowed_both_negative_t1_t3": disallowed_both_negative_t1_t3,
+        "strong_solid_count": strong_solid_count,
+        "coinflip_count": coinflip_count,
+        "solid_count": solid_count,
+        "ineligible_count": ineligible_count,
+        "missing_odds_count": missing_odds_count,
+        "sample_disallowed": sample_disallowed
+    }
     built: List[Dict[str, Any]] = []
 
     # Ensure all required snapshots are available
@@ -163,18 +190,27 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
         parlay = []  # Placeholder for parlay construction logic
         if not parlay:
             if parlay_index == 0:
+                refusal = {
+                    "code": "FIRST_SLATE_INELIGIBLE",
+                    "reason": "First slate ineligible",
+                    "diagnostics": _generate_diagnostics(games, classified_games)
+                }
                 return {
                     "ok": True,
                     "parlays_requested": max_parlays,
                     "parlays_built": 0,
-                    "refusal": {"code": "FIRST_SLATE_INELIGIBLE", "reason": "First slate ineligible"}
+                    "refusal": refusal
                 }
             break
         built.append(parlay)
 
     refusal = None
     if len(built) < max_parlays:
-        refusal = {"code": "INSUFFICIENT_PARLAYS", "reason": "Not enough eligible games to build requested parlays"}
+        refusal = {
+            "code": "INSUFFICIENT_PARLAYS",
+            "reason": "Not enough eligible games to build requested parlays",
+            "diagnostics": _generate_diagnostics(games, classified_games)
+        }
 
     # Implement combo ranking
     # ...
