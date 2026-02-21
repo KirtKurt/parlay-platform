@@ -682,9 +682,7 @@ def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
             books_out[key] = {"ml": {"home": int(ho), "away": int(ao)}}
 
         game_key = _game_key("nba", slate_date_et, away, home, ct)
-        game_key = _game_key("ncaam", slate_date_et, away, home, commence_time)
         games_out.append({
-            "game_key": game_key,
             "game_key": game_key,
             "id": gid,
             "commence_time": ct,
