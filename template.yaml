@@ -79,10 +79,6 @@ Resources:
             TableName: !Ref SnapshotsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref SignalsTable
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalLedgerTable
-      Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SignalLedgerTable
       Events:
@@ -107,12 +103,11 @@ Resources:
             TableName: !Ref SnapshotsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref SignalsTable
-      Events:
-        Daily1AM:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 1 * * ? *)
-            Input: '{"run":"base_pull"}'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalsTable
         HotEvery45Min:
           Type: Schedule
           Properties:
