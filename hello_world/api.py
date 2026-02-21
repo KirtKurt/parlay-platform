@@ -89,7 +89,7 @@ def lambda_handler(event, context):
         query_params = event.get("queryStringParameters", {})
         sport = query_params.get("sport", "nba")
         limit = int(query_params.get("limit", 10))
-        
+
         key_expr = Key("PK").eq(f"SPORT#{sport}")
         resp = snapshots_tbl.query(
             KeyConditionExpression=key_expr,
@@ -97,7 +97,6 @@ def lambda_handler(event, context):
             Limit=limit,
         )
         items = resp.get("Items", [])
-        
         return _resp(200, {"ok": True, "items": items})
 
     if event.get("httpMethod") == "POST" and event.get("path") == "/v1/pull/ncaam":
