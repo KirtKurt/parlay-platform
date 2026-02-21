@@ -127,7 +127,8 @@ def _compact_ncaam_h2h(raw_games: list, slate_date_et: str) -> Dict[str, Any]:
             "books": books_out,
         })
 
-    return {
+    if cls == "INELIGIBLE":
+        _log_ineligible_reason("ncaam", "T4", _get_slate_date_et(), game, factors)
         "games": games_out,
         "count": len(games_out),
         "available_book_keys": sorted(all_keys_seen),
