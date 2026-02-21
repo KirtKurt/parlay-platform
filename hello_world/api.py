@@ -683,12 +683,17 @@ def _resp(status: int, body: Any) -> Dict[str, Any]:
         },
         "body": json.dumps(body, default=_json_default)
     }
-    if not body:
-        return {}
-    try:
-        return json.loads(body)
-    except Exception:
-        return {}
+def _resp(status: int, body: Any) -> Dict[str, Any]:
+    return {
+        "statusCode": status,
+        "headers": {
+            "content-type": "application/json",
+            "access-control-allow-origin": "*",
+            "access-control-allow-headers": "content-type",
+            "access-control-allow-methods": "GET,POST,OPTIONS",
+        },
+        "body": json.dumps(body, default=_json_default)
+    }
 
 def _american_to_prob(a: int) -> float:
     return abs(a) / (abs(a) + 100) if a < 0 else 100 / (a + 100)
@@ -715,13 +720,6 @@ def _log_ineligible_reason(sport: str, t: str, slate_date_et: str, game: dict, f
         }, default=str))
     except Exception as e:
         print(f"Logging error: {e}")
-    if not vals:
-        return 0.0, 0.0
-    m = sum(vals) / len(vals)
-    if len(vals) == 1:
-        return m, 0.0
-    var = sum((x - m) ** 2 for x in vals) / (len(vals) - 1)
-    return m, math.sqrt(var)
 
 # =========================
 # ODDS API + SNAPSHOT
