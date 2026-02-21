@@ -447,10 +447,29 @@ def lambda_handler(event, context):
     return _resp(404, {"error": "Not Found"})
 
 def scheduler_handler(event, context):
+    """
+    EventBridge scheduler entrypoint.
+    Expected event payload:
+      {"sport":"ncaam","t":"T2","run":"mid_pull"}
+      {"sport":"nba","t":"T1","run":"base_pull"}
+    """
+    event = event or {}
     sport = event.get("sport")
-max_parlays = 7
     t = event.get("t")
     run = event.get("run")
+
+    # Scheduler does NOT build parlays. It only pulls snapshots.
+    try:
+        if sport == "nba":
+            result = _pull_nba_snapshot(run_type=run, t=t)
+        elif sport == "ncaam":
+            result = _pull_ncaam_snapshot(run_type=run, t=t)
+        else:
+            return _resp(400, {"ok": False, "error": "Unsupported sport", "sport": sport})
+
+        return _resp(200, {"ok": True, "sport": sport, "t": t, "run": run, "result": result})
+    except Exception as e:
+        return _resp(500, {"ok": False, "sport": sport, "t": t, "run": run, "error": str(e)})
 
     try:
         if sport == "nba":
