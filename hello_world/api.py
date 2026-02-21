@@ -11,6 +11,7 @@ import urllib.parse
 import boto3
 from boto3.dynamodb.conditions import Key
 
+
 from nba_algorithm import rank_nba_b11c1
 
 SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
