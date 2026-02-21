@@ -86,8 +86,19 @@ def lambda_handler(event, context):
         return _resp(200, result)
 
     if event.get("httpMethod") == "GET" and event.get("path") == "/v1/snapshots":
-        snapshot = _latest_snapshot()
-        return _resp(200, snapshot)
+        query_params = event.get("queryStringParameters", {})
+        sport = query_params.get("sport", "nba")
+        limit = int(query_params.get("limit", 10))
+        
+        key_expr = Key("PK").eq(f"SPORT#{sport}")
+        resp = snapshots_tbl.query(
+            KeyConditionExpression=key_expr,
+            ScanIndexForward=False,
+            Limit=limit,
+        )
+        items = resp.get("Items", [])
+        
+        return _resp(200, {"ok": True, "items": items})
 
     if event.get("httpMethod") == "POST" and event.get("path") == "/v1/pull/ncaam":
         body = _parse_json(event.get("body"))
