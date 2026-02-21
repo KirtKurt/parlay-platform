@@ -167,7 +167,7 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
                     "refusal": {"code": "FIRST_SLATE_INELIGIBLE", "reason": "First slate ineligible"}
                 }
             break
-        built_parlays.append(parlay)
+        built.append(parlay)
 
     refusal = None
     if len(built) < max_parlays:
