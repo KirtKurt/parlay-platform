@@ -430,26 +430,6 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
         "slate_date_et": slate_date_et,
         "meta": {"source": "theOddsAPI", "run_type": run_type, "pulled_at": asof},
     }
-    item["t"] = t if t else None
-    snapshots_tbl.put_item(Item=item)
-    return item
-    if snapshots_tbl is None:
-        raise RuntimeError("SNAPSHOTS_TABLE not configured")
-
-    asof = _now_iso()
-    slate_id = f"{sport.upper()}_{asof[:10]}_{run_type}"
-    sk_prefix = f"{t}#DATE#{slate_date_et}#" if t else ""
-    item = {
-        "PK": f"SPORT#{sport}",
-        "SK": f"{sk_prefix}ASOF#{asof}#SLATE#{slate_id}",
-        "sport": "nba",
-        "slate_id": slate_id,
-        "asof": asof,
-        "created_at": asof,
-        "data": data,
-        "slate_date_et": slate_date_et,
-        "meta": {"source": "theOddsAPI", "run_type": run_type, "pulled_at": asof},
-    }
     snapshots_tbl.put_item(Item=item)
     return item
 
@@ -458,21 +438,24 @@ def _pull_nba_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]
     slate_date_et = _get_slate_date_et()
     filtered_games = _filter_games_by_slate_date(raw, slate_date_et)
     compact = _compact_nba_h2h(filtered_games)
-    stored = _store_snapshot(run_type, compact, t, slate_date_et)
+    stored = _store_snapshot(run_type, compact, slate_date_et, t)
     return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
 
 def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Optional[Dict[str, Any]]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
-    et_date = _get_slate_date_et()
-    key_expr = Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(f"{et_date}#DATE#{t}#")
+    key_expr = Key("PK").eq(f"SPORT#{sport}")
     resp = snapshots_tbl.query(
         KeyConditionExpression=key_expr,
         ScanIndexForward=False,
-        Limit=1,
+        Limit=50,
     )
     items = resp.get("Items", [])
-    return items[0] if items else None
+    today_et = _get_slate_date_et()
+    for item in items:
+        if item.get("t") == t and item.get("slate_date_et") == today_et:
+            return item
+    return None
 
 # =========================
 # PANEL CONSENSUS + SIGNALS
