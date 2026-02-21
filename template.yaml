@@ -102,36 +102,7 @@ Resources:
             TableName: !Ref SnapshotsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref SignalsTable
-      Policies:     # <-- THIS SECOND "Policies" MUST GO
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalsTable
-        HotEvery45Min:   # <-- these schedules are in the wrong place
-          Type: Schedule
-          Properties:
-            Schedule: rate(45 minutes)  SchedulerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: hello_world/
-      Handler: api.scheduler_handler
-              - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalsTable
-        HotEvery45Min:Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalsTable
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalsTable
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalsTable
+      Events:
         HotEvery45Min:
           Type: Schedule
           Properties:
