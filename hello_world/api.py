@@ -118,7 +118,35 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
     # Implement signal calculation and classification logic
     # Placeholder implementation
     classified_games = []
+    key_overlap_t1_t4 = 0
+    key_overlap_t2_t4 = 0
+    key_overlap_t3_t4 = 0
+    missing_t_link_count = 0
+
     for game in games:
+        game_key = game["game_key"]
+        t1_game = t_map["T1"].get(game_key)
+        t2_game = t_map["T2"].get(game_key)
+        t3_game = t_map["T3"].get(game_key)
+
+        if not t1_game or not t2_game or not t3_game:
+            classified_game = {
+                "game_id": game.get("id"),
+                "signals": {},  # Add signal calculations here
+                "class": "INELIGIBLE",
+                "factors": ["MISSING_T_LINK"],
+                "disallowed": False,
+            }
+            classified_games.append(classified_game)
+            missing_t_link_count += 1
+            continue
+
+        if t1_game:
+            key_overlap_t1_t4 += 1
+        if t2_game:
+            key_overlap_t2_t4 += 1
+        if t3_game:
+            key_overlap_t3_t4 += 1
         # Calculate signals and classify each game
         classified_game = {
             "game_id": game.get("id"),
@@ -179,7 +207,11 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
 
     built: List[Dict[str, Any]] = []
 
-    # Implement exclusion rule and signal model
+    # Build per-T maps keyed by game_key
+    t_map = {f"T{i}": {} for i in range(1, 5)}
+    for i, snapshot in enumerate(snapshots, 1):
+        for game in snapshot["data"]["games"]:
+            t_map[f"T{i}"][game["game_key"]] = game
     games = snapshots[3]["data"]["games"]  # Use T4 for game list
     classified_games = _calculate_signals_and_classify(games, snapshots, coinflip_lite)
 
@@ -426,7 +458,15 @@ def lambda_handler(event, context):
         if len(built) < 4:
             refusal = {"code": "INSUFFICIENT_PARLAYS", "reason": "Not enough eligible games to build 4 parlays"}
 
+        diagnostics = {
+            "key_overlap_t1_t4": key_overlap_t1_t4,
+            "key_overlap_t2_t4": key_overlap_t2_t4,
+            "key_overlap_t3_t4": key_overlap_t3_t4,
+            "missing_t_link_count": missing_t_link_count,
+        }
+
         return _resp(200, {
+            "diagnostics": diagnostics,
             "ok": True,
             "parlays_requested": 4,
             "parlays_built": len(built),
@@ -530,7 +570,11 @@ COINFLIP_FACTORS_MIN = 2
 # =========================
 # BASIC HELPERS
 # =========================
-def _now_iso() -> str:
+def _normalize_team(s: str) -> str:
+    return s.lower().replace(" ", "").replace(".", "")
+
+def _game_key(sport: str, slate_date_et: str, away_team: str, home_team: str, commence_time: str) -> str:
+    return f"{sport}#{slate_date_et}#{_normalize_team(away_team)}#{_normalize_team(home_team)}#{commence_time}"
     return datetime.now(timezone.utc).isoformat()
 
 def _json_default(o):
@@ -639,7 +683,11 @@ def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
 
             books_out[key] = {"ml": {"home": int(ho), "away": int(ao)}}
 
+        game_key = _game_key("nba", slate_date_et, away, home, ct)
+        game_key = _game_key("ncaam", slate_date_et, away, home, commence_time)
         games_out.append({
+            "game_key": game_key,
+            "game_key": game_key,
             "id": gid,
             "commence_time": ct,
             "home_team": home,
