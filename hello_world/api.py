@@ -413,6 +413,27 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
     item = {
         "PK": f"SPORT#{sport}",
         "SK": f"{sk_prefix}ASOF#{asof}#SLATE#{slate_id}",
+        "sport": sport,
+        "slate_id": slate_id,
+        "asof": asof,
+        "created_at": asof,
+        "data": data,
+        "slate_date_et": slate_date_et,
+        "meta": {"source": "theOddsAPI", "run_type": run_type, "pulled_at": asof},
+    }
+    if t:
+        item["t"] = t
+    snapshots_tbl.put_item(Item=item)
+    return item
+    if snapshots_tbl is None:
+        raise RuntimeError("SNAPSHOTS_TABLE not configured")
+
+    asof = _now_iso()
+    slate_id = f"{sport.upper()}_{asof[:10]}_{run_type}"
+    sk_prefix = f"{t}#DATE#{slate_date_et}#" if t else ""
+    item = {
+        "PK": f"SPORT#{sport}",
+        "SK": f"{sk_prefix}ASOF#{asof}#SLATE#{slate_id}",
         "sport": "nba",
         "slate_id": slate_id,
         "asof": asof,
@@ -433,6 +454,21 @@ def _pull_nba_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]
     return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
 
 def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, Any]:
+    if snapshots_tbl is None:
+        raise RuntimeError("SNAPSHOTS_TABLE not configured")
+    key_expr = Key("PK").eq(f"SPORT#{sport}")
+    slate_date_et = _get_slate_date_et()
+    if t:
+        key_expr = key_expr & Key("SK").begins_with(f"{t}#DATE#{slate_date_et}#")
+    resp = snapshots_tbl.query(
+        KeyConditionExpression=key_expr,
+        ScanIndexForward=False,
+        Limit=1,
+    )
+    items = resp.get("Items", [])
+    if not items:
+        return None
+    return items[0]
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
     key_expr = Key("PK").eq(f"SPORT#{sport}")
