@@ -144,6 +144,8 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
             }
         }
 
+    built: List[Dict[str, Any]] = []
+
     # Implement exclusion rule and signal model
     games = snapshots[3]["data"]["games"]  # Use T4 for game list
     classified_games = _calculate_signals_and_classify(games, snapshots, coinflip_lite)
@@ -167,7 +169,7 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
         built_parlays.append(parlay)
 
     refusal = None
-    if len(built_parlays) < max_parlays:
+    if len(built) < max_parlays:
         refusal = {"code": "INSUFFICIENT_PARLAYS", "reason": "Not enough eligible games to build requested parlays"}
 
     # Implement combo ranking
@@ -181,9 +183,9 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
         "model": "NCAAM-B1.1C.2.3",
         "slate_date_et": _get_slate_date_et(),
         "parlays_requested": max_parlays,
-        "parlays_built": len(built_parlays),
+        "parlays_built": len(built),
         "refusal": refusal,
-        "parlays": built_parlays
+        "parlays": built
     }
 
 def lambda_handler(event, context):
