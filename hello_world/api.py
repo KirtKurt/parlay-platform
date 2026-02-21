@@ -135,6 +135,13 @@ def _compact_ncaam_h2h(raw_games: list, slate_date_et: str) -> Dict[str, Any]:
             "books": books_out,
         })
 
+    return {
+        "games": games_out,
+        "count": len(games_out),
+        "available_book_keys": sorted(all_keys_seen),
+        "panel_books": list(PANEL_BOOKS),
+    }
+
 def _pull_ncaam_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]:
     slate_date_et = _get_slate_date_et()
     raw = _http_get_json(_build_oddsapi_url_ncaam_h2h())
