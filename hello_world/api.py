@@ -993,11 +993,25 @@ def _steam_resistance_signals(books: dict) -> dict:
 # =========================
 def _best_ml_for_engine(game: dict) -> Optional[dict]:
     books = game.get("books", {}) or {}
-    for b in BOOK_PRIORITY:
-        if b in books and "ml" in books[b]:
-            ml = books[b]["ml"]
+    preferred_books = ["fanatics", "draftkings", "fanduel", "betmgm", "caesars", "betrivers", "bovada", "lowvig"]
+    
+    # Check preferred books first
+    for book in preferred_books:
+        ml = books.get(book, {}).get("ml", {})
+        if ml.get("home") is not None and ml.get("away") is not None:
+            home = int(float(ml["home"]))
+            away = int(float(ml["away"]))
+            return {"book": book, "home": home, "away": away}
+    
+    # Check any remaining books
+    for book, data in books.items():
+        if book not in preferred_books:
+            ml = data.get("ml", {})
             if ml.get("home") is not None and ml.get("away") is not None:
-                return {"home": int(ml["home"]), "away": int(ml["away"]), "book": b}
+                home = int(float(ml["home"]))
+                away = int(float(ml["away"]))
+                return {"book": book, "home": home, "away": away}
+    
     return None
 
 def _leader_gap_from_ml(ml: dict) -> float:
