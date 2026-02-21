@@ -1,12 +1,12 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: Parlay Platform
+Description: Parlay Platform (NBA-B1.1C.1) - API + Scheduler + DynamoDB
 
 Parameters:
   OddsApiKey:
     Type: String
     NoEcho: true
-    Default: ""
+    Description: theOddsAPI key (DO NOT COMMIT THIS VALUE)
 
 Globals:
   Function:
@@ -15,13 +15,31 @@ Globals:
     MemorySize: 1024
     Environment:
       Variables:
+        SNAPSHOTS_TABLE: !Ref SnapshotsTable
+        SIGNALS_TABLE: !Ref SignalsTable
         ODDS_API_KEY: !Ref OddsApiKey
 
 Resources:
-
   SnapshotsTable:
     Type: AWS::DynamoDB::Table
     Properties:
+      TableName: parlay_platform_snapshots
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
+  SignalsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: parlay_platform_signals
       BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: PK
@@ -42,11 +60,15 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
-      Environment:
-        Variables:
-          SNAPSHOTS_TABLE: !Ref SnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalsTable
       Events:
-        ProxyApi:
+        RootAny:
+          Type: Api
+          Properties:
+            Path: /
+            Method: ANY
+        ProxyAny:
           Type: Api
           Properties:
             Path: /{proxy+}
@@ -60,10 +82,61 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
-      Environment:
-        Variables:
-          SNAPSHOTS_TABLE: !Ref SnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalsTable
+      Events:
+        Daily1AM:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 1 * * ? *)
+            Input: '{"run":"base_pull"}'
+        HotEvery45Min:
+          Type: Schedule
+          Properties:
+            Schedule: rate(45 minutes)
+            Input: '{"run":"hot_pull"}'
+        NCAAMT1:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 7 * * ? *)
+            Input: '{"sport":"ncaam","t":"T1","run":"base_pull"}'
+        NCAAMT2:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 15 * * ? *)
+            Input: '{"sport":"ncaam","t":"T2","run":"mid_pull"}'
+        NCAAMT3:
+          Type: Schedule
+          Properties:
+            Schedule: cron(45 15 * * ? *)
+            Input: '{"sport":"ncaam","t":"T3","run":"late_pull"}'
+        NCAAMT4:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 16 * * ? *)
+            Input: '{"sport":"ncaam","t":"T4","run":"freeze_pull"}'
+        NBAT1:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 7 * * ? *)
+            Input: '{"sport":"nba","t":"T1","run":"base_pull"}'
+        NBAT2:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 13 * * ? *)
+            Input: '{"sport":"nba","t":"T2","run":"mid_pull"}'
+        NBAT3:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 18 * * ? *)
+            Input: '{"sport":"nba","t":"T3","run":"late_pull"}'
+        NBAT4:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 20 * * ? *)
+            Input: '{"sport":"nba","t":"T4","run":"freeze_pull"}'
 
 Outputs:
   ApiUrl:
+    Description: API Gateway endpoint base URL
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
