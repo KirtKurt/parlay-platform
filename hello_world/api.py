@@ -408,8 +408,8 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
 
     asof = _now_iso()
-    slate_id = f"{sport.upper()}_{asof[:10]}_{run_type}"
-    sk_prefix = f"{t}#DATE#{slate_date_et}#" if t else f"ASOF#{asof}#DATE#{slate_date_et}#"
+    slate_id = f"{sport.upper()}_{slate_date_et}_{run_type}"
+    sk_prefix = f"{t}#DATE#{slate_date_et}#ASOF#{asof}#" if t else f"ASOF#{asof}#DATE#{slate_date_et}#"
     item = {
         "PK": f"SPORT#{sport}",
         "SK": f"{sk_prefix}ASOF#{asof}#SLATE#{slate_id}",
@@ -421,8 +421,7 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
         "slate_date_et": slate_date_et,
         "meta": {"source": "theOddsAPI", "run_type": run_type, "pulled_at": asof},
     }
-    if t:
-        item["t"] = t
+    item["t"] = t if t else "ASOF"
     snapshots_tbl.put_item(Item=item)
     return item
     if snapshots_tbl is None:
@@ -458,8 +457,7 @@ def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, A
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
     key_expr = Key("PK").eq(f"SPORT#{sport}")
     slate_date_et = _get_slate_date_et()
-    if t:
-        key_expr = key_expr & Key("SK").begins_with(f"{t}#DATE#{slate_date_et}#")
+    key_expr = key_expr & Key("SK").begins_with(f"{t}#DATE#{slate_date_et}#")
     resp = snapshots_tbl.query(
         KeyConditionExpression=key_expr,
         ScanIndexForward=False,
