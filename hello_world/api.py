@@ -433,6 +433,7 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
     slate_id = f"{sport.upper()}_{slate_date_et}_{run_type}"
     sk_prefix = f"{t}#DATE#{slate_date_et}#ASOF#{asof}#SLATE#{slate_id}" if t else f"ASOF#{asof}#SLATE#{slate_id}"
     item = {
+        "t": t if t else None,
         "PK": f"SPORT#{sport}",
         "SK": sk_prefix,
         "sport": sport,
