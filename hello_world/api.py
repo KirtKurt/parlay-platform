@@ -382,7 +382,7 @@ def lambda_handler(event, context):
     if event.get("httpMethod") == "GET" and event.get("path") == "/v1/health":
         return _resp(200, {"status": "healthy"})
 
-    if event.get("httpMethod") == "POST" and event.get("path") == "/v1/pull/nba":
+    if event.get("httpMethod") == "POST" and event.get("path") in ["/v1/pull/nba", "/v1/alias/nba"]:
         body = _parse_json(event.get("body"))
         t = body.get("t")
         run_type = body.get("run", "manual")
