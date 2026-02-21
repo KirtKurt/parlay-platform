@@ -859,11 +859,11 @@ def _pull_nba_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]
 def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Optional[Dict[str, Any]]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
-    key_expr = Key("PK").eq(f"SPORT#{sport}")
+    key_expr = Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(f"{t}#")
     resp = snapshots_tbl.query(
         KeyConditionExpression=key_expr,
         ScanIndexForward=False,
-        Limit=50,
+        Limit=1,
     )
     items = resp.get("Items", [])
     today_et = _get_slate_date_et()
