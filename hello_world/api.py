@@ -443,6 +443,16 @@ def lambda_handler(event, context):
         result = _build_ncaam_b1c23(max_parlays, coinflip_lite)
         return _resp(200, result)
 
+    if event.get("httpMethod") == "POST" and event.get("path").startswith("/v1/build/ncaam/"):
+        try:
+            max_parlays = int(event.get("path").split("/")[-1])
+        except ValueError:
+            return _resp(400, {"error": "Invalid max_parlays value"})
+        body = _parse_json(event.get("body"))
+        coinflip_lite = bool(body.get("coinflip_lite", False))
+        result = _build_ncaam_b1c23(max_parlays, coinflip_lite)
+        return _resp(200, result)
+
     if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/nba/4":
         # Retrieve snapshots T1, T2, T3, T4
         snapshots = [_latest_snapshot(f"T{i}") for i in range(1, 5)]
