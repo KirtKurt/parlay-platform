@@ -165,9 +165,14 @@ def compute_game_signals(sport: str, t: str, slate_date_et: str, snapshots_by_t:
     return signals
 
 def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List[Dict[str, Any]], coinflip_lite: bool) -> List[Dict[str, Any]]:
-    # Implement signal calculation and classification logic
+    slate_date_et = (snapshots[-1].get("slate_date_et") if snapshots else None) or _get_slate_date_et()
     # Placeholder implementation
     t_map = {f"T{i}": {} for i in range(1, 5)}
+    for i, snap in enumerate(snapshots, 1):
+        for g in snap["data"]["games"]:
+            gk = g.get("game_key") or _game_key_day("ncaam", slate_date_et, g.get("away_team"), g.get("home_team"))
+            t_map[f"T{i}"][gk] = g
+
     classified_games = []
     key_overlap_t1_t4 = sum(1 for game in games if _game_key_day("ncaam", slate_date_et, game["away_team"], game["home_team"]) in t_map["T1"])
     key_overlap_t2_t4 = sum(1 for game in games if _game_key_day("ncaam", slate_date_et, game["away_team"], game["home_team"]) in t_map["T2"])
