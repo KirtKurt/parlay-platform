@@ -409,10 +409,10 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
 
     asof = _now_iso()
     slate_id = f"{sport.upper()}_{slate_date_et}_{run_type}"
-    sk_prefix = f"{t}#DATE#{slate_date_et}#ASOF#{asof}#" if t else f"ASOF#{asof}#DATE#{slate_date_et}#"
+    sk_prefix = f"{t}#DATE#{slate_date_et}#ASOF#{asof}#SLATE#{slate_id}" if t else f"ASOF#{asof}#DATE#{slate_date_et}#"
     item = {
         "PK": f"SPORT#{sport}",
-        "SK": f"{sk_prefix}ASOF#{asof}#SLATE#{slate_id}",
+        "SK": sk_prefix,
         "sport": sport,
         "slate_id": slate_id,
         "asof": asof,
@@ -457,7 +457,8 @@ def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Dict[str, A
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
     key_expr = Key("PK").eq(f"SPORT#{sport}")
     slate_date_et = _get_slate_date_et()
-    key_expr = key_expr & Key("SK").begins_with(f"{t}#DATE#{slate_date_et}#")
+    if t:
+        key_expr = key_expr & Key("SK").begins_with(f"{t}#DATE#{slate_date_et}#")
     resp = snapshots_tbl.query(
         KeyConditionExpression=key_expr,
         ScanIndexForward=False,
