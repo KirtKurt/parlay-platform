@@ -14,16 +14,13 @@ from boto3.dynamodb.conditions import Key
 
 dynamodb = boto3.resource("dynamodb")
 
-
-
-
-from nba_algorithm import rank_nba_b11c1
-
-SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
-signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE else None
-
+SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
+SIGNALS_TABLE = os.environ.get("SIGNALS_TABLE", "")
 SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
 OUTCOMES_TABLE = os.environ.get("OUTCOMES_TABLE", "")
+ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
+
+snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
 signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE else None
 outcomes_tbl = dynamodb.Table(OUTCOMES_TABLE) if OUTCOMES_TABLE else None
 
@@ -636,10 +633,7 @@ def scheduler_handler(event, context):
     except Exception as e:
         return _resp(500, {"ok": False, "sport": sport, "t": t, "run": run, "error": str(e)})
 # =========================
-dynamodb = boto3.resource("dynamodb")
-SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
-ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
-snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
+from nba_algorithm import rank_nba_b11c1
 
 # =========================
 # CONFIG
