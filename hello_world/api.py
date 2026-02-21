@@ -32,6 +32,14 @@ def _parse_json(body: Optional[str]) -> Dict[str, Any]:
     except Exception:
         return {}
 
+def _parse_json(body: Optional[str]) -> Dict[str, Any]:
+    if not body:
+        return {}
+    try:
+        return json.loads(body)
+    except Exception:
+        return {}
+
 def _http_get_json(url: str, timeout: int = 20) -> Any:
     req = urllib.request.Request(url, headers={"accept": "application/json"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -222,10 +230,10 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
             key_overlap_t3_t4 += 1
 
         # Calculate signals and classify each game
+        cls, factors = _classify_game(game, snapshots, t_map, coinflip_lite, slate_date_et)
+
         if cls == "INELIGIBLE":
             _log_ineligible_reason("ncaam", "T4", slate_date_et, game, factors)
-
-        cls, factors = _classify_game(game, snapshots, t_map, coinflip_lite, slate_date_et)
         classified_game = {
             "game_id": game.get("id"),
             "signals": {},  # Add signal calculations here
@@ -892,7 +900,7 @@ def _panel_metrics(game: dict) -> dict:
     total = len(present)
     if total == 0:
         try:
-            _log_ineligible_reason("ncaam", "T4", _get_slate_date_et(), game, factors)
+            _log_ineligible_reason("ncaam", "T4", _get_slate_date_et(), game, ["PANEL_NO_BOOKS"])
         except Exception as e:
             print(f"Logging error: {e}")
         return {
