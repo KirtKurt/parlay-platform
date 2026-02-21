@@ -111,6 +111,81 @@ def compute_game_signals(sport: str, t: str, slate_date_et: str, snapshots_by_t:
         signals.append(signal)
     return signals
 
+def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List[Dict[str, Any]], coinflip_lite: bool) -> List[Dict[str, Any]]:
+    # Implement signal calculation and classification logic
+    # Placeholder implementation
+    classified_games = []
+    for game in games:
+        # Calculate signals and classify each game
+        classified_game = {
+            "game_id": game.get("id"),
+            "signals": {},  # Add signal calculations here
+            "class": "INELIGIBLE",  # Determine class based on signals
+            "disallowed": False,  # Determine if disallowed
+        }
+        classified_games.append(classified_game)
+    return classified_games
+
+def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
+    # Ensure all required snapshots are available
+    snapshots = [_latest_snapshot(f"T{i}", "ncaam") for i in range(1, 5)]
+    missing_snapshots = [f"T{i}" for i, s in enumerate(snapshots, 1) if s is None]
+    if missing_snapshots:
+        return {
+            "ok": True,
+            "model": "NCAAM-B1.1C.2.3",
+            "slate_date_et": _get_slate_date_et(),
+            "parlays_requested": max_parlays,
+            "parlays_built": 0,
+            "refusal": {
+                "code": "MISSING_REQUIRED_T_SNAPSHOTS",
+                "reason": "Missing required snapshots",
+                "missing": missing_snapshots
+            }
+        }
+
+    # Implement exclusion rule and signal model
+    games = snapshots[3]["data"]["games"]  # Use T4 for game list
+    classified_games = _calculate_signals_and_classify(games, snapshots, coinflip_lite)
+
+    # Implement parlay construction rules
+    built_parlays = []
+    used_game_ids = set()
+
+    for parlay_index in range(max_parlays):
+        # Build each parlay
+        parlay = []  # Placeholder for parlay construction logic
+        if not parlay:
+            if parlay_index == 0:
+                return {
+                    "ok": True,
+                    "parlays_requested": max_parlays,
+                    "parlays_built": 0,
+                    "refusal": {"code": "FIRST_SLATE_INELIGIBLE", "reason": "First slate ineligible"}
+                }
+            break
+        built_parlays.append(parlay)
+
+    refusal = None
+    if len(built_parlays) < max_parlays:
+        refusal = {"code": "INSUFFICIENT_PARLAYS", "reason": "Not enough eligible games to build requested parlays"}
+
+    # Implement combo ranking
+    # ...
+
+    # Implement audit logging
+    # ...
+
+    return {
+        "ok": True,
+        "model": "NCAAM-B1.1C.2.3",
+        "slate_date_et": _get_slate_date_et(),
+        "parlays_requested": max_parlays,
+        "parlays_built": len(built_parlays),
+        "refusal": refusal,
+        "parlays": built_parlays
+    }
+
 def lambda_handler(event, context):
     if event.get("httpMethod") == "GET" and event.get("path") == "/v1/health":
         return _resp(200, {"status": "healthy"})
@@ -166,13 +241,9 @@ def lambda_handler(event, context):
     if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/ncaam/b1c23":
         body = _parse_json(event.get("body"))
         max_parlays = min(int(body.get("max_parlays", 7)), 7)
-        result = _build_ncaam_b1c23(max_parlays)
+        coinflip_lite = body.get("coinflip_lite", False)
+        result = _build_ncaam_b1c23(max_parlays, coinflip_lite)
         return _resp(200, result)
-        query_params = event.get("queryStringParameters", {})
-        t = query_params.get("t")
-        sport = query_params.get("sport", "nba")
-        snapshot = _latest_snapshot(t, sport)
-        return _resp(200, snapshot)
 
     if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/nba/4":
         # Retrieve snapshots T1, T2, T3, T4
