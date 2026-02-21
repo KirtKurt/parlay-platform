@@ -300,6 +300,9 @@ def _build_ncaam_b1c23(max_parlays: int) -> Dict[str, Any]:
             }
         }
 
+    built = []
+    refusal = None
+
     # Implement exclusion rule and signal model
     # ...
 
