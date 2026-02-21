@@ -401,7 +401,7 @@ def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
         "panel_books": list(PANEL_BOOKS),
     }
 
-def _store_snapshot(run_type: str, data: Dict[str, Any], t: Optional[str] = None, slate_date_et: str, sport: str = "nba") -> Dict[str, Any]:
+def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: Optional[str] = None, sport: str = "nba") -> Dict[str, Any]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
 
