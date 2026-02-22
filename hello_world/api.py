@@ -935,11 +935,8 @@ def _panel_metrics(game: dict) -> dict:
         fav_probs.append(fav_p)
 
     total = len(present)
+    books_total = len(game.get("books", {}))
     if total == 0:
-        try:
-            _log_ineligible_reason("ncaam", "T4", _get_slate_date_et(), game, ["PANEL_NO_BOOKS"])
-        except Exception as e:
-            print(f"Logging error: {e}")
         return {
             "books_present": [],
             "panel_total": 0,
@@ -947,6 +944,7 @@ def _panel_metrics(game: dict) -> dict:
             "panel_avg_fav_p": None,
             "panel_std_fav_p": None,
             "panel_disagree": True,
+            "books_total": books_total,
         }
 
     home_votes = sum(1 for s in fav_sides if s == "home")
@@ -1042,9 +1040,11 @@ def _classify_game(game: Dict[str, Any], snapshots: List[Dict[str, Any]], t_map:
     # factor 2: panel disagreement
     if panel.get("panel_disagree"):
         factors.append("PANEL_DISAGREE")
-    # factor 3: missing panel coverage
+    # factor 3: missing panel coverage, but not auto-ineligible
     if (panel.get("panel_total") or 0) < 2:
         factors.append("LOW_PANEL_COVERAGE")
+    if panel.get("panel_total") == 0:
+        factors.append("PANEL_NO_BOOKS")
     # factor 4: coinflip signal
     if sig.get("coinflip"):
         factors.append("COINFLIP_SIGNAL")
