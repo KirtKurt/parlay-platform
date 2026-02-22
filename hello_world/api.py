@@ -263,10 +263,10 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
 def _generate_diagnostics(games_t4: List[Dict[str, Any]], classified: List[Dict[str, Any]]) -> Dict[str, Any]:
     total_games_t4 = len(games_t4)
     disallowed_both_negative_t1_t3 = sum(1 for game in classified if game["disallowed"])
-    strong_solid_count = sum(1 for game in classified if game["class"] == "STRONG_SOLID")
-    coinflip_count = sum(1 for game in classified if game["class"] == "COIN_FLIP")
-    solid_count = sum(1 for game in classified if game["class"] == "SOLID")
-    ineligible_count = sum(1 for game in classified if game["class"] == "INELIGIBLE")
+    strong_solid_count = counter.get("STRONG_SOLID", 0)
+    coinflip_count = counter.get("COIN_FLIP", 0)
+    solid_count = counter.get("SOLID", 0)
+    ineligible_count = counter.get("INELIGIBLE", 0)
     missing_odds_count = sum(1 for game in games_t4 if _best_ml_for_engine(game) is None)
 
     sample_disallowed = [
@@ -326,6 +326,15 @@ def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
             t_map[f"T{i}"][gk] = g
     games = snapshots[3]["data"]["games"]  # Use T4 for game list
     classified_games = _calculate_signals_and_classify(games, snapshots, coinflip_lite)
+    from collections import Counter
+    counter = Counter(game["class"] for game in classified_games)
+    print(json.dumps({
+        "tag": "CLASS_SUMMARY",
+        "sport": "ncaam",
+        "slate_date_et": slate_date_et,
+        "counts": dict(counter),
+        "total": len(classified_games)
+    }))
 
     # Implement parlay construction rules
     used_game_ids = set()
