@@ -261,7 +261,9 @@ def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List
     return classified_games
 
 def _generate_diagnostics(games_t4: List[Dict[str, Any]], classified: List[Dict[str, Any]]) -> Dict[str, Any]:
+    from collections import Counter
     total_games_t4 = len(games_t4)
+    counter = Counter(g.get("class") for g in classified)
     disallowed_both_negative_t1_t3 = sum(1 for game in classified if game["disallowed"])
     strong_solid_count = counter.get("STRONG_SOLID", 0)
     coinflip_count = counter.get("COIN_FLIP", 0)
