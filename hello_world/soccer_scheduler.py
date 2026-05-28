@@ -3,6 +3,7 @@ import os
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Dict, List
 from zoneinfo import ZoneInfo
 
@@ -36,6 +37,16 @@ DEFAULT_SOCCER_KEYS = [
 ]
 SOCCER_KEYS = [s.strip() for s in os.environ.get("SOCCER_KEYS", ",".join(DEFAULT_SOCCER_KEYS)).split(",") if s.strip()]
 ODDS_MARKETS = "h2h,spreads,totals"
+
+
+def ddb_safe(value: Any) -> Any:
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, dict):
+        return {k: ddb_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [ddb_safe(v) for v in value]
+    return value
 
 
 def _now_iso() -> str:
@@ -147,7 +158,7 @@ def pull_soccer_hot_snapshot() -> Dict[str, Any]:
             "soccer_model": "SOC-B1.1-three-way-audit-v1",
         },
     }
-    snapshots_tbl.put_item(Item=item)
+    snapshots_tbl.put_item(Item=ddb_safe(item))
     audit_result = record_soccer_snapshot_audit(slate_date_et=slate_date, asof=asof, t="HOT", run_type="hot_pull_audited", compact_snapshot=compact_snapshot, raw_by_sport_key=raw_by_sport_key)
     prediction_audit = record_soccer_no_edge_prediction_rows(slate_date_et=slate_date, asof=asof, compact_snapshot=compact_snapshot)
     return {"ok": len(errors) == 0 and audit_result.get("ok", False), "sport": "soccer", "t": "HOT", "count": len(games), "soccer_keys": SOCCER_KEYS, "errors": errors, "audit": audit_result, "prediction_audit": prediction_audit}
