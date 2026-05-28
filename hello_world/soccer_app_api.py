@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 from soccer_signal_api import soccer_match_signals, soccer_parlays
-from universal_market_language import market_language_status
+from universal_market_language import market_language_status, prediction_label_explanation, status_filter_explanation
 
 
 STATUS_PRIORITY = {
@@ -60,7 +60,9 @@ def _format_kickoff(iso_value: Optional[str]) -> Optional[str]:
 def _market_language(item: Dict[str, Any]) -> Dict[str, Any]:
     return item.get("public_market_language") or {
         "public_prediction": "Pass / No Clean Edge",
+        "prediction_label_explanation": prediction_label_explanation("Pass / No Clean Edge"),
         "market_status": "No Clean Edge",
+        "status_filter_explanation": status_filter_explanation("No Clean Edge"),
         "best_use": "Avoid / No Bet",
         "market_intelligence_tags": [],
         "public_explanation": "No clean edge is published yet. The market is being tracked until movement becomes clearer.",
@@ -84,15 +86,19 @@ def _match_card(match: Dict[str, Any]) -> Dict[str, Any]:
         })
     title = match.get("match") or f"{match.get('away_team')} at {match.get('home_team')}"
     status = language.get("market_status")
+    prediction_label = language.get("public_prediction")
     return {
         "card_type": "individual_match",
         "title": title,
         "subtitle": match.get("league"),
         "league": match.get("league"),
         "kickoff": _format_kickoff(match.get("commence_time")),
-        "prediction_label": language.get("public_prediction"),
+        "prediction_label": prediction_label,
+        "prediction_label_explanation": language.get("prediction_label_explanation") or prediction_label_explanation(prediction_label),
         "market_status": status,
         "status_priority": STATUS_PRIORITY.get(status, 99),
+        "status_filter_explanation": language.get("status_filter_explanation") or status_filter_explanation(status),
+        "filter_reason": language.get("status_filter_explanation") or status_filter_explanation(status),
         "best_use": language.get("best_use"),
         "market_intelligence_tags": language.get("market_intelligence_tags", []),
         "why": language.get("public_explanation"),
@@ -106,6 +112,8 @@ def _match_card(match: Dict[str, Any]) -> Dict[str, Any]:
 
 def _parlay_card(combo: Dict[str, Any]) -> Dict[str, Any]:
     language = _market_language(combo)
+    prediction_label = language.get("public_prediction")
+    status = language.get("market_status")
     legs = []
     for leg in combo.get("legs") or []:
         legs.append({
@@ -121,8 +129,11 @@ def _parlay_card(combo: Dict[str, Any]) -> Dict[str, Any]:
         "rank": combo.get("rank"),
         "title": combo.get("combo"),
         "subtitle": "3-match soccer parlay · 27-combo market",
-        "prediction_label": language.get("public_prediction"),
-        "market_status": language.get("market_status"),
+        "prediction_label": prediction_label,
+        "prediction_label_explanation": language.get("prediction_label_explanation") or prediction_label_explanation(prediction_label),
+        "market_status": status,
+        "status_filter_explanation": language.get("status_filter_explanation") or status_filter_explanation(status),
+        "filter_reason": language.get("status_filter_explanation") or status_filter_explanation(status),
         "best_use": language.get("best_use"),
         "market_intelligence_tags": language.get("market_intelligence_tags", []),
         "why": language.get("public_explanation"),
@@ -132,6 +143,22 @@ def _parlay_card(combo: Dict[str, Any]) -> Dict[str, Any]:
         "implied_win_probability_pct": combo.get("implied_win_probability_pct"),
         "legs": legs,
     }
+
+
+def _status_filters(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    counts: Dict[str, int] = {}
+    for card in cards:
+        status = card.get("market_status") or "No Clean Edge"
+        counts[status] = counts.get(status, 0) + 1
+    filters = []
+    for status, priority in sorted(STATUS_PRIORITY.items(), key=lambda item: item[1]):
+        filters.append({
+            "status": status,
+            "count": counts.get(status, 0),
+            "why_this_filter_exists": status_filter_explanation(status),
+            "display_confidence_scores": False,
+        })
+    return filters
 
 
 def soccer_app_cards(limit: int = 40, top_matches: int = 25, top_parlays: int = 3, league: Optional[str] = None) -> Dict[str, Any]:
@@ -153,7 +180,7 @@ def soccer_app_cards(limit: int = 40, top_matches: int = 25, top_parlays: int = 
         "sport": "soccer",
         "view": "customer_app_cards",
         "model": matches_payload.get("model"),
-        "feature_version": "soccer_customer_cards_v1_no_raw_json_no_confidence_scores",
+        "feature_version": "soccer_customer_cards_v2_status_filter_reasons_no_confidence_scores",
         "asof": matches_payload.get("asof"),
         "market_language": market_language_status(),
         "display_confidence_scores": False,
@@ -163,6 +190,7 @@ def soccer_app_cards(limit: int = 40, top_matches: int = 25, top_parlays: int = 
             "league_sections": len(league_sections),
             "parlays": len(parlay_cards),
         },
+        "status_filters": _status_filters(match_cards),
         "top_match_cards": match_cards[:top_matches],
         "league_sections": {key: value[:top_matches] for key, value in sorted(league_sections.items())},
         "top_parlay_cards": parlay_cards,
