@@ -60,6 +60,13 @@ def _parse_json(body: Optional[str]) -> Dict[str, Any]:
         return {}
 
 
+def _event_payload(event: Dict[str, Any]) -> Dict[str, Any]:
+    body = _parse_json(event.get("body"))
+    if body:
+        return body
+    return event if isinstance(event, dict) else {}
+
+
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -198,9 +205,9 @@ def lambda_handler(event, context):
     if (event.get("httpMethod") or "").upper() == "OPTIONS":
         return _resp(200, {"ok": True})
     try:
-        body = _parse_json(event.get("body"))
-        t = body.get("t") or "HOT"
-        run = body.get("run") or "manual_hot_test"
+        payload = _event_payload(event)
+        t = payload.get("t") or "HOT"
+        run = payload.get("run") or "manual_hot_test"
         slate_date = _slate_date_et()
         asof = _now_iso()
         raw = _filter_today_et(_http_get_json(_odds_url()), slate_date)
