@@ -246,6 +246,10 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalLedgerTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PredictionsTable
       Events:
         SoccerHotEvery15Min:
           Type: Schedule
