@@ -12,6 +12,7 @@ from boto3.dynamodb.conditions import Key
 
 from nba_algorithm import rank_nba_b11c1
 from mlb_algorithm import rank_mlb_b10a3
+from mlb_audit import pull_mlb_results, evaluate_mlb_predictions, mlb_training_export
 
 
 dynamodb = boto3.resource("dynamodb")
@@ -20,6 +21,7 @@ SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
 SIGNALS_TABLE = os.environ.get("SIGNALS_TABLE", "")
 SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
 PREDICTIONS_TABLE = os.environ.get("PREDICTIONS_TABLE", "")
+OUTCOMES_TABLE = os.environ.get("OUTCOMES_TABLE", "")
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 
 snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
@@ -104,13 +106,7 @@ def _oddsapi_url(sport: str) -> str:
     sport_key = SPORT_KEYS.get(sport)
     if not sport_key:
         raise ValueError(f"Unsupported sport: {sport}")
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": ODDS_MARKETS,
-        "oddsFormat": "american",
-        "dateFormat": "iso",
-    }
+    params = {"apiKey": ODDS_API_KEY, "regions": "us", "markets": ODDS_MARKETS, "oddsFormat": "american", "dateFormat": "iso"}
     return f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?" + urllib.parse.urlencode(params)
 
 
@@ -392,29 +388,7 @@ def _generate_hot_predictions(sport: str, limit: int, store: bool) -> Dict[str, 
             delta = away_delta
         confidence = min(95, max(50, round(50 + abs(delta) * 1000)))
         prediction_id = f"{sport}#{slate_date}#{game_key}#{latest.get('asof')}".replace(" ", "_")
-        item = {
-            "PK": f"PRED#{sport}#{slate_date}",
-            "SK": f"PRED#{latest.get('asof')}#{game_key}",
-            "prediction_id": prediction_id,
-            "sport": sport,
-            "slate_date_et": slate_date,
-            "created_at": now,
-            "asof": latest.get("asof"),
-            "previous_asof": previous.get("asof"),
-            "game_key": game_key,
-            "game_id": latest_game.get("id"),
-            "home_team": latest_game.get("home_team"),
-            "away_team": latest_game.get("away_team"),
-            "prediction_type": "HOT_TEAM_MOVEMENT",
-            "predicted_team": team,
-            "predicted_side": side,
-            "home_delta": Decimal(str(round(home_delta, 5))),
-            "away_delta": Decimal(str(round(away_delta, 5))),
-            "confidence": Decimal(str(confidence)),
-            "target_success_rate": Decimal("75"),
-            "status": "OPEN",
-            "evaluation": {},
-        }
+        item = {"PK": f"PRED#{sport}#{slate_date}", "SK": f"PRED#{latest.get('asof')}#{game_key}", "prediction_id": prediction_id, "sport": sport, "slate_date_et": slate_date, "created_at": now, "asof": latest.get("asof"), "previous_asof": previous.get("asof"), "game_key": game_key, "game_id": latest_game.get("id"), "home_team": latest_game.get("home_team"), "away_team": latest_game.get("away_team"), "market": "moneyline", "prediction_type": "HOT_TEAM_MOVEMENT", "predicted_team": team, "predicted_side": side, "home_delta": Decimal(str(round(home_delta, 5))), "away_delta": Decimal(str(round(away_delta, 5))), "confidence": Decimal(str(confidence)), "target_success_rate": Decimal("75"), "status": "OPEN", "evaluation": {}}
         predictions.append(item)
         if store and predictions_tbl is not None:
             predictions_tbl.put_item(Item=item)
@@ -431,12 +405,7 @@ def _record_prediction_result(body: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("Provide prediction SK to evaluate")
     success = bool(body.get("success"))
     evaluation = body.get("evaluation") or {}
-    predictions_tbl.update_item(
-        Key={"PK": f"PRED#{sport}#{slate_date}", "SK": sk},
-        UpdateExpression="SET #s=:s, evaluated_at=:e, success=:x, evaluation=:v",
-        ExpressionAttributeNames={"#s": "status"},
-        ExpressionAttributeValues={":s": "CORRECT" if success else "WRONG", ":e": _now_iso(), ":x": success, ":v": evaluation},
-    )
+    predictions_tbl.update_item(Key={"PK": f"PRED#{sport}#{slate_date}", "SK": sk}, UpdateExpression="SET #s=:s, evaluated_at=:e, success=:x, evaluation=:v", ExpressionAttributeNames={"#s": "status"}, ExpressionAttributeValues={":s": "CORRECT" if success else "WRONG", ":e": _now_iso(), ":x": success, ":v": evaluation})
     return {"ok": True, "sport": sport, "slate_date_et": slate_date, "sk": sk, "status": "CORRECT" if success else "WRONG"}
 
 
@@ -531,6 +500,15 @@ def lambda_handler(event, context):
     if method == "GET" and path == "/v1/predictions/accuracy":
         params = event.get("queryStringParameters") or {}
         return _resp(200, _prediction_accuracy((params.get("sport") or "mlb").lower(), params.get("slate_date_et")))
+    if method == "GET" and path == "/v1/audit/mlb/training":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, mlb_training_export(params.get("slate_date_et")))
+    if method == "POST" and path == "/v1/results/pull/mlb":
+        body = _parse_json(event.get("body"))
+        return _resp(200, pull_mlb_results(int(body.get("days_from", 3))))
+    if method == "POST" and path == "/v1/audit/mlb/evaluate":
+        body = _parse_json(event.get("body"))
+        return _resp(200, evaluate_mlb_predictions(body.get("slate_date_et")))
     if method == "POST" and path == "/v1/predictions/result":
         return _resp(200, _record_prediction_result(_parse_json(event.get("body"))))
     if method == "POST" and path in {"/v1/pull/nba", "/v1/pull/ncaam", "/v1/pull/mlb"}:
