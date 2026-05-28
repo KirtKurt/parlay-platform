@@ -3,7 +3,7 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
@@ -20,6 +20,7 @@ snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
 
 SPORT_KEY = "baseball_mlb"
 ODDS_MARKETS = "h2h,spreads,totals"
+DEFAULT_DAYS_AHEAD = 1  # Today + tomorrow, so next-day MLB lines are captured as soon as available.
 
 
 def _ddb_safe(value: Any) -> Any:
@@ -74,6 +75,16 @@ def _now_iso() -> str:
 
 def _slate_date_et() -> str:
     return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+
+
+def _game_date_et(commence_time: Optional[str]) -> Optional[str]:
+    if not commence_time:
+        return None
+    try:
+        dt = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    return dt.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
 
 
 def _http_get_json(url: str, timeout: int = 20) -> Any:
@@ -181,18 +192,19 @@ def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_er
         }
 
 
-def _filter_today_et(games: List[Dict[str, Any]], slate_date: str) -> List[Dict[str, Any]]:
+def _filter_upcoming_et(games: List[Dict[str, Any]], *, start_date: str, days_ahead: int) -> List[Dict[str, Any]]:
+    """Keep games from ET start_date through start_date + days_ahead.
+
+    Permanent MLB behavior: pull today + tomorrow every 15 minutes so next-day lines
+    are captured immediately when books/the feed first publish ML, spread, and total.
+    """
     eastern = ZoneInfo("America/New_York")
+    start = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=eastern)
+    allowed = {(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(max(0, days_ahead) + 1)}
     out = []
     for game in games or []:
-        commence = game.get("commence_time")
-        if not commence:
-            continue
-        try:
-            dt = datetime.fromisoformat(commence.replace("Z", "+00:00"))
-        except Exception:
-            continue
-        if dt.astimezone(eastern).strftime("%Y-%m-%d") == slate_date:
+        game_date = _game_date_et(game.get("commence_time"))
+        if game_date in allowed:
             out.append(game)
     return out
 
@@ -247,14 +259,19 @@ def _total(bookmaker: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result if len(result) == 4 else None
 
 
-def _compact(raw_games: List[Dict[str, Any]], slate_date: str) -> Dict[str, Any]:
+def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
     games_out = []
     books_seen = set()
+    game_dates_seen = set()
     for raw_game in raw_games or []:
         home = raw_game.get("home_team")
         away = raw_game.get("away_team")
         if not home or not away:
             continue
+        game_date = _game_date_et(raw_game.get("commence_time"))
+        if not game_date:
+            continue
+        game_dates_seen.add(game_date)
         books: Dict[str, Any] = {}
         for bookmaker in raw_game.get("bookmakers", []) or []:
             book_key = (bookmaker.get("key") or "").lower().strip()
@@ -273,18 +290,25 @@ def _compact(raw_games: List[Dict[str, Any]], slate_date: str) -> Dict[str, Any]
             if payload:
                 books[book_key] = payload
                 books_seen.add(book_key)
-        game_key = f"mlb|{slate_date}|{away.lower()}|{home.lower()}"
+        game_key = f"mlb|{game_date}|{away.lower()}|{home.lower()}"
         games_out.append({
             "id": raw_game.get("id") or game_key,
             "game_key": game_key,
             "internal_key": game_key,
+            "game_date_et": game_date,
             "commence_time": raw_game.get("commence_time"),
             "home_team": home,
             "away_team": away,
             "books": books,
             "markets_stored": ["ml", "spread", "total"],
         })
-    return {"games": games_out, "count": len(games_out), "available_book_keys": sorted(books_seen), "markets": ["ml", "spread", "total"]}
+    return {
+        "games": games_out,
+        "count": len(games_out),
+        "game_dates_et": sorted(game_dates_seen),
+        "available_book_keys": sorted(books_seen),
+        "markets": ["ml", "spread", "total"],
+    }
 
 
 def lambda_handler(event, context):
@@ -294,14 +318,16 @@ def lambda_handler(event, context):
     try:
         payload = _event_payload(event)
         t = payload.get("t") or "HOT"
-        run = payload.get("run") or "manual_hot_test"
+        run = payload.get("run") or "rolling_open_hot_pull"
+        days_ahead = int(payload.get("days_ahead", DEFAULT_DAYS_AHEAD))
         slate_date = _slate_date_et()
         asof = _now_iso()
-        raw = _filter_today_et(_http_get_json(_odds_url()), slate_date)
-        compact = _compact(raw, slate_date)
+        raw = _filter_upcoming_et(_http_get_json(_odds_url()), start_date=slate_date, days_ahead=days_ahead)
+        compact = _compact(raw)
         if snapshots_tbl is None:
             raise RuntimeError("SNAPSHOTS_TABLE not configured")
-        slate_id = f"MLB_{slate_date}_{run}"
+        date_scope = "_".join(compact.get("game_dates_et") or [slate_date])
+        slate_id = f"MLB_ROLLING_{date_scope}_{run}"
         item = {
             "PK": "SPORT#mlb",
             "SK": f"{t}#DATE#{slate_date}#ASOF#{asof}#SLATE#{slate_id}",
@@ -309,10 +335,20 @@ def lambda_handler(event, context):
             "t": t,
             "slate_id": slate_id,
             "slate_date_et": slate_date,
+            "game_dates_et": compact.get("game_dates_et") or [],
+            "rolling_open_pull": True,
+            "days_ahead": days_ahead,
             "asof": asof,
             "created_at": asof,
             "data": compact,
-            "meta": {"source": "theOddsAPI", "run_type": run, "pulled_at": asof, "markets": ["h2h", "spreads", "totals"]},
+            "meta": {
+                "source": "theOddsAPI",
+                "run_type": run,
+                "pulled_at": asof,
+                "markets": ["h2h", "spreads", "totals"],
+                "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min",
+                "purpose": "Capture early MLB movement immediately when next-day lines become available.",
+            },
         }
         item = _ddb_safe(item)
         snapshots_tbl.put_item(Item=item)
@@ -324,7 +360,11 @@ def lambda_handler(event, context):
             "live_pull_ok": True,
             "fallback_used": False,
             "t": t,
+            "run": run,
+            "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min",
             "slate_date_et": slate_date,
+            "game_dates_et": compact.get("game_dates_et") or [],
+            "days_ahead": days_ahead,
             "asof": asof,
             "count": compact["count"],
             "stored": {"pk": item["PK"], "sk": item["SK"]},
