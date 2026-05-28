@@ -152,6 +152,7 @@ def _delta_for_game(prev: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, A
         reason_codes.append("spread_supports_hot_side")
     elif spread_signal.get("direction") == "disagrees_with_hot_side":
         reason_codes.append("spread_disagreement")
+
     if abs(delta) >= PUBLISH_DELTA_THRESHOLD and len(reason_codes) >= 2:
         prediction_status = "PUBLISHED_MODERATE"
         confidence = "moderate"
@@ -168,6 +169,16 @@ def _delta_for_game(prev: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, A
         prediction = f"{hot_team} favorite pressure"
     else:
         prediction = f"{hot_team} pressure/watchlist"
+
+    public = _public_language(
+        prediction_status=prediction_status,
+        hot_team=hot_team,
+        prediction=prediction,
+        reason_codes=reason_codes,
+        book_agreement=book_agreement,
+        spread_signal=spread_signal,
+        total_signal=total_signal,
+    )
 
     return {
         "ok": True,
@@ -189,11 +200,70 @@ def _delta_for_game(prev: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, A
         "prediction_status": prediction_status,
         "confidence": confidence,
         "reason_codes": reason_codes,
+        "public_market_language": public,
+        "public_prediction": public["prediction_label"],
+        "market_status": public["market_status"],
+        "best_use": public["best_use"],
+        "why": public["why"],
+        "display_confidence_scores": False,
         "book_agreement": book_agreement,
         "spread_signal": spread_signal,
         "total_signal": total_signal,
         "latest_consensus": {"home": round(latest_cp["home"], 6), "away": round(latest_cp["away"], 6), "books": latest_cp["books"]},
         "previous_consensus": {"home": round(prev_cp["home"], 6), "away": round(prev_cp["away"], 6), "books": prev_cp["books"]},
+    }
+
+
+def _public_language(
+    prediction_status: str,
+    hot_team: Optional[str],
+    prediction: str,
+    reason_codes: List[str],
+    book_agreement: Dict[str, Any],
+    spread_signal: Dict[str, Any],
+    total_signal: Dict[str, Any],
+) -> Dict[str, Any]:
+    tags = []
+    if "multi_book_move" in reason_codes:
+        tags.append("Cross-Book Confirmation")
+    if "dog_tightening" in reason_codes:
+        tags.append("Dog Tightening")
+    if "favorite_not_separating" in reason_codes:
+        tags.append("Favorite Not Separating")
+    if "spread_supports_hot_side" in reason_codes:
+        tags.append("Spread Support")
+    if "spread_disagreement" in reason_codes:
+        tags.append("Spread Disagreement")
+    if total_signal.get("direction") in {"total_rising", "total_falling"}:
+        tags.append("Total Movement")
+
+    if prediction_status.startswith("PUBLISHED"):
+        label = prediction
+        status = "Published Edge"
+        best_use = "Playable / Parlay Candidate"
+        why = f"{hot_team} has enough market movement and confirmation to publish as an edge."
+    elif prediction_status == "WATCHLIST":
+        label = f"{hot_team} Watchlist"
+        status = "Watchlist"
+        best_use = "Track / Wait for Confirmation"
+        why = f"{hot_team} is showing movement, but it has not met the full publish gate yet."
+    else:
+        label = "Pass / No Clean Edge"
+        status = "No Clean Edge"
+        best_use = "Avoid / No Bet"
+        why = "No clean edge is published yet. The market is being tracked until movement becomes clearer."
+
+    return {
+        "language_version": "universal_market_language_v1",
+        "prediction_label": label,
+        "market_status": status,
+        "best_use": best_use,
+        "market_intelligence_tags": tags,
+        "why": why,
+        "books_agreeing": book_agreement.get("agreeing_books", 0),
+        "books_disagreeing": book_agreement.get("disagreeing_books", 0),
+        "spread_direction": spread_signal.get("direction"),
+        "total_direction": total_signal.get("direction"),
     }
 
 
@@ -230,7 +300,6 @@ def _spread_signal(prev: Dict[str, Any], latest: Dict[str, Any], hot_side: str) 
     if prev_point is None or latest_point is None:
         return {"direction": "missing", "delta": None}
     delta = latest_point - prev_point
-    # For favorites, moving more negative is support. For dogs, moving less positive is support.
     if abs(delta) < 0.01:
         direction = "flat"
     elif delta < 0:
@@ -288,49 +357,76 @@ def movement_deltas(limit: int = 40) -> Dict[str, Any]:
     return {"ok": True, "sport": "mlb", "previous_asof": prev_snap.get("asof"), "latest_asof": latest_snap.get("asof"), "count": len(deltas), "deltas": deltas}
 
 
-def hot_sides(limit: int = 40, store: bool = False) -> Dict[str, Any]:
+def hot_sides(limit: int = 40, store: bool = False, include_no_edge: bool = True) -> Dict[str, Any]:
     data = movement_deltas(limit=limit)
     rows = []
+    actionable_rows = []
     now = _now_iso()
     slate_date = _slate_date_et()
+    status_counts: Dict[str, int] = {}
+
     for row in data.get("deltas", []):
-        if row.get("prediction_status") == "NO_EDGE":
+        status = row.get("prediction_status") or "UNKNOWN"
+        status_counts[status] = status_counts.get(status, 0) + 1
+        is_actionable = status != "NO_EDGE"
+        if not include_no_edge and not is_actionable:
             continue
-        item = {
-            "PK": f"PRED#mlb#{slate_date}",
-            "SK": f"HOT_SIDE#{row.get('latest_asof')}#{row.get('game_key')}",
-            "sport": "mlb",
-            "slate_date_et": slate_date,
-            "created_at": now,
-            "asof": row.get("latest_asof"),
-            "previous_asof": row.get("previous_asof"),
-            "game_key": row.get("game_key"),
-            "game_id": row.get("game_id"),
-            "home_team": row.get("home_team"),
-            "away_team": row.get("away_team"),
-            "market": "moneyline",
-            "prediction_type": "HOT_SIDE_MOVEMENT",
-            "prediction_status": row.get("prediction_status"),
-            "status": "OPEN",
-            "predicted_team": row.get("hot_team") if row.get("prediction_status", "").startswith("PUBLISHED") else None,
-            "hot_team": row.get("hot_team"),
-            "hot_side": row.get("hot_side"),
-            "confidence_label": row.get("confidence"),
-            "confidence": Decimal(str(_confidence_score(row))),
-            "target_success_rate": TARGET_SUCCESS_RATE,
-            "reason_codes": row.get("reason_codes", []),
-            "explanation": row.get("prediction"),
-            "movement": {
-                "home_delta": Decimal(str(row.get("home_delta"))),
-                "away_delta": Decimal(str(row.get("away_delta"))),
-                "hot_delta": Decimal(str(row.get("hot_delta"))),
-            },
-            "evaluation": {},
-        }
-        rows.append({**row, "stored_prediction_key": item["SK"] if store else None})
-        if store and predictions_tbl is not None:
-            predictions_tbl.put_item(Item=item)
-    return {"ok": True, "sport": "mlb", "stored": store, "count": len(rows), "target_success_rate": 75, "hot_sides": rows}
+
+        item = None
+        if is_actionable:
+            item = {
+                "PK": f"PRED#mlb#{slate_date}",
+                "SK": f"HOT_SIDE#{row.get('latest_asof')}#{row.get('game_key')}",
+                "sport": "mlb",
+                "slate_date_et": slate_date,
+                "created_at": now,
+                "asof": row.get("latest_asof"),
+                "previous_asof": row.get("previous_asof"),
+                "game_key": row.get("game_key"),
+                "game_id": row.get("game_id"),
+                "home_team": row.get("home_team"),
+                "away_team": row.get("away_team"),
+                "market": "moneyline",
+                "prediction_type": "HOT_SIDE_MOVEMENT",
+                "prediction_status": status,
+                "status": "OPEN",
+                "predicted_team": row.get("hot_team") if status.startswith("PUBLISHED") else None,
+                "hot_team": row.get("hot_team"),
+                "hot_side": row.get("hot_side"),
+                "confidence_label": row.get("confidence"),
+                "confidence": Decimal(str(_confidence_score(row))),
+                "target_success_rate": TARGET_SUCCESS_RATE,
+                "reason_codes": row.get("reason_codes", []),
+                "explanation": row.get("prediction"),
+                "public_market_language": row.get("public_market_language", {}),
+                "movement": {
+                    "home_delta": Decimal(str(row.get("home_delta"))),
+                    "away_delta": Decimal(str(row.get("away_delta"))),
+                    "hot_delta": Decimal(str(row.get("hot_delta"))),
+                },
+                "evaluation": {},
+            }
+            actionable_rows.append(row)
+            if store and predictions_tbl is not None:
+                predictions_tbl.put_item(Item=item)
+
+        rows.append({**row, "stored_prediction_key": item["SK"] if item and store else None})
+
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "stored": store,
+        "count": len(rows),
+        "movement_count": data.get("count", 0),
+        "actionable_count": len(actionable_rows),
+        "status_counts": status_counts,
+        "target_success_rate": 75,
+        "display_confidence_scores": False,
+        "message": "No clean edge is published yet; returning tracked market cards." if not actionable_rows else "Actionable market cards found.",
+        "previous_asof": data.get("previous_asof"),
+        "latest_asof": data.get("latest_asof"),
+        "hot_sides": rows,
+    }
 
 
 def _confidence_score(row: Dict[str, Any]) -> int:
@@ -430,7 +526,8 @@ def lambda_handler(event, context):
         if method == "GET" and path == "/v1/signals/mlb/deltas":
             return _resp(200, movement_deltas(min(int(params.get("limit") or 40), 200)))
         if method == "GET" and path == "/v1/predictions/mlb/hot-sides":
-            return _resp(200, hot_sides(min(int(params.get("limit") or 40), 200), params.get("store", "false").lower() == "true"))
+            include_no_edge = params.get("include_no_edge", "true").lower() != "false"
+            return _resp(200, hot_sides(min(int(params.get("limit") or 40), 200), params.get("store", "false").lower() == "true", include_no_edge))
         if method == "GET" and path == "/v1/results/mlb/status":
             return _resp(200, results_status(params.get("slate_date_et")))
         if method == "GET" and path == "/v1/sources/mlb/status":
