@@ -3,15 +3,18 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from soccer_league_segments import LEAGUE_PROFILE_VERSION, get_soccer_league_profile
+from soccer_league_segments import LEAGUE_PROFILE_VERSION, SOCCER_LEAGUE_SEGMENTS, get_soccer_league_profile
 
 
 dynamodb = boto3.resource("dynamodb")
@@ -24,7 +27,7 @@ signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE e
 predictions_tbl = dynamodb.Table(PREDICTIONS_TABLE) if PREDICTIONS_TABLE else None
 outcomes_tbl = dynamodb.Table(OUTCOMES_TABLE) if OUTCOMES_TABLE else None
 
-FEATURE_VERSION = "soccer_full_capture_1_to_14_v1"
+FEATURE_VERSION = "soccer_full_capture_1_to_14_v2_result_audit"
 MODEL_VERSION = "SOC-B1.1-three-way-audit-v1"
 
 
@@ -50,7 +53,7 @@ def _parse_dt(value: Optional[str]) -> Optional[datetime]:
     if not value:
         return None
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except Exception:
         return None
 
@@ -105,7 +108,6 @@ def soccer_three_way_probs(game: Dict[str, Any]) -> Dict[str, Any]:
     home_team = game.get("home_team")
     away_team = game.get("away_team")
     book_probs: Dict[str, Dict[str, float]] = {}
-
     for book_key, markets in (game.get("books") or {}).items():
         h2h = markets.get("h2h") or markets.get("ml") or []
         raw: Dict[str, float] = {}
@@ -121,24 +123,18 @@ def soccer_three_way_probs(game: Dict[str, Any]) -> Dict[str, Any]:
         total = sum(raw.values())
         if total > 0 and {"home", "draw", "away"}.issubset(raw.keys()):
             book_probs[book_key] = {side: raw[side] / total for side in ["home", "draw", "away"]}
-
     if not book_probs:
         return {"home": None, "draw": None, "away": None, "books": [], "leader": None, "leader_gap": None}
-
-    consensus = {}
-    for side in ["home", "draw", "away"]:
-        consensus[side] = sum(book[side] for book in book_probs.values()) / len(book_probs)
+    consensus = {side: sum(book[side] for book in book_probs.values()) / len(book_probs) for side in ["home", "draw", "away"]}
     ordered = sorted(consensus.items(), key=lambda kv: kv[1], reverse=True)
-    leader = ordered[0][0]
-    gap = ordered[0][1] - ordered[1][1]
     return {
         "home": round(consensus["home"], 6),
         "draw": round(consensus["draw"], 6),
         "away": round(consensus["away"], 6),
         "books": sorted(book_probs.keys()),
         "book_count": len(book_probs),
-        "leader": leader,
-        "leader_gap": round(gap, 6),
+        "leader": ordered[0][0],
+        "leader_gap": round(ordered[0][1] - ordered[1][1], 6),
         "book_probs": {book: {k: round(v, 6) for k, v in vals.items()} for book, vals in book_probs.items()},
     }
 
@@ -167,8 +163,7 @@ def _market_availability(game: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _league_profile(game: Dict[str, Any]) -> Dict[str, Any]:
-    profile = game.get("league_profile") or get_soccer_league_profile(game.get("sport_key") or "")
-    return profile
+    return game.get("league_profile") or get_soccer_league_profile(game.get("sport_key") or "")
 
 
 def source_registry() -> Dict[str, Any]:
@@ -177,7 +172,7 @@ def source_registry() -> Dict[str, Any]:
         "2_every_book": {"status": "CONNECTED", "source": "all returned bookmakers"},
         "3_opening_every_move_closing": {"status": "PARTIAL_CONNECTED", "source": "snapshot timeline"},
         "4_timestamp_quality": {"status": "CONNECTED", "source": "asof + minutes_until_start + time_bucket"},
-        "5_result_labels": {"status": "CONNECTED_PENDING_PULL", "source": "theOddsAPI soccer scores endpoint"},
+        "5_result_labels": {"status": "CONNECTED", "source": "manual result payload or theOddsAPI soccer scores endpoint"},
         "6_market_shape_signals": {"status": "SCHEMA_INSTALLED", "source": "computed from 3-way snapshot deltas"},
         "7_cross_market_confirmation": {"status": "SCHEMA_INSTALLED", "source": "h2h/spread/total availability and movement"},
         "8_pitching_data": {"status": "NOT_APPLICABLE", "source": None},
@@ -185,7 +180,7 @@ def source_registry() -> Dict[str, Any]:
         "10_injuries_lineups_news": {"status": "NOT_CONNECTED_YET", "source": None},
         "11_public_betting_handle": {"status": "NOT_CONNECTED_YET", "source": None},
         "12_game_context": {"status": "LEAGUE_SEGMENTED_SCHEMA_INSTALLED", "source": "league_segment + sport_key + match context fields"},
-        "13_prediction_logs_no_edge": {"status": "CONNECTED", "source": "soccer prediction skeleton rows"},
+        "13_prediction_logs_no_edge": {"status": "CONNECTED", "source": "soccer prediction and result audit rows"},
         "14_model_versioning": {"status": "CONNECTED", "source": "model_version + feature_version + league_profile_version"},
     }
 
@@ -346,12 +341,240 @@ def record_soccer_no_edge_prediction_rows(*, slate_date_et: str, asof: str, comp
     return {"ok": True, "stored": stored, "feature_version": FEATURE_VERSION, "league_profile_version": LEAGUE_PROFILE_VERSION}
 
 
+def _safe_int(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except Exception:
+        try:
+            return int(float(value))
+        except Exception:
+            return None
+
+
+def _score_for_team(result: Dict[str, Any], team: Optional[str]) -> Optional[int]:
+    if not team:
+        return None
+    scores = result.get("scores") or []
+    if isinstance(scores, list):
+        for row in scores:
+            if row.get("name") == team:
+                return _safe_int(row.get("score"))
+    # Manual payload fallback names.
+    if team == result.get("home_team"):
+        return _safe_int(result.get("home_score"))
+    if team == result.get("away_team"):
+        return _safe_int(result.get("away_score"))
+    return None
+
+
+def _derive_game_key(result: Dict[str, Any]) -> str:
+    return result.get("game_key") or f"soccer|{result.get('sport_key')}|{result.get('away_team')}|{result.get('home_team')}|{result.get('commence_time')}"
+
+
+def _normalize_result(result: Dict[str, Any], slate_date_et: str, source: str) -> Optional[Dict[str, Any]]:
+    home_team = result.get("home_team")
+    away_team = result.get("away_team")
+    home_score = _score_for_team(result, home_team)
+    away_score = _score_for_team(result, away_team)
+    completed = bool(result.get("completed") or result.get("status") in {"FINAL", "COMPLETED"})
+    if home_score is None or away_score is None:
+        return None
+    if home_score > away_score:
+        actual_outcome = "home"
+        actual_selection = home_team
+    elif away_score > home_score:
+        actual_outcome = "away"
+        actual_selection = away_team
+    else:
+        actual_outcome = "draw"
+        actual_selection = "Draw"
+    game_key = _derive_game_key(result)
+    profile = get_soccer_league_profile(result.get("sport_key") or "")
+    return ddb_safe({
+        "PK": f"OUTCOME#soccer#{slate_date_et}",
+        "SK": f"GAME#{game_key}",
+        "entity_type": "SOCCER_FINAL_OUTCOME",
+        "sport": "soccer",
+        "sport_key": result.get("sport_key"),
+        "league_segment": profile.get("league_segment"),
+        "league_name": profile.get("league_name"),
+        "league_profile_version": LEAGUE_PROFILE_VERSION,
+        "slate_date_et": slate_date_et,
+        "created_at": _now_iso(),
+        "source": source,
+        "source_result_id": result.get("id"),
+        "game_id": result.get("id"),
+        "game_key": game_key,
+        "home_team": home_team,
+        "away_team": away_team,
+        "commence_time": result.get("commence_time"),
+        "completed": completed,
+        "home_score": home_score,
+        "away_score": away_score,
+        "actual_outcome": actual_outcome,
+        "actual_selection": actual_selection,
+        "draw": actual_outcome == "draw",
+        "raw_result_hash": _payload_hash(result),
+    })
+
+
+def _fetch_scores_for_league(sport_key: str, days_from: int = 3) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    if not ODDS_API_KEY:
+        return [], "ODDS_API_KEY not configured"
+    query = urllib.parse.urlencode({"apiKey": ODDS_API_KEY, "daysFrom": max(1, min(int(days_from), 3))})
+    url = f"https://api.the-odds-api.com/v4/sports/{urllib.parse.quote(sport_key)}/scores/?{query}"
+    try:
+        with urllib.request.urlopen(url, timeout=12) as response:
+            return json.loads(response.read().decode("utf-8")), None
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = exc.read().decode("utf-8")
+        except Exception:
+            detail = str(exc)
+        return [], f"{sport_key}: HTTP {exc.code}: {detail}"
+    except Exception as exc:
+        return [], f"{sport_key}: {exc}"
+
+
+def _collect_score_results(*, manual_results: Optional[List[Dict[str, Any]]] = None, fetch_live: bool = False, days_from: int = 3) -> Dict[str, Any]:
+    source = "manual_payload" if manual_results is not None else "the_odds_api_scores"
+    raw_results: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    if manual_results is not None:
+        raw_results = manual_results
+    elif fetch_live:
+        for sport_key in SOCCER_LEAGUE_SEGMENTS.keys():
+            results, error = _fetch_scores_for_league(sport_key, days_from=days_from)
+            raw_results.extend(results or [])
+            if error:
+                errors.append(error)
+    return {"source": source, "raw_results": raw_results, "errors": errors}
+
+
+def _query_predictions(slate_date_et: str) -> List[Dict[str, Any]]:
+    if predictions_tbl is None:
+        return []
+    items: List[Dict[str, Any]] = []
+    kwargs: Dict[str, Any] = {"KeyConditionExpression": Key("PK").eq(f"PRED#soccer#{slate_date_et}")}
+    while True:
+        resp = predictions_tbl.query(**kwargs)
+        items.extend(resp.get("Items", []))
+        if not resp.get("LastEvaluatedKey"):
+            break
+        kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+    return items
+
+
+def _query_outcomes(slate_date_et: str) -> List[Dict[str, Any]]:
+    if outcomes_tbl is None:
+        return []
+    items: List[Dict[str, Any]] = []
+    kwargs: Dict[str, Any] = {"KeyConditionExpression": Key("PK").eq(f"OUTCOME#soccer#{slate_date_et}")}
+    while True:
+        resp = outcomes_tbl.query(**kwargs)
+        items.extend(resp.get("Items", []))
+        if not resp.get("LastEvaluatedKey"):
+            break
+        kwargs["ExclusiveStartKey"] = resp["LastEvaluatedKey"]
+    return items
+
+
+def _grade_predictions(slate_date_et: str, outcomes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if predictions_tbl is None:
+        return {"ok": False, "graded": 0, "error": "PREDICTIONS_TABLE not configured"}
+    outcome_by_game_key = {o.get("game_key"): o for o in outcomes if o.get("game_key")}
+    predictions = _query_predictions(slate_date_et)
+    graded = correct = wrong = no_pick = pending = 0
+    graded_items: List[Dict[str, Any]] = []
+    for pred in predictions:
+        game_key = pred.get("game_key")
+        outcome = outcome_by_game_key.get(game_key)
+        predicted = pred.get("attempted_outcome") or pred.get("predicted_outcome")
+        if not outcome:
+            pending += 1
+            continue
+        if not predicted:
+            no_pick += 1
+            result_status = "NO_PICK"
+            success = None
+        else:
+            graded += 1
+            success = predicted == outcome.get("actual_outcome")
+            result_status = "CORRECT" if success else "WRONG"
+            correct += 1 if success else 0
+            wrong += 0 if success else 1
+        predictions_tbl.update_item(
+            Key={"PK": pred["PK"], "SK": pred["SK"]},
+            UpdateExpression="SET outcome_status=:os, #status=:st, success=:success, actual_outcome=:ao, actual_selection=:asel, actual_home_score=:hs, actual_away_score=:as, graded_at=:ga, result_audit_version=:rav",
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues=ddb_safe({
+                ":os": "GRADED" if result_status in {"CORRECT", "WRONG", "NO_PICK"} else "PENDING",
+                ":st": result_status,
+                ":success": success,
+                ":ao": outcome.get("actual_outcome"),
+                ":asel": outcome.get("actual_selection"),
+                ":hs": outcome.get("home_score"),
+                ":as": outcome.get("away_score"),
+                ":ga": _now_iso(),
+                ":rav": FEATURE_VERSION,
+            }),
+        )
+        graded_items.append({
+            "game_key": game_key,
+            "match": f"{pred.get('away_team')} at {pred.get('home_team')}",
+            "predicted_outcome": predicted,
+            "predicted_selection": pred.get("attempted_selection") or pred.get("hot_label"),
+            "actual_outcome": outcome.get("actual_outcome"),
+            "actual_selection": outcome.get("actual_selection"),
+            "home_score": outcome.get("home_score"),
+            "away_score": outcome.get("away_score"),
+            "status": result_status,
+        })
+    accuracy = round(correct / graded * 100, 2) if graded else None
+    return {"ok": True, "prediction_rows": len(predictions), "graded": graded, "correct": correct, "wrong": wrong, "no_pick": no_pick, "pending": pending, "accuracy_pct": accuracy, "graded_items": graded_items}
+
+
+def soccer_results_audit(*, slate_date: Optional[str] = None, manual_results: Optional[List[Dict[str, Any]]] = None, fetch_live: bool = False, days_from: int = 3) -> Dict[str, Any]:
+    if outcomes_tbl is None:
+        raise RuntimeError("OUTCOMES_TABLE not configured")
+    slate_date = slate_date or _slate_date_et()
+    collected = _collect_score_results(manual_results=manual_results, fetch_live=fetch_live, days_from=days_from)
+    stored = 0
+    skipped = 0
+    for result in collected["raw_results"]:
+        normalized = _normalize_result(result, slate_date, collected["source"])
+        if not normalized:
+            skipped += 1
+            continue
+        outcomes_tbl.put_item(Item=normalized)
+        stored += 1
+    outcomes = _query_outcomes(slate_date)
+    grade_result = _grade_predictions(slate_date, outcomes)
+    return {
+        "ok": True,
+        "sport": "soccer",
+        "slate_date_et": slate_date,
+        "result_audit_version": FEATURE_VERSION,
+        "source": collected["source"],
+        "fetch_live_requested": fetch_live,
+        "raw_results_seen": len(collected["raw_results"]),
+        "outcomes_stored_now": stored,
+        "outcomes_skipped_unusable": skipped,
+        "outcomes_available": len(outcomes),
+        "score_pull_errors": collected["errors"],
+        "grading": grade_result,
+        "next_step": "If outcomes_available is 0, run again after matches complete or POST manual results payload.",
+    }
+
+
 def soccer_results_status(slate_date: Optional[str] = None) -> Dict[str, Any]:
     if outcomes_tbl is None:
         raise RuntimeError("OUTCOMES_TABLE not configured")
     slate_date = slate_date or _slate_date_et()
-    outcomes = outcomes_tbl.query(KeyConditionExpression=Key("PK").eq(f"OUTCOME#soccer#{slate_date}")).get("Items", [])
-    predictions = predictions_tbl.query(KeyConditionExpression=Key("PK").eq(f"PRED#soccer#{slate_date}")).get("Items", []) if predictions_tbl is not None else []
+    outcomes = _query_outcomes(slate_date)
+    predictions = _query_predictions(slate_date)
     graded = [p for p in predictions if p.get("status") in {"CORRECT", "WRONG"}]
     correct = [p for p in graded if p.get("status") == "CORRECT"]
     accuracy = round(len(correct) / len(graded) * 100, 2) if graded else None
@@ -383,6 +606,7 @@ def soccer_source_status() -> Dict[str, Any]:
             "soccer_movement_delta_endpoint": "CONNECTED",
             "soccer_hot_side_prediction_endpoint": "CONNECTED",
             "soccer_result_evaluation_endpoint": "CONNECTED_LEAGUE_SEGMENTED",
+            "soccer_results_audit_grading_endpoint": "CONNECTED",
             "soccer_source_status_endpoint": "CONNECTED",
             "soccer_specific_algorithm_silo": "CONNECTED",
             "soccer_league_segmentation": "CONNECTED",
@@ -392,7 +616,7 @@ def soccer_source_status() -> Dict[str, Any]:
             "all_returned_books": "CONNECTED",
             "timestamps": "CONNECTED",
             "audit_ledger_schema": "CONNECTED_LEAGUE_SEGMENTED",
-            "results_scores": "CONNECTED_PENDING_COMPLETED_MATCHES",
+            "results_scores": "CONNECTED_MANUAL_AND_LIVE_PULL_READY",
             "weather": "NOT_CONNECTED_YET",
             "injuries_lineups_news": "NOT_CONNECTED_YET",
             "public_betting_handle": "NOT_CONNECTED_YET",
