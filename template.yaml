@@ -251,6 +251,11 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref PredictionsTable
       Events:
+        SoccerManualPull:
+          Type: Api
+          Properties:
+            Path: /v1/pull/soccer
+            Method: POST
         SoccerHotEvery15Min:
           Type: Schedule
           Properties:
