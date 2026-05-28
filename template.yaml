@@ -188,46 +188,6 @@ Resources:
           Properties:
             Schedule: cron(0 20 * * ? *)
             Input: '{"sport":"mlb","t":"T4","run":"freeze_pull"}'
-        NCAAMT1:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 7 * * ? *)
-            Input: '{"sport":"ncaam","t":"T1","run":"base_pull"}'
-        NCAAMT2:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 15 * * ? *)
-            Input: '{"sport":"ncaam","t":"T2","run":"mid_pull"}'
-        NCAAMT3:
-          Type: Schedule
-          Properties:
-            Schedule: cron(45 15 * * ? *)
-            Input: '{"sport":"ncaam","t":"T3","run":"late_pull"}'
-        NCAAMT4:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 16 * * ? *)
-            Input: '{"sport":"ncaam","t":"T4","run":"freeze_pull"}'
-        NBAT1:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 7 * * ? *)
-            Input: '{"sport":"nba","t":"T1","run":"base_pull"}'
-        NBAT2:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 13 * * ? *)
-            Input: '{"sport":"nba","t":"T2","run":"mid_pull"}'
-        NBAT3:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 18 * * ? *)
-            Input: '{"sport":"nba","t":"T3","run":"late_pull"}'
-        NBAT4:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 20 * * ? *)
-            Input: '{"sport":"nba","t":"T4","run":"freeze_pull"}'
 
   SoccerSchedulerFunction:
     Type: AWS::Serverless::Function
