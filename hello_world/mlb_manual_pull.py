@@ -1,5 +1,6 @@
 import json
 import os
+import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
@@ -92,6 +93,92 @@ def _odds_url() -> str:
         "dateFormat": "iso",
     }
     return f"https://api.the-odds-api.com/v4/sports/{SPORT_KEY}/odds/?" + urllib.parse.urlencode(params)
+
+
+def _oddsapi_auth_diagnostic(exc: Exception) -> Optional[Dict[str, Any]]:
+    """Return a non-secret diagnostic when The Odds API blocks the live pull."""
+    if isinstance(exc, urllib.error.HTTPError):
+        try:
+            upstream_body = exc.read().decode("utf-8")[:300]
+        except Exception:
+            upstream_body = ""
+        return {
+            "source": "theOddsAPI",
+            "http_status": exc.code,
+            "reason": exc.reason,
+            "message": "Live MLB odds pull was rejected by the upstream odds feed.",
+            "odds_api_key_present": bool(ODDS_API_KEY),
+            "odds_api_key_length": len(ODDS_API_KEY or ""),
+            "secret_exposed": False,
+            "upstream_body_sample": upstream_body,
+        }
+    if str(exc) == "ODDS_API_KEY missing":
+        return {
+            "source": "theOddsAPI",
+            "http_status": None,
+            "reason": "missing_key",
+            "message": "ODDS_API_KEY is not configured on the deployed Lambda.",
+            "odds_api_key_present": False,
+            "odds_api_key_length": 0,
+            "secret_exposed": False,
+        }
+    return None
+
+
+def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_error: Exception) -> Optional[Dict[str, Any]]:
+    """
+    For pre-start display runs, keep the product usable when the external feed rejects
+    the refresh by explicitly returning the latest stored MLB snapshot analysis.
+
+    This is not silent fallback: live_pull_ok=false and the upstream diagnostic are
+    included in the response body. If cached analysis cannot be built, the caller gets
+    the original failure.
+    """
+    run = str(payload.get("run") or "")
+    if "pre_start" not in run and "final" not in run:
+        return None
+
+    diagnostic = _oddsapi_auth_diagnostic(live_pull_error)
+    if not diagnostic:
+        return None
+
+    try:
+        from mlb_signal_api import hot_sides
+
+        cached = hot_sides(limit=80, store=True, include_no_edge=True)
+        return {
+            **cached,
+            "ok": True,
+            "sport": "mlb",
+            "live_pull_ok": False,
+            "fallback_used": True,
+            "fallback_type": "latest_stored_snapshots_after_live_pull_auth_failure",
+            "source_status": {
+                "live_odds_feed": "AUTH_FAILED",
+                "cached_snapshot_analysis": "USED",
+                "predictions_storage": cached.get("storage_status"),
+            },
+            "upstream_error": diagnostic,
+            "message": (
+                "Live MLB odds refresh failed because the upstream odds feed rejected authorization. "
+                "Returned latest stored MLB game-winner attempts and 3-leg parlay so the front end still has a transparent pre-start card. "
+                "Fix ODDS_API_KEY in AWS/GitHub secrets to restore fresh live pulls."
+            ),
+        }
+    except Exception as fallback_exc:
+        return {
+            "ok": False,
+            "sport": "mlb",
+            "live_pull_ok": False,
+            "fallback_used": False,
+            "source_status": {
+                "live_odds_feed": "AUTH_FAILED",
+                "cached_snapshot_analysis": "FAILED",
+            },
+            "upstream_error": diagnostic,
+            "fallback_error": str(fallback_exc),
+            "message": "Live pull failed and cached pre-start analysis could not be generated.",
+        }
 
 
 def _filter_today_et(games: List[Dict[str, Any]], slate_date: str) -> List[Dict[str, Any]]:
@@ -234,6 +321,8 @@ def lambda_handler(event, context):
         return _resp(200, {
             "ok": True,
             "sport": "mlb",
+            "live_pull_ok": True,
+            "fallback_used": False,
             "t": t,
             "slate_date_et": slate_date,
             "asof": asof,
@@ -245,4 +334,15 @@ def lambda_handler(event, context):
             "prediction_audit": prediction_audit_result,
         })
     except Exception as exc:
-        return _resp(500, {"ok": False, "sport": "mlb", "error": str(exc)})
+        payload = _event_payload(event)
+        fallback = _transparent_cached_pre_start_response(payload, exc)
+        if fallback is not None:
+            return _resp(200 if fallback.get("ok") else 500, fallback)
+        return _resp(500, {
+            "ok": False,
+            "sport": "mlb",
+            "live_pull_ok": False,
+            "fallback_used": False,
+            "upstream_error": _oddsapi_auth_diagnostic(exc),
+            "error": str(exc),
+        })
