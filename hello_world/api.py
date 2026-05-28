@@ -30,6 +30,7 @@ PREFERRED_BOOKS = ["fanatics", "draftkings", "fanduel", "betmgm", "caesars", "be
 PANEL_BOOKS = ["fanatics", "draftkings", "fanduel", "betmgm", "caesars"]
 STRONG_GAP = 0.08
 COINFLIP_GAP = 0.05
+ODDS_MARKETS = "h2h,spreads,totals"
 
 
 def _json_default(value: Any) -> Any:
@@ -100,7 +101,13 @@ def _oddsapi_url(sport: str) -> str:
     sport_key = SPORT_KEYS.get(sport)
     if not sport_key:
         raise ValueError(f"Unsupported sport: {sport}")
-    params = {"apiKey": ODDS_API_KEY, "regions": "us", "markets": "h2h", "oddsFormat": "american", "dateFormat": "iso"}
+    params = {
+        "apiKey": ODDS_API_KEY,
+        "regions": "us",
+        "markets": ODDS_MARKETS,
+        "oddsFormat": "american",
+        "dateFormat": "iso",
+    }
     return f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?" + urllib.parse.urlencode(params)
 
 
@@ -120,7 +127,71 @@ def _filter_games_by_slate_date(games: List[Dict[str, Any]], slate_date_et: str)
     return out
 
 
-def _compact_h2h(raw_games: List[Dict[str, Any]], sport: str, slate_date_et: str) -> Dict[str, Any]:
+def _market(bookmaker: Dict[str, Any], market_key: str) -> Optional[Dict[str, Any]]:
+    return next((m for m in bookmaker.get("markets", []) or [] if m.get("key") == market_key), None)
+
+
+def _extract_h2h(bookmaker: Dict[str, Any], home: str, away: str) -> Optional[Dict[str, int]]:
+    market = _market(bookmaker, "h2h")
+    if not market:
+        return None
+    home_price = away_price = None
+    for outcome in market.get("outcomes", []) or []:
+        if outcome.get("name") == home:
+            home_price = outcome.get("price")
+        elif outcome.get("name") == away:
+            away_price = outcome.get("price")
+    if home_price is None or away_price is None:
+        return None
+    return {"home": int(home_price), "away": int(away_price)}
+
+
+def _extract_spread(bookmaker: Dict[str, Any], home: str, away: str) -> Optional[Dict[str, Any]]:
+    market = _market(bookmaker, "spreads")
+    if not market:
+        return None
+    home_point = home_price = away_point = away_price = None
+    for outcome in market.get("outcomes", []) or []:
+        if outcome.get("name") == home:
+            home_point = outcome.get("point")
+            home_price = outcome.get("price")
+        elif outcome.get("name") == away:
+            away_point = outcome.get("point")
+            away_price = outcome.get("price")
+    if home_point is None or home_price is None or away_point is None or away_price is None:
+        return None
+    return {
+        "home_point": float(home_point),
+        "home_price": int(home_price),
+        "away_point": float(away_point),
+        "away_price": int(away_price),
+    }
+
+
+def _extract_total(bookmaker: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    market = _market(bookmaker, "totals")
+    if not market:
+        return None
+    over_point = over_price = under_point = under_price = None
+    for outcome in market.get("outcomes", []) or []:
+        name = (outcome.get("name") or "").lower()
+        if name == "over":
+            over_point = outcome.get("point")
+            over_price = outcome.get("price")
+        elif name == "under":
+            under_point = outcome.get("point")
+            under_price = outcome.get("price")
+    if over_point is None or over_price is None or under_point is None or under_price is None:
+        return None
+    return {
+        "over_point": float(over_point),
+        "over_price": int(over_price),
+        "under_point": float(under_point),
+        "under_price": int(under_price),
+    }
+
+
+def _compact_markets(raw_games: List[Dict[str, Any]], sport: str, slate_date_et: str) -> Dict[str, Any]:
     games_out = []
     all_books = set()
     for raw_game in raw_games or []:
@@ -130,26 +201,36 @@ def _compact_h2h(raw_games: List[Dict[str, Any]], sport: str, slate_date_et: str
         commence_time = raw_game.get("commence_time")
         if not home or not away:
             continue
-        books_out = {}
+        books_out: Dict[str, Any] = {}
         for bookmaker in raw_game.get("bookmakers", []) or []:
             book_key = (bookmaker.get("key") or "").lower().strip()
             if not book_key:
                 continue
-            all_books.add(book_key)
-            h2h = next((m for m in bookmaker.get("markets", []) or [] if m.get("key") == "h2h"), None)
-            if not h2h:
-                continue
-            home_odds = away_odds = None
-            for outcome in h2h.get("outcomes", []) or []:
-                if outcome.get("name") == home:
-                    home_odds = outcome.get("price")
-                elif outcome.get("name") == away:
-                    away_odds = outcome.get("price")
-            if home_odds is not None and away_odds is not None:
-                books_out[book_key] = {"ml": {"home": int(home_odds), "away": int(away_odds)}}
+            book_payload: Dict[str, Any] = {}
+            ml = _extract_h2h(bookmaker, home, away)
+            spread = _extract_spread(bookmaker, home, away)
+            total = _extract_total(bookmaker)
+            if ml:
+                book_payload["ml"] = ml
+            if spread:
+                book_payload["spread"] = spread
+            if total:
+                book_payload["total"] = total
+            if book_payload:
+                books_out[book_key] = book_payload
+                all_books.add(book_key)
         game_key = _game_key_day(sport, slate_date_et, away, home)
-        games_out.append({"id": game_id or game_key, "game_key": game_key, "internal_key": game_key, "commence_time": commence_time, "home_team": home, "away_team": away, "books": books_out})
-    return {"games": games_out, "count": len(games_out), "available_book_keys": sorted(all_books), "panel_books": PANEL_BOOKS}
+        games_out.append({
+            "id": game_id or game_key,
+            "game_key": game_key,
+            "internal_key": game_key,
+            "commence_time": commence_time,
+            "home_team": home,
+            "away_team": away,
+            "books": books_out,
+            "markets_stored": ["ml", "spread", "total"],
+        })
+    return {"games": games_out, "count": len(games_out), "available_book_keys": sorted(all_books), "panel_books": PANEL_BOOKS, "markets": ["ml", "spread", "total"]}
 
 
 def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: Optional[str], sport: str) -> Dict[str, Any]:
@@ -158,7 +239,7 @@ def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: 
     asof = _now_iso()
     slate_id = f"{sport.upper()}_{slate_date_et}_{run_type}"
     sk = f"{t}#DATE#{slate_date_et}#ASOF#{asof}#SLATE#{slate_id}" if t else f"DATE#{slate_date_et}#ASOF#{asof}#SLATE#{slate_id}"
-    item = {"PK": f"SPORT#{sport}", "SK": sk, "sport": sport, "t": t, "slate_id": slate_id, "slate_date_et": slate_date_et, "asof": asof, "created_at": asof, "data": data, "meta": {"source": "theOddsAPI", "run_type": run_type, "pulled_at": asof}}
+    item = {"PK": f"SPORT#{sport}", "SK": sk, "sport": sport, "t": t, "slate_id": slate_id, "slate_date_et": slate_date_et, "asof": asof, "created_at": asof, "data": data, "meta": {"source": "theOddsAPI", "run_type": run_type, "pulled_at": asof, "markets": ["h2h", "spreads", "totals"]}}
     snapshots_tbl.put_item(Item=item)
     return item
 
@@ -167,9 +248,9 @@ def _pull_snapshot(sport: str, run_type: str, t: Optional[str] = None) -> Dict[s
     sport = (sport or "").lower()
     slate_date_et = _get_slate_date_et()
     raw = _http_get_json(_oddsapi_url(sport))
-    compact = _compact_h2h(_filter_games_by_slate_date(raw, slate_date_et), sport, slate_date_et)
+    compact = _compact_markets(_filter_games_by_slate_date(raw, slate_date_et), sport, slate_date_et)
     stored = _store_snapshot(run_type, compact, slate_date_et, t, sport)
-    return {"ok": True, "sport": sport, "t": t, "slate_date_et": slate_date_et, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}, "available_book_keys": compact["available_book_keys"]}
+    return {"ok": True, "sport": sport, "t": t, "slate_date_et": slate_date_et, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}, "available_book_keys": compact["available_book_keys"], "markets": compact["markets"]}
 
 
 def _latest_snapshot(t: Optional[str], sport: str) -> Optional[Dict[str, Any]]:
@@ -227,7 +308,7 @@ def _rank_for_sport(sport: str, games: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _class_counts(classified: List[Dict[str, Any]]) -> Dict[str, int]:
-    counts = {}
+    counts: Dict[str, int] = {}
     for game in classified:
         key = game.get("class", "UNKNOWN")
         counts[key] = counts.get(key, 0) + 1
@@ -299,6 +380,28 @@ def _query_snapshots(sport: str, t: Optional[str], limit: int) -> Dict[str, Any]
     return {"ok": True, "sport": sport, "t": t, "items": response.get("Items", [])}
 
 
+def _query_games(sport: str, t: str) -> Dict[str, Any]:
+    snapshot = _latest_snapshot(t, sport)
+    if not snapshot:
+        return {"ok": True, "sport": sport, "t": t, "games": [], "message": "No snapshot found for this sport/t today."}
+    games = snapshot.get("data", {}).get("games", [])
+    return {"ok": True, "sport": sport, "t": t, "asof": snapshot.get("asof"), "count": len(games), "games": games}
+
+
+def _query_odds_history(sport: str, game_key: Optional[str], game_id: Optional[str], limit: int) -> Dict[str, Any]:
+    if snapshots_tbl is None:
+        raise RuntimeError("SNAPSHOTS_TABLE not configured")
+    response = snapshots_tbl.query(KeyConditionExpression=Key("PK").eq(f"SPORT#{sport}"), ScanIndexForward=False, Limit=limit)
+    timeline = []
+    for item in response.get("Items", []):
+        for game in item.get("data", {}).get("games", []) or []:
+            if (game_key and game.get("game_key") == game_key) or (game_id and game.get("id") == game_id):
+                timeline.append({"asof": item.get("asof"), "t": item.get("t"), "slate_date_et": item.get("slate_date_et"), "run_type": item.get("meta", {}).get("run_type"), "game": game})
+                break
+    timeline.sort(key=lambda row: row.get("asof") or "")
+    return {"ok": True, "sport": sport, "game_key": game_key, "game_id": game_id, "count": len(timeline), "timeline": timeline}
+
+
 def lambda_handler(event, context):
     event = event or {}
     method = (event.get("httpMethod") or "").upper()
@@ -310,6 +413,12 @@ def lambda_handler(event, context):
     if method == "GET" and path == "/v1/snapshots":
         params = event.get("queryStringParameters") or {}
         return _resp(200, _query_snapshots((params.get("sport") or "nba").lower(), params.get("t"), min(int(params.get("limit") or 10), 100)))
+    if method == "GET" and path == "/v1/games":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, _query_games((params.get("sport") or "mlb").lower(), params.get("t") or "T1"))
+    if method == "GET" and path == "/v1/odds/history":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, _query_odds_history((params.get("sport") or "mlb").lower(), params.get("game_key"), params.get("game_id"), min(int(params.get("limit") or 200), 500)))
     if method == "POST" and path in {"/v1/pull/nba", "/v1/pull/ncaam", "/v1/pull/mlb"}:
         sport = path.rsplit("/", 1)[-1]
         body = _parse_json(event.get("body"))
