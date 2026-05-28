@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 from soccer_signal_api import soccer_match_signals, soccer_parlays
 from universal_market_language import market_language_status, prediction_label_explanation, status_filter_explanation
 
+DISPLAY_CONFIDENCE_SCORES = True
 
 STATUS_PRIORITY = {
     "Clean Edge": 0,
@@ -66,7 +67,7 @@ def _market_language(item: Dict[str, Any]) -> Dict[str, Any]:
         "best_use": "Avoid / No Bet",
         "market_intelligence_tags": [],
         "public_explanation": "No clean edge is published yet. The market is being tracked until movement becomes clearer.",
-        "display_confidence_scores": False,
+        "display_confidence_scores": DISPLAY_CONFIDENCE_SCORES,
     }
 
 
@@ -87,6 +88,7 @@ def _match_card(match: Dict[str, Any]) -> Dict[str, Any]:
     title = match.get("match") or f"{match.get('away_team')} at {match.get('home_team')}"
     status = language.get("market_status")
     prediction_label = language.get("public_prediction")
+    confidence_score = match.get("confidence_score") or match.get("confidence")
     return {
         "card_type": "individual_match",
         "title": title,
@@ -102,7 +104,9 @@ def _match_card(match: Dict[str, Any]) -> Dict[str, Any]:
         "best_use": language.get("best_use"),
         "market_intelligence_tags": language.get("market_intelligence_tags", []),
         "why": language.get("public_explanation"),
-        "display_confidence_scores": False,
+        "display_confidence_scores": DISPLAY_CONFIDENCE_SCORES,
+        "confidence_score": confidence_score,
+        "confidence_label": status,
         "hot_side": match.get("hot_side"),
         "hot_outcome": match.get("hot_outcome"),
         "books_tracked": match.get("books_tracked"),
@@ -137,7 +141,9 @@ def _parlay_card(combo: Dict[str, Any]) -> Dict[str, Any]:
         "best_use": language.get("best_use"),
         "market_intelligence_tags": language.get("market_intelligence_tags", []),
         "why": language.get("public_explanation"),
-        "display_confidence_scores": False,
+        "display_confidence_scores": DISPLAY_CONFIDENCE_SCORES,
+        "confidence_score": combo.get("confidence_score") or combo.get("signal_score_internal"),
+        "confidence_label": combo.get("confidence_band") or status,
         "parlay_decimal_odds": combo.get("parlay_decimal_odds"),
         "parlay_american_odds": combo.get("parlay_american_odds"),
         "implied_win_probability_pct": combo.get("implied_win_probability_pct"),
@@ -156,7 +162,7 @@ def _status_filters(cards: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "status": status,
             "count": counts.get(status, 0),
             "why_this_filter_exists": status_filter_explanation(status),
-            "display_confidence_scores": False,
+            "display_confidence_scores": DISPLAY_CONFIDENCE_SCORES,
         })
     return filters
 
@@ -180,10 +186,10 @@ def soccer_app_cards(limit: int = 40, top_matches: int = 25, top_parlays: int = 
         "sport": "soccer",
         "view": "customer_app_cards",
         "model": matches_payload.get("model"),
-        "feature_version": "soccer_customer_cards_v2_status_filter_reasons_no_confidence_scores",
+        "feature_version": "soccer_customer_cards_v3_status_filter_reasons_with_confidence_scores",
         "asof": matches_payload.get("asof"),
         "market_language": market_language_status(),
-        "display_confidence_scores": False,
+        "display_confidence_scores": DISPLAY_CONFIDENCE_SCORES,
         "raw_json_hidden_from_customer": True,
         "counts": {
             "matches": len(match_cards),
