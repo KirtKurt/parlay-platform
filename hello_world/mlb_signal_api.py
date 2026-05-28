@@ -122,6 +122,25 @@ def _recent_snapshots(limit: int = 40, t: Optional[str] = None) -> List[Dict[str
     return sorted(items, key=lambda x: x.get("asof") or "")
 
 
+def _confidence_score(row: Dict[str, Any]) -> int:
+    score = 50 + min(35, int(abs(float(row.get("hot_delta") or 0)) * 1000))
+    score += min(10, int(row.get("book_agreement", {}).get("agreeing_books", 0)))
+    if row.get("spread_signal", {}).get("direction") == "supports_hot_side":
+        score += 5
+    return min(95, score)
+
+
+def _confidence_label(row: Dict[str, Any]) -> str:
+    status = row.get("prediction_status")
+    if status == "NO_EDGE":
+        return "No Clean Edge"
+    if status == "WATCHLIST":
+        return "Watchlist"
+    if status and str(status).startswith("PUBLISHED"):
+        return "Playable Edge"
+    return str(row.get("confidence") or "Unknown")
+
+
 def _delta_for_game(prev: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, Any]:
     prev_cp = _consensus_probs(prev)
     latest_cp = _consensus_probs(latest)
@@ -180,7 +199,7 @@ def _delta_for_game(prev: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, A
         total_signal=total_signal,
     )
 
-    return {
+    row = {
         "ok": True,
         "game_key": latest.get("game_key"),
         "game_id": latest.get("id"),
@@ -205,13 +224,16 @@ def _delta_for_game(prev: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, A
         "market_status": public["market_status"],
         "best_use": public["best_use"],
         "why": public["why"],
-        "display_confidence_scores": False,
+        "display_confidence_scores": True,
         "book_agreement": book_agreement,
         "spread_signal": spread_signal,
         "total_signal": total_signal,
         "latest_consensus": {"home": round(latest_cp["home"], 6), "away": round(latest_cp["away"], 6), "books": latest_cp["books"]},
         "previous_consensus": {"home": round(prev_cp["home"], 6), "away": round(prev_cp["away"], 6), "books": prev_cp["books"]},
     }
+    row["confidence_score"] = _confidence_score(row)
+    row["confidence_label"] = _confidence_label(row)
+    return row
 
 
 def _public_language(
@@ -372,6 +394,15 @@ def hot_sides(limit: int = 40, store: bool = False, include_no_edge: bool = True
         if not include_no_edge and not is_actionable:
             continue
 
+        confidence_score = _confidence_score(row)
+        confidence_label = _confidence_label(row)
+        row = {
+            **row,
+            "display_confidence_scores": True,
+            "confidence_score": confidence_score,
+            "confidence_label": confidence_label,
+        }
+
         item = None
         if is_actionable:
             item = {
@@ -393,8 +424,10 @@ def hot_sides(limit: int = 40, store: bool = False, include_no_edge: bool = True
                 "predicted_team": row.get("hot_team") if status.startswith("PUBLISHED") else None,
                 "hot_team": row.get("hot_team"),
                 "hot_side": row.get("hot_side"),
-                "confidence_label": row.get("confidence"),
-                "confidence": Decimal(str(_confidence_score(row))),
+                "confidence_label": confidence_label,
+                "confidence": Decimal(str(confidence_score)),
+                "confidence_score": Decimal(str(confidence_score)),
+                "display_confidence_scores": True,
                 "target_success_rate": TARGET_SUCCESS_RATE,
                 "reason_codes": row.get("reason_codes", []),
                 "explanation": row.get("prediction"),
@@ -421,20 +454,12 @@ def hot_sides(limit: int = 40, store: bool = False, include_no_edge: bool = True
         "actionable_count": len(actionable_rows),
         "status_counts": status_counts,
         "target_success_rate": 75,
-        "display_confidence_scores": False,
-        "message": "No clean edge is published yet; returning tracked market cards." if not actionable_rows else "Actionable market cards found.",
+        "display_confidence_scores": True,
+        "message": "No clean edge is published yet; returning tracked market cards with confidence scores." if not actionable_rows else "Actionable market cards found with confidence scores.",
         "previous_asof": data.get("previous_asof"),
         "latest_asof": data.get("latest_asof"),
         "hot_sides": rows,
     }
-
-
-def _confidence_score(row: Dict[str, Any]) -> int:
-    score = 50 + min(35, int(abs(float(row.get("hot_delta") or 0)) * 1000))
-    score += min(10, int(row.get("book_agreement", {}).get("agreeing_books", 0)))
-    if row.get("spread_signal", {}).get("direction") == "supports_hot_side":
-        score += 5
-    return min(95, score)
 
 
 def audit_snapshots(limit: int = 20) -> Dict[str, Any]:
