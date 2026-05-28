@@ -1,88 +1,120 @@
 import json
 import os
-import math
-from datetime import datetime, timezone, timedelta
-from zoneinfo import ZoneInfo
-from decimal import Decimal
-from typing import Any, Dict, Optional, List, Tuple
-import urllib.request
 import urllib.parse
+import urllib.request
+from datetime import datetime, timezone
+from decimal import Decimal
+from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
-from boto3.dynamodb.conditions import Key
 import boto3
 from boto3.dynamodb.conditions import Key
+
+from nba_algorithm import rank_nba_b11c1
+
 
 dynamodb = boto3.resource("dynamodb")
 
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
 SIGNALS_TABLE = os.environ.get("SIGNALS_TABLE", "")
 SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
-OUTCOMES_TABLE = os.environ.get("OUTCOMES_TABLE", "")
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 
 snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
+signals_tbl = dynamodb.Table(SIGNALS_TABLE) if SIGNALS_TABLE else None
 signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE else None
-outcomes_tbl = dynamodb.Table(OUTCOMES_TABLE) if OUTCOMES_TABLE else None
+
+SPORT_KEYS = {
+    "nba": "basketball_nba",
+    "ncaam": "basketball_ncaab",
+}
+
+PREFERRED_BOOKS = [
+    "fanatics",
+    "draftkings",
+    "fanduel",
+    "betmgm",
+    "caesars",
+    "betrivers",
+    "bovada",
+    "lowvig",
+]
+PANEL_BOOKS = ["fanatics", "draftkings", "fanduel", "betmgm", "caesars"]
+
+STRONG_GAP = 0.08
+COINFLIP_GAP = 0.05
+
+
+def _json_default(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
+    return str(value)
+
+
+def _resp(status: int, body: Any) -> Dict[str, Any]:
+    return {
+        "statusCode": status,
+        "headers": {
+            "content-type": "application/json",
+            "access-control-allow-origin": "*",
+            "access-control-allow-headers": "content-type,authorization",
+            "access-control-allow-methods": "GET,POST,OPTIONS",
+        },
+        "body": json.dumps(body, default=_json_default),
+    }
+
 
 def _parse_json(body: Optional[str]) -> Dict[str, Any]:
     if not body:
         return {}
     try:
-        return json.loads(body)
+        payload = json.loads(body)
+        return payload if isinstance(payload, dict) else {}
     except Exception:
         return {}
 
-def _parse_json(body: Optional[str]) -> Dict[str, Any]:
-    if not body:
-        return {}
-    try:
-        return json.loads(body)
-    except Exception:
-        return {}
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _get_slate_date_et() -> str:
+    return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+
+
+def _normalize_team(name: Optional[str]) -> str:
+    return " ".join((name or "").lower().strip().split())
+
+
+def _game_key_day(sport: str, slate_date_et: str, away_team: Optional[str], home_team: Optional[str]) -> str:
+    return f"{sport}|{slate_date_et}|{_normalize_team(away_team)}|{_normalize_team(home_team)}"
+
+
+def _american_to_prob(american: int) -> float:
+    if american == 0:
+        raise ValueError("American odds cannot be 0")
+    return abs(american) / (abs(american) + 100.0) if american < 0 else 100.0 / (american + 100.0)
+
+
+def _vig_norm(p1: float, p2: float) -> Tuple[float, float]:
+    total = p1 + p2
+    if total <= 0:
+        return 0.5, 0.5
+    return p1 / total, p2 / total
+
 
 def _http_get_json(url: str, timeout: int = 20) -> Any:
     req = urllib.request.Request(url, headers={"accept": "application/json"})
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        return json.loads(r.read().decode("utf-8"))
+    with urllib.request.urlopen(req, timeout=timeout) as response:
+        return json.loads(response.read().decode("utf-8"))
 
-def _choose_best_3(snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
-    games = snapshot.get("data", {}).get("games", [])
-    # Assuming the games are sorted by some criteria, we take the first 3 unique games
-    return games[:3]
-# HANDLERS
-def _calculate_net_delta(game: dict, snapshots: List[Dict[str, Any]]) -> Optional[float]:
-    gid = game.get("game_id") or game.get("id")
-    t4_game = next((g for g in snapshots[3]["data"]["games"] if g.get("id") == gid), None)
-    t1_game = next((g for g in snapshots[0]["data"]["games"] if g.get("id") == gid), None)
 
-    if not t4_game or not t1_game:
-        return None
-
-    def get_fav_p(game: dict) -> Optional[float]:
-        dk = (game.get("books", {}).get("draftkings") or {}).get("ml")
-        fd = (game.get("books", {}).get("fanduel") or {}).get("ml")
-        panel = _panel_metrics(game)
-        if dk:
-            _, fav_p = _fav_side_and_prob(dk)
-            return fav_p
-        elif fd:
-            _, fav_p = _fav_side_and_prob(fd)
-            return fav_p
-        elif panel.get("panel_avg_fav_p") is not None:
-            return panel["panel_avg_fav_p"]
-        return None
-
-    fav_p_t4 = get_fav_p(t4_game)
-    fav_p_t1 = get_fav_p(t1_game)
-
-    if fav_p_t4 is None or fav_p_t1 is None:
-        return None
-
-    return round(fav_p_t4 - fav_p_t1, 4)
-
-def _build_oddsapi_url_ncaam_h2h() -> str:
+def _oddsapi_url(sport: str) -> str:
     if not ODDS_API_KEY:
         raise RuntimeError("ODDS_API_KEY missing")
+    sport_key = SPORT_KEYS.get(sport)
+    if not sport_key:
+        raise ValueError(f"Unsupported sport: {sport}")
     params = {
         "apiKey": ODDS_API_KEY,
         "regions": "us",
@@ -90,986 +122,419 @@ def _build_oddsapi_url_ncaam_h2h() -> str:
         "oddsFormat": "american",
         "dateFormat": "iso",
     }
-    return "https://api.the-odds-api.com/v4/sports/basketball_ncaab/odds/?" + urllib.parse.urlencode(params)
+    return f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/?" + urllib.parse.urlencode(params)
 
-def _generate_internal_key(home_team: str, away_team: str, game_date: str) -> str:
-    return f"{_normalize_team(home_team)}|{_normalize_team(away_team)}|{game_date}"
 
-def _compact_ncaam_h2h(raw_games: list, slate_date_et: str) -> Dict[str, Any]:
-    all_keys_seen = set()
-    games_out = []
+def _filter_games_by_slate_date(games: List[Dict[str, Any]], slate_date_et: str) -> List[Dict[str, Any]]:
+    eastern = ZoneInfo("America/New_York")
+    filtered: List[Dict[str, Any]] = []
+    for game in games or []:
+        commence = game.get("commence_time")
+        if not commence:
+            continue
+        try:
+            commence_dt = datetime.fromisoformat(commence.replace("Z", "+00:00"))
+        except ValueError:
+            continue
+        if commence_dt.astimezone(eastern).strftime("%Y-%m-%d") == slate_date_et:
+            filtered.append(game)
+    return filtered
 
-    for g in raw_games:
-        home = g.get("home_team")
-        away = g.get("away_team")
-        gid = g.get("id")
-        ct = g.get("commence_time")
 
-        internal_key = _generate_internal_key(home, away, slate_date_et)
-        books_out: Dict[str, Any] = {}
+def _compact_h2h(raw_games: List[Dict[str, Any]], sport: str, slate_date_et: str) -> Dict[str, Any]:
+    games_out: List[Dict[str, Any]] = []
+    all_books = set()
 
-        for b in g.get("bookmakers", []) or []:
-            key = (b.get("key") or "").lower().strip()
-            if not key:
-                continue
-            all_keys_seen.add(key)
-
-            h2h = next((m for m in (b.get("markets") or []) if m.get("key") == "h2h"), None)
-            if not h2h:
-                continue
-
-            ho = ao = None
-            for o in (h2h.get("outcomes") or []):
-                if o.get("name") == home:
-                    ho = o.get("price")
-                elif o.get("name") == away:
-                    ao = o.get("price")
-
-            if ho is None or ao is None:
-                continue
-
-            books_out[key] = {"ml": {"home": int(ho), "away": int(ao)}}
-
-        game_key = _game_key_day("ncaam", slate_date_et, away, home)
-        games_out.append({
-            "id": gid,
-            "internal_key": internal_key,
-            "home_team": home,
-            "away_team": away,
-            "books": books_out,
-        })
-
-    return {
-        "games": games_out,
-        "count": len(games_out),
-        "available_book_keys": sorted(all_keys_seen),
-        "panel_books": list(PANEL_BOOKS),
-    }
-
-def _pull_ncaam_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]:
-    slate_date_et = _get_slate_date_et()
-    raw = _http_get_json(_build_oddsapi_url_ncaam_h2h())
-    filtered_games = _filter_games_by_slate_date(raw, slate_date_et)
-    compact = _compact_ncaam_h2h(filtered_games, slate_date_et)
-    slate_date_et = _get_slate_date_et()
-    stored = _store_snapshot(run_type, compact, slate_date_et, t, sport="ncaam")
-    return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
-
-def compute_game_signals(sport: str, t: str, slate_date_et: str, snapshots_by_t: Dict[str, Any]) -> List[Dict[str, Any]]:
-    # Implement the logic to compute signals for each game
-    # This is a placeholder implementation
-    signals = []
-    t4_snapshot = snapshots_by_t.get("T4") or snapshots_by_t.get("T1")
-    if not t4_snapshot:
-        return signals
-
-    for game in t4_snapshot["data"]["games"]:
-        game_id = game.get("id")
-        commence_time = game.get("commence_time")
-        home_team = game.get("home_team")
-        away_team = game.get("away_team")
-        # Compute signals and other required fields
-        signal = {
-            "game_id": game_id,
-            "slate_date_et": slate_date_et,
-            "t": t,
-            "commence_time": commence_time,
-            "home_team": home_team,
-            "away_team": away_team,
-            # Add more fields as needed
-        }
-        signals.append(signal)
-    return signals
-
-def _calculate_signals_and_classify(games: List[Dict[str, Any]], snapshots: List[Dict[str, Any]], coinflip_lite: bool) -> List[Dict[str, Any]]:
-    slate_date_et = (snapshots[-1].get("slate_date_et") if snapshots else None) or _get_slate_date_et()
-    # Placeholder implementation
-    t_map = {f"T{i}": {} for i in range(1, 5)}
-    for i, snap in enumerate(snapshots, 1):
-        for g in snap["data"]["games"]:
-            gk = g.get("game_key") or _game_key_day("ncaam", slate_date_et, g.get("away_team"), g.get("home_team"))
-            t_map[f"T{i}"][gk] = g
-
-    classified_games = []
-    key_overlap_t1_t4 = sum(1 for game in games if _game_key_day("ncaam", slate_date_et, game["away_team"], game["home_team"]) in t_map["T1"])
-    key_overlap_t2_t4 = sum(1 for game in games if _game_key_day("ncaam", slate_date_et, game["away_team"], game["home_team"]) in t_map["T2"])
-    key_overlap_t3_t4 = sum(1 for game in games if _game_key_day("ncaam", slate_date_et, game["away_team"], game["home_team"]) in t_map["T3"])
-    missing_t_link_count = 0
-
-    for game in games:
-        game_key = game["game_key"]
-        t1_game = t_map["T1"].get(game_key)
-        t2_game = t_map["T2"].get(game_key)
-        t3_game = t_map["T3"].get(game_key)
-
-        if not t1_game or not t2_game or not t3_game:
-            factors = ["MISSING_T_LINK"]
-            classified_game = {
-                "game_id": game.get("id"),
-                "signals": {},  # Add signal calculations here
-                "class": "INELIGIBLE",
-                "factors": ["MISSING_T_LINK"],
-                "disallowed": False,
-            }
-            try:
-                _log_ineligible_reason("ncaam", "T4", slate_date_et, game, factors)
-            except Exception as e:
-                print(f"Logging error: {e}")
-            classified_games.append(classified_game)
-            missing_t_link_count += 1
+    for raw_game in raw_games or []:
+        home = raw_game.get("home_team")
+        away = raw_game.get("away_team")
+        game_id = raw_game.get("id")
+        commence_time = raw_game.get("commence_time")
+        if not home or not away:
             continue
 
-        if t1_game:
-            key_overlap_t1_t4 += 1
-        if t2_game:
-            key_overlap_t2_t4 += 1
-        if t3_game:
-            key_overlap_t3_t4 += 1
-        # Calculate signals and classify each game
-        if t1_game:
-            key_overlap_t1_t4 += 1
-        if t2_game:
-            key_overlap_t2_t4 += 1
-        if t3_game:
-            key_overlap_t3_t4 += 1
-
-        # Calculate signals and classify each game
-        cls, factors = _classify_game(game, snapshots, t_map, coinflip_lite, slate_date_et)
-
-        if cls == "INELIGIBLE":
-            _log_ineligible_reason("ncaam", "T4", slate_date_et, game, factors)
-        if cls == "INELIGIBLE":
-            print(json.dumps({
-                "tag": "INELIGIBLE_REASON",
-                "sport": "ncaam",
-                "t": "T4",
-                "slate_date_et": slate_date_et,
-                "game_id": game.get("id") or game.get("game_id") or game.get("game_key") or game.get("internal_key"),
-                "home": game.get("home_team") or game.get("home"),
-                "away": game.get("away_team") or game.get("away"),
-                "commence_time": game.get("commence_time"),
-                "ml_pack_present": bool(_best_ml_for_engine(game)),
-                "factors": factors
-            }, default=str))
-        classified_game = {
-            "game_id": game.get("id"),
-            "signals": {},  # Add signal calculations here
-            "class": "INELIGIBLE",  # Determine class based on signals
-            "disallowed": False,  # Determine if disallowed
-        }
-        classified_games.append(classified_game)
-    return classified_games
-
-def _generate_diagnostics(games_t4: List[Dict[str, Any]], classified: List[Dict[str, Any]]) -> Dict[str, Any]:
-    from collections import Counter
-    total_games_t4 = len(games_t4)
-    counter = Counter(g.get("class") for g in classified)
-    disallowed_both_negative_t1_t3 = sum(1 for game in classified if game["disallowed"])
-    strong_solid_count = counter.get("STRONG_SOLID", 0)
-    coinflip_count = counter.get("COIN_FLIP", 0)
-    solid_count = counter.get("SOLID", 0)
-    ineligible_count = counter.get("INELIGIBLE", 0)
-    missing_odds_count = sum(1 for game in games_t4 if _best_ml_for_engine(game) is None)
-
-    sample_disallowed = [
-        {
-            "game_id": game.get("id"),
-            "matchup": f"{game.get('home_team')} vs {game.get('away_team')}",
-            "reason": "Disallowed"
-        }
-        for game in classified if game["disallowed"]
-    ][:10]
-
-    return {
-        "total_games_t4": total_games_t4,
-        "disallowed_both_negative_t1_t3": disallowed_both_negative_t1_t3,
-        "strong_solid_count": strong_solid_count,
-        "coinflip_count": coinflip_count,
-        "solid_count": solid_count,
-        "ineligible_count": ineligible_count,
-        "missing_odds_count": missing_odds_count,
-        "sample_disallowed": sample_disallowed
-    }
-def _build_ncaam_b1c23(max_parlays: int, coinflip_lite: bool) -> Dict[str, Any]:
-    key_overlap_t1_t4 = 0
-    key_overlap_t2_t4 = 0
-    key_overlap_t3_t4 = 0
-    missing_t_link_count = 0
-    built: List[Dict[str, Any]] = []
-
-    # Ensure all required snapshots are available
-    snapshots = [_latest_snapshot(f"T{i}", "ncaam") for i in range(1, 5)]
-    missing_snapshots = [f"T{i}" for i, s in enumerate(snapshots, 1) if s is None]
-    if missing_snapshots:
-        result = {
-            "ok": True,
-            "model": "NCAAM-B1.1C.2.3",
-            "slate_date_et": _get_slate_date_et(),
-            "parlays_requested": max_parlays,
-            "parlays_built": 0,
-            "refusal": {
-                "code": "MISSING_REQUIRED_T_SNAPSHOTS",
-                "reason": "Missing required snapshots",
-                "missing": missing_snapshots
-            }
-        }
-
-    built: List[Dict[str, Any]] = []
-
-    # Build per-T maps keyed by game_key_day
-    t_map = {f"T{i}": {} for i in range(1, 5)}
-    slate_date_et = _get_slate_date_et()
-    for i, snapshot in enumerate(snapshots, 1):
-        for g in snapshot["data"]["games"]:
-            g["internal_key"] = _generate_internal_key(g.get("home_team"), g.get("away_team"), slate_date_et)
-        for g in snapshot["data"]["games"]:
-            gk = g["internal_key"]
-            g["game_key"] = gk
-            t_map[f"T{i}"][gk] = g
-    games = snapshots[3]["data"]["games"]  # Use T4 for game list
-    classified_games = _calculate_signals_and_classify(games, snapshots, coinflip_lite)
-    from collections import Counter
-    counter = Counter(game["class"] for game in classified_games)
-    print(json.dumps({
-        "tag": "CLASS_SUMMARY",
-        "sport": "ncaam",
-        "slate_date_et": slate_date_et,
-        "counts": dict(counter),
-        "total": len(classified_games)
-    }))
-
-    # Implement parlay construction rules
-    used_game_ids = set()
-
-    for parlay_index in range(max_parlays):
-        # Build each parlay
-        parlay = []  # Placeholder for parlay construction logic
-        if not parlay:
-            if parlay_index == 0:
-                refusal = {
-                    "code": "FIRST_SLATE_INELIGIBLE",
-                    "reason": "First slate ineligible",
-                    "diagnostics": {
-                        **_generate_diagnostics(games, classified_games),
-                        "missing_t_link_count": missing_t_link_count,
-                        "sample_ineligible": [
-                            {
-                                "game_id": game.get("id") or game.get("game_key"),
-                                "matchup": f"{game.get('home_team')} vs {game.get('away_team')}",
-                                "factors": game.get("factors")
-                            }
-                            for game in classified_games if game["class"] == "INELIGIBLE"
-                        ][:10],
-                        "sample_missing_odds": [
-                            {
-                                "game_id": game.get("id") or game.get("game_key"),
-                                "matchup": f"{game.get('home_team')} vs {game.get('away_team')}"
-                            }
-                            for game in games if _best_ml_for_engine(game) is None
-                        ][:10]
-                    }
-                }
-                return {
-                    "ok": True,
-                    "parlays_requested": max_parlays,
-                    "parlays_built": 0,
-                    "refusal": refusal
-                }
-            break
-        built.append(parlay)
-
-    refusal = None
-    if len(built) < max_parlays:
-        refusal = {
-            "code": "INSUFFICIENT_PARLAYS",
-            "reason": "Not enough eligible games to build requested parlays",
-            "diagnostics": _generate_diagnostics(games, classified_games)
-        }
-
-    # Implement combo ranking
-    # ...
-
-    # Implement audit logging
-    # ...
-
-    return {
-        "ok": True,
-        "model": "NCAAM-B1.1C.2.3",
-        "slate_date_et": _get_slate_date_et(),
-        "parlays_requested": max_parlays,
-        "parlays_built": len(built),
-        "refusal": refusal,
-        "parlays": built
-    }
-
-def lambda_handler(event, context):
-    if event.get("httpMethod") == "GET" and event.get("path") == "/v1/health":
-        return _resp(200, {"status": "healthy"})
-
-    if event.get("httpMethod") == "POST" and event.get("path") in ["/v1/pull/nba", "/v1/alias/nba", "/v1/nba/alias"]:
-        body = _parse_json(event.get("body"))
-        t = body.get("t")
-        run_type = body.get("run", "manual")
-        result = _pull_nba_snapshot(run_type, t)
-        # Compute and store signals
-        snapshots_by_t = {t: _latest_snapshot(t, "nba") for t in ["T1", "T2", "T3", "T4"]}
-        signals = compute_game_signals("nba", t, _get_slate_date_et(), snapshots_by_t)
-        for signal in signals:
-            signal_ledger_tbl.put_item(Item={
-                "PK": f"LEDGER#nba#{_get_slate_date_et()}#{t}",
-                "SK": f"GAME#{signal['game_id']}",
-                **signal
-            })
-        return _resp(200, result)
-
-    if event.get("httpMethod") == "GET" and event.get("path") == "/v1/snapshots":
-        query_params = event.get("queryStringParameters") or {}
-        sport = query_params.get("sport", "nba")
-        t = query_params.get("t")
-        today_et = _get_slate_date_et()
-        limit = int(query_params.get("limit", 10))
-
-        key_expr = Key("PK").eq(f"SPORT#{sport}")
-        if t:
-            key_expr = key_expr & Key("SK").begins_with(f"{t}#DATE#{today_et}")
-        else:
-            key_expr = key_expr & Key("SK").begins_with(f"DATE#{today_et}")
-
-        resp = snapshots_tbl.query(
-            KeyConditionExpression=key_expr,
-            ScanIndexForward=False,
-            Limit=limit,
-        )
-
-        items = resp.get("Items", [])
-        return _resp(200, {"ok": True, "items": items})
-
-    if event.get("httpMethod") == "POST" and event.get("path") == "/v1/pull/ncaam":
-        body = _parse_json(event.get("body"))
-        t = body.get("t")
-        run_type = body.get("run", "manual")
-        result = _pull_ncaam_snapshot(run_type, t)
-        # Compute and store signals
-        snapshots_by_t = {t: _latest_snapshot(t, "ncaam") for t in ["T1", "T2", "T3", "T4"]}
-        signals = compute_game_signals("ncaam", t, _get_slate_date_et(), snapshots_by_t)
-        for signal in signals:
-            signal_ledger_tbl.put_item(Item={
-                "PK": f"LEDGER#ncaam#{_get_slate_date_et()}#{t}",
-                "SK": f"GAME#{signal['game_id']}",
-                **signal
-            })
-        return _resp(200, result)
-
-    if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/ncaam/b1c23":
-        body = _parse_json(event.get("body"))
-        max_parlays = min(int(body.get("max_parlays", 7)), 7)
-        coinflip_lite = bool(body.get("coinflip_lite", False))
-        result = _build_ncaam_b1c23(max_parlays, coinflip_lite)
-        return _resp(200, result)
-
-    if event.get("httpMethod") == "POST" and event.get("path").startswith("/v1/build/ncaam/"):
-        try:
-            max_parlays = int(event.get("path").split("/")[-1])
-        except ValueError:
-            return _resp(400, {"error": "Invalid max_parlays value"})
-        body = _parse_json(event.get("body"))
-        coinflip_lite = bool(body.get("coinflip_lite", False))
-        result = _build_ncaam_b1c23(max_parlays, coinflip_lite)
-        return _resp(200, result)
-
-    if event.get("httpMethod") == "POST" and event.get("path") == "/v1/build/nba/4":
-        # Retrieve snapshots T1, T2, T3, T4
-        snapshots = [_latest_snapshot(f"T{i}") for i in range(1, 5)]
-        if any(s is None for s in snapshots):
-            return _resp(200, {
-                "ok": False,
-                "refusal": {"code": "MISSING_SNAPSHOT", "reason": "One or more required snapshots (T1-T4) are missing"}
-            })
-
-        # Use T4 for building, T1-T3 for validation
-        games = snapshots[3]["data"]["games"]
-        eligible_games = [_classify_game(game) for game in games]
-
-        built = []
-        used_game_ids = set()
-
-        for parlay_index in range(1, 5):
-            chosen_games = []
-            games_for_engine = []
-            strong = [g for g in eligible_games if g["class"] == "STRONG_SOLID" and g.get("game_id") not in used_game_ids]
-            coin = [g for g in eligible_games if g["class"] == "COIN_FLIP" and g.get("game_id") not in used_game_ids]
-
-            if len(strong) >= 2:
-                strong.sort(key=lambda x: -x["gap"])
-                s1, s2 = strong[:2]
-                third = coin[0] if coin else strong[2] if len(strong) > 2 else None
-                if third:
-                    slate = [s1, s2, third]
-                else:
-                    slate = []
-            else:
-                slate = []
-
-            if not slate:
-                if parlay_index == 1:
-                    # Calculate pool counts
-                    pool_counts = {
-                        "STRONG_SOLID": sum(1 for game in eligible_games if game["class"] == "STRONG_SOLID"),
-                        "SOLID": sum(1 for game in eligible_games if game["class"] == "SOLID"),
-                        "COIN_FLIP": sum(1 for game in eligible_games if game["class"] == "COIN_FLIP"),
-                        "MARGINAL": sum(1 for game in eligible_games if game["class"] == "MARGINAL"),
-                        "INELIGIBLE": sum(1 for game in eligible_games if game["class"] == "INELIGIBLE"),
-                    }
-
-                    # Determine top candidates
-                    top_candidates = sorted(
-                        eligible_games,
-                        key=lambda x: x.get("gap", 0),
-                        reverse=True
-                    )[:10]
-                    top_candidates_info = [
-                        {
-                            "game_id": game.get("game_id") or game.get("id"),
-                            "home_team": game.get("home_team") or game.get("home"),
-                            "away_team": game.get("away_team") or game.get("away"),
-                            "class": game.get("class"),
-                            "factors": game.get("factors"),
-                            "net_delta": _calculate_net_delta(game, snapshots)
-                        }
-                        for game in top_candidates
-                    ]
-
-                    # Include SKs used
-                    sks_used = [snapshot["SK"] for snapshot in snapshots]
-
-                    return _resp(200, {
-                        "ok": True,
-                        "parlays_requested": 4,
-                        "parlays_built": 0,
-                        "refusal": {"code": "FIRST_SLATE_INELIGIBLE", "reason": "First slate ineligible"},
-                        "debug": {
-                            "pool_counts": pool_counts,
-                            "top_candidates": top_candidates_info,
-                            "sks_used": sks_used
-                        }
-                    })
-                break
-
-            solid_count = sum(1 for game in slate if game["class"] == "STRONG_SOLID")
-            coin_flip_count = sum(1 for game in slate if game["class"] == "COIN_FLIP")
-
-            if solid_count < 2 or coin_flip_count > 1:
-                if parlay_index == 1:
-                    return _resp(200, {
-                        "ok": True,
-                        "parlays_requested": 4,
-                        "parlays_built": 0,
-                        "refusal": {"code": "FIRST_SLATE_INELIGIBLE", "reason": "First slate ineligible"}
-                    })
-                break
-
-            slate.sort(key=lambda x: -x["gap"])
-            chosen_games = slate[:3]
-            for game in chosen_games:
-                gid = game.get("game_id") or game.get("id")
-                if gid:
-                    used_game_ids.add(gid)
-
-            structure_tag = "CLEAN_3_SOLID" if coin_flip_count == 0 else "MIXED_2_SOLID_1_CF"
-            if coin_flip_count == 1 and any(len(game["factors"]) >= 3 for game in chosen_games if game["class"] == "COIN_FLIP"):
-                structure_tag = "MARGINAL_MIXED"
-
-            games_for_engine = []
-            for game in chosen_games:
-                gid = game.get("game_id") or game.get("id")
-                ht = game.get("home_team") or game.get("home")
-                at = game.get("away_team") or game.get("away")
-                if gid and ht and at:
-                    games_for_engine.append({
-                        "game_id": gid,
-                        "home": ht,
-                        "away": at,
-                        "ml": game["ml"]
-                    })
-            if len(games_for_engine) == 3:
-                ranked = rank_nba_b11c1(games_for_engine)
-            else:
-                if parlay_index == 1:
-                    return _resp(200, {
-                        "ok": True,
-                        "parlays_requested": 4,
-                        "parlays_built": 0,
-                        "refusal": {"code": "FIRST_SLATE_INELIGIBLE", "reason": "First slate ineligible"}
-                    })
-                break
-
-            built.append({
-                "parlay_index": parlay_index,
-                "structure_tag": structure_tag,
-                "legs": chosen_games,
-                "ranked": ranked["ranked"][:8],
-                "source_snapshot": {"pk": snapshots[3]["PK"], "sk": snapshots[3]["SK"]}
-            })
-
-        refusal = None
-        if len(built) < 4:
-            refusal = {"code": "INSUFFICIENT_PARLAYS", "reason": "Not enough eligible games to build 4 parlays"}
-
-        return _resp(200, {
-            "ok": True,
-            "parlays_requested": 4,
-            "parlays_built": len(built),
-            "refusal": refusal,
-            "parlays": built
-        })
-
-    if event.get("httpMethod") == "GET" and event.get("path") == "/v1/ledger":
-        query_params = event.get("queryStringParameters", {})
-        sport = query_params.get("sport")
-        t = query_params.get("t")
-        date = query_params.get("date")
-        if not sport or not t or not date:
-            return _resp(400, {"error": "Missing required query parameters"})
-
-        key_expr = Key("PK").eq(f"LEDGER#{sport}#{date}#{t}")
-        resp = signal_ledger_tbl.query(
-            KeyConditionExpression=key_expr,
-            ScanIndexForward=False
-        )
-        items = resp.get("Items", [])
-        return _resp(200, {"ok": True, "items": items})
-
-    if event.get("httpMethod") == "POST" and event.get("path") == "/v1/outcomes":
-        body = _parse_json(event.get("body"))
-        sport = body.get("sport")
-        slate_date_et = body.get("slate_date_et")
-        game_id = body.get("game_id")
-        winner_team = body.get("winner_team")
-        home_score = body.get("home_score")
-        away_score = body.get("away_score")
-
-        if not all([sport, slate_date_et, game_id, winner_team, home_score, away_score]):
-            return _resp(400, {"error": "Missing required fields in request body"})
-
-        # Determine if the underdog won
-        ledger_key = f"LEDGER#{sport}#{slate_date_et}#T4"
-        ledger_resp = signal_ledger_tbl.get_item(Key={"PK": ledger_key, "SK": f"GAME#{game_id}"})
-        ledger_item = ledger_resp.get("Item")
-        underdog_won = False
-        if ledger_item:
-            # Logic to determine underdog based on T4 odds
-            underdog_won = True  # Placeholder logic
-
-        outcomes_tbl.put_item(Item={
-            "PK": f"OUTCOME#{sport}#{slate_date_et}",
-            "SK": f"GAME#{game_id}",
-            "winner_team": winner_team,
-            "home_score": home_score,
-            "away_score": away_score,
-            "underdog_won": underdog_won
-        })
-        return _resp(200, {"ok": True})
-
-    return _resp(404, {"error": "Not Found"})
-
-def scheduler_handler(event, context):
-    """
-    EventBridge scheduler entrypoint.
-    Expected event payload:
-      {"sport":"ncaam","t":"T2","run":"mid_pull"}
-      {"sport":"nba","t":"T1","run":"base_pull"}
-    """
-    event = event or {}
-    sport = event.get("sport")
-    t = event.get("t")
-    run = event.get("run")
-
-    # Scheduler does NOT build parlays. It only pulls snapshots.
-    try:
-        if sport == "nba":
-            result = _pull_nba_snapshot(run_type=run, t=t)
-        elif sport == "ncaam":
-            result = _pull_ncaam_snapshot(run_type=run, t=t)
-        else:
-            return _resp(400, {"ok": False, "error": "Unsupported sport", "sport": sport})
-
-        return _resp(200, {"ok": True, "sport": sport, "t": t, "run": run, "result": result})
-    except Exception as e:
-        return _resp(500, {"ok": False, "sport": sport, "t": t, "run": run, "error": str(e)})
-# =========================
-from nba_algorithm import rank_nba_b11c1
-
-# =========================
-# CONFIG
-# =========================
-PANEL_BOOKS = ("fanduel", "draftkings", "betmgm", "caesars")
-BOOK_PRIORITY = ("draftkings", "fanduel", "betmgm", "caesars")
-
-# Classification thresholds (based on leader gap)
-SOLID_GAP = 0.08
-MODERATE_GAP = 0.05
-
-# Coin-flip “uncertainty factor” thresholds
-DISAGREE_STD = 0.03
-COINFLIP_FACTORS_MIN = 2
-
-# =========================
-# BASIC HELPERS
-# =========================
-def _normalize_team(s: str) -> str:
-    return ' '.join(s.lower().strip().split())
-
-def _game_key_day(sport: str, slate_date_et: str, away_team: str, home_team: str) -> str:
-    away_norm = _normalize_team(away_team)
-    home_norm = _normalize_team(home_team)
-    return f"{sport}|{slate_date_et}|{away_norm}|{home_norm}"
-    return datetime.now(timezone.utc).isoformat()
-
-def _json_default(o):
-    if isinstance(o, Decimal):
-        return float(o)
-    return str(o)
-
-def _resp(status: int, body: Any) -> Dict[str, Any]:
-    return {
-        "statusCode": status,
-        "headers": {
-            "content-type": "application/json",
-            "access-control-allow-origin": "*",
-            "access-control-allow-headers": "content-type",
-            "access-control-allow-methods": "GET,POST,OPTIONS",
-        },
-        "body": json.dumps(body, default=_json_default)
-    }
-def _resp(status: int, body: Any) -> Dict[str, Any]:
-    return {
-        "statusCode": status,
-        "headers": {
-            "content-type": "application/json",
-            "access-control-allow-origin": "*",
-            "access-control-allow-headers": "content-type",
-            "access-control-allow-methods": "GET,POST,OPTIONS",
-        },
-        "body": json.dumps(body, default=_json_default)
-    }
-
-def _american_to_prob(a: int) -> float:
-    return abs(a) / (abs(a) + 100) if a < 0 else 100 / (a + 100)
-
-def _vig_norm(p1: float, p2: float) -> Tuple[float, float]:
-    s = p1 + p2
-    return (p1 / s, p2 / s) if s > 0 else (0.5, 0.5)
-
-def _mean_std(vals: List[float]) -> Tuple[float, float]:
-    vals = [float(x) for x in (vals or []) if x is not None]
-    if not vals:
-        return 0.0, 0.0
-    m = sum(vals) / len(vals)
-    var = sum((x - m) ** 2 for x in vals) / len(vals)
-    return m, var ** 0.5
-
-def _log_ineligible_reason(sport: str, t: str, slate_date_et: str, game: dict, factors):
-    try:
-        print(json.dumps({
-            "tag": "INELIGIBLE_REASON",
-            "sport": sport,
-            "t": t,
-            "slate_date_et": slate_date_et,
-            "game_id": game.get("id") or game.get("game_id"),
-            "game_key": game.get("game_key"),
-            "away": game.get("away_team") or game.get("away"),
-            "home": game.get("home_team") or game.get("home"),
-            "commence_time": game.get("commence_time"),
-            "reason": factors
-        }, default=str))
-    except Exception as e:
-        print(f"Logging error: {e}")
-
-# =========================
-# ODDS API + SNAPSHOT
-# =========================
-def _get_slate_date_et() -> str:
-    eastern = ZoneInfo("America/New_York")
-    return datetime.now(eastern).strftime('%Y-%m-%d')
-
-def _filter_games_by_slate_date(games: list, slate_date_et: str) -> list:
-    eastern = ZoneInfo("America/New_York")
-    filtered_games = []
-    for game in games:
-        commence_time = datetime.fromisoformat(game['commence_time'].replace('Z', '+00:00'))
-        commence_time_et = commence_time.astimezone(eastern).strftime('%Y-%m-%d')
-        if commence_time_et == slate_date_et:
-            filtered_games.append(game)
-    return filtered_games
-
-def _build_oddsapi_url_nba_h2h() -> str:
-    if not ODDS_API_KEY:
-        raise RuntimeError("ODDS_API_KEY missing")
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": "h2h",
-        "oddsFormat": "american",
-        "dateFormat": "iso",
-    }
-    return "https://api.the-odds-api.com/v4/sports/basketball_nba/odds/?" + urllib.parse.urlencode(params)
-
-def _compact_nba_h2h(raw_games: list) -> Dict[str, Any]:
-    # Store all bookmakers returned by OddsAPI
-    all_keys_seen = set()
-    games_out = []
-
-    slate_date_et = _get_slate_date_et()
-    for g in raw_games:
-        home = g.get("home_team")
-        away = g.get("away_team")
-        gid = g.get("id")
-        ct = g.get("commence_time")
-
         books_out: Dict[str, Any] = {}
-
-        for b in g.get("bookmakers", []) or []:
-            key = (b.get("key") or "").lower().strip()
-            if not key:
+        for bookmaker in raw_game.get("bookmakers", []) or []:
+            book_key = (bookmaker.get("key") or "").lower().strip()
+            if not book_key:
                 continue
-            all_keys_seen.add(key)
-
-            h2h = next((m for m in (b.get("markets") or []) if m.get("key") == "h2h"), None)
+            all_books.add(book_key)
+            h2h = next((m for m in bookmaker.get("markets", []) or [] if m.get("key") == "h2h"), None)
             if not h2h:
                 continue
 
-            ho = ao = None
-            for o in (h2h.get("outcomes") or []):
-                if o.get("name") == home:
-                    ho = o.get("price")
-                elif o.get("name") == away:
-                    ao = o.get("price")
+            home_odds = away_odds = None
+            for outcome in h2h.get("outcomes", []) or []:
+                if outcome.get("name") == home:
+                    home_odds = outcome.get("price")
+                elif outcome.get("name") == away:
+                    away_odds = outcome.get("price")
 
-            if ho is None or ao is None:
+            if home_odds is None or away_odds is None:
                 continue
+            books_out[book_key] = {"ml": {"home": int(home_odds), "away": int(away_odds)}}
 
-            books_out[key] = {"ml": {"home": int(ho), "away": int(ao)}}
-
-        game_key = f"nba|{_normalize_team(away)}|{_normalize_team(home)}|{ct}"
-        games_out.append({
-            "game_key": game_key,
-            "game_key": game_key,
-            "id": gid,
-            "commence_time": ct,
-            "home_team": home,
-            "away_team": away,
-            "books": books_out,
-        })
+        game_key = _game_key_day(sport, slate_date_et, away, home)
+        games_out.append(
+            {
+                "id": game_id or game_key,
+                "game_key": game_key,
+                "internal_key": game_key,
+                "commence_time": commence_time,
+                "home_team": home,
+                "away_team": away,
+                "books": books_out,
+            }
+        )
 
     return {
         "games": games_out,
         "count": len(games_out),
-        "available_book_keys": sorted(all_keys_seen),
-        "panel_books": list(PANEL_BOOKS),
+        "available_book_keys": sorted(all_books),
+        "panel_books": PANEL_BOOKS,
     }
 
-def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: Optional[str] = None, sport: str = "nba") -> Dict[str, Any]:
+
+def _store_snapshot(run_type: str, data: Dict[str, Any], slate_date_et: str, t: Optional[str], sport: str) -> Dict[str, Any]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
 
-    asof = datetime.now(timezone.utc).isoformat()
+    asof = _now_iso()
     slate_id = f"{sport.upper()}_{slate_date_et}_{run_type}"
-    sk_prefix = f"{t}#DATE#{slate_date_et}#ASOF#{asof}#SLATE#{slate_id}" if t else f"ASOF#{asof}#SLATE#{slate_id}"
+    sk = f"{t}#DATE#{slate_date_et}#ASOF#{asof}#SLATE#{slate_id}" if t else f"DATE#{slate_date_et}#ASOF#{asof}#SLATE#{slate_id}"
     item = {
-        "t": t if t else None,
         "PK": f"SPORT#{sport}",
-        "SK": sk_prefix,
+        "SK": sk,
         "sport": sport,
+        "t": t,
         "slate_id": slate_id,
+        "slate_date_et": slate_date_et,
         "asof": asof,
         "created_at": asof,
         "data": data,
-        "slate_date_et": slate_date_et,
         "meta": {"source": "theOddsAPI", "run_type": run_type, "pulled_at": asof},
     }
     snapshots_tbl.put_item(Item=item)
     return item
 
-def _pull_nba_snapshot(run_type: str, t: Optional[str] = None) -> Dict[str, Any]:
-    raw = _http_get_json(_build_oddsapi_url_nba_h2h())
-    slate_date_et = _get_slate_date_et()
-    filtered_games = _filter_games_by_slate_date(raw, slate_date_et)
-    compact = _compact_nba_h2h(filtered_games)
-    stored = _store_snapshot(run_type, compact, slate_date_et, t)
-    return {"ok": True, "count": compact["count"], "stored": {"pk": stored["PK"], "sk": stored["SK"]}}
 
-def _latest_snapshot(t: Optional[str] = None, sport: str = "nba") -> Optional[Dict[str, Any]]:
+def _pull_snapshot(sport: str, run_type: str, t: Optional[str] = None) -> Dict[str, Any]:
+    sport = (sport or "").lower()
+    slate_date_et = _get_slate_date_et()
+    raw = _http_get_json(_oddsapi_url(sport))
+    filtered = _filter_games_by_slate_date(raw, slate_date_et)
+    compact = _compact_h2h(filtered, sport, slate_date_et)
+    stored = _store_snapshot(run_type, compact, slate_date_et, t, sport)
+    return {
+        "ok": True,
+        "sport": sport,
+        "t": t,
+        "slate_date_et": slate_date_et,
+        "count": compact["count"],
+        "stored": {"pk": stored["PK"], "sk": stored["SK"]},
+        "available_book_keys": compact["available_book_keys"],
+    }
+
+
+def _latest_snapshot(t: Optional[str], sport: str) -> Optional[Dict[str, Any]]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
-    key_expr = Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(f"{t}#")
-    resp = snapshots_tbl.query(
-        KeyConditionExpression=key_expr,
+    if not t:
+        raise ValueError("t is required for latest snapshot lookup")
+
+    today_et = _get_slate_date_et()
+    response = snapshots_tbl.query(
+        KeyConditionExpression=Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(f"{t}#DATE#{today_et}"),
         ScanIndexForward=False,
         Limit=1,
     )
-    items = resp.get("Items", [])
-    today_et = _get_slate_date_et()
-    for item in items:
-        if item.get("t") == t and item.get("slate_date_et") == today_et:
-            return item
+    items = response.get("Items", [])
+    return items[0] if items else None
+
+
+def _best_ml_for_engine(game: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    books = game.get("books", {}) or {}
+    for book in PREFERRED_BOOKS:
+        ml = (books.get(book) or {}).get("ml", {})
+        if ml.get("home") is not None and ml.get("away") is not None:
+            return {"book": book, "home": int(ml["home"]), "away": int(ml["away"])}
+    for book, data in books.items():
+        ml = (data or {}).get("ml", {})
+        if ml.get("home") is not None and ml.get("away") is not None:
+            return {"book": book, "home": int(ml["home"]), "away": int(ml["away"])}
     return None
 
-# =========================
-# PANEL CONSENSUS + SIGNALS
-# =========================
-def _fav_side_and_prob(ml: dict) -> Tuple[Optional[str], float]:
-    ho = ml.get("home")
-    ao = ml.get("away")
-    if ho is None or ao is None:
-        return None, 0.0
-    ho = int(ho); ao = int(ao)
-    p_h_raw = _american_to_prob(ho)
-    p_a_raw = _american_to_prob(ao)
-    p_h, p_a = _vig_norm(p_h_raw, p_a_raw)
-    return ("home", float(p_h)) if p_h >= p_a else ("away", float(p_a))
 
-def _panel_metrics(game: dict) -> dict:
-    books = game.get("books", {}) or {}
-    present = []
-    fav_probs = []
-    fav_sides = []
+def _favorite_from_ml(ml: Dict[str, int], home_team: str, away_team: str) -> Tuple[str, str, float, Dict[str, float]]:
+    home_raw = _american_to_prob(int(ml["home"]))
+    away_raw = _american_to_prob(int(ml["away"]))
+    home_p, away_p = _vig_norm(home_raw, away_raw)
+    if home_p >= away_p:
+        return home_team, away_team, home_p - away_p, {"home": home_p, "away": away_p}
+    return away_team, home_team, away_p - home_p, {"home": home_p, "away": away_p}
 
-    for book in PANEL_BOOKS:
-        if book not in books:
-            continue
-        ml = (books[book] or {}).get("ml", {})
-        side, fav_p = _fav_side_and_prob(ml)
-        if side is None:
-            continue
-        present.append(book)
-        fav_sides.append(side)
-        fav_probs.append(fav_p)
 
-    total = len(present)
-    books_total = len(game.get("books", {}))
-    if total == 0:
+def _classify_game_simple(game: Dict[str, Any]) -> Dict[str, Any]:
+    home = game.get("home_team") or game.get("home")
+    away = game.get("away_team") or game.get("away")
+    ml_pack = _best_ml_for_engine(game)
+    if not home or not away:
+        return {"class": "INELIGIBLE", "factors": ["MISSING_TEAMS"], "game": game}
+    if not ml_pack:
+        return {"class": "INELIGIBLE", "factors": ["NO_MONEYLINE_ODDS"], "game": game}
+
+    ml = {"home": ml_pack["home"], "away": ml_pack["away"]}
+    favorite, dog, gap, p_norm = _favorite_from_ml(ml, home, away)
+    factors: List[str] = []
+    if gap < COINFLIP_GAP:
+        factors.append("COMPRESSED_MARKET")
+
+    class_name = "STRONG_SOLID" if gap >= STRONG_GAP else "COIN_FLIP" if gap < COINFLIP_GAP else "SOLID"
+    return {
+        "game_id": game.get("id") or game.get("game_key"),
+        "game_key": game.get("game_key"),
+        "home_team": home,
+        "away_team": away,
+        "commence_time": game.get("commence_time"),
+        "book": ml_pack["book"],
+        "ml": ml,
+        "p_norm": {"home": round(p_norm["home"], 4), "away": round(p_norm["away"], 4)},
+        "favorite": favorite,
+        "dog": dog,
+        "gap": round(gap, 4),
+        "class": class_name,
+        "factors": factors,
+        "disallowed": False,
+    }
+
+
+def _game_to_rank_input(game: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "game_id": game["game_id"],
+        "home": game["home_team"],
+        "away": game["away_team"],
+        "ml": game["ml"],
+    }
+
+
+def _class_counts(classified: List[Dict[str, Any]]) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for game in classified:
+        key = game.get("class", "UNKNOWN")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def _build_parlays_from_latest(sport: str, max_parlays: int) -> Dict[str, Any]:
+    required_t = ["T1", "T2", "T3", "T4"]
+    snapshots = {t: _latest_snapshot(t, sport) for t in required_t}
+    missing = [t for t, snapshot in snapshots.items() if snapshot is None]
+    slate_date_et = _get_slate_date_et()
+    if missing:
         return {
-            "books_present": [],
-            "panel_total": 0,
-            "panel_confirm_ratio": 0.0,
-            "panel_avg_fav_p": None,
-            "panel_std_fav_p": None,
-            "panel_disagree": True,
-            "books_total": books_total,
+            "ok": True,
+            "sport": sport,
+            "slate_date_et": slate_date_et,
+            "parlays_requested": max_parlays,
+            "parlays_built": 0,
+            "refusal": {
+                "code": "MISSING_REQUIRED_T_SNAPSHOTS",
+                "reason": "T1, T2, T3, and T4 must exist before building.",
+                "missing": missing,
+            },
         }
 
-    home_votes = sum(1 for s in fav_sides if s == "home")
-    away_votes = total - home_votes
-    confirm = max(home_votes, away_votes)
+    games_t4 = snapshots["T4"].get("data", {}).get("games", [])
+    classified = [_classify_game_simple(game) for game in games_t4]
+    eligible = [game for game in classified if game.get("class") in {"STRONG_SOLID", "SOLID", "COIN_FLIP"}]
+    eligible.sort(key=lambda game: (game.get("class") == "STRONG_SOLID", game.get("gap", 0)), reverse=True)
 
-    avg_p, std_p = _mean_std(fav_probs)
+    built: List[Dict[str, Any]] = []
+    used_game_ids = set()
+    for _ in range(max_parlays):
+        available = [game for game in eligible if game["game_id"] not in used_game_ids]
+        strong = [game for game in available if game["class"] == "STRONG_SOLID"]
+        variable = [game for game in available if game["class"] in {"COIN_FLIP", "SOLID"}]
+
+        if len(strong) >= 2 and variable:
+            slate = strong[:2] + [variable[0]]
+        elif len(available) >= 3 and len(strong) >= 1:
+            slate = available[:3]
+        else:
+            break
+
+        try:
+            ranked = rank_nba_b11c1([_game_to_rank_input(game) for game in slate])
+        except Exception as exc:
+            return {
+                "ok": False,
+                "sport": sport,
+                "error": "RANKING_FAILED",
+                "detail": str(exc),
+                "slate": slate,
+            }
+
+        for game in slate:
+            used_game_ids.add(game["game_id"])
+
+        built.append(
+            {
+                "structure": "2_STRONG_1_VARIABLE" if len([g for g in slate if g["class"] == "STRONG_SOLID"]) >= 2 else "BEST_AVAILABLE",
+                "legs": slate,
+                "ranking": ranked,
+            }
+        )
+
+    refusal = None
+    if len(built) < max_parlays:
+        refusal = {
+            "code": "INSUFFICIENT_ELIGIBLE_GAMES",
+            "reason": "Could not build all requested no-overlap parlays from eligible T4 games.",
+            "eligible_games": len(eligible),
+            "class_counts": _class_counts(classified),
+        }
+
     return {
-        "books_present": present,
-        "panel_total": total,
-        "panel_confirm_ratio": round(confirm / total, 3),
-        "panel_avg_fav_p": round(avg_p, 4),
-        "panel_std_fav_p": round(std_p, 4),
-        "panel_disagree": std_p > DISAGREE_STD,
+        "ok": True,
+        "sport": sport,
+        "model": "B1.1C-clean",
+        "slate_date_et": slate_date_et,
+        "parlays_requested": max_parlays,
+        "parlays_built": len(built),
+        "refusal": refusal,
+        "parlays": built,
     }
 
-def _steam_resistance_signals(books: dict) -> dict:
-    fd = (books.get("fanduel") or {}).get("ml")
-    dk = (books.get("draftkings") or {}).get("ml")
-    if not fd or not dk:
-        return {"steam": False, "resistance": False, "coinflip": False, "gap": None}
 
-    fd_side, fd_fav_p = _fav_side_and_prob(fd)
-    dk_side, dk_fav_p = _fav_side_and_prob(dk)
-    if not fd_side or not dk_side:
-        return {"steam": False, "resistance": False, "coinflip": False, "gap": None}
+def compute_game_signals(sport: str, t: Optional[str], slate_date_et: str, snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
+    games = snapshot.get("data", {}).get("games", []) if snapshot else []
+    signals: List[Dict[str, Any]] = []
+    for game in games:
+        classified = _classify_game_simple(game)
+        if classified.get("class") == "INELIGIBLE":
+            continue
+        signals.append(
+            {
+                "game_id": classified["game_id"],
+                "game_key": classified.get("game_key"),
+                "sport": sport,
+                "t": t,
+                "slate_date_et": slate_date_et,
+                "home_team": classified["home_team"],
+                "away_team": classified["away_team"],
+                "book": classified["book"],
+                "class": classified["class"],
+                "favorite": classified["favorite"],
+                "dog": classified["dog"],
+                "gap": Decimal(str(classified["gap"])),
+                "factors": classified["factors"],
+                "created_at": _now_iso(),
+            }
+        )
+    return signals
 
-    gap = abs(fd_fav_p - dk_fav_p)
-    steam = gap >= 0.03
-    coinflip = max(fd_fav_p, dk_fav_p) < 0.525
-    resistance = steam and ((fd_fav_p > dk_fav_p and dk_fav_p > 0.5) or (dk_fav_p > fd_fav_p and fd_fav_p > 0.5))
 
-    return {
-        "steam": steam,
-        "resistance": resistance,
-        "coinflip": coinflip,
-        "gap": round(gap, 4),
-        "fd_fav_p": round(fd_fav_p, 4),
-        "dk_fav_p": round(dk_fav_p, 4),
-    }
+def _store_signals(sport: str, t: Optional[str], slate_date_et: str, snapshot: Dict[str, Any]) -> None:
+    if signal_ledger_tbl is None or not t:
+        return
+    for signal in compute_game_signals(sport, t, slate_date_et, snapshot):
+        signal_ledger_tbl.put_item(
+            Item={
+                "PK": f"LEDGER#{sport}#{slate_date_et}#{t}",
+                "SK": f"GAME#{signal['game_id']}",
+                **signal,
+            }
+        )
 
-# =========================
-# CLASSIFICATION: SOLID / COIN FLIP
-# =========================
-def _best_ml_for_engine(game: dict) -> Optional[dict]:
-    books = game.get("books", {}) or {}
-    preferred_books = ["fanatics", "draftkings", "fanduel", "betmgm", "caesars", "betrivers", "bovada", "lowvig"]
-    
-    # Check preferred books first
-    for book in preferred_books:
-        ml = books.get(book, {}).get("ml", {})
-        if ml.get("home") is not None and ml.get("away") is not None:
-            home = int(float(ml["home"]))
-            away = int(float(ml["away"]))
-            return {"book": book, "home": home, "away": away}
-    
-    # Check any remaining books
-    for book, data in books.items():
-        if book not in preferred_books:
-            ml = data.get("ml", {})
-            if ml.get("home") is not None and ml.get("away") is not None:
-                home = int(float(ml["home"]))
-                away = int(float(ml["away"]))
-                return {"book": book, "home": home, "away": away}
-    
-    return None
 
-def _leader_gap_from_ml(ml: dict) -> float:
-    side, fav_p = _fav_side_and_prob(ml)
-    if side is None:
-        return 0.0
-    # compute normalized gap as fav - dog
-    ho = int(ml["home"]); ao = int(ml["away"])
-    p_h, p_a = _vig_norm(_american_to_prob(ho), _american_to_prob(ao))
-    return abs(p_h - p_a)
+def _pull_and_store_with_signals(sport: str, run_type: str, t: Optional[str]) -> Dict[str, Any]:
+    result = _pull_snapshot(sport, run_type, t)
+    snapshot = _latest_snapshot(t, sport) if t else None
+    if snapshot:
+        _store_signals(sport, t, result["slate_date_et"], snapshot)
+    return result
 
-def _classify_game(game: Dict[str, Any], snapshots: List[Dict[str, Any]], t_map: Dict[str, Any], coinflip_lite: bool, slate_date_et: str) -> Tuple[str, Any]:
-    gid = game.get("id") or game.get("game_id")
-    home_team = game.get("home_team") or game.get("home")
-    away_team = game.get("away_team") or game.get("away")
-    ml_pack = _best_ml_for_engine(game)
-    if not ml_pack:
-        return "INELIGIBLE", ["NO_ODDS"]
-    ml = {"home": ml_pack["home"], "away": ml_pack["away"]}
-    gap = _leader_gap_from_ml(ml)
-    panel = _panel_metrics(game)
-    sig = _steam_resistance_signals(game.get("books", {}))
 
-    factors = []
-    # factor 1: compressed gap
-    if gap < MODERATE_GAP:
-        factors.append("LOW_GAP")
-    # factor 2: panel disagreement
-    if panel.get("panel_disagree"):
-        factors.append("PANEL_DISAGREE")
-    # factor 3: missing panel coverage, but not auto-ineligible
-    if (panel.get("panel_total") or 0) < 2:
-        factors.append("LOW_PANEL_COVERAGE")
-    if panel.get("panel_total") == 0:
-        factors.append("PANEL_NO_BOOKS")
-    # factor 4: coinflip signal
-    if sig.get("coinflip"):
-        factors.append("COINFLIP_SIGNAL")
-
-    # classification
-    if gap >= SOLID_GAP and not panel.get("panel_disagree"):
-        cls = "STRONG_SOLID"
-    elif gap >= SOLID_GAP:
-        cls = "SOLID"
+def _query_snapshots(sport: str, t: Optional[str], limit: int) -> Dict[str, Any]:
+    if snapshots_tbl is None:
+        raise RuntimeError("SNAPSHOTS_TABLE not configured")
+    slate_date_et = _get_slate_date_et()
+    if t:
+        key_condition = Key("PK").eq(f"SPORT#{sport}") & Key("SK").begins_with(f"{t}#DATE#{slate_date_et}")
     else:
-        # coin flip requires multiple uncertainty factors (your rule)
-        cls = "COIN_FLIP" if len(factors) >= COINFLIP_FACTORS_MIN else "MARGINAL"
+        key_condition = Key("PK").eq(f"SPORT#{sport}")
+    response = snapshots_tbl.query(KeyConditionExpression=key_condition, ScanIndexForward=False, Limit=limit)
+    return {"ok": True, "sport": sport, "t": t, "items": response.get("Items", [])}
 
-    return cls, factors
 
-# =========================
-# =========================
+def lambda_handler(event, context):
+    event = event or {}
+    method = (event.get("httpMethod") or "").upper()
+    path = event.get("path") or "/"
+
+    if method == "OPTIONS":
+        return _resp(200, {"ok": True})
+
+    if method == "GET" and path in {"/", "/health", "/v1/health"}:
+        return _resp(200, {"ok": True, "status": "healthy", "service": "parlay-platform", "ts": _now_iso()})
+
+    if method == "GET" and path == "/v1/snapshots":
+        params = event.get("queryStringParameters") or {}
+        sport = (params.get("sport") or "nba").lower()
+        t = params.get("t")
+        limit = min(int(params.get("limit") or 10), 100)
+        try:
+            return _resp(200, _query_snapshots(sport, t, limit))
+        except Exception as exc:
+            return _resp(500, {"ok": False, "error": str(exc)})
+
+    if method == "POST" and path in {"/v1/pull/nba", "/v1/pull/ncaam"}:
+        sport = path.rsplit("/", 1)[-1]
+        body = _parse_json(event.get("body"))
+        run_type = body.get("run", "manual")
+        t = body.get("t")
+        try:
+            return _resp(200, _pull_and_store_with_signals(sport, run_type, t))
+        except Exception as exc:
+            return _resp(500, {"ok": False, "sport": sport, "error": str(exc)})
+
+    if method == "POST" and path == "/v1/rank/nba":
+        body = _parse_json(event.get("body"))
+        games = body.get("games")
+        if not isinstance(games, list) or len(games) != 3:
+            return _resp(400, {"ok": False, "error": "Provide exactly 3 games in body.games"})
+        try:
+            return _resp(200, rank_nba_b11c1(games))
+        except Exception as exc:
+            return _resp(400, {"ok": False, "error": str(exc)})
+
+    if method == "POST" and path == "/v1/build/nba/4":
+        return _resp(200, _build_parlays_from_latest("nba", 4))
+
+    if method == "POST" and path == "/v1/build/ncaam/b1c23":
+        body = _parse_json(event.get("body"))
+        max_parlays = min(max(int(body.get("max_parlays", 1)), 1), 7)
+        return _resp(200, _build_parlays_from_latest("ncaam", max_parlays))
+
+    if method == "POST" and path.startswith("/v1/build/ncaam/"):
+        try:
+            max_parlays = min(max(int(path.rstrip("/").split("/")[-1]), 1), 7)
+        except ValueError:
+            return _resp(400, {"ok": False, "error": "Invalid max_parlays value"})
+        return _resp(200, _build_parlays_from_latest("ncaam", max_parlays))
+
+    return _resp(404, {"ok": False, "error": f"Route not found: {method} {path}"})
+
+
+def scheduler_handler(event, context):
+    event = event or {}
+    sport = (event.get("sport") or "").lower()
+    t = event.get("t")
+    run_type = event.get("run") or "scheduled"
+    if sport not in SPORT_KEYS:
+        return _resp(400, {"ok": False, "error": "Unsupported sport", "sport": sport})
+    try:
+        result = _pull_and_store_with_signals(sport, run_type, t)
+        return _resp(200, {"ok": True, "sport": sport, "t": t, "run": run_type, "result": result})
+    except Exception as exc:
+        return _resp(500, {"ok": False, "sport": sport, "t": t, "run": run_type, "error": str(exc)})
