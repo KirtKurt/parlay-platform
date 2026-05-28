@@ -135,9 +135,18 @@ def underdog_count(games: List[MLBGame], picks: List[str]) -> int:
 def combo_tags(games: List[MLBGame], picks: List[str]) -> List[str]:
     tags: List[str] = []
     for game, pick in zip(games, picks):
-        side = "DOG" if pick == game.dog else "FAV"
-        for tag in game.tags:
-            tags.append(f"{game.game_id}:{side}:{tag}")
+        if pick == game.dog:
+            if "MLB_LIVE_DOG" in game.tags:
+                tags.append(f"{game.game_id}:DOG:MLB_LIVE_DOG")
+            if "COMPRESSED_MARKET" in game.tags:
+                tags.append(f"{game.game_id}:DOG:COMPRESSED_MARKET")
+        else:
+            if "VULNERABLE_HOLD" in game.tags:
+                tags.append(f"{game.game_id}:FAV:VULNERABLE_HOLD")
+            if "FLAT_FAVORITE_DOWNGRADE" in game.tags:
+                tags.append(f"{game.game_id}:FAV:FLAT_FAVORITE_DOWNGRADE")
+            if "COMPRESSED_MARKET" in game.tags:
+                tags.append(f"{game.game_id}:FAV:COMPRESSED_MARKET")
     return tags
 
 
@@ -166,7 +175,7 @@ def mlb_b10a3_score(games: List[MLBGame], picks: List[str]) -> float:
 
     score += 0.55 * sum(1 for tag in tags if ":DOG:MLB_LIVE_DOG" in tag)
     score -= 0.60 * sum(1 for tag in tags if ":FAV:FLAT_FAVORITE_DOWNGRADE" in tag)
-    score -= 0.35 * sum(1 for tag in tags if "COMPRESSED_MARKET" in tag and ":FAV:" in tag)
+    score -= 0.35 * sum(1 for tag in tags if ":FAV:COMPRESSED_MARKET" in tag)
 
     return score
 
