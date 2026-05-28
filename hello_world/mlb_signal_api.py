@@ -40,6 +40,17 @@ def _json_default(value: Any) -> Any:
     return str(value)
 
 
+def _to_ddb(value: Any) -> Any:
+    """Convert API payload values into DynamoDB-safe values without losing ML features."""
+    if isinstance(value, float):
+        return Decimal(str(round(value, 12)))
+    if isinstance(value, dict):
+        return {k: _to_ddb(v) for k, v in value.items() if v is not None}
+    if isinstance(value, list):
+        return [_to_ddb(v) for v in value if v is not None]
+    return value
+
+
 def _resp(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "statusCode": status,
@@ -379,10 +390,65 @@ def movement_deltas(limit: int = 40) -> Dict[str, Any]:
     return {"ok": True, "sport": "mlb", "previous_asof": prev_snap.get("asof"), "latest_asof": latest_snap.get("asof"), "count": len(deltas), "deltas": deltas}
 
 
+def _prediction_item(row: Dict[str, Any], slate_date: str, now: str) -> Dict[str, Any]:
+    status = row.get("prediction_status") or "UNKNOWN"
+    return {
+        "PK": f"PRED#mlb#{slate_date}",
+        "SK": f"HOT_SIDE#{row.get('latest_asof')}#{row.get('game_key')}",
+        "sport": "mlb",
+        "slate_date_et": slate_date,
+        "created_at": now,
+        "asof": row.get("latest_asof"),
+        "previous_asof": row.get("previous_asof"),
+        "game_key": row.get("game_key"),
+        "game_id": row.get("game_id"),
+        "home_team": row.get("home_team"),
+        "away_team": row.get("away_team"),
+        "commence_time": row.get("commence_time"),
+        "market": "moneyline",
+        "prediction_type": "HOT_SIDE_MOVEMENT",
+        "prediction_status": status,
+        "status": "OPEN",
+        "predicted_team": row.get("hot_team") if str(status).startswith("PUBLISHED") else None,
+        "hot_team": row.get("hot_team"),
+        "hot_side": row.get("hot_side"),
+        "hot_side_label": row.get("hot_side_label"),
+        "confidence_label": row.get("confidence_label"),
+        "confidence": row.get("confidence_score"),
+        "confidence_score": row.get("confidence_score"),
+        "display_confidence_scores": True,
+        "target_success_rate": TARGET_SUCCESS_RATE,
+        "reason_codes": row.get("reason_codes", []),
+        "market_intelligence_tags": row.get("public_market_language", {}).get("market_intelligence_tags", []),
+        "explanation": row.get("prediction"),
+        "public_prediction": row.get("public_prediction"),
+        "market_status": row.get("market_status"),
+        "best_use": row.get("best_use"),
+        "why": row.get("why"),
+        "public_market_language": row.get("public_market_language", {}),
+        "favorite": row.get("favorite", {}),
+        "book_agreement": row.get("book_agreement", {}),
+        "spread_signal": row.get("spread_signal", {}),
+        "total_signal": row.get("total_signal", {}),
+        "latest_consensus": row.get("latest_consensus", {}),
+        "previous_consensus": row.get("previous_consensus", {}),
+        "movement": {
+            "home_delta": row.get("home_delta"),
+            "away_delta": row.get("away_delta"),
+            "hot_delta": row.get("hot_delta"),
+        },
+        "ml_training_row": True,
+        "ml_outcome_status": "PENDING_RESULT",
+        "evaluation": {},
+    }
+
+
 def hot_sides(limit: int = 40, store: bool = False, include_no_edge: bool = True) -> Dict[str, Any]:
     data = movement_deltas(limit=limit)
     rows = []
     actionable_rows = []
+    stored_count = 0
+    storage_errors: List[str] = []
     now = _now_iso()
     slate_date = _slate_date_et()
     status_counts: Dict[str, int] = {}
@@ -403,59 +469,35 @@ def hot_sides(limit: int = 40, store: bool = False, include_no_edge: bool = True
             "confidence_label": confidence_label,
         }
 
-        item = None
         if is_actionable:
-            item = {
-                "PK": f"PRED#mlb#{slate_date}",
-                "SK": f"HOT_SIDE#{row.get('latest_asof')}#{row.get('game_key')}",
-                "sport": "mlb",
-                "slate_date_et": slate_date,
-                "created_at": now,
-                "asof": row.get("latest_asof"),
-                "previous_asof": row.get("previous_asof"),
-                "game_key": row.get("game_key"),
-                "game_id": row.get("game_id"),
-                "home_team": row.get("home_team"),
-                "away_team": row.get("away_team"),
-                "market": "moneyline",
-                "prediction_type": "HOT_SIDE_MOVEMENT",
-                "prediction_status": status,
-                "status": "OPEN",
-                "predicted_team": row.get("hot_team") if status.startswith("PUBLISHED") else None,
-                "hot_team": row.get("hot_team"),
-                "hot_side": row.get("hot_side"),
-                "confidence_label": confidence_label,
-                "confidence": Decimal(str(confidence_score)),
-                "confidence_score": Decimal(str(confidence_score)),
-                "display_confidence_scores": True,
-                "target_success_rate": TARGET_SUCCESS_RATE,
-                "reason_codes": row.get("reason_codes", []),
-                "explanation": row.get("prediction"),
-                "public_market_language": row.get("public_market_language", {}),
-                "movement": {
-                    "home_delta": Decimal(str(row.get("home_delta"))),
-                    "away_delta": Decimal(str(row.get("away_delta"))),
-                    "hot_delta": Decimal(str(row.get("hot_delta"))),
-                },
-                "evaluation": {},
-            }
             actionable_rows.append(row)
-            if store and predictions_tbl is not None:
-                predictions_tbl.put_item(Item=item)
 
-        rows.append({**row, "stored_prediction_key": item["SK"] if item and store else None})
+        item = _prediction_item(row, slate_date, now)
+        stored_prediction_key = None
+        if store:
+            if predictions_tbl is None:
+                storage_errors.append("PREDICTIONS_TABLE not configured")
+            else:
+                predictions_tbl.put_item(Item=_to_ddb(item))
+                stored_count += 1
+                stored_prediction_key = item["SK"]
+
+        rows.append({**row, "stored_prediction_key": stored_prediction_key})
 
     return {
         "ok": True,
         "sport": "mlb",
         "stored": store,
+        "stored_count": stored_count,
+        "storage_status": "CONNECTED" if store and predictions_tbl is not None else ("NOT_REQUESTED" if not store else "NOT_CONFIGURED"),
+        "storage_errors": storage_errors,
         "count": len(rows),
         "movement_count": data.get("count", 0),
         "actionable_count": len(actionable_rows),
         "status_counts": status_counts,
         "target_success_rate": 75,
         "display_confidence_scores": True,
-        "message": "No clean edge is published yet; returning tracked market cards with confidence scores." if not actionable_rows else "Actionable market cards found with confidence scores.",
+        "message": "ML audit rows stored for every returned market card, including No Clean Edge rows." if store and not storage_errors else ("No clean edge is published yet; returning tracked market cards with confidence scores." if not actionable_rows else "Actionable market cards found with confidence scores."),
         "previous_asof": data.get("previous_asof"),
         "latest_asof": data.get("latest_asof"),
         "hot_sides": rows,
