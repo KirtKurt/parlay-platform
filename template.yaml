@@ -323,6 +323,28 @@ Resources:
             Path: /v1/sources/soccer/status
             Method: GET
 
+  SoccerResultsAuditFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: soccer_results_api.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PredictionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
+      Events:
+        SoccerResultsAuditGet:
+          Type: Api
+          Properties:
+            Path: /v1/results/soccer/audit
+            Method: GET
+        SoccerResultsAuditPost:
+          Type: Api
+          Properties:
+            Path: /v1/results/soccer/audit
+            Method: POST
+
   SoccerAppApiFunction:
     Type: AWS::Serverless::Function
     Properties:
