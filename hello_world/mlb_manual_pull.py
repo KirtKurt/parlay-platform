@@ -140,10 +140,6 @@ def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_er
     """
     For pre-start display runs, keep the product usable when the external feed rejects
     the refresh by explicitly returning the latest stored MLB snapshot analysis.
-
-    This is not silent fallback: live_pull_ok=false and the upstream diagnostic are
-    included in the response body. If cached analysis cannot be built, the caller gets
-    the original failure.
     """
     run = str(payload.get("run") or "")
     if "pre_start" not in run and "final" not in run:
@@ -311,6 +307,50 @@ def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def _compact_for_game_date(compact: Dict[str, Any], game_date: str) -> Dict[str, Any]:
+    games = [game for game in compact.get("games", []) or [] if game.get("game_date_et") == game_date]
+    books_seen = sorted({book for game in games for book in (game.get("books") or {}).keys()})
+    return {
+        **compact,
+        "games": games,
+        "count": len(games),
+        "game_dates_et": [game_date] if games else [],
+        "available_book_keys": books_seen,
+        "date_isolated": True,
+    }
+
+
+def _store_snapshot_item(*, t: str, slate_date: str, game_date: str, asof: str, run: str, compact: Dict[str, Any], date_isolated: bool, pk: str) -> Dict[str, str]:
+    slate_id = f"MLB_DATE_{game_date}_{run}" if date_isolated else f"MLB_ROLLING_{'_'.join(compact.get('game_dates_et') or [slate_date])}_{run}"
+    item = {
+        "PK": pk,
+        "SK": f"{t}#GAME_DATE#{game_date}#PULL_DATE#{slate_date}#ASOF#{asof}#SLATE#{slate_id}",
+        "sport": "mlb",
+        "t": t,
+        "slate_id": slate_id,
+        "slate_date_et": game_date,
+        "pull_date_et": slate_date,
+        "game_date_et": game_date,
+        "game_dates_et": compact.get("game_dates_et") or [],
+        "rolling_open_pull": True,
+        "date_isolated": date_isolated,
+        "asof": asof,
+        "created_at": asof,
+        "data": compact,
+        "meta": {
+            "source": "theOddsAPI",
+            "run_type": run,
+            "pulled_at": asof,
+            "markets": ["h2h", "spreads", "totals"],
+            "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min_date_isolated",
+            "purpose": "Capture early MLB movement immediately when each actual game date's lines become available, without cross-day bleed.",
+        },
+    }
+    item = _ddb_safe(item)
+    snapshots_tbl.put_item(Item=item)
+    return {"pk": item["PK"], "sk": item["SK"]}
+
+
 def lambda_handler(event, context):
     event = event or {}
     if (event.get("httpMethod") or "").upper() == "OPTIONS":
@@ -326,34 +366,45 @@ def lambda_handler(event, context):
         compact = _compact(raw)
         if snapshots_tbl is None:
             raise RuntimeError("SNAPSHOTS_TABLE not configured")
-        date_scope = "_".join(compact.get("game_dates_et") or [slate_date])
-        slate_id = f"MLB_ROLLING_{date_scope}_{run}"
-        item = {
-            "PK": "SPORT#mlb",
-            "SK": f"{t}#DATE#{slate_date}#ASOF#{asof}#SLATE#{slate_id}",
-            "sport": "mlb",
-            "t": t,
-            "slate_id": slate_id,
-            "slate_date_et": slate_date,
-            "game_dates_et": compact.get("game_dates_et") or [],
-            "rolling_open_pull": True,
-            "days_ahead": days_ahead,
-            "asof": asof,
-            "created_at": asof,
-            "data": compact,
-            "meta": {
-                "source": "theOddsAPI",
-                "run_type": run,
-                "pulled_at": asof,
-                "markets": ["h2h", "spreads", "totals"],
-                "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min",
-                "purpose": "Capture early MLB movement immediately when next-day lines become available.",
-            },
-        }
-        item = _ddb_safe(item)
-        snapshots_tbl.put_item(Item=item)
-        audit_result = record_snapshot_audit(sport="mlb", slate_date_et=slate_date, asof=asof, t=t, run_type=run, compact_snapshot=compact, raw_games=raw)
-        prediction_audit_result = record_no_edge_prediction_rows(sport="mlb", slate_date_et=slate_date, asof=asof, compact_snapshot=compact)
+
+        combined_stored = _store_snapshot_item(
+            t=t,
+            slate_date=slate_date,
+            game_date=slate_date,
+            asof=asof,
+            run=run,
+            compact=compact,
+            date_isolated=False,
+            pk="SPORT#mlb",
+        )
+
+        isolated_stored = []
+        audit_results = []
+        prediction_audit_results = []
+        for game_date in compact.get("game_dates_et") or []:
+            date_compact = _compact_for_game_date(compact, game_date)
+            if not date_compact.get("games"):
+                continue
+            stored_item = _store_snapshot_item(
+                t=t,
+                slate_date=slate_date,
+                game_date=game_date,
+                asof=asof,
+                run=run,
+                compact=date_compact,
+                date_isolated=True,
+                pk=f"SPORT#mlb#DATE#{game_date}",
+            )
+            isolated_stored.append({"game_date_et": game_date, **stored_item, "count": date_compact.get("count")})
+            audit_results.append({
+                "game_date_et": game_date,
+                **record_snapshot_audit(sport="mlb", slate_date_et=game_date, asof=asof, t=t, run_type=run, compact_snapshot=date_compact, raw_games=raw),
+            })
+            prediction_audit_results.append({
+                "game_date_et": game_date,
+                **record_no_edge_prediction_rows(sport="mlb", slate_date_et=game_date, asof=asof, compact_snapshot=date_compact),
+            })
+
         return _resp(200, {
             "ok": True,
             "sport": "mlb",
@@ -361,17 +412,24 @@ def lambda_handler(event, context):
             "fallback_used": False,
             "t": t,
             "run": run,
-            "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min",
-            "slate_date_et": slate_date,
+            "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min_date_isolated",
+            "data_isolation": {
+                "enabled": True,
+                "rule": "Every game is stored, audited, predicted, and later graded under its actual ET game date, not under the pull date.",
+                "date_partition_pk_pattern": "SPORT#mlb#DATE#YYYY-MM-DD",
+                "game_key_pattern": "mlb|YYYY-MM-DD|away|home",
+            },
+            "pull_date_et": slate_date,
             "game_dates_et": compact.get("game_dates_et") or [],
             "days_ahead": days_ahead,
             "asof": asof,
             "count": compact["count"],
-            "stored": {"pk": item["PK"], "sk": item["SK"]},
+            "stored": combined_stored,
+            "date_isolated_stored": isolated_stored,
             "available_book_keys": compact["available_book_keys"],
             "markets": compact["markets"],
-            "audit": audit_result,
-            "prediction_audit": prediction_audit_result,
+            "audit": audit_results,
+            "prediction_audit": prediction_audit_results,
         })
     except Exception as exc:
         payload = _event_payload(event)
