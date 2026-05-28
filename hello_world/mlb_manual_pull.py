@@ -3,6 +3,7 @@ import os
 import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
@@ -18,7 +19,19 @@ SPORT_KEY = "baseball_mlb"
 ODDS_MARKETS = "h2h,spreads,totals"
 
 
+def _ddb_safe(value: Any) -> Any:
+    if isinstance(value, float):
+        return Decimal(str(value))
+    if isinstance(value, dict):
+        return {k: _ddb_safe(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_ddb_safe(v) for v in value]
+    return value
+
+
 def _json_default(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return float(value)
     return str(value)
 
 
@@ -205,7 +218,8 @@ def lambda_handler(event, context):
             "data": compact,
             "meta": {"source": "theOddsAPI", "run_type": run, "pulled_at": asof, "markets": ["h2h", "spreads", "totals"]},
         }
+        item = _ddb_safe(item)
         snapshots_tbl.put_item(Item=item)
-        return _resp(200, {"ok": True, "sport": "mlb", "t": t, "slate_date_et": slate_date, "count": compact["count"], "stored": {"pk": item["PK"], "sk": item["SK"]}, "available_book_keys": compact["available_book_keys"], "markets": compact["markets"]})
+        return _resp(200, {"ok": True, "sport": "mlb", "t": t, "slate_date_et": slate_date, "asof": asof, "count": compact["count"], "stored": {"pk": item["PK"], "sk": item["SK"]}, "available_book_keys": compact["available_book_keys"], "markets": compact["markets"]})
     except Exception as exc:
         return _resp(500, {"ok": False, "sport": "mlb", "error": str(exc)})
