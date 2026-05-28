@@ -19,17 +19,20 @@ dynamodb = boto3.resource("dynamodb")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
 SIGNALS_TABLE = os.environ.get("SIGNALS_TABLE", "")
 SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
+PREDICTIONS_TABLE = os.environ.get("PREDICTIONS_TABLE", "")
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 
 snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
 signals_tbl = dynamodb.Table(SIGNALS_TABLE) if SIGNALS_TABLE else None
 signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE else None
+predictions_tbl = dynamodb.Table(PREDICTIONS_TABLE) if PREDICTIONS_TABLE else None
 
 SPORT_KEYS = {"nba": "basketball_nba", "ncaam": "basketball_ncaab", "mlb": "baseball_mlb"}
 PREFERRED_BOOKS = ["fanatics", "draftkings", "fanduel", "betmgm", "caesars", "betrivers", "bovada", "lowvig"]
 PANEL_BOOKS = ["fanatics", "draftkings", "fanduel", "betmgm", "caesars"]
 STRONG_GAP = 0.08
 COINFLIP_GAP = 0.05
+HOT_MOVE_THRESHOLD = 0.015
 ODDS_MARKETS = "h2h,spreads,totals"
 
 
@@ -160,12 +163,7 @@ def _extract_spread(bookmaker: Dict[str, Any], home: str, away: str) -> Optional
             away_price = outcome.get("price")
     if home_point is None or home_price is None or away_point is None or away_price is None:
         return None
-    return {
-        "home_point": float(home_point),
-        "home_price": int(home_price),
-        "away_point": float(away_point),
-        "away_price": int(away_price),
-    }
+    return {"home_point": float(home_point), "home_price": int(home_price), "away_point": float(away_point), "away_price": int(away_price)}
 
 
 def _extract_total(bookmaker: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -183,12 +181,7 @@ def _extract_total(bookmaker: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             under_price = outcome.get("price")
     if over_point is None or over_price is None or under_point is None or under_price is None:
         return None
-    return {
-        "over_point": float(over_point),
-        "over_price": int(over_price),
-        "under_point": float(under_point),
-        "under_price": int(under_price),
-    }
+    return {"over_point": float(over_point), "over_price": int(over_price), "under_point": float(under_point), "under_price": int(under_price)}
 
 
 def _compact_markets(raw_games: List[Dict[str, Any]], sport: str, slate_date_et: str) -> Dict[str, Any]:
@@ -220,16 +213,7 @@ def _compact_markets(raw_games: List[Dict[str, Any]], sport: str, slate_date_et:
                 books_out[book_key] = book_payload
                 all_books.add(book_key)
         game_key = _game_key_day(sport, slate_date_et, away, home)
-        games_out.append({
-            "id": game_id or game_key,
-            "game_key": game_key,
-            "internal_key": game_key,
-            "commence_time": commence_time,
-            "home_team": home,
-            "away_team": away,
-            "books": books_out,
-            "markets_stored": ["ml", "spread", "total"],
-        })
+        games_out.append({"id": game_id or game_key, "game_key": game_key, "internal_key": game_key, "commence_time": commence_time, "home_team": home, "away_team": away, "books": books_out, "markets_stored": ["ml", "spread", "total"]})
     return {"games": games_out, "count": len(games_out), "available_book_keys": sorted(all_books), "panel_books": PANEL_BOOKS, "markets": ["ml", "spread", "total"]}
 
 
@@ -264,6 +248,13 @@ def _latest_snapshot(t: Optional[str], sport: str) -> Optional[Dict[str, Any]]:
     return items[0] if items else None
 
 
+def _recent_snapshots(sport: str, limit: int = 30) -> List[Dict[str, Any]]:
+    if snapshots_tbl is None:
+        raise RuntimeError("SNAPSHOTS_TABLE not configured")
+    response = snapshots_tbl.query(KeyConditionExpression=Key("PK").eq(f"SPORT#{sport}"), ScanIndexForward=False, Limit=limit)
+    return sorted(response.get("Items", []), key=lambda x: x.get("asof") or "")
+
+
 def _best_ml_for_engine(game: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     books = game.get("books", {}) or {}
     for book in PREFERRED_BOOKS:
@@ -282,6 +273,29 @@ def _favorite_from_ml(ml: Dict[str, int], home_team: str, away_team: str) -> Tup
     if home_p >= away_p:
         return home_team, away_team, home_p - away_p, {"home": home_p, "away": away_p}
     return away_team, home_team, away_p - home_p, {"home": home_p, "away": away_p}
+
+
+def _panel_side_probs(game: Dict[str, Any]) -> Dict[str, float]:
+    home_vals = []
+    away_vals = []
+    for book in PANEL_BOOKS:
+        ml = (game.get("books", {}).get(book) or {}).get("ml")
+        if not ml:
+            continue
+        home_p, away_p = _vig_norm(_american_to_prob(int(ml["home"])), _american_to_prob(int(ml["away"])))
+        home_vals.append(home_p)
+        away_vals.append(away_p)
+    if not home_vals or not away_vals:
+        ml_pack = _best_ml_for_engine(game)
+        if not ml_pack:
+            return {}
+        home_p, away_p = _vig_norm(_american_to_prob(ml_pack["home"]), _american_to_prob(ml_pack["away"]))
+        return {"home": home_p, "away": away_p}
+    return {"home": sum(home_vals) / len(home_vals), "away": sum(away_vals) / len(away_vals)}
+
+
+def _game_index(snapshot: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    return {g.get("game_key") or g.get("id"): g for g in snapshot.get("data", {}).get("games", []) if g.get("game_key") or g.get("id")}
 
 
 def _classify_game_simple(game: Dict[str, Any]) -> Dict[str, Any]:
@@ -344,6 +358,98 @@ def _build_parlays_from_latest(sport: str, max_parlays: int) -> Dict[str, Any]:
         built.append({"structure": "2_STRONG_1_VARIABLE" if len([g for g in slate if g["class"] == "STRONG_SOLID"]) >= 2 else "BEST_AVAILABLE", "legs": slate, "ranking": ranked})
     refusal = None if len(built) >= max_parlays else {"code": "INSUFFICIENT_ELIGIBLE_GAMES", "reason": "Could not build all requested no-overlap parlays from eligible T4 games.", "eligible_games": len(eligible), "class_counts": _class_counts(classified)}
     return {"ok": True, "sport": sport, "model": "MLB-B1.0A.3" if sport == "mlb" else "B1.1C-clean", "slate_date_et": slate_date_et, "parlays_requested": max_parlays, "parlays_built": len(built), "refusal": refusal, "parlays": built}
+
+
+def _generate_hot_predictions(sport: str, limit: int, store: bool) -> Dict[str, Any]:
+    snapshots = _recent_snapshots(sport, limit)
+    if len(snapshots) < 2:
+        return {"ok": True, "sport": sport, "predictions": [], "message": "Need at least two snapshots before generating hot predictions."}
+    previous = snapshots[-2]
+    latest = snapshots[-1]
+    prev_games = _game_index(previous)
+    predictions = []
+    now = _now_iso()
+    slate_date = latest.get("slate_date_et") or _get_slate_date_et()
+    for game_key, latest_game in _game_index(latest).items():
+        prev_game = prev_games.get(game_key)
+        if not prev_game:
+            continue
+        latest_probs = _panel_side_probs(latest_game)
+        prev_probs = _panel_side_probs(prev_game)
+        if not latest_probs or not prev_probs:
+            continue
+        home_delta = latest_probs["home"] - prev_probs["home"]
+        away_delta = latest_probs["away"] - prev_probs["away"]
+        if abs(home_delta) < HOT_MOVE_THRESHOLD and abs(away_delta) < HOT_MOVE_THRESHOLD:
+            continue
+        if home_delta >= away_delta:
+            team = latest_game.get("home_team")
+            side = "home"
+            delta = home_delta
+        else:
+            team = latest_game.get("away_team")
+            side = "away"
+            delta = away_delta
+        confidence = min(95, max(50, round(50 + abs(delta) * 1000)))
+        prediction_id = f"{sport}#{slate_date}#{game_key}#{latest.get('asof')}".replace(" ", "_")
+        item = {
+            "PK": f"PRED#{sport}#{slate_date}",
+            "SK": f"PRED#{latest.get('asof')}#{game_key}",
+            "prediction_id": prediction_id,
+            "sport": sport,
+            "slate_date_et": slate_date,
+            "created_at": now,
+            "asof": latest.get("asof"),
+            "previous_asof": previous.get("asof"),
+            "game_key": game_key,
+            "game_id": latest_game.get("id"),
+            "home_team": latest_game.get("home_team"),
+            "away_team": latest_game.get("away_team"),
+            "prediction_type": "HOT_TEAM_MOVEMENT",
+            "predicted_team": team,
+            "predicted_side": side,
+            "home_delta": Decimal(str(round(home_delta, 5))),
+            "away_delta": Decimal(str(round(away_delta, 5))),
+            "confidence": Decimal(str(confidence)),
+            "target_success_rate": Decimal("75"),
+            "status": "OPEN",
+            "evaluation": {},
+        }
+        predictions.append(item)
+        if store and predictions_tbl is not None:
+            predictions_tbl.put_item(Item=item)
+    return {"ok": True, "sport": sport, "stored": bool(store and predictions_tbl is not None), "count": len(predictions), "target_success_rate": 75, "predictions": predictions}
+
+
+def _record_prediction_result(body: Dict[str, Any]) -> Dict[str, Any]:
+    if predictions_tbl is None:
+        raise RuntimeError("PREDICTIONS_TABLE not configured")
+    sport = (body.get("sport") or "mlb").lower()
+    slate_date = body.get("slate_date_et") or _get_slate_date_et()
+    sk = body.get("sk") or body.get("SK")
+    if not sk:
+        raise ValueError("Provide prediction SK to evaluate")
+    success = bool(body.get("success"))
+    evaluation = body.get("evaluation") or {}
+    predictions_tbl.update_item(
+        Key={"PK": f"PRED#{sport}#{slate_date}", "SK": sk},
+        UpdateExpression="SET #s=:s, evaluated_at=:e, success=:x, evaluation=:v",
+        ExpressionAttributeNames={"#s": "status"},
+        ExpressionAttributeValues={":s": "CORRECT" if success else "WRONG", ":e": _now_iso(), ":x": success, ":v": evaluation},
+    )
+    return {"ok": True, "sport": sport, "slate_date_et": slate_date, "sk": sk, "status": "CORRECT" if success else "WRONG"}
+
+
+def _prediction_accuracy(sport: str, slate_date: Optional[str]) -> Dict[str, Any]:
+    if predictions_tbl is None:
+        raise RuntimeError("PREDICTIONS_TABLE not configured")
+    slate_date = slate_date or _get_slate_date_et()
+    resp = predictions_tbl.query(KeyConditionExpression=Key("PK").eq(f"PRED#{sport}#{slate_date}"))
+    items = resp.get("Items", [])
+    evaluated = [i for i in items if i.get("status") in {"CORRECT", "WRONG"}]
+    correct = [i for i in evaluated if i.get("status") == "CORRECT"]
+    rate = round((len(correct) / len(evaluated)) * 100, 2) if evaluated else None
+    return {"ok": True, "sport": sport, "slate_date_et": slate_date, "target_success_rate": 75, "total_predictions": len(items), "evaluated": len(evaluated), "correct": len(correct), "wrong": len(evaluated) - len(correct), "accuracy_pct": rate, "meets_target": rate is not None and rate >= 75}
 
 
 def compute_game_signals(sport: str, t: Optional[str], slate_date_et: str, snapshot: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -419,6 +525,14 @@ def lambda_handler(event, context):
     if method == "GET" and path == "/v1/odds/history":
         params = event.get("queryStringParameters") or {}
         return _resp(200, _query_odds_history((params.get("sport") or "mlb").lower(), params.get("game_key"), params.get("game_id"), min(int(params.get("limit") or 200), 500)))
+    if method == "GET" and path == "/v1/predictions/hot":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, _generate_hot_predictions((params.get("sport") or "mlb").lower(), min(int(params.get("limit") or 30), 100), params.get("store", "false").lower() == "true"))
+    if method == "GET" and path == "/v1/predictions/accuracy":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, _prediction_accuracy((params.get("sport") or "mlb").lower(), params.get("slate_date_et")))
+    if method == "POST" and path == "/v1/predictions/result":
+        return _resp(200, _record_prediction_result(_parse_json(event.get("body"))))
     if method == "POST" and path in {"/v1/pull/nba", "/v1/pull/ncaam", "/v1/pull/mlb"}:
         sport = path.rsplit("/", 1)[-1]
         body = _parse_json(event.get("body"))
