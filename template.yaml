@@ -6,7 +6,7 @@ Parameters:
   OddsApiKey:
     Type: String
     NoEcho: true
-    Description: theOddsAPI key (DO NOT COMMIT THIS VALUE)
+    Description: External odds feed key
 
 Globals:
   Function:
@@ -131,7 +131,7 @@ Resources:
             Path: /{proxy+}
             Method: ANY
 
-  MLBManualPullFunction:
+  MLBAuditedPullFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: hello_world/
@@ -139,55 +139,58 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalLedgerTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PredictionsTable
       Events:
         MLBManualPull:
           Type: Api
           Properties:
             Path: /v1/pull/mlb
             Method: POST
-
-  SchedulerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: hello_world/
-      Handler: api.scheduler_handler
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalLedgerTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PredictionsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref OutcomesTable
-      Events:
         MLBHotEvery15Min:
           Type: Schedule
           Properties:
             Schedule: rate(15 minutes)
-            Input: '{"sport":"mlb","t":"HOT","run":"hot_pull"}'
+            Input: '{"sport":"mlb","t":"HOT","run":"hot_pull_audited"}'
         MLBBasePull:
           Type: Schedule
           Properties:
             Schedule: cron(0 7 * * ? *)
-            Input: '{"sport":"mlb","t":"T1","run":"base_pull"}'
+            Input: '{"sport":"mlb","t":"T1","run":"base_pull_audited"}'
         MLBT2:
           Type: Schedule
           Properties:
             Schedule: cron(0 15 * * ? *)
-            Input: '{"sport":"mlb","t":"T2","run":"mid_pull"}'
+            Input: '{"sport":"mlb","t":"T2","run":"mid_pull_audited"}'
         MLBT3:
           Type: Schedule
           Properties:
             Schedule: cron(0 18 * * ? *)
-            Input: '{"sport":"mlb","t":"T3","run":"late_pull"}'
+            Input: '{"sport":"mlb","t":"T3","run":"late_pull_audited"}'
         MLBT4:
           Type: Schedule
           Properties:
             Schedule: cron(0 20 * * ? *)
-            Input: '{"sport":"mlb","t":"T4","run":"freeze_pull"}'
+            Input: '{"sport":"mlb","t":"T4","run":"freeze_pull_audited"}'
+
+  MLBResultsSchedulerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_results_scheduler.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PredictionsTable
+      Events:
+        MLBResultsEvery6Hours:
+          Type: Schedule
+          Properties:
+            Schedule: rate(6 hours)
+            Input: '{"sport":"mlb","days_from":3,"run":"results_pull"}'
 
   SoccerSchedulerFunction:
     Type: AWS::Serverless::Function
