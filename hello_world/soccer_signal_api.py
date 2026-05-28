@@ -1,10 +1,11 @@
 from __future__ import annotations
 
+import itertools
 import json
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import boto3
@@ -26,6 +27,8 @@ HOT_DELTA_THRESHOLD = 0.006
 PUBLISH_DELTA_THRESHOLD = 0.018
 TARGET_SUCCESS_RATE = Decimal("75")
 MODEL_VERSION = "SOC-B1.1-three-way-audit-v1"
+FEATURE_VERSION = "soccer_individual_match_and_27_combo_parlay_v1"
+SOCCER_OUTCOMES = ("home", "draw", "away")
 
 
 def _now_iso() -> str:
@@ -55,11 +58,20 @@ def _resp(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _recent_snapshots(limit: int = 40) -> List[Dict[str, Any]]:
+def _has_games(snapshot: Dict[str, Any]) -> bool:
+    games = snapshot.get("data", {}).get("games", []) or []
+    count = snapshot.get("data", {}).get("count")
+    return bool(games) or float(count or 0) > 0
+
+
+def _recent_snapshots(limit: int = 40, populated_only: bool = False) -> List[Dict[str, Any]]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
     resp = snapshots_tbl.query(KeyConditionExpression=Key("PK").eq("SPORT#soccer"), ScanIndexForward=False, Limit=limit)
-    return sorted(resp.get("Items", []), key=lambda x: x.get("asof") or "")
+    rows = sorted(resp.get("Items", []), key=lambda x: x.get("asof") or "")
+    if populated_only:
+        rows = [row for row in rows if _has_games(row)]
+    return rows
 
 
 def _game_index(snapshot: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -69,6 +81,21 @@ def _game_index(snapshot: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
 def _book_probs(game: Dict[str, Any]) -> Dict[str, Dict[str, float]]:
     consensus = soccer_three_way_probs(game)
     return consensus.get("book_probs") or {}
+
+
+def _american_to_decimal(price: float) -> float:
+    price = float(price)
+    if price == 0:
+        raise ValueError("American odds cannot be 0")
+    return round(1 + (100 / abs(price)) if price < 0 else 1 + (price / 100), 6)
+
+
+def _decimal_to_american(decimal_odds: float) -> int:
+    if decimal_odds <= 1:
+        raise ValueError("Decimal odds must be greater than 1")
+    if decimal_odds >= 2:
+        return int(round((decimal_odds - 1) * 100))
+    return int(round(-100 / (decimal_odds - 1)))
 
 
 def _book_agreement(prev: Dict[str, Any], latest: Dict[str, Any], outcome: str) -> Dict[str, Any]:
@@ -93,13 +120,73 @@ def _outcome_label(outcome: str, game: Dict[str, Any]) -> str:
     return "Draw"
 
 
+def _price_for_outcome(game: Dict[str, Any], outcome: str) -> Optional[float]:
+    prices: List[float] = []
+    home = game.get("home_team")
+    away = game.get("away_team")
+    for markets in (game.get("books") or {}).values():
+        h2h = markets.get("h2h") or markets.get("ml") or []
+        if isinstance(h2h, list):
+            for row in h2h:
+                name = row.get("name")
+                if ((outcome == "home" and name == home) or (outcome == "away" and name == away) or (outcome == "draw" and str(name).lower() in {"draw", "tie", "x"})) and row.get("price") is not None:
+                    prices.append(float(row["price"]))
+        elif isinstance(h2h, dict) and h2h.get(outcome) is not None:
+            prices.append(float(h2h[outcome]))
+    if not prices:
+        return None
+    return round(sum(prices) / len(prices), 2)
+
+
+def _spread_summary(game: Dict[str, Any]) -> Dict[str, Any]:
+    points: List[float] = []
+    for markets in (game.get("books") or {}).values():
+        spread = markets.get("spreads") or markets.get("spread")
+        if isinstance(spread, list):
+            for row in spread:
+                if row.get("point") is not None:
+                    points.append(float(row["point"]))
+        elif isinstance(spread, dict):
+            for key in ("home_point", "away_point"):
+                if spread.get(key) is not None:
+                    points.append(float(spread[key]))
+    return {"available": bool(points), "sample_points": points[:6]}
+
+
+def _total_summary(game: Dict[str, Any]) -> Dict[str, Any]:
+    points: List[float] = []
+    for markets in (game.get("books") or {}).values():
+        total = markets.get("totals") or markets.get("total")
+        if isinstance(total, list):
+            for row in total:
+                if row.get("point") is not None:
+                    points.append(float(row["point"]))
+        elif isinstance(total, dict):
+            for key in ("over_point", "under_point"):
+                if total.get(key) is not None:
+                    points.append(float(total[key]))
+    return {"available": bool(points), "sample_points": points[:6]}
+
+
+def _point_delta(prev: Dict[str, Any], latest: Dict[str, Any], market: str) -> Dict[str, Any]:
+    prev_summary = _spread_summary(prev) if market == "spread" else _total_summary(prev)
+    latest_summary = _spread_summary(latest) if market == "spread" else _total_summary(latest)
+    if not prev_summary["sample_points"] or not latest_summary["sample_points"]:
+        return {"direction": "unavailable", "previous_point": None, "latest_point": None, "delta": None}
+    prev_avg = sum(prev_summary["sample_points"]) / len(prev_summary["sample_points"])
+    latest_avg = sum(latest_summary["sample_points"]) / len(latest_summary["sample_points"])
+    delta = round(latest_avg - prev_avg, 4)
+    direction = "flat" if abs(delta) < 0.001 else "up" if delta > 0 else "down"
+    return {"direction": direction, "previous_point": round(prev_avg, 4), "latest_point": round(latest_avg, 4), "delta": delta}
+
+
 def _delta_for_game(prev: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, Any]:
     prev_p = soccer_three_way_probs(prev)
     latest_p = soccer_three_way_probs(latest)
     if prev_p.get("home") is None or latest_p.get("home") is None:
         return {"ok": False, "reason": "missing_three_way_h2h"}
 
-    deltas = {side: latest_p[side] - prev_p[side] for side in ["home", "draw", "away"]}
+    deltas = {side: latest_p[side] - prev_p[side] for side in SOCCER_OUTCOMES}
     hot_outcome = max(deltas, key=lambda side: deltas[side])
     hot_delta = deltas[hot_outcome]
     hot_label = _outcome_label(hot_outcome, latest)
@@ -152,22 +239,34 @@ def _delta_for_game(prev: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, A
         "hot_outcome": hot_outcome,
         "hot_label": hot_label,
         "hot_delta": round(hot_delta, 6),
-        "deltas": {side: round(deltas[side], 6) for side in ["home", "draw", "away"]},
+        "deltas": {side: round(deltas[side], 6) for side in SOCCER_OUTCOMES},
         "hot_side_label": f"{hot_label} pressure",
         "prediction": prediction_text,
         "prediction_status": prediction_status,
         "confidence": confidence,
         "reason_codes": reason_codes,
         "book_agreement": agreement,
+        "spread_signal": _point_delta(prev, latest, "spread"),
+        "total_signal": _point_delta(prev, latest, "total"),
         "latest_consensus_three_way": {k: latest_p.get(k) for k in ["home", "draw", "away", "leader", "leader_gap", "books", "book_count"]},
         "previous_consensus_three_way": {k: prev_p.get(k) for k in ["home", "draw", "away", "leader", "leader_gap", "books", "book_count"]},
     }
 
 
 def soccer_movement_deltas(limit: int = 40) -> Dict[str, Any]:
-    snapshots = _recent_snapshots(limit=limit)
+    snapshots = _recent_snapshots(limit=limit, populated_only=True)
     if len(snapshots) < 2:
-        return {"ok": True, "sport": "soccer", "count": 0, "message": "Need at least two soccer snapshots."}
+        latest = snapshots[-1] if snapshots else None
+        return {
+            "ok": True,
+            "sport": "soccer",
+            "model": MODEL_VERSION,
+            "count": 0,
+            "deltas": [],
+            "status": "WAITING_FOR_SECOND_POPULATED_SNAPSHOT",
+            "latest_populated_asof": latest.get("asof") if latest else None,
+            "message": "Need at least two populated soccer snapshots. Empty HOT snapshots are ignored.",
+        }
     prev_snap = snapshots[-2]
     latest_snap = snapshots[-1]
     prev_games = _game_index(prev_snap)
@@ -234,6 +333,128 @@ def soccer_hot_sides(limit: int = 40, store: bool = False) -> Dict[str, Any]:
     return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "stored": store, "count": len(rows), "target_success_rate": 75, "hot_sides": rows}
 
 
+def soccer_match_signals(limit: int = 40) -> Dict[str, Any]:
+    snapshots = _recent_snapshots(limit=limit, populated_only=True)
+    if not snapshots:
+        return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "count": 0, "matches": [], "status": "NO_POPULATED_SOCCER_SNAPSHOT"}
+    latest = snapshots[-1]
+    movement_by_key = {row.get("game_key"): row for row in soccer_movement_deltas(limit=limit).get("deltas", [])}
+    has_movement = len(snapshots) >= 2
+    matches = []
+    for game in latest.get("data", {}).get("games", []) or []:
+        consensus = soccer_three_way_probs(game)
+        if consensus.get("home") is None:
+            continue
+        key = game.get("game_key") or game.get("id")
+        movement = movement_by_key.get(key)
+        outcomes = {}
+        for outcome in SOCCER_OUTCOMES:
+            outcomes[outcome] = {
+                "team": _outcome_label(outcome, game),
+                "consensus_price": _price_for_outcome(game, outcome),
+                "consensus_probability": consensus.get(outcome),
+                "signal": "PENDING_BASELINE" if not has_movement else ("HOT" if movement and movement.get("hot_outcome") == outcome else "NEUTRAL"),
+            }
+        matches.append({
+            "game_id": game.get("id"),
+            "game_key": key,
+            "league": game.get("sport_key"),
+            "match": f"{game.get('away_team')} at {game.get('home_team')}",
+            "home_team": game.get("home_team"),
+            "away_team": game.get("away_team"),
+            "commence_time": game.get("commence_time"),
+            "market_type": "3-way h2h",
+            "books_tracked": consensus.get("book_count"),
+            "outcomes": outcomes,
+            "hot_side": movement.get("hot_label") if movement else None,
+            "hot_outcome": movement.get("hot_outcome") if movement else None,
+            "confidence": movement.get("confidence") if movement else "pending",
+            "status": movement.get("prediction_status") if movement else "WAITING_FOR_SECOND_POPULATED_SNAPSHOT",
+            "reason_codes": movement.get("reason_codes", []) if movement else [],
+            "explanation": movement.get("prediction") if movement else "Baseline odds are stored. Need next populated soccer HOT snapshot before movement can be confirmed.",
+            "spread_market": _spread_summary(game),
+            "total_market": _total_summary(game),
+        })
+    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "feature_version": FEATURE_VERSION, "asof": latest.get("asof"), "populated_snapshot_count": len(snapshots), "count": len(matches), "matches": matches}
+
+
+def _combo_confidence(score: float) -> str:
+    if score >= 2.0:
+        return "High"
+    if score >= 1.0:
+        return "Moderate"
+    return "Fragile"
+
+
+def _eligible_matches_for_parlay(limit: int) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    movement = soccer_movement_deltas(limit=limit)
+    if not movement.get("previous_asof") or not movement.get("latest_asof"):
+        return movement, []
+    rows = [row for row in movement.get("deltas", []) if row.get("latest_consensus_three_way", {}).get("book_count", 0) >= 2]
+    rows.sort(key=lambda row: (_confidence_score(row), abs(float(row.get("hot_delta") or 0))), reverse=True)
+    return movement, rows
+
+
+def soccer_parlays(limit: int = 40, matches_per_parlay: int = 3) -> Dict[str, Any]:
+    if matches_per_parlay != 3:
+        return {"ok": False, "sport": "soccer", "error": "Soccer parlay engine currently requires exactly 3 matches for 27 combinations."}
+    movement, rows = _eligible_matches_for_parlay(limit)
+    if not movement or not movement.get("previous_asof"):
+        return {
+            "ok": True,
+            "sport": "soccer",
+            "model": MODEL_VERSION,
+            "parlays_ready": False,
+            "reason": "Need at least two populated soccer snapshots to compute movement deltas.",
+            "latest_populated_asof": movement.get("latest_populated_asof") if movement else None,
+            "required_next_step": "Wait for next HOT soccer snapshot with count > 0.",
+        }
+    if len(rows) < 3:
+        return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "parlays_ready": False, "reason": "Need at least three soccer matches with usable three-way market movement.", "usable_matches": len(rows)}
+
+    selected = rows[:3]
+    combos = []
+    for outcomes in itertools.product(SOCCER_OUTCOMES, repeat=3):
+        decimal_odds = 1.0
+        score = 0.0
+        legs = []
+        reason_codes: List[str] = []
+        valid = True
+        for row, outcome in zip(selected, outcomes):
+            price = _price_for_outcome({"home_team": row["home_team"], "away_team": row["away_team"], "books": {}}, outcome)
+            # Price cannot be recovered from delta row alone; use consensus probability as a fair-odds fallback for ranking display.
+            prob = row.get("latest_consensus_three_way", {}).get(outcome)
+            if not prob or prob <= 0:
+                valid = False
+                break
+            leg_decimal = round(1 / float(prob), 6)
+            decimal_odds *= leg_decimal
+            if row.get("hot_outcome") == outcome:
+                score += 1.0 + abs(float(row.get("hot_delta") or 0)) * 100
+                reason_codes.append(f"{_outcome_label(outcome, row)}_hot_side")
+            if outcome == "draw":
+                score += 0.15
+            legs.append({"match": f"{row.get('away_team')} at {row.get('home_team')}", "outcome": outcome, "selection": _outcome_label(outcome, row), "fair_decimal_odds": leg_decimal, "consensus_probability": prob})
+        if not valid:
+            continue
+        decimal_odds = round(decimal_odds, 4)
+        combos.append({
+            "combo": " + ".join(leg["selection"] for leg in legs),
+            "outcome_types": list(outcomes),
+            "legs": legs,
+            "parlay_decimal_odds": decimal_odds,
+            "parlay_american_odds": _decimal_to_american(decimal_odds),
+            "implied_win_probability_pct": round((1 / decimal_odds) * 100, 2),
+            "signal_score": round(score, 4),
+            "confidence_band": _combo_confidence(score),
+            "reason_codes": reason_codes or ["no_hot_side_alignment"],
+        })
+    combos.sort(key=lambda row: (row["signal_score"], row["implied_win_probability_pct"]), reverse=True)
+    for idx, combo in enumerate(combos, 1):
+        combo["rank"] = idx
+    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "parlays_ready": True, "previous_asof": movement.get("previous_asof"), "latest_asof": movement.get("latest_asof"), "match_count": 3, "combo_count": len(combos), "selected_matches": selected, "ranked_combinations": combos}
+
+
 def soccer_audit_snapshots(limit: int = 20) -> Dict[str, Any]:
     if signal_ledger_tbl is None:
         raise RuntimeError("SIGNAL_LEDGER_TABLE not configured")
@@ -255,10 +476,14 @@ def lambda_handler(event, context):
     try:
         if method == "GET" and path == "/v1/audit/soccer/snapshots":
             return _resp(200, soccer_audit_snapshots(min(int(params.get("limit") or 20), 100)))
-        if method == "GET" and path == "/v1/signals/soccer/deltas":
+        if method == "GET" and path in {"/v1/signals/soccer/deltas", "/v1/soccer/movement"}:
             return _resp(200, soccer_movement_deltas(min(int(params.get("limit") or 40), 200)))
-        if method == "GET" and path == "/v1/predictions/soccer/hot-sides":
+        if method == "GET" and path in {"/v1/predictions/soccer/hot-sides", "/v1/soccer/hot-sides"}:
             return _resp(200, soccer_hot_sides(min(int(params.get("limit") or 40), 200), params.get("store", "false").lower() == "true"))
+        if method == "GET" and path == "/v1/soccer/matches/signals":
+            return _resp(200, soccer_match_signals(min(int(params.get("limit") or 40), 200)))
+        if method == "GET" and path == "/v1/soccer/parlays":
+            return _resp(200, soccer_parlays(min(int(params.get("limit") or 40), 200)))
         if method == "GET" and path == "/v1/results/soccer/status":
             return _resp(200, soccer_results_status(params.get("slate_date_et")))
         if method == "GET" and path == "/v1/sources/soccer/status":
