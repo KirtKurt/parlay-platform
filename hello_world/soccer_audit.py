@@ -11,6 +11,8 @@ from zoneinfo import ZoneInfo
 import boto3
 from boto3.dynamodb.conditions import Key
 
+from soccer_league_segments import LEAGUE_PROFILE_VERSION, get_soccer_league_profile
+
 
 dynamodb = boto3.resource("dynamodb")
 SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
@@ -164,6 +166,11 @@ def _market_availability(game: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _league_profile(game: Dict[str, Any]) -> Dict[str, Any]:
+    profile = game.get("league_profile") or get_soccer_league_profile(game.get("sport_key") or "")
+    return profile
+
+
 def source_registry() -> Dict[str, Any]:
     return {
         "1_raw_odds_snapshots": {"status": "CONNECTED_HASHED", "source": "theOddsAPI soccer odds response"},
@@ -177,18 +184,26 @@ def source_registry() -> Dict[str, Any]:
         "9_weather": {"status": "NOT_CONNECTED_YET", "source": None},
         "10_injuries_lineups_news": {"status": "NOT_CONNECTED_YET", "source": None},
         "11_public_betting_handle": {"status": "NOT_CONNECTED_YET", "source": None},
-        "12_game_context": {"status": "SCHEMA_INSTALLED", "source": "league, sport_key, match context fields"},
+        "12_game_context": {"status": "LEAGUE_SEGMENTED_SCHEMA_INSTALLED", "source": "league_segment + sport_key + match context fields"},
         "13_prediction_logs_no_edge": {"status": "CONNECTED", "source": "soccer prediction skeleton rows"},
-        "14_model_versioning": {"status": "CONNECTED", "source": "model_version + feature_version"},
+        "14_model_versioning": {"status": "CONNECTED", "source": "model_version + feature_version + league_profile_version"},
     }
 
 
-def _external_context() -> Dict[str, Any]:
+def _external_context(game: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    profile = _league_profile(game or {}) if game else None
     return {
         "weather": {"source_status": "NOT_CONNECTED_YET"},
         "injuries_lineups_news": {"source_status": "NOT_CONNECTED_YET"},
         "public_betting_handle": {"source_status": "NOT_CONNECTED_YET"},
-        "game_context": {"source_status": "SCHEMA_INSTALLED_PARTIAL", "league_context": None, "table_position": None, "rest_days": None, "travel_spot": None, "cup_match": None},
+        "game_context": {
+            "source_status": "LEAGUE_SEGMENTED_SCHEMA_INSTALLED_PARTIAL",
+            "league_context": profile,
+            "table_position": None,
+            "rest_days": None,
+            "travel_spot": None,
+            "cup_match": None,
+        },
     }
 
 
@@ -196,12 +211,17 @@ def build_game_audit_row(*, slate_date_et: str, asof: str, t: str, run_type: str
     minutes_until_start = _minutes_until(asof, game.get("commence_time"))
     game_key = game.get("game_key") or game.get("id")
     consensus = soccer_three_way_probs(game)
+    profile = _league_profile(game)
     return ddb_safe({
         "PK": f"AUDIT#soccer#{slate_date_et}",
-        "SK": f"ASOF#{asof}#GAME#{game_key}",
+        "SK": f"ASOF#{asof}#LEAGUE#{profile.get('league_segment')}#GAME#{game_key}",
         "entity_type": "GAME_SNAPSHOT_AUDIT",
         "sport": "soccer",
         "sport_key": game.get("sport_key"),
+        "league_segment": profile.get("league_segment"),
+        "league_name": profile.get("league_name"),
+        "league_profile_version": LEAGUE_PROFILE_VERSION,
+        "league_profile": profile,
         "slate_date_et": slate_date_et,
         "asof": asof,
         "t": t,
@@ -217,6 +237,7 @@ def build_game_audit_row(*, slate_date_et: str, asof: str, t: str, run_type: str
         "minutes_until_start": minutes_until_start,
         "time_bucket": _time_bucket(minutes_until_start),
         "soccer_market_type": "THREE_WAY_HOME_DRAW_AWAY",
+        "market_type": "3-way home/draw/away",
         "consensus_three_way": consensus,
         "market_availability": _market_availability(game),
         "markets_stored": game.get("markets_stored") or [],
@@ -225,15 +246,15 @@ def build_game_audit_row(*, slate_date_et: str, asof: str, t: str, run_type: str
         "raw_game_hash": _payload_hash(raw_game) if raw_game else None,
         "compact_game_hash": _payload_hash(game),
         "line_lifecycle": {"line_lifecycle_status": "CURRENT_ONLY_UNTIL_HISTORY_DERIVED"},
-        "market_shape_signals": {"source_status": "SCHEMA_INSTALLED_PENDING_DELTA_COMPUTE"},
-        "external_context": _external_context(),
+        "market_shape_signals": {"source_status": "SCHEMA_INSTALLED_PENDING_DELTA_COMPUTE", "league_segment": profile.get("league_segment")},
+        "external_context": _external_context(game),
         "result_labels": {"source_status": "PENDING_FINAL", "winner_result": None, "home_score": None, "away_score": None, "draw": None},
         "prediction_status": "NOT_PREDICTED_YET",
         "outcome_status": "PENDING",
         "reason_codes": [],
         "source_registry": source_registry(),
         "capture_items_1_to_14_installed": True,
-        "notes": ["Soccer full 1-14 capture schema installed.", "Soccer h2h is three-way: home/draw/away. Do not apply 2-way MLB logic."],
+        "notes": ["Soccer full 1-14 capture schema installed.", "Soccer h2h is three-way: home/draw/away.", "League segmentation is required before soccer scoring."],
     })
 
 
@@ -247,6 +268,7 @@ def record_soccer_snapshot_audit(*, slate_date_et: str, asof: str, t: str, run_t
                 raw_by_id[game["id"]] = game
     stored = 0
     errors: List[str] = []
+    league_segments = sorted({game.get("league_segment") or _league_profile(game).get("league_segment") for game in compact_snapshot.get("games", []) or []})
     for game in compact_snapshot.get("games", []) or []:
         try:
             signal_ledger_tbl.put_item(Item=build_game_audit_row(slate_date_et=slate_date_et, asof=asof, t=t, run_type=run_type, game=game, raw_game=raw_by_id.get(game.get("id"))))
@@ -264,6 +286,9 @@ def record_soccer_snapshot_audit(*, slate_date_et: str, asof: str, t: str, run_t
         "run_type": run_type,
         "created_at": _now_iso(),
         "feature_version": FEATURE_VERSION,
+        "model_version": MODEL_VERSION,
+        "league_profile_version": LEAGUE_PROFILE_VERSION,
+        "league_segments": league_segments,
         "game_count": len(compact_snapshot.get("games", []) or []),
         "audit_rows_stored": stored,
         "soccer_keys": compact_snapshot.get("soccer_keys") or [],
@@ -274,7 +299,7 @@ def record_soccer_snapshot_audit(*, slate_date_et: str, asof: str, t: str, run_t
         "errors": errors,
     })
     signal_ledger_tbl.put_item(Item=summary)
-    return {"ok": len(errors) == 0, "stored": stored, "errors": errors, "feature_version": FEATURE_VERSION}
+    return {"ok": len(errors) == 0, "stored": stored, "errors": errors, "feature_version": FEATURE_VERSION, "league_profile_version": LEAGUE_PROFILE_VERSION, "league_segments": league_segments}
 
 
 def record_soccer_no_edge_prediction_rows(*, slate_date_et: str, asof: str, compact_snapshot: Dict[str, Any]) -> Dict[str, Any]:
@@ -283,12 +308,17 @@ def record_soccer_no_edge_prediction_rows(*, slate_date_et: str, asof: str, comp
     stored = 0
     for game in compact_snapshot.get("games", []) or []:
         game_key = game.get("game_key") or game.get("id")
+        profile = _league_profile(game)
         predictions_tbl.put_item(Item=ddb_safe({
             "PK": f"PRED#soccer#{slate_date_et}",
-            "SK": f"ASOF#{asof}#GAME#{game_key}",
+            "SK": f"ASOF#{asof}#LEAGUE#{profile.get('league_segment')}#GAME#{game_key}",
             "entity_type": "PREDICTION_AUDIT",
             "sport": "soccer",
             "sport_key": game.get("sport_key"),
+            "league_segment": profile.get("league_segment"),
+            "league_name": profile.get("league_name"),
+            "league_profile_version": LEAGUE_PROFILE_VERSION,
+            "league_profile": profile,
             "slate_date_et": slate_date_et,
             "asof": asof,
             "created_at": _now_iso(),
@@ -299,12 +329,13 @@ def record_soccer_no_edge_prediction_rows(*, slate_date_et: str, asof: str, comp
             "home_team": game.get("home_team"),
             "away_team": game.get("away_team"),
             "prediction_market": "h2h_three_way",
+            "market_type": "3-way home/draw/away",
             "prediction_status": "NO_EDGE",
             "status": "NO_EDGE",
             "predicted_outcome": None,
             "confidence": None,
             "confidence_label": "NO_EDGE",
-            "reason_codes": ["initial_soccer_audit_capture", "three_way_no_published_prediction_yet"],
+            "reason_codes": ["initial_soccer_audit_capture", "three_way_no_published_prediction_yet", "league_segment_required"],
             "consensus_three_way": soccer_three_way_probs(game),
             "outcome_status": "PENDING",
             "success": None,
@@ -312,7 +343,7 @@ def record_soccer_no_edge_prediction_rows(*, slate_date_et: str, asof: str, comp
             "capture_items_1_to_14_installed": True,
         }))
         stored += 1
-    return {"ok": True, "stored": stored, "feature_version": FEATURE_VERSION}
+    return {"ok": True, "stored": stored, "feature_version": FEATURE_VERSION, "league_profile_version": LEAGUE_PROFILE_VERSION}
 
 
 def soccer_results_status(slate_date: Optional[str] = None) -> Dict[str, Any]:
@@ -324,7 +355,20 @@ def soccer_results_status(slate_date: Optional[str] = None) -> Dict[str, Any]:
     graded = [p for p in predictions if p.get("status") in {"CORRECT", "WRONG"}]
     correct = [p for p in graded if p.get("status") == "CORRECT"]
     accuracy = round(len(correct) / len(graded) * 100, 2) if graded else None
-    return {"ok": True, "sport": "soccer", "slate_date_et": slate_date, "outcomes_count": len(outcomes), "predictions_count": len(predictions), "graded_count": len(graded), "correct": len(correct), "wrong": len(graded) - len(correct), "accuracy_pct": accuracy, "target_success_rate": 75, "outcomes": outcomes}
+    by_league: Dict[str, Dict[str, Any]] = {}
+    for p in predictions:
+        league = p.get("league_segment") or "unknown_soccer_league"
+        bucket = by_league.setdefault(league, {"predictions_count": 0, "graded_count": 0, "correct": 0, "wrong": 0, "accuracy_pct": None})
+        bucket["predictions_count"] += 1
+        if p.get("status") in {"CORRECT", "WRONG"}:
+            bucket["graded_count"] += 1
+            if p.get("status") == "CORRECT":
+                bucket["correct"] += 1
+            else:
+                bucket["wrong"] += 1
+    for bucket in by_league.values():
+        bucket["accuracy_pct"] = round(bucket["correct"] / bucket["graded_count"] * 100, 2) if bucket["graded_count"] else None
+    return {"ok": True, "sport": "soccer", "slate_date_et": slate_date, "league_profile_version": LEAGUE_PROFILE_VERSION, "outcomes_count": len(outcomes), "predictions_count": len(predictions), "graded_count": len(graded), "correct": len(correct), "wrong": len(graded) - len(correct), "accuracy_pct": accuracy, "accuracy_by_league": by_league, "target_success_rate": 75, "outcomes": outcomes}
 
 
 def soccer_source_status() -> Dict[str, Any]:
@@ -332,24 +376,27 @@ def soccer_source_status() -> Dict[str, Any]:
         "ok": True,
         "sport": "soccer",
         "algorithm_silo": "SOC-B1.1-three-way-audit-v1",
+        "league_profile_version": LEAGUE_PROFILE_VERSION,
+        "segmentation": "league_segmented_soccer",
         "items_status": {
             "full_1_to_14_soccer_audit_schema": "CONNECTED",
             "soccer_movement_delta_endpoint": "CONNECTED",
             "soccer_hot_side_prediction_endpoint": "CONNECTED",
-            "soccer_result_evaluation_endpoint": "CONNECTED",
+            "soccer_result_evaluation_endpoint": "CONNECTED_LEAGUE_SEGMENTED",
             "soccer_source_status_endpoint": "CONNECTED",
             "soccer_specific_algorithm_silo": "CONNECTED",
+            "soccer_league_segmentation": "CONNECTED",
         },
         "external_data_sources": {
             "odds_h2h_spread_total": "CONNECTED",
             "all_returned_books": "CONNECTED",
             "timestamps": "CONNECTED",
-            "audit_ledger_schema": "CONNECTED",
+            "audit_ledger_schema": "CONNECTED_LEAGUE_SEGMENTED",
             "results_scores": "CONNECTED_PENDING_COMPLETED_MATCHES",
             "weather": "NOT_CONNECTED_YET",
             "injuries_lineups_news": "NOT_CONNECTED_YET",
             "public_betting_handle": "NOT_CONNECTED_YET",
             "pitching": "NOT_APPLICABLE_TO_SOCCER",
         },
-        "important_note": "Soccer h2h is modeled as home/draw/away. It does not use MLB 2-outcome logic.",
+        "important_note": "Soccer h2h is modeled as home/draw/away and segmented by league. It does not use MLB 2-outcome logic.",
     }
