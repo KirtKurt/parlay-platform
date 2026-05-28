@@ -9,6 +9,8 @@ from zoneinfo import ZoneInfo
 
 import boto3
 
+from audit_ledger import record_no_edge_prediction_rows, record_snapshot_audit
+
 
 dynamodb = boto3.resource("dynamodb")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -220,6 +222,20 @@ def lambda_handler(event, context):
         }
         item = _ddb_safe(item)
         snapshots_tbl.put_item(Item=item)
-        return _resp(200, {"ok": True, "sport": "mlb", "t": t, "slate_date_et": slate_date, "asof": asof, "count": compact["count"], "stored": {"pk": item["PK"], "sk": item["SK"]}, "available_book_keys": compact["available_book_keys"], "markets": compact["markets"]})
+        audit_result = record_snapshot_audit(sport="mlb", slate_date_et=slate_date, asof=asof, t=t, run_type=run, compact_snapshot=compact, raw_games=raw)
+        prediction_audit_result = record_no_edge_prediction_rows(sport="mlb", slate_date_et=slate_date, asof=asof, compact_snapshot=compact)
+        return _resp(200, {
+            "ok": True,
+            "sport": "mlb",
+            "t": t,
+            "slate_date_et": slate_date,
+            "asof": asof,
+            "count": compact["count"],
+            "stored": {"pk": item["PK"], "sk": item["SK"]},
+            "available_book_keys": compact["available_book_keys"],
+            "markets": compact["markets"],
+            "audit": audit_result,
+            "prediction_audit": prediction_audit_result,
+        })
     except Exception as exc:
         return _resp(500, {"ok": False, "sport": "mlb", "error": str(exc)})
