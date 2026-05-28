@@ -349,9 +349,11 @@ def soccer_match_signals(limit: int = 40) -> Dict[str, Any]:
         movement = movement_by_key.get(key)
         outcomes = {}
         for outcome in SOCCER_OUTCOMES:
+            price = _price_for_outcome(game, outcome)
             outcomes[outcome] = {
                 "team": _outcome_label(outcome, game),
-                "consensus_price": _price_for_outcome(game, outcome),
+                "consensus_price": price,
+                "decimal_odds": _american_to_decimal(price) if price is not None else None,
                 "consensus_probability": consensus.get(outcome),
                 "signal": "PENDING_BASELINE" if not has_movement else ("HOT" if movement and movement.get("hot_outcome") == outcome else "NEUTRAL"),
             }
@@ -387,10 +389,30 @@ def _combo_confidence(score: float) -> str:
 
 
 def _eligible_matches_for_parlay(limit: int) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
+    snapshots = _recent_snapshots(limit=limit, populated_only=True)
+    if len(snapshots) < 2:
+        latest = snapshots[-1] if snapshots else None
+        return {
+            "ok": True,
+            "sport": "soccer",
+            "model": MODEL_VERSION,
+            "previous_asof": None,
+            "latest_asof": latest.get("asof") if latest else None,
+            "latest_populated_asof": latest.get("asof") if latest else None,
+        }, []
+    latest_snap = snapshots[-1]
+    latest_games = _game_index(latest_snap)
     movement = soccer_movement_deltas(limit=limit)
-    if not movement.get("previous_asof") or not movement.get("latest_asof"):
-        return movement, []
-    rows = [row for row in movement.get("deltas", []) if row.get("latest_consensus_three_way", {}).get("book_count", 0) >= 2]
+    rows = []
+    for row in movement.get("deltas", []):
+        game = latest_games.get(row.get("game_key"))
+        if not game:
+            continue
+        if row.get("latest_consensus_three_way", {}).get("book_count", 0) < 2:
+            continue
+        if any(_price_for_outcome(game, outcome) is None for outcome in SOCCER_OUTCOMES):
+            continue
+        rows.append({**row, "latest_game": game})
     rows.sort(key=lambda row: (_confidence_score(row), abs(float(row.get("hot_delta") or 0))), reverse=True)
     return movement, rows
 
@@ -410,7 +432,7 @@ def soccer_parlays(limit: int = 40, matches_per_parlay: int = 3) -> Dict[str, An
             "required_next_step": "Wait for next HOT soccer snapshot with count > 0.",
         }
     if len(rows) < 3:
-        return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "parlays_ready": False, "reason": "Need at least three soccer matches with usable three-way market movement.", "usable_matches": len(rows)}
+        return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "parlays_ready": False, "reason": "Need at least three soccer matches with usable three-way market movement and actual h2h prices.", "usable_matches": len(rows)}
 
     selected = rows[:3]
     combos = []
@@ -421,20 +443,26 @@ def soccer_parlays(limit: int = 40, matches_per_parlay: int = 3) -> Dict[str, An
         reason_codes: List[str] = []
         valid = True
         for row, outcome in zip(selected, outcomes):
-            price = _price_for_outcome({"home_team": row["home_team"], "away_team": row["away_team"], "books": {}}, outcome)
-            # Price cannot be recovered from delta row alone; use consensus probability as a fair-odds fallback for ranking display.
-            prob = row.get("latest_consensus_three_way", {}).get(outcome)
-            if not prob or prob <= 0:
+            game = row["latest_game"]
+            price = _price_for_outcome(game, outcome)
+            if price is None:
                 valid = False
                 break
-            leg_decimal = round(1 / float(prob), 6)
+            leg_decimal = _american_to_decimal(price)
             decimal_odds *= leg_decimal
             if row.get("hot_outcome") == outcome:
                 score += 1.0 + abs(float(row.get("hot_delta") or 0)) * 100
-                reason_codes.append(f"{_outcome_label(outcome, row)}_hot_side")
+                reason_codes.append(f"{_outcome_label(outcome, game)}_hot_side")
             if outcome == "draw":
                 score += 0.15
-            legs.append({"match": f"{row.get('away_team')} at {row.get('home_team')}", "outcome": outcome, "selection": _outcome_label(outcome, row), "fair_decimal_odds": leg_decimal, "consensus_probability": prob})
+            legs.append({
+                "match": f"{game.get('away_team')} at {game.get('home_team')}",
+                "outcome": outcome,
+                "selection": _outcome_label(outcome, game),
+                "american_odds": price,
+                "decimal_odds": leg_decimal,
+                "consensus_probability": row.get("latest_consensus_three_way", {}).get(outcome),
+            })
         if not valid:
             continue
         decimal_odds = round(decimal_odds, 4)
@@ -452,7 +480,8 @@ def soccer_parlays(limit: int = 40, matches_per_parlay: int = 3) -> Dict[str, An
     combos.sort(key=lambda row: (row["signal_score"], row["implied_win_probability_pct"]), reverse=True)
     for idx, combo in enumerate(combos, 1):
         combo["rank"] = idx
-    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "parlays_ready": True, "previous_asof": movement.get("previous_asof"), "latest_asof": movement.get("latest_asof"), "match_count": 3, "combo_count": len(combos), "selected_matches": selected, "ranked_combinations": combos}
+    selected_public = [{k: v for k, v in row.items() if k != "latest_game"} for row in selected]
+    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "parlays_ready": True, "previous_asof": movement.get("previous_asof"), "latest_asof": movement.get("latest_asof"), "match_count": 3, "combo_count": len(combos), "selected_matches": selected_public, "ranked_combinations": combos}
 
 
 def soccer_audit_snapshots(limit: int = 20) -> Dict[str, Any]:
