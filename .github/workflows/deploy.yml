@@ -51,3 +51,20 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --parameter-overrides OddsApiKey=${{ secrets.ODDS_API_KEY }}
+
+      - name: Read stack outputs
+        id: stack_outputs
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+          echo "API_URL=$API_URL"
+
+      - name: Smoke test live health endpoint
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          test -n "$API_URL"
+          curl --fail --silent --show-error "${API_URL}v1/health"
