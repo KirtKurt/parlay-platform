@@ -10,6 +10,7 @@ from zoneinfo import ZoneInfo
 import boto3
 
 from soccer_audit import record_soccer_no_edge_prediction_rows, record_soccer_snapshot_audit
+from soccer_league_segments import LEAGUE_PROFILE_VERSION, get_soccer_league_profile
 
 
 dynamodb = boto3.resource("dynamodb")
@@ -81,6 +82,7 @@ def _compact_soccer_game(raw_game: Dict[str, Any], sport_key: str) -> Dict[str, 
     away = raw_game.get("away_team")
     game_id = raw_game.get("id") or f"{sport_key}|{away}|{home}|{raw_game.get('commence_time')}"
     books: Dict[str, Any] = {}
+    league_profile = get_soccer_league_profile(sport_key)
 
     for bookmaker in raw_game.get("bookmakers", []) or []:
         book_key = (bookmaker.get("key") or "").lower().strip()
@@ -105,12 +107,17 @@ def _compact_soccer_game(raw_game: Dict[str, Any], sport_key: str) -> Dict[str, 
         "game_key": f"soccer|{sport_key}|{away}|{home}|{raw_game.get('commence_time')}",
         "sport": "soccer",
         "sport_key": sport_key,
+        "league_segment": league_profile["league_segment"],
+        "league_name": league_profile["league_name"],
+        "league_profile_version": LEAGUE_PROFILE_VERSION,
+        "league_profile": league_profile,
+        "market_type": "3-way home/draw/away",
         "commence_time": raw_game.get("commence_time"),
         "home_team": home,
         "away_team": away,
         "books": books,
         "markets_stored": ["h2h", "spreads", "totals"],
-        "model_note": "Soccer is 3-way for h2h: home/draw/away. Keep isolated from 2-way sport models.",
+        "model_note": "Soccer is 3-way for h2h: home/draw/away. League segmented. Keep isolated from 2-way sport models.",
     }
 
 
@@ -133,10 +140,13 @@ def pull_soccer_hot_snapshot() -> Dict[str, Any]:
         except Exception as exc:
             errors.append({"sport_key": sport_key, "error": str(exc)})
 
+    league_segments = sorted({game.get("league_segment") for game in games if game.get("league_segment")})
     compact_snapshot = {
         "games": games,
         "count": len(games),
         "soccer_keys": SOCCER_KEYS,
+        "league_profile_version": LEAGUE_PROFILE_VERSION,
+        "league_segments": league_segments,
         "markets": ["h2h", "spreads", "totals"],
         "errors": errors,
     }
@@ -156,12 +166,14 @@ def pull_soccer_hot_snapshot() -> Dict[str, Any]:
             "pulled_at": asof,
             "temporary_mode": "until_friday_starter_plan_baseball_plus_soccer_only_expanded_exact_keys",
             "soccer_model": "SOC-B1.1-three-way-audit-v1",
+            "league_profile_version": LEAGUE_PROFILE_VERSION,
+            "segmentation": "league_segmented_soccer",
         },
     }
     snapshots_tbl.put_item(Item=ddb_safe(item))
     audit_result = record_soccer_snapshot_audit(slate_date_et=slate_date, asof=asof, t="HOT", run_type="hot_pull_audited", compact_snapshot=compact_snapshot, raw_by_sport_key=raw_by_sport_key)
     prediction_audit = record_soccer_no_edge_prediction_rows(slate_date_et=slate_date, asof=asof, compact_snapshot=compact_snapshot)
-    return {"ok": len(errors) == 0 and audit_result.get("ok", False), "sport": "soccer", "t": "HOT", "count": len(games), "soccer_keys": SOCCER_KEYS, "errors": errors, "audit": audit_result, "prediction_audit": prediction_audit}
+    return {"ok": len(errors) == 0 and audit_result.get("ok", False), "sport": "soccer", "t": "HOT", "count": len(games), "soccer_keys": SOCCER_KEYS, "league_profile_version": LEAGUE_PROFILE_VERSION, "league_segments": league_segments, "errors": errors, "audit": audit_result, "prediction_audit": prediction_audit}
 
 
 def lambda_handler(event, context):
