@@ -53,6 +53,26 @@ MARKET_INTELLIGENCE_TERMS = {
     "high_variance_match": "High-Variance Match",
 }
 
+STATUS_FILTER_EXPLANATIONS = {
+    MARKET_STATUS["CLEAN_EDGE"]: "Shown when the market is giving a clear side: published pressure plus cross-book confirmation or a multi-book move.",
+    MARKET_STATUS["PLAYABLE_EDGE"]: "Shown when a side has enough market pressure to publish, but the signal is not strong enough to call it a clean anchor.",
+    MARKET_STATUS["CHAOS_MATCH"]: "Shown when the match has 3-way market compression, draw pressure, non-favorite pressure, or cross-book tension. This is a volatility label, not a confidence score.",
+    MARKET_STATUS["WATCHLIST_EDGE"]: "Shown when early pressure exists but the market has not confirmed enough to publish a pick. Keep tracking movement before using it.",
+    MARKET_STATUS["NO_CLEAN_EDGE"]: "Shown when the market has not separated enough. The safest customer-facing use is pass, avoid, or keep tracking.",
+}
+
+PRIMARY_PREDICTION_EXPLANATIONS = {
+    PRIMARY_PREDICTIONS["HOT_SIDE_PRESSURE"]: "The side is receiving the strongest current market pressure, but the card still checks whether that pressure is clean, conflicted, or only a watchlist signal.",
+    PRIMARY_PREDICTIONS["CHAOS_MATCH"]: "The match is not clean enough for a simple side. The market is compressed, conflicted, or showing draw/non-favorite pressure.",
+    PRIMARY_PREDICTIONS["DRAW_WATCH"]: "The draw outcome is receiving enough market attention to track, especially in a 3-way soccer market.",
+    PRIMARY_PREDICTIONS["UPSET_WATCH"]: "The side getting pressure is not the current market leader, which can signal underdog or non-favorite pressure.",
+    PRIMARY_PREDICTIONS["PASS_NO_CLEAN_EDGE"]: "The model is intentionally not publishing a side because the market has not separated enough.",
+    PRIMARY_PREDICTIONS["HOME_TEAM_WIN"]: "The home side is the published market read when supported by the active signal rules.",
+    PRIMARY_PREDICTIONS["AWAY_TEAM_WIN"]: "The away side is the published market read when supported by the active signal rules.",
+    PRIMARY_PREDICTIONS["FAVORITE_WIN"]: "The favorite is the published market read when the favorite is separating cleanly.",
+    PRIMARY_PREDICTIONS["UNDERDOG_WIN"]: "The underdog is the published market read when dog pressure is strong enough to clear the signal rules.",
+}
+
 
 def reason_codes_to_tags(reason_codes: Optional[Iterable[str]]) -> List[str]:
     seen = set()
@@ -89,6 +109,23 @@ def best_use_from_status(status: str, *, is_parlay: bool = False) -> str:
     if status == MARKET_STATUS["CHAOS_MATCH"]:
         return BEST_USE["AVOID_NO_BET"]
     return BEST_USE["AVOID_NO_BET"]
+
+
+def status_filter_explanation(status: Optional[str]) -> str:
+    return STATUS_FILTER_EXPLANATIONS.get(
+        status or MARKET_STATUS["NO_CLEAN_EDGE"],
+        "Shown based on the public market-status rules for this sport silo.",
+    )
+
+
+def prediction_label_explanation(label: Optional[str]) -> str:
+    if not label:
+        return PRIMARY_PREDICTION_EXPLANATIONS[PRIMARY_PREDICTIONS["PASS_NO_CLEAN_EDGE"]]
+    if label in PRIMARY_PREDICTION_EXPLANATIONS:
+        return PRIMARY_PREDICTION_EXPLANATIONS[label]
+    if str(label).endswith(" Win"):
+        return "The named side is the published market read when supported by the active signal rules."
+    return "This label is based on the strongest current market read after applying the sport-specific signal rules."
 
 
 def soccer_public_prediction(*, hot_outcome: Optional[str], current_leader: Optional[str], home_team: Optional[str], away_team: Optional[str], hot_label: Optional[str], prediction_status: Optional[str], reason_codes: Optional[Iterable[str]]) -> str:
@@ -136,7 +173,9 @@ def build_public_market_language(*, sport: str, prediction_status: Optional[str]
     return {
         "language_version": LANGUAGE_VERSION,
         "public_prediction": public_prediction,
+        "prediction_label_explanation": prediction_label_explanation(public_prediction),
         "market_status": status,
+        "status_filter_explanation": status_filter_explanation(status),
         "best_use": best_use_from_status(status, is_parlay=is_parlay),
         "market_intelligence_tags": tags,
         "public_explanation": public_explanation(prediction=prediction, market_status=status, tags=tags),
@@ -151,7 +190,9 @@ def market_language_status() -> Dict[str, Any]:
         "scope": "universal_all_sports",
         "rule": "Use market-status language and market-intelligence tags instead of user-facing numeric confidence scores.",
         "primary_predictions": list(PRIMARY_PREDICTIONS.values()),
+        "primary_prediction_explanations": PRIMARY_PREDICTION_EXPLANATIONS,
         "market_statuses": list(MARKET_STATUS.values()),
+        "status_filter_explanations": STATUS_FILTER_EXPLANATIONS,
         "best_uses": list(BEST_USE.values()),
         "market_intelligence_terms": sorted(set(MARKET_INTELLIGENCE_TERMS.values())),
         "display_confidence_scores": False,
