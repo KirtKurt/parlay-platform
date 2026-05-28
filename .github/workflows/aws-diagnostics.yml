@@ -1,0 +1,84 @@
+name: AWS Diagnostics
+
+on:
+  workflow_dispatch:
+    inputs:
+      stack_name:
+        description: CloudFormation stack name
+        required: false
+        default: parlay-platform-dev
+      log_minutes:
+        description: How many minutes of recent Lambda logs to inspect
+        required: false
+        default: "60"
+
+jobs:
+  diagnostics:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Confirm AWS caller
+        run: aws sts get-caller-identity
+
+      - name: CloudFormation stack summary
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name "${{ inputs.stack_name }}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].{StackName:StackName,Status:StackStatus,CreationTime:CreationTime,LastUpdatedTime:LastUpdatedTime,Outputs:Outputs}" \
+            --output json
+
+      - name: CloudFormation recent events
+        run: |
+          aws cloudformation describe-stack-events \
+            --stack-name "${{ inputs.stack_name }}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "StackEvents[0:20].{Time:Timestamp,Resource:LogicalResourceId,Type:ResourceType,Status:ResourceStatus,Reason:ResourceStatusReason}" \
+            --output table
+
+      - name: List Lambda functions for stack
+        run: |
+          aws lambda list-functions \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Functions[?contains(FunctionName, 'parlay') || contains(FunctionName, 'Api') || contains(FunctionName, 'Scheduler')].{Name:FunctionName,Runtime:Runtime,Updated:LastModified,Handler:Handler}" \
+            --output table
+
+      - name: API Gateway outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name "${{ inputs.stack_name }}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs" \
+            --output table
+
+      - name: DynamoDB tables
+        run: aws dynamodb list-tables --region "${{ secrets.AWS_REGION }}" --output table
+
+      - name: Lambda log groups
+        run: |
+          aws logs describe-log-groups \
+            --region "${{ secrets.AWS_REGION }}" \
+            --log-group-name-prefix /aws/lambda/ \
+            --query "logGroups[?contains(logGroupName, 'parlay') || contains(logGroupName, 'Api') || contains(logGroupName, 'Scheduler')].{LogGroup:logGroupName,StoredBytes:storedBytes}" \
+            --output table
+
+      - name: Recent Lambda errors
+        run: |
+          START_MS=$(( ($(date +%s) - (${{ inputs.log_minutes }} * 60)) * 1000 ))
+          for LOG_GROUP in $(aws logs describe-log-groups --region "${{ secrets.AWS_REGION }}" --log-group-name-prefix /aws/lambda/ --query "logGroups[].logGroupName" --output text); do
+            echo "Checking $LOG_GROUP"
+            aws logs filter-log-events \
+              --region "${{ secrets.AWS_REGION }}" \
+              --log-group-name "$LOG_GROUP" \
+              --start-time "$START_MS" \
+              --filter-pattern 'ERROR Exception Traceback Task timed out Runtime.ImportModuleError' \
+              --query "events[0:20].{Time:timestamp,Message:message}" \
+              --output json || true
+          done
