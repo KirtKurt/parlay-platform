@@ -131,6 +131,21 @@ Resources:
             Path: /{proxy+}
             Method: ANY
 
+  MLBManualPullFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_manual_pull.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+      Events:
+        MLBManualPull:
+          Type: Api
+          Properties:
+            Path: /v1/pull/mlb
+            Method: POST
+
   SchedulerFunction:
     Type: AWS::Serverless::Function
     Properties:
