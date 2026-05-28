@@ -17,9 +17,23 @@ ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 
 snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
 
-# Temporary until-Friday starter-plan soccer list.
-# Keep this small to avoid burning the 500-credit plan too quickly.
-DEFAULT_SOCCER_KEYS = ["soccer_epl", "soccer_usa_mls"]
+# Controlled starter-plan soccer list using only keys returned by live /v4/sports discovery.
+# This expands beyond EPL/MLS because those returned 0 games, while keeping outrights excluded.
+DEFAULT_SOCCER_KEYS = [
+    "soccer_brazil_campeonato",
+    "soccer_brazil_serie_b",
+    "soccer_chile_campeonato",
+    "soccer_china_superleague",
+    "soccer_conmebol_copa_libertadores",
+    "soccer_conmebol_copa_sudamericana",
+    "soccer_finland_veikkausliiga",
+    "soccer_japan_j_league",
+    "soccer_league_of_ireland",
+    "soccer_norway_eliteserien",
+    "soccer_spain_segunda_division",
+    "soccer_sweden_allsvenskan",
+    "soccer_sweden_superettan",
+]
 SOCCER_KEYS = [s.strip() for s in os.environ.get("SOCCER_KEYS", ",".join(DEFAULT_SOCCER_KEYS)).split(",") if s.strip()]
 ODDS_MARKETS = "h2h,spreads,totals"
 
@@ -129,7 +143,7 @@ def pull_soccer_hot_snapshot() -> Dict[str, Any]:
             "source": "theOddsAPI",
             "run_type": "hot_pull_audited",
             "pulled_at": asof,
-            "temporary_mode": "until_friday_starter_plan_baseball_plus_soccer_only",
+            "temporary_mode": "until_friday_starter_plan_baseball_plus_soccer_only_expanded_exact_keys",
             "soccer_model": "SOC-B1.1-three-way-audit-v1",
         },
     }
