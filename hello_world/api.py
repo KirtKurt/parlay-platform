@@ -13,6 +13,7 @@ from boto3.dynamodb.conditions import Key
 from nba_algorithm import rank_nba_b11c1
 from mlb_algorithm import rank_mlb_b10a3
 from mlb_audit import pull_mlb_results, evaluate_mlb_predictions, mlb_training_export
+from sports_discovery import discover_available_sports
 
 
 dynamodb = boto3.resource("dynamodb")
@@ -485,6 +486,11 @@ def lambda_handler(event, context):
         return _resp(200, {"ok": True})
     if method == "GET" and path in {"/", "/health", "/v1/health"}:
         return _resp(200, {"ok": True, "status": "healthy", "service": "parlay-platform", "ts": _now_iso()})
+    if method == "GET" and path == "/v1/sports/available":
+        try:
+            return _resp(200, discover_available_sports())
+        except Exception as exc:
+            return _resp(500, {"ok": False, "error": str(exc)})
     if method == "GET" and path == "/v1/snapshots":
         params = event.get("queryStringParameters") or {}
         return _resp(200, _query_snapshots((params.get("sport") or "nba").lower(), params.get("t"), min(int(params.get("limit") or 10), 100)))
