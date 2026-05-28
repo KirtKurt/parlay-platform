@@ -153,33 +153,33 @@ Resources:
           Type: Schedule
           Properties:
             Schedule: rate(15 minutes)
-            Input: '{"sport":"mlb","t":"HOT","run":"hot_pull_audited"}'
+            Input: '{"sport":"mlb","t":"HOT","run":"hot_pull_audited","days_ahead":1}'
         MLBBasePull:
           Type: Schedule
           Properties:
             Schedule: cron(0 7 * * ? *)
-            Input: '{"sport":"mlb","t":"T1","run":"base_pull_audited"}'
+            Input: '{"sport":"mlb","t":"T1","run":"base_pull_audited","days_ahead":1}'
         MLBT2:
           Type: Schedule
           Properties:
             Schedule: cron(0 15 * * ? *)
-            Input: '{"sport":"mlb","t":"T2","run":"mid_pull_audited"}'
+            Input: '{"sport":"mlb","t":"T2","run":"mid_pull_audited","days_ahead":1}'
         MLBT3:
           Type: Schedule
           Properties:
             Schedule: cron(0 18 * * ? *)
-            Input: '{"sport":"mlb","t":"T3","run":"late_pull_audited"}'
+            Input: '{"sport":"mlb","t":"T3","run":"late_pull_audited","days_ahead":1}'
         MLBT4:
           Type: Schedule
           Properties:
             Schedule: cron(0 20 * * ? *)
-            Input: '{"sport":"mlb","t":"T4","run":"freeze_pull_audited"}'
+            Input: '{"sport":"mlb","t":"T4","run":"freeze_pull_audited","days_ahead":1}'
 
   MLBSignalApiFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: hello_world/
-      Handler: mlb_signal_api.lambda_handler
+      Handler: mlb_date_signal_api.lambda_handler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
