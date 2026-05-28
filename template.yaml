@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Transform: AWS::Serverless-2016-10-31
-Description: Parlay Platform (NBA-B1.1C.1) - API + Scheduler + DynamoDB
+Description: Parlay Platform - API + Scheduler + DynamoDB
 
 Parameters:
   OddsApiKey:
@@ -92,6 +92,7 @@ Resources:
           Properties:
             Path: /{proxy+}
             Method: ANY
+
   SchedulerFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -102,12 +103,29 @@ Resources:
             TableName: !Ref SnapshotsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref SignalsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalLedgerTable
       Events:
-        HotEvery45Min:
+        MLBBasePull:
           Type: Schedule
           Properties:
-            Schedule: rate(45 minutes)
-            Input: '{"run":"hot_pull"}'
+            Schedule: cron(0 7 * * ? *)
+            Input: '{"sport":"mlb","t":"T1","run":"base_pull"}'
+        MLBT2:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 15 * * ? *)
+            Input: '{"sport":"mlb","t":"T2","run":"mid_pull"}'
+        MLBT3:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 18 * * ? *)
+            Input: '{"sport":"mlb","t":"T3","run":"late_pull"}'
+        MLBT4:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 20 * * ? *)
+            Input: '{"sport":"mlb","t":"T4","run":"freeze_pull"}'
         NCAAMT1:
           Type: Schedule
           Properties:
