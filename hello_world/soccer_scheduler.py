@@ -8,6 +8,8 @@ from zoneinfo import ZoneInfo
 
 import boto3
 
+from soccer_audit import record_soccer_no_edge_prediction_rows, record_soccer_snapshot_audit
+
 
 dynamodb = boto3.resource("dynamodb")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -95,15 +97,24 @@ def pull_soccer_hot_snapshot() -> Dict[str, Any]:
     slate_date = _slate_date_et()
     games: List[Dict[str, Any]] = []
     errors: List[Dict[str, str]] = []
+    raw_by_sport_key: Dict[str, List[Dict[str, Any]]] = {}
 
     for sport_key in SOCCER_KEYS:
         try:
             raw_games = _http_get_json(_odds_url(sport_key))
+            raw_by_sport_key[sport_key] = raw_games or []
             for raw_game in raw_games or []:
                 games.append(_compact_soccer_game(raw_game, sport_key))
         except Exception as exc:
             errors.append({"sport_key": sport_key, "error": str(exc)})
 
+    compact_snapshot = {
+        "games": games,
+        "count": len(games),
+        "soccer_keys": SOCCER_KEYS,
+        "markets": ["h2h", "spreads", "totals"],
+        "errors": errors,
+    }
     item = {
         "PK": "SPORT#soccer",
         "SK": f"HOT#DATE#{slate_date}#ASOF#{asof}#SLATE#SOCCER_HOT",
@@ -113,26 +124,23 @@ def pull_soccer_hot_snapshot() -> Dict[str, Any]:
         "slate_date_et": slate_date,
         "asof": asof,
         "created_at": asof,
-        "data": {
-            "games": games,
-            "count": len(games),
-            "soccer_keys": SOCCER_KEYS,
-            "markets": ["h2h", "spreads", "totals"],
-            "errors": errors,
-        },
+        "data": compact_snapshot,
         "meta": {
             "source": "theOddsAPI",
-            "run_type": "hot_pull",
+            "run_type": "hot_pull_audited",
             "pulled_at": asof,
             "temporary_mode": "until_friday_starter_plan_baseball_plus_soccer_only",
+            "soccer_model": "SOC-B1.1-three-way-audit-v1",
         },
     }
     snapshots_tbl.put_item(Item=item)
-    return {"ok": len(errors) == 0, "sport": "soccer", "t": "HOT", "count": len(games), "soccer_keys": SOCCER_KEYS, "errors": errors}
+    audit_result = record_soccer_snapshot_audit(slate_date_et=slate_date, asof=asof, t="HOT", run_type="hot_pull_audited", compact_snapshot=compact_snapshot, raw_by_sport_key=raw_by_sport_key)
+    prediction_audit = record_soccer_no_edge_prediction_rows(slate_date_et=slate_date, asof=asof, compact_snapshot=compact_snapshot)
+    return {"ok": len(errors) == 0 and audit_result.get("ok", False), "sport": "soccer", "t": "HOT", "count": len(games), "soccer_keys": SOCCER_KEYS, "errors": errors, "audit": audit_result, "prediction_audit": prediction_audit}
 
 
 def lambda_handler(event, context):
     try:
-        return {"statusCode": 200, "headers": {"content-type": "application/json"}, "body": json.dumps(pull_soccer_hot_snapshot())}
+        return {"statusCode": 200, "headers": {"content-type": "application/json"}, "body": json.dumps(pull_soccer_hot_snapshot(), default=str)}
     except Exception as exc:
         return {"statusCode": 500, "headers": {"content-type": "application/json"}, "body": json.dumps({"ok": False, "sport": "soccer", "error": str(exc)})}
