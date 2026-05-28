@@ -28,7 +28,7 @@ HOT_DELTA_THRESHOLD = 0.006
 PUBLISH_DELTA_THRESHOLD = 0.018
 TARGET_SUCCESS_RATE = Decimal("75")
 MODEL_VERSION = "SOC-B1.1-three-way-audit-v1"
-FEATURE_VERSION = "soccer_individual_match_and_27_combo_parlay_v2_market_language"
+FEATURE_VERSION = "soccer_individual_match_and_27_combo_parlay_v3_stored_mode_baseline"
 SOCCER_OUTCOMES = ("home", "draw", "away")
 
 
@@ -68,11 +68,31 @@ def _has_games(snapshot: Dict[str, Any]) -> bool:
 def _recent_snapshots(limit: int = 40, populated_only: bool = False) -> List[Dict[str, Any]]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
-    resp = snapshots_tbl.query(KeyConditionExpression=Key("PK").eq("SPORT#soccer"), ScanIndexForward=False, Limit=limit)
+    # Fetch more than the requested display count so empty live-failure HOT rows do not hide
+    # the last usable populated soccer snapshot.
+    query_limit = max(limit, 200) if populated_only else limit
+    resp = snapshots_tbl.query(
+        KeyConditionExpression=Key("PK").eq("SPORT#soccer"),
+        ScanIndexForward=False,
+        Limit=query_limit,
+    )
     rows = sorted(resp.get("Items", []), key=lambda x: x.get("asof") or "")
     if populated_only:
         rows = [row for row in rows if _has_games(row)]
-    return rows
+    return rows[-limit:]
+
+
+def _fallback_status(snapshots: List[Dict[str, Any]]) -> Dict[str, Any]:
+    return {
+        "live_pull_ok": False,
+        "fallback_used": bool(snapshots),
+        "stored": bool(snapshots),
+        "source_status": {
+            "live_odds_feed": "UNAVAILABLE_OR_NOT_REQUESTED",
+            "cached_snapshot_analysis": "USED" if snapshots else "EMPTY",
+            "predictions_storage": "CONNECTED" if predictions_tbl is not None else "NOT_CONFIGURED",
+        },
+    }
 
 
 def _game_index(snapshot: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
@@ -198,6 +218,56 @@ def _public_language_for_row(row: Dict[str, Any], *, is_parlay: bool = False) ->
     )
 
 
+def _baseline_row_from_game(game: Dict[str, Any], asof: Optional[str]) -> Optional[Dict[str, Any]]:
+    consensus = soccer_three_way_probs(game)
+    if consensus.get("home") is None:
+        return None
+    leader = consensus.get("leader") or max(SOCCER_OUTCOMES, key=lambda side: consensus.get(side) or 0)
+    leader_label = _outcome_label(leader, game)
+    leader_gap = consensus.get("leader_gap")
+    reason_codes = ["stored_snapshot_baseline", "three_way_consensus_leader"]
+    if leader == "draw":
+        reason_codes.append("draw_leader")
+    if leader_gap is not None and leader_gap < 0.05:
+        reason_codes.append("compressed_three_way_market")
+    row = {
+        "ok": True,
+        "game_key": game.get("game_key") or game.get("id"),
+        "game_id": game.get("id"),
+        "sport_key": game.get("sport_key"),
+        "home_team": game.get("home_team"),
+        "away_team": game.get("away_team"),
+        "commence_time": game.get("commence_time"),
+        "previous_asof": None,
+        "latest_asof": asof,
+        "market_type": "THREE_WAY_HOME_DRAW_AWAY",
+        "current_leader": leader,
+        "current_leader_label": leader_label,
+        "hot_outcome": leader,
+        "hot_label": leader_label,
+        "hot_delta": 0,
+        "deltas": {side: 0 for side in SOCCER_OUTCOMES},
+        "hot_side_label": f"{leader_label} baseline lean",
+        "prediction": f"{leader_label} baseline lean",
+        "prediction_status": "BASELINE_LEAN",
+        "confidence": "baseline",
+        "reason_codes": reason_codes,
+        "book_agreement": {"common_books": consensus.get("book_count") or 0, "agreeing_books": 0, "disagreeing_books": 0, "agreeing": [], "disagreeing": []},
+        "spread_signal": _spread_summary(game),
+        "total_signal": _total_summary(game),
+        "latest_consensus_three_way": {k: consensus.get(k) for k in ["home", "draw", "away", "leader", "leader_gap", "books", "book_count"]},
+        "previous_consensus_three_way": None,
+        "attempted_outcome": leader,
+        "attempted_selection": leader_label,
+        "attempted_winner": leader_label,
+        "attempted_winner_basis": "stored_three_way_consensus_leader",
+        "attempted_probability_pct": round((consensus.get(leader) or 0) * 100, 2),
+        "attempted_american_odds": _price_for_outcome(game, leader),
+    }
+    row["public_market_language"] = _public_language_for_row(row)
+    return row
+
+
 def _delta_for_game(prev: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, Any]:
     prev_p = soccer_three_way_probs(prev)
     latest_p = soccer_three_way_probs(latest)
@@ -234,6 +304,8 @@ def _delta_for_game(prev: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, A
         prediction_status = "NO_EDGE"
         confidence = "no_edge"
 
+    attempted_outcome = hot_outcome if prediction_status != "NO_EDGE" else current_leader
+    attempted_label = _outcome_label(attempted_outcome, latest) if attempted_outcome else None
     if hot_outcome == "draw":
         prediction_text = "Draw pressure/watchlist"
     elif hot_outcome == current_leader:
@@ -268,6 +340,12 @@ def _delta_for_game(prev: Dict[str, Any], latest: Dict[str, Any]) -> Dict[str, A
         "total_signal": _point_delta(prev, latest, "total"),
         "latest_consensus_three_way": {k: latest_p.get(k) for k in ["home", "draw", "away", "leader", "leader_gap", "books", "book_count"]},
         "previous_consensus_three_way": {k: prev_p.get(k) for k in ["home", "draw", "away", "leader", "leader_gap", "books", "book_count"]},
+        "attempted_outcome": attempted_outcome,
+        "attempted_selection": attempted_label,
+        "attempted_winner": attempted_label,
+        "attempted_winner_basis": "movement_hot_side" if prediction_status != "NO_EDGE" else "consensus_three_way_leader",
+        "attempted_probability_pct": round((latest_p.get(attempted_outcome) or 0) * 100, 2) if attempted_outcome else None,
+        "attempted_american_odds": _price_for_outcome(latest, attempted_outcome) if attempted_outcome else None,
     }
     row["public_market_language"] = _public_language_for_row(row)
     return row
@@ -277,16 +355,24 @@ def soccer_movement_deltas(limit: int = 40) -> Dict[str, Any]:
     snapshots = _recent_snapshots(limit=limit, populated_only=True)
     if len(snapshots) < 2:
         latest = snapshots[-1] if snapshots else None
+        baseline = []
+        if latest:
+            for game in latest.get("data", {}).get("games", []) or []:
+                row = _baseline_row_from_game(game, latest.get("asof"))
+                if row:
+                    baseline.append(row)
         return {
             "ok": True,
             "sport": "soccer",
             "model": MODEL_VERSION,
+            "feature_version": FEATURE_VERSION,
             "market_language": market_language_status(),
-            "count": 0,
-            "deltas": [],
-            "status": "WAITING_FOR_SECOND_POPULATED_SNAPSHOT",
+            "count": len(baseline),
+            "deltas": baseline,
+            "status": "BASELINE_STORED_MODE" if baseline else "NO_POPULATED_SOCCER_SNAPSHOT",
             "latest_populated_asof": latest.get("asof") if latest else None,
-            "message": "Need at least two populated soccer snapshots. Empty HOT snapshots are ignored.",
+            "message": "Using latest populated soccer snapshot as baseline until a second populated snapshot is available.",
+            **_fallback_status(snapshots),
         }
     prev_snap = snapshots[-2]
     latest_snap = snapshots[-1]
@@ -296,17 +382,20 @@ def soccer_movement_deltas(limit: int = 40) -> Dict[str, Any]:
     for game_key, latest_game in latest_games.items():
         prev_game = prev_games.get(game_key)
         if not prev_game:
-            continue
-        row = _delta_for_game({**prev_game, "_snapshot_asof": prev_snap.get("asof")}, {**latest_game, "_snapshot_asof": latest_snap.get("asof")})
-        if row.get("ok"):
+            row = _baseline_row_from_game(latest_game, latest_snap.get("asof"))
+        else:
+            row = _delta_for_game({**prev_game, "_snapshot_asof": prev_snap.get("asof")}, {**latest_game, "_snapshot_asof": latest_snap.get("asof")})
+        if row and row.get("ok"):
             deltas.append(row)
-    deltas.sort(key=lambda x: abs(float(x.get("hot_delta") or 0)), reverse=True)
-    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "feature_version": FEATURE_VERSION, "market_language": market_language_status(), "previous_asof": prev_snap.get("asof"), "latest_asof": latest_snap.get("asof"), "count": len(deltas), "deltas": deltas}
+    deltas.sort(key=lambda x: (_confidence_score(x), abs(float(x.get("hot_delta") or 0))), reverse=True)
+    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "feature_version": FEATURE_VERSION, "market_language": market_language_status(), "previous_asof": prev_snap.get("asof"), "latest_asof": latest_snap.get("asof"), "count": len(deltas), "deltas": deltas, **_fallback_status(snapshots)}
 
 
 def _confidence_score(row: Dict[str, Any]) -> int:
     score = 50 + min(35, int(abs(float(row.get("hot_delta") or 0)) * 1000))
     score += min(10, int(row.get("book_agreement", {}).get("agreeing_books", 0)))
+    if row.get("prediction_status") == "BASELINE_LEAN":
+        score += 2
     if "compressed_three_way_market" in row.get("reason_codes", []):
         score -= 5
     return max(1, min(95, score))
@@ -318,9 +407,8 @@ def soccer_hot_sides(limit: int = 40, store: bool = False) -> Dict[str, Any]:
     now = _now_iso()
     slate_date = _slate_date_et()
     for row in data.get("deltas", []):
-        if row.get("prediction_status") == "NO_EDGE":
-            continue
         public_language = row.get("public_market_language") or _public_language_for_row(row)
+        predicted_outcome = row.get("attempted_outcome") or row.get("hot_outcome") or row.get("current_leader")
         item = {
             "PK": f"PRED#soccer#{slate_date}",
             "SK": f"HOT_SIDE#{row.get('latest_asof')}#{row.get('game_key')}",
@@ -335,41 +423,46 @@ def soccer_hot_sides(limit: int = 40, store: bool = False) -> Dict[str, Any]:
             "home_team": row.get("home_team"),
             "away_team": row.get("away_team"),
             "market": "h2h_three_way",
-            "prediction_type": "SOCCER_HOT_SIDE_THREE_WAY_MOVEMENT",
+            "prediction_type": "SOCCER_HOME_DRAW_AWAY_ATTEMPT",
             "prediction_status": row.get("prediction_status"),
             "status": "OPEN",
-            "predicted_outcome": row.get("hot_outcome") if row.get("prediction_status", "").startswith("PUBLISHED") else None,
+            "predicted_outcome": predicted_outcome,
+            "attempted_outcome": predicted_outcome,
+            "attempted_selection": row.get("attempted_selection") or row.get("hot_label"),
             "hot_outcome": row.get("hot_outcome"),
             "hot_label": row.get("hot_label"),
             "confidence_label": public_language.get("market_status"),
-            "confidence": None,
+            "confidence_score": _confidence_score(row),
+            "confidence": row.get("confidence"),
             "target_success_rate": TARGET_SUCCESS_RATE,
             "reason_codes": row.get("reason_codes", []),
             "explanation": public_language.get("public_explanation"),
             "public_market_language": public_language,
-            "movement": {"hot_delta": Decimal(str(row.get("hot_delta"))), "deltas": {k: Decimal(str(v)) for k, v in row.get("deltas", {}).items()}},
+            "movement": {"hot_delta": Decimal(str(row.get("hot_delta") or 0)), "deltas": {k: Decimal(str(v)) for k, v in row.get("deltas", {}).items()}},
             "evaluation": {},
         }
-        rows.append({**row, "public_market_language": public_language, "stored_prediction_key": item["SK"] if store else None})
+        rows.append({**row, "public_market_language": public_language, "confidence_score": _confidence_score(row), "stored_prediction_key": item["SK"] if store else None})
         if store and predictions_tbl is not None:
             predictions_tbl.put_item(Item=item)
-    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "feature_version": FEATURE_VERSION, "market_language": market_language_status(), "stored": store, "count": len(rows), "target_success_rate": 75, "hot_sides": rows}
+    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "feature_version": FEATURE_VERSION, "market_language": market_language_status(), "stored": store, "count": len(rows), "individual_prediction_count": len(rows), "target_success_rate": 75, "hot_sides": rows, **_fallback_status(_recent_snapshots(limit=limit, populated_only=True))}
 
 
 def soccer_match_signals(limit: int = 40) -> Dict[str, Any]:
     snapshots = _recent_snapshots(limit=limit, populated_only=True)
     if not snapshots:
-        return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "market_language": market_language_status(), "count": 0, "matches": [], "status": "NO_POPULATED_SOCCER_SNAPSHOT"}
+        return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "feature_version": FEATURE_VERSION, "market_language": market_language_status(), "count": 0, "matches": [], "status": "NO_POPULATED_SOCCER_SNAPSHOT", **_fallback_status(snapshots)}
     latest = snapshots[-1]
-    movement_by_key = {row.get("game_key"): row for row in soccer_movement_deltas(limit=limit).get("deltas", [])}
-    has_movement = len(snapshots) >= 2
+    movement_data = soccer_movement_deltas(limit=limit)
+    movement_by_key = {row.get("game_key"): row for row in movement_data.get("deltas", [])}
+    has_movement = bool(movement_data.get("previous_asof"))
     matches = []
     for game in latest.get("data", {}).get("games", []) or []:
         consensus = soccer_three_way_probs(game)
         if consensus.get("home") is None:
             continue
         key = game.get("game_key") or game.get("id")
-        movement = movement_by_key.get(key)
+        movement = movement_by_key.get(key) or _baseline_row_from_game(game, latest.get("asof"))
+        attempted_outcome = movement.get("attempted_outcome") or movement.get("hot_outcome") or consensus.get("leader")
         outcomes = {}
         for outcome in SOCCER_OUTCOMES:
             price = _price_for_outcome(game, outcome)
@@ -378,7 +471,7 @@ def soccer_match_signals(limit: int = 40) -> Dict[str, Any]:
                 "consensus_price": price,
                 "decimal_odds": _american_to_decimal(price) if price is not None else None,
                 "consensus_probability": consensus.get(outcome),
-                "signal": "PENDING_BASELINE" if not has_movement else ("HOT" if movement and movement.get("hot_outcome") == outcome else "NEUTRAL"),
+                "signal": "ATTEMPTED_OUTCOME" if attempted_outcome == outcome else ("PENDING_BASELINE" if not has_movement else ("HOT" if movement and movement.get("hot_outcome") == outcome else "NEUTRAL")),
             }
         public_language = movement.get("public_market_language") if movement else build_public_market_language(sport="soccer", prediction_status="NO_EDGE", reason_codes=[], prediction=None, soccer_context={"home_team": game.get("home_team"), "away_team": game.get("away_team")})
         matches.append({
@@ -392,37 +485,41 @@ def soccer_match_signals(limit: int = 40) -> Dict[str, Any]:
             "market_type": "3-way h2h",
             "books_tracked": consensus.get("book_count"),
             "outcomes": outcomes,
+            "attempted_outcome": attempted_outcome,
+            "attempted_selection": _outcome_label(attempted_outcome, game) if attempted_outcome else None,
+            "attempted_winner": _outcome_label(attempted_outcome, game) if attempted_outcome else None,
+            "attempted_winner_basis": movement.get("attempted_winner_basis") if movement else "stored_three_way_consensus_leader",
+            "attempted_probability_pct": movement.get("attempted_probability_pct") if movement else round((consensus.get(attempted_outcome) or 0) * 100, 2) if attempted_outcome else None,
+            "attempted_american_odds": movement.get("attempted_american_odds") if movement else _price_for_outcome(game, attempted_outcome) if attempted_outcome else None,
             "hot_side": movement.get("hot_label") if movement else None,
             "hot_outcome": movement.get("hot_outcome") if movement else None,
-            "confidence": None,
-            "status": movement.get("prediction_status") if movement else "WAITING_FOR_SECOND_POPULATED_SNAPSHOT",
+            "confidence": movement.get("confidence") if movement else "baseline",
+            "confidence_score": _confidence_score(movement) if movement else 50,
+            "status": movement.get("prediction_status") if movement else "BASELINE_LEAN",
             "reason_codes": movement.get("reason_codes", []) if movement else [],
             "public_market_language": public_language,
             "explanation": public_language.get("public_explanation"),
             "spread_market": _spread_summary(game),
             "total_market": _total_summary(game),
         })
-    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "feature_version": FEATURE_VERSION, "market_language": market_language_status(), "asof": latest.get("asof"), "populated_snapshot_count": len(snapshots), "count": len(matches), "matches": matches}
-
-
-def _combo_confidence(score: float) -> str:
-    if score >= 2.0:
-        return "Clean Edge"
-    if score >= 1.0:
-        return "Playable Edge"
-    return "Watchlist Edge"
+    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "feature_version": FEATURE_VERSION, "market_language": market_language_status(), "asof": latest.get("asof"), "populated_snapshot_count": len(snapshots), "count": len(matches), "individual_prediction_count": len(matches), "matches": matches, **_fallback_status(snapshots)}
 
 
 def _eligible_matches_for_parlay(limit: int) -> Tuple[Optional[Dict[str, Any]], List[Dict[str, Any]]]:
     snapshots = _recent_snapshots(limit=limit, populated_only=True)
-    if len(snapshots) < 2:
-        latest = snapshots[-1] if snapshots else None
-        return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "previous_asof": None, "latest_asof": latest.get("asof") if latest else None, "latest_populated_asof": latest.get("asof") if latest else None}, []
-    latest_snap = snapshots[-1]
-    latest_games = _game_index(latest_snap)
+    latest = snapshots[-1] if snapshots else None
     movement = soccer_movement_deltas(limit=limit)
+    if not latest:
+        return movement, []
+    latest_games = _game_index(latest)
     rows = []
-    for row in movement.get("deltas", []):
+    movement_rows = movement.get("deltas", [])
+    if not movement_rows:
+        for game in latest_games.values():
+            row = _baseline_row_from_game(game, latest.get("asof"))
+            if row:
+                movement_rows.append(row)
+    for row in movement_rows:
         game = latest_games.get(row.get("game_key"))
         if not game:
             continue
@@ -431,7 +528,7 @@ def _eligible_matches_for_parlay(limit: int) -> Tuple[Optional[Dict[str, Any]], 
         if any(_price_for_outcome(game, outcome) is None for outcome in SOCCER_OUTCOMES):
             continue
         rows.append({**row, "latest_game": game})
-    rows.sort(key=lambda row: (_confidence_score(row), abs(float(row.get("hot_delta") or 0))), reverse=True)
+    rows.sort(key=lambda row: (_confidence_score(row), row.get("attempted_probability_pct") or 0, abs(float(row.get("hot_delta") or 0))), reverse=True)
     return movement, rows
 
 
@@ -439,10 +536,8 @@ def soccer_parlays(limit: int = 40, matches_per_parlay: int = 3) -> Dict[str, An
     if matches_per_parlay != 3:
         return {"ok": False, "sport": "soccer", "error": "Soccer parlay engine currently requires exactly 3 matches for 27 combinations."}
     movement, rows = _eligible_matches_for_parlay(limit)
-    if not movement or not movement.get("previous_asof"):
-        return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "market_language": market_language_status(), "parlays_ready": False, "reason": "Need at least two populated soccer snapshots to compute movement deltas.", "latest_populated_asof": movement.get("latest_populated_asof") if movement else None, "required_next_step": "Wait for next HOT soccer snapshot with count > 0."}
     if len(rows) < 3:
-        return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "market_language": market_language_status(), "parlays_ready": False, "reason": "Need at least three soccer matches with usable three-way market movement and actual h2h prices.", "usable_matches": len(rows)}
+        return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "feature_version": FEATURE_VERSION, "market_language": market_language_status(), "parlays_ready": False, "reason": "Need at least three soccer matches with usable three-way h2h prices from stored snapshots.", "usable_matches": len(rows), **_fallback_status(_recent_snapshots(limit=limit, populated_only=True))}
 
     selected = rows[:3]
     combos = []
@@ -460,9 +555,9 @@ def soccer_parlays(limit: int = 40, matches_per_parlay: int = 3) -> Dict[str, An
                 break
             leg_decimal = _american_to_decimal(price)
             decimal_odds *= leg_decimal
-            if row.get("hot_outcome") == outcome:
+            if row.get("attempted_outcome") == outcome or row.get("hot_outcome") == outcome:
                 score += 1.0 + abs(float(row.get("hot_delta") or 0)) * 100
-                reason_codes.append(f"{_outcome_label(outcome, game)}_hot_side")
+                reason_codes.append(f"{_outcome_label(outcome, game)}_attempted_side")
             if outcome == "draw":
                 score += 0.15
             legs.append({"match": f"{game.get('away_team')} at {game.get('home_team')}", "outcome": outcome, "selection": _outcome_label(outcome, game), "american_odds": price, "decimal_odds": leg_decimal, "consensus_probability": row.get("latest_consensus_three_way", {}).get(outcome)})
@@ -470,12 +565,12 @@ def soccer_parlays(limit: int = 40, matches_per_parlay: int = 3) -> Dict[str, An
             continue
         decimal_odds = round(decimal_odds, 4)
         public_language = build_public_market_language(sport="soccer", prediction_status="PUBLISHED_MODERATE" if score >= 2 else "WATCHLIST", reason_codes=reason_codes, prediction=" + ".join(leg["selection"] for leg in legs), is_parlay=True)
-        combos.append({"combo": " + ".join(leg["selection"] for leg in legs), "outcome_types": list(outcomes), "legs": legs, "parlay_decimal_odds": decimal_odds, "parlay_american_odds": _decimal_to_american(decimal_odds), "implied_win_probability_pct": round((1 / decimal_odds) * 100, 2), "signal_score_internal": round(score, 4), "confidence_band": public_language.get("market_status"), "public_market_language": public_language, "reason_codes": reason_codes or ["no_hot_side_alignment"]})
+        combos.append({"combo": " + ".join(leg["selection"] for leg in legs), "outcome_types": list(outcomes), "legs": legs, "parlay_decimal_odds": decimal_odds, "parlay_american_odds": _decimal_to_american(decimal_odds), "implied_win_probability_pct": round((1 / decimal_odds) * 100, 2), "signal_score_internal": round(score, 4), "confidence_score": round(score, 4), "confidence_band": public_language.get("market_status"), "public_market_language": public_language, "reason_codes": reason_codes or ["no_attempted_side_alignment"]})
     combos.sort(key=lambda row: (row["signal_score_internal"], row["implied_win_probability_pct"]), reverse=True)
     for idx, combo in enumerate(combos, 1):
         combo["rank"] = idx
     selected_public = [{k: v for k, v in row.items() if k != "latest_game"} for row in selected]
-    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "feature_version": FEATURE_VERSION, "market_language": market_language_status(), "parlays_ready": True, "previous_asof": movement.get("previous_asof"), "latest_asof": movement.get("latest_asof"), "match_count": 3, "combo_count": len(combos), "selected_matches": selected_public, "ranked_combinations": combos}
+    return {"ok": True, "sport": "soccer", "model": MODEL_VERSION, "feature_version": FEATURE_VERSION, "market_language": market_language_status(), "parlays_ready": True, "previous_asof": movement.get("previous_asof") if movement else None, "latest_asof": movement.get("latest_asof") or movement.get("latest_populated_asof") if movement else None, "match_count": 3, "combo_count": len(combos), "selected_matches": selected_public, "ranked_combinations": combos, **_fallback_status(_recent_snapshots(limit=limit, populated_only=True))}
 
 
 def soccer_audit_snapshots(limit: int = 20) -> Dict[str, Any]:
