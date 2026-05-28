@@ -175,6 +175,52 @@ Resources:
             Schedule: cron(0 20 * * ? *)
             Input: '{"sport":"mlb","t":"T4","run":"freeze_pull_audited"}'
 
+  MLBSignalApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_signal_api.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalLedgerTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PredictionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
+      Events:
+        AuditSnapshots:
+          Type: Api
+          Properties:
+            Path: /v1/audit/mlb/snapshots
+            Method: GET
+        AuditGame:
+          Type: Api
+          Properties:
+            Path: /v1/audit/mlb/game
+            Method: GET
+        SignalDeltas:
+          Type: Api
+          Properties:
+            Path: /v1/signals/mlb/deltas
+            Method: GET
+        HotSides:
+          Type: Api
+          Properties:
+            Path: /v1/predictions/mlb/hot-sides
+            Method: GET
+        ResultsStatus:
+          Type: Api
+          Properties:
+            Path: /v1/results/mlb/status
+            Method: GET
+        SourceStatus:
+          Type: Api
+          Properties:
+            Path: /v1/sources/mlb/status
+            Method: GET
+
   MLBResultsSchedulerFunction:
     Type: AWS::Serverless::Function
     Properties:
