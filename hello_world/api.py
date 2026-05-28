@@ -14,6 +14,8 @@ from nba_algorithm import rank_nba_b11c1
 from mlb_algorithm import rank_mlb_b10a3
 from mlb_audit import pull_mlb_results, evaluate_mlb_predictions, mlb_training_export
 from mlb_signal_api import audit_snapshots, audit_game, movement_deltas, hot_sides, results_status, source_status
+from soccer_signal_api import soccer_audit_snapshots, soccer_movement_deltas, soccer_hot_sides
+from soccer_audit import soccer_results_status, soccer_source_status
 from sports_discovery import discover_available_sports
 
 
@@ -524,6 +526,20 @@ def lambda_handler(event, context):
         return _resp(200, results_status(params.get("slate_date_et")))
     if method == "GET" and path == "/v1/sources/mlb/status":
         return _resp(200, source_status())
+    if method == "GET" and path == "/v1/audit/soccer/snapshots":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, soccer_audit_snapshots(min(int(params.get("limit") or 20), 100)))
+    if method == "GET" and path == "/v1/signals/soccer/deltas":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, soccer_movement_deltas(min(int(params.get("limit") or 40), 200)))
+    if method == "GET" and path == "/v1/predictions/soccer/hot-sides":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, soccer_hot_sides(min(int(params.get("limit") or 40), 200), params.get("store", "false").lower() == "true"))
+    if method == "GET" and path == "/v1/results/soccer/status":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, soccer_results_status(params.get("slate_date_et")))
+    if method == "GET" and path == "/v1/sources/soccer/status":
+        return _resp(200, soccer_source_status())
     if method == "GET" and path == "/v1/audit/mlb/training":
         params = event.get("queryStringParameters") or {}
         return _resp(200, mlb_training_export(params.get("slate_date_et")))
