@@ -13,6 +13,7 @@ from boto3.dynamodb.conditions import Key
 from nba_algorithm import rank_nba_b11c1
 from mlb_algorithm import rank_mlb_b10a3
 from mlb_audit import pull_mlb_results, evaluate_mlb_predictions, mlb_training_export
+from mlb_signal_api import audit_snapshots, audit_game, movement_deltas, hot_sides, results_status, source_status
 from sports_discovery import discover_available_sports
 
 
@@ -506,6 +507,23 @@ def lambda_handler(event, context):
     if method == "GET" and path == "/v1/predictions/accuracy":
         params = event.get("queryStringParameters") or {}
         return _resp(200, _prediction_accuracy((params.get("sport") or "mlb").lower(), params.get("slate_date_et")))
+    if method == "GET" and path == "/v1/audit/mlb/snapshots":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, audit_snapshots(min(int(params.get("limit") or 20), 100)))
+    if method == "GET" and path == "/v1/audit/mlb/game":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, audit_game(params.get("game_key"), min(int(params.get("limit") or 50), 200)))
+    if method == "GET" and path == "/v1/signals/mlb/deltas":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, movement_deltas(min(int(params.get("limit") or 40), 200)))
+    if method == "GET" and path == "/v1/predictions/mlb/hot-sides":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, hot_sides(min(int(params.get("limit") or 40), 200), params.get("store", "false").lower() == "true"))
+    if method == "GET" and path == "/v1/results/mlb/status":
+        params = event.get("queryStringParameters") or {}
+        return _resp(200, results_status(params.get("slate_date_et")))
+    if method == "GET" and path == "/v1/sources/mlb/status":
+        return _resp(200, source_status())
     if method == "GET" and path == "/v1/audit/mlb/training":
         params = event.get("queryStringParameters") or {}
         return _resp(200, mlb_training_export(params.get("slate_date_et")))
