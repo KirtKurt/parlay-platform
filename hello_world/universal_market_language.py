@@ -179,7 +179,7 @@ def build_public_market_language(*, sport: str, prediction_status: Optional[str]
         "best_use": best_use_from_status(status, is_parlay=is_parlay),
         "market_intelligence_tags": tags,
         "public_explanation": public_explanation(prediction=prediction, market_status=status, tags=tags),
-        "display_confidence_scores": False,
+        "display_confidence_scores": True,
     }
 
 
@@ -188,12 +188,12 @@ def market_language_status() -> Dict[str, Any]:
         "ok": True,
         "language_version": LANGUAGE_VERSION,
         "scope": "universal_all_sports",
-        "rule": "Use market-status language and market-intelligence tags instead of user-facing numeric confidence scores.",
+        "rule": "Use market-status language, market-intelligence tags, and user-facing confidence score fields when supported by the sport card layer.",
         "primary_predictions": list(PRIMARY_PREDICTIONS.values()),
         "primary_prediction_explanations": PRIMARY_PREDICTION_EXPLANATIONS,
         "market_statuses": list(MARKET_STATUS.values()),
         "status_filter_explanations": STATUS_FILTER_EXPLANATIONS,
         "best_uses": list(BEST_USE.values()),
         "market_intelligence_terms": sorted(set(MARKET_INTELLIGENCE_TERMS.values())),
-        "display_confidence_scores": False,
+        "display_confidence_scores": True,
     }
