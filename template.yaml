@@ -20,6 +20,7 @@ Globals:
         ODDS_API_KEY: !Ref OddsApiKey
         SIGNAL_LEDGER_TABLE: !Ref SignalLedgerTable
         PREDICTIONS_TABLE: !Ref PredictionsTable
+        OUTCOMES_TABLE: !Ref OutcomesTable
 
 Resources:
   SnapshotsTable:
@@ -86,6 +87,22 @@ Resources:
         - AttributeName: SK
           KeyType: RANGE
 
+  OutcomesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: parlay_platform_outcomes
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -100,6 +117,8 @@ Resources:
             TableName: !Ref SignalLedgerTable
         - DynamoDBCrudPolicy:
             TableName: !Ref PredictionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
       Events:
         RootAny:
           Type: Api
@@ -126,6 +145,8 @@ Resources:
             TableName: !Ref SignalLedgerTable
         - DynamoDBCrudPolicy:
             TableName: !Ref PredictionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
       Events:
         MLBHotEvery15Min:
           Type: Schedule
