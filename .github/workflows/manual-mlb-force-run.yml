@@ -1,0 +1,106 @@
+name: Manual MLB Force Run
+
+on:
+  workflow_dispatch:
+    inputs:
+      game_date_et:
+        description: "Game date ET to audit, example 2026-06-18"
+        required: true
+        default: "2026-06-18"
+      days_ahead:
+        description: "Days ahead for MLB odds pull"
+        required: true
+        default: "1"
+      t_label:
+        description: "Snapshot label to write"
+        required: true
+        default: "HOT"
+
+jobs:
+  force-mlb-run:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate API_URL secret
+        run: |
+          if [ -z "${{ secrets.API_URL }}" ]; then
+            echo "Missing required repository secret: API_URL"
+            echo "Add it in GitHub: Settings > Secrets and variables > Actions > New repository secret"
+            echo "Value example: https://abc123.execute-api.us-east-1.amazonaws.com/Prod"
+            exit 1
+          fi
+
+      - name: Normalize API base URL
+        id: api
+        run: |
+          API_URL="${{ secrets.API_URL }}"
+          API_URL="${API_URL%/}"
+          echo "base=$API_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Check MLB source status
+        run: |
+          curl -sS "${{ steps.api.outputs.base }}/v1/sources/mlb/status" | tee source_status.json
+          python - <<'PY'
+          import json
+          data=json.load(open('source_status.json'))
+          if not data.get('ok'):
+              raise SystemExit('MLB source status returned ok=false')
+          print('MLB source status OK')
+          PY
+
+      - name: Force MLB pull
+        run: |
+          curl -sS -X POST "${{ steps.api.outputs.base }}/v1/pull/mlb" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "sport": "mlb",
+              "t": "${{ inputs.t_label }}",
+              "run": "github_manual_force_run",
+              "days_ahead": ${{ inputs.days_ahead }}
+            }' | tee force_pull.json
+          python - <<'PY'
+          import json
+          data=json.load(open('force_pull.json'))
+          if not data.get('ok'):
+              raise SystemExit(f"MLB force pull failed: {data}")
+          print('MLB force pull OK')
+          PY
+
+      - name: Check MLB audit snapshots
+        run: |
+          curl -sS "${{ steps.api.outputs.base }}/v1/audit/mlb/snapshots?game_date_et=${{ inputs.game_date_et }}" | tee audit_snapshots.json
+          python - <<'PY'
+          import json
+          data=json.load(open('audit_snapshots.json'))
+          print(json.dumps(data, indent=2))
+          if not data.get('ok'):
+              raise SystemExit(f"MLB audit snapshot check failed: {data}")
+          count = int(data.get('count') or 0)
+          if count <= 0:
+              raise SystemExit('MLB audit snapshot count is 0. Pull ran, but no date-isolated audit rows were found for the requested date.')
+          print(f'MLB audit snapshot count OK: {count}')
+          PY
+
+      - name: Check MLB movement deltas
+        run: |
+          curl -sS "${{ steps.api.outputs.base }}/v1/signals/mlb/deltas?game_date_et=${{ inputs.game_date_et }}" | tee movement_deltas.json
+          python - <<'PY'
+          import json
+          data=json.load(open('movement_deltas.json'))
+          print(json.dumps(data, indent=2))
+          if not data.get('ok'):
+              raise SystemExit(f"MLB movement delta check failed: {data}")
+          print('MLB movement delta endpoint OK')
+          PY
+
+      - name: Store MLB hot-side predictions
+        run: |
+          curl -sS "${{ steps.api.outputs.base }}/v1/predictions/mlb/hot-sides?game_date_et=${{ inputs.game_date_et }}&store=true" | tee hot_sides.json
+          python - <<'PY'
+          import json
+          data=json.load(open('hot_sides.json'))
+          print(json.dumps(data, indent=2))
+          if not data.get('ok'):
+              raise SystemExit(f"MLB hot-side prediction storage failed: {data}")
+          print('MLB hot-side endpoint OK')
+          PY
