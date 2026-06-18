@@ -28,6 +28,64 @@ export type Ranking = {
   risk: 'LOW' | 'MED' | 'HIGH';
 };
 
+export type LineMovementPoint = {
+  time: string;
+  bufMoneyline: number;
+  miaMoneyline: number;
+  milestone?: 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
+  signal?: Signal;
+};
+
+export const lineMovement: LineMovementPoint[] = [
+  { time: '1:00 AM', bufMoneyline: -115, miaMoneyline: -105, milestone: 'T1' },
+  { time: '1:15 AM', bufMoneyline: -116, miaMoneyline: -104 },
+  { time: '1:30 AM', bufMoneyline: -118, miaMoneyline: -102 },
+  { time: '1:45 AM', bufMoneyline: -119, miaMoneyline: -101 },
+  { time: '2:00 AM', bufMoneyline: -121, miaMoneyline: 102 },
+  { time: '2:15 AM', bufMoneyline: -122, miaMoneyline: 103 },
+  { time: '2:30 AM', bufMoneyline: -124, miaMoneyline: 104 },
+  { time: '2:45 AM', bufMoneyline: -123, miaMoneyline: 103, signal: 'RESISTANCE' },
+  { time: '3:00 AM', bufMoneyline: -125, miaMoneyline: 105 },
+  { time: '3:15 AM', bufMoneyline: -126, miaMoneyline: 106 },
+  { time: '3:30 AM', bufMoneyline: -128, miaMoneyline: 108 },
+  { time: '3:45 AM', bufMoneyline: -129, miaMoneyline: 109 },
+  { time: '4:00 AM', bufMoneyline: -130, miaMoneyline: 110 },
+  { time: '4:15 AM', bufMoneyline: -131, miaMoneyline: 111 },
+  { time: '4:30 AM', bufMoneyline: -130, miaMoneyline: 110, signal: 'RESISTANCE' },
+  { time: '4:45 AM', bufMoneyline: -132, miaMoneyline: 112 },
+  { time: '5:00 AM', bufMoneyline: -133, miaMoneyline: 113 },
+  { time: '5:15 AM', bufMoneyline: -134, miaMoneyline: 114 },
+  { time: '5:30 AM', bufMoneyline: -135, miaMoneyline: 115 },
+  { time: '5:45 AM', bufMoneyline: -136, miaMoneyline: 116 },
+  { time: '6:00 AM', bufMoneyline: -137, miaMoneyline: 117 },
+  { time: '6:15 AM', bufMoneyline: -138, miaMoneyline: 118 },
+  { time: '6:30 AM', bufMoneyline: -137, miaMoneyline: 117, signal: 'RESISTANCE' },
+  { time: '6:45 AM', bufMoneyline: -139, miaMoneyline: 119 },
+  { time: '7:00 AM', bufMoneyline: -140, miaMoneyline: 120 },
+  { time: '7:15 AM', bufMoneyline: -141, miaMoneyline: 121 },
+  { time: '7:30 AM', bufMoneyline: -142, miaMoneyline: 122 },
+  { time: '7:45 AM', bufMoneyline: -143, miaMoneyline: 123 },
+  { time: '8:00 AM', bufMoneyline: -144, miaMoneyline: 124 },
+  { time: '8:15 AM', bufMoneyline: -143, miaMoneyline: 123, signal: 'RESISTANCE' },
+  { time: '8:30 AM', bufMoneyline: -144, miaMoneyline: 124 },
+  { time: '8:45 AM', bufMoneyline: -145, miaMoneyline: 125 },
+  { time: '9:00 AM', bufMoneyline: -146, miaMoneyline: 126, milestone: 'T2', signal: 'STEAM' },
+  { time: '9:15 AM', bufMoneyline: -145, miaMoneyline: 125 },
+  { time: '9:30 AM', bufMoneyline: -146, miaMoneyline: 126 },
+  { time: '9:45 AM', bufMoneyline: -147, miaMoneyline: 127 },
+  { time: '10:00 AM', bufMoneyline: -148, miaMoneyline: 128 },
+  { time: '10:15 AM', bufMoneyline: -147, miaMoneyline: 127, signal: 'RESISTANCE' },
+  { time: '10:30 AM', bufMoneyline: -149, miaMoneyline: 129 },
+  { time: '10:45 AM', bufMoneyline: -150, miaMoneyline: 130 },
+  { time: '11:00 AM', bufMoneyline: -149, miaMoneyline: 129 },
+  { time: '11:15 AM', bufMoneyline: -150, miaMoneyline: 130 },
+  { time: '11:30 AM', bufMoneyline: -151, miaMoneyline: 131 },
+  { time: '11:45 AM', bufMoneyline: -152, miaMoneyline: 132 },
+  { time: '12:00 PM', bufMoneyline: -151, miaMoneyline: 131, signal: 'RESISTANCE' },
+  { time: '12:15 PM', bufMoneyline: -153, miaMoneyline: 133 },
+  { time: '12:30 PM', bufMoneyline: -154, miaMoneyline: 134, milestone: 'T3', signal: 'DAC' }
+];
+
 export const games: Game[] = [
   {
     id: 'nfl-001',
@@ -39,7 +97,7 @@ export const games: Game[] = [
     favoriteMl: -142,
     underdogMl: 120,
     total: 48.5,
-    movement: 'Favorite strengthened from T1 → T3 across 2 books',
+    movement: 'Favorite strengthened from T1 → T3 across 2 books with 15-minute pulls tracked',
     confidence: 'High',
     risk: 'LOW',
     signals: ['STEAM', 'DAC'],
@@ -140,7 +198,7 @@ export const rankings: Ranking[] = [
 
 export const statusCards = [
   { label: 'Last Snapshot', value: 'T3 · 12:31 PM', detail: 'Fanatics canonical + FanDuel comparator' },
-  { label: 'Slate Status', value: 'Ready', detail: '4 eligible games in this demo shell' },
+  { label: 'Line Graph', value: '15-min pulls', detail: 'T markers plus every hot pull' },
   { label: 'Build Rule', value: '2 Solid + 1 CF', detail: 'Natural structure, no forced risk' },
   { label: 'Safety', value: 'Human Gate', detail: 'Cancel-only T5 protection later' }
 ];
