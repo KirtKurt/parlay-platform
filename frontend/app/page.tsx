@@ -1,5 +1,6 @@
 import { games, rankings, statusCards } from '@/lib/mockData';
 import { SignalPill } from '@/components/SignalPill';
+import { LineMovementGraph } from '@/components/LineMovementGraph';
 
 export default function Home() {
   return (
@@ -23,8 +24,8 @@ export default function Home() {
           <p className="eyebrow blue">Market Intelligence Engine</p>
           <h2>Stop guessing. Check steam, resistance, traps, and coin-flip risk before you build.</h2>
           <p className="hero-copy">
-            A mobile-first sportsbook feel with our own signal discipline: T-snapshots, multi-book confirmation,
-            natural structure, Top-3 containment, and refusal when the data is not safe enough.
+            A mobile-first sportsbook feel with our own signal discipline: T-snapshots, 15-minute hot pulls,
+            multi-book confirmation, natural structure, Top-3 containment, and refusal when the data is not safe enough.
           </p>
           <div className="hero-actions">
             <button className="primary-button large">Run Demo Build</button>
@@ -138,6 +139,8 @@ export default function Home() {
           </div>
         </aside>
       </section>
+
+      <LineMovementGraph />
     </main>
   );
 }
