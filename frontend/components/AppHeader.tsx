@@ -26,7 +26,9 @@ export function AppHeader({
         {apiStatus && <span className={`api-badge api-${apiStatus.toLowerCase()}`} title={apiDetail}>{apiStatus}</span>}
         <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>Sports</Link>
         <Link className="ghost-button" href="/methodology" style={{ textDecoration: 'none' }}>Methodology</Link>
-        <Link className="primary-button" href="/parlays/build" style={{ textDecoration: 'none' }}>Build Parlay</Link>
+        <Link className="ghost-button" href="/pricing" style={{ textDecoration: 'none' }}>Pricing</Link>
+        <Link className="ghost-button" href="/login" style={{ textDecoration: 'none' }}>Login</Link>
+        <Link className="primary-button" href="/register" style={{ textDecoration: 'none' }}>Join</Link>
       </div>
     </nav>
   );
