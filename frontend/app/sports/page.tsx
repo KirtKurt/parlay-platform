@@ -12,10 +12,11 @@ export default async function SportsPage() {
       <AppHeader title="Sports lobby" apiStatus={apiStatus} apiDetail={apiDetail} />
 
       <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
-        <p className="eyebrow blue">Multi-sport terminal · first week free</p>
-        <h2>Every sport gets its own market board, game page, and signal vocabulary.</h2>
+        <p className="eyebrow blue">All sports · first week free</p>
+        <h2>Pick your sport. We’ll organize the board.</h2>
         <p className="hero-copy">
-          Browse NFL, college football, NBA, NCAAM, NHL, MLB, tennis, soccer, darts, lacrosse, and table tennis from one sports intelligence lobby. Each page is built to rank high-value research terms naturally: line movement, steam, resistance, market anomaly, T-snapshot, game detail, and parlay structure.
+          Jump into NFL, college football, NBA, college hoops, NHL, MLB, tennis, soccer, darts, lacrosse, or table tennis.
+          Each sport has its own board so you can quickly see what is live, what is moving, and which matchups deserve a closer look.
         </p>
         <div className="hero-actions">
           <Link className="primary-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
@@ -63,14 +64,14 @@ export default async function SportsPage() {
       </section>
 
       <ContentBlock
-        eyebrow="Search-friendly guide"
-        title="Built for fans searching by sport, signal, and market behavior"
-        body="The sports lobby gives search engines and AI assistants a clean map of the product: every supported sport has a dedicated URL, every game can become its own page, and the same language appears consistently across the site. That helps people discover Silvers Syndicate when they search for sports market intelligence, line movement analysis, parlay research tools, and signal-based slate monitoring."
+        eyebrow="What you get from each board"
+        title="Less scrolling. More context."
+        body="The goal is simple: make every sport easier to read. Instead of jumping between odds screens, headlines, and random opinions, each board gives you one place to check line movement, market signals, available games, and the premium research layer when you are signed in."
         items={[
-          { title: 'Dedicated sport URLs', detail: 'Each sport has its own page so search engines can understand coverage clearly.' },
-          { title: 'Expandable game pages', detail: 'Game and match pages are generated from data instead of being manually built.' },
-          { title: 'Consistent terms', detail: 'Steam, resistance, chaos, anomaly, and T-snapshot language repeats across pages.' },
-          { title: 'Free preview', detail: 'Visitors can see enough value to understand the product before registration.' }
+          { title: 'Sport-specific pages', detail: 'Each sport has a clean URL and its own board, which helps users and search engines understand the coverage.' },
+          { title: 'Game pages ready to grow', detail: 'As more data comes in, each matchup can become a deeper timeline with notes, movement, and signal history.' },
+          { title: 'Consistent language', detail: 'Steam, resistance, chaos, anomaly, and T-snapshot language stays the same across sports.' },
+          { title: 'Preview before you join', detail: 'You can see the structure first. Full movement and rankings unlock for members.' }
         ]}
       />
     </main>
