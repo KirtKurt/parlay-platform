@@ -7,9 +7,9 @@ export default function Home() {
     <main className="shell">
       <nav className="topbar">
         <div className="brand-block">
-          <div className="brand-mark">RC</div>
+          <div className="brand-mark">SS</div>
           <div>
-            <p className="eyebrow">Risk Check Syndicate</p>
+            <p className="eyebrow">Silvers Syndicate</p>
             <h1>Sportsbook-style parlay intelligence</h1>
           </div>
         </div>
