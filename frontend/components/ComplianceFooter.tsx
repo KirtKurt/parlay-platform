@@ -7,6 +7,7 @@ export function ComplianceFooter() {
       <div>
         <strong>Silvers Syndicate</strong>
         <p>Sports market intelligence for informational and entertainment use.</p>
+        <p>Silvers Syndicate is not affiliated with any league, team, sportsbook, or data provider.</p>
       </div>
       <nav>
         <Link href="/legal/privacy">Privacy</Link>
