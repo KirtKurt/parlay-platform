@@ -6,6 +6,12 @@ import { SignalPill } from '@/components/SignalPill';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
 import { PaidPreviewGate } from '@/components/PaidPreviewGate';
 import { getSportSlugForLeague } from '@/lib/sports';
+import { SportEquipmentIcon, TeamJerseyBadge } from '@/components/SportVisuals';
+
+function splitMatchup(matchup: string) {
+  const pieces = matchup.split(/\s+@\s+|\s+vs\.?\s+/i).map((piece) => piece.trim()).filter(Boolean);
+  return pieces.length >= 2 ? [pieces[0], pieces[1]] : [matchup, 'Opponent'];
+}
 
 export default async function GameDetailPage({ params }: { params: { gameId: string } }) {
   const { games, lineMovement, apiStatus, apiDetail } = await getApiSnapshot();
@@ -13,26 +19,34 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
 
   if (!game) notFound();
 
+  const sportSlug = getSportSlugForLeague(game.league);
+  const [leftTeam, rightTeam] = splitMatchup(game.matchup);
+
   return (
     <main className="shell">
       <AppHeader title="Game detail terminal" apiStatus={apiStatus} apiDetail={apiDetail} />
 
       <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
-        <p className="eyebrow blue">{game.league} · {game.start}</p>
+        <p className="eyebrow blue"><SportEquipmentIcon slug={sportSlug} size="small" /> {game.league} · {game.start}</p>
+        <div className="team-badge-row" style={{ margin: '10px 0 12px' }}>
+          <TeamJerseyBadge teamName={leftTeam} size="large" />
+          <b>vs</b>
+          <TeamJerseyBadge teamName={rightTeam} size="large" />
+        </div>
         <h2>{game.matchup}</h2>
         <p className="hero-copy">{game.movement}</p>
         <div className="hero-actions">
           <Link className="primary-button large" href="/register" style={{ textDecoration: 'none' }}>Unlock Full Detail</Link>
-          <Link className="ghost-button large" href={`/sports/${getSportSlugForLeague(game.league)}`} style={{ textDecoration: 'none' }}>Back to {game.league}</Link>
+          <Link className="ghost-button large" href={`/sports/${sportSlug}`} style={{ textDecoration: 'none' }}>Back to {game.league}</Link>
           <Link className="ghost-button large" href="/login" style={{ textDecoration: 'none' }}>Log In</Link>
         </div>
       </section>
 
       <section className="status-row">
-        <article className="status-card"><span>Favorite</span><strong>{game.favorite}</strong><p>Preview only. Full moneyline path is locked.</p></article>
-        <article className="status-card"><span>Underdog</span><strong>{game.underdog}</strong><p>Preview only. Comparator book detail is locked.</p></article>
-        <article className="status-card"><span>Total</span><strong>{game.total}</strong><p>O/U market tracked across snapshots.</p></article>
-        <article className="status-card"><span>Risk</span><strong>{game.risk}</strong><p>{game.confidence} confidence</p></article>
+        <article className="status-card"><TeamJerseyBadge teamName={game.favorite} /><span>Favorite</span><strong>{game.favorite}</strong><p>Preview only. Full moneyline path is locked.</p></article>
+        <article className="status-card"><TeamJerseyBadge teamName={game.underdog} /><span>Underdog</span><strong>{game.underdog}</strong><p>Preview only. Comparator book detail is locked.</p></article>
+        <article className="status-card"><SportEquipmentIcon slug={sportSlug} /><span>Total</span><strong>{game.total}</strong><p>O/U market tracked across snapshots.</p></article>
+        <article className="status-card"><SportEquipmentIcon slug={sportSlug} /><span>Risk</span><strong>{game.risk}</strong><p>{game.confidence} confidence</p></article>
       </section>
 
       <section className="panel" style={{ marginBottom: 20 }}>
