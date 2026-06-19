@@ -3,6 +3,7 @@ import type { MetadataRoute } from 'next';
 const baseUrl = 'https://silverssyndicate.app';
 const routes = [
   '',
+  '/picks-audit',
   '/sports',
   '/sports/nfl',
   '/sports/cfb',
@@ -29,7 +30,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return routes.map((route) => ({
     url: `${baseUrl}${route}`,
     lastModified: new Date(),
-    changeFrequency: route === '' ? 'daily' : 'weekly',
-    priority: route === '' ? 1 : 0.7
+    changeFrequency: route === '' || route === '/picks-audit' ? 'daily' : 'weekly',
+    priority: route === '' ? 1 : route === '/picks-audit' ? 0.9 : 0.7
   }));
 }
