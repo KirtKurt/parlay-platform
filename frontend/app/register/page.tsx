@@ -9,9 +9,10 @@ export default function RegisterPage() {
       <AppHeader title="Create account" />
       <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
         <p className="eyebrow blue">First week free · new member setup</p>
-        <h2>Create your account and unlock the sports market terminal.</h2>
+        <h2>Create your account and start reading the board.</h2>
         <p className="hero-copy">
-          Register once to personalize your sports board, select your primary sport, confirm age and location, and begin the first free week of launch access. The signup flow is designed to collect only the information needed to support access, safety, and subscription readiness.
+          Set up your profile, choose the sport you care about most, and start your free week. We ask for the basics so the account can
+          be personalized, access can be handled responsibly, and your subscription can be connected later through your billing provider.
         </p>
         <div className="hero-actions">
           <Link className="ghost-button large" href="/pricing" style={{ textDecoration: 'none' }}>Compare plans</Link>
@@ -20,14 +21,14 @@ export default function RegisterPage() {
       </section>
       <RegisterForm />
       <ContentBlock
-        eyebrow="Why registration matters"
-        title="A cleaner account profile improves the member experience"
-        body="Registration turns the public preview into a member workspace. The profile fields help route users toward the sports they care about, support age and location acknowledgments, and prepare the account for provider-neutral recurring access when payment credentials are supplied later."
+        eyebrow="What happens after signup"
+        title="Your preview turns into a real workspace"
+        body="Once your account is created, the public preview becomes a more useful dashboard. You can come back to the sports you follow, see member-only board sections, and keep the workflow organized around the way you actually watch the market."
         items={[
-          { title: 'Personalized sports', detail: 'Primary sport selection helps shape the first dashboard experience.' },
-          { title: 'Free launch week', detail: 'New members can explore the product before full monthly access begins.' },
-          { title: 'Safety acknowledgments', detail: 'Age, location, and informational-use acknowledgments support responsible access.' },
-          { title: 'Future-ready', detail: 'The flow is prepared for backend identity and billing confirmation.' }
+          { title: 'Your sports come first', detail: 'Pick a primary sport so the first board feels relevant right away.' },
+          { title: 'Free launch week', detail: 'Use the product for the first week before monthly access begins.' },
+          { title: 'Clear acknowledgments', detail: 'Age, location, and informational-use acknowledgments keep access responsible.' },
+          { title: 'Ready for billing later', detail: 'The flow is prepared for your provider-neutral monthly billing setup.' }
         ]}
       />
     </main>
