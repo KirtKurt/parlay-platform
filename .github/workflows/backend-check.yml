@@ -1,0 +1,25 @@
+name: Backend Build Check
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - backend/**
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Setup SAM
+        uses: aws-actions/setup-sam@v2
+      - name: Build backend
+        working-directory: backend
+        run: sam build
