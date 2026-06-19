@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { AppHeader } from '@/components/AppHeader';
-import { subscriptionPlans } from '@/lib/subscription';
+import { featureComparison, subscriptionPlans } from '@/lib/subscription';
 
 export default function PricingPage() {
   return (
@@ -8,8 +8,8 @@ export default function PricingPage() {
       <AppHeader title="Pricing" />
       <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
         <p className="eyebrow blue">First week free</p>
-        <h2>Simple launch pricing: Core or Pro.</h2>
-        <p className="hero-copy">Start with seven days of free launch access, then choose the market intelligence workflow that fits how deeply you want to study each slate.</p>
+        <h2>Choose your Silvers Syndicate access level.</h2>
+        <p className="hero-copy">Start with seven days of free launch access. Core is built for daily slate research. Pro is built for deeper no-overlap construction, watchlists, and advanced volatility review.</p>
         <div className="hero-actions">
           <Link className="primary-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
           <Link className="ghost-button large" href="/methodology" style={{ textDecoration: 'none' }}>How it works</Link>
@@ -33,7 +33,33 @@ export default function PricingPage() {
         ))}
       </section>
 
-      <Link className="ghost-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Create account</Link>
+      <section className="glass-card" style={{ marginTop: 22, padding: 22 }}>
+        <details open>
+          <summary style={{ cursor: 'pointer', color: '#20f29f', fontWeight: 900, fontSize: '1rem' }}>Compare Core vs Pro features</summary>
+          <div style={{ overflowX: 'auto', marginTop: 18 }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
+              <thead>
+                <tr>
+                  <th style={{ textAlign: 'left', padding: '12px 10px', color: '#e8edf7', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>Feature</th>
+                  <th style={{ textAlign: 'left', padding: '12px 10px', color: '#e8edf7', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>Core</th>
+                  <th style={{ textAlign: 'left', padding: '12px 10px', color: '#e8edf7', borderBottom: '1px solid rgba(255,255,255,0.12)' }}>Pro</th>
+                </tr>
+              </thead>
+              <tbody>
+                {featureComparison.map((row) => (
+                  <tr key={row.feature}>
+                    <td style={{ padding: '12px 10px', color: '#f4f7ff', fontWeight: 800, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{row.feature}</td>
+                    <td style={{ padding: '12px 10px', color: '#96a4bd', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{row.core}</td>
+                    <td style={{ padding: '12px 10px', color: '#96a4bd', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>{row.pro}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </details>
+      </section>
+
+      <Link className="ghost-button large" href="/register?promo=free-week" style={{ textDecoration: 'none', marginTop: 22 }}>Create account</Link>
     </main>
   );
 }
