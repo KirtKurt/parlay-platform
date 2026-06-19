@@ -1,8 +1,10 @@
-import { games, rankings, statusCards } from '@/lib/mockData';
+import { getApiSnapshot } from '@/lib/api';
 import { SignalPill } from '@/components/SignalPill';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
 
-export default function Home() {
+export default async function Home() {
+  const { games, rankings, statusCards, lineMovement, apiStatus, apiDetail } = await getApiSnapshot();
+
   return (
     <main className="shell">
       <nav className="topbar">
@@ -14,6 +16,7 @@ export default function Home() {
           </div>
         </div>
         <div className="nav-actions">
+          <span className={`api-badge api-${apiStatus.toLowerCase()}`} title={apiDetail}>{apiStatus}</span>
           <button className="ghost-button">Today</button>
           <button className="primary-button">Build Parlay</button>
         </div>
@@ -107,6 +110,7 @@ export default function Home() {
                 <div className="signal-row">
                   {game.signals.map((signal) => <SignalPill signal={signal} key={`${game.id}-${signal}`} />)}
                 </div>
+                {game.marketNote && <p className="movement">{game.marketNote}</p>}
               </article>
             ))}
           </div>
@@ -140,7 +144,7 @@ export default function Home() {
         </aside>
       </section>
 
-      <LineMovementGraph />
+      <LineMovementGraph data={lineMovement} />
     </main>
   );
 }
