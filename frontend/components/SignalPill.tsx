@@ -8,7 +8,7 @@ const iconMap: Record<Signal, string> = {
   COIN_FLIP: '⟳',
   CHAOS: '⬡',
   DAC: '✓',
-  INTEGRITY_ALERT: '⚠'
+  MARKET_ANOMALY: '⚠'
 };
 
 export function SignalPill({ signal }: { signal: Signal }) {
