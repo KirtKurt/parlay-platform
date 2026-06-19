@@ -7,7 +7,8 @@ const iconMap: Record<Signal, string> = {
   REVERSAL: '↺',
   COIN_FLIP: '⟳',
   CHAOS: '⬡',
-  DAC: '✓'
+  DAC: '✓',
+  INTEGRITY_ALERT: '⚠'
 };
 
 export function SignalPill({ signal }: { signal: Signal }) {
