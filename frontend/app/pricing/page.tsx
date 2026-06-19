@@ -16,15 +16,15 @@ export default function PricingPage() {
         </div>
       </section>
 
-      <section className="status-row pricing-grid-compact">
+      <section className="status-row" style={{ gridTemplateColumns: 'repeat(2, minmax(0, 1fr))' }}>
         {subscriptionPlans.map((plan) => (
-          <article className="status-card pricing-card" key={plan.id}>
+          <article className="status-card" key={plan.id}>
             <span>{plan.name}</span>
             <strong>{plan.price}/mo</strong>
             <p>{plan.description} Includes the first week free for new launch members.</p>
-            <details className="feature-dropdown">
-              <summary>View included features</summary>
-              <ul>
+            <details style={{ marginTop: 16, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 14 }}>
+              <summary style={{ cursor: 'pointer', color: '#20f29f', fontWeight: 900 }}>View included features</summary>
+              <ul style={{ margin: '14px 0 0', paddingLeft: 18, color: '#96a4bd', lineHeight: 1.7 }}>
                 {plan.features.map((feature) => <li key={feature}>{feature}</li>)}
               </ul>
             </details>
