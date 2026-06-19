@@ -1,22 +1,28 @@
 import Link from 'next/link';
 import { AppHeader } from '@/components/AppHeader';
+import { subscriptionPlans } from '@/lib/subscription';
 
 export default function PricingPage() {
   return (
     <main className="shell">
       <AppHeader title="Pricing" />
       <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
-        <p className="eyebrow blue">Subscription layer</p>
-        <h2>Turn the intelligence terminal into a paid product.</h2>
-        <p className="hero-copy">Pricing is a placeholder for launch planning. The paid value is sport coverage, game detail pages, ranked parlay structures, market movement history, and refusal logic.</p>
+        <p className="eyebrow blue">Monthly membership</p>
+        <h2>Choose the plan that matches how serious the customer is.</h2>
+        <p className="hero-copy">The Core $35/month plan is the primary subscription. The signup flow now moves from account registration to secure hosted checkout.</p>
       </section>
       <section className="status-row">
-        <article className="status-card"><span>Starter</span><strong>$19/mo</strong><p>Market board, methodology, and limited game detail pages.</p></article>
-        <article className="status-card"><span>Core</span><strong>$35/mo</strong><p>Full sport boards, Top-8 parlay builds, and line movement pages.</p></article>
-        <article className="status-card"><span>Pro</span><strong>$79/mo</strong><p>Multi-sport, no-overlap builds, alerts, and human-gate notes.</p></article>
+        {subscriptionPlans.map((plan) => (
+          <article className="status-card" key={plan.id}>
+            <span>{plan.name}</span>
+            <strong>{plan.price}/mo</strong>
+            <p>{plan.description}</p>
+            <Link className="primary-button" href={`/register?plan=${plan.id}`} style={{ display: 'inline-block', marginTop: 14, textDecoration: 'none' }}>{plan.cta}</Link>
+          </article>
+        ))}
         <article className="status-card"><span>Enterprise</span><strong>Custom</strong><p>Internal syndicate tooling, exports, and higher data limits.</p></article>
       </section>
-      <Link className="primary-button large" href="/parlays/build" style={{ textDecoration: 'none' }}>Preview product flow</Link>
+      <Link className="ghost-button large" href="/register" style={{ textDecoration: 'none' }}>Create account</Link>
     </main>
   );
 }
