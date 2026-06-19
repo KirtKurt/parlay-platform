@@ -1,3 +1,4 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
@@ -5,104 +6,324 @@ import { GameCard } from '@/components/GameCard';
 import { RankingCard } from '@/components/RankingCard';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
 import { PaidPreviewGate } from '@/components/PaidPreviewGate';
-import { ContentBlock } from '@/components/ContentBlock';
 import { sports } from '@/lib/sports';
 
+export const metadata: Metadata = {
+  title: 'Silvers Syndicate | Parlay Risk Checker & Sports Market Intelligence',
+  description:
+    'See where your picks start to break down. Check line movement, steam, resistance, market anomaly alerts, weak-leg risk, and parlay structure before you lock in a ticket.',
+  alternates: {
+    canonical: '/'
+  },
+  openGraph: {
+    title: 'Silvers Syndicate | See Where Your Picks Start to Break Down',
+    description:
+      'A premium sports market intelligence board for line movement, steam, resistance, weak-leg risk, and parlay risk checks. First week free.'
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Silvers Syndicate | See Where Your Picks Start to Break Down',
+    description: 'Check your picks against market movement before you lock in a parlay.'
+  }
+};
+
+const sportIcons: Record<string, string> = {
+  nfl: '🏈',
+  cfb: '🏟️',
+  nba: '🏀',
+  ncaam: '⛹️',
+  nhl: '🏒',
+  mlb: '⚾',
+  tennis: '🎾',
+  soccer: '⚽',
+  darts: '🎯',
+  lacrosse: '🥍',
+  'table-tennis': '🏓'
+};
+
+const featuredMatchups = [
+  {
+    league: 'NFL',
+    time: '8:20 PM',
+    home: { abbr: 'BUF', name: 'Buffalo', icon: '↗', tone: 'blue' },
+    away: { abbr: 'MIA', name: 'Miami', icon: '≈', tone: 'teal' },
+    market: 'BUF -4.5 · O/U 49.5',
+    signal: 'STEAM',
+    risk: 'LOW RISK',
+    riskTone: 'low'
+  },
+  {
+    league: 'NFL',
+    time: '4:25 PM',
+    home: { abbr: 'DAL', name: 'Dallas', icon: '★', tone: 'silver' },
+    away: { abbr: 'PHI', name: 'Philadelphia', icon: '↯', tone: 'green' },
+    market: 'PHI -3 · O/U 46.5',
+    signal: 'RESISTANCE',
+    risk: 'MEDIUM RISK',
+    riskTone: 'med'
+  },
+  {
+    league: 'NBA',
+    time: '7:30 PM',
+    home: { abbr: 'BOS', name: 'Boston', icon: '♣', tone: 'green' },
+    away: { abbr: 'LAL', name: 'Los Angeles', icon: '◉', tone: 'gold' },
+    market: 'LAL -2.5 · O/U 218.5',
+    signal: 'COIN FLIP',
+    risk: 'MEDIUM RISK',
+    riskTone: 'med'
+  },
+  {
+    league: 'NCAAF',
+    time: '3:30 PM',
+    home: { abbr: 'UGA', name: 'Georgia', icon: '◆', tone: 'red' },
+    away: { abbr: 'ALA', name: 'Alabama', icon: 'A', tone: 'crimson' },
+    market: 'ALA -6.5 · O/U 52.5',
+    signal: 'MARKET ANOMALY',
+    risk: 'HIGH RISK',
+    riskTone: 'high'
+  }
+];
+
+const checkCards = [
+  { icon: '≋', title: 'Steam', copy: 'Sharp money pushing a number before the public catches up.' },
+  { icon: '⬡', title: 'Resistance', copy: 'Line pushback that tells you the obvious side may not be clean.' },
+  { icon: '⇄', title: 'Coin Flip', copy: 'A split market where one leg should be treated with caution.' },
+  { icon: '⚠', title: 'Market Anomaly', copy: 'Odd movement the board cannot explain with normal pressure.' },
+  { icon: '15', title: '15-Minute Pulls', copy: 'Late movement checks that catch reversals and sharp swings.' },
+  { icon: '∞', title: 'No-Overlap Structure', copy: 'Cleaner builds with less repeated exposure across tickets.' }
+];
+
+const guideCards = [
+  {
+    icon: '📈',
+    title: 'How line movement helps you read a game',
+    copy: 'Opening lines, mid-day moves, and late pulls can reveal whether a side is gaining trust or quietly losing support.'
+  },
+  {
+    icon: '🧩',
+    title: 'Why some parlays fall apart before kickoff',
+    copy: 'A ticket can look clean and still carry one weak leg. We show where that pressure starts to show up.'
+  },
+  {
+    icon: '🛡️',
+    title: 'What steam and resistance actually tell you',
+    copy: 'Separate meaningful market pressure from noise so you can stop chasing every popular side.'
+  }
+];
+
+function TeamBadge({ team }: { team: { abbr: string; icon: string; tone: string } }) {
+  return (
+    <div className={`team-badge tone-${team.tone}`} aria-label={`${team.abbr} custom team icon`}>
+      <span>{team.icon}</span>
+    </div>
+  );
+}
+
+function MiniSparkline({ tone = 'blue' }: { tone?: string }) {
+  return (
+    <svg className={`mini-spark tone-${tone}`} viewBox="0 0 160 54" role="img" aria-label="Line movement chart preview">
+      <path d="M2 38 C16 36 18 28 32 31 C47 36 49 21 63 24 C78 27 77 14 92 18 C106 22 111 35 124 31 C138 26 141 17 158 15" />
+      <line x1="52" y1="6" x2="52" y2="50" />
+      <line x1="104" y1="6" x2="104" y2="50" />
+      <text x="45" y="10">T1</text>
+      <text x="97" y="10">T2</text>
+      <circle cx="158" cy="15" r="3" />
+    </svg>
+  );
+}
+
 export default async function Home() {
-  const { games, rankings, statusCards, lineMovement, apiStatus, apiDetail } = await getApiSnapshot();
+  const { games, rankings, lineMovement, apiStatus, apiDetail } = await getApiSnapshot();
 
   return (
-    <main className="shell">
-      <AppHeader apiStatus={apiStatus} apiDetail={apiDetail} />
+    <main className="shell visual-home">
+      <AppHeader apiStatus={apiStatus} apiDetail={apiDetail} title="Silvers Syndicate" />
 
-      <section className="hero-grid">
-        <div className="hero-card glass-card">
-          <p className="eyebrow blue">First week free · check the pick before the ticket</p>
-          <h2>Before you trust the pick, see what the market is saying.</h2>
-          <p className="hero-copy">
-            Silvers Syndicate helps you slow down before a parlay gets expensive. Bring the pick you already like,
-            check the movement behind it, look for weak-leg risk, and decide whether the board is clean enough to keep moving.
+      <section className="visual-hero">
+        <div className="hero-copy-stack">
+          <div className="promo-line">
+            <span>✦ 7-day free trial</span>
+            <small>No card required</small>
+          </div>
+          <h2>See where your picks start to <span>break down.</span></h2>
+          <p>
+            Silvers Syndicate checks line movement, steam, resistance, and weak-leg risk so you can see what the market sees before you lock in a parlay.
           </p>
           <div className="hero-actions">
-            <Link className="primary-button large" href="/picks-audit" style={{ textDecoration: 'none' }}>Test Your Picks</Link>
-            <Link className="ghost-button large" href="/start-here" style={{ textDecoration: 'none' }}>Start Here</Link>
-            <Link className="ghost-button large" href="/sports" style={{ textDecoration: 'none' }}>Preview the Board</Link>
-            <Link className="ghost-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
+            <Link className="primary-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week →</Link>
+            <Link className="ghost-button large" href="/picks-audit" style={{ textDecoration: 'none' }}>Test Your Picks →</Link>
+          </div>
+          <div className="hero-trust-row">
+            <span>▣ No credit card required</span>
+            <span>◷ Cancel anytime</span>
+            <span>◇ Market-first analysis</span>
           </div>
         </div>
 
-        <aside className="bet-slip glass-card">
-          <div className="slip-head">
-            <span>Market Check</span>
-            <strong>Preview</strong>
+        <aside className="analysis-board glass-card" aria-label="Silvers Syndicate analysis board preview">
+          <div className="board-head">
+            <strong>Silvers Syndicate Analysis Board</strong>
+            <span>● Live</span>
           </div>
-          {rankings[0].legs.slice(0, 2).map((leg) => (
-            <div className="slip-leg" key={leg}>
-              <span>{leg}</span>
-              <b>Check</b>
+          <div className="board-columns">
+            <span>Matchup</span>
+            <span>Line movement</span>
+            <span>Signal</span>
+            <span>Risk</span>
+          </div>
+          {featuredMatchups.map((matchup) => (
+            <div className="board-row" key={`${matchup.home.abbr}-${matchup.away.abbr}`}>
+              <div className="board-teams">
+                <TeamBadge team={matchup.home} />
+                <div>
+                  <strong>{matchup.home.abbr}</strong>
+                  <span>{matchup.home.name}</span>
+                </div>
+                <b>vs</b>
+                <TeamBadge team={matchup.away} />
+                <div>
+                  <strong>{matchup.away.abbr}</strong>
+                  <span>{matchup.away.name}</span>
+                </div>
+              </div>
+              <MiniSparkline tone={matchup.riskTone} />
+              <span className={`signal signal-${matchup.signal.toLowerCase().replace(/\s+/g, '_')}`}>{matchup.signal}</span>
+              <span className={`risk risk-${matchup.riskTone}`}>{matchup.risk}</span>
             </div>
           ))}
-          <div className="slip-leg">
-            <span>Weak-leg report</span>
-            <b>Locked</b>
-          </div>
-          <div className="slip-total">
-            <span>Full ranking</span>
-            <strong>MEMBERS</strong>
-          </div>
-          <p className="slip-note">Start free to unlock full rankings, signal notes, coin-flip markers, and reason-coded no-build alerts.</p>
+          <p className="board-disclaimer">Custom icons and team references are for analysis only. No league, team, sportsbook, or data-provider affiliation.</p>
         </aside>
       </section>
 
-      <section className="status-row">
-        {statusCards.map((card) => (
-          <article className="status-card" key={card.label}>
-            <span>{card.label}</span>
-            <strong>{card.value}</strong>
-            <p>{card.detail}</p>
-          </article>
+      <section className="sports-icon-strip" aria-label="Sports covered">
+        {sports.map((sport) => (
+          <Link href={`/sports/${sport.slug}`} className="sport-icon-card" key={sport.slug} style={{ textDecoration: 'none' }}>
+            <span>{sportIcons[sport.slug] ?? '◇'}</span>
+            <strong>{sport.label}</strong>
+          </Link>
         ))}
       </section>
 
-      <ContentBlock
-        eyebrow="Choose your path"
-        title="Three ways to use the site"
-        body="The website is now organized around what visitors are usually trying to do first: challenge a pick, browse a sport, or understand what makes the system different."
-        items={[
-          { title: 'I already have a pick', detail: 'Go to the pick audit and look for the market reasons it may fail before you lock it in.' },
-          { title: 'I want to browse today’s board', detail: 'Choose a sport and review the slate structure, signal tags, and premium preview.' },
-          { title: 'I want to know how this works', detail: 'Read the methodology, then compare Core vs Pro and start the free week when you are ready.' },
-          { title: 'I want the full output', detail: 'Register for the free week to unlock the full board, rankings, and market notes.' }
-        ]}
-      />
-
-      <section className="panel" style={{ marginBottom: 20, marginTop: 20 }}>
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Pick audit</p>
-            <h3>Start with the thing most people skip: why it might lose.</h3>
-          </div>
-          <Link className="ghost-button" href="/picks-audit" style={{ textDecoration: 'none' }}>See Why Picks Fail</Link>
+      <section className="visual-section">
+        <div className="section-heading">
+          <p className="eyebrow blue">What we check before you build</p>
+          <h3>A cleaner way to question your own ticket.</h3>
         </div>
-        <p className="hero-copy" style={{ marginTop: 8 }}>
-          The regular board shows you how the market is moving. The pick audit page takes the tougher angle: it looks for
-          the weak leg, bad movement, and the reason your ticket may not hold up.
-        </p>
-      </section>
-
-      <section className="panel" style={{ marginBottom: 20, marginTop: 20 }}>
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Sports Coverage</p>
-            <h3>Every sport gets its own board</h3>
-          </div>
-          <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>All Sports</Link>
-        </div>
-        <div className="league-tabs">
-          {sports.map((sport) => (
-            <Link className="ghost-button" href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none' }}>{sport.label}</Link>
+        <div className="icon-feature-grid">
+          {checkCards.map((card) => (
+            <article className="icon-feature-card" key={card.title}>
+              <div className="feature-icon">{card.icon}</div>
+              <h4>{card.title}</h4>
+              <p>{card.copy}</p>
+            </article>
           ))}
         </div>
+      </section>
+
+      <section className="split-analytics-row">
+        <div className="panel visual-line-panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Line movement over time</p>
+              <h3>BUF vs MIA · spread pressure</h3>
+            </div>
+            <span className="analysis-chip">Last 15 min pull: 0.5 pts</span>
+          </div>
+          <LineMovementGraph data={lineMovement} />
+        </div>
+
+        <div className="panel pick-vs-market">
+          <p className="eyebrow">Your pick vs. market check</p>
+          <h3>The ticket may feel right. The market may disagree.</h3>
+          <div className="compare-row">
+            <div>
+              <span>👍 Your pick</span>
+              <strong>This favorite feels safe.</strong>
+            </div>
+            <b>→</b>
+            <div>
+              <span>🛡 Market check</span>
+              <strong>Resistance is building across books.</strong>
+            </div>
+          </div>
+          <div className="compare-row warning-row">
+            <div>
+              <span>✅ Your pick</span>
+              <strong>This 3-leg parlay looks clean.</strong>
+            </div>
+            <b>→</b>
+            <div>
+              <span>⚠ Weak-leg check</span>
+              <strong>One leg is carrying most of the failure risk.</strong>
+            </div>
+          </div>
+          <Link className="primary-button" href="/picks-audit" style={{ textDecoration: 'none' }}>Run a Pick Audit</Link>
+        </div>
+      </section>
+
+      <section className="visual-section">
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow blue">Today’s top matchups & signals</p>
+            <h3>Team names, abbreviations, custom icons, and market tags.</h3>
+          </div>
+          <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>View full board →</Link>
+        </div>
+        <div className="matchup-card-grid">
+          {featuredMatchups.map((matchup) => (
+            <article className="matchup-preview-card" key={`${matchup.league}-${matchup.home.abbr}-${matchup.away.abbr}`}>
+              <div className="game-topline"><span className="league-chip">{matchup.league}</span><span>{matchup.time}</span></div>
+              <div className="matchup-teams-row">
+                <div><TeamBadge team={matchup.home} /><strong>{matchup.home.abbr}</strong><span>{matchup.home.name}</span></div>
+                <b>vs</b>
+                <div><TeamBadge team={matchup.away} /><strong>{matchup.away.abbr}</strong><span>{matchup.away.name}</span></div>
+              </div>
+              <p>{matchup.market}</p>
+              <div className="signal-row">
+                <span className={`signal signal-${matchup.signal.toLowerCase().replace(/\s+/g, '_')}`}>{matchup.signal}</span>
+                <span className={`risk risk-${matchup.riskTone}`}>{matchup.risk}</span>
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="visual-section learn-section">
+        <div className="section-heading centered">
+          <p className="eyebrow blue">Learn. Analyze. Bet smarter.</p>
+          <h3>Organic content that answers what serious fans already search for.</h3>
+        </div>
+        <div className="guide-card-grid">
+          {guideCards.map((card) => (
+            <article className="guide-card" key={card.title}>
+              <div className="guide-icon">{card.icon}</div>
+              <h4>{card.title}</h4>
+              <p>{card.copy}</p>
+              <Link href="/methodology" style={{ textDecoration: 'none' }}>Read guide →</Link>
+            </article>
+          ))}
+        </div>
+      </section>
+
+      <section className="visual-section faq-grid">
+        {[
+          ['Is there a free trial?', 'Yes. New launch members get the first week free.'],
+          ['Do you offer picks?', 'No. We provide market intelligence. You make the call.'],
+          ['Can I cancel anytime?', 'Yes. Cancel during the free week or keep Core or Pro.'],
+          ['Are you affiliated with teams or leagues?', 'No. Team references and custom icons are used for analysis and navigation only.']
+        ].map(([question, answer]) => (
+          <details className="faq-card" key={question}>
+            <summary>{question}</summary>
+            <p>{answer}</p>
+          </details>
+        ))}
+      </section>
+
+      <section className="trust-cta-strip">
+        <span>10,000+ market checks simulated</span>
+        <span>Real-time market data mindset</span>
+        <span>Bankroll protection first</span>
+        <Link className="primary-button" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start your 7-day free trial →</Link>
       </section>
 
       <PaidPreviewGate title="Unlock the full market board">
@@ -110,16 +331,10 @@ export default async function Home() {
           <div className="panel slate-panel">
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Today’s Board</p>
-                <h3>Eligible games</h3>
-              </div>
-              <div className="league-tabs">
-                {sports.slice(0, 4).map((sport, index) => (
-                  <Link className={index === 0 ? 'active' : ''} href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none' }}>{sport.label}</Link>
-                ))}
+                <p className="eyebrow">Premium board</p>
+                <h3>Full game list and market notes</h3>
               </div>
             </div>
-
             <div className="game-list">
               {games.map((game) => <GameCard game={game} key={game.id} />)}
             </div>
@@ -128,7 +343,7 @@ export default async function Home() {
           <aside className="panel rank-panel">
             <div className="panel-header compact">
               <div>
-                <p className="eyebrow">8-Combo Ranking</p>
+                <p className="eyebrow">8-combo ranking</p>
                 <h3>Containment zone</h3>
               </div>
             </div>
@@ -137,8 +352,6 @@ export default async function Home() {
             </div>
           </aside>
         </section>
-
-        <LineMovementGraph data={lineMovement} />
       </PaidPreviewGate>
     </main>
   );
