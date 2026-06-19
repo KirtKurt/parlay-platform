@@ -168,6 +168,54 @@ export const games: Game[] = [
     signals: ['MARKET_ANOMALY', 'CHAOS', 'REVERSAL'],
     dataStatus: 'Collected',
     marketNote: 'Market Anomaly flags unusual price behavior only. It is not a claim about teams, players, officials, or intent.'
+  },
+  {
+    id: 'darts-001',
+    league: 'DARTS',
+    start: '3:40 PM',
+    matchup: 'Price vs Smith',
+    favorite: 'Price',
+    underdog: 'Smith',
+    favoriteMl: -128,
+    underdogMl: 110,
+    total: 8.5,
+    movement: 'Favorite hold with short-format volatility; checkout-pressure market still compressed',
+    confidence: 'Moderate',
+    risk: 'MED',
+    signals: ['STEAM', 'COIN_FLIP'],
+    dataStatus: 'Collected'
+  },
+  {
+    id: 'lacrosse-001',
+    league: 'LACROSSE',
+    start: '6:05 PM',
+    matchup: 'Maryland @ Duke',
+    favorite: 'Duke',
+    underdog: 'Maryland',
+    favoriteMl: -145,
+    underdogMl: 124,
+    total: 24.5,
+    movement: 'Total firmed while favorite ML held; goalie/news sensitivity remains medium',
+    confidence: 'Moderate',
+    risk: 'MED',
+    signals: ['STEAM', 'RESISTANCE'],
+    dataStatus: 'Collected'
+  },
+  {
+    id: 'table-tennis-001',
+    league: 'TABLE TENNIS',
+    start: '11:15 AM',
+    matchup: 'Chen vs Novak',
+    favorite: 'Chen',
+    underdog: 'Novak',
+    favoriteMl: -162,
+    underdogMl: 138,
+    total: 74.5,
+    movement: 'Fast-cycle market; favorite strengthened but short-match variance remains high',
+    confidence: 'Fragile',
+    risk: 'HIGH',
+    signals: ['STEAM', 'CHAOS'],
+    dataStatus: 'Collected'
   }
 ];
 
