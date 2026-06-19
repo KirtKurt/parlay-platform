@@ -40,4 +40,12 @@ jobs:
 
       - name: Deploy
         working-directory: backend
-        run: sam deploy --stack-name silvers-syndicate-api --region us-east-1 --capabilities CAPABILITY_IAM --resolve-s3 --no-confirm-changeset --no-fail-on-empty-changeset
+        run: >-
+          sam deploy
+          --stack-name silvers-syndicate-api
+          --region us-east-1
+          --capabilities CAPABILITY_IAM
+          --resolve-s3
+          --no-confirm-changeset
+          --no-fail-on-empty-changeset
+          --parameter-overrides OddsApiKey="${{ secrets.ODDS_API_KEY }}"
