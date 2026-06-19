@@ -3,13 +3,13 @@ import { AppHeader } from '@/components/AppHeader';
 import { ContentBlock } from '@/components/ContentBlock';
 
 const sections = [
-  ['T1 baseline', 'Immutable capture of both-side moneyline, spread, and total for every game and sportsbook. No inference at T1.'],
-  ['T2/T3 confirmation', 'Market movement is compared through later snapshots. Fanatics T3 is canonical; FanDuel and DraftKings act as comparators.'],
-  ['Steam', 'A price-strengthening signal that can support an anchor only when it survives multi-book confirmation.'],
-  ['Resistance', 'A warning that a side is not moving cleanly, often weakening anchor quality or creating a coin-flip condition.'],
-  ['Coin flip', 'A controlled variable leg with real uncertainty: compression, conflicting signals, late instability, or information sensitivity.'],
-  ['Market Anomaly', 'Unusual price behavior flag. It describes market data only and does not make claims about people, teams, or intent.'],
-  ['Refusal', 'If a compliant build cannot be created, the system refuses instead of inventing a safer-looking answer.']
+  ['T1 baseline', 'The first clean capture. We record the board before trying to explain it.'],
+  ['T2/T3 confirmation', 'Later snapshots show whether the early move held up or started to fall apart.'],
+  ['Steam', 'A side is gaining market support. It still has to survive confirmation before we treat it seriously.'],
+  ['Resistance', 'The market is pushing back. That can weaken a leg or turn it into a coin-flip spot.'],
+  ['Coin flip', 'A leg with real uncertainty: compressed pricing, conflicting signals, late movement, or news sensitivity.'],
+  ['Market Anomaly', 'Something about the price action looks unusual enough to flag for review.'],
+  ['Refusal', 'If the board is too messy, the system should say no instead of forcing a fake-safe answer.']
 ];
 
 export default function MethodologyPage() {
@@ -17,10 +17,11 @@ export default function MethodologyPage() {
     <main className="shell">
       <AppHeader title="Methodology" />
       <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
-        <p className="eyebrow blue">Trust layer · first week free</p>
-        <h2>Understand the signal before you trust the board.</h2>
+        <p className="eyebrow blue">How the board thinks · first week free</p>
+        <h2>We do not start with a pick. We start with the movement.</h2>
         <p className="hero-copy">
-          Silvers Syndicate explains the market structure behind each board: where the line moved, which books agreed, which legs are anchors, and where uncertainty lives. The methodology page is written to help users and search engines understand the terms behind the product.
+          Silvers Syndicate is built around a simple idea: the market leaves clues. The goal is to capture the board at the right times,
+          compare how books move, and explain which games look clean, fragile, or too chaotic to trust.
         </p>
         <div className="hero-actions">
           <Link className="primary-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
@@ -39,13 +40,13 @@ export default function MethodologyPage() {
       </section>
       <ContentBlock
         eyebrow="Plain-English glossary"
-        title="How to read Silvers Syndicate signals"
-        body="The system is designed around repeatable language. A user should be able to read a sport page, game page, line movement graph, and market board without guessing what the signal labels mean. That same consistency helps organic discovery because the site gives clear definitions for sports market intelligence terms."
+        title="The words on the board should actually mean something"
+        body="A signal is only useful if you can understand why it is there. That is why the same language repeats across the product. When you see steam, resistance, chaos, or a coin-flip marker, the point is not to sound technical. The point is to make the risk easier to read."
         items={[
-          { title: 'Anchor', detail: 'A stronger candidate only after movement confirms across the correct snapshot window.' },
-          { title: 'Variable', detail: 'The side or leg carrying the most uncertainty in a ranked structure.' },
-          { title: 'Chaos', detail: 'A warning that instability is high enough to slow down or refuse a build.' },
-          { title: 'Human gate', detail: 'A review layer for fragile spots before a final structure is trusted.' }
+          { title: 'Anchor', detail: 'A stronger candidate only after the market confirms it across the right window.' },
+          { title: 'Variable', detail: 'The leg carrying the most uncertainty in a ranked structure.' },
+          { title: 'Chaos', detail: 'A warning that the board is unstable enough to slow down or refuse the build.' },
+          { title: 'Human gate', detail: 'A final review layer for fragile spots before trusting a structure.' }
         ]}
       />
     </main>
