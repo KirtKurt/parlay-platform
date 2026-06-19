@@ -4,6 +4,7 @@ import { AppHeader } from '@/components/AppHeader';
 import { GameCard } from '@/components/GameCard';
 import { RankingCard } from '@/components/RankingCard';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
+import { PaidPreviewGate } from '@/components/PaidPreviewGate';
 import { sports } from '@/lib/sports';
 
 export default async function Home() {
@@ -18,32 +19,36 @@ export default async function Home() {
           <p className="eyebrow blue">Market Intelligence Terminal</p>
           <h2>One lobby for every sport, every slate, every game, every parlay risk decision.</h2>
           <p className="hero-copy">
-            Silvers Syndicate is moving from a single demo board into a full sports market terminal: sport pages,
+            Silvers Syndicate gives visitors a preview of the market board, then unlocks the full terminal after registration: sport pages,
             game detail pages, T-snapshot timelines, 15-minute line movement, Top-3 containment logic, and refusal when the data is not safe enough.
           </p>
           <div className="hero-actions">
-            <Link className="primary-button large" href="/parlays/build" style={{ textDecoration: 'none' }}>Build Parlay</Link>
-            <Link className="ghost-button large" href="/sports" style={{ textDecoration: 'none' }}>View Sports Lobby</Link>
-            <Link className="ghost-button large" href={`/game/${games[0]?.id ?? 'nfl-001'}`} style={{ textDecoration: 'none' }}>Open Game Detail</Link>
+            <Link className="primary-button large" href="/register" style={{ textDecoration: 'none' }}>Join Monthly</Link>
+            <Link className="ghost-button large" href="/sports" style={{ textDecoration: 'none' }}>Preview Sports Lobby</Link>
+            <Link className="ghost-button large" href="/login" style={{ textDecoration: 'none' }}>Log In</Link>
           </div>
         </div>
 
         <aside className="bet-slip glass-card">
           <div className="slip-head">
-            <span>Parlay Slip</span>
-            <strong>3 Legs</strong>
+            <span>Preview Slip</span>
+            <strong>Locked</strong>
           </div>
-          {rankings[0].legs.map((leg) => (
+          {rankings[0].legs.slice(0, 2).map((leg) => (
             <div className="slip-leg" key={leg}>
               <span>{leg}</span>
-              <b>Selected</b>
+              <b>Preview</b>
             </div>
           ))}
+          <div className="slip-leg">
+            <span>Premium leg hidden</span>
+            <b>Members only</b>
+          </div>
           <div className="slip-total">
             <span>Rank #1</span>
-            <strong>{rankings[0].american}</strong>
+            <strong>LOCKED</strong>
           </div>
-          <p className="slip-note">{rankings[0].note}</p>
+          <p className="slip-note">Register to unlock full Top-8 rankings, true coin-flip markers, and reason-coded refusals.</p>
         </aside>
       </section>
 
@@ -72,39 +77,41 @@ export default async function Home() {
         </div>
       </section>
 
-      <section className="content-grid">
-        <div className="panel slate-panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Today’s Board</p>
-              <h3>Eligible games</h3>
+      <PaidPreviewGate title="Unlock the full market board">
+        <section className="content-grid">
+          <div className="panel slate-panel">
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Today’s Board</p>
+                <h3>Eligible games</h3>
+              </div>
+              <div className="league-tabs">
+                {sports.slice(0, 4).map((sport, index) => (
+                  <Link className={index === 0 ? 'active' : ''} href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none' }}>{sport.label}</Link>
+                ))}
+              </div>
             </div>
-            <div className="league-tabs">
-              {sports.slice(0, 4).map((sport, index) => (
-                <Link className={index === 0 ? 'active' : ''} href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none' }}>{sport.label}</Link>
-              ))}
+
+            <div className="game-list">
+              {games.map((game) => <GameCard game={game} key={game.id} />)}
             </div>
           </div>
 
-          <div className="game-list">
-            {games.map((game) => <GameCard game={game} key={game.id} />)}
-          </div>
-        </div>
-
-        <aside className="panel rank-panel">
-          <div className="panel-header compact">
-            <div>
-              <p className="eyebrow">8-Combo Ranking</p>
-              <h3>Containment zone</h3>
+          <aside className="panel rank-panel">
+            <div className="panel-header compact">
+              <div>
+                <p className="eyebrow">8-Combo Ranking</p>
+                <h3>Containment zone</h3>
+              </div>
             </div>
-          </div>
-          <div className="rank-list">
-            {rankings.map((ranking) => <RankingCard ranking={ranking} key={ranking.rank} />)}
-          </div>
-        </aside>
-      </section>
+            <div className="rank-list">
+              {rankings.map((ranking) => <RankingCard ranking={ranking} key={ranking.rank} />)}
+            </div>
+          </aside>
+        </section>
 
-      <LineMovementGraph data={lineMovement} />
+        <LineMovementGraph data={lineMovement} />
+      </PaidPreviewGate>
     </main>
   );
 }
