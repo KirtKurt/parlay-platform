@@ -6,15 +6,13 @@ import { GameCard } from '@/components/GameCard';
 import { RankingCard } from '@/components/RankingCard';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
 import { PaidPreviewGate } from '@/components/PaidPreviewGate';
-import { sports } from '@/lib/sports';
+import { SportEquipmentIcon, SportIconStrip, TeamJerseyBadge } from '@/components/SportVisuals';
 
 export const metadata: Metadata = {
   title: 'Silvers Syndicate | Parlay Risk Checker & Sports Market Intelligence',
   description:
     'See where your picks start to break down. Check line movement, steam, resistance, market anomaly alerts, weak-leg risk, and parlay structure before you lock in a ticket.',
-  alternates: {
-    canonical: '/'
-  },
+  alternates: { canonical: '/' },
   openGraph: {
     title: 'Silvers Syndicate | See Where Your Picks Start to Break Down',
     description:
@@ -27,26 +25,13 @@ export const metadata: Metadata = {
   }
 };
 
-const sportIcons: Record<string, string> = {
-  nfl: '🏈',
-  cfb: '🏟️',
-  nba: '🏀',
-  ncaam: '⛹️',
-  nhl: '🏒',
-  mlb: '⚾',
-  tennis: '🎾',
-  soccer: '⚽',
-  darts: '🎯',
-  lacrosse: '🥍',
-  'table-tennis': '🏓'
-};
-
 const featuredMatchups = [
   {
     league: 'NFL',
+    sport: 'nfl',
     time: '8:20 PM',
-    home: { abbr: 'BUF', name: 'Buffalo', icon: '↗', tone: 'blue' },
-    away: { abbr: 'MIA', name: 'Miami', icon: '≈', tone: 'teal' },
+    home: { abbr: 'BUF', name: 'Buffalo', tone: 'blue', number: '17' },
+    away: { abbr: 'MIA', name: 'Miami', tone: 'teal', number: '10' },
     market: 'BUF -4.5 · O/U 49.5',
     signal: 'STEAM',
     risk: 'LOW RISK',
@@ -54,9 +39,10 @@ const featuredMatchups = [
   },
   {
     league: 'NFL',
+    sport: 'nfl',
     time: '4:25 PM',
-    home: { abbr: 'DAL', name: 'Dallas', icon: '★', tone: 'silver' },
-    away: { abbr: 'PHI', name: 'Philadelphia', icon: '↯', tone: 'green' },
+    home: { abbr: 'DAL', name: 'Dallas', tone: 'silver', number: '4' },
+    away: { abbr: 'PHI', name: 'Philadelphia', tone: 'green', number: '11' },
     market: 'PHI -3 · O/U 46.5',
     signal: 'RESISTANCE',
     risk: 'MEDIUM RISK',
@@ -64,19 +50,21 @@ const featuredMatchups = [
   },
   {
     league: 'NBA',
+    sport: 'nba',
     time: '7:30 PM',
-    home: { abbr: 'BOS', name: 'Boston', icon: '♣', tone: 'green' },
-    away: { abbr: 'LAL', name: 'Los Angeles', icon: '◉', tone: 'gold' },
+    home: { abbr: 'BOS', name: 'Boston', tone: 'green', number: '0' },
+    away: { abbr: 'LAL', name: 'Los Angeles', tone: 'gold', number: '23' },
     market: 'LAL -2.5 · O/U 218.5',
     signal: 'COIN FLIP',
     risk: 'MEDIUM RISK',
     riskTone: 'med'
   },
   {
-    league: 'NCAAF',
+    league: 'CFB',
+    sport: 'cfb',
     time: '3:30 PM',
-    home: { abbr: 'UGA', name: 'Georgia', icon: '◆', tone: 'red' },
-    away: { abbr: 'ALA', name: 'Alabama', icon: 'A', tone: 'crimson' },
+    home: { abbr: 'UGA', name: 'Georgia', tone: 'red', number: '1' },
+    away: { abbr: 'ALA', name: 'Alabama', tone: 'crimson', number: '15' },
     market: 'ALA -6.5 · O/U 52.5',
     signal: 'MARKET ANOMALY',
     risk: 'HIGH RISK',
@@ -85,39 +73,31 @@ const featuredMatchups = [
 ];
 
 const checkCards = [
-  { icon: '≋', title: 'Steam', copy: 'Sharp money pushing a number before the public catches up.' },
-  { icon: '⬡', title: 'Resistance', copy: 'Line pushback that tells you the obvious side may not be clean.' },
-  { icon: '⇄', title: 'Coin Flip', copy: 'A split market where one leg should be treated with caution.' },
-  { icon: '⚠', title: 'Market Anomaly', copy: 'Odd movement the board cannot explain with normal pressure.' },
-  { icon: '15', title: '15-Minute Pulls', copy: 'Late movement checks that catch reversals and sharp swings.' },
-  { icon: '∞', title: 'No-Overlap Structure', copy: 'Cleaner builds with less repeated exposure across tickets.' }
+  { sport: 'nfl', title: 'Steam', copy: 'Sharp money pushing a number before the public catches up.' },
+  { sport: 'nhl', title: 'Resistance', copy: 'Line pushback that tells you the obvious side may not be clean.' },
+  { sport: 'nba', title: 'Coin Flip', copy: 'A split market where one leg should be treated with caution.' },
+  { sport: 'darts', title: 'Market Anomaly', copy: 'Odd movement the board cannot explain with normal pressure.' },
+  { sport: 'mlb', title: '15-Minute Pulls', copy: 'Late movement checks that catch reversals and sharp swings.' },
+  { sport: 'lacrosse', title: 'No-Overlap Structure', copy: 'Cleaner builds with less repeated exposure across tickets.' }
 ];
 
 const guideCards = [
   {
-    icon: '📈',
+    sport: 'tennis',
     title: 'How line movement helps you read a game',
     copy: 'Opening lines, mid-day moves, and late pulls can reveal whether a side is gaining trust or quietly losing support.'
   },
   {
-    icon: '🧩',
+    sport: 'soccer',
     title: 'Why some parlays fall apart before kickoff',
     copy: 'A ticket can look clean and still carry one weak leg. We show where that pressure starts to show up.'
   },
   {
-    icon: '🛡️',
+    sport: 'table-tennis',
     title: 'What steam and resistance actually tell you',
     copy: 'Separate meaningful market pressure from noise so you can stop chasing every popular side.'
   }
 ];
-
-function TeamBadge({ team }: { team: { abbr: string; icon: string; tone: string } }) {
-  return (
-    <div className={`team-badge tone-${team.tone}`} aria-label={`${team.abbr} custom team icon`}>
-      <span>{team.icon}</span>
-    </div>
-  );
-}
 
 function MiniSparkline({ tone = 'blue' }: { tone?: string }) {
   return (
@@ -143,20 +123,20 @@ export default async function Home() {
         <div className="hero-copy-stack">
           <div className="promo-line">
             <span>✦ 7-day free trial</span>
-            <small>No card required</small>
+            <small>Pro access preview</small>
           </div>
           <h2>See where your picks start to <span>break down.</span></h2>
           <p>
-            Silvers Syndicate checks line movement, steam, resistance, and weak-leg risk so you can see what the market sees before you lock in a parlay.
+            Silvers Syndicate checks line movement, steam, resistance, and weak-leg risk with a clean visual system built around sport equipment icons and custom jersey-style team badges.
           </p>
           <div className="hero-actions">
             <Link className="primary-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week →</Link>
             <Link className="ghost-button large" href="/picks-audit" style={{ textDecoration: 'none' }}>Test Your Picks →</Link>
           </div>
           <div className="hero-trust-row">
-            <span>▣ No credit card required</span>
-            <span>◷ Cancel anytime</span>
-            <span>◇ Market-first analysis</span>
+            <span>▣ Equipment icons</span>
+            <span>◷ Jersey-style badges</span>
+            <span>◇ No official logos</span>
           </div>
         </div>
 
@@ -174,13 +154,14 @@ export default async function Home() {
           {featuredMatchups.map((matchup) => (
             <div className="board-row" key={`${matchup.home.abbr}-${matchup.away.abbr}`}>
               <div className="board-teams">
-                <TeamBadge team={matchup.home} />
+                <SportEquipmentIcon slug={matchup.sport} size="small" />
+                <TeamJerseyBadge abbr={matchup.home.abbr} tone={matchup.home.tone} number={matchup.home.number} size="small" />
                 <div>
                   <strong>{matchup.home.abbr}</strong>
                   <span>{matchup.home.name}</span>
                 </div>
                 <b>vs</b>
-                <TeamBadge team={matchup.away} />
+                <TeamJerseyBadge abbr={matchup.away.abbr} tone={matchup.away.tone} number={matchup.away.number} size="small" />
                 <div>
                   <strong>{matchup.away.abbr}</strong>
                   <span>{matchup.away.name}</span>
@@ -191,18 +172,11 @@ export default async function Home() {
               <span className={`risk risk-${matchup.riskTone}`}>{matchup.risk}</span>
             </div>
           ))}
-          <p className="board-disclaimer">Custom icons and team references are for analysis only. No league, team, sportsbook, or data-provider affiliation.</p>
+          <p className="board-disclaimer">Custom equipment icons and jersey-style badges are for analysis only. No league, team, sportsbook, or data-provider affiliation.</p>
         </aside>
       </section>
 
-      <section className="sports-icon-strip" aria-label="Sports covered">
-        {sports.map((sport) => (
-          <Link href={`/sports/${sport.slug}`} className="sport-icon-card" key={sport.slug} style={{ textDecoration: 'none' }}>
-            <span>{sportIcons[sport.slug] ?? '◇'}</span>
-            <strong>{sport.label}</strong>
-          </Link>
-        ))}
-      </section>
+      <SportIconStrip />
 
       <section className="visual-section">
         <div className="section-heading">
@@ -212,7 +186,7 @@ export default async function Home() {
         <div className="icon-feature-grid">
           {checkCards.map((card) => (
             <article className="icon-feature-card" key={card.title}>
-              <div className="feature-icon">{card.icon}</div>
+              <SportEquipmentIcon slug={card.sport} />
               <h4>{card.title}</h4>
               <p>{card.copy}</p>
             </article>
@@ -237,23 +211,23 @@ export default async function Home() {
           <h3>The ticket may feel right. The market may disagree.</h3>
           <div className="compare-row">
             <div>
-              <span>👍 Your pick</span>
+              <span><TeamJerseyBadge abbr="BUF" tone="blue" number="17" size="small" /> Your pick</span>
               <strong>This favorite feels safe.</strong>
             </div>
             <b>→</b>
             <div>
-              <span>🛡 Market check</span>
+              <span><SportEquipmentIcon slug="nfl" size="small" /> Market check</span>
               <strong>Resistance is building across books.</strong>
             </div>
           </div>
           <div className="compare-row warning-row">
             <div>
-              <span>✅ Your pick</span>
+              <span><TeamJerseyBadge abbr="DAL" tone="silver" number="4" size="small" /> Your pick</span>
               <strong>This 3-leg parlay looks clean.</strong>
             </div>
             <b>→</b>
             <div>
-              <span>⚠ Weak-leg check</span>
+              <span><SportEquipmentIcon slug="cfb" size="small" /> Weak-leg check</span>
               <strong>One leg is carrying most of the failure risk.</strong>
             </div>
           </div>
@@ -265,18 +239,18 @@ export default async function Home() {
         <div className="panel-header">
           <div>
             <p className="eyebrow blue">Today’s top matchups & signals</p>
-            <h3>Team names, abbreviations, custom icons, and market tags.</h3>
+            <h3>Team names, abbreviations, custom jersey badges, and market tags.</h3>
           </div>
           <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>View full board →</Link>
         </div>
         <div className="matchup-card-grid">
           {featuredMatchups.map((matchup) => (
             <article className="matchup-preview-card" key={`${matchup.league}-${matchup.home.abbr}-${matchup.away.abbr}`}>
-              <div className="game-topline"><span className="league-chip">{matchup.league}</span><span>{matchup.time}</span></div>
+              <div className="game-topline"><span className="league-chip"><SportEquipmentIcon slug={matchup.sport} size="small" /> {matchup.league}</span><span>{matchup.time}</span></div>
               <div className="matchup-teams-row">
-                <div><TeamBadge team={matchup.home} /><strong>{matchup.home.abbr}</strong><span>{matchup.home.name}</span></div>
+                <div><TeamJerseyBadge abbr={matchup.home.abbr} tone={matchup.home.tone} number={matchup.home.number} /><strong>{matchup.home.abbr}</strong><span>{matchup.home.name}</span></div>
                 <b>vs</b>
-                <div><TeamBadge team={matchup.away} /><strong>{matchup.away.abbr}</strong><span>{matchup.away.name}</span></div>
+                <div><TeamJerseyBadge abbr={matchup.away.abbr} tone={matchup.away.tone} number={matchup.away.number} /><strong>{matchup.away.abbr}</strong><span>{matchup.away.name}</span></div>
               </div>
               <p>{matchup.market}</p>
               <div className="signal-row">
@@ -296,7 +270,7 @@ export default async function Home() {
         <div className="guide-card-grid">
           {guideCards.map((card) => (
             <article className="guide-card" key={card.title}>
-              <div className="guide-icon">{card.icon}</div>
+              <SportEquipmentIcon slug={card.sport} />
               <h4>{card.title}</h4>
               <p>{card.copy}</p>
               <Link href="/methodology" style={{ textDecoration: 'none' }}>Read guide →</Link>
