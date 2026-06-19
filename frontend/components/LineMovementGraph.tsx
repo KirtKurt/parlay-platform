@@ -1,3 +1,6 @@
+'use client';
+
+import { useMemo, useState } from 'react';
 import { lineMovement as fallbackLineMovement, type LineMovementPoint } from '@/lib/mockData';
 
 type Point = LineMovementPoint;
@@ -34,16 +37,21 @@ function formattedOdds(value: number) {
 
 export function LineMovementGraph({ data = fallbackLineMovement }: { data?: Point[] }) {
   const lineMovement = data.length ? data : fallbackLineMovement;
+  const [activeIndex, setActiveIndex] = useState(lineMovement.length - 1);
+
+  const safeIndex = Math.min(activeIndex, lineMovement.length - 1);
+  const visibleMovement = useMemo(() => lineMovement.slice(0, safeIndex + 1), [lineMovement, safeIndex]);
+  const activePoint = lineMovement[safeIndex];
   const allValues = lineMovement.flatMap((point) => [point.bufMoneyline, point.miaMoneyline]);
   const min = Math.min(...allValues) - 5;
   const max = Math.max(...allValues) + 5;
-  const milestones = lineMovement.filter((point) => point.milestone);
+  const milestones = visibleMovement.filter((point) => point.milestone);
 
   return (
     <section className="panel movement-panel">
       <div className="panel-header compact movement-header">
         <div>
-          <p className="eyebrow">15-minute Line Movement</p>
+          <p className="eyebrow">Interactive 15-minute Line Movement</p>
           <h3>Bills vs Dolphins moneyline path</h3>
         </div>
         <div className="movement-legend">
@@ -63,13 +71,13 @@ export function LineMovementGraph({ data = fallbackLineMovement }: { data?: Poin
           </defs>
           {[20, 40, 60, 80].map((y) => <line className="chart-grid" x1="0" x2="100" y1={y} y2={y} key={y} />)}
           {milestones.map((point) => {
-            const x = scaleX(lineMovement.indexOf(point), lineMovement.length);
+            const x = scaleX(visibleMovement.indexOf(point), visibleMovement.length);
             return <line className="milestone-line" x1={x} x2={x} y1="0" y2="100" key={point.time} />;
           })}
-          <path className="line-path line-buf" d={pathFor(lineMovement, 'bufMoneyline', min, max)} />
-          <path className="line-path line-mia" d={pathFor(lineMovement, 'miaMoneyline', min, max)} />
-          {lineMovement.map((point, index) => {
-            const x = scaleX(index, lineMovement.length);
+          <path className="line-path line-buf" d={pathFor(visibleMovement, 'bufMoneyline', min, max)} />
+          <path className="line-path line-mia" d={pathFor(visibleMovement, 'miaMoneyline', min, max)} />
+          {visibleMovement.map((point, index) => {
+            const x = scaleX(index, visibleMovement.length);
             const isMilestone = Boolean(point.milestone);
             return (
               <g key={point.time}>
@@ -82,7 +90,7 @@ export function LineMovementGraph({ data = fallbackLineMovement }: { data?: Poin
 
         <div className="milestone-labels">
           {milestones.map((point) => (
-            <span style={{ left: `${scaleX(lineMovement.indexOf(point), lineMovement.length)}%` }} key={point.time}>
+            <span style={{ left: `${scaleX(visibleMovement.indexOf(point), visibleMovement.length)}%` }} key={point.time}>
               {point.milestone}
             </span>
           ))}
@@ -90,17 +98,41 @@ export function LineMovementGraph({ data = fallbackLineMovement }: { data?: Poin
       </div>
 
       <div className="pull-strip">
-        {lineMovement.map((point) => (
-          <div className={point.milestone ? 'pull-dot pull-dot-major' : 'pull-dot'} title={`${point.time}: BUF ${formattedOdds(point.bufMoneyline)} / MIA ${formattedOdds(point.miaMoneyline)}${point.signal ? ` · ${point.signal}` : ''}`} key={point.time}>
-            {point.milestone ? point.milestone : ''}
-          </div>
+        {lineMovement.map((point, index) => (
+          <button
+            type="button"
+            className={index === safeIndex ? 'pull-dot pull-dot-major' : point.milestone ? 'pull-dot pull-dot-major' : 'pull-dot'}
+            title={`${point.time}: BUF ${formattedOdds(point.bufMoneyline)} / MIA ${formattedOdds(point.miaMoneyline)}${point.signal ? ` · ${point.signal}` : ''}`}
+            key={point.time}
+            onClick={() => setActiveIndex(index)}
+            aria-label={`Show line movement through ${point.time}`}
+          >
+            {point.milestone ? point.milestone : index === safeIndex ? 'NOW' : ''}
+          </button>
         ))}
+      </div>
+
+      <div style={{ display: 'grid', gap: '10px', margin: '0 0 18px' }}>
+        <div className="rank-meta" style={{ justifyContent: 'space-between' }}>
+          <span>Slide time: {activePoint.time}</span>
+          <span>BUF {formattedOdds(activePoint.bufMoneyline)}</span>
+          <span>MIA {formattedOdds(activePoint.miaMoneyline)}</span>
+          <span>{activePoint.signal ?? 'Market capture'}</span>
+        </div>
+        <input
+          type="range"
+          min="0"
+          max={lineMovement.length - 1}
+          value={safeIndex}
+          onChange={(event) => setActiveIndex(Number(event.target.value))}
+          aria-label="Slide through 15-minute odds pulls"
+        />
       </div>
 
       <div className="movement-footer">
         <div>
-          <span>Latest</span>
-          <strong>BUF {formattedOdds(lineMovement[lineMovement.length - 1].bufMoneyline)}</strong>
+          <span>Displayed Through</span>
+          <strong>{activePoint.time}</strong>
         </div>
         <div>
           <span>Path</span>
@@ -108,7 +140,7 @@ export function LineMovementGraph({ data = fallbackLineMovement }: { data?: Poin
         </div>
         <div>
           <span>Signal</span>
-          <strong>Steam building without major reversal</strong>
+          <strong>{activePoint.signal ?? 'Steam building without major reversal'}</strong>
         </div>
       </div>
     </section>
