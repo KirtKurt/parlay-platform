@@ -1,14 +1,18 @@
 'use client';
 
-import { FormEvent, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { FormEvent, useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { createDemoMemberSession, saveMemberSession } from '@/lib/memberSession';
 
 export function LoginForm() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [status, setStatus] = useState<'idle' | 'signed-in'>('idle');
-  const [email, setEmail] = useState(searchParams.get('email') ?? '');
+  const [email, setEmail] = useState('');
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setEmail(params.get('email') ?? '');
+  }, []);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
