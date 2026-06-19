@@ -57,3 +57,4 @@ NEXT_PUBLIC_API_BASE_URL=<ApiUrl>
 Then redeploy the Amplify frontend.
 
 Deployment trigger: backend README updated to start the GitHub Actions deploy pipeline.
+Deployment trigger: fresh backend push to AWS after workflow credential fix.
