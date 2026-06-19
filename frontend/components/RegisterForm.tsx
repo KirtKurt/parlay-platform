@@ -3,17 +3,17 @@
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createDemoMemberSession, saveMemberSession } from '@/lib/memberSession';
-import { defaultPlanId, registrationSports, registrationStates, subscriptionPlans } from '@/lib/subscription';
+import { registrationSports, registrationStates, subscriptionPlans } from '@/lib/subscription';
 
 export function RegisterForm() {
   const router = useRouter();
-  const [planId, setPlanId] = useState(defaultPlanId);
+  const [planId, setPlanId] = useState<'core' | 'pro'>('pro');
   const [email, setEmail] = useState('');
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const plan = subscriptionPlans.find((item) => item.id === planId);
-    saveMemberSession(createDemoMemberSession(email, plan?.name === 'Pro' ? 'Pro' : 'Core'));
+    saveMemberSession(createDemoMemberSession(email, plan?.name === 'Core' ? 'Core' : 'Pro'));
 
     const params = new URLSearchParams({ plan: planId });
     if (email) params.set('email', email);
