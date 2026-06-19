@@ -51,6 +51,10 @@ h4 { margin-bottom: 12px; font-size: 1rem; }
 .primary-button { background: linear-gradient(135deg, var(--green), var(--blue)); color: #04101d; box-shadow: 0 12px 40px rgba(57, 167, 255, 0.25); }
 .ghost-button { color: var(--text); background: rgba(255,255,255,0.06); border: 1px solid var(--line); }
 .large { padding: 15px 22px; }
+.api-badge { border-radius: 999px; padding: 9px 12px; border: 1px solid var(--line); font-size: 0.72rem; font-weight: 950; letter-spacing: 0.04em; }
+.api-connected { color: var(--green); background: rgba(32,242,159,0.12); }
+.api-mock { color: var(--yellow); background: rgba(255,209,102,0.12); }
+.api-failed { color: var(--red); background: rgba(255,93,115,0.12); }
 
 .hero-grid { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 20px; align-items: stretch; }
 .glass-card, .panel, .status-card {
@@ -92,6 +96,8 @@ h4 { margin-bottom: 12px; font-size: 1rem; }
 .league-chip { color: var(--blue); font-weight: 900; }
 .data-status { padding: 4px 8px; border-radius: 999px; font-weight: 900; }
 .data-status.collected { color: var(--green); background: rgba(32,242,159,0.12); }
+.data-status.pending { color: var(--yellow); background: rgba(255,209,102,0.12); }
+.data-status.failed { color: var(--red); background: rgba(255,93,115,0.12); }
 .market-row { display: grid; grid-template-columns: repeat(3, 1fr); }
 .market-row div { padding: 12px; border-radius: 16px; background: rgba(0,0,0,0.2); }
 .market-row span { display: block; color: var(--muted); font-size: 0.76rem; margin-bottom: 5px; }
@@ -102,7 +108,7 @@ h4 { margin-bottom: 12px; font-size: 1rem; }
 .signal { border-radius: 999px; padding: 7px 10px; font-size: 0.72rem; font-weight: 950; border: 1px solid var(--line); background: rgba(255,255,255,0.06); }
 .signal-steam, .signal-dac { color: var(--green); }
 .signal-resistance, .signal-coin_flip { color: var(--yellow); }
-.signal-trap, .signal-reversal, .signal-chaos { color: var(--red); }
+.signal-trap, .signal-reversal, .signal-chaos, .signal-market_anomaly { color: var(--red); }
 .rank-card.top-zone { border-color: rgba(32,242,159,0.38); background: linear-gradient(180deg, rgba(32,242,159,0.11), rgba(255,255,255,0.04)); }
 .rank-head span { color: var(--muted); font-weight: 850; }
 .rank-head b { color: #04101d; background: var(--green); border-radius: 999px; padding: 4px 8px; font-size: 0.72rem; }
@@ -159,15 +165,12 @@ h4 { margin-bottom: 12px; font-size: 1rem; }
   .hero-grid, .content-grid { grid-template-columns: 1fr; }
   .status-row { grid-template-columns: repeat(2, 1fr); }
   .bet-slip { min-height: 360px; }
-  .movement-footer { grid-template-columns: 1fr; }
 }
+
 @media (max-width: 680px) {
   .shell { padding: 16px; }
-  .topbar { align-items: flex-start; flex-direction: column; }
-  .nav-actions { width: 100%; }
-  .nav-actions button, .hero-actions button { flex: 1; }
-  .status-row, .market-row { grid-template-columns: 1fr; }
-  h2 { font-size: 2.5rem; }
-  .panel-header { align-items: flex-start; flex-direction: column; }
-  .movement-chart-wrap { height: 250px; }
+  .topbar { align-items: flex-start; }
+  .market-row, .movement-footer { grid-template-columns: 1fr; }
+  .status-row { grid-template-columns: 1fr; }
+  .hero-card { min-height: auto; }
 }
