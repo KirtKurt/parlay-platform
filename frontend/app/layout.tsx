@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { ComplianceFooter } from '@/components/ComplianceFooter';
 import './globals.css';
 
 const siteUrl = 'https://silverssyndicate.app';
@@ -59,6 +60,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
         />
         {children}
+        <ComplianceFooter />
       </body>
     </html>
   );
