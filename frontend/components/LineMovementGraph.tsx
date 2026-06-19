@@ -1,6 +1,6 @@
-import { lineMovement } from '@/lib/mockData';
+import { lineMovement as fallbackLineMovement, type LineMovementPoint } from '@/lib/mockData';
 
-type Point = (typeof lineMovement)[number];
+type Point = LineMovementPoint;
 type SeriesKey = 'bufMoneyline' | 'miaMoneyline';
 
 const series: { key: SeriesKey; label: string }[] = [
@@ -32,7 +32,8 @@ function formattedOdds(value: number) {
   return value > 0 ? `+${value}` : `${value}`;
 }
 
-export function LineMovementGraph() {
+export function LineMovementGraph({ data = fallbackLineMovement }: { data?: Point[] }) {
+  const lineMovement = data.length ? data : fallbackLineMovement;
   const allValues = lineMovement.flatMap((point) => [point.bufMoneyline, point.miaMoneyline]);
   const min = Math.min(...allValues) - 5;
   const max = Math.max(...allValues) + 5;
