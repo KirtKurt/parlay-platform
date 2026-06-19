@@ -1,4 +1,4 @@
-export type Signal = 'STEAM' | 'RESISTANCE' | 'TRAP' | 'REVERSAL' | 'COIN_FLIP' | 'CHAOS' | 'DAC';
+export type Signal = 'STEAM' | 'RESISTANCE' | 'TRAP' | 'REVERSAL' | 'COIN_FLIP' | 'CHAOS' | 'DAC' | 'MARKET_ANOMALY';
 
 export type Game = {
   id: string;
@@ -15,6 +15,7 @@ export type Game = {
   risk: 'LOW' | 'MED' | 'HIGH';
   signals: Signal[];
   dataStatus: 'Collected' | 'Pending' | 'Failed';
+  marketNote?: string;
 };
 
 export type Ranking = {
@@ -150,6 +151,23 @@ export const games: Game[] = [
     risk: 'LOW',
     signals: ['STEAM', 'DAC'],
     dataStatus: 'Collected'
+  },
+  {
+    id: 'anomaly-001',
+    league: 'NCAAM',
+    start: '9:10 PM',
+    matchup: 'Example State @ Coastal Tech',
+    favorite: 'Coastal Tech',
+    underdog: 'Example State',
+    favoriteMl: -108,
+    underdogMl: -104,
+    total: 141.5,
+    movement: 'Abnormal cross-book divergence and sudden late reversal detected',
+    confidence: 'Fragile',
+    risk: 'HIGH',
+    signals: ['MARKET_ANOMALY', 'CHAOS', 'REVERSAL'],
+    dataStatus: 'Collected',
+    marketNote: 'Market Anomaly flags unusual price behavior only. It is not a claim about teams, players, officials, or intent.'
   }
 ];
 
@@ -199,6 +217,6 @@ export const rankings: Ranking[] = [
 export const statusCards = [
   { label: 'Last Snapshot', value: 'T3 · 12:31 PM', detail: 'Fanatics canonical + FanDuel comparator' },
   { label: 'Line Graph', value: '15-min pulls', detail: 'T markers plus every hot pull' },
-  { label: 'Build Rule', value: '2 Solid + 1 CF', detail: 'Natural structure, no forced risk' },
-  { label: 'Safety', value: 'Human Gate', detail: 'Cancel-only T5 protection later' }
+  { label: 'Market Anomaly', value: 'Abnormal behavior', detail: 'Flags unusual markets without accusation' },
+  { label: 'Build Rule', value: '2 Solid + 1 CF', detail: 'Natural structure, no forced risk' }
 ];
