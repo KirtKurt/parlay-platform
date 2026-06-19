@@ -10,7 +10,7 @@ export type AppHeaderProps = {
 
 export function AppHeader({
   eyebrow = 'Silvers Syndicate',
-  title = 'Sportsbook-style parlay intelligence',
+  title = 'Sports market intelligence',
   apiStatus,
   apiDetail
 }: AppHeaderProps) {
@@ -27,11 +27,12 @@ export function AppHeader({
         </Link>
         <div className="nav-actions">
           {apiStatus && <span className={`api-badge api-${apiStatus.toLowerCase()}`} title={apiDetail}>{apiStatus}</span>}
+          <Link className="ghost-button" href="/start-here" style={{ textDecoration: 'none' }}>Start Here</Link>
+          <Link className="ghost-button" href="/picks-audit" style={{ textDecoration: 'none' }}>Test Picks</Link>
           <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>Sports</Link>
-          <Link className="ghost-button" href="/methodology" style={{ textDecoration: 'none' }}>Methodology</Link>
           <Link className="ghost-button" href="/pricing" style={{ textDecoration: 'none' }}>Pricing</Link>
           <Link className="ghost-button" href="/login" style={{ textDecoration: 'none' }}>Login</Link>
-          <Link className="primary-button" href="/register" style={{ textDecoration: 'none' }}>Join</Link>
+          <Link className="primary-button" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
         </div>
       </nav>
     </>
