@@ -26,6 +26,7 @@ export default async function Home() {
           </p>
           <div className="hero-actions">
             <Link className="primary-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
+            <Link className="ghost-button large" href="/picks-audit" style={{ textDecoration: 'none' }}>Test Your Picks</Link>
             <Link className="ghost-button large" href="/sports" style={{ textDecoration: 'none' }}>Preview the Board</Link>
             <Link className="ghost-button large" href="/methodology" style={{ textDecoration: 'none' }}>How It Works</Link>
           </div>
@@ -75,6 +76,20 @@ export default async function Home() {
           { title: 'Try it first', detail: 'Your first week is free, so you can see the workflow before committing.' }
         ]}
       />
+
+      <section className="panel" style={{ marginBottom: 20, marginTop: 20 }}>
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Pick audit</p>
+            <h3>Want the tougher version?</h3>
+          </div>
+          <Link className="ghost-button" href="/picks-audit" style={{ textDecoration: 'none' }}>See Why Picks Fail</Link>
+        </div>
+        <p className="hero-copy" style={{ marginTop: 8 }}>
+          The regular board shows you how the market is moving. The pick audit page takes the opposite angle: it looks for
+          the weak leg, the bad movement, and the reason your ticket may not hold up.
+        </p>
+      </section>
 
       <section className="panel" style={{ marginBottom: 20, marginTop: 20 }}>
         <div className="panel-header">
