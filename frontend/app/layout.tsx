@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Risk Check Syndicate',
+  title: 'Silvers Syndicate',
   description: 'Sports market movement and parlay risk intelligence.'
 };
 
