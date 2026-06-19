@@ -2,6 +2,7 @@ import Link from 'next/link';
 import { AppHeader } from '@/components/AppHeader';
 import { RegisterForm } from '@/components/RegisterForm';
 import { ContentBlock } from '@/components/ContentBlock';
+import { SportIconStrip, TeamJerseyBadge } from '@/components/SportVisuals';
 
 export default function RegisterPage() {
   return (
@@ -15,12 +16,18 @@ export default function RegisterPage() {
           <p className="hero-copy">
             Set up your profile, choose the sport you care about most, and start your free week with Pro selected by default.
           </p>
+          <div className="team-badge-row" style={{ marginTop: 14 }}>
+            <TeamJerseyBadge abbr="PRO" tone="gold" number="79" />
+            <TeamJerseyBadge abbr="BOS" tone="green" number="0" />
+            <TeamJerseyBadge abbr="LAL" tone="gold" number="23" />
+          </div>
           <div className="hero-actions">
             <Link className="ghost-button large" href="/pricing" style={{ textDecoration: 'none' }}>Compare plans</Link>
             <Link className="ghost-button large" href="/login" style={{ textDecoration: 'none' }}>Already a member?</Link>
           </div>
         </div>
       </section>
+      <SportIconStrip compact />
       <ContentBlock
         eyebrow="What happens after signup"
         title="Your preview turns into a real workspace"
