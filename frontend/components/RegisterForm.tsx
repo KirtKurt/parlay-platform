@@ -2,6 +2,7 @@
 
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { createDemoMemberSession, saveMemberSession } from '@/lib/memberSession';
 import { defaultPlanId, registrationSports, registrationStates, subscriptionPlans } from '@/lib/subscription';
 
 export function RegisterForm() {
@@ -11,6 +12,9 @@ export function RegisterForm() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    const plan = subscriptionPlans.find((item) => item.id === planId);
+    saveMemberSession(createDemoMemberSession(email, plan?.name === 'Pro' ? 'Pro' : 'Core'));
+
     const params = new URLSearchParams({ plan: planId });
     if (email) params.set('email', email);
     router.push(`/checkout?${params.toString()}`);
