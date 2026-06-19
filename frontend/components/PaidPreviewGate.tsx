@@ -15,7 +15,7 @@ export function PaidPreviewGate({
   teaser = 'Free preview: slate count, high-level signals, and sample movement are visible. Full odds movement and ranked combinations unlock after registration.'
 }: PaidPreviewGateProps) {
   return (
-    <section style={{ position: 'relative', marginTop: 20 }}>
+    <section style={{ position: 'relative', marginTop: 8 }}>
       <div
         aria-hidden="true"
         style={{
@@ -34,26 +34,27 @@ export function PaidPreviewGate({
         style={{
           position: 'absolute',
           inset: 0,
-          display: 'grid',
-          placeItems: 'center',
-          padding: 18,
-          background: 'linear-gradient(180deg, rgba(5,8,20,0.1), rgba(5,8,20,0.76))',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'flex-start',
+          padding: 'clamp(14px, 3.5vh, 42px) 18px 18px',
+          background: 'linear-gradient(180deg, rgba(5,8,20,0.34), rgba(5,8,20,0.78))',
           borderRadius: 28
         }}
       >
         <div
           className="glass-card"
           style={{
-            width: 'min(620px, 100%)',
-            padding: 26,
+            width: 'min(720px, 100%)',
+            padding: 'clamp(20px, 3vw, 30px)',
             textAlign: 'center',
             borderColor: 'rgba(32,242,159,0.32)'
           }}
         >
           <p className="eyebrow blue">Free preview</p>
-          <h3 style={{ fontSize: '1.85rem', marginBottom: 12 }}>{title}</h3>
-          <p className="movement" style={{ margin: '0 auto 12px', maxWidth: 500 }}>{message}</p>
-          <p className="movement" style={{ margin: '0 auto 22px', maxWidth: 520, color: '#ffd166' }}>{teaser}</p>
+          <h3 style={{ fontSize: 'clamp(1.65rem, 3vw, 2.45rem)', marginBottom: 12 }}>{title}</h3>
+          <p className="movement" style={{ margin: '0 auto 12px', maxWidth: 560 }}>{message}</p>
+          <p className="movement" style={{ margin: '0 auto 22px', maxWidth: 600, color: '#ffd166' }}>{teaser}</p>
           <div className="hero-actions" style={{ justifyContent: 'center' }}>
             <Link className="primary-button large" href="/register" style={{ textDecoration: 'none' }}>Create Account</Link>
             <Link className="ghost-button large" href="/login" style={{ textDecoration: 'none' }}>Log In</Link>
