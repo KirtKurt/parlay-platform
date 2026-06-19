@@ -15,7 +15,13 @@ GET /v1/parlays/{build_id}
 
 ## Deploy
 
-From the repository root:
+This backend is deployed by GitHub Actions using the workflow:
+
+```bash
+.github/workflows/deploy-silvers-backend.yml
+```
+
+Manual local deploy remains available:
 
 ```bash
 cd backend
@@ -49,3 +55,5 @@ NEXT_PUBLIC_API_BASE_URL=<ApiUrl>
 ```
 
 Then redeploy the Amplify frontend.
+
+Deployment trigger: backend README updated to start the GitHub Actions deploy pipeline.
