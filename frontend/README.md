@@ -1,4 +1,4 @@
-# Risk Check Syndicate Frontend v0.1
+# Silvers Syndicate Frontend v0.1
 
 Sportsbook-style Next.js frontend shell for the parlay intelligence platform.
 
