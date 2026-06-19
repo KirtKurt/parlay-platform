@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { PromoBanner } from '@/components/PromoBanner';
 
 export type AppHeaderProps = {
   eyebrow?: string;
@@ -14,22 +15,25 @@ export function AppHeader({
   apiDetail
 }: AppHeaderProps) {
   return (
-    <nav className="topbar">
-      <Link className="brand-block" href="/" style={{ color: 'inherit', textDecoration: 'none' }}>
-        <div className="brand-mark">SS</div>
-        <div>
-          <p className="eyebrow">{eyebrow}</p>
-          <h1>{title}</h1>
+    <>
+      <PromoBanner />
+      <nav className="topbar">
+        <Link className="brand-block" href="/" style={{ color: 'inherit', textDecoration: 'none' }}>
+          <div className="brand-mark">SS</div>
+          <div>
+            <p className="eyebrow">{eyebrow}</p>
+            <h1>{title}</h1>
+          </div>
+        </Link>
+        <div className="nav-actions">
+          {apiStatus && <span className={`api-badge api-${apiStatus.toLowerCase()}`} title={apiDetail}>{apiStatus}</span>}
+          <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>Sports</Link>
+          <Link className="ghost-button" href="/methodology" style={{ textDecoration: 'none' }}>Methodology</Link>
+          <Link className="ghost-button" href="/pricing" style={{ textDecoration: 'none' }}>Pricing</Link>
+          <Link className="ghost-button" href="/login" style={{ textDecoration: 'none' }}>Login</Link>
+          <Link className="primary-button" href="/register" style={{ textDecoration: 'none' }}>Join</Link>
         </div>
-      </Link>
-      <div className="nav-actions">
-        {apiStatus && <span className={`api-badge api-${apiStatus.toLowerCase()}`} title={apiDetail}>{apiStatus}</span>}
-        <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>Sports</Link>
-        <Link className="ghost-button" href="/methodology" style={{ textDecoration: 'none' }}>Methodology</Link>
-        <Link className="ghost-button" href="/pricing" style={{ textDecoration: 'none' }}>Pricing</Link>
-        <Link className="ghost-button" href="/login" style={{ textDecoration: 'none' }}>Login</Link>
-        <Link className="primary-button" href="/register" style={{ textDecoration: 'none' }}>Join</Link>
-      </div>
-    </nav>
+      </nav>
+    </>
   );
 }
