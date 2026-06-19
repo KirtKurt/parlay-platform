@@ -16,6 +16,7 @@ Included screens/components:
 - Signal badges: STEAM, RESISTANCE, COIN_FLIP, DAC, CHAOS, etc.
 - Parlay slip panel
 - Ranked 8-combo containment zone panel
+- Customer registration, login, pricing, checkout, and account screens
 - Mobile-first responsive layout
 
 ## Locked product requirement: line movement graph
@@ -43,13 +44,15 @@ This is a core product requirement because users need to see the full market pat
 
 ## Current data mode
 
-The app currently uses mock data in:
+The app can call the AWS backend when this environment variable is configured:
 
 ```bash
-lib/mockData.ts
+NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com
 ```
 
-When the AWS backend is ready, replace the mock data with API calls to:
+If the variable is not set, the frontend falls back to local demo data.
+
+Backend routes expected by the frontend:
 
 ```bash
 GET /v1/slates/today?sport=nfl
@@ -59,11 +62,21 @@ POST /v1/parlays/build
 GET /v1/parlays/{build_id}
 ```
 
-Set the backend URL in:
+## Customer registration and monthly billing
+
+The frontend includes a staged subscription flow:
 
 ```bash
-NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com
+/pricing
+/register
+/login
+/checkout
+/checkout/success
+/checkout/cancel
+/account
 ```
+
+Billing is intentionally provider-neutral. The final billing provider credentials will be supplied later and should be connected through backend environment variables, not hard-coded into the frontend.
 
 ## Local run
 
@@ -104,8 +117,8 @@ Customer app:
 - Next.js / React
 - AWS Amplify Hosting
 - API Gateway / FastAPI backend
-- Stripe subscription gate
-- Cognito or Clerk login
+- Provider-neutral monthly subscription gate
+- Cognito or equivalent login
 
 Internal/admin app:
 
