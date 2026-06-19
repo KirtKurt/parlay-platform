@@ -33,7 +33,7 @@ export function LoginForm() {
       <div>
         <p className="eyebrow blue">Member login</p>
         <h3>Sign in to your market workspace</h3>
-        <p className="slip-note">Use the email you registered with. This creates a working member session while the live Cognito login is being wired in.</p>
+        <p className="slip-note">Use the email you registered with to get back to your watchlist, saved boards, and member tools.</p>
       </div>
       <label className="field-card full-span">
         <span>Email</span>
@@ -57,7 +57,7 @@ export function LoginForm() {
         </div>
       )}
       <div className="compliance-box">
-        Live launch note: this is a working frontend session for testing. Production authentication should be enforced server-side with Cognito, DynamoDB, and subscription status.
+        First week free for new members. Preview your board, save a watchlist, and decide before monthly membership begins.
       </div>
     </form>
   );
