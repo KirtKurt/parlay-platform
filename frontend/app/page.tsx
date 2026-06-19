@@ -5,6 +5,7 @@ import { GameCard } from '@/components/GameCard';
 import { RankingCard } from '@/components/RankingCard';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
 import { PaidPreviewGate } from '@/components/PaidPreviewGate';
+import { ContentBlock } from '@/components/ContentBlock';
 import { sports } from '@/lib/sports';
 
 export default async function Home() {
@@ -16,16 +17,17 @@ export default async function Home() {
 
       <section className="hero-grid">
         <div className="hero-card glass-card">
-          <p className="eyebrow blue">Market Intelligence Terminal</p>
-          <h2>One lobby for every sport, every slate, every game, every parlay risk decision.</h2>
+          <p className="eyebrow blue">First week free · sports market intelligence</p>
+          <h2>See the market move before you build the slate.</h2>
           <p className="hero-copy">
-            Silvers Syndicate gives visitors a preview of the market board, then unlocks the full terminal after registration: sport pages,
-            game detail pages, T-snapshot timelines, 15-minute line movement, Top-3 containment logic, and refusal when the data is not safe enough.
+            Silvers Syndicate is a premium sports research terminal built around line movement, T-snapshots, steam, resistance,
+            market anomalies, coin-flip risk, and ranked parlay structure. New members can start with a free first week and preview
+            the system before monthly membership begins.
           </p>
           <div className="hero-actions">
-            <Link className="primary-button large" href="/register" style={{ textDecoration: 'none' }}>Join Monthly</Link>
+            <Link className="primary-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
             <Link className="ghost-button large" href="/sports" style={{ textDecoration: 'none' }}>Preview Sports Lobby</Link>
-            <Link className="ghost-button large" href="/login" style={{ textDecoration: 'none' }}>Log In</Link>
+            <Link className="ghost-button large" href="/methodology" style={{ textDecoration: 'none' }}>How It Works</Link>
           </div>
         </div>
 
@@ -48,7 +50,7 @@ export default async function Home() {
             <span>Rank #1</span>
             <strong>LOCKED</strong>
           </div>
-          <p className="slip-note">Register to unlock full Top-8 rankings, true coin-flip markers, and reason-coded refusals.</p>
+          <p className="slip-note">Register to unlock full Top-8 rankings, true coin-flip markers, signal detail, and reason-coded refusals.</p>
         </aside>
       </section>
 
@@ -62,11 +64,23 @@ export default async function Home() {
         ))}
       </section>
 
-      <section className="panel" style={{ marginBottom: 20 }}>
+      <ContentBlock
+        eyebrow="Why members use it"
+        title="A research-first board for serious sports fans"
+        body="Most sports pages show scores, headlines, or isolated prices. Silvers Syndicate organizes the market itself: when each snapshot was captured, which books agreed, where resistance appeared, where a favorite strengthened, and when the safest answer is no build at all. The product is designed for people searching for sports market intelligence, parlay risk research, line movement tools, and a disciplined alternative to pick-selling content."
+        items={[
+          { title: 'T-snapshot timeline', detail: 'Track T1, T2, T3, T4, and safety-only T5 logic in one place.' },
+          { title: 'Signal vocabulary', detail: 'Steam, resistance, reversal, trap, chaos, and market anomaly labels explain what changed.' },
+          { title: 'Parlay structure', detail: 'See how anchor legs, coin-flip variables, and no-overlap builds are separated.' },
+          { title: 'Free week', detail: 'New members can explore the terminal for the first week before monthly access begins.' }
+        ]}
+      />
+
+      <section className="panel" style={{ marginBottom: 20, marginTop: 20 }}>
         <div className="panel-header">
           <div>
-            <p className="eyebrow">Sport Pages</p>
-            <h3>Expandable market boards</h3>
+            <p className="eyebrow">Sports Coverage</p>
+            <h3>Pages built for every major board and niche market</h3>
           </div>
           <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>All Sports</Link>
         </div>
