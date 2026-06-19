@@ -39,7 +39,7 @@ export function clearMemberSession() {
   window.dispatchEvent(new Event('silvers-member-session-change'));
 }
 
-export function createDemoMemberSession(email: string, plan: 'Core' | 'Pro' | 'Master' = 'Core'): MemberSession {
+export function createDemoMemberSession(email: string, plan: 'Core' | 'Pro' | 'Master' = 'Pro'): MemberSession {
   const startedAt = new Date();
   const freeWeekEndsAt = new Date(startedAt);
   freeWeekEndsAt.setDate(freeWeekEndsAt.getDate() + 7);
