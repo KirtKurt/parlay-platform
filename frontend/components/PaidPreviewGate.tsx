@@ -11,8 +11,8 @@ type PaidPreviewGateProps = {
 export function PaidPreviewGate({
   children,
   title = 'Members see the full board',
-  message = 'Create an account or log in to unlock the complete line movement, rankings, parlay build logic, and game-level signal detail.',
-  teaser = 'Free preview: slate count, high-level signals, and sample movement are visible. Full odds movement and ranked combinations unlock after registration.'
+  message = 'Create an account or log in to unlock the complete line movement, rankings, build logic, and game-level signal detail.',
+  teaser = 'Launch promo: the first week is free. Free preview includes slate count, high-level signals, and sample movement. Full movement and ranked combinations unlock after registration.'
 }: PaidPreviewGateProps) {
   return (
     <section style={{ position: 'relative', marginTop: 8 }}>
@@ -56,7 +56,7 @@ export function PaidPreviewGate({
           <p className="movement" style={{ margin: '0 auto 12px', maxWidth: 560 }}>{message}</p>
           <p className="movement" style={{ margin: '0 auto 22px', maxWidth: 600, color: '#ffd166' }}>{teaser}</p>
           <div className="hero-actions" style={{ justifyContent: 'center' }}>
-            <Link className="primary-button large" href="/register" style={{ textDecoration: 'none' }}>Create Account</Link>
+            <Link className="primary-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
             <Link className="ghost-button large" href="/login" style={{ textDecoration: 'none' }}>Log In</Link>
             <Link className="ghost-button large" href="/pricing" style={{ textDecoration: 'none' }}>View Plans</Link>
           </div>
