@@ -1,0 +1,38 @@
+.session-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.session-pill {
+  border-radius: 999px;
+  padding: 11px 14px;
+  color: var(--green);
+  background: rgba(32, 242, 159, 0.1);
+  border: 1px solid rgba(32, 242, 159, 0.28);
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.compact-button {
+  padding: 10px 12px;
+}
+
+.success-box {
+  border-color: rgba(32, 242, 159, 0.32);
+  background: rgba(32, 242, 159, 0.08);
+  color: var(--text);
+}
+
+@media (max-width: 680px) {
+  .session-actions {
+    width: 100%;
+  }
+
+  .session-pill,
+  .session-actions .ghost-button {
+    width: 100%;
+    text-align: center;
+  }
+}
