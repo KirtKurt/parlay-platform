@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { HeaderAuthControls } from '@/components/HeaderAuthControls';
 import { PromoBanner } from '@/components/PromoBanner';
 
 export type AppHeaderProps = {
@@ -31,7 +32,7 @@ export function AppHeader({
           <Link className="ghost-button" href="/picks-audit" style={{ textDecoration: 'none' }}>Test Picks</Link>
           <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>Sports</Link>
           <Link className="ghost-button" href="/pricing" style={{ textDecoration: 'none' }}>Pricing</Link>
-          <Link className="ghost-button" href="/login" style={{ textDecoration: 'none' }}>Login</Link>
+          <HeaderAuthControls />
           <Link className="primary-button" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
         </div>
       </nav>
