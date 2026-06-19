@@ -17,16 +17,16 @@ export default async function Home() {
 
       <section className="hero-grid">
         <div className="hero-card glass-card">
-          <p className="eyebrow blue">First week free · sports market intelligence</p>
-          <h2>See the market move before you build the slate.</h2>
+          <p className="eyebrow blue">First week free · built for sharper sports research</p>
+          <h2>Before you build a parlay, see how the market is actually moving.</h2>
           <p className="hero-copy">
-            Silvers Syndicate is a premium sports research terminal built around line movement, T-snapshots, steam, resistance,
-            market anomalies, coin-flip risk, and ranked parlay structure. New members can start with a free first week and preview
-            the system before monthly membership begins.
+            Silvers Syndicate is for people who want more than a gut pick. We track line movement, market pressure,
+            steam, resistance, and timing so you can see where the board looks clean, where it looks shaky, and when
+            the smartest move may be to pass. Start with a free week and see how the board reads before monthly access begins.
           </p>
           <div className="hero-actions">
             <Link className="primary-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
-            <Link className="ghost-button large" href="/sports" style={{ textDecoration: 'none' }}>Preview Sports Lobby</Link>
+            <Link className="ghost-button large" href="/sports" style={{ textDecoration: 'none' }}>Preview the Board</Link>
             <Link className="ghost-button large" href="/methodology" style={{ textDecoration: 'none' }}>How It Works</Link>
           </div>
         </div>
@@ -50,7 +50,7 @@ export default async function Home() {
             <span>Rank #1</span>
             <strong>LOCKED</strong>
           </div>
-          <p className="slip-note">Register to unlock full Top-8 rankings, true coin-flip markers, signal detail, and reason-coded refusals.</p>
+          <p className="slip-note">Create an account to unlock full rankings, signal notes, coin-flip markers, and reason-coded no-build alerts.</p>
         </aside>
       </section>
 
@@ -65,14 +65,14 @@ export default async function Home() {
       </section>
 
       <ContentBlock
-        eyebrow="Why members use it"
-        title="A research-first board for serious sports fans"
-        body="Most sports pages show scores, headlines, or isolated prices. Silvers Syndicate organizes the market itself: when each snapshot was captured, which books agreed, where resistance appeared, where a favorite strengthened, and when the safest answer is no build at all. The product is designed for people searching for sports market intelligence, parlay risk research, line movement tools, and a disciplined alternative to pick-selling content."
+        eyebrow="Why people use it"
+        title="A cleaner way to read the board"
+        body="Most sports sites show you the line. Silvers Syndicate helps explain the story behind the line: when the move started, whether books agreed, where resistance showed up, and which games are too messy to force. It is sports market intelligence in plain English, built for people who want structure before they make decisions."
         items={[
-          { title: 'T-snapshot timeline', detail: 'Track T1, T2, T3, T4, and safety-only T5 logic in one place.' },
-          { title: 'Signal vocabulary', detail: 'Steam, resistance, reversal, trap, chaos, and market anomaly labels explain what changed.' },
-          { title: 'Parlay structure', detail: 'See how anchor legs, coin-flip variables, and no-overlap builds are separated.' },
-          { title: 'Free week', detail: 'New members can explore the terminal for the first week before monthly access begins.' }
+          { title: 'Follow the timeline', detail: 'See how the market changes from early snapshot to later confirmation windows.' },
+          { title: 'Read the pressure', detail: 'Steam, resistance, reversal, trap, chaos, and anomaly labels make movement easier to understand.' },
+          { title: 'Separate strong from shaky', detail: 'Anchor legs, coin-flip variables, and no-overlap builds are kept in their own lanes.' },
+          { title: 'Try it first', detail: 'Your first week is free, so you can see the workflow before committing.' }
         ]}
       />
 
@@ -80,7 +80,7 @@ export default async function Home() {
         <div className="panel-header">
           <div>
             <p className="eyebrow">Sports Coverage</p>
-            <h3>Pages built for every major board and niche market</h3>
+            <h3>Every sport has its own board</h3>
           </div>
           <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>All Sports</Link>
         </div>
