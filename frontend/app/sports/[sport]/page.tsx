@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
 import { GameCard } from '@/components/GameCard';
-import { getSportBySlug, sports } from '@/lib/sports';
+import { getSportBySlug, getSportSlugForLeague, sports } from '@/lib/sports';
 
 export function generateStaticParams() {
   return sports.map((sport) => ({ sport: sport.slug }));
@@ -14,8 +14,7 @@ export default async function SportPage({ params }: { params: { sport: string } 
   if (!sport) notFound();
 
   const { games, rankings, apiStatus, apiDetail } = await getApiSnapshot();
-  const sportGames = games.filter((game) => game.league.toLowerCase() === sport.slug);
-  const visibleGames = sportGames.length ? sportGames : games.filter((game) => game.league === sport.label);
+  const visibleGames = games.filter((game) => getSportSlugForLeague(game.league) === sport.slug);
 
   return (
     <main className="shell">
@@ -43,7 +42,7 @@ export default async function SportPage({ params }: { params: { sport: string } 
             {visibleGames.length ? visibleGames.map((game) => <GameCard game={game} key={game.id} />) : (
               <article className="game-card">
                 <h4>{sport.label} data pipeline ready</h4>
-                <p className="movement">When the backend returns {sport.label} games, this page will populate automatically with game cards, signals, and links to detail pages.</p>
+                <p className="movement">When the backend returns {sport.label} games or matches, this page will populate automatically with cards, signals, and links to detail pages.</p>
               </article>
             )}
           </div>
