@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { ComplianceFooter } from '@/components/ComplianceFooter';
 import './globals.css';
 import './home-visual.css';
+import './auth.css';
 
 const siteUrl = 'https://silverssyndicate.app';
 
