@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { clearMemberSession, getMemberSession, MemberSession } from '@/lib/memberSession';
+import { TeamJerseyBadge } from '@/components/SportVisuals';
 
 function formatDate(value?: string) {
   if (!value) return 'Pending live billing';
@@ -21,6 +22,7 @@ export function AccountWorkspace() {
       <>
         <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
           <p className="eyebrow blue">Member workspace</p>
+          <TeamJerseyBadge abbr="SS" tone="blue" number="00" />
           <h2>You are not signed in yet.</h2>
           <p className="hero-copy">Log in to open your market board, saved sports, and free-week access.</p>
           <div className="hero-actions">
@@ -36,6 +38,11 @@ export function AccountWorkspace() {
     <>
       <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
         <p className="eyebrow blue">Member workspace</p>
+        <div className="team-badge-row" style={{ marginTop: 10 }}>
+          <TeamJerseyBadge abbr="PRO" tone="gold" number="79" />
+          <TeamJerseyBadge abbr="BUF" tone="blue" number="17" />
+          <TeamJerseyBadge abbr="MIA" tone="teal" number="10" />
+        </div>
         <h2>Welcome back.</h2>
         <p className="hero-copy">You are signed in as {session.email}. Open the sports board, test a pick, or review your plan access.</p>
         <div className="hero-actions">
@@ -54,10 +61,10 @@ export function AccountWorkspace() {
         </div>
       </section>
       <section className="status-row">
-        <article className="status-card"><span>Status</span><strong>Signed in</strong><p>Frontend member session is active for testing.</p></article>
-        <article className="status-card"><span>Plan</span><strong>{session.plan}</strong><p>{session.plan === 'Pro' ? 'Advanced market and build tools.' : 'Core market board access.'}</p></article>
-        <article className="status-card"><span>Free Week Ends</span><strong>{formatDate(session.freeWeekEndsAt)}</strong><p>The live billing provider will enforce the real renewal date.</p></article>
-        <article className="status-card"><span>Saved Sports</span><strong>11</strong><p>NFL, CFB, NBA, NCAAM, NHL, MLB, Tennis, Soccer, Darts, Lacrosse, Table Tennis.</p></article>
+        <article className="status-card"><TeamJerseyBadge abbr="IN" tone="green" number="1" /><span>Status</span><strong>Signed in</strong><p>Frontend member session is active for testing.</p></article>
+        <article className="status-card"><TeamJerseyBadge abbr={session.plan.toUpperCase()} tone={session.plan === 'Pro' ? 'gold' : 'blue'} number={session.plan === 'Pro' ? '79' : '35'} /><span>Plan</span><strong>{session.plan}</strong><p>{session.plan === 'Pro' ? 'Advanced market and build tools.' : 'Core market board access.'}</p></article>
+        <article className="status-card"><TeamJerseyBadge abbr="FW" tone="teal" number="7" /><span>Free Week Ends</span><strong>{formatDate(session.freeWeekEndsAt)}</strong><p>The live billing provider will enforce the real renewal date.</p></article>
+        <article className="status-card"><TeamJerseyBadge abbr="SPT" tone="mint" number="11" /><span>Saved Sports</span><strong>11</strong><p>NFL, CFB, NBA, NCAAM, NHL, MLB, Tennis, Soccer, Darts, Lacrosse, Table Tennis.</p></article>
       </section>
       <section className="content-grid" style={{ marginTop: 20 }}>
         <article className="panel">
