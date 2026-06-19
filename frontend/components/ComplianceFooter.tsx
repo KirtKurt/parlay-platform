@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import '../app/footer.css';
 
 export function ComplianceFooter() {
   return (
