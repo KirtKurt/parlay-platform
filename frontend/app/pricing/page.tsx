@@ -8,8 +8,11 @@ export default function PricingPage() {
       <AppHeader title="Pricing" />
       <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
         <p className="eyebrow blue">First week free</p>
-        <h2>Choose your Silvers Syndicate access level.</h2>
-        <p className="hero-copy">Start with seven days of free launch access. Core is built for daily slate research. Pro is built for deeper no-overlap construction, watchlists, and advanced volatility review.</p>
+        <h2>Start with a free week. Keep the plan that fits how you follow sports.</h2>
+        <p className="hero-copy">
+          Core is built for everyday slate research. Pro is for members who want more depth, more sports coverage,
+          stronger no-overlap tools, and a closer look at volatility. No complicated menu. Just two clear options.
+        </p>
         <div className="hero-actions">
           <Link className="primary-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
           <Link className="ghost-button large" href="/methodology" style={{ textDecoration: 'none' }}>How it works</Link>
@@ -21,9 +24,9 @@ export default function PricingPage() {
           <article className="status-card" key={plan.id}>
             <span>{plan.name}</span>
             <strong>{plan.price}/mo</strong>
-            <p>{plan.description} Includes the first week free for new launch members.</p>
+            <p>{plan.description} New members get the first week free.</p>
             <details style={{ marginTop: 16, borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 14 }}>
-              <summary style={{ cursor: 'pointer', color: '#20f29f', fontWeight: 900 }}>View included features</summary>
+              <summary style={{ cursor: 'pointer', color: '#20f29f', fontWeight: 900 }}>What’s included</summary>
               <ul style={{ margin: '14px 0 0', paddingLeft: 18, color: '#96a4bd', lineHeight: 1.7 }}>
                 {plan.features.map((feature) => <li key={feature}>{feature}</li>)}
               </ul>
@@ -35,7 +38,11 @@ export default function PricingPage() {
 
       <section className="glass-card" style={{ marginTop: 22, padding: 22 }}>
         <details open>
-          <summary style={{ cursor: 'pointer', color: '#20f29f', fontWeight: 900, fontSize: '1rem' }}>Compare Core vs Pro features</summary>
+          <summary style={{ cursor: 'pointer', color: '#20f29f', fontWeight: 900, fontSize: '1rem' }}>Compare Core and Pro</summary>
+          <p style={{ color: '#96a4bd', marginTop: 12, maxWidth: 760 }}>
+            Core gives you the main market board and daily research flow. Pro is for members who want the deeper workflow: more alerts,
+            more sports, stronger build tools, and better review support before locking in a slate.
+          </p>
           <div style={{ overflowX: 'auto', marginTop: 18 }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 680 }}>
               <thead>
