@@ -11,9 +11,9 @@ Parameters:
 
 Globals:
   Function:
-    Timeout: 30
+    Timeout: 60
     Runtime: python3.11
-    MemorySize: 512
+    MemorySize: 768
     Architectures:
       - x86_64
     Environment:
@@ -22,7 +22,9 @@ Globals:
         ODDS_API_KEY: !Ref OddsApiKey
         GAMES_TABLE: !Ref SilversGamesTable
         SNAPSHOTS_TABLE: !Ref SilversSnapshotsTable
+        GAME_STATUS_TABLE: !Ref SilversGameStatusTable
         PARLAY_BUILDS_TABLE: !Ref SilversParlayBuildsTable
+        AUDIT_EVENTS_TABLE: !Ref SilversAuditEventsTable
         INGESTION_RUNS_TABLE: !Ref SilversIngestionRunsTable
         ODDS_REGIONS: us
         ODDS_MARKETS: h2h,spreads,totals
@@ -79,6 +81,32 @@ Resources:
           Projection:
             ProjectionType: ALL
 
+  SilversGameStatusTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: game_id
+          AttributeType: S
+        - AttributeName: status_captured_at
+          AttributeType: S
+        - AttributeName: sport
+          AttributeType: S
+      KeySchema:
+        - AttributeName: game_id
+          KeyType: HASH
+        - AttributeName: status_captured_at
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: SportStatusIndex
+          KeySchema:
+            - AttributeName: sport
+              KeyType: HASH
+            - AttributeName: status_captured_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
   SilversParlayBuildsTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -89,6 +117,30 @@ Resources:
       KeySchema:
         - AttributeName: build_id
           KeyType: HASH
+
+  SilversAuditEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: audit_id
+          AttributeType: S
+        - AttributeName: entity_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: audit_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: EntityAuditIndex
+          KeySchema:
+            - AttributeName: entity_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
 
   SilversIngestionRunsTable:
     Type: AWS::DynamoDB::Table
@@ -112,7 +164,11 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref SilversSnapshotsTable
         - DynamoDBCrudPolicy:
+            TableName: !Ref SilversGameStatusTable
+        - DynamoDBCrudPolicy:
             TableName: !Ref SilversParlayBuildsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SilversAuditEventsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref SilversIngestionRunsTable
       Events:
@@ -121,6 +177,11 @@ Resources:
           Properties:
             Path: /v1/health
             Method: GET
+        ManualIngest:
+          Type: HttpApi
+          Properties:
+            Path: /v1/ingest/odds
+            Method: POST
         TodaySlate:
           Type: HttpApi
           Properties:
@@ -136,6 +197,31 @@ Resources:
           Properties:
             Path: /v1/games/{game_id}/line-movement
             Method: GET
+        GameStatus:
+          Type: HttpApi
+          Properties:
+            Path: /v1/games/{game_id}/status
+            Method: GET
+        GameAudit:
+          Type: HttpApi
+          Properties:
+            Path: /v1/audit/games
+            Method: GET
+        RecordGameResult:
+          Type: HttpApi
+          Properties:
+            Path: /v1/audit/games/result
+            Method: POST
+        ParlayAudit:
+          Type: HttpApi
+          Properties:
+            Path: /v1/audit/parlays
+            Method: GET
+        RecordParlayResult:
+          Type: HttpApi
+          Properties:
+            Path: /v1/audit/parlays/result
+            Method: POST
         BuildParlay:
           Type: HttpApi
           Properties:
@@ -146,6 +232,13 @@ Resources:
           Properties:
             Path: /v1/parlays/{build_id}
             Method: GET
+        FifteenMinuteOddsPull:
+          Type: Schedule
+          Properties:
+            Name: silvers-syndicate-15-minute-pull
+            Description: Continuous odds capture heartbeat every 15 minutes.
+            Schedule: rate(15 minutes)
+            Input: '{"source":"silvers.scheduler","pullLabel":"HOT_15"}'
         T1OddsPull:
           Type: Schedule
           Properties:
@@ -178,3 +271,9 @@ Outputs:
   SnapshotsTableName:
     Description: DynamoDB snapshots table
     Value: !Ref SilversSnapshotsTable
+  GameStatusTableName:
+    Description: DynamoDB game status table
+    Value: !Ref SilversGameStatusTable
+  AuditEventsTableName:
+    Description: DynamoDB audit events table
+    Value: !Ref SilversAuditEventsTable
