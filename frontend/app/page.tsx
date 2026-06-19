@@ -1,38 +1,30 @@
+import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
-import { SignalPill } from '@/components/SignalPill';
+import { AppHeader } from '@/components/AppHeader';
+import { GameCard } from '@/components/GameCard';
+import { RankingCard } from '@/components/RankingCard';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
+import { sports } from '@/lib/sports';
 
 export default async function Home() {
   const { games, rankings, statusCards, lineMovement, apiStatus, apiDetail } = await getApiSnapshot();
 
   return (
     <main className="shell">
-      <nav className="topbar">
-        <div className="brand-block">
-          <div className="brand-mark">SS</div>
-          <div>
-            <p className="eyebrow">Silvers Syndicate</p>
-            <h1>Sportsbook-style parlay intelligence</h1>
-          </div>
-        </div>
-        <div className="nav-actions">
-          <span className={`api-badge api-${apiStatus.toLowerCase()}`} title={apiDetail}>{apiStatus}</span>
-          <button className="ghost-button">Today</button>
-          <button className="primary-button">Build Parlay</button>
-        </div>
-      </nav>
+      <AppHeader apiStatus={apiStatus} apiDetail={apiDetail} />
 
       <section className="hero-grid">
         <div className="hero-card glass-card">
-          <p className="eyebrow blue">Market Intelligence Engine</p>
-          <h2>Stop guessing. Check steam, resistance, traps, and coin-flip risk before you build.</h2>
+          <p className="eyebrow blue">Market Intelligence Terminal</p>
+          <h2>One lobby for every sport, every slate, every game, every parlay risk decision.</h2>
           <p className="hero-copy">
-            A mobile-first sportsbook feel with our own signal discipline: T-snapshots, 15-minute hot pulls,
-            multi-book confirmation, natural structure, Top-3 containment, and refusal when the data is not safe enough.
+            Silvers Syndicate is moving from a single demo board into a full sports market terminal: sport pages,
+            game detail pages, T-snapshot timelines, 15-minute line movement, Top-3 containment logic, and refusal when the data is not safe enough.
           </p>
           <div className="hero-actions">
-            <button className="primary-button large">Run Demo Build</button>
-            <button className="ghost-button large">View Slate</button>
+            <Link className="primary-button large" href="/parlays/build" style={{ textDecoration: 'none' }}>Build Parlay</Link>
+            <Link className="ghost-button large" href="/sports" style={{ textDecoration: 'none' }}>View Sports Lobby</Link>
+            <Link className="ghost-button large" href={`/game/${games[0]?.id ?? 'nfl-001'}`} style={{ textDecoration: 'none' }}>Open Game Detail</Link>
           </div>
         </div>
 
@@ -65,6 +57,21 @@ export default async function Home() {
         ))}
       </section>
 
+      <section className="panel" style={{ marginBottom: 20 }}>
+        <div className="panel-header">
+          <div>
+            <p className="eyebrow">Sport Pages</p>
+            <h3>Expandable market boards</h3>
+          </div>
+          <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>All Sports</Link>
+        </div>
+        <div className="league-tabs">
+          {sports.map((sport) => (
+            <Link className="ghost-button" href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none' }}>{sport.label}</Link>
+          ))}
+        </div>
+      </section>
+
       <section className="content-grid">
         <div className="panel slate-panel">
           <div className="panel-header">
@@ -73,46 +80,14 @@ export default async function Home() {
               <h3>Eligible games</h3>
             </div>
             <div className="league-tabs">
-              <span className="active">NFL</span>
-              <span>CFB</span>
-              <span>NBA</span>
-              <span>NHL</span>
+              {sports.slice(0, 4).map((sport, index) => (
+                <Link className={index === 0 ? 'active' : ''} href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none' }}>{sport.label}</Link>
+              ))}
             </div>
           </div>
 
           <div className="game-list">
-            {games.map((game) => (
-              <article className="game-card" key={game.id}>
-                <div className="game-topline">
-                  <span className="league-chip">{game.league}</span>
-                  <span>{game.start}</span>
-                  <span className={`data-status ${game.dataStatus.toLowerCase()}`}>{game.dataStatus}</span>
-                </div>
-                <h4>{game.matchup}</h4>
-                <div className="market-row">
-                  <div>
-                    <span>Favorite</span>
-                    <strong>{game.favorite}</strong>
-                    <b>{game.favoriteMl}</b>
-                  </div>
-                  <div>
-                    <span>Underdog</span>
-                    <strong>{game.underdog}</strong>
-                    <b>{game.underdogMl > 0 ? `+${game.underdogMl}` : game.underdogMl}</b>
-                  </div>
-                  <div>
-                    <span>Total</span>
-                    <strong>O/U</strong>
-                    <b>{game.total}</b>
-                  </div>
-                </div>
-                <p className="movement">{game.movement}</p>
-                <div className="signal-row">
-                  {game.signals.map((signal) => <SignalPill signal={signal} key={`${game.id}-${signal}`} />)}
-                </div>
-                {game.marketNote && <p className="movement">{game.marketNote}</p>}
-              </article>
-            ))}
+            {games.map((game) => <GameCard game={game} key={game.id} />)}
           </div>
         </div>
 
@@ -124,22 +99,7 @@ export default async function Home() {
             </div>
           </div>
           <div className="rank-list">
-            {rankings.map((ranking) => (
-              <article className={`rank-card ${ranking.topZone ? 'top-zone' : ''}`} key={ranking.rank}>
-                <div className="rank-head">
-                  <span>Rank #{ranking.rank}</span>
-                  {ranking.topZone && <b>TOP-3</b>}
-                </div>
-                <h4>{ranking.legs.join(' × ')}</h4>
-                <div className="rank-meta">
-                  <span>{ranking.american}</span>
-                  <span>{ranking.implied}</span>
-                  <span>{ranking.structure}</span>
-                </div>
-                <p>{ranking.note}</p>
-                <div className={`risk risk-${ranking.risk.toLowerCase()}`}>{ranking.risk} RISK</div>
-              </article>
-            ))}
+            {rankings.map((ranking) => <RankingCard ranking={ranking} key={ranking.rank} />)}
           </div>
         </aside>
       </section>
