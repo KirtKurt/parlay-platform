@@ -1,0 +1,57 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Silvers Syndicate backend API
+
+Globals:
+  Function:
+    Timeout: 10
+    Runtime: python3.11
+    MemorySize: 256
+    Architectures:
+      - x86_64
+    Environment:
+      Variables:
+        APP_NAME: silvers-syndicate
+
+Resources:
+  SilversApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: app.lambda_handler
+      Events:
+        Health:
+          Type: HttpApi
+          Properties:
+            Path: /v1/health
+            Method: GET
+        TodaySlate:
+          Type: HttpApi
+          Properties:
+            Path: /v1/slates/today
+            Method: GET
+        GameSnapshots:
+          Type: HttpApi
+          Properties:
+            Path: /v1/games/{game_id}/snapshots
+            Method: GET
+        GameLineMovement:
+          Type: HttpApi
+          Properties:
+            Path: /v1/games/{game_id}/line-movement
+            Method: GET
+        BuildParlay:
+          Type: HttpApi
+          Properties:
+            Path: /v1/parlays/build
+            Method: POST
+        GetParlay:
+          Type: HttpApi
+          Properties:
+            Path: /v1/parlays/{build_id}
+            Method: GET
+
+Outputs:
+  ApiUrl:
+    Description: Base URL for the Silvers Syndicate API
+    Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
