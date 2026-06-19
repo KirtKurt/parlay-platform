@@ -2,23 +2,119 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 Description: Silvers Syndicate backend API
 
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: The Odds API key used by scheduled ingestion.
+
 Globals:
   Function:
-    Timeout: 10
+    Timeout: 30
     Runtime: python3.11
-    MemorySize: 256
+    MemorySize: 512
     Architectures:
       - x86_64
     Environment:
       Variables:
         APP_NAME: silvers-syndicate
+        ODDS_API_KEY: !Ref OddsApiKey
+        GAMES_TABLE: !Ref SilversGamesTable
+        SNAPSHOTS_TABLE: !Ref SilversSnapshotsTable
+        PARLAY_BUILDS_TABLE: !Ref SilversParlayBuildsTable
+        INGESTION_RUNS_TABLE: !Ref SilversIngestionRunsTable
+        ODDS_REGIONS: us
+        ODDS_MARKETS: h2h,spreads,totals
+        ODDS_BOOKMAKERS: fanduel,draftkings,fanatics
 
 Resources:
+  SilversGamesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: game_id
+          AttributeType: S
+        - AttributeName: sport
+          AttributeType: S
+        - AttributeName: commence_date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: game_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: SportDateIndex
+          KeySchema:
+            - AttributeName: sport
+              KeyType: HASH
+            - AttributeName: commence_date
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  SilversSnapshotsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: game_id
+          AttributeType: S
+        - AttributeName: captured_at
+          AttributeType: S
+        - AttributeName: sport
+          AttributeType: S
+      KeySchema:
+        - AttributeName: game_id
+          KeyType: HASH
+        - AttributeName: captured_at
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: SportCapturedAtIndex
+          KeySchema:
+            - AttributeName: sport
+              KeyType: HASH
+            - AttributeName: captured_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  SilversParlayBuildsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: build_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: build_id
+          KeyType: HASH
+
+  SilversIngestionRunsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: run_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: run_id
+          KeyType: HASH
+
   SilversApiFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/
       Handler: app.lambda_handler
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SilversGamesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SilversSnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SilversParlayBuildsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SilversIngestionRunsTable
       Events:
         Health:
           Type: HttpApi
@@ -50,8 +146,35 @@ Resources:
           Properties:
             Path: /v1/parlays/{build_id}
             Method: GET
+        T1OddsPull:
+          Type: Schedule
+          Properties:
+            Name: silvers-syndicate-t1-pull
+            Description: T1 base market capture, 1:00 AM ET during daylight time.
+            Schedule: cron(0 5 * * ? *)
+            Input: '{"source":"silvers.scheduler","pullLabel":"T1"}'
+        T2OddsPull:
+          Type: Schedule
+          Properties:
+            Name: silvers-syndicate-t2-pull
+            Description: T2 market capture, 9:00 AM ET during daylight time.
+            Schedule: cron(0 13 * * ? *)
+            Input: '{"source":"silvers.scheduler","pullLabel":"T2"}'
+        T3OddsPull:
+          Type: Schedule
+          Properties:
+            Name: silvers-syndicate-t3-pull
+            Description: T3 market capture, 12:30 PM ET during daylight time.
+            Schedule: cron(30 16 * * ? *)
+            Input: '{"source":"silvers.scheduler","pullLabel":"T3"}'
 
 Outputs:
   ApiUrl:
     Description: Base URL for the Silvers Syndicate API
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
+  GamesTableName:
+    Description: DynamoDB games table
+    Value: !Ref SilversGamesTable
+  SnapshotsTableName:
+    Description: DynamoDB snapshots table
+    Value: !Ref SilversSnapshotsTable
