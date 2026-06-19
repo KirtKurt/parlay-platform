@@ -1,7 +1,7 @@
 import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
-import { sports } from '@/lib/sports';
+import { getSportSlugForLeague, sports } from '@/lib/sports';
 
 export default async function SportsPage() {
   const { games, apiStatus, apiDetail } = await getApiSnapshot();
@@ -20,7 +20,7 @@ export default async function SportsPage() {
 
       <section className="status-row">
         {sports.slice(0, 4).map((sport) => {
-          const count = games.filter((game) => game.league.toLowerCase() === sport.slug).length;
+          const count = games.filter((game) => getSportSlugForLeague(game.league) === sport.slug).length;
           return (
             <Link className="status-card" href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none', color: 'inherit' }}>
               <span>{sport.label}</span>
@@ -32,8 +32,21 @@ export default async function SportsPage() {
       </section>
 
       <section className="status-row">
-        {sports.slice(4).map((sport) => {
-          const count = games.filter((game) => game.league.toLowerCase() === sport.slug).length;
+        {sports.slice(4, 8).map((sport) => {
+          const count = games.filter((game) => getSportSlugForLeague(game.league) === sport.slug).length;
+          return (
+            <Link className="status-card" href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none', color: 'inherit' }}>
+              <span>{sport.label}</span>
+              <strong>{count || 'Ready'}</strong>
+              <p>{sport.description}</p>
+            </Link>
+          );
+        })}
+      </section>
+
+      <section className="status-row">
+        {sports.slice(8).map((sport) => {
+          const count = games.filter((game) => getSportSlugForLeague(game.league) === sport.slug).length;
           return (
             <Link className="status-card" href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none', color: 'inherit' }}>
               <span>{sport.label}</span>
