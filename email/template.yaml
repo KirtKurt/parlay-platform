@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Silvers Syndicate AWS email foundation using Amazon SES.
+
+Parameters:
+  DomainName:
+    Type: String
+    Default: silverssyndicate.app
+    Description: Domain to verify for Silvers Syndicate email sending.
+  MailFromSubdomain:
+    Type: String
+    Default: mail
+    Description: Subdomain used for SES MAIL FROM, for example mail.silverssyndicate.app.
+  ConfigurationSetName:
+    Type: String
+    Default: silvers-syndicate-email
+    Description: SES configuration set name for app-generated email.
+
+Resources:
+  SilversEmailConfigurationSet:
+    Type: AWS::SES::ConfigurationSet
+    Properties:
+      Name: !Ref ConfigurationSetName
+
+  SilversDomainIdentity:
+    Type: AWS::SES::EmailIdentity
+    Properties:
+      EmailIdentity: !Ref DomainName
+      ConfigurationSetAttributes:
+        ConfigurationSetName: !Ref SilversEmailConfigurationSet
+      DkimAttributes:
+        SigningEnabled: true
+      FeedbackAttributes:
+        EmailForwardingEnabled: true
+      MailFromAttributes:
+        BehaviorOnMxFailure: USE_DEFAULT_VALUE
+        MailFromDomain: !Sub "${MailFromSubdomain}.${DomainName}"
+
+  WelcomeEmailTemplate:
+    Type: AWS::SES::Template
+    Properties:
+      Template:
+        TemplateName: silvers-welcome
+        SubjectPart: Welcome to Silvers Syndicate
+        TextPart: "Welcome to Silvers Syndicate. Your first week is active. Sign in to review market boards, saved games, and member access."
+        HtmlPart: "<h1>Welcome to Silvers Syndicate</h1><p>Your first week is active. Sign in to review market boards, saved games, and member access.</p>"
+
+  PasswordResetEmailTemplate:
+    Type: AWS::SES::Template
+    Properties:
+      Template:
+        TemplateName: silvers-password-reset
+        SubjectPart: Reset your Silvers Syndicate password
+        TextPart: "Use the secure reset link in this email to reset your Silvers Syndicate password. If you did not request this, ignore this email."
+        HtmlPart: "<h1>Password reset</h1><p>Use the secure reset link in this email to reset your Silvers Syndicate password.</p><p>If you did not request this, ignore this email.</p>"
+
+  BillingEmailTemplate:
+    Type: AWS::SES::Template
+    Properties:
+      Template:
+        TemplateName: silvers-billing-notice
+        SubjectPart: Silvers Syndicate billing notice
+        TextPart: "This is a Silvers Syndicate billing notice for your membership. Review your account for plan and billing details."
+        HtmlPart: "<h1>Billing notice</h1><p>This is a Silvers Syndicate billing notice for your membership. Review your account for plan and billing details.</p>"
+
+  AlertEmailTemplate:
+    Type: AWS::SES::Template
+    Properties:
+      Template:
+        TemplateName: silvers-market-alert
+        SubjectPart: Silvers Syndicate market alert
+        TextPart: "A watched game or market board changed. Sign in to review the latest market status and risk notes."
+        HtmlPart: "<h1>Market alert</h1><p>A watched game or market board changed. Sign in to review the latest market status and risk notes.</p>"
+
+Outputs:
+  EmailDomainIdentity:
+    Description: SES email identity created for the domain.
+    Value: !Ref SilversDomainIdentity
+  MailFromDomain:
+    Description: MAIL FROM domain to add to DNS when SES provides verification records.
+    Value: !Sub "${MailFromSubdomain}.${DomainName}"
+  ConfigurationSet:
+    Description: SES configuration set for application emails.
+    Value: !Ref SilversEmailConfigurationSet
+  PrimaryAddressesToCreateInWorkMail:
+    Description: Recommended human inboxes to create in AWS WorkMail.
+    Value: !Sub "kurt@${DomainName}, support@${DomainName}, legal@${DomainName}, billing@${DomainName}, no-reply@${DomainName}"
