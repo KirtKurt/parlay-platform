@@ -1,0 +1,56 @@
+name: Deploy Silvers Email
+
+on:
+  workflow_dispatch:
+    inputs:
+      domain_name:
+        description: Domain to verify in SES
+        required: true
+        default: silverssyndicate.app
+      mail_from_subdomain:
+        description: MAIL FROM subdomain
+        required: true
+        default: mail
+  push:
+    branches:
+      - main
+    paths:
+      - email/**
+      - .github/workflows/deploy-silvers-email.yml
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-email:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Deploy SES email stack
+        run: >-
+          aws cloudformation deploy
+          --template-file email/template.yaml
+          --stack-name silvers-syndicate-email
+          --region us-east-1
+          --no-fail-on-empty-changeset
+          --parameter-overrides
+          DomainName="${{ github.event.inputs.domain_name || 'silverssyndicate.app' }}"
+          MailFromSubdomain="${{ github.event.inputs.mail_from_subdomain || 'mail' }}"
+          ConfigurationSetName="silvers-syndicate-email"
+
+      - name: Show stack outputs
+        run: >-
+          aws cloudformation describe-stacks
+          --stack-name silvers-syndicate-email
+          --region us-east-1
+          --query "Stacks[0].Outputs"
+          --output table
