@@ -1,44 +1,29 @@
-import Link from 'next/link';
-import { AppHeader } from '@/components/AppHeader';
-import { RegisterForm } from '@/components/RegisterForm';
-import { ContentBlock } from '@/components/ContentBlock';
-import { SportIconStrip, TeamJerseyBadge } from '@/components/SportVisuals';
+import type { Metadata } from 'next';
+import { InqsiSeoPage } from '@/components/InqsiSeoPage';
+
+export const metadata: Metadata = {
+  title: 'Create Account',
+  description: 'Create an InQsi account and start the 5-day free promo when authentication and billing providers are connected.',
+  alternates: { canonical: '/register' }
+};
 
 export default function RegisterPage() {
   return (
-    <main className="shell auth-shell">
-      <AppHeader title="Create account" />
-      <section className="auth-top-grid register-top-grid">
-        <RegisterForm />
-        <div className="hero-card glass-card auth-side-card" style={{ minHeight: 0 }}>
-          <p className="eyebrow blue">First week free · Pro selected</p>
-          <h2>Create your account and start reading the board.</h2>
-          <p className="hero-copy">
-            Set up your profile, choose the sport you care about most, and start your free week with Pro selected by default.
-          </p>
-          <div className="team-badge-row" style={{ marginTop: 14 }}>
-            <TeamJerseyBadge abbr="PRO" tone="gold" number="79" />
-            <TeamJerseyBadge abbr="BOS" tone="green" number="0" />
-            <TeamJerseyBadge abbr="LAL" tone="gold" number="23" />
-          </div>
-          <div className="hero-actions">
-            <Link className="ghost-button large" href="/pricing" style={{ textDecoration: 'none' }}>Compare plans</Link>
-            <Link className="ghost-button large" href="/login" style={{ textDecoration: 'none' }}>Already a member?</Link>
-          </div>
-        </div>
-      </section>
-      <SportIconStrip compact />
-      <ContentBlock
-        eyebrow="What happens after signup"
-        title="Your preview turns into a real workspace"
-        body="Once your account is created, the public preview becomes a more useful dashboard. You can come back to the sports you follow, see member-only board sections, and keep the workflow organized around the way you actually watch the market."
-        items={[
-          { title: 'Your sports come first', detail: 'Pick a primary sport so the first board feels relevant right away.' },
-          { title: 'Free launch week', detail: 'Use the product for the first week before monthly access begins.' },
-          { title: 'Clear acknowledgments', detail: 'Age, location, and informational-use acknowledgments keep access responsible.' },
-          { title: 'Ready for billing later', detail: 'The flow is prepared for your provider-neutral monthly billing setup.' }
-        ]}
-      />
-    </main>
+    <InqsiSeoPage
+      path="/register"
+      eyebrow="Create account"
+      title="Start your InQsi workspace."
+      intro="The account flow is designed for Google, Apple, and email access with a 5-day free promo. Until provider keys are connected, the page stays in Working on it mode."
+      sections={[
+        { title: 'Google access', copy: 'Visual flow is ready. OAuth keys still need to be connected.' },
+        { title: 'Apple access', copy: 'Visual flow is ready. Apple client settings still need to be connected.' },
+        { title: 'Email access', copy: 'Email auth remains disabled until a provider is selected.' },
+        { title: 'Subscription gate', copy: 'Plan logic is prepared and waits on billing keys.' }
+      ]}
+      faqs={[
+        { question: 'Can users create accounts now?', answer: 'The interface is ready, but provider keys must be connected before live sign-up.' },
+        { question: 'Is the 5-day promo included?', answer: 'Yes. The product flow is prepared around a 5-day free promo.' }
+      ]}
+    />
   );
 }
