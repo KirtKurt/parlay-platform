@@ -19,6 +19,8 @@ const routes = [
   '/game-leans',
   '/best-lines',
   '/parlay-scanner',
+  '/ai-slip-scanner',
+  '/3-leg-parlay-guide',
   '/live-market',
   '/performance',
   '/alerts',
@@ -35,7 +37,10 @@ const routes = [
   '/legal/site-terms',
   '/legal/safe-use',
   '/legal/accessibility',
-  '/contact'
+  '/contact',
+  '/u/inqsi-member',
+  '/u/buffalo-market',
+  '/u/three-leg-only'
 ];
 
 export default function sitemap(): MetadataRoute.Sitemap {
@@ -43,6 +48,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     url: `${baseUrl}${route}`,
     lastModified: new Date(),
     changeFrequency: route === '' || route === '/picks-audit' || route === '/game-leans' || route === '/live-market' ? 'daily' : 'weekly',
-    priority: route === '' ? 1 : route === '/picks-audit' ? 0.95 : route === '/game-leans' ? 0.9 : 0.75
+    priority: route === '' ? 1 : route === '/picks-audit' ? 0.95 : route === '/game-leans' ? 0.9 : route === '/ai-slip-scanner' || route === '/3-leg-parlay-guide' ? 0.88 : 0.75
   }));
 }
