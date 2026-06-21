@@ -45,6 +45,22 @@ export type AdminFeatureFlag = {
   note: string;
 };
 
+export type AdminTrafficSource = {
+  source: string;
+  visits: number;
+  trials: number;
+  paid: number;
+  creator: string;
+};
+
+export type AdminSupportItem = {
+  id: string;
+  type: string;
+  status: 'open' | 'watching' | 'closed';
+  member: string;
+  note: string;
+};
+
 export const adminMembers: AdminMember[] = [
   {
     id: 'mem_001',
@@ -103,6 +119,17 @@ export const adminSeoPages: AdminSeoPage[] = [
   { path: '/line-movement-guide', status: 'live', indexable: true, lastUpdated: '2026-06-21' },
   { path: '/compare/inqsi-vs-pick-sellers', status: 'live', indexable: true, lastUpdated: '2026-06-21' },
   { path: '/u/inqsi-member', status: 'live', indexable: true, lastUpdated: '2026-06-21' }
+];
+
+export const adminTrafficSources: AdminTrafficSource[] = [
+  { source: 'organic search', visits: 128, trials: 9, paid: 1, creator: 'direct' },
+  { source: 'creator link', visits: 84, trials: 11, paid: 2, creator: 'creator-alpha' },
+  { source: 'direct', visits: 52, trials: 3, paid: 1, creator: 'direct' }
+];
+
+export const adminSupportItems: AdminSupportItem[] = [
+  { id: 'support_001', type: 'visibility', status: 'open', member: 'InQsi Member', note: 'Review public score-card visibility question.' },
+  { id: 'support_002', type: 'access', status: 'watching', member: 'Buffalo Market Read', note: 'Monitor member access and trial conversion.' }
 ];
 
 export const adminAuditEvents: AdminAuditEvent[] = [
