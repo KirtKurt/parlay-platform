@@ -37,7 +37,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         routed_event["httpMethod"] = method
         return ops_report.lambda_handler(routed_event, context)
 
-    if path.startswith("/v1/creators") or path.startswith("/v1/attribution") or path.startswith("/v1/memberships"):
+    if path.startswith("/v1/creators") or path.startswith("/v1/creator-reports") or path.startswith("/v1/attribution") or path.startswith("/v1/memberships"):
         routed_event = dict(event)
         routed_event["path"] = path
         routed_event["rawPath"] = path
