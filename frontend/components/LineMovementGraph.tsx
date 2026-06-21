@@ -1,9 +1,16 @@
 'use client';
 
 import { useMemo, useState } from 'react';
-import { lineMovement as fallbackLineMovement, type LineMovementPoint } from '@/lib/mockData';
+import { lineMovement as fallbackLineMovement } from '@/lib/mockData';
 
-type Point = LineMovementPoint;
+type Point = {
+  time: string;
+  bufMoneyline: number;
+  miaMoneyline: number;
+  milestone?: string;
+  signal?: string;
+};
+
 type SeriesKey = 'bufMoneyline' | 'miaMoneyline';
 
 const series: { key: SeriesKey; label: string }[] = [
