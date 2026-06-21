@@ -15,6 +15,12 @@ import {
   validateSlipLegCount
 } from '@/lib/inqsi-slip-scoring';
 
+const publicCards = [
+  { handle: 'inqsi-member', name: 'InQsi Member', week: 67, month: 63, isFollowed: true },
+  { handle: 'buffalo-market', name: 'Buffalo Market Read', week: 71, month: 58, isFollowed: false },
+  { handle: 'three-leg-only', name: 'Three Leg Only', week: 62, month: 66, isFollowed: false }
+];
+
 function VisibilityBadge({ visibility }: { visibility: SlipVisibility }) {
   return <span className="league-chip">{visibility === 'public' ? 'Public' : 'Private'}</span>;
 }
@@ -97,6 +103,7 @@ export function MySlipsScoresDashboard() {
   const publicCount = slips.filter((slip) => slip.visibility === 'public').length;
   const weekScore = accuracyWindows.find((window) => window.label === '1 week');
   const monthScore = accuracyWindows.find((window) => window.label === '1 month');
+  const leaderboardCards = [...publicCards].sort((a, b) => b.week - a.week);
 
   function setVisibility(id: string, visibility: SlipVisibility) {
     setSlips((current) => current.map((slip) => slip.id === id ? { ...slip, visibility } : slip));
@@ -127,7 +134,7 @@ export function MySlipsScoresDashboard() {
         <article className="panel">
           <div className="panel-header compact"><div><p className="eyebrow blue">Public profile card</p><h3>{publicProfileSnapshot.displayName}</h3></div></div>
           <p className="movement">@{publicProfileSnapshot.handle}</p>
-          <p className="movement">{publicProfileSnapshot.headline}</p>
+          <p className="movement">Shareable card link: inqsi.app/u/{publicProfileSnapshot.handle}</p>
           <p className="movement">The customer controls whether the public card shows 1-week and 1-month cumulative score percentages.</p>
           <div className="hero-actions" style={{ marginTop: 14 }}>
             <button className={showWeekScore ? 'primary-button large' : 'ghost-button large'} type="button" onClick={() => setShowWeekScore((current) => !current)}>Show 1 Week %</button>
@@ -142,13 +149,34 @@ export function MySlipsScoresDashboard() {
         </article>
 
         <aside className="panel">
-          <p className="eyebrow blue">Challenge-ready scoring model</p>
-          <h3>Build the foundation now. Turn on challenges later.</h3>
-          <p className="movement">Status: {challengeScoringModel.status}</p>
+          <p className="eyebrow blue">Followed card discovery</p>
+          <h3>Find public cards by handle.</h3>
+          <p className="movement">Use Followed Profiles, not Friends. Customers can find a public card by handle and decide whether to follow the score card. No comments, messages, or copy-slip action at launch.</p>
           <div className="game-list" style={{ marginTop: 14 }}>
-            {challengeScoringModel.rankingInputs.map((input) => <article className="game-card" key={input}><p className="movement">{input}</p></article>)}
+            {publicCards.map((card) => (
+              <article className="game-card" key={card.handle}>
+                <div className="game-topline"><span className="league-chip">@{card.handle}</span><span>{card.isFollowed ? 'Followed' : 'Available'}</span></div>
+                <h4>{card.name}</h4>
+                <p className="movement">1 week {card.week}% · 1 month {card.month}% · inqsi.app/u/{card.handle}</p>
+              </article>
+            ))}
           </div>
         </aside>
+      </section>
+
+      <section className="panel" style={{ marginTop: 20 }}>
+        <div className="panel-header compact"><div><p className="eyebrow blue">Leaderboard foundation</p><h3>Score-based, controlled, and no comments.</h3></div></div>
+        <p className="movement">Leaderboard should rank only public cards and only score windows the owner has chosen to show. Private slips stay excluded.</p>
+        <div className="game-list" style={{ marginTop: 14 }}>
+          {leaderboardCards.map((card, index) => (
+            <article className="game-card" key={card.handle}>
+              <div className="game-topline"><span className="league-chip">#{index + 1}</span><span>@{card.handle}</span></div>
+              <h4>{card.name}</h4>
+              <p className="movement">1 week {card.week}% · 1 month {card.month}%</p>
+            </article>
+          ))}
+        </div>
+        <div className="compliance-box" style={{ marginTop: 14 }}>Future challenge pages remain hidden for now. The scoring model exists, but no challenge route is exposed.</div>
       </section>
 
       <section style={{ marginTop: 20 }}>
