@@ -6,24 +6,24 @@ import { PaidPreviewGate } from '@/components/PaidPreviewGate';
 import { getApiSnapshot } from '@/lib/api';
 
 export const metadata: Metadata = {
-  title: 'Why Your Parlay Picks Fail | Silvers Syndicate Picks Audit',
+  title: 'Why Your Picks Go Wrong | InQsi Picks Audit',
   description:
-    'Run your picks through market movement, steam, resistance, trap risk, and weak-leg exposure before you lock in a parlay.',
+    'Run your picks through market movement, steam, resistance, risk signals, and weak-leg exposure before you lock in a parlay.',
   alternates: {
-    canonical: 'https://silverssyndicate.app/picks-audit'
+    canonical: 'https://inqsi.app/picks-audit'
   },
   openGraph: {
-    title: 'See why your picks might fail before you play them',
+    title: 'Find where your picks go wrong before you lock them in',
     description:
-      'Silvers Syndicate checks line movement, resistance, market pressure, and weak-leg exposure before you build a parlay.',
-    url: 'https://silverssyndicate.app/picks-audit',
-    siteName: 'Silvers Syndicate',
+      'InQsi checks line movement, resistance, market pressure, and weak-leg exposure before you build a parlay.',
+    url: 'https://inqsi.app/picks-audit',
+    siteName: 'InQsi',
     type: 'website'
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'See why your picks might fail',
-    description: 'A market-first picks audit for parlays, steam, resistance, and weak-leg risk.'
+    title: 'Find where your picks go wrong',
+    description: 'A market-first picks audit for parlays, resistance, and weak-leg risk.'
   }
 };
 
@@ -74,19 +74,19 @@ export default async function PicksAuditPage() {
 
       <section className="hero-grid">
         <div className="hero-card glass-card">
-          <p className="eyebrow red">First week free · picks audit</p>
-          <h2>See why your picks might not work before you lock them in.</h2>
+          <p className="eyebrow red">5 days free · picks audit</p>
+          <h2>Find where your picks go wrong before you lock them in.</h2>
           <p className="hero-copy">
             Most parlays look good before the games start. The problem usually shows up in the market: a line that moves
             the wrong way, a favorite taking resistance, a total that will not settle, or one weak leg hiding inside a
-            good-looking ticket. Silvers Syndicate is built to show you those problems first.
+            good-looking ticket. InQsi is built to show you those problems first.
           </p>
           <div className="hero-actions">
-            <Link className="primary-button large" href="/register?promo=free-week&source=picks-audit" style={{ textDecoration: 'none' }}>
+            <Link className="primary-button large" href="/register?promo=5-days&source=picks-audit" style={{ textDecoration: 'none' }}>
               Run Your Picks
             </Link>
             <Link className="ghost-button large" href="/pricing" style={{ textDecoration: 'none' }}>
-              First Week Free
+              5 Days Free
             </Link>
             <Link className="ghost-button large" href="/" style={{ textDecoration: 'none' }}>
               Main Home Page
@@ -130,7 +130,7 @@ export default async function PicksAuditPage() {
         <article className="status-card">
           <span>What we check</span>
           <strong>The pressure</strong>
-          <p>Line movement, steam, resistance, reversals, timing, and book disagreement.</p>
+          <p>Line movement, resistance, reversals, timing, and book disagreement.</p>
         </article>
         <article className="status-card">
           <span>The goal</span>
@@ -142,7 +142,7 @@ export default async function PicksAuditPage() {
       <ContentBlock
         eyebrow="The challenge"
         title="The market does not care how good your pick feels."
-        body="A good story is not the same thing as a clean market. Silvers Syndicate looks for the places where your pick is being pushed, resisted, or contradicted by the board. Sometimes the answer is confidence. Sometimes the answer is caution. Sometimes the answer is do not force it."
+        body="A good story is not the same thing as a clean market. InQsi looks for the places where your pick is being pushed, resisted, or contradicted by the board. Sometimes the answer is confidence. Sometimes the answer is caution. Sometimes the answer is do not force it."
         items={auditChecks}
       />
 
@@ -152,8 +152,8 @@ export default async function PicksAuditPage() {
             <p className="eyebrow">Your pick vs. market check</p>
             <h3>Same ticket. Two very different reads.</h3>
           </div>
-          <Link className="ghost-button" href="/register?promo=free-week&source=picks-audit-compare" style={{ textDecoration: 'none' }}>
-            Start Free Week
+          <Link className="ghost-button" href="/register?promo=5-days&source=picks-audit-compare" style={{ textDecoration: 'none' }}>
+            Start 5 Days Free
           </Link>
         </div>
         <div className="content-grid">
@@ -181,7 +181,7 @@ export default async function PicksAuditPage() {
             <p className="eyebrow">Locked report</p>
             <h3>Market pressure notes</h3>
             <p className="hero-copy">
-              Review steam, resistance, reversal, trap risk, chaos, and anomaly labels in plain English before you make a decision.
+              Review resistance, reversal, risk, chaos, and anomaly labels in plain English before you make a decision.
             </p>
           </article>
         </section>
@@ -190,15 +190,15 @@ export default async function PicksAuditPage() {
       <section className="panel" style={{ marginTop: 20 }}>
         <div className="panel-header">
           <div>
-            <p className="eyebrow blue">Free week</p>
+            <p className="eyebrow blue">5 days free</p>
             <h3>Run the audit before the ticket.</h3>
           </div>
-          <Link className="primary-button" href="/register?promo=free-week&source=picks-audit-bottom" style={{ textDecoration: 'none' }}>
-            Start Free Week
+          <Link className="primary-button" href="/register?promo=5-days&source=picks-audit-bottom" style={{ textDecoration: 'none' }}>
+            Start 5 Days Free
           </Link>
         </div>
         <p className="hero-copy" style={{ marginTop: 8 }}>
-          Use the first week to compare your own picks against the market read. Keep what holds up. Question what does not.
+          Use the first 5 days to compare your own picks against the market read. Keep what holds up. Question what does not.
           Walk away from builds that only looked good before the data came in.
         </p>
       </section>
