@@ -16,7 +16,7 @@ export type FeatureComparisonRow = {
   fullAccess: string;
 };
 
-export const subscriptionPlans: SubscriptionPlan[] = [
+export const subscriptionPlans: any[] = [
   {
     id: 'full_access',
     name: 'InQsi Full Access',
