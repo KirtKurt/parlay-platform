@@ -22,7 +22,7 @@ export function PromoBanner() {
     >
       <div style={{ lineHeight: 1.45 }}>
         <strong style={{ color: '#20f29f' }}>Launch promo: 5 days free.</strong>
-        <span style={{ color: '#b9c5db' }}> Preview the market board, scan your first bet slip, and see how risk detection works before monthly membership starts.</span>
+        <span style={{ color: '#b9c5db' }}> Preview the market board, scan your first slip, and see how risk detection works before monthly membership starts.</span>
       </div>
       <Link
         href="/register?promo=5-days"
