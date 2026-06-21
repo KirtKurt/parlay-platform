@@ -13,6 +13,7 @@ function formatDate(value?: string) {
 const workspaceLinks = [
   { href: '/parlay-scanner', chip: 'Scan', title: 'AI Slip Scanner', copy: 'Bring your own slip and check where the risk may be hiding.' },
   { href: '/parlays', chip: 'Build', title: 'Build My Slip', copy: 'Let InQsi help structure a cleaner slip from the games you choose.' },
+  { href: '/account/slips', chip: 'Slips', title: 'My Slips & Scores', copy: 'Set slips public or private, review post-game analysis, and track accuracy over time.' },
   { href: '/game-leans', chip: 'Leans', title: 'Game Leans', copy: 'Review market-supported sides with risk context.' },
   { href: '/line-movement-review', chip: 'Movement', title: 'Line Movement Review', copy: 'See whether the number moved for you or against you after your first read.' },
   { href: '/performance', chip: 'History', title: 'Review History', copy: 'Look back at saved scans, builder outputs, and market reads.' },
@@ -45,7 +46,7 @@ export function AccountWorkspace() {
           <p className="eyebrow blue">Member workspace</p>
           <TeamJerseyBadge abbr="IQ" tone="blue" number="00" />
           <h2>You are not signed in yet.</h2>
-          <p className="hero-copy">Log in to open your scanner, builder, watchlist, alerts, review history, and billing portal.</p>
+          <p className="hero-copy">Log in to open your scanner, builder, saved slips, watchlist, alerts, review history, and billing portal.</p>
           <div className="hero-actions">
             <Link className="primary-button large" href="/login" style={{ textDecoration: 'none' }}>Login</Link>
             <Link className="ghost-button large" href="/register" style={{ textDecoration: 'none' }}>Create account</Link>
@@ -67,10 +68,11 @@ export function AccountWorkspace() {
           <TeamJerseyBadge abbr="BLD" tone="teal" number="2" />
         </div>
         <h2>Welcome back.</h2>
-        <p className="hero-copy">You are signed in as {session.email}. Scan a slip, let InQsi build a slip, review market movement, or manage billing from one account workspace.</p>
+        <p className="hero-copy">You are signed in as {session.email}. Scan a slip, let InQsi build a slip, publish or hide saved slips, review accuracy, or manage billing from one account workspace.</p>
         <div className="hero-actions">
           <Link className="primary-button large" href="/parlays" style={{ textDecoration: 'none' }}>Build My Slip</Link>
           <Link className="ghost-button large" href="/parlay-scanner" style={{ textDecoration: 'none' }}>Scan My Slip</Link>
+          <Link className="ghost-button large" href="/account/slips" style={{ textDecoration: 'none' }}>My Slips & Scores</Link>
           <Link className="ghost-button large" href="/account/billing" style={{ textDecoration: 'none' }}>Billing Portal</Link>
           <button
             className="ghost-button large"
@@ -87,8 +89,8 @@ export function AccountWorkspace() {
 
       <section className="status-row">
         <article className="status-card"><TeamJerseyBadge abbr="IN" tone="green" number="1" /><span>Status</span><strong>Signed in</strong><p>Account workspace is active.</p></article>
-        <article className="status-card"><TeamJerseyBadge abbr="IQ" tone={isFullAccess ? 'gold' : 'blue'} number={isFullAccess ? '38' : '5'} /><span>Access</span><strong>{session.plan}</strong><p>{isFullAccess ? 'Full scanner, builder, and market review access.' : 'Member workspace access.'}</p></article>
-        <article className="status-card"><TeamJerseyBadge abbr="DAY" tone="teal" number="5" /><span>Promo Ends</span><strong>{formatDate(session.promoEndsAt)}</strong><p>The payment provider will enforce the real renewal date.</p></article>
+        <article className="status-card"><TeamJerseyBadge abbr="IQ" tone={isFullAccess ? 'gold' : 'blue'} number={isFullAccess ? '38' : '5'} /><span>Access</span><strong>{session.plan}</strong><p>{isFullAccess ? 'Full scanner, builder, slip scoring, and market review access.' : 'Member workspace access.'}</p></article>
+        <article className="status-card"><TeamJerseyBadge abbr="SLIP" tone="teal" number="%" /><span>Slip Scores</span><strong>Private by default</strong><p>Customers choose whether saved slips are public or private.</p></article>
         <article className="status-card"><TeamJerseyBadge abbr="PAY" tone="mint" number="0" /><span>Card Data</span><strong>Not stored</strong><p>Payment methods are managed through the provider portal.</p></article>
       </section>
 
@@ -106,11 +108,11 @@ export function AccountWorkspace() {
         </article>
 
         <aside className="panel">
-          <p className="eyebrow blue">Billing & payment</p>
-          <h3>Use the secure provider portal.</h3>
-          <p className="movement">Members should be able to update their card, view invoices, manage renewal, and change subscription settings through the payment provider portal.</p>
-          <p className="movement">InQsi should store access status and provider customer IDs only. It should not store raw credit card numbers.</p>
-          <Link className="primary-button" href="/account/billing" style={{ display: 'inline-block', marginTop: 14, textDecoration: 'none' }}>Open Billing & Payment Portal</Link>
+          <p className="eyebrow blue">Saved slips</p>
+          <h3>Public or private. No comments yet.</h3>
+          <p className="movement">Customers should be able to keep slips private or display selected slips publicly. For now, other customers cannot comment on slips.</p>
+          <p className="movement">After games finish, InQsi should score the slip and show accuracy by individual parlay, 1 day, 1 week, 1 month, 3 months, and 1 year.</p>
+          <Link className="primary-button" href="/account/slips" style={{ display: 'inline-block', marginTop: 14, textDecoration: 'none' }}>Open My Slips & Scores</Link>
         </aside>
       </section>
     </>
