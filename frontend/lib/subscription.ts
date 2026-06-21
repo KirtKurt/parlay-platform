@@ -1,10 +1,11 @@
-export type PlanId = 'core' | 'pro';
+export type PlanId = 'full_access';
 
 export type SubscriptionPlan = {
   id: PlanId;
   name: string;
   price: string;
   interval: string;
+  monthlyPriceCents: number;
   description: string;
   features: string[];
   cta: string;
@@ -12,66 +13,50 @@ export type SubscriptionPlan = {
 
 export type FeatureComparisonRow = {
   feature: string;
-  core: string;
-  pro: string;
+  fullAccess: string;
 };
 
 export const subscriptionPlans: SubscriptionPlan[] = [
   {
-    id: 'core',
-    name: 'Core',
-    price: '$35',
+    id: 'full_access',
+    name: 'InQsi Full Access',
+    price: '$38',
     interval: 'per month',
-    description: 'The main Silvers Syndicate subscription for daily sports market intelligence, full sport boards, line movement, and parlay risk structure.',
+    monthlyPriceCents: 3800,
+    description: 'One InQsi membership package with all available sports market intelligence features included.',
     features: [
-      'First week free for new launch members',
-      'Full sport pages across NFL, CFB, NBA, NCAAM, NHL, MLB, tennis, soccer, darts, lacrosse, and table tennis',
+      '5-day free promo for new members',
+      'All supported sport boards',
       'Game and match market boards with moneyline, spread, total, and signal context where available',
-      '15-minute line movement preview with T1/T2/T3 snapshot framing',
+      '15-minute market movement view with T1/T2/T3 snapshot framing',
       'Steam, resistance, coin-flip, chaos, and market-anomaly labels',
-      'Top-8 parlay ranking view for supported slates',
-      'Top-3 containment view and core risk notes',
-      'Methodology library explaining T-snapshots, line movement, and risk classification'
+      'Predicted winner lean when verified data supports it',
+      'Best available line display when provider data supports it',
+      'Top-8 ranking view for supported 3-leg structures',
+      'Watchlists, alerts, saved research, and dashboard history',
+      'Creator attribution and member access support'
     ],
-    cta: 'Start Core'
-  },
-  {
-    id: 'pro',
-    name: 'Pro',
-    price: '$79',
-    interval: 'per month',
-    description: 'Advanced workflow for serious slate review, no-overlap builds, saved research, and deeper market-anomaly monitoring.',
-    features: [
-      'Everything included in Core',
-      'No-overlap parlay build workspace for multi-card construction',
-      'Deeper market anomaly review and escalation notes',
-      'Saved watchlists for games, teams, matches, and high-volatility slates',
-      'Human-gate review notes and safer-leg substitution indicators when available',
-      'Advanced slate filtering by sport, signal, confidence, and structure',
-      'Priority access to new sport modules and beta data views',
-      'Expanded methodology notes for advanced users and recurring slate review'
-    ],
-    cta: 'Start Pro'
+    cta: 'Start Full Access'
   }
 ];
 
 export const featureComparison: FeatureComparisonRow[] = [
-  { feature: 'First week free', core: 'Included', pro: 'Included' },
-  { feature: 'Sports covered', core: 'All public sport boards', pro: 'All public sport boards + beta modules' },
-  { feature: 'Line movement', core: '15-minute movement view', pro: '15-minute movement view + deeper review context' },
-  { feature: 'T-snapshot framework', core: 'T1/T2/T3 framing', pro: 'T1/T2/T3 framing + advanced review notes' },
-  { feature: 'Signals', core: 'Steam, resistance, coin flip, chaos, anomaly labels', pro: 'Signals + anomaly escalation notes' },
-  { feature: 'Parlay rankings', core: 'Top-8 ranking and Top-3 containment view', pro: 'Top-8 ranking + advanced build workspace' },
-  { feature: 'No-overlap builds', core: 'Limited preview', pro: 'Included' },
-  { feature: 'Watchlists', core: 'Not included', pro: 'Included' },
-  { feature: 'Human-gate review notes', core: 'Not included', pro: 'Included when available' },
-  { feature: 'Best for', core: 'Daily slate research and core market intelligence', pro: 'Power users building multiple cards and tracking volatility' }
+  { feature: '5-day promo', fullAccess: 'Included' },
+  { feature: 'Sports covered', fullAccess: 'All supported sport boards' },
+  { feature: 'Line movement', fullAccess: '15-minute movement view' },
+  { feature: 'T-snapshot framework', fullAccess: 'T1/T2/T3 framing' },
+  { feature: 'Signals', fullAccess: 'Steam, resistance, coin flip, chaos, anomaly labels' },
+  { feature: 'Parlay rankings', fullAccess: 'Top-8 ranking for supported 3-leg structures' },
+  { feature: 'Watchlists', fullAccess: 'Included' },
+  { feature: 'Alerts', fullAccess: 'Included' },
+  { feature: 'Performance dashboard', fullAccess: 'Included when verified records exist' },
+  { feature: 'Best for', fullAccess: 'One simple membership for all InQsi features' }
 ];
 
-export const defaultPlanId: PlanId = 'core';
+export const defaultPlanId: PlanId = 'full_access';
 
 export function getPlan(planId?: string | null) {
-  return subscriptionPlans.find((plan) => plan.id === planId) ?? subscriptionPlans.find((plan) => plan.id === defaultPlanId)!;
+  return subscriptionPlans.find((plan) => plan.id === planId) ?? subscriptionPlans[0];
 }
 
 export const registrationSports = [
