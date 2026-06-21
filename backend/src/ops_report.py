@@ -8,7 +8,7 @@ from boto3.dynamodb.conditions import Key
 
 CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "content-type,authorization",
+    "Access-Control-Allow-Headers": "content-type,authorization,x-inqsi-dashboard-key",
     "Access-Control-Allow-Methods": "GET,OPTIONS",
 }
 
@@ -30,6 +30,12 @@ def response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
     return {"statusCode": status_code, "headers": CORS_HEADERS, "body": json.dumps(safe(body))}
 
 
+def allowed(event: Dict[str, Any]) -> bool:
+    expected = os.environ.get("INQSI_DASHBOARD_KEY")
+    supplied = (event.get("headers") or {}).get("x-inqsi-dashboard-key")
+    return bool(expected and supplied and supplied == expected)
+
+
 def table_count(env_name: str) -> int:
     table_name = os.environ.get(env_name)
     if not table_name:
@@ -42,7 +48,6 @@ def live_member_count() -> int:
     if not table_name:
         return 0
     table = DDB.Table(table_name)
-    # A full production report should aggregate by creator daily. This count is a safe live operator snapshot.
     result = table.scan(FilterExpression=Key("member_status").eq(LIVE_STATUS), Select="COUNT", Limit=1000)
     return int(result.get("Count", 0))
 
@@ -51,6 +56,8 @@ def handle_http(event: Dict[str, Any]) -> Dict[str, Any]:
     method = event.get("requestContext", {}).get("http", {}).get("method", event.get("httpMethod", "GET")).upper()
     if method == "OPTIONS":
         return response(200, {"ok": True})
+    if not allowed(event):
+        return response(403, {"error": "dashboard_locked"})
     return response(200, {
         "product": "InQsi",
         "summary": {
