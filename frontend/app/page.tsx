@@ -5,7 +5,7 @@ import { AppHeader } from '@/components/AppHeader';
 const SPORTS = ['NFL', 'NCAAF', 'NBA', 'NCAAM', 'NHL', 'MLB', 'WNBA', 'Soccer', 'Tennis', 'MMA', 'Boxing', 'Golf', 'eSports'];
 const CORE_LINKS = [
   ['AI Bet Slip Scanner', '/parlay-scanner'],
-  ['Predicted winners', '/predicted-winners'],
+  ['Game Leans', '/game-leans'],
   ['Best lines', '/best-lines'],
   ['Live market mode', '/live-market'],
   ['Public performance', '/performance'],
