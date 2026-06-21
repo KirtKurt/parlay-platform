@@ -3,7 +3,7 @@ import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
   title: 'Create Account',
-  description: 'Create an InQsi account and start the 5-day free promo when authentication and billing providers are connected.',
+  description: 'Create an InQsi account and start the 5-day free promo.',
   alternates: { canonical: '/register' }
 };
 
@@ -13,16 +13,16 @@ export default function RegisterPage() {
       path="/register"
       eyebrow="Create account"
       title="Start your InQsi workspace."
-      intro="The account flow is designed for Google, Apple, and email access with a 5-day free promo. Until provider keys are connected, the page stays in Working on it mode."
+      intro="Start with 5 days free. Scan a slip, review the sports board, and see whether InQsi helps you catch risk before you lock anything in."
       sections={[
-        { title: 'Google access', copy: 'Visual flow is ready. OAuth keys still need to be connected.' },
-        { title: 'Apple access', copy: 'Visual flow is ready. Apple client settings still need to be connected.' },
-        { title: 'Email access', copy: 'Email auth remains disabled until a provider is selected.' },
-        { title: 'Subscription gate', copy: 'Plan logic is prepared and waits on billing keys.' }
+        { title: 'Quick access', copy: 'Create your workspace and get to the scanner without a complicated setup.' },
+        { title: 'AI Bet Slip Scanner', copy: 'Bring the picks you already like and check for weak legs, resistance, and warning signs.' },
+        { title: 'Sports board', copy: 'Review market pressure, support, and unusual movement across supported sports.' },
+        { title: 'Full Access', copy: 'One membership opens the full InQsi workspace after the 5-day promo.' }
       ]}
       faqs={[
-        { question: 'Can users create accounts now?', answer: 'The interface is ready, but provider keys must be connected before live sign-up.' },
-        { question: 'Is the 5-day promo included?', answer: 'Yes. The product flow is prepared around a 5-day free promo.' }
+        { question: 'What should I do first?', answer: 'Start with the AI Bet Slip Scanner. Bring a pick you already like and see where the market may be warning you.' },
+        { question: 'Is the 5-day promo included?', answer: 'Yes. InQsi is built around a 5-day free promo before monthly membership.' }
       ]}
     />
   );
