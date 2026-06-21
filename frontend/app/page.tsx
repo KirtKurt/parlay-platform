@@ -22,7 +22,7 @@ const FOOTER_LINKS = [
 
 export const metadata: Metadata = {
   title: 'InQsi | AI Slip Scanner & Sports Market Review',
-  description: 'InQsi helps customers scan slips, review market signals, surface hidden risk, compare line movement, and learn from post-game score history.',
+  description: 'InQsi helps members scan slips, review market signals, surface hidden risk, compare line movement, and learn from post-game score history.',
   alternates: { canonical: '/' }
 };
 
@@ -50,7 +50,7 @@ export default function Home() {
         <div className="inqsi-hero-card">
           <p className="inqsi-promo">5 days free promo · Cancel anytime</p>
           <h1>Find where your picks go wrong <span>before you lock it in.</span></h1>
-          <p>InQsi helps customers find hidden risk before they lock in a slip. The platform reviews market movement, scans thousands of market signals, and checks each slip for weak legs, instability, and warning signs.</p>
+          <p>InQsi helps members find hidden risk before they lock in a slip. The platform reviews market movement, scans thousands of market signals, and checks each slip for weak legs, instability, and warning signs.</p>
           <div className="inqsi-stat-grid" aria-label="InQsi value proposition">
             <div><b>Sportsbooks Evaluated</b><span>Major sportsbook markets monitored</span></div>
             <div><b>Market Signals</b><span>Thousands of data points analyzed</span></div>
@@ -60,7 +60,7 @@ export default function Home() {
         </div>
         <aside className="inqsi-signup-card" aria-label="Create account">
           <h2>Start with 5 days free</h2>
-          <p>Scan your slip, save watchlists, review alerts, and track market intelligence in one dashboard.</p>
+          <p>Scan your slip, save watchlists, review alerts, and track market intelligence in one member dashboard.</p>
           <a href="/parlay-scanner">Open AI Slip Scanner</a>
           <a className="inqsi-primary" href="/register">Create account</a>
           <small>Start with the scanner, review the board, and decide whether InQsi earns a place in your routine.</small>
