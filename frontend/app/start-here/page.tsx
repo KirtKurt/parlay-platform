@@ -20,7 +20,7 @@ const steps = [
     detail: 'Start with the side, team, or parlay leg you were already thinking about. InQsi helps challenge the ticket before you build it.'
   },
   {
-    title: '2. Run it through the AI Bet Slip Scanner',
+    title: '2. Run it through the AI Slip Scanner',
     detail: 'Look for resistance, late movement, reversal risk, and weak-leg exposure. The goal is not to talk you into more action. The goal is to show where your picks go wrong.'
   },
   {
@@ -40,8 +40,8 @@ export default function StartHerePage() {
 
       <section className="sport-hero-grid">
         <div className="hero-card glass-card" style={{ minHeight: 0 }}>
-          <p className="eyebrow blue">New here · 5 days free</p>
-          <h2>Don’t start with a subscription. Start with a question.</h2>
+          <p className="eyebrow blue">New here - 5 days free</p>
+          <h2>Do not start with a subscription. Start with a question.</h2>
           <p className="hero-copy">
             Take a pick you already like and ask why it might fail. If the market agrees, great. If it does not, you will see where the pressure is showing up before you lock anything in.
           </p>
@@ -52,7 +52,7 @@ export default function StartHerePage() {
             <span style={{ color: '#96a4bd', fontSize: '.85rem' }}>Example pick audit marker</span>
           </div>
           <div className="hero-actions">
-            <Link className="primary-button large" href="/parlay-scanner" style={{ textDecoration: 'none' }}>AI Bet Slip Scanner</Link>
+            <Link className="primary-button large" href="/parlay-scanner" style={{ textDecoration: 'none' }}>AI Slip Scanner</Link>
             <Link className="ghost-button large" href="/sports" style={{ textDecoration: 'none' }}>Preview Sports</Link>
             <Link className="ghost-button large" href="/pricing" style={{ textDecoration: 'none' }}>View Full Access</Link>
           </div>
@@ -73,7 +73,7 @@ export default function StartHerePage() {
         <div className="panel-header">
           <div>
             <p className="eyebrow">Best next move</p>
-            <h3>Start with the AI Bet Slip Scanner</h3>
+            <h3>Start with the AI Slip Scanner</h3>
           </div>
           <Link className="primary-button" href="/register?promo=5-days" style={{ textDecoration: 'none' }}>Start 5 Days Free</Link>
         </div>
