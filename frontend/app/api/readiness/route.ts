@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { getAuthReadiness, getSubscriptionReadiness } from '@/lib/inqsi-auth-billing';
+import { getAuthReadiness, getMembershipReadiness } from '@/lib/inqsi-auth-membership';
 import { getMonitoringReadiness } from '@/lib/inqsi-observability';
 
 export const dynamic = 'force-dynamic';
@@ -9,7 +9,7 @@ export async function GET() {
     product: 'InQsi',
     status: 'working_on_it',
     auth: getAuthReadiness(),
-    subscription: getSubscriptionReadiness(),
+    membership: getMembershipReadiness(),
     monitoring: getMonitoringReadiness(),
     dataPolicy: 'Verified data only. Missing feeds return Working on it.'
   });
