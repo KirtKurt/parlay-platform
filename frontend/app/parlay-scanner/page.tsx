@@ -24,7 +24,7 @@ export default function Page() {
       <section className="inqsi-hero inqsi-seo-hero">
         <div className="inqsi-hero-card">
           <p className="inqsi-promo">AI Bet Slip Scanner</p>
-          <h1>Paste your parlay. Let InQsi scan what looks wrong.</h1>
+          <h1>Paste your parlay. Find where your picks go wrong.</h1>
           <p>
             This is where a member brings their own 3-leg parlay for review. The AI Bet Slip Scanner checks the selections against market movement,
             signal strength, weak-leg risk, and stability before the user locks anything in.
@@ -33,7 +33,7 @@ export default function Page() {
             <div><b>1</b><span>Enter selections</span></div>
             <div><b>2</b><span>Match to live market</span></div>
             <div><b>3</b><span>Scan risk</span></div>
-            <div><b>4</b><span>Return pass/caution</span></div>
+            <div><b>4</b><span>Show where picks go wrong</span></div>
           </div>
         </div>
 
