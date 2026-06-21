@@ -11,16 +11,15 @@ export function LoginForm() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    setEmail(params.get('email') ?? 'kurt.silvers@gmail.com');
+    setEmail(params.get('email') ?? '');
   }, []);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const formData = new FormData(event.currentTarget);
     const submittedEmail = String(formData.get('email') ?? email).trim();
-    const selectedPlan = String(formData.get('plan') ?? 'Pro') as 'Core' | 'Pro';
 
-    saveMemberSession(createDemoMemberSession(submittedEmail, selectedPlan));
+    saveMemberSession(createDemoMemberSession(submittedEmail, 'Pro'));
     setStatus('signed-in');
 
     window.setTimeout(() => {
@@ -33,7 +32,7 @@ export function LoginForm() {
       <div>
         <p className="eyebrow blue">Member login</p>
         <h3>Sign in to your market workspace</h3>
-        <p className="slip-note">Your Pro workspace opens your watchlist, sport boards, pick-audit flow, and member tools.</p>
+        <p className="slip-note">Your InQsi workspace opens your watchlist, sport boards, AI Bet Slip Scanner, and member tools.</p>
       </div>
       <label className="field-card full-span">
         <span>Email</span>
@@ -45,19 +44,18 @@ export function LoginForm() {
       </label>
       <label className="field-card full-span">
         <span>Plan access</span>
-        <select name="plan" defaultValue="Pro">
-          <option value="Pro">Pro member</option>
-          <option value="Core">Core member</option>
+        <select name="plan" defaultValue="full_access">
+          <option value="full_access">InQsi Full Access</option>
         </select>
       </label>
       <button className="primary-button large" type="submit">Sign in</button>
       {status === 'signed-in' && (
         <div className="compliance-box success-box">
-          You are signed in with Pro access. Sending you to your account workspace now.
+          You are signed in with InQsi Full Access. Sending you to your account workspace now.
         </div>
       )}
       <div className="compliance-box">
-        First week free for new members. Preview your board, save a watchlist, and decide from there.
+        First 5 days free for new members. Preview your board, save a watchlist, and decide from there.
       </div>
     </form>
   );
