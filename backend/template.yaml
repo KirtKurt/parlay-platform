@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Silvers Syndicate backend API
+Description: InQsi backend API
 
 Parameters:
   OddsApiKey:
@@ -8,6 +8,11 @@ Parameters:
     NoEcho: true
     Default: ""
     Description: The Odds API key used by scheduled ingestion.
+  BillingWebhookSecret:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Optional shared secret for external billing provider membership webhooks.
 
 Globals:
   Function:
@@ -18,14 +23,20 @@ Globals:
       - x86_64
     Environment:
       Variables:
-        APP_NAME: silvers-syndicate
+        APP_NAME: inqsi
         ODDS_API_KEY: !Ref OddsApiKey
+        BILLING_WEBHOOK_SECRET: !Ref BillingWebhookSecret
         GAMES_TABLE: !Ref SilversGamesTable
         SNAPSHOTS_TABLE: !Ref SilversSnapshotsTable
         GAME_STATUS_TABLE: !Ref SilversGameStatusTable
         PARLAY_BUILDS_TABLE: !Ref SilversParlayBuildsTable
         AUDIT_EVENTS_TABLE: !Ref SilversAuditEventsTable
         INGESTION_RUNS_TABLE: !Ref SilversIngestionRunsTable
+        CREATORS_TABLE: !Ref InQsiCreatorsTable
+        ATTRIBUTION_EVENTS_TABLE: !Ref InQsiAttributionEventsTable
+        USER_ATTRIBUTION_TABLE: !Ref InQsiUserAttributionTable
+        MEMBERSHIP_TABLE: !Ref InQsiMembershipTable
+        CREATOR_METRICS_TABLE: !Ref InQsiCreatorMetricsTable
         ODDS_REGIONS: us
         ODDS_MARKETS: h2h,spreads,totals
         ODDS_BOOKMAKERS: fanduel,draftkings,fanatics
@@ -153,6 +164,117 @@ Resources:
         - AttributeName: run_id
           KeyType: HASH
 
+  InQsiCreatorsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: creator_id
+          AttributeType: S
+        - AttributeName: referral_code
+          AttributeType: S
+      KeySchema:
+        - AttributeName: creator_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: ReferralCodeIndex
+          KeySchema:
+            - AttributeName: referral_code
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InQsiAttributionEventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: event_id
+          AttributeType: S
+        - AttributeName: creator_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: event_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: CreatorCreatedAtIndex
+          KeySchema:
+            - AttributeName: creator_id
+              KeyType: HASH
+            - AttributeName: created_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  InQsiUserAttributionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: user_id
+          AttributeType: S
+        - AttributeName: creator_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: user_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: CreatorUserIndex
+          KeySchema:
+            - AttributeName: creator_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InQsiMembershipTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: membership_id
+          AttributeType: S
+        - AttributeName: creator_id
+          AttributeType: S
+        - AttributeName: member_status
+          AttributeType: S
+        - AttributeName: user_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: membership_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: CreatorStatusIndex
+          KeySchema:
+            - AttributeName: creator_id
+              KeyType: HASH
+            - AttributeName: member_status
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+        - IndexName: UserMembershipIndex
+          KeySchema:
+            - AttributeName: user_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InQsiCreatorMetricsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: creator_id
+          AttributeType: S
+        - AttributeName: metric_date
+          AttributeType: S
+      KeySchema:
+        - AttributeName: creator_id
+          KeyType: HASH
+        - AttributeName: metric_date
+          KeyType: RANGE
+
   SilversApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -171,6 +293,16 @@ Resources:
             TableName: !Ref SilversAuditEventsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref SilversIngestionRunsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InQsiCreatorsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InQsiAttributionEventsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InQsiUserAttributionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InQsiMembershipTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InQsiCreatorMetricsTable
       Events:
         FrontendRoot:
           Type: HttpApi
@@ -242,6 +374,31 @@ Resources:
           Properties:
             Path: /v1/parlays/{build_id}
             Method: GET
+        CreatorRoutes:
+          Type: HttpApi
+          Properties:
+            Path: /v1/creators/{proxy+}
+            Method: ANY
+        CreatorRoot:
+          Type: HttpApi
+          Properties:
+            Path: /v1/creators
+            Method: ANY
+        AttributionCapture:
+          Type: HttpApi
+          Properties:
+            Path: /v1/attribution/capture
+            Method: POST
+        AttributionLinkUser:
+          Type: HttpApi
+          Properties:
+            Path: /v1/attribution/link-user
+            Method: POST
+        MembershipWebhook:
+          Type: HttpApi
+          Properties:
+            Path: /v1/memberships/webhook
+            Method: POST
         FifteenMinuteOddsPull:
           Type: Schedule
           Properties:
@@ -273,7 +430,7 @@ Resources:
 
 Outputs:
   ApiUrl:
-    Description: Base URL for the Silvers Syndicate API
+    Description: Base URL for the InQsi API
     Value: !Sub "https://${ServerlessHttpApi}.execute-api.${AWS::Region}.amazonaws.com"
   GamesTableName:
     Description: DynamoDB games table
@@ -287,3 +444,15 @@ Outputs:
   AuditEventsTableName:
     Description: DynamoDB audit events table
     Value: !Ref SilversAuditEventsTable
+  CreatorsTableName:
+    Description: DynamoDB creators table
+    Value: !Ref InQsiCreatorsTable
+  AttributionEventsTableName:
+    Description: DynamoDB attribution events table
+    Value: !Ref InQsiAttributionEventsTable
+  UserAttributionTableName:
+    Description: DynamoDB user attribution table
+    Value: !Ref InQsiUserAttributionTable
+  MembershipTableName:
+    Description: DynamoDB membership table
+    Value: !Ref InQsiMembershipTable
