@@ -26,13 +26,13 @@ export default async function SportPage({ params }: { params: { sport: string } 
 
       <section className="sport-hero-grid">
         <div className="hero-card glass-card" style={{ minHeight: 0 }}>
-          <p className="eyebrow blue">{sport.label} board · first week free</p>
+          <p className="eyebrow blue">{sport.label} board · 5 days free</p>
           <h2>{sport.title}</h2>
           <p className="hero-copy">
             {sport.description} The board now uses a {visual.equipmentLabel} visual cue, jersey-style team badges, and signal cards so the page is easier to scan.
           </p>
           <div className="hero-actions">
-            <Link className="primary-button large" href={`/register?promo=free-week&sport=${sport.slug}`} style={{ textDecoration: 'none' }}>Unlock {sport.label}</Link>
+            <Link className="primary-button large" href={`/register?promo=5-days&sport=${sport.slug}`} style={{ textDecoration: 'none' }}>Unlock {sport.label}</Link>
             <Link className="ghost-button large" href="/sports" style={{ textDecoration: 'none' }}>Back to sports</Link>
             <Link className="ghost-button large" href="/login" style={{ textDecoration: 'none' }}>Log In</Link>
           </div>
@@ -46,7 +46,7 @@ export default async function SportPage({ params }: { params: { sport: string } 
         <article className="status-card"><SportEquipmentIcon slug={sport.slug} /><span>Preview</span><strong>{visibleGames.length || 'Ready'}</strong><p>You can see whether a {sport.label} slate is available before logging in.</p></article>
         <article className="status-card"><span>Signals</span><strong>Preview</strong><p>Signal names are visible. Members unlock the reason behind them.</p></article>
         <article className="status-card"><span>Movement</span><strong>Locked</strong><p>The full line history unlocks after registration.</p></article>
-        <article className="status-card"><span>Promo</span><strong>7 days</strong><p>New members can start with the first week free.</p></article>
+        <article className="status-card"><span>Promo</span><strong>5 days</strong><p>New members can start with 5 days free.</p></article>
       </section>
 
       <ContentBlock
