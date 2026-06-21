@@ -4,22 +4,22 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <title>InQsi | Sports Market Intelligence</title>
-  <meta name="description" content="InQsi checks sportsbook market movement, predicted winner leans, live odds, signals, watchlists, and 3-leg parlay risk before you lock it in." />
-  <meta name="keywords" content="sports market intelligence, odds movement, parlay scanner, sportsbook lines, moneyline, spread, over under, live odds, sports analytics, bet slip checker" />
+  <meta name="description" content="InQsi checks sportsbook market movement, game leans, live market signals, watchlists, and slip risk before you lock it in." />
+  <meta name="keywords" content="sports market intelligence, odds movement, slip scanner, sportsbook lines, moneyline, spread, over under, live market, sports analytics" />
   <meta name="robots" content="index,follow,max-image-preview:large,max-snippet:-1,max-video-preview:-1" />
   <meta name="theme-color" content="#07111f" />
   <link rel="canonical" href="/" />
   <link rel="manifest" href="./manifest.webmanifest" />
   <meta property="og:type" content="website" />
   <meta property="og:title" content="InQsi | Find What Looks Wrong Before You Lock It In" />
-  <meta property="og:description" content="Mobile-first sports market intelligence with winner leans, parlay checks, live market mode, signal scores, and sportsbook movement." />
+  <meta property="og:description" content="Mobile-first sports market intelligence with game leans, slip checks, live market mode, signal scores, and sportsbook movement." />
   <meta property="og:url" content="/" />
   <meta property="og:site_name" content="InQsi" />
   <meta name="twitter:card" content="summary_large_image" />
   <meta name="twitter:title" content="InQsi Sports Market Intelligence" />
-  <meta name="twitter:description" content="Check market movement, predicted winner leans, and parlay risk before you lock it in." />
+  <meta name="twitter:description" content="Check market movement, game leans, and slip risk before you lock it in." />
   <script type="application/ld+json">
-  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"InQsi","applicationCategory":"SportsApplication","operatingSystem":"iOS, Android, Web","description":"Sports market intelligence app for line movement, signal scoring, predicted winner leans, live odds, and parlay risk checks.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"5 day free promotional trial"}}
+  {"@context":"https://schema.org","@type":"SoftwareApplication","name":"InQsi","applicationCategory":"SportsApplication","operatingSystem":"iOS, Android, Web","description":"Sports market intelligence app for line movement, signal scoring, game leans, live market review, and slip risk checks.","offers":{"@type":"Offer","price":"0","priceCurrency":"USD","description":"5 day free promotional access"}}
   </script>
   <link rel="stylesheet" href="./styles.css" />
 </head>
@@ -30,9 +30,9 @@
       <span class="brand-text"><strong>InQsi</strong><small>Market Intelligence</small></span>
     </a>
     <nav class="top-links" aria-label="Primary">
-      <a href="#scores">Scores</a>
-      <a href="#parlay">Parlay</a>
-      <a href="#performance">Performance</a>
+      <a href="#scores">Market Board</a>
+      <a href="#parlay">AI Slip Scanner</a>
+      <a href="#performance">Review History</a>
       <button id="openSignup" class="pill-btn">5 Days Free</button>
     </nav>
   </header>
@@ -40,9 +40,9 @@
   <main id="home">
     <section class="hero card glow-card">
       <div>
-        <p class="eyebrow">Updated from your current API URL</p>
+        <p class="eyebrow">InQsi Market Intelligence</p>
         <h1>Find what looks wrong before you lock it in.</h1>
-        <p class="hero-copy">InQsi reads sportsbook movement, predicted winner leans, live odds, signal scores, and 3-leg parlay risk across every sport we can safely pull.</p>
+        <p class="hero-copy">InQsi reads sportsbook movement, game leans, live market signals, and slip risk so you can see warning signs before you trust a pick.</p>
         <div class="hero-actions">
           <button id="heroSignup" class="primary-btn">Start 5 Days Free</button>
           <button id="refreshAll" class="ghost-btn">Refresh Market</button>
@@ -55,39 +55,39 @@
     </section>
 
     <section class="sport-strip card" aria-label="Sports">
-      <div class="section-title"><h2>Sports</h2><span id="apiStatus">Connecting…</span></div>
+      <div class="section-title"><h2>Sports</h2><span id="apiStatus">Market data pending</span></div>
       <div id="sportsTabs" class="tabs"></div>
     </section>
 
     <section id="scores" class="layout-grid">
       <div class="feed-column">
-        <div class="section-title"><h2 id="sportTitle">Market Board</h2><span id="lastUpdated">Waiting on pull</span></div>
+        <div class="section-title"><h2 id="sportTitle">Market Board</h2><span id="lastUpdated">Waiting for market data</span></div>
         <div id="gameFeed" class="game-feed"></div>
       </div>
       <aside class="side-column">
         <section class="card promo-card">
           <h2>5 Days Free</h2>
-          <p>Check the market, scan parlays, track live odds, and review winner leans before paying.</p>
+          <p>Check the market, scan slips, track live movement, and review game leans before paying.</p>
           <button id="sideSignup" class="primary-btn wide">Claim Promo</button>
         </section>
         <section id="parlay" class="card">
-          <div class="section-title"><h2>Auto Parlay</h2><span>2 anchors + 1 risk</span></div>
+          <div class="section-title"><h2>AI Slip Scanner</h2><span>2 anchors + 1 risk</span></div>
           <div id="autoParlayBox" class="stack"></div>
         </section>
         <section class="card">
-          <div class="section-title"><h2>Winner Leans</h2><span>1 hour before</span></div>
+          <div class="section-title"><h2>Game Leans</h2><span>Market context</span></div>
           <div id="winnerBox" class="stack"></div>
         </section>
       </aside>
     </section>
 
     <section class="feature-grid" aria-label="InQsi features">
-      <article class="card"><h3>Ticket Scanner</h3><p>Paste three game IDs from your slip and InQsi checks the strongest leg, weakest leg, and 8 ranked outcomes.</p></article>
-      <article class="card"><h3>Best Lines</h3><p>Compare available sportsbook prices for moneyline, spread, and total when the API provides book-level lines.</p></article>
-      <article class="card"><h3>Live Market Mode</h3><p>Live scores and live odds refresh from the backend when games are active.</p></article>
-      <article class="card"><h3>Watchlist</h3><p>Track games for steam, reversal, chaos, and one-hour prediction visibility.</p></article>
-      <article class="card"><h3>Context Layer</h3><p>Ready for injuries, weather, lineups, starters, and news feeds when provider credentials are connected.</p></article>
-      <article id="performance" class="card"><h3>Performance</h3><p id="performanceBox">Waiting for graded results from the nightly autopsy.</p></article>
+      <article class="card"><h3>AI Slip Scanner</h3><p>Scan your slip and review the strongest leg, weakest leg, and ranked risk outcomes.</p></article>
+      <article class="card"><h3>Best Lines</h3><p>Compare available sportsbook prices for moneyline, spread, and total when market data is available.</p></article>
+      <article class="card"><h3>Live Market Mode</h3><p>Review live market movement and signal changes when games are active.</p></article>
+      <article class="card"><h3>Watchlist</h3><p>Track games for steam, resistance, reversal, chaos, and warning signs.</p></article>
+      <article class="card"><h3>Context Layer</h3><p>Use market context and signal notes to slow down before trusting a pick.</p></article>
+      <article id="performance" class="card"><h3>Review History</h3><p id="performanceBox">Past reviews will appear when saved market reads are available.</p></article>
     </section>
   </main>
 
@@ -96,7 +96,7 @@
       <button id="closeSignup" class="close-btn" aria-label="Close signup">×</button>
       <div class="center-brand"><span class="logo-mark"><span>Q</span></span><strong>InQsi</strong></div>
       <h2 id="signupTitle">Start your 5 day free promo</h2>
-      <p>Sign up to save watchlists, scan slips, view winner leans, and unlock full parlay checks.</p>
+      <p>Sign up to save watchlists, scan slips, view game leans, and unlock full market checks.</p>
       <button id="googleLogin" class="auth-btn">Continue with Google</button>
       <button id="appleLogin" class="auth-btn dark">Continue with Apple</button>
       <div class="divider"><span>or</span></div>
@@ -104,20 +104,20 @@
         <input name="email" type="email" autocomplete="email" placeholder="Email address" required />
         <button class="primary-btn wide" type="submit">Create Account</button>
       </form>
-      <p id="authMessage" class="tiny-note">Google and Apple require live OAuth client configuration before production sign-in.</p>
+      <p id="authMessage" class="tiny-note">Create your account to start the 5 day promo and return to your saved reviews.</p>
     </div>
   </div>
 
   <footer class="footer">
     <div class="brand mini"><span class="logo-mark"><span>Q</span></span><span class="brand-text"><strong>InQsi</strong><small>Review before you lock it in.</small></span></div>
     <nav aria-label="Media and policy links" class="media-links">
-      <a href="/about">About</a><a href="/features">Features</a><a href="/sports">Sports</a><a href="/odds-movement">Odds Movement</a><a href="/parlay-scanner">Parlay Scanner</a><a href="/performance">Performance</a><a href="/responsible-play">Responsible Play</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/contact">Contact</a><a href="https://www.instagram.com/" rel="nofollow noopener">Instagram</a><a href="https://www.tiktok.com/" rel="nofollow noopener">TikTok</a><a href="https://www.youtube.com/" rel="nofollow noopener">YouTube</a><a href="https://x.com/" rel="nofollow noopener">X</a><a href="https://www.linkedin.com/" rel="nofollow noopener">LinkedIn</a>
+      <a href="/about">About</a><a href="/features">Features</a><a href="/sports">Sports</a><a href="/odds-movement">Odds Movement</a><a href="/parlay-scanner">AI Slip Scanner</a><a href="/performance">Review History</a><a href="/responsible-play">Responsible Play</a><a href="/privacy">Privacy</a><a href="/terms">Terms</a><a href="/contact">Contact</a><a href="https://www.instagram.com/" rel="nofollow noopener">Instagram</a><a href="https://www.tiktok.com/" rel="nofollow noopener">TikTok</a><a href="https://www.youtube.com/" rel="nofollow noopener">YouTube</a><a href="https://x.com/" rel="nofollow noopener">X</a><a href="https://www.linkedin.com/" rel="nofollow noopener">LinkedIn</a>
     </nav>
     <p class="tiny-note">InQsi provides market intelligence and risk signals. No guarantee of outcomes. 21+ where applicable.</p>
   </footer>
 
   <template id="emptyTemplate">
-    <div class="empty-state"><div class="jersey ghost-jersey">IQ</div><h3>InQsi is warming up the market feed.</h3><p>Sportsbook data has not arrived here yet. No fake lines. No filler games. Check back after the next pull.</p></div>
+    <div class="empty-state"><div class="jersey ghost-jersey">IQ</div><h3>Waiting for market data.</h3><p>Sportsbook data has not arrived here yet. No fake lines. No filler games.</p></div>
   </template>
 
   <script src="./app.js" defer></script>
