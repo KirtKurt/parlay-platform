@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { PartnerCapture } from '@/components/PartnerCapture';
 import { TrackingConsent } from '@/components/TrackingConsent';
 import './globals.css';
 import './inqsi.css';
@@ -108,6 +109,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }} />
+        <PartnerCapture />
         {children}
         <TrackingConsent />
       </body>
