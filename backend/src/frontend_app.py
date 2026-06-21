@@ -2,6 +2,7 @@ from typing import Any, Dict
 
 import app
 import creator_tracking
+import member_sessions
 import ops_report
 from frontend import html_response, manifest_response, robots_response, sitemap_response
 
@@ -13,6 +14,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
     if method == "OPTIONS":
         return app.response(200, {"ok": True})
+
+    if path.startswith("/v1/member"):
+        routed_event = dict(event)
+        routed_event["path"] = path
+        routed_event["rawPath"] = path
+        routed_event["httpMethod"] = method
+        return member_sessions.lambda_handler(routed_event, context)
 
     if path.startswith("/v1/ops"):
         routed_event = dict(event)
