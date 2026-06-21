@@ -9,19 +9,19 @@ export type AppHeaderProps = {
 
 export function AppHeader({ eyebrow = 'InQsi', title = 'Sports market intelligence', apiStatus, apiDetail }: AppHeaderProps) {
   return (
-    <nav className="topbar">
-      <Link className="brand-block" href="/" style={{ color: 'inherit', textDecoration: 'none' }}>
-        <div className="brand-mark">Q</div>
-        <div><p className="eyebrow">{eyebrow}</p><h1>{title}</h1></div>
+    <header className="inqsi-topbar">
+      <Link className="inqsi-brand" href="/" aria-label="InQsi home">
+        <span className="inqsi-logo-mark" aria-hidden="true">Q</span>
+        <span><b>{eyebrow}</b><small>{title}</small></span>
       </Link>
-      <div className="nav-actions">
+      <nav className="inqsi-nav-actions" aria-label="Primary navigation">
         {apiStatus && <span className={`api-badge api-${apiStatus.toLowerCase()}`} title={apiDetail}>{apiStatus}</span>}
-        <Link className="ghost-button" href="/start-here" style={{ textDecoration: 'none' }}>Start Here</Link>
-        <Link className="ghost-button" href="/picks-audit" style={{ textDecoration: 'none' }}>Check Slip</Link>
-        <Link className="ghost-button" href="/sports" style={{ textDecoration: 'none' }}>Sports</Link>
-        <Link className="ghost-button" href="/pricing" style={{ textDecoration: 'none' }}>Pricing</Link>
-        <Link className="primary-button" href="/register" style={{ textDecoration: 'none' }}>Start 5 Days Free</Link>
-      </div>
-    </nav>
+        <Link href="/sports">Sports</Link>
+        <Link href="/parlay-scanner">Scanner</Link>
+        <Link href="/performance">Performance</Link>
+        <Link href="/pricing">Pricing</Link>
+        <Link className="inqsi-primary" href="/register">Start 5 Days Free</Link>
+      </nav>
+    </header>
   );
 }
