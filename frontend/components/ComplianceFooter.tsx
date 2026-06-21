@@ -5,9 +5,9 @@ export function ComplianceFooter() {
   return (
     <footer className="site-footer">
       <div>
-        <strong>Silvers Syndicate</strong>
+        <strong>InQsi</strong>
         <p>Sports market intelligence for informational and entertainment use.</p>
-        <p>Silvers Syndicate is not affiliated with any league, team, sportsbook, or data provider.</p>
+        <p>InQsi is not affiliated with any league, team, sportsbook, or data provider.</p>
       </div>
       <nav>
         <Link href="/legal/privacy">Privacy</Link>
