@@ -2,6 +2,7 @@ import json
 from typing import Any, Dict, List
 
 from inqsi_core import InqsiError, active_sport_keys, analyze_sport, auto_parlay, discover_sports, game_detail, graph_data, json_default, latest_game_states, pull_and_analyze_all, pull_and_analyze_sport, user_parlay
+from inqsi_live import ingest_live_sport, latest_live_games
 
 
 def response(status: int, body: Any) -> Dict[str, Any]:
@@ -35,6 +36,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return response(200, {"ok": True, "configured_sports": active_sport_keys(), "available_sports": discover_sports()})
         if p.endswith("/pull"):
             return response(200, pull_and_analyze_sport(sport) if sport else pull_and_analyze_all())
+        if p.endswith("/live-pull"):
+            if not sport:
+                return response(400, {"ok": False, "error": "sport_key is required"})
+            return response(200, ingest_live_sport(sport))
+        if p.endswith("/live"):
+            if not sport:
+                return response(400, {"ok": False, "error": "sport_key is required"})
+            return response(200, latest_live_games(sport))
         if p.endswith("/games"):
             if not sport:
                 return response(400, {"ok": False, "error": "sport_key is required"})
