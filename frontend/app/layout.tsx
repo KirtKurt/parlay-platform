@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { TrackingConsent } from '@/components/TrackingConsent';
 import './globals.css';
 import './inqsi.css';
+import './inqsi-compat.css';
 import './tracking.css';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app';
