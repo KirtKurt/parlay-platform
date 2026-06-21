@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { MemberLanguageGuard } from '@/components/MemberLanguageGuard';
 import { PartnerCapture } from '@/components/PartnerCapture';
 import { TrackingConsent } from '@/components/TrackingConsent';
 import './globals.css';
@@ -132,6 +133,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }} />
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }} />
+        <MemberLanguageGuard />
         <PartnerCapture />
         {children}
         <TrackingConsent />
