@@ -58,15 +58,15 @@ export function InqsiSeoPage({ eyebrow, title, intro, sections, faqs = [], path 
           <p>{intro}</p>
         </div>
         <aside className="inqsi-signup-card">
-          <h2>Start with 5 days free</h2>
-          <p>Use InQsi to review market movement, risk signals, game leans, and saved review history in one clean interface.</p>
-          <a href="/register">Create account</a>
-          <a href="/picks-audit">Review selections</a>
-          <small>No fake data. If verified market data is unavailable, InQsi uses a clear waiting state.</small>
+          <h2>Plain-English takeaway</h2>
+          <p>InQsi helps customers slow down, review a slip, compare market movement, and understand the score after the games are final.</p>
+          <a href="/ai-slip-scanner">AI Slip Scanner</a>
+          <a href="/3-leg-parlay-guide">3-leg guide</a>
+          <small>Simple for readers. Structured for search engines and AI answer systems.</small>
         </aside>
       </section>
 
-      <section className="inqsi-feature-grid">
+      <section className="inqsi-feature-grid" aria-label="Article key points">
         {sections.map((section) => (
           <article key={section.title}>
             <b>{section.title}</b>
@@ -77,7 +77,7 @@ export function InqsiSeoPage({ eyebrow, title, intro, sections, faqs = [], path 
 
       {faqs.length > 0 && (
         <section className="inqsi-panel">
-          <div className="inqsi-section-head"><h2>Common questions</h2><span>FAQ</span></div>
+          <div className="inqsi-section-head"><h2>Quick answers</h2><span>FAQ</span></div>
           <div className="inqsi-game-list">
             {faqs.map((faq) => (
               <article className="inqsi-mini-card" key={faq.question}>
