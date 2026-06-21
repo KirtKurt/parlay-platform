@@ -5,6 +5,7 @@ import './globals.css';
 import './inqsi.css';
 import './inqsi-compat.css';
 import './tracking.css';
+import './inqsi-final-fixes.css';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app';
 const ogImage = '/og-inqsi.svg';
@@ -19,11 +20,10 @@ export const metadata: Metadata = {
     template: '%s | InQsi'
   },
   description:
-    'InQsi is a sports market review platform with an AI Slip Scanner, 3-leg slip builder, line movement review, best-line warnings, saved slips, and post-game accuracy scoring.',
+    'InQsi is a sports market review platform for members using an AI Slip Scanner, 3-leg slip builder, line movement review, best-line warnings, saved slips, and post-game accuracy scoring.',
   keywords: [
     'InQsi',
     'AI slip scanner',
-    'AI bet slip scanner',
     'AI slip builder',
     '3-leg parlay guide',
     'parlay risk guide',
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
     'sports market intelligence',
     'best line warning',
     'parlay accuracy tracker',
-    'post-game slip autopsy',
+    'post-game slip review',
     'sports risk review'
   ],
   alternates: { canonical: '/' },
@@ -45,7 +45,7 @@ export const metadata: Metadata = {
     siteName: 'InQsi',
     title: 'InQsi | AI Slip Scanner & Sports Market Review',
     description:
-      'Review slips before lock-in, cap builds at 3 legs, compare line movement, save slips, and track post-game accuracy.',
+      'Members can review slips before lock-in, cap builds at 3 legs, compare line movement, save slips, and track post-game accuracy.',
     images: [{ url: ogImage, width: 1200, height: 630, alt: 'InQsi AI slip scanner and sports market review' }]
   },
   twitter: {
@@ -74,7 +74,7 @@ const organizationJsonLd = {
   url: siteUrl,
   contactPoint: {
     '@type': 'ContactPoint',
-    contactType: 'customer support',
+    contactType: 'member support',
     email: 'support@inqsi.app'
   }
 };
@@ -115,7 +115,7 @@ const productJsonLd = {
   brand: { '@type': 'Brand', name: 'InQsi' },
   category: 'Sports analytics software',
   url: siteUrl,
-  description: 'InQsi helps customers scan slips, build disciplined 3-leg slips, review line movement, check best-line warnings, save public or private slips, and track post-game score accuracy.',
+  description: 'InQsi helps members scan slips, build disciplined 3-leg slips, review line movement, check best-line warnings, save public or private slips, and track post-game score accuracy.',
   offers: {
     '@type': 'Offer',
     priceCurrency: 'USD',
