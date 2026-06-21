@@ -19,7 +19,7 @@ export function LoginForm() {
     const formData = new FormData(event.currentTarget);
     const submittedEmail = String(formData.get('email') ?? email).trim();
 
-    saveMemberSession(createDemoMemberSession(submittedEmail, 'Pro'));
+    saveMemberSession(createDemoMemberSession(submittedEmail, 'Full Access'));
     setStatus('signed-in');
 
     window.setTimeout(() => {
