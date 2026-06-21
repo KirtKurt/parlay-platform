@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'Game Leans Dashboard',
-  description: 'Review InQsi game lean context, market stability, signal strength, and data availability.',
+  title: 'Game Leans',
+  description: 'Review InQsi game leans with market context, signal strength, and risk notes before lock-in.',
   alternates: { canonical: '/game-leans' }
 };
 
@@ -13,17 +13,17 @@ export default function Page() {
       path="/game-leans"
       eyebrow="Game leans"
       title="Game leans with market context."
-      intro="InQsi presents game leans with signal score context, market stability, and short explanations. If verified data is unavailable, this page shows Working on it."
+      intro="InQsi does not ask you to blindly trust a pick. Game leans show where the market appears to be pointing, what signals support the read, and what warning signs still deserve attention."
       sections={[
-        { title: 'Market-aware visibility', copy: 'Game leans are designed to appear when the market has enough information to review.' },
+        { title: 'Market direction', copy: 'See which side appears to have market support when the board has enough information to review.' },
         { title: 'Signal context', copy: 'Each lean is supported by market movement, stability, and a short what-to-watch explanation.' },
-        { title: 'Responsible language', copy: 'InQsi avoids guarantee language and keeps the message clear and professional.' },
-        { title: 'Sport-specific learning', copy: 'Results are stored by sport so each sport improves independently.' }
+        { title: 'Risk notes', copy: 'Resistance, chaos, and coin-flip pressure stay visible so a lean does not feel stronger than it should.' },
+        { title: 'No guarantees', copy: 'InQsi gives you a market read, not certainty. The goal is to help you make a calmer decision before lock-in.' }
       ]}
       faqs={[
-        { question: 'Does InQsi guarantee an outcome?', answer: 'No. InQsi presents market-based leans and context, not guarantees.' },
-        { question: 'When should game leans appear?', answer: 'The product goal is to show leans when verified data is available and the market has enough context.' },
-        { question: 'What happens if data is missing?', answer: 'InQsi shows Working on it rather than displaying artificial results.' }
+        { question: 'Does InQsi guarantee an outcome?', answer: 'No. InQsi presents market-based leans and risk context, not guarantees.' },
+        { question: 'What should I look for first?', answer: 'Start with the signal context, then check whether resistance or instability is warning you to slow down.' },
+        { question: 'What happens if data is missing?', answer: 'InQsi uses a clear waiting state rather than displaying artificial results.' }
       ]}
     />
   );
