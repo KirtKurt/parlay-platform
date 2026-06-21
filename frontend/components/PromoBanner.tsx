@@ -21,11 +21,11 @@ export function PromoBanner() {
       }}
     >
       <div style={{ lineHeight: 1.45 }}>
-        <strong style={{ color: '#20f29f' }}>Launch promo: first week free.</strong>
-        <span style={{ color: '#b9c5db' }}> Preview the terminal, build your first watchlist, and see how the market board works before monthly membership starts.</span>
+        <strong style={{ color: '#20f29f' }}>Launch promo: 5 days free.</strong>
+        <span style={{ color: '#b9c5db' }}> Preview the market board, scan your first bet slip, and see how risk detection works before monthly membership starts.</span>
       </div>
       <Link
-        href="/register?promo=free-week"
+        href="/register?promo=5-days"
         style={{
           textDecoration: 'none',
           color: '#04101d',
@@ -36,7 +36,7 @@ export function PromoBanner() {
           whiteSpace: 'nowrap'
         }}
       >
-        Start free week
+        Start 5 days free
       </Link>
     </div>
   );
