@@ -4,7 +4,7 @@ import { AppHeader } from '@/components/AppHeader';
 
 const SPORTS = ['NFL', 'NCAAF', 'NBA', 'NCAAM', 'NHL', 'MLB', 'WNBA', 'Soccer', 'Tennis', 'MMA', 'Boxing', 'Golf', 'eSports'];
 const FOOTER_LINKS = [
-  ['AI Bet Slip Scanner', '/parlay-scanner'],
+  ['AI Slip Scanner', '/parlay-scanner'],
   ['Game Leans', '/game-leans'],
   ['Best Lines', '/best-lines'],
   ['Live Market', '/live-market'],
@@ -20,19 +20,19 @@ const FOOTER_LINKS = [
 
 export const metadata: Metadata = {
   title: 'InQsi | Sports Market Intelligence',
-  description: 'InQsi evaluates sportsbook markets and thousands of data points to help scan bet slips, surface risk, and review market movement before you lock it in.',
+  description: 'InQsi evaluates sportsbook markets and thousands of data points to help scan slips, surface risk, and review market movement before you lock it in.',
   alternates: { canonical: '/' }
 };
 
 function MarketPreviewCard({ label }: { label: string }) {
   return (
     <article className="inqsi-game-card">
-      <div className="inqsi-game-row"><b>{label}</b><span className="inqsi-score-chip">Working</span></div>
+      <div className="inqsi-game-row"><b>{label}</b><span className="inqsi-score-chip">Pending</span></div>
       <div className="inqsi-team-stack">
-        <div className="inqsi-team"><span className="inqsi-jersey">A</span><span><b>Market side A</b><small>Verified feed required</small></span></div>
+        <div className="inqsi-team"><span className="inqsi-jersey">A</span><span><b>Market side A</b><small>Waiting for market data</small></span></div>
         <div className="inqsi-team"><span className="inqsi-jersey">B</span><span><b>Market side B</b><small>No artificial data shown</small></span></div>
       </div>
-      <div className="inqsi-market-grid"><div><span>ML</span>Working</div><div><span>Spread</span>Working</div><div><span>Total</span>Working</div></div>
+      <div className="inqsi-market-grid"><div><span>ML</span>Pending</div><div><span>Spread</span>Pending</div><div><span>Total</span>Pending</div></div>
       <div className="inqsi-signal-row"><span>Market signals</span><span>Risk review</span><span>AI scan</span></div>
     </article>
   );
@@ -53,13 +53,13 @@ export default function Home() {
             <div><b>Sportsbooks Evaluated</b><span>Major sportsbook markets monitored</span></div>
             <div><b>Market Signals</b><span>Thousands of data points analyzed</span></div>
             <div><b>Risk Detection</b><span>Weak legs surfaced before lock-in</span></div>
-            <div><b>AI Bet Slip Scanner</b><span>Your picks scanned for where they go wrong</span></div>
+            <div><b>AI Slip Scanner</b><span>Your picks scanned for where they go wrong</span></div>
           </div>
         </div>
         <aside className="inqsi-signup-card" aria-label="Create account">
           <h2>Start with 5 days free</h2>
           <p>Scan your slip, save watchlists, review alerts, and track market intelligence in one dashboard.</p>
-          <a href="/parlay-scanner">Open AI Bet Slip Scanner</a>
+          <a href="/parlay-scanner">Open AI Slip Scanner</a>
           <a className="inqsi-primary" href="/register">Create account</a>
           <small>Start with the scanner, review the board, and decide whether InQsi earns a place in your routine.</small>
         </aside>
@@ -70,12 +70,12 @@ export default function Home() {
       <section className="inqsi-layout inqsi-mock-dashboard">
         <div>
           <section className="inqsi-panel">
-            <div className="inqsi-section-head"><h2>Sports Market Board</h2><span>Working on it</span></div>
+            <div className="inqsi-section-head"><h2>Sports Market Board</h2><span>Market data pending</span></div>
             <div className="inqsi-game-list"><MarketPreviewCard label="Game slot 1" /><MarketPreviewCard label="Game slot 2" /></div>
           </section>
         </div>
         <aside className="inqsi-panel">
-          <div className="inqsi-section-head"><h2>AI Bet Slip Scanner</h2><span>Bring your picks</span></div>
+          <div className="inqsi-section-head"><h2>AI Slip Scanner</h2><span>Bring your picks</span></div>
           <p className="movement">Enter your own slip and let InQsi scan for weak legs, market instability, and warning signs.</p>
           <Link className="inqsi-primary" href="/parlay-scanner" style={{ textDecoration: 'none', width: '100%' }}>Scan my slip</Link>
         </aside>
