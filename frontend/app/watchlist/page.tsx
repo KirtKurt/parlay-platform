@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'Saved List',
-  description: 'Review saved items, data readiness, and status in InQsi.',
+  title: 'Watchlist',
+  description: 'Save the games, slips, and market signals you want to review again in InQsi.',
   alternates: { canonical: '/watchlist' }
 };
 
@@ -11,14 +11,14 @@ export default function Page() {
   return (
     <InqsiSeoPage
       path="/watchlist"
-      eyebrow="Saved list"
-      title="Saved items and review status."
-      intro="InQsi will keep followed items organized in one place. If connected data is unavailable, the page shows Working on it."
+      eyebrow="Watchlist"
+      title="Keep the games you care about close."
+      intro="Save the games, slips, and market signals you want to review again. Your watchlist keeps the important spots in one place so you can come back before lock-in."
       sections={[
-        { title: 'Saved items', copy: 'Keep important items organized in one dashboard.' },
-        { title: 'Status view', copy: 'See whether each saved item has current verified data.' },
-        { title: 'Quick return', copy: 'Return to important pages without searching.' },
-        { title: 'Clear states', copy: 'Unavailable information stays clearly labeled.' }
+        { title: 'Saved games', copy: 'Keep the matchups you are watching in one clean view.' },
+        { title: 'Saved slips', copy: 'Return to the picks you want InQsi to challenge again.' },
+        { title: 'Signal follow-up', copy: 'Track pressure, resistance, and warning signs without digging through every board.' },
+        { title: 'Faster review', copy: 'Use the watchlist to focus only on the markets that matter to you.' }
       ]}
     />
   );
