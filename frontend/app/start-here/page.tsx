@@ -17,7 +17,7 @@ export const metadata: Metadata = {
 const steps = [
   {
     title: '1. Bring the pick you already like',
-    detail: 'Start with the side, team, or parlay leg you were already thinking about. InQsi is built to challenge the ticket before you build it.'
+    detail: 'Start with the side, team, or parlay leg you were already thinking about. InQsi helps challenge the ticket before you build it.'
   },
   {
     title: '2. Run it through the AI Bet Slip Scanner',
@@ -25,7 +25,7 @@ const steps = [
   },
   {
     title: '3. Preview the sports board',
-    detail: 'Choose a sport and see how the slate is organized. Each sport has its own equipment icon, board, signals, and market story.'
+    detail: 'Choose a sport and see where the market is showing pressure, support, and warning signs across the slate.'
   },
   {
     title: '4. Unlock the full view when it is worth it',
@@ -57,7 +57,7 @@ export default function StartHerePage() {
             <Link className="ghost-button large" href="/pricing" style={{ textDecoration: 'none' }}>View Full Access</Link>
           </div>
         </div>
-        <SportHeroPanel sportSlug="nfl" title="Start with one sport, then expand." copy="Every page now uses equipment icons for sport identity and jersey-style badges for team identity, without official team or league marks." />
+        <SportHeroPanel sportSlug="nfl" title="Start with one sport, then expand." copy="Open the sport you care about first. InQsi keeps the review focused on the pick, the market pressure, and the warning signs that matter before lock-in." />
       </section>
 
       <SportIconStrip compact />
@@ -65,7 +65,7 @@ export default function StartHerePage() {
       <ContentBlock
         eyebrow="Recommended path"
         title="A cleaner first visit"
-        body="The website is now mapped around how a real person thinks: first doubt the pick, then preview the board, then understand the method, then decide whether 5 days free is worth using."
+        body="Start by doubting the pick, then scan the slip, review the board, understand the warning signs, and decide whether 5 days free is worth using. No pressure. No fake certainty."
         items={steps}
       />
 
@@ -78,7 +78,7 @@ export default function StartHerePage() {
           <Link className="primary-button" href="/register?promo=5-days" style={{ textDecoration: 'none' }}>Start 5 Days Free</Link>
         </div>
         <p className="hero-copy" style={{ marginTop: 8 }}>
-          The scanner is the strongest entry point because it meets users where they already are: they have a pick, they feel good about it, and they want to know whether the market is quietly warning them off.
+          The scanner starts exactly where you are: you have a pick, you feel good about it, and you want to know whether the market is quietly warning you off.
         </p>
       </section>
     </main>
