@@ -8,7 +8,7 @@ const FOOTER_LINKS = [
   ['Game Leans', '/game-leans'],
   ['Best Lines', '/best-lines'],
   ['Live Market', '/live-market'],
-  ['Line Movement Review', '/clv'],
+  ['Line Movement Review', '/line-movement-review'],
   ['Review History', '/performance'],
   ['Alerts', '/alerts'],
   ['Watchlist', '/watchlist'],
