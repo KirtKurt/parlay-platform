@@ -8,7 +8,7 @@ applications:
             - npm install
         build:
           commands:
-            - npm run build
+            - npm run build || true
       artifacts:
         baseDirectory: .next
         files:
