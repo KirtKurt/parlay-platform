@@ -48,7 +48,7 @@ export default function Home() {
         <div className="inqsi-hero-card">
           <p className="inqsi-promo">5 days free promo · Cancel anytime</p>
           <h1>Find where your picks go wrong <span>before you lock it in.</span></h1>
-          <p>InQsi helps bettors find hidden risk before they lock in a slip. The platform evaluates sportsbook markets, analyzes thousands of market signals, and scans your bet slip for weak legs, instability, and warning signs.</p>
+          <p>InQsi helps you find hidden risk before you lock in a slip. The platform evaluates sportsbook markets, analyzes thousands of market signals, and scans your bet slip for weak legs, instability, and warning signs.</p>
           <div className="inqsi-stat-grid" aria-label="InQsi value proposition">
             <div><b>Sportsbooks Evaluated</b><span>Major sportsbook markets monitored</span></div>
             <div><b>Market Signals</b><span>Thousands of data points analyzed</span></div>
