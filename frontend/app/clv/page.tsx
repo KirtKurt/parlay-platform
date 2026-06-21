@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'CLV Tracking',
-  description: 'Review CLV tracking readiness, snapshot timing, and data status in InQsi.',
+  title: 'Line Movement Review',
+  description: 'Review how market lines move after your first InQsi read.',
   alternates: { canonical: '/clv' }
 };
 
@@ -11,14 +11,14 @@ export default function Page() {
   return (
     <InqsiSeoPage
       path="/clv"
-      eyebrow="CLV"
-      title="Closing line value tracking."
-      intro="InQsi will compare saved market snapshots with later market positions when verified data is available. Until that data exists, this page shows Working on it."
+      eyebrow="Line movement"
+      title="Show how the number moved after your first read."
+      intro="This page keeps suggestion 5 visible for customers: a simple line movement review. It helps you look back at where the market was when you first checked a game and how the number moved later."
       sections={[
-        { title: 'Snapshot tracking', copy: 'Store the market position at the time of review.' },
-        { title: 'Later comparison', copy: 'Compare saved snapshots with later market positions when available.' },
-        { title: 'Signal review', copy: 'Use movement quality to review whether a signal had useful timing.' },
-        { title: 'Data status', copy: 'Show unavailable information clearly instead of filling gaps.' }
+        { title: 'First read', copy: 'Save the market position from your first review.' },
+        { title: 'Later movement', copy: 'Compare the first read with where the market moved later.' },
+        { title: 'Signal timing', copy: 'Review whether the market gave useful clues early or late.' },
+        { title: 'Simple language', copy: 'InQsi shows this as line movement review instead of technical CLV language.' }
       ]}
     />
   );
