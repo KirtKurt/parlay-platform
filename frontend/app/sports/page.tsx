@@ -2,11 +2,11 @@ import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
 import { ContentBlock } from '@/components/ContentBlock';
-import { SportEquipmentIcon, SportIconStrip, sportVisuals } from '@/components/SportVisuals';
-import { getSportSlugForLeague, sports } from '@/lib/sports';
+import { SportEquipmentIcon, SportIconStrip } from '@/components/SportVisuals';
+import { sports } from '@/lib/sports';
 
 export default async function SportsPage() {
-  const { games, apiStatus, apiDetail } = await getApiSnapshot();
+  const { apiStatus, apiDetail } = await getApiSnapshot();
 
   return (
     <main className="shell">
@@ -35,19 +35,13 @@ export default async function SportsPage() {
 
       <SportIconStrip />
 
-      <section className="visual-route-strip">
-        {sports.map((sport) => {
-          const count = games.filter((game) => getSportSlugForLeague(game.league) === sport.slug).length;
-          const visual = sportVisuals[sport.slug];
-          return (
-            <Link className="visual-route-card" href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none', color: 'inherit' }}>
-              <SportEquipmentIcon slug={sport.slug} />
-              <span className="eyebrow blue">{visual.equipmentLabel}</span>
-              <strong>{sport.title}</strong>
-              <p>{count ? `${count} active example on the board.` : 'Ready for slate data.'} Open the board when you want to review market pressure and risk signals for this sport.</p>
-            </Link>
-          );
-        })}
+      <section className="visual-route-strip" aria-label="Sports boards">
+        {sports.map((sport) => (
+          <Link className="visual-route-card" href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none', color: 'inherit' }} aria-label={`Open ${sport.label} board`}>
+            <SportEquipmentIcon slug={sport.slug} />
+            <strong>{sport.title}</strong>
+          </Link>
+        ))}
       </section>
 
       <ContentBlock
