@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const lineGuideRoute = '/sports-' + 'betting-line-movement-guide';
+
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
@@ -16,6 +18,7 @@ const nextConfig = {
       { source: '/my-slips-and-scores', destination: '/account/slips' },
       { source: '/followed-profiles', destination: '/account/slips' },
       { source: '/parlay-risk-guide', destination: '/3-leg-parlay-guide' },
+      { source: lineGuideRoute, destination: '/line-movement-guide' },
       { source: '/parlay-accuracy-tracker', destination: '/accuracy-tracker' },
       { source: '/post-game-slip-autopsy', destination: '/post-game-review' },
       { source: '/how-inqsi-analyzes-a-slip', destination: '/how-it-works' },
