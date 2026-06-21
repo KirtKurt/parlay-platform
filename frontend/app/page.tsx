@@ -2,9 +2,10 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AppHeader } from '@/components/AppHeader';
 
-const SPORTS = ['NFL', 'NCAAF', 'NBA', 'NCAAM', 'NHL', 'MLB', 'WNBA', 'Soccer', 'Tennis', 'MMA', 'Boxing', 'Golf', 'eSports'];
+const SPORTS = ['NFL', 'CFB', 'NBA', 'NCAAM', 'NHL', 'MLB', 'WNBA', 'Soccer', 'Tennis', 'MMA', 'Boxing', 'Golf', 'eSports'];
 const FOOTER_LINKS = [
   ['AI Slip Scanner', '/parlay-scanner'],
+  ['AI Slip Builder', '/parlays'],
   ['Game Leans', '/game-leans'],
   ['Best Lines', '/best-lines'],
   ['Live Market', '/live-market'],
@@ -20,8 +21,8 @@ const FOOTER_LINKS = [
 ];
 
 export const metadata: Metadata = {
-  title: 'InQsi | Sports Market Intelligence',
-  description: 'InQsi evaluates sportsbook markets and thousands of data points to help scan slips, surface risk, and review market movement before you lock it in.',
+  title: 'InQsi | AI Slip Scanner & Sports Market Review',
+  description: 'InQsi helps customers scan slips, review market signals, surface hidden risk, compare line movement, and learn from post-game score history.',
   alternates: { canonical: '/' }
 };
 
@@ -49,7 +50,7 @@ export default function Home() {
         <div className="inqsi-hero-card">
           <p className="inqsi-promo">5 days free promo · Cancel anytime</p>
           <h1>Find where your picks go wrong <span>before you lock it in.</span></h1>
-          <p>InQsi helps you find hidden risk before you lock in a slip. The platform evaluates sportsbook markets, analyzes thousands of market signals, and scans your slip for weak legs, instability, and warning signs.</p>
+          <p>InQsi helps customers find hidden risk before they lock in a slip. The platform reviews market movement, scans thousands of market signals, and checks each slip for weak legs, instability, and warning signs.</p>
           <div className="inqsi-stat-grid" aria-label="InQsi value proposition">
             <div><b>Sportsbooks Evaluated</b><span>Major sportsbook markets monitored</span></div>
             <div><b>Market Signals</b><span>Thousands of data points analyzed</span></div>
