@@ -1,100 +1,66 @@
+import type { Metadata } from 'next';
 import Link from 'next/link';
-import { MASTER_ACCESS, SUBSCRIBER_ACCESS, VISITOR_ACCESS } from '@/lib/accessControl';
+import { getProviderOverallStatus } from '@/lib/inqsi-data-provider';
+import { getAuthReadiness, getSubscriptionReadiness } from '@/lib/inqsi-auth-billing';
+import { getMonitoringReadiness } from '@/lib/inqsi-observability';
+import { getLaunchReadiness } from '@/lib/inqsi-launch-checklist';
 
-const adminChecks = [
-  'Verify backend health and API connectivity',
-  'Review customer subscription state from billing provider confirmation',
-  'Override support access only through server-side master role',
-  'Inspect slate ingestion status by sport',
-  'Review locked premium outputs before public release'
-];
+export const metadata: Metadata = {
+  title: 'Admin Dashboard',
+  description: 'Private InQsi operator dashboard readiness shell.',
+  robots: { index: false, follow: false },
+  alternates: { canonical: '/admin' }
+};
+
+function StatusCard({ title, value, copy }: { title: string; value: string; copy: string }) {
+  return <article><b>{title}</b><span>{value}</span><small>{copy}</small></article>;
+}
 
 export default function AdminPage() {
+  const providers = getProviderOverallStatus();
+  const auth = getAuthReadiness();
+  const subscription = getSubscriptionReadiness();
+  const monitoring = getMonitoringReadiness();
+  const launch = getLaunchReadiness();
+
   return (
-    <main className="shell">
-      <section className="hero-card glass-card">
-        <p className="eyebrow blue">Master Console</p>
-        <h2>Admin access is server-side only.</h2>
-        <p className="hero-copy">
-          This page is the frontend placeholder for the Silvers Syndicate master login flow. No master password is stored in the frontend. The real unlock must come from the backend after identity, role, and subscription status are verified.
-        </p>
-        <div className="hero-actions">
-          <Link className="primary-button large" href="/login">Master Sign In</Link>
-          <Link className="ghost-button large" href="/account">Account Status</Link>
+    <main className="inqsi-shell">
+      <header className="inqsi-topbar">
+        <Link className="inqsi-brand" href="/"><span className="inqsi-logo-mark">Q</span><span><b>InQsi</b><small>Operator Dashboard</small></span></Link>
+        <nav className="inqsi-nav-actions"><Link href="/launch-checklist">Launch checklist</Link><Link href="/privacy-choices">Privacy</Link></nav>
+      </header>
+
+      <section className="inqsi-hero inqsi-seo-hero">
+        <div className="inqsi-hero-card">
+          <p className="inqsi-promo">Private admin shell</p>
+          <h1>Operator dashboard readiness.</h1>
+          <p>This page is the internal command center shell for providers, auth, billing, analytics, launch readiness, and data status. Private admin auth still needs to be connected before exposing real operational data.</p>
         </div>
-      </section>
-
-      <section className="status-row">
-        <article className="status-card">
-          <span>Visitor</span>
-          <strong>{VISITOR_ACCESS.label}</strong>
-          <p>Teaser view only. Premium rankings, graph detail, and parlay outputs stay blurred.</p>
-        </article>
-        <article className="status-card">
-          <span>Paid Subscriber</span>
-          <strong>{SUBSCRIBER_ACCESS.label}</strong>
-          <p>Full board unlock after monthly billing provider confirms active status.</p>
-        </article>
-        <article className="status-card">
-          <span>Master</span>
-          <strong>{MASTER_ACCESS.label}</strong>
-          <p>Full access plus admin tools. Must be assigned by backend role, not client code.</p>
-        </article>
-        <article className="status-card">
-          <span>Billing</span>
-          <strong>Provider-neutral</strong>
-          <p>Your payment provider credentials will be added later. No Stripe dependency.</p>
-        </article>
-      </section>
-
-      <section className="content-grid">
-        <div className="panel">
-          <div className="panel-header compact">
-            <div>
-              <p className="eyebrow">Admin Readiness</p>
-              <h3>Master console checklist</h3>
-            </div>
-          </div>
-          <div className="game-list">
-            {adminChecks.map((item) => (
-              <article className="game-card" key={item}>
-                <div className="game-topline">
-                  <span className="league-chip">CONTROL</span>
-                  <span>Required</span>
-                  <span className="data-status collected">Planned</span>
-                </div>
-                <h4>{item}</h4>
-                <p className="movement">This must be enforced on the server before any real customer or billing data is exposed.</p>
-              </article>
-            ))}
-          </div>
-        </div>
-
-        <aside className="panel rank-panel">
-          <div className="panel-header compact">
-            <div>
-              <p className="eyebrow">Access Rules</p>
-              <h3>No client-side secrets</h3>
-            </div>
-          </div>
-          <div className="rank-list">
-            <article className="rank-card top-zone">
-              <div className="rank-head"><span>Rule #1</span><b>LOCKED</b></div>
-              <h4>No master password in frontend code</h4>
-              <p>Frontend code is public to the browser. Master access must come from authenticated backend claims.</p>
-            </article>
-            <article className="rank-card">
-              <div className="rank-head"><span>Rule #2</span></div>
-              <h4>Billing provider confirms active status</h4>
-              <p>The payment provider sends confirmation to the backend, then the backend unlocks the user.</p>
-            </article>
-            <article className="rank-card">
-              <div className="rank-head"><span>Rule #3</span></div>
-              <h4>Master role bypasses subscription gate</h4>
-              <p>Master users can inspect premium and admin views without monthly billing status.</p>
-            </article>
-          </div>
+        <aside className="inqsi-signup-card">
+          <h2>Launch readiness</h2>
+          <p>{launch.percentReady}% ready · {launch.blocked} blocked items</p>
+          <a href="/api/admin/summary">View JSON summary</a>
+          <small>Robots are set to noindex for this page.</small>
         </aside>
+      </section>
+
+      <section className="inqsi-feature-grid">
+        <StatusCard title="Providers" value={providers.ready ? 'Ready' : 'Working on it'} copy={providers.message} />
+        <StatusCard title="Auth" value={auth.ready ? 'Ready' : 'Working on it'} copy={auth.message} />
+        <StatusCard title="Subscription" value={subscription.ready ? 'Ready' : 'Working on it'} copy={subscription.message} />
+        <StatusCard title="Monitoring" value={monitoring.analyticsEndpointReady ? 'Partially ready' : 'Working on it'} copy={monitoring.message} />
+      </section>
+
+      <section className="inqsi-panel">
+        <div className="inqsi-section-head"><h2>Launch items</h2><span>{launch.blocked} blocked</span></div>
+        <div className="inqsi-game-list">
+          {launch.items.map((item) => (
+            <article className="inqsi-mini-card" key={item.id}>
+              <b>{item.area}: {item.title}</b>
+              <small>{item.status.toUpperCase()} · {item.note}</small>
+            </article>
+          ))}
+        </div>
       </section>
     </main>
   );
