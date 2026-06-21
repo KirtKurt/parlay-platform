@@ -75,6 +75,31 @@ def creator_by_code(value: Any):
     return items[0] if items else None
 
 
+def creator_by_private_token(token: str):
+    if not token or len(token) < 20:
+        return None
+    result = CREATORS_TABLE.scan(FilterExpression=Key("private_report_token").eq(token), Limit=1)
+    items = result.get("Items", [])
+    return items[0] if items else None
+
+
+def sanitize_creator(creator: Dict[str, Any], include_private: bool = False) -> Dict[str, Any]:
+    public = {
+        "creator_id": creator.get("creator_id"),
+        "creator_name": creator.get("creator_name"),
+        "handle": creator.get("handle"),
+        "referral_code": creator.get("referral_code"),
+        "campaign_name": creator.get("campaign_name"),
+        "commission_type": creator.get("commission_type"),
+        "commission_amount": creator.get("commission_amount"),
+        "active": creator.get("active"),
+    }
+    if include_private:
+        public["private_report_token"] = creator.get("private_report_token")
+        public["private_report_path"] = f"/partner-report/{creator.get('private_report_token')}"
+    return public
+
+
 def create_creator(payload: Dict[str, Any]) -> Dict[str, Any]:
     referral_code = code(payload.get("referralCode") or payload.get("referral_code"))
     if not referral_code:
@@ -90,12 +115,13 @@ def create_creator(payload: Dict[str, Any]) -> Dict[str, Any]:
         "campaign_name": payload.get("campaignName") or payload.get("campaign_name") or "default",
         "commission_type": payload.get("commissionType") or payload.get("commission_type") or "manual",
         "commission_amount": payload.get("commissionAmount") or payload.get("commission_amount") or 0,
+        "private_report_token": payload.get("privateReportToken") or payload.get("private_report_token") or f"pr_{uuid.uuid4().hex}{uuid.uuid4().hex[:8]}",
         "active": bool(payload.get("active", True)),
         "created_at": now,
         "updated_at": now,
     }
     CREATORS_TABLE.put_item(Item=safe_decimal(item))
-    return response(201, {"created": True, "creator": item})
+    return response(201, {"created": True, "creator": sanitize_creator(item, include_private=True)})
 
 
 def capture(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -129,7 +155,7 @@ def link_user(payload: Dict[str, Any]) -> Dict[str, Any]:
         return response(404, {"error": "creator_not_found"})
     existing = USER_ATTRIBUTION_TABLE.get_item(Key={"user_id": user_id}).get("Item")
     if existing and existing.get("locked"):
-        return response(200, {"linked": False, "locked": True, "attribution": existing})
+        return response(200, {"linked": False, "locked": True, "attribution": {"creator_id": existing.get("creator_id"), "referral_code": existing.get("referral_code"), "member_status": existing.get("member_status")}})
     now = utc_now()
     item = {
         "user_id": user_id,
@@ -142,7 +168,7 @@ def link_user(payload: Dict[str, Any]) -> Dict[str, Any]:
         "updated_at": now,
     }
     USER_ATTRIBUTION_TABLE.put_item(Item=safe_decimal(item))
-    return response(200, {"linked": True, "attribution": item})
+    return response(200, {"linked": True, "attribution": {"creator_id": item["creator_id"], "referral_code": item["referral_code"], "member_status": item["member_status"]}})
 
 
 def membership_update(payload: Dict[str, Any], headers: Dict[str, Any]) -> Dict[str, Any]:
@@ -164,9 +190,9 @@ def membership_update(payload: Dict[str, Any], headers: Dict[str, Any]) -> Dict[
         "referral_code": attribution.get("referral_code") or payload.get("referralCode") or payload.get("referral_code"),
         "billing_provider": payload.get("billingProvider") or payload.get("billing_provider") or "external_billing_provider",
         "billing_provider_customer_id": payload.get("billingProviderCustomerId") or payload.get("billing_provider_customer_id"),
-        "plan": payload.get("plan") or "premium",
+        "plan": payload.get("plan") or "full_access",
         "member_status": status,
-        "amount_cents": payload.get("amountCents") or payload.get("amount_cents"),
+        "amount_cents": payload.get("amountCents") or payload.get("amount_cents") or 3800,
         "period_start": payload.get("periodStart") or payload.get("period_start"),
         "period_end": payload.get("periodEnd") or payload.get("period_end"),
         "last_paid_at": payload.get("lastPaidAt") or payload.get("last_paid_at") or (now if status == LIVE_PAID else None),
@@ -178,26 +204,55 @@ def membership_update(payload: Dict[str, Any], headers: Dict[str, Any]) -> Dict[
         attribution["member_status"] = status
         attribution["updated_at"] = now
         USER_ATTRIBUTION_TABLE.put_item(Item=safe_decimal(attribution))
-    return response(200, {"stored": True, "membership": item})
+    return response(200, {"stored": True, "membership": {"membership_id": item["membership_id"], "creator_id": item["creator_id"], "member_status": item["member_status"]}})
+
+
+def memberships_by_status(creator_id: str, status: str):
+    return MEMBERSHIP_TABLE.query(IndexName="CreatorStatusIndex", KeyConditionExpression=Key("creator_id").eq(creator_id) & Key("member_status").eq(status)).get("Items", [])
+
+
+def compute_payout_due(creator: Dict[str, Any], active_count: int, live_mrr_cents: int) -> int:
+    commission_type = creator.get("commission_type") or "manual"
+    amount = int(creator.get("commission_amount") or 0)
+    if commission_type == "percent_mrr":
+        return int(live_mrr_cents * amount / 100)
+    if commission_type == "flat_per_live_member":
+        return int(active_count * amount)
+    return 0
+
+
+def aggregate_metrics(creator: Dict[str, Any]) -> Dict[str, Any]:
+    creator_id = creator.get("creator_id")
+    active = memberships_by_status(creator_id, LIVE_PAID)
+    canceled = memberships_by_status(creator_id, "canceled")
+    past_due = memberships_by_status(creator_id, "past_due")
+    trial = memberships_by_status(creator_id, "trial")
+    live_mrr_cents = sum(int(item.get("amount_cents") or 0) for item in active)
+    payout_due_cents = compute_payout_due(creator, len(active), live_mrr_cents)
+    return {
+        "activePaidMembers": len(active),
+        "trialMembers": len(trial),
+        "canceledMembers": len(canceled),
+        "pastDueMembers": len(past_due),
+        "liveMrrCents": live_mrr_cents,
+        "payoutDueCents": payout_due_cents,
+        "commissionType": creator.get("commission_type"),
+        "commissionAmount": creator.get("commission_amount"),
+    }
 
 
 def creator_metrics(creator_id: str) -> Dict[str, Any]:
     creator = CREATORS_TABLE.get_item(Key={"creator_id": creator_id}).get("Item")
     if not creator:
         return response(404, {"error": "creator_not_found"})
-    active = MEMBERSHIP_TABLE.query(IndexName="CreatorStatusIndex", KeyConditionExpression=Key("creator_id").eq(creator_id) & Key("member_status").eq(LIVE_PAID)).get("Items", [])
-    canceled = MEMBERSHIP_TABLE.query(IndexName="CreatorStatusIndex", KeyConditionExpression=Key("creator_id").eq(creator_id) & Key("member_status").eq("canceled")).get("Items", [])
-    past_due = MEMBERSHIP_TABLE.query(IndexName="CreatorStatusIndex", KeyConditionExpression=Key("creator_id").eq(creator_id) & Key("member_status").eq("past_due")).get("Items", [])
-    return response(200, {
-        "creator": creator,
-        "metrics": {
-            "livePaidCustomers": len(active),
-            "liveMrrCents": sum(int(item.get("amount_cents") or 0) for item in active),
-            "canceledCustomers": len(canceled),
-            "pastDueCustomers": len(past_due),
-        },
-        "privacy": "Creator reporting should default to aggregate counts."
-    })
+    return response(200, {"creator": sanitize_creator(creator, include_private=True), "metrics": aggregate_metrics(creator), "privacy": "Aggregate reporting only. Customer emails are not returned."})
+
+
+def private_report(token: str) -> Dict[str, Any]:
+    creator = creator_by_private_token(token)
+    if not creator or creator.get("active") is False:
+        return response(404, {"error": "private_report_not_found"})
+    return response(200, {"creator": sanitize_creator(creator, include_private=False), "metrics": aggregate_metrics(creator), "privacy": "This report is creator-specific and aggregate only. Customer emails are not returned."})
 
 
 def handle_http(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -210,9 +265,11 @@ def handle_http(event: Dict[str, Any]) -> Dict[str, Any]:
         return create_creator(body(event))
     if path == "/v1/creators" and method == "GET":
         items = CREATORS_TABLE.scan(Limit=100).get("Items", [])
-        return response(200, {"creators": items, "count": len(items)})
+        return response(200, {"creators": [sanitize_creator(item, include_private=True) for item in items], "count": len(items)})
     if path.startswith("/v1/creators/") and path.endswith("/metrics") and method == "GET":
         return creator_metrics(path.split("/")[3])
+    if path.startswith("/v1/creator-reports/") and method == "GET":
+        return private_report(path.split("/")[3])
     if path == "/v1/attribution/capture" and method == "POST":
         return capture(body(event))
     if path == "/v1/attribution/link-user" and method == "POST":
