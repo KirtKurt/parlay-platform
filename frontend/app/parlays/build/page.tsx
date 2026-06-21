@@ -16,8 +16,8 @@ export default async function BuildParlayPage() {
 
       <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
         <p className="eyebrow blue">Build with discipline</p>
-        <h2>Choose games. Check the structure. Do not force the slip.</h2>
-        <p className="hero-copy">The AI Slip Builder helps turn a group of games into a cleaner 3-leg slip. It looks for strong anchors, flags the coin-flip leg, checks zero-overlap options, and warns you when the market is not supporting the build.</p>
+        <h2>Choose up to 3 legs. Check the structure. Do not force the slip.</h2>
+        <p className="hero-copy">The AI Slip Builder helps turn selected games into a cleaner 3-leg slip. InQsi does not build parlays with more than 3 legs. It looks for strong anchors, flags the coin-flip leg, checks zero-overlap options, and warns you when the market is not supporting the build.</p>
         <div className="hero-actions">
           <Link className="primary-button large" href="/register" style={{ textDecoration: 'none' }}>Start 5 Days Free</Link>
           <Link className="ghost-button large" href="/pricing" style={{ textDecoration: 'none' }}>View Pricing</Link>
@@ -26,13 +26,13 @@ export default async function BuildParlayPage() {
       </section>
 
       <section className="status-row">
-        <article className="status-card"><span>Slip type</span><strong>3-leg</strong><p>Eight possible outcome paths reviewed.</p></article>
+        <article className="status-card"><span>Slip type</span><strong>3-leg max</strong><p>No 4-leg, 5-leg, or larger parlay builds.</p></article>
         <article className="status-card"><span>Anchor check</span><strong>2 Solid</strong><p>Looks for at least two legs with cleaner support.</p></article>
         <article className="status-card"><span>Variable leg</span><strong>0-1 CF</strong><p>Coin-flip exposure stays visible instead of hidden.</p></article>
         <article className="status-card"><span>Overlap</span><strong>Zero</strong><p>Multi-slip builds avoid repeating the same team when possible.</p></article>
       </section>
 
-      <PaidPreviewGate title="Unlock the full AI Slip Builder" message="Preview the discipline now. Full ranked builds, weak-leg review, and saved slip history unlock with member access.">
+      <PaidPreviewGate title="Unlock the full AI Slip Builder" message="Preview the discipline now. Full 3-leg ranked builds, weak-leg review, and saved slip history unlock with member access.">
         <section className="content-grid">
           <div className="panel">
             <div className="panel-header">
@@ -41,7 +41,7 @@ export default async function BuildParlayPage() {
                 <h3>Start with the legs that look cleaner.</h3>
               </div>
             </div>
-            <p className="movement">Anchor candidates are the games InQsi sees as having cleaner market support. They are not guarantees. They are the legs that deserve to be checked first when building the slip.</p>
+            <p className="movement">Anchor candidates are the games InQsi sees as having cleaner market support. They are not guarantees. They are the legs that deserve to be checked first when building a 3-leg slip.</p>
             <div className="game-list">
               {anchorCandidates.map((game) => <GameCard game={game} key={game.id} />)}
             </div>
@@ -54,7 +54,7 @@ export default async function BuildParlayPage() {
                 <h3>Current top paths</h3>
               </div>
             </div>
-            <p className="movement">The builder ranks the strongest-looking structure first, then shows where the risk starts to enter the slip.</p>
+            <p className="movement">The builder ranks the strongest-looking 3-leg structure first, then shows where the risk starts to enter the slip.</p>
             <div className="rank-list">
               {rankings.slice(0, 3).map((ranking) => <RankingCard ranking={ranking} key={ranking.rank} />)}
             </div>
