@@ -7,8 +7,9 @@ from typing import Any, Dict, List, Optional
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from inqsi_core import latest_game_states, latest_snapshot, rank_combinations
-from inqsi_public_predictions import public_predictions_for_sport
+from inqsi_core import auto_parlay, latest_game_states, latest_snapshot, rank_combinations
+from inqsi_live import latest_live_games
+from inqsi_winner_predictions import visible_winner_predictions
 
 
 def _env(name: str, default: str = "") -> str:
@@ -47,11 +48,11 @@ def _from_ddb(value: Any) -> Any:
     return value
 
 
-def _american_value(price: Any, side: str = "favorite") -> Optional[int]:
-    try:
-        return int(price)
-    except Exception:
-        return None
+def _table():
+    table = _signal_ledger or _predictions
+    if table is None:
+        raise RuntimeError("No InQsi market feature table configured")
+    return table
 
 
 def _better_moneyline(current: Optional[Dict[str, Any]], candidate: Dict[str, Any]) -> Dict[str, Any]:
@@ -122,19 +123,24 @@ def check_bet_slip(sport_key: str, legs: List[Dict[str, Any]]) -> Dict[str, Any]
     return {"ok": True, "sport_key": sport_key, "legs_checked": checked, "strongest_leg": strongest, "weakest_leg": weakest, "ranked_combinations": ranking, "message": "Scan your ticket. Find what looks wrong."}
 
 
+def save_bet_slip_scan(user_id: str, sport_key: str, legs: List[Dict[str, Any]]) -> Dict[str, Any]:
+    result = check_bet_slip(sport_key, legs)
+    scan_id = f"SCAN#{sport_key}#{now_iso()}#{uuid.uuid4().hex[:8]}"
+    item = {"PK": f"INQSI#USER#{user_id}", "SK": scan_id, "entity_type": "INQSI_BET_SLIP_SCAN", "user_id": user_id, "sport_key": sport_key, "created_at": now_iso(), "legs": legs, "scan_result": result}
+    _table().put_item(Item=_to_ddb(item))
+    return {"ok": True, "scan_id": scan_id, "result": result}
+
+
 def save_watchlist_item(user_id: str, sport_key: str, game_id: str) -> Dict[str, Any]:
-    if _signal_ledger is None:
-        raise RuntimeError("SIGNAL_LEDGER_TABLE not configured")
-    item = {"PK": f"INQSI#WATCHLIST#{user_id}", "SK": f"SPORT#{sport_key}#GAME#{game_id}", "entity_type": "INQSI_WATCHLIST_ITEM", "user_id": user_id, "sport_key": sport_key, "game_id": game_id, "created_at": now_iso(), "status": "ACTIVE"}
-    _signal_ledger.put_item(Item=_to_ddb(item))
+    item = {"PK": f"INQSI#USER#{user_id}", "SK": f"WATCH#{sport_key}#GAME#{game_id}", "entity_type": "INQSI_WATCHLIST_ITEM", "user_id": user_id, "sport_key": sport_key, "game_id": game_id, "created_at": now_iso(), "status": "ACTIVE", "alert_rules": ["steam", "reversal", "chaos", "prediction_visible", "one_hour_final_check"]}
+    _table().put_item(Item=_to_ddb(item))
     return {"ok": True, "watchlist_item": item}
 
 
 def watchlist(user_id: str) -> Dict[str, Any]:
-    if _signal_ledger is None:
-        raise RuntimeError("SIGNAL_LEDGER_TABLE not configured")
-    response = _signal_ledger.query(KeyConditionExpression=Key("PK").eq(f"INQSI#WATCHLIST#{user_id}"))
-    return {"ok": True, "user_id": user_id, "items": [_from_ddb(i) for i in response.get("Items", [])]}
+    response = _table().query(KeyConditionExpression=Key("PK").eq(f"INQSI#USER#{user_id}"))
+    items = [_from_ddb(i) for i in response.get("Items", [])]
+    return {"ok": True, "user_id": user_id, "items": [i for i in items if i.get("entity_type") == "INQSI_WATCHLIST_ITEM"], "bet_slip_scans": [i for i in items if i.get("entity_type") == "INQSI_BET_SLIP_SCAN"], "alerts": [i for i in items if i.get("entity_type") == "INQSI_ALERT"]}
 
 
 def alert_candidates(sport_key: str) -> Dict[str, Any]:
@@ -149,15 +155,36 @@ def alert_candidates(sport_key: str) -> Dict[str, Any]:
             alerts.append({"type": "REVERSAL_WARNING", "sport_key": sport_key, "game_id": game.get("game_id"), "message": "Reversal warning detected. Review before locking it in."})
         if indicators.get("chaos"):
             alerts.append({"type": "CHAOS_ALERT", "sport_key": sport_key, "game_id": game.get("game_id"), "message": "Chaos alert: books or movement are unstable."})
-    return {"ok": True, "sport_key": sport_key, "alerts": alerts, "count": len(alerts)}
+    return {"ok": True, "sport_key": sport_key, "alerts": alerts, "count": len(alerts), "push_status": "backend_ready_mobile_push_provider_needed"}
+
+
+def create_alert(user_id: str, sport_key: str, game_id: str, alert_type: str, message: str) -> Dict[str, Any]:
+    item = {"PK": f"INQSI#USER#{user_id}", "SK": f"ALERT#{now_iso()}#{uuid.uuid4().hex[:8]}", "entity_type": "INQSI_ALERT", "user_id": user_id, "sport_key": sport_key, "game_id": game_id, "alert_type": alert_type, "message": message, "status": "UNREAD", "created_at": now_iso()}
+    _table().put_item(Item=_to_ddb(item))
+    return {"ok": True, "alert": item}
+
+
+def user_dashboard(user_id: str, sport_key: Optional[str] = None) -> Dict[str, Any]:
+    data = watchlist(user_id)
+    payload = {"ok": True, "user_id": user_id, "watchlist": data.get("items", []), "bet_slip_scans": data.get("bet_slip_scans", []), "alerts": data.get("alerts", [])}
+    if sport_key:
+        payload["visible_winner_predictions"] = visible_winner_predictions(sport_key)
+        payload["auto_parlay"] = auto_parlay(sport_key)
+    return payload
+
+
+def live_market_mode(sport_key: str) -> Dict[str, Any]:
+    live = latest_live_games(sport_key)
+    states = {g.get("game_id"): g for g in latest_game_states(sport_key)}
+    enhanced = []
+    for game in live.get("games", []):
+        enhanced.append({**game, "signal_state": states.get(game.get("game_id"))})
+    return {"ok": True, "sport_key": sport_key, "mode": "live_market_mode", "games": enhanced, "visible_winner_predictions": visible_winner_predictions(sport_key)}
 
 
 def public_performance_dashboard(sport_key: str) -> Dict[str, Any]:
-    if _signal_ledger is None:
-        raise RuntimeError("SIGNAL_LEDGER_TABLE not configured")
-    # Dashboard is sport-scoped only. It reads learning records created by nightly autopsy.
-    winner_resp = _signal_ledger.query(KeyConditionExpression=Key("PK").eq(f"INQSI#WINNER_LEARNING#{sport_key}"))
-    parlay_resp = _signal_ledger.query(KeyConditionExpression=Key("PK").eq(f"INQSI#AUTOPSY#{sport_key}"))
+    winner_resp = _table().query(KeyConditionExpression=Key("PK").eq(f"INQSI#WINNER_LEARNING#{sport_key}"))
+    parlay_resp = _table().query(KeyConditionExpression=Key("PK").eq(f"INQSI#AUTOPSY#{sport_key}"))
     winner_items = [_from_ddb(i) for i in winner_resp.get("Items", [])]
     parlay_items = [_from_ddb(i) for i in parlay_resp.get("Items", [])]
     winner_total = len(winner_items)
@@ -168,12 +195,17 @@ def public_performance_dashboard(sport_key: str) -> Dict[str, Any]:
     return {"ok": True, "sport_key": sport_key, "winner_prediction_accuracy": round(winner_hits / winner_total, 4) if winner_total else None, "winner_predictions_graded": winner_total, "top_3_parlay_containment": round(top3 / parlay_total, 4) if parlay_total else None, "top_4_parlay_containment": round(top4 / parlay_total, 4) if parlay_total else None, "auto_parlays_graded": parlay_total}
 
 
-def closing_line_value_stub(sport_key: str, game_id: str) -> Dict[str, Any]:
-    # CLV requires capturing prediction line at publish time and the final pre-start/closing line.
-    # This endpoint reserves the contract and keeps the data sport-scoped.
-    return {"ok": True, "sport_key": sport_key, "game_id": game_id, "status": "CLV_CONTRACT_READY", "required_fields": ["published_line", "published_at", "closing_line", "closed_at", "beat_close"]}
+def closing_line_value_record(sport_key: str, game_id: str, published_line: Dict[str, Any], closing_line: Dict[str, Any]) -> Dict[str, Any]:
+    item = {"PK": f"INQSI#CLV#{sport_key}", "SK": f"GAME#{game_id}#ASOF#{now_iso()}", "entity_type": "INQSI_CLOSING_LINE_VALUE", "sport_key": sport_key, "game_id": game_id, "published_line": published_line, "closing_line": closing_line, "created_at": now_iso()}
+    _table().put_item(Item=_to_ddb(item))
+    return {"ok": True, "clv_record": item}
 
 
-def context_layer_stub(sport_key: str, game_id: str) -> Dict[str, Any]:
-    # Injury, weather, lineup, goalie/pitcher/starter and news providers plug in here.
-    return {"ok": True, "sport_key": sport_key, "game_id": game_id, "context_sources": ["injuries", "weather", "lineups", "starters", "news"], "status": "PROVIDER_HOOKS_READY"}
+def context_layer_stub(sport_key: str, game_id: str, context_items: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    item = {"PK": f"INQSI#CONTEXT#{sport_key}", "SK": f"GAME#{game_id}", "entity_type": "INQSI_GAME_CONTEXT", "sport_key": sport_key, "game_id": game_id, "updated_at": now_iso(), "context_items": context_items or [], "provider_hooks": ["injuries", "weather", "lineups", "starters", "news"]}
+    _table().put_item(Item=_to_ddb(item))
+    return {"ok": True, "context": item, "status": "provider_hooks_ready"}
+
+
+def community_leaderboard_stub(sport_key: Optional[str] = None) -> Dict[str, Any]:
+    return {"ok": True, "sport_key": sport_key, "feature": "community_leaderboard", "status": "foundation_ready", "note": "Requires user identity, verified slip rules, ranking rules, and abuse controls before public launch."}
