@@ -1,0 +1,27 @@
+{
+  "product": "InQsi",
+  "package": "Google and Apple OAuth integration",
+  "backend_routes": [
+    "/v1/oauth/readiness",
+    "/v1/oauth/google/start",
+    "/v1/oauth/google/callback",
+    "/v1/oauth/apple/start",
+    "/v1/oauth/apple/callback"
+  ],
+  "google_required_environment": [
+    "GOOGLE_OAUTH_CLIENT_ID",
+    "GOOGLE_OAUTH_CLIENT_SECRET",
+    "GOOGLE_OAUTH_REDIRECT_URI"
+  ],
+  "apple_required_environment": [
+    "APPLE_CLIENT_ID",
+    "APPLE_TEAM_ID",
+    "APPLE_KEY_ID",
+    "APPLE_PRIVATE_KEY",
+    "APPLE_REDIRECT_URI"
+  ],
+  "frontend_environment": [
+    "NEXT_PUBLIC_INQSI_API_URL"
+  ],
+  "security_policy": "Do not create member sessions from unverified identity tokens. Callback token exchange remains reserved until provider secrets are configured and verification is enabled."
+}
