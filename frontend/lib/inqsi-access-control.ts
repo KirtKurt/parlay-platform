@@ -22,12 +22,14 @@ export function getAccessLevel(access: InqsiAccountAccess) {
     const active = new Date(trialEndsAt).getTime() > Date.now();
     return { allowed: active, tier: active ? 'trial' : 'expired', trialEndsAt, message: active ? 'Trial access active.' : 'Trial expired.' };
   }
-  return { allowed: false, tier: 'preview', message: 'Create an account or subscribe to unlock premium workspace.' };
+  return { allowed: false, tier: 'preview', message: 'Create an account to unlock premium workspace.' };
 }
+
+const processorReady = Boolean(process.env.MEMBER_PROCESSOR_API_KEY && process.env.NEXT_PUBLIC_MEMBER_PLAN_ID);
 
 export const ACCESS_READINESS = {
   authReady: Boolean(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_APPLE_CLIENT_ID || process.env.EMAIL_AUTH_PROVIDER),
-  billingReady: Boolean(process.env.STRIPE_SECRET_KEY && process.env.NEXT_PUBLIC_STRIPE_PRICE_ID),
+  processorReady,
   trialDays: 5,
-  status: process.env.STRIPE_SECRET_KEY && process.env.NEXT_PUBLIC_STRIPE_PRICE_ID ? 'ready' : 'working_on_it'
+  status: processorReady ? 'ready' : 'working_on_it'
 };
