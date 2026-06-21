@@ -22,7 +22,7 @@ export default function MethodologyPage() {
           <p className="eyebrow blue">How InQsi checks the board · 5 days free</p>
           <h2>Before you lock it in, see what the market is warning you about.</h2>
           <p className="hero-copy">
-            InQsi keeps the review simple: bring the picks you already like, then check the signals that could make them risky. You see movement, pressure, and warning signs in plain English so you can slow down, rethink weak legs, and make a more informed decision.
+            The market is constantly sending signals, but the most important ones are often the easiest to overlook. InQsi is built around the idea that the market leaves breadcrumbs as clues. Before you lock in, we help you slow down, scan the risk, and see whether the market is warning you about something you may have missed.
           </p>
           <div className="team-badge-row" style={{ marginTop: 16 }}>
             <TeamJerseyBadge abbr="UGA" tone="red" number="1" />
