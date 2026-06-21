@@ -3,8 +3,8 @@ import { AppHeader } from '@/components/AppHeader';
 import { SportIconStrip, TeamJerseyBadge, SportEquipmentIcon, TeamBadgeRow } from '@/components/SportVisuals';
 
 export const metadata = {
-  title: 'Visual System Check | Silvers Syndicate',
-  description: 'A live deployment check for the Silvers Syndicate sport equipment icons and jersey-style team badge system.'
+  title: 'Visual System Check | InQsi',
+  description: 'A live deployment check for the InQsi sport equipment icons and jersey-style team badge system.'
 };
 
 const sampleTeams = [
@@ -24,9 +24,9 @@ export default function VisualSystemPage() {
       <section className="sport-hero-grid">
         <div className="hero-card glass-card" style={{ minHeight: 0 }}>
           <p className="eyebrow blue">Deployment check · equipment icons · jersey badges</p>
-          <h2>If you can see this page, the new visual system is live.</h2>
+          <h2>If you can see this page, the InQsi visual system is live.</h2>
           <p className="hero-copy">
-            This page is a direct test route for the new Silvers Syndicate visual system: sports equipment icons, custom jersey-style team badges, and no official league or team logos.
+            This page is a direct test route for the InQsi visual system: sports equipment icons, custom jersey-style team badges, and no official league or team logos.
           </p>
           <div className="hero-actions">
             <Link className="primary-button large" href="/sports" style={{ textDecoration: 'none' }}>Open Sports Board</Link>
