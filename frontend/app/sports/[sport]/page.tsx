@@ -5,7 +5,7 @@ import { AppHeader } from '@/components/AppHeader';
 import { GameCard } from '@/components/GameCard';
 import { PaidPreviewGate } from '@/components/PaidPreviewGate';
 import { ContentBlock } from '@/components/ContentBlock';
-import { SportEquipmentIcon, SportHeroPanel, SportIconStrip, sportVisuals } from '@/components/SportVisuals';
+import { SportEquipmentIcon, SportHeroPanel, SportIconStrip } from '@/components/SportVisuals';
 import { getSportBySlug, getSportSlugForLeague, sports } from '@/lib/sports';
 
 export function generateStaticParams() {
@@ -16,7 +16,6 @@ export default async function SportPage({ params }: { params: { sport: string } 
   const sport = getSportBySlug(params.sport);
   if (!sport) notFound();
 
-  const visual = sportVisuals[sport.slug];
   const { games, rankings, apiStatus, apiDetail } = await getApiSnapshot();
   const visibleGames = games.filter((game) => getSportSlugForLeague(game.league) === sport.slug);
 
@@ -29,7 +28,7 @@ export default async function SportPage({ params }: { params: { sport: string } 
           <p className="eyebrow blue">{sport.label} board · 5 days free</p>
           <h2>{sport.title}</h2>
           <p className="hero-copy">
-            {sport.description} The board now uses a {visual.equipmentLabel} visual cue, jersey-style team badges, and signal cards so the page is easier to scan.
+            {sport.description} Open this board when you want to check market pressure, spot weak legs, and see whether a pick is getting support or running into resistance.
           </p>
           <div className="hero-actions">
             <Link className="primary-button large" href={`/register?promo=5-days&sport=${sport.slug}`} style={{ textDecoration: 'none' }}>Unlock {sport.label}</Link>
@@ -37,7 +36,7 @@ export default async function SportPage({ params }: { params: { sport: string } 
             <Link className="ghost-button large" href="/login" style={{ textDecoration: 'none' }}>Log In</Link>
           </div>
         </div>
-        <SportHeroPanel sportSlug={sport.slug} title={`${visual.label} visual board`} copy={visual.description} />
+        <SportHeroPanel sportSlug={sport.slug} title="Check the board before you trust the pick." copy="InQsi keeps the review focused on the signals that matter: support, resistance, volatility, and the warning signs that could change how you feel about a slip." />
       </section>
 
       <SportIconStrip compact />
@@ -54,10 +53,10 @@ export default async function SportPage({ params }: { params: { sport: string } 
         title={`A simpler way to read the ${sport.label} board`}
         body={`The ${sport.label} board is built to show more than a final price. It helps you see whether a matchup is getting support, running into resistance, or becoming too unstable to force.`}
         items={[
-          { title: 'Equipment identity', detail: `The page uses ${visual.equipmentLabel} graphics so the sport is clear at a glance.` },
-          { title: 'Team badges', detail: 'Team names and abbreviations use custom jersey-style markers instead of official logo marks.' },
-          { title: 'Signals stay readable', detail: 'Steam, resistance, coin-flip, chaos, and anomaly labels stay consistent across sports.' },
-          { title: 'Member unlock', detail: 'Public preview stays simple. Full ranking and movement detail unlock after registration.' }
+          { title: 'Start with the slate', detail: `Open the ${sport.label} board and see which games are ready for review.` },
+          { title: 'Look for pressure', detail: 'Support, resistance, and unusual movement help show where the market may be warning you.' },
+          { title: 'Keep the risk readable', detail: 'Steam, resistance, coin-flip, chaos, and anomaly labels stay consistent across sports.' },
+          { title: 'Unlock the full view', detail: 'Public preview stays simple. Full ranking and movement detail unlock after registration.' }
         ]}
       />
 
@@ -75,7 +74,7 @@ export default async function SportPage({ params }: { params: { sport: string } 
               {visibleGames.length ? visibleGames.map((game) => <GameCard game={game} key={game.id} />) : (
                 <article className="game-card">
                   <h4>{sport.label} board is ready</h4>
-                  <p className="movement">When the backend sends {sport.label} games or matches, this page will fill in automatically with cards, signals, and links to detail pages.</p>
+                  <p className="movement">When verified {sport.label} games or matches are available, this page will fill in automatically with cards, signals, and links to detail pages.</p>
                 </article>
               )}
             </div>
@@ -92,7 +91,7 @@ export default async function SportPage({ params }: { params: { sport: string } 
               <article className="rank-card top-zone">
                 <div className="rank-head"><span>Gate</span><b>LOCKED</b></div>
                 <h4>At least 2 Strong Solid legs</h4>
-                <p>No forced structure. If the board does not support a safe build, the app should refuse instead of dressing it up.</p>
+                <p>No forced structure. If the board does not support a safe build, InQsi should slow you down instead of dressing it up.</p>
               </article>
               <article className="rank-card">
                 <div className="rank-head"><span>Containment</span><b>TOP-3</b></div>
