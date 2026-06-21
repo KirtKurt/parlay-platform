@@ -45,7 +45,7 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
       <section className="status-row">
         <article className="status-card"><TeamJerseyBadge teamName={game.favorite} /><span>Favorite</span><strong>{game.favorite}</strong><p>Preview only. Full moneyline path is locked.</p></article>
         <article className="status-card"><TeamJerseyBadge teamName={game.underdog} /><span>Underdog</span><strong>{game.underdog}</strong><p>Preview only. Comparator book detail is locked.</p></article>
-        <article className="status-card"><SportEquipmentIcon slug={sportSlug} /><span>Total</span><strong>{game.total}</strong><p>O/U market tracked across snapshots.</p></article>
+        <article className="status-card"><SportEquipmentIcon slug={sportSlug} /><span>Total</span><strong>{game.total}</strong><p>O/U market tracked across verified snapshots.</p></article>
         <article className="status-card"><SportEquipmentIcon slug={sportSlug} /><span>Risk</span><strong>{game.risk}</strong><p>{game.confidence} confidence</p></article>
       </section>
 
@@ -76,14 +76,14 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
             <p className="movement">{game.marketNote ?? 'Signals reflect market movement only. They do not guarantee outcomes and they do not replace the refusal rules.'}</p>
             <div className="rank-list">
               <article className="rank-card top-zone">
-                <div className="rank-head"><span>T1</span><b>BASELINE</b></div>
-                <h4>Immutable market capture</h4>
-                <p>Both-side moneyline, spread, and total are captured without inference.</p>
+                <div className="rank-head"><span>Baseline</span><b>CAPTURED</b></div>
+                <h4>Verified market capture</h4>
+                <p>Both-side moneyline, spread, and total are captured before signal review.</p>
               </article>
               <article className="rank-card">
-                <div className="rank-head"><span>T2/T3</span><b>CONFIRM</b></div>
+                <div className="rank-head"><span>Confirmation</span><b>REVIEW</b></div>
                 <h4>Book agreement and divergence</h4>
-                <p>Fanatics is canonical at T3; FanDuel and DraftKings compare agreement, resistance, and magnification.</p>
+                <p>Multiple sportsbook markets are evaluated for agreement, resistance, and unusual divergence.</p>
               </article>
             </div>
           </div>
