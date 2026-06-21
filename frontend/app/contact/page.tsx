@@ -3,17 +3,17 @@ import { AppHeader } from '@/components/AppHeader';
 
 export const metadata: Metadata = {
   title: 'Contact',
-  description: 'Contact Silvers Syndicate for account, access, product, legal, privacy, and business questions.',
+  description: 'Contact InQsi for account, access, product, legal, privacy, and business questions.',
   alternates: { canonical: '/contact' }
 };
 
 export default function ContactPage() {
   return (
     <main className="shell legal-shell">
-      <AppHeader eyebrow="Silvers Syndicate" title="Contact" />
+      <AppHeader eyebrow="InQsi" title="Contact" />
       <section className="legal-hero panel">
         <p className="eyebrow blue">Support and inquiries</p>
-        <h2>Contact Silvers Syndicate</h2>
+        <h2>Contact InQsi</h2>
         <p>Use this page for account access, subscription questions, legal notices, privacy requests, accessibility feedback, product issues, partnership questions, and business inquiries.</p>
       </section>
 
@@ -21,7 +21,7 @@ export default function ContactPage() {
         <article className="panel legal-doc">
           <section>
             <h3>Support</h3>
-            <p>For account, login, plan, or product questions, contact support@silverssyndicate.app when that mailbox is active.</p>
+            <p>For account, login, plan, or product questions, contact support@inqsi.app when that mailbox is active.</p>
             <p>Please include the email connected to your account, the page URL, the browser or device, and a short description of the issue.</p>
           </section>
           <section>
