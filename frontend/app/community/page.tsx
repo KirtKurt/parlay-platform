@@ -21,7 +21,7 @@ export default function Page() {
       <section className="panel">
         <div className="game-list">
           {cards.map((card) => (
-            <Link className="game-card" href={`/u/${card.h}`} key={card.h} style={{ color: 'inherit', textDecoration: 'none' }}>
+            <Link className="game-card" href={`/community/${card.h}`} key={card.h} style={{ color: 'inherit', textDecoration: 'none' }}>
               <div className="game-topline"><span className="league-chip">@{card.h}</span><span>{card.f ? 'Followed' : 'Not followed'}</span></div>
               <h4>{card.n}</h4>
               <p className="movement">1 week: {card.w}% · 1 month: {card.m}%</p>
