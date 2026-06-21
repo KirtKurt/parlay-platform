@@ -1,0 +1,47 @@
+.inqsi-menu nav,
+.inqsi-menu[open] nav {
+  text-align: left !important;
+}
+
+.inqsi-menu nav a,
+.inqsi-menu nav span,
+.inqsi-menu[open] nav a,
+.inqsi-menu[open] nav span {
+  justify-content: flex-start !important;
+  text-align: left !important;
+  gap: 10px !important;
+}
+
+.inqsi-menu nav a[href='/game-leans'],
+.inqsi-menu nav a[href='/predicted-winners'] {
+  justify-content: flex-start !important;
+  text-align: left !important;
+}
+
+.inqsi-menu nav a[href='/predicted-winners'] {
+  font-size: 0 !important;
+}
+
+.inqsi-menu nav a[href='/predicted-winners']::after {
+  content: 'Game Leans';
+  font-size: 1rem;
+  text-align: left !important;
+}
+
+@media (max-width: 640px) {
+  .inqsi-menu nav,
+  .inqsi-menu[open] nav {
+    left: 16px !important;
+    right: 16px !important;
+    width: auto !important;
+    align-items: stretch !important;
+  }
+
+  .inqsi-menu nav a,
+  .inqsi-menu nav span {
+    width: 100% !important;
+    min-height: 52px !important;
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+}
