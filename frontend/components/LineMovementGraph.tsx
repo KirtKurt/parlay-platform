@@ -59,7 +59,7 @@ export function LineMovementGraph({ data = fallbackLineMovement }: { data?: Poin
       <div className="panel-header compact movement-header">
         <div>
           <p className="eyebrow">Interactive 15-minute Line Movement</p>
-          <h3>Bills vs Dolphins moneyline path</h3>
+          <h3>Moneyline path from every snapshot</h3>
         </div>
         <div className="movement-legend">
           {series.map((item) => (
@@ -143,11 +143,11 @@ export function LineMovementGraph({ data = fallbackLineMovement }: { data?: Poin
         </div>
         <div>
           <span>Path</span>
-          <strong>T1 + every 15 min + T2 + every 15 min + T3</strong>
+          <strong>Every 15 minutes from first capture through latest pull</strong>
         </div>
         <div>
           <span>Signal</span>
-          <strong>{activePoint.signal ?? 'Steam building without major reversal'}</strong>
+          <strong>{activePoint.signal ?? 'Movement building without major reversal'}</strong>
         </div>
       </div>
     </section>
