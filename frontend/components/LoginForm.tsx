@@ -32,18 +32,14 @@ export function LoginForm() {
       <div>
         <p className="eyebrow blue">Member login</p>
         <h3>Sign in to your market workspace</h3>
-        <p className="slip-note">Your InQsi workspace opens your watchlist, sport boards, AI Bet Slip Scanner, and member tools.</p>
+        <p className="slip-note">Your InQsi workspace opens your watchlist, sport boards, AI Slip Scanner, and saved review tools.</p>
       </div>
       <label className="field-card full-span">
         <span>Email</span>
         <input required name="email" type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} />
       </label>
       <label className="field-card full-span">
-        <span>Password</span>
-        <input required name="password" type="password" placeholder="Password" />
-      </label>
-      <label className="field-card full-span">
-        <span>Plan access</span>
+        <span>Access</span>
         <select name="plan" defaultValue="full_access">
           <option value="full_access">InQsi Full Access</option>
         </select>
