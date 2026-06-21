@@ -157,7 +157,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: src/
-      Handler: app.lambda_handler
+      Handler: frontend_app.lambda_handler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SilversGamesTable
@@ -172,6 +172,16 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref SilversIngestionRunsTable
       Events:
+        FrontendRoot:
+          Type: HttpApi
+          Properties:
+            Path: /
+            Method: GET
+        FrontendProxy:
+          Type: HttpApi
+          Properties:
+            Path: /{proxy+}
+            Method: ANY
         Health:
           Type: HttpApi
           Properties:
