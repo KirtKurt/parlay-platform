@@ -9,17 +9,17 @@ export type AppHeaderProps = {
 
 const primaryLinks = [
   { href: '/sports', label: 'Sports' },
-  { href: '/parlay-scanner', label: 'Scanner' },
+  { href: '/parlay-scanner', label: 'Evaluate Bet Slip' },
   { href: '/performance', label: 'Performance' },
   { href: '/pricing', label: 'Pricing' }
 ];
 
 const menuLinks = [
   { href: '/', label: 'Home' },
+  { href: '/parlay-scanner', label: 'Evaluate my bet slip' },
   { href: '/sports', label: 'Sports board' },
   { href: '/predicted-winners', label: 'Predicted winners' },
   { href: '/best-lines', label: 'Best lines' },
-  { href: '/parlay-scanner', label: 'Parlay scanner' },
   { href: '/live-market', label: 'Live market' },
   { href: '/alerts', label: 'Alerts' },
   { href: '/watchlist', label: 'Watchlist' },
