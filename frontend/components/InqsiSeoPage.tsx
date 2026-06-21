@@ -1,3 +1,5 @@
+import { AppHeader } from '@/components/AppHeader';
+
 type Faq = { question: string; answer: string };
 
 type InqsiSeoPageProps = {
@@ -37,6 +39,7 @@ export function InqsiSeoPage({ eyebrow, title, intro, sections, faqs = [], path 
     <main className="inqsi-shell">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
       {faqJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />}
+      <AppHeader eyebrow="InQsi" title={title} />
 
       <section className="inqsi-hero inqsi-seo-hero">
         <div className="inqsi-hero-card">
