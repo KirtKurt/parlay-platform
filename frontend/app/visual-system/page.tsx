@@ -3,8 +3,8 @@ import { AppHeader } from '@/components/AppHeader';
 import { SportIconStrip, TeamJerseyBadge, SportEquipmentIcon, TeamBadgeRow } from '@/components/SportVisuals';
 
 export const metadata = {
-  title: 'Visual System Check | InQsi',
-  description: 'A live deployment check for the InQsi sport equipment icons and jersey-style team badge system.'
+  title: 'Board Check | InQsi',
+  description: 'A live check for the InQsi sports board, matchup cards, and market signal display.'
 };
 
 const sampleTeams = [
@@ -19,14 +19,14 @@ const sampleTeams = [
 export default function VisualSystemPage() {
   return (
     <main className="shell">
-      <AppHeader title="Visual system check" />
+      <AppHeader title="Board check" />
 
       <section className="sport-hero-grid">
         <div className="hero-card glass-card" style={{ minHeight: 0 }}>
-          <p className="eyebrow blue">Deployment check · equipment icons · jersey badges</p>
-          <h2>If you can see this page, the InQsi visual system is live.</h2>
+          <p className="eyebrow blue">Live board check · clear sports review</p>
+          <h2>If you can see this page, the InQsi board is loading correctly.</h2>
           <p className="hero-copy">
-            This page is a direct test route for the InQsi visual system: sports equipment icons, custom jersey-style team badges, and no official league or team logos.
+            This page confirms that matchups, sport boards, and market signal cards are readable before a full slate goes live. The goal is simple: make the risk easier to scan before you lock in a pick.
           </p>
           <div className="hero-actions">
             <Link className="primary-button large" href="/sports" style={{ textDecoration: 'none' }}>Open Sports Board</Link>
@@ -35,9 +35,9 @@ export default function VisualSystemPage() {
         </div>
         <aside className="sport-hero-panel accent-blue">
           <SportEquipmentIcon slug="nfl" size="large" showLabel />
-          <h3>Equipment-first design</h3>
-          <p>Every sport gets a clear visual anchor: football, basketball, puck, bat, racket, soccer ball, dartboard, lacrosse stick, or paddle.</p>
-          <div className="mini-equipment-line"><span>No logos</span><span>Custom icons</span><span>Jersey badges</span></div>
+          <h3>Fast to read</h3>
+          <p>Open the sport, review the matchup, and look for support, resistance, coin-flip pressure, or unusual movement.</p>
+          <div className="mini-equipment-line"><span>No logos</span><span>Clear matchups</span><span>Risk signals</span></div>
         </aside>
       </section>
 
@@ -45,17 +45,17 @@ export default function VisualSystemPage() {
 
       <section className="visual-section">
         <div className="section-heading">
-          <p className="eyebrow blue">Jersey-style team markers</p>
-          <h3>Team names and abbreviations without official marks.</h3>
+          <p className="eyebrow blue">Matchup examples</p>
+          <h3>Game cards should be easy to scan.</h3>
         </div>
         <div className="matchup-card-grid">
           {sampleTeams.map(([left, right]) => (
             <article className="matchup-preview-card" key={`${left}-${right}`}>
               <TeamBadgeRow leftTeam={left} rightTeam={right} />
-              <p>Custom jersey badges only. No official logos, no league marks, no sportsbook branding.</p>
+              <p>Clear matchup labels only. No official logos, no league marks, no sportsbook branding.</p>
               <div className="signal-row">
                 <span className="signal signal-steam">STEAM</span>
-                <span className="risk risk-low">VISUAL CHECK</span>
+                <span className="risk risk-low">BOARD CHECK</span>
               </div>
             </article>
           ))}
@@ -63,7 +63,7 @@ export default function VisualSystemPage() {
       </section>
 
       <section className="trust-cta-strip">
-        <span>Visual system version: equipment-and-jersey-v1</span>
+        <span>Board check active</span>
         <span>Deployment marker: 2026-06-19</span>
         <span>Not affiliated with any league, team, sportsbook, or data provider.</span>
       </section>
