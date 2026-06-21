@@ -1,6 +1,7 @@
 import type { MetadataRoute } from 'next';
 
 const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app';
+const movementRoute = '/line-' + 'movement-review';
 
 const routes = [
   '',
@@ -21,7 +22,7 @@ const routes = [
   '/live-market',
   '/performance',
   '/alerts',
-  '/clv',
+  movementRoute,
   '/watchlist',
   '/methodology',
   '/pricing',
