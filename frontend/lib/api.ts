@@ -57,6 +57,7 @@ export type InqsiSnapshot = {
   alerts: any[];
   performance: any;
   lineMovement: LineMovementPoint[];
+  rankings: any[];
 };
 
 const defaultSports = ['americanfootball_nfl', 'basketball_nba', 'baseball_mlb', 'icehockey_nhl', 'basketball_ncaab', 'soccer_epl', 'tennis_atp'];
@@ -126,14 +127,15 @@ export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAUL
   const [gamesPayload, predictionsPayload, parlayPayload, livePayload, alertsPayload, performancePayload] = await Promise.all([
     safeFetch<any>(`/games?sport_key=${encodeURIComponent(selectedSport)}`, { games: [] }),
     safeFetch<any>(`/winner-predictions?sport_key=${encodeURIComponent(selectedSport)}`, { predictions: [] }),
-    safeFetch<any>(`/auto-parlay?sport_key=${encodeURIComponent(selectedSport)}`, { built: false }),
-    safeFetch<any>(`/live-market?sport_key=${encodeURIComponent(selectedSport)}`, { games: [] }),
+    safeFetch<any>(`/auto-parlay?sport_key=${encodeURIComponent(selectedSport)}`, { built: false, rankings: [] }),
+    safeFetch<any>(`/live-market?sport_key=${encodeURIComponent(selectedSport)}`, { games: [], lineMovement: [] }),
     safeFetch<any>(`/alerts?sport_key=${encodeURIComponent(selectedSport)}`, { alerts: [] }),
     safeFetch<any>(`/performance?sport_key=${encodeURIComponent(selectedSport)}`, {})
   ]);
 
   const games = (gamesPayload.games || []).map(normalizeGame) as InqsiGame[];
   const predictions = (predictionsPayload.predictions || []) as InqsiPrediction[];
+  const rankings = parlayPayload.rankings || parlayPayload.combinations || parlayPayload.top_rankings || [];
 
   return {
     apiStatus: base ? (games.length || predictions.length || parlayPayload?.built ? 'CONNECTED' : 'WAITING') : 'WAITING',
@@ -146,7 +148,8 @@ export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAUL
     liveMarket: livePayload,
     alerts: alertsPayload.alerts || [],
     performance: performancePayload,
-    lineMovement: livePayload.lineMovement || livePayload.line_movement || []
+    lineMovement: livePayload.lineMovement || livePayload.line_movement || [],
+    rankings
   };
 }
 
