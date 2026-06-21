@@ -3,7 +3,7 @@ import { LegalDoc } from '@/components/LegalDoc';
 
 export const metadata: Metadata = {
   title: 'Safe Use',
-  description: 'Safe use rules and member expectations for Silvers Syndicate.',
+  description: 'Safe use rules and member expectations for InQsi.',
   alternates: { canonical: '/legal/safe-use' }
 };
 
@@ -12,7 +12,7 @@ export default function SafeUsePage() {
     <LegalDoc
       title="Safe Use"
       updated="June 2026"
-      intro="Silvers Syndicate is designed to help users slow down, question assumptions, and review market risk before making independent decisions."
+      intro="InQsi is designed to help users slow down, question assumptions, and review market risk before making independent decisions."
       sections={[
         {
           title: 'Use the product as a research tool',
@@ -31,7 +31,7 @@ export default function SafeUsePage() {
         {
           title: 'Age and location rules',
           body: [
-            'Use Silvers Syndicate only if you are old enough and legally permitted in your location to use sports market intelligence connected to sports wagering decision making.',
+            'Use InQsi only if you are old enough and legally permitted in your location to use sports market intelligence connected to sports wagering decision making.',
             'Rules vary by jurisdiction. You are responsible for knowing and following the laws and platform rules that apply to you.'
           ]
         },
