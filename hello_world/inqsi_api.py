@@ -4,7 +4,7 @@ from typing import Any, Dict, List
 from inqsi_core import InqsiError, active_sport_keys, analyze_sport, auto_parlay, discover_sports, game_detail, graph_data, json_default, latest_game_states, pull_and_analyze_all, pull_and_analyze_sport, user_parlay
 from inqsi_live import ingest_live_sport, latest_live_games
 from inqsi_winner_predictions import store_winner_predictions_for_sport, visible_winner_predictions
-from inqsi_market_features import alert_candidates, best_available_lines, check_bet_slip, closing_line_value_stub, context_layer_stub, public_performance_dashboard, save_watchlist_item, watchlist
+from inqsi_market_features import alert_candidates, best_available_lines, check_bet_slip, closing_line_value_record, community_leaderboard_stub, context_layer_stub, live_market_mode, public_performance_dashboard, save_bet_slip_scan, save_watchlist_item, user_dashboard, watchlist
 
 
 def response(status: int, body: Any) -> Dict[str, Any]:
@@ -43,6 +43,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if not sport:
                 return response(400, {"ok": False, "error": "sport_key is required"})
             return response(200, ingest_live_sport(sport))
+        if p.endswith("/live-market"):
+            if not sport:
+                return response(400, {"ok": False, "error": "sport_key is required"})
+            return response(200, live_market_mode(sport))
         if p.endswith("/live"):
             if not sport:
                 return response(400, {"ok": False, "error": "sport_key is required"})
@@ -62,13 +66,18 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if p.endswith("/bet-slip-check"):
             if not sport:
                 return response(400, {"ok": False, "error": "sport_key is required"})
-            return response(200, check_bet_slip(sport, body.get("legs") or []))
+            legs = body.get("legs") or []
+            if user_id and user_id != "anonymous":
+                return response(200, save_bet_slip_scan(user_id, sport, legs))
+            return response(200, check_bet_slip(sport, legs))
         if p.endswith("/watchlist/add"):
             if not sport or not game_id:
                 return response(400, {"ok": False, "error": "sport_key and game_id are required"})
             return response(200, save_watchlist_item(user_id, sport, game_id))
         if p.endswith("/watchlist"):
             return response(200, watchlist(user_id))
+        if p.endswith("/dashboard"):
+            return response(200, user_dashboard(user_id, sport))
         if p.endswith("/alerts"):
             if not sport:
                 return response(400, {"ok": False, "error": "sport_key is required"})
@@ -80,11 +89,13 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if p.endswith("/clv"):
             if not sport or not game_id:
                 return response(400, {"ok": False, "error": "sport_key and game_id are required"})
-            return response(200, closing_line_value_stub(sport, game_id))
+            return response(200, closing_line_value_record(sport, game_id, body.get("published_line") or {}, body.get("closing_line") or {}))
         if p.endswith("/context"):
             if not sport or not game_id:
                 return response(400, {"ok": False, "error": "sport_key and game_id are required"})
-            return response(200, context_layer_stub(sport, game_id))
+            return response(200, context_layer_stub(sport, game_id, body.get("context_items") or []))
+        if p.endswith("/leaderboard"):
+            return response(200, community_leaderboard_stub(sport))
         if p.endswith("/games"):
             if not sport:
                 return response(400, {"ok": False, "error": "sport_key is required"})
