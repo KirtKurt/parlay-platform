@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { AppHeader } from '@/components/AppHeader';
 
 export const metadata: Metadata = {
-  title: 'Evaluate My Bet Slip',
-  description: 'Enter your own 3-leg parlay and let InQsi review line movement, weak-leg risk, signals, and market stability.',
+  title: 'AI Bet Slip Scanner',
+  description: 'Enter your own 3-leg parlay and let the InQsi AI Bet Slip Scanner review line movement, weak-leg risk, signals, and market stability.',
   alternates: { canonical: '/parlay-scanner' }
 };
 
@@ -19,28 +19,28 @@ const reviewChecks = [
 export default function Page() {
   return (
     <main className="inqsi-shell">
-      <AppHeader eyebrow="InQsi" title="Evaluate my bet slip" />
+      <AppHeader eyebrow="InQsi" title="AI Bet Slip Scanner" />
 
       <section className="inqsi-hero inqsi-seo-hero">
         <div className="inqsi-hero-card">
-          <p className="inqsi-promo">Bet slip evaluator</p>
-          <h1>Paste your parlay. InQsi shows what looks wrong.</h1>
+          <p className="inqsi-promo">AI Bet Slip Scanner</p>
+          <h1>Paste your parlay. Let InQsi scan what looks wrong.</h1>
           <p>
-            This is where a member brings their own 3-leg parlay for review. InQsi checks the selections against market movement,
+            This is where a member brings their own 3-leg parlay for review. The AI Bet Slip Scanner checks the selections against market movement,
             signal strength, weak-leg risk, and stability before the user locks anything in.
           </p>
-          <div className="inqsi-stat-grid" aria-label="Evaluation flow">
+          <div className="inqsi-stat-grid" aria-label="Scanner flow">
             <div><b>1</b><span>Enter selections</span></div>
             <div><b>2</b><span>Match to live market</span></div>
-            <div><b>3</b><span>Run risk review</span></div>
+            <div><b>3</b><span>Scan risk</span></div>
             <div><b>4</b><span>Return pass/caution</span></div>
           </div>
         </div>
 
         <aside className="inqsi-signup-card">
-          <h2>Evaluate My Bet Slip</h2>
-          <p>Full evaluation unlocks for members. The public preview shows the workflow without inventing live results.</p>
-          <a href="/register?source=bet-slip-evaluator">Start 5 days free</a>
+          <h2>AI Bet Slip Scanner</h2>
+          <p>Full scan unlocks for members. The public preview shows the workflow without inventing live results.</p>
+          <a href="/register?source=ai-bet-slip-scanner">Start 5 days free</a>
           <a href="/sports">View sports board</a>
           <small>No fake grades. If sportsbook data is not connected yet, InQsi shows Working on it.</small>
         </aside>
@@ -48,7 +48,7 @@ export default function Page() {
 
       <section className="inqsi-layout">
         <div className="inqsi-panel">
-          <div className="inqsi-section-head"><h2>Your bet slip</h2><span>3-leg review</span></div>
+          <div className="inqsi-section-head"><h2>Your bet slip</h2><span>3-leg scan</span></div>
           <div className="inqsi-game-list">
             {[1, 2, 3].map((leg) => (
               <article className="inqsi-game-card" key={leg}>
@@ -65,7 +65,7 @@ export default function Page() {
         </div>
 
         <aside className="inqsi-panel">
-          <div className="inqsi-section-head"><h2>What InQsi evaluates</h2><span>Risk review</span></div>
+          <div className="inqsi-section-head"><h2>What the AI scans</h2><span>Risk review</span></div>
           <div className="inqsi-game-list">
             {reviewChecks.map((check) => (
               <article className="inqsi-mini-card" key={check}>
@@ -78,7 +78,7 @@ export default function Page() {
       </section>
 
       <section className="inqsi-panel">
-        <div className="inqsi-section-head"><h2>Evaluation result preview</h2><span>Working on it</span></div>
+        <div className="inqsi-section-head"><h2>Scan result preview</h2><span>Working on it</span></div>
         <div className="inqsi-feature-grid">
           <article><b>Overall read</b><span>Pass / caution / do not force</span></article>
           <article><b>Strongest leg</b><span>The cleanest market support in the slip</span></article>
