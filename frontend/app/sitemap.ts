@@ -21,6 +21,9 @@ const routes = [
   '/parlay-scanner',
   '/ai-slip-scanner',
   '/3-leg-parlay-guide',
+  '/line-movement-guide',
+  '/accuracy-tracker',
+  '/post-game-review',
   '/live-market',
   '/performance',
   '/alerts',
@@ -48,6 +51,6 @@ export default function sitemap(): MetadataRoute.Sitemap {
     url: `${baseUrl}${route}`,
     lastModified: new Date(),
     changeFrequency: route === '' || route === '/picks-audit' || route === '/game-leans' || route === '/live-market' ? 'daily' : 'weekly',
-    priority: route === '' ? 1 : route === '/picks-audit' ? 0.95 : route === '/game-leans' ? 0.9 : route === '/ai-slip-scanner' || route === '/3-leg-parlay-guide' ? 0.88 : 0.75
+    priority: route === '' ? 1 : route === '/picks-audit' ? 0.95 : route === '/game-leans' ? 0.9 : route === '/ai-slip-scanner' || route === '/3-leg-parlay-guide' || route === '/line-movement-guide' || route === '/accuracy-tracker' || route === '/post-game-review' ? 0.88 : 0.75
   }));
 }
