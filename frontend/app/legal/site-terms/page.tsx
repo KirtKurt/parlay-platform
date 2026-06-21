@@ -3,7 +3,7 @@ import { LegalDoc } from '@/components/LegalDoc';
 
 export const metadata: Metadata = {
   title: 'Site Terms',
-  description: 'Terms of use and site rules for Silvers Syndicate.',
+  description: 'Terms of use and site rules for InQsi.',
   alternates: { canonical: '/legal/site-terms' }
 };
 
@@ -12,20 +12,20 @@ export default function SiteTermsPage() {
     <LegalDoc
       title="Site Terms"
       updated="June 2026"
-      intro="These Site Terms govern access to and use of Silvers Syndicate, including public pages, free previews, account pages, member tools, market boards, and subscription features."
+      intro="These Site Terms govern access to and use of InQsi, including public pages, free previews, account pages, member tools, market boards, and member features."
       sections={[
         {
           title: 'Acceptance of terms',
           body: [
-            'By accessing or using Silvers Syndicate, you agree to these Site Terms, the Privacy Policy, the Disclaimer, and the Safe Use rules. If you do not agree, do not use the service.',
-            'We may update these terms as the product, laws, provider relationships, or subscription features change. Continued use after updates means you accept the updated terms.'
+            'By accessing or using InQsi, you agree to these Site Terms, the Privacy Policy, the Disclaimer, and the Safe Use rules. If you do not agree, do not use the service.',
+            'We may update these terms as the product, laws, provider relationships, or member features change. Continued use after updates means you accept the updated terms.'
           ]
         },
         {
           title: 'Nature of the service',
           body: [
-            'Silvers Syndicate provides sports market intelligence, educational content, line movement displays, risk labels, and research tools for informational and entertainment purposes.',
-            'Silvers Syndicate is not a sportsbook, does not accept wagers, does not place bets for users, does not custody funds, and does not guarantee any outcome, win, profit, ranking, signal, model result, or prediction.'
+            'InQsi provides sports market intelligence, educational content, line movement displays, risk labels, and research tools for informational and entertainment purposes.',
+            'InQsi is not a sportsbook, does not accept wagers, does not place bets for users, does not custody funds, and does not guarantee any outcome, win, profit, ranking, signal, model result, or pick.'
           ]
         },
         {
@@ -43,32 +43,32 @@ export default function SiteTermsPage() {
           ]
         },
         {
-          title: 'Subscriptions, trials, cancellation, and refunds',
+          title: 'Promotions, access, cancellation, and refunds',
           body: [
-            'Promotional free-week access may be offered to new members and may be modified, limited, or ended at any time. Any free trial terms shown at checkout will control that specific offer.',
-            'Monthly membership, cancellation, renewal, refund, and billing rules must be presented clearly at checkout through the selected payment provider. Unless a separate written policy says otherwise, access fees are for digital services and may not be refundable after a billing period begins.',
-            'A user must cancel through the stated cancellation method before the trial or renewal date to avoid future charges once real billing is active.'
+            'Promotional 5-day access may be offered to new members and may be modified, limited, or ended at any time. Any offer terms shown in the product will control that specific offer.',
+            'Membership, cancellation, renewal, refund, and access rules must be presented clearly before paid access opens. Unless a separate written policy says otherwise, access fees are for digital services and may not be refundable after an access period begins.',
+            'A user must cancel through the stated cancellation method before the renewal date to avoid future charges once live member access is active.'
           ]
         },
         {
           title: 'Prohibited conduct',
           body: [
-            'You may not copy, scrape, reverse engineer, resell, sublicense, exploit, overload, attack, or interfere with the service. You may not use the service to violate law, harass others, commit fraud, evade compliance controls, or misrepresent affiliation with Silvers Syndicate.',
+            'You may not copy, scrape, reverse engineer, resell, sublicense, exploit, overload, attack, or interfere with the service. You may not use the service to violate law, harass others, commit fraud, evade compliance controls, or misrepresent affiliation with InQsi.',
             'You may not use automated tools to harvest data, reconstruct proprietary rankings, bypass access gates, or create competing datasets or products without written permission.'
           ]
         },
         {
           title: 'Intellectual property and marks',
           body: [
-            'Silvers Syndicate owns or licenses the site design, text, software, graphics, custom icons, workflows, risk labels, presentation format, and proprietary methods used in the service.',
-            'Team names, league names, and sportsbook names may be used only for identification, analysis, comparison, or navigation. Silvers Syndicate is not affiliated with, endorsed by, sponsored by, or approved by any league, team, sportsbook, or data provider.'
+            'InQsi owns or licenses the site design, text, software, graphics, custom icons, workflows, risk labels, presentation format, and proprietary methods used in the service.',
+            'Team names, league names, and sportsbook names may be used only for identification, analysis, comparison, or navigation. InQsi is not affiliated with, endorsed by, sponsored by, or approved by any league, team, sportsbook, or data provider.'
           ]
         },
         {
           title: 'No warranties and limitation of liability',
           body: [
             'The service is provided on an as-is and as-available basis. We do not warrant uninterrupted access, error-free data, timely updates, accurate odds, profitable outcomes, or that every market movement will be captured.',
-            'To the fullest extent permitted by law, Silvers Syndicate will not be liable for losses, wagers, decisions, damages, lost profits, lost data, business interruption, or indirect, incidental, consequential, special, punitive, or exemplary damages arising from use of the service.'
+            'To the fullest extent permitted by law, InQsi will not be liable for losses, wagers, decisions, damages, lost profits, lost data, business interruption, or indirect, incidental, consequential, special, punitive, or exemplary damages arising from use of the service.'
           ]
         },
         {
