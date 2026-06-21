@@ -14,14 +14,14 @@ export default async function SportsPage() {
 
       <section className="sport-hero-grid">
         <div className="hero-card glass-card" style={{ minHeight: 0 }}>
-          <p className="eyebrow blue">All sports · first week free</p>
+          <p className="eyebrow blue">All sports · 5 days free</p>
           <h2>Pick your sport. We’ll organize the board.</h2>
           <p className="hero-copy">
             Start with the sport you care about today. Each board uses the same visual language: equipment icons for the sport,
             jersey-style badges for teams, and clean signal labels for market pressure.
           </p>
           <div className="hero-actions">
-            <Link className="primary-button large" href="/register?promo=free-week" style={{ textDecoration: 'none' }}>Start Free Week</Link>
+            <Link className="primary-button large" href="/register?promo=5-days" style={{ textDecoration: 'none' }}>Start 5 Days Free</Link>
             <Link className="ghost-button large" href="/picks-audit" style={{ textDecoration: 'none' }}>Test Your Picks</Link>
             <Link className="ghost-button large" href="/methodology" style={{ textDecoration: 'none' }}>Read Methodology</Link>
           </div>
