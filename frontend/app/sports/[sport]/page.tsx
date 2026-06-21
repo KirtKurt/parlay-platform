@@ -18,6 +18,7 @@ export default async function SportPage({ params }: { params: { sport: string } 
 
   const { games, rankings, apiStatus, apiDetail } = await getApiSnapshot();
   const visibleGames = games.filter((game) => getSportSlugForLeague(game.league) === sport.slug);
+  const hasMarketData = visibleGames.length > 0;
 
   return (
     <main className="shell">
@@ -26,9 +27,14 @@ export default async function SportPage({ params }: { params: { sport: string } 
       <section className="sport-hero-grid">
         <div className="hero-card glass-card" style={{ minHeight: 0 }}>
           <p className="eyebrow blue">{sport.label} board · 5 days free</p>
-          <h2>{sport.title}</h2>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, margin: '8px 0 10px' }}>
+            <SportEquipmentIcon slug={sport.slug} size="large" />
+            <h2 style={{ margin: 0 }}>{sport.title}</h2>
+          </div>
           <p className="hero-copy">
-            {sport.description} Open this board when you want to check market pressure, spot weak legs, and see whether a pick is getting support or running into resistance.
+            {hasMarketData
+              ? 'Market data is available for this board. Review the slate, scan the signals, and check where the risk is showing up before lock-in.'
+              : 'Waiting for market data. Once verified market data is available, InQsi will show game leans, market signals, and risk checks for this board.'}
           </p>
           <div className="hero-actions">
             <Link className="primary-button large" href={`/register?promo=5-days&sport=${sport.slug}`} style={{ textDecoration: 'none' }}>Unlock {sport.label}</Link>
@@ -42,9 +48,9 @@ export default async function SportPage({ params }: { params: { sport: string } 
       <SportIconStrip compact />
 
       <section className="status-row">
-        <article className="status-card"><SportEquipmentIcon slug={sport.slug} /><span>Preview</span><strong>{visibleGames.length || 'Ready'}</strong><p>You can see whether a {sport.label} slate is available before logging in.</p></article>
-        <article className="status-card"><span>Signals</span><strong>Preview</strong><p>Signal names are visible. Members unlock the reason behind them.</p></article>
-        <article className="status-card"><span>Movement</span><strong>Locked</strong><p>The full line history unlocks after registration.</p></article>
+        <article className="status-card"><SportEquipmentIcon slug={sport.slug} /><span>Market Data</span><strong>{hasMarketData ? `${visibleGames.length} Active` : 'Waiting'}</strong><p>{hasMarketData ? `This ${sport.label} board has verified market data available.` : 'Waiting for market data.'}</p></article>
+        <article className="status-card"><span>Signals</span><strong>{hasMarketData ? 'Available' : 'Waiting'}</strong><p>{hasMarketData ? 'Signal detail is ready for review.' : 'Signals appear after market data is available.'}</p></article>
+        <article className="status-card"><span>Movement</span><strong>{hasMarketData ? 'Ready' : 'Waiting'}</strong><p>{hasMarketData ? 'Movement detail unlocks after registration.' : 'Line movement will appear with verified market data.'}</p></article>
         <article className="status-card"><span>Promo</span><strong>5 days</strong><p>New members can start with 5 days free.</p></article>
       </section>
 
@@ -66,15 +72,15 @@ export default async function SportPage({ params }: { params: { sport: string } 
             <div className="panel-header">
               <div>
                 <p className="eyebrow">Market Board</p>
-                <h3>{visibleGames.length ? `${visibleGames.length} active game${visibleGames.length === 1 ? '' : 's'}` : 'No active slate yet'}</h3>
+                <h3>{hasMarketData ? `${visibleGames.length} active game${visibleGames.length === 1 ? '' : 's'}` : 'Waiting for market data'}</h3>
               </div>
               <SportEquipmentIcon slug={sport.slug} />
             </div>
             <div className="game-list">
-              {visibleGames.length ? visibleGames.map((game) => <GameCard game={game} key={game.id} />) : (
+              {hasMarketData ? visibleGames.map((game) => <GameCard game={game} key={game.id} />) : (
                 <article className="game-card">
-                  <h4>{sport.label} board is ready</h4>
-                  <p className="movement">When verified {sport.label} games or matches are available, this page will fill in automatically with cards, signals, and links to detail pages.</p>
+                  <h4>Waiting for market data</h4>
+                  <p className="movement">Once verified market data is available, InQsi will show game leans, market signals, and risk checks for this board.</p>
                 </article>
               )}
             </div>
