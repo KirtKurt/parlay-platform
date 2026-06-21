@@ -4,6 +4,7 @@ from typing import Any, Dict, List
 from inqsi_core import InqsiError, active_sport_keys, analyze_sport, auto_parlay, discover_sports, game_detail, graph_data, json_default, latest_game_states, pull_and_analyze_all, pull_and_analyze_sport, user_parlay
 from inqsi_live import ingest_live_sport, latest_live_games
 from inqsi_winner_predictions import store_winner_predictions_for_sport, visible_winner_predictions
+from inqsi_market_features import alert_candidates, best_available_lines, check_bet_slip, closing_line_value_stub, context_layer_stub, public_performance_dashboard, save_watchlist_item, watchlist
 
 
 def response(status: int, body: Any) -> Dict[str, Any]:
@@ -30,6 +31,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         body = parse_body(event)
         sport = q.get("sport_key") or body.get("sport_key")
         game_id = q.get("game_id") or body.get("game_id")
+        user_id = q.get("user_id") or body.get("user_id") or "anonymous"
 
         if p.endswith("/health"):
             return response(200, {"ok": True, "service": "inqsi-backend", "version": "v1"})
@@ -53,6 +55,36 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if not sport:
                 return response(400, {"ok": False, "error": "sport_key is required"})
             return response(200, store_winner_predictions_for_sport(sport))
+        if p.endswith("/best-lines"):
+            if not sport or not game_id:
+                return response(400, {"ok": False, "error": "sport_key and game_id are required"})
+            return response(200, best_available_lines(sport, game_id))
+        if p.endswith("/bet-slip-check"):
+            if not sport:
+                return response(400, {"ok": False, "error": "sport_key is required"})
+            return response(200, check_bet_slip(sport, body.get("legs") or []))
+        if p.endswith("/watchlist/add"):
+            if not sport or not game_id:
+                return response(400, {"ok": False, "error": "sport_key and game_id are required"})
+            return response(200, save_watchlist_item(user_id, sport, game_id))
+        if p.endswith("/watchlist"):
+            return response(200, watchlist(user_id))
+        if p.endswith("/alerts"):
+            if not sport:
+                return response(400, {"ok": False, "error": "sport_key is required"})
+            return response(200, alert_candidates(sport))
+        if p.endswith("/performance"):
+            if not sport:
+                return response(400, {"ok": False, "error": "sport_key is required"})
+            return response(200, public_performance_dashboard(sport))
+        if p.endswith("/clv"):
+            if not sport or not game_id:
+                return response(400, {"ok": False, "error": "sport_key and game_id are required"})
+            return response(200, closing_line_value_stub(sport, game_id))
+        if p.endswith("/context"):
+            if not sport or not game_id:
+                return response(400, {"ok": False, "error": "sport_key and game_id are required"})
+            return response(200, context_layer_stub(sport, game_id))
         if p.endswith("/games"):
             if not sport:
                 return response(400, {"ok": False, "error": "sport_key is required"})
