@@ -15,9 +15,8 @@ declare global {
   interface Window {
     dataLayer?: unknown[];
     gtag?: (...args: unknown[]) => void;
-    posthog?: { init?: (...args: unknown[]) => void; capture?: (...args: unknown[]) => void; opt_out_capturing?: () => void; opt_in_capturing?: () => void };
+    posthog?: { init?: (...args: unknown[]) => void; capture?: (...args: unknown[]) => void };
     fbq?: (...args: unknown[]) => void;
-    ttq?: { page?: () => void; track?: (...args: unknown[]) => void };
   }
 }
 
@@ -39,8 +38,18 @@ function maskSensitiveInputs() {
   });
 }
 
+function sendFirstPartyEvent(name: string, consentType: 'analytics' | 'marketing' | 'replay') {
+  void fetch('/api/events', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-inqsi-consent': consentType },
+    body: JSON.stringify({ name, path: window.location.pathname, referrer: document.referrer || null, userAgent: navigator.userAgent })
+  }).catch(() => undefined);
+}
+
 function installTracking(consent: ConsentState) {
   maskSensitiveInputs();
+
+  if (consent.analytics) sendFirstPartyEvent('page_view', 'analytics');
 
   const gaId = process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID;
   if (consent.analytics && gaId) {
@@ -72,10 +81,11 @@ function installTracking(consent: ConsentState) {
 
   const metaPixel = process.env.NEXT_PUBLIC_META_PIXEL_ID;
   if (consent.marketing && metaPixel) {
-    window.fbq = window.fbq || function fbq(...args: unknown[]) { (window.fbq as unknown[] & ((...inner: unknown[]) => void))?.push?.(args); };
+    window.fbq = window.fbq || function fbq() { /* waits for pixel script */ };
     loadScript('inqsi-meta-pixel', 'https://connect.facebook.net/en_US/fbevents.js', () => {
       window.fbq?.('init', metaPixel);
       window.fbq?.('track', 'PageView');
+      sendFirstPartyEvent('marketing_page_view', 'marketing');
     });
   }
 }
