@@ -1,0 +1,42 @@
+{
+  "product": "InQsi",
+  "buildItem": "3-record-storage",
+  "status": "built_for_backend_deploy",
+  "policy": "verified_data_only_no_placeholder_values",
+  "storage": {
+    "gamesTableEnv": "GAMES_TABLE",
+    "snapshotsTableEnv": "SNAPSHOTS_TABLE",
+    "gameStatusTableEnv": "GAME_STATUS_TABLE",
+    "parlayBuildsTableEnv": "PARLAY_BUILDS_TABLE",
+    "auditEventsTableEnv": "AUDIT_EVENTS_TABLE",
+    "ingestionRunsTableEnv": "INGESTION_RUNS_TABLE"
+  },
+  "writePaths": [
+    {
+      "path": "/v1/ingest/odds",
+      "method": "POST",
+      "writes": ["games", "snapshots", "game_status", "ingestion_runs", "audit_events"],
+      "requires": "ODDS_API_KEY"
+    },
+    {
+      "path": "scheduled rate(15 minutes)",
+      "method": "EVENTBRIDGE",
+      "writes": ["games", "snapshots", "game_status", "ingestion_runs", "audit_events"],
+      "requires": "ODDS_API_KEY"
+    }
+  ],
+  "readPaths": [
+    "/v1/slates/today",
+    "/v1/games/{game_id}/snapshots",
+    "/v1/games/{game_id}/line-movement",
+    "/v1/games/{game_id}/status",
+    "/v1/audit/games"
+  ],
+  "cadence": {
+    "hotPull": "15 minutes",
+    "t1": "1:00 AM ET during daylight time",
+    "t2": "9:00 AM ET during daylight time",
+    "t3": "12:30 PM ET during daylight time"
+  },
+  "noFakeDataRule": "If no stored odds snapshots exist, the API returns NO_MARKET_DATA instead of placeholder games."
+}
