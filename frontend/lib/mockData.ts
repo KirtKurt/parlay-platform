@@ -33,12 +33,12 @@ export type LineMovementPoint = {
   time: string;
   bufMoneyline: number;
   miaMoneyline: number;
-  milestone?: 'T1' | 'T2' | 'T3' | 'T4' | 'T5';
+  milestone?: 'Baseline' | 'Review' | 'Confirm';
   signal?: Signal;
 };
 
 export const lineMovement: LineMovementPoint[] = [
-  { time: '1:00 AM', bufMoneyline: -115, miaMoneyline: -105, milestone: 'T1' },
+  { time: '1:00 AM', bufMoneyline: -115, miaMoneyline: -105, milestone: 'Baseline' },
   { time: '1:15 AM', bufMoneyline: -116, miaMoneyline: -104 },
   { time: '1:30 AM', bufMoneyline: -118, miaMoneyline: -102 },
   { time: '1:45 AM', bufMoneyline: -119, miaMoneyline: -101 },
@@ -70,7 +70,7 @@ export const lineMovement: LineMovementPoint[] = [
   { time: '8:15 AM', bufMoneyline: -143, miaMoneyline: 123, signal: 'RESISTANCE' },
   { time: '8:30 AM', bufMoneyline: -144, miaMoneyline: 124 },
   { time: '8:45 AM', bufMoneyline: -145, miaMoneyline: 125 },
-  { time: '9:00 AM', bufMoneyline: -146, miaMoneyline: 126, milestone: 'T2', signal: 'STEAM' },
+  { time: '9:00 AM', bufMoneyline: -146, miaMoneyline: 126, milestone: 'Review', signal: 'STEAM' },
   { time: '9:15 AM', bufMoneyline: -145, miaMoneyline: 125 },
   { time: '9:30 AM', bufMoneyline: -146, miaMoneyline: 126 },
   { time: '9:45 AM', bufMoneyline: -147, miaMoneyline: 127 },
@@ -84,7 +84,7 @@ export const lineMovement: LineMovementPoint[] = [
   { time: '11:45 AM', bufMoneyline: -152, miaMoneyline: 132 },
   { time: '12:00 PM', bufMoneyline: -151, miaMoneyline: 131, signal: 'RESISTANCE' },
   { time: '12:15 PM', bufMoneyline: -153, miaMoneyline: 133 },
-  { time: '12:30 PM', bufMoneyline: -154, miaMoneyline: 134, milestone: 'T3', signal: 'DAC' }
+  { time: '12:30 PM', bufMoneyline: -154, miaMoneyline: 134, milestone: 'Confirm', signal: 'DAC' }
 ];
 
 export const games: Game[] = [
@@ -98,7 +98,7 @@ export const games: Game[] = [
     favoriteMl: -142,
     underdogMl: 120,
     total: 48.5,
-    movement: 'Favorite strengthened from T1 → T3 across 2 books with 15-minute pulls tracked',
+    movement: 'Favorite strengthened across multiple sportsbook markets with verified movement tracked',
     confidence: 'High',
     risk: 'LOW',
     signals: ['STEAM', 'DAC'],
@@ -130,7 +130,7 @@ export const games: Game[] = [
     favoriteMl: -130,
     underdogMl: 112,
     total: 52.5,
-    movement: 'Underdog hold; favorite still T3 anchor',
+    movement: 'Underdog hold; favorite still shows anchor-level market support',
     confidence: 'Moderate',
     risk: 'MED',
     signals: ['STEAM', 'RESISTANCE'],
@@ -263,8 +263,8 @@ export const rankings: Ranking[] = [
 ];
 
 export const statusCards = [
-  { label: 'Last Snapshot', value: 'T3 · 12:31 PM', detail: 'Fanatics canonical + FanDuel comparator' },
-  { label: 'Line Graph', value: '15-min pulls', detail: 'T markers plus every hot pull' },
+  { label: 'Latest Market Check', value: 'Confirmed', detail: 'Multi-book sportsbook comparison' },
+  { label: 'Line Graph', value: 'Market movement', detail: 'Verified changes plus signal markers' },
   { label: 'Market Anomaly', value: 'Abnormal behavior', detail: 'Flags unusual markets without accusation' },
   { label: 'Build Rule', value: '2 Solid + 1 CF', detail: 'Natural structure, no forced risk' }
 ];
