@@ -29,6 +29,15 @@ function dollars(cents?: number) {
   return `$${((cents || 0) / 100).toFixed(2)}`;
 }
 
+function ReportHeader() {
+  return (
+    <header className="inqsi-topbar">
+      <a className="inqsi-brand" href="/"><span className="inqsi-logo-mark">Q</span><span><b>InQsi</b><small>Creator Partner Report</small></span></a>
+      <nav className="inqsi-nav-actions" aria-label="Creator report navigation"><a href="/">Home</a><a href="/contact">Contact</a></nav>
+    </header>
+  );
+}
+
 export function PartnerReportClient({ token }: { token: string }) {
   const [report, setReport] = useState<PartnerReport | null>(null);
   const [message, setMessage] = useState('Loading creator report...');
@@ -52,6 +61,7 @@ export function PartnerReportClient({ token }: { token: string }) {
   if (message) {
     return (
       <main className="inqsi-shell">
+        <ReportHeader />
         <section className="inqsi-hero"><div className="inqsi-hero-card"><p className="inqsi-promo">Creator report</p><h1>{message}</h1><p>No customer emails or personal member records are shown here.</p></div></section>
       </main>
     );
@@ -62,7 +72,7 @@ export function PartnerReportClient({ token }: { token: string }) {
 
   return (
     <main className="inqsi-shell">
-      <header className="inqsi-topbar"><a className="inqsi-brand" href="/"><span className="inqsi-logo-mark">Q</span><span><b>InQsi</b><small>Creator Partner Report</small></span></a></header>
+      <ReportHeader />
       <section className="inqsi-hero">
         <div className="inqsi-hero-card"><p className="inqsi-promo">Private report</p><h1>{creator?.creator_name || 'Creator partner'} performance.</h1><p>Referral code: {creator?.referral_code}. This report is aggregate-only and does not expose customer emails.</p></div>
         <aside className="inqsi-signup-card"><h2>Payout due</h2><p>{dollars(metrics?.payoutDueCents)}</p><small>Based on the commission terms stored for this creator.</small></aside>
