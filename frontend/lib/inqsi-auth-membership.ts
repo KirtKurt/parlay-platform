@@ -17,7 +17,7 @@ export const INQSI_AUTH_PROVIDERS: Array<{ id: InqsiAuthProvider; label: string;
 const processorReady = Boolean(process.env.MEMBER_PROCESSOR_API_KEY && process.env.NEXT_PUBLIC_MEMBER_PLAN_ID);
 
 export const INQSI_MEMBERSHIP_PLANS: InqsiMembershipPlan[] = [
-  { id: 'inqsi-premium-monthly', name: 'InQsi Premium', trialDays: 5, monthlyPriceCents: 3500, enabled: processorReady }
+  { id: 'full_access', name: 'InQsi Full Access', trialDays: 5, monthlyPriceCents: 3800, enabled: processorReady }
 ];
 
 export function getAuthReadiness() {
