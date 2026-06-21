@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { AppHeader } from '@/components/AppHeader';
 
 const SPORTS = ['NFL', 'NCAAF', 'NBA', 'NCAAM', 'NHL', 'MLB', 'WNBA', 'Soccer', 'Tennis', 'MMA', 'Boxing', 'Golf', 'eSports'];
 const CORE_LINKS = [
@@ -22,7 +23,7 @@ const CORE_LINKS = [
 
 export const metadata: Metadata = {
   title: 'InQsi | Sports Market Intelligence',
-  description: 'InQsi scans sportsbook markets and thousands of data points to help review bet slips, market movement, game leans, alerts, and risk signals before you lock it in.',
+  description: 'InQsi evaluates sportsbook markets and thousands of data points to help scan bet slips, surface risk, and review market movement before you lock it in.',
   alternates: { canonical: '/' }
 };
 
@@ -48,21 +49,18 @@ export default function Home() {
   return (
     <main className="inqsi-shell">
       <a className="inqsi-skip-link" href="#main-content">Skip to main content</a>
-      <header className="inqsi-topbar">
-        <Link className="inqsi-brand" href="/" aria-label="InQsi home"><span className="inqsi-logo-mark" aria-hidden="true">Q</span><span><b>InQsi</b><small>Market Intelligence</small></span></Link>
-        <nav className="inqsi-nav-actions" aria-label="Primary navigation"><Link href="/parlay-scanner">AI Bet Slip Scanner</Link><Link href="/sports">Sports</Link><Link href="/performance">Performance</Link><a className="inqsi-primary" href="#signup">Start 5 days free</a></nav>
-      </header>
+      <AppHeader eyebrow="InQsi" title="Market Intelligence" />
 
       <section className="inqsi-hero inqsi-mockup-hero" id="main-content">
         <div className="inqsi-hero-card">
           <p className="inqsi-promo">5 days free promo · Cancel anytime</p>
           <h1>Find what looks wrong <span>before you lock it in.</span></h1>
-          <p>InQsi scans multiple sportsbook markets and thousands of data points to help evaluate your bet slip, compare line movement, identify risk signals, and show where a parlay may be weaker than it looks.</p>
+          <p>InQsi evaluates sportsbook markets and thousands of data points to help scan your bet slip, review market pressure, surface weak spots, and flag risk before you lock anything in.</p>
           <div className="inqsi-stat-grid" aria-label="InQsi value proposition">
-            <div><b>Sportsbooks</b><span>market sources compared</span></div>
-            <div><b>1,000s</b><span>of data points reviewed</span></div>
-            <div><b>AI scan</b><span>your bet slip evaluated</span></div>
-            <div><b>Risk flags</b><span>what looks wrong surfaced</span></div>
+            <div><b>Sportsbooks</b><span>market sources evaluated</span></div>
+            <div><b>Thousands</b><span>data points reviewed</span></div>
+            <div><b>AI scan</b><span>bet slip risk review</span></div>
+            <div><b>Risk flags</b><span>weak spots surfaced</span></div>
           </div>
         </div>
         <aside className="inqsi-signup-card" aria-label="Create account"><h2>Start with 5 days free</h2><p>Save watchlists, alerts, scans, dashboards, and InQsi game leans.</p><a href="/parlay-scanner">Open AI Bet Slip Scanner</a><a href="/register">Continue with Google</a><a href="/register">Continue with Apple</a><a className="inqsi-primary" href="/register">Create account</a><small>Google and Apple sign-in are ready visually. Provider keys still need to be connected.</small></aside>
@@ -73,7 +71,7 @@ export default function Home() {
       <section className="inqsi-layout inqsi-mock-dashboard">
         <div>
           <section className="inqsi-panel"><div className="inqsi-section-head"><h2>Sports Market Board</h2><span>Working on it</span></div><div className="inqsi-game-list"><MockGameCard label="Game slot 1" /><MockGameCard label="Game slot 2" /></div></section>
-          <section className="inqsi-feature-grid" aria-label="Product features"><article><b>AI Bet Slip Scanner</b><span>Bring your own selections and scan for weak-leg risk.</span></article><article><b>Market Data</b><span>Compare verified sources for moneyline, spread, and totals when connected.</span></article><article><b>CLV Tracking</b><span>Store review point versus later market position.</span></article><article><b>Watchlist + Alerts</b><span>Steam, reversal, chaos, and final-check warnings.</span></article><article><b>Live Status Mode</b><span>Close-to-live status where supported.</span></article><article><b>Public Performance</b><span>Sport-specific accuracy and containment history.</span></article><article><b>Context Layer</b><span>Hooks for injuries, weather, starters, and news.</span></article><article><b>Admin Readiness</b><span>Provider, auth, billing, privacy, and launch checks.</span></article></section>
+          <section className="inqsi-feature-grid" aria-label="Product features"><article><b>AI Bet Slip Scanner</b><span>Bring your own selections and scan for weak-leg risk.</span></article><article><b>Market Data</b><span>Review verified market sources for moneyline, spread, and totals when connected.</span></article><article><b>CLV Tracking</b><span>Store review point versus later market position.</span></article><article><b>Watchlist + Alerts</b><span>Steam, reversal, chaos, and final-check warnings.</span></article><article><b>Live Status Mode</b><span>Close-to-live status where supported.</span></article><article><b>Public Performance</b><span>Sport-specific accuracy and containment history.</span></article><article><b>Context Layer</b><span>Hooks for injuries, weather, starters, and news.</span></article><article><b>Admin Readiness</b><span>Provider, auth, billing, privacy, and launch checks.</span></article></section>
         </div>
         <aside className="inqsi-sidebar"><section className="inqsi-panel"><div className="inqsi-section-head"><h2>Game Leans</h2><span>Working on it</span></div><WorkingCard title="Game leans working on it" copy="Game leans appear when verified data is available." /></section><section className="inqsi-panel"><div className="inqsi-section-head"><h2>Bet Slip Review</h2><span>AI scanner</span></div><WorkingCard title="Scanner ready visually" copy="The scanner will evaluate a user-entered bet slip once verified market data is connected." /></section><section className="inqsi-panel"><div className="inqsi-section-head"><h2>Readiness</h2><span>Admin</span></div><WorkingCard title="Provider checks live" copy="Use /admin or /api/admin/summary to inspect readiness." /></section></aside>
       </section>
