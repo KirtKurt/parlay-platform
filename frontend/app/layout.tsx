@@ -6,6 +6,7 @@ const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
+  applicationName: 'InQsi',
   title: {
     default: 'InQsi | Sports Market Intelligence, Line Movement & Parlay Scanner',
     template: '%s | InQsi'
@@ -13,16 +14,19 @@ export const metadata: Metadata = {
   description:
     'InQsi tracks sportsbook line movement, live odds, predicted winners, 3-leg parlay rankings, alerts, best available lines, and market risk signals before you lock it in.',
   keywords: [
+    'InQsi',
     'sports market intelligence',
     'line movement tracker',
     'parlay scanner',
-    'sports betting analytics',
+    'sports analytics',
     'odds comparison',
     'closing line value',
     'sportsbook signals',
     'predicted winners',
     'live odds app',
-    'InQsi'
+    'bet slip scanner',
+    'market stability',
+    'parlay risk checker'
   ],
   alternates: { canonical: '/' },
   openGraph: {
@@ -70,11 +74,42 @@ const organizationJsonLd = {
   }
 };
 
+const websiteJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'WebSite',
+  name: 'InQsi',
+  url: siteUrl,
+  description: 'Sports market intelligence for market movement, game signals, line comparison, parlay scanning, alerts, and performance tracking.',
+  potentialAction: {
+    '@type': 'SearchAction',
+    target: `${siteUrl}/sports?query={search_term_string}`,
+    'query-input': 'required name=search_term_string'
+  }
+};
+
+const softwareJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'SoftwareApplication',
+  name: 'InQsi',
+  applicationCategory: 'SportsApplication',
+  operatingSystem: 'Web, iOS, Android',
+  url: siteUrl,
+  description: 'Sports market intelligence application for reviewing line movement, game signals, best available lines, parlay structure, alerts, and performance tracking.',
+  offers: {
+    '@type': 'Offer',
+    price: '0',
+    priceCurrency: 'USD',
+    description: '5-day free promo'
+  }
+};
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(websiteJsonLd) }} />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(softwareJsonLd) }} />
         {children}
       </body>
     </html>
