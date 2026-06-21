@@ -48,7 +48,7 @@ export default function Home() {
         <div className="inqsi-hero-card">
           <p className="inqsi-promo">5 days free promo · Cancel anytime</p>
           <h1>Find where your picks go wrong <span>before you lock it in.</span></h1>
-          <p>InQsi helps you find hidden risk before you lock in a slip. The platform evaluates sportsbook markets, analyzes thousands of market signals, and scans your bet slip for weak legs, instability, and warning signs.</p>
+          <p>InQsi helps you find hidden risk before you lock in a slip. The platform evaluates sportsbook markets, analyzes thousands of market signals, and scans your slip for weak legs, instability, and warning signs.</p>
           <div className="inqsi-stat-grid" aria-label="InQsi value proposition">
             <div><b>Sportsbooks Evaluated</b><span>Major sportsbook markets monitored</span></div>
             <div><b>Market Signals</b><span>Thousands of data points analyzed</span></div>
@@ -61,7 +61,7 @@ export default function Home() {
           <p>Scan your slip, save watchlists, review alerts, and track market intelligence in one dashboard.</p>
           <a href="/parlay-scanner">Open AI Bet Slip Scanner</a>
           <a className="inqsi-primary" href="/register">Create account</a>
-          <small>Google and Apple sign-in are ready visually. Provider keys still need to be connected.</small>
+          <small>Start with the scanner, review the board, and decide whether InQsi earns a place in your routine.</small>
         </aside>
       </section>
 
@@ -76,8 +76,8 @@ export default function Home() {
         </div>
         <aside className="inqsi-panel">
           <div className="inqsi-section-head"><h2>AI Bet Slip Scanner</h2><span>Bring your picks</span></div>
-          <p className="movement">Enter your own parlay and let InQsi scan for weak legs, market instability, and warning signs.</p>
-          <Link className="inqsi-primary" href="/parlay-scanner" style={{ textDecoration: 'none', width: '100%' }}>Scan my bet slip</Link>
+          <p className="movement">Enter your own slip and let InQsi scan for weak legs, market instability, and warning signs.</p>
+          <Link className="inqsi-primary" href="/parlay-scanner" style={{ textDecoration: 'none', width: '100%' }}>Scan my slip</Link>
         </aside>
       </section>
 
