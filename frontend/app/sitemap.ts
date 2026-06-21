@@ -15,7 +15,7 @@ const routes = [
   '/sports/mlb',
   '/sports/tennis',
   '/sports/soccer',
-  '/predicted-winners',
+  '/game-leans',
   '/best-lines',
   '/parlay-scanner',
   '/live-market',
@@ -52,7 +52,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
   return routes.map((route) => ({
     url: `${baseUrl}${route}`,
     lastModified: new Date(),
-    changeFrequency: route === '' || route === '/picks-audit' || route === '/predicted-winners' || route === '/live-market' ? 'daily' : 'weekly',
-    priority: route === '' ? 1 : route === '/picks-audit' ? 0.95 : route === '/predicted-winners' ? 0.9 : 0.75
+    changeFrequency: route === '' || route === '/picks-audit' || route === '/game-leans' || route === '/live-market' ? 'daily' : 'weekly',
+    priority: route === '' ? 1 : route === '/picks-audit' ? 0.95 : route === '/game-leans' ? 0.9 : 0.75
   }));
 }
