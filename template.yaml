@@ -107,7 +107,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: hello_world/
-      Handler: api.lambda_handler
+      Handler: frontend_app.lambda_handler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
