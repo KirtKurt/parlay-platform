@@ -23,6 +23,15 @@ export function InqsiSeoPage({ eyebrow, title, intro, sections, faqs = [], path 
       { '@type': 'ListItem', position: 2, name: title, item: url }
     ]
   };
+  const articleJsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'Article',
+    headline: title,
+    description: intro,
+    mainEntityOfPage: url,
+    author: { '@type': 'Organization', name: 'InQsi' },
+    publisher: { '@type': 'Organization', name: 'InQsi' }
+  };
   const faqJsonLd = faqs.length
     ? {
         '@context': 'https://schema.org',
@@ -38,6 +47,7 @@ export function InqsiSeoPage({ eyebrow, title, intro, sections, faqs = [], path 
   return (
     <main className="inqsi-shell">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(breadcrumbJsonLd) }} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(articleJsonLd) }} />
       {faqJsonLd && <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(faqJsonLd) }} />}
       <AppHeader eyebrow="InQsi" title={title} />
 
