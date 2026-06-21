@@ -21,7 +21,7 @@ const menuLinks = [
   { href: '/game-leans', label: 'Game Leans' },
   { href: '/best-lines', label: 'Best lines' },
   { href: '/live-market', label: 'Live market' },
-  { href: '/clv', label: 'Line Movement Review' },
+  { href: '/line-movement-review', label: 'Line Movement Review' },
   { href: '/alerts', label: 'Alerts' },
   { href: '/watchlist', label: 'Watchlist' },
   { href: '/performance', label: 'Review History' },
