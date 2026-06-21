@@ -12,7 +12,7 @@ Parameters:
     Type: String
     NoEcho: true
     Default: ""
-    Description: Optional shared secret for external billing provider membership webhooks.
+    Description: Optional shared secret for external membership webhooks.
 
 Globals:
   Function:
@@ -37,6 +37,8 @@ Globals:
         USER_ATTRIBUTION_TABLE: !Ref InQsiUserAttributionTable
         MEMBERSHIP_TABLE: !Ref InQsiMembershipTable
         CREATOR_METRICS_TABLE: !Ref InQsiCreatorMetricsTable
+        MEMBERS_TABLE: !Ref InQsiMembersTable
+        MEMBER_SESSIONS_TABLE: !Ref InQsiMemberSessionsTable
         ODDS_REGIONS: us
         ODDS_MARKETS: h2h,spreads,totals
         ODDS_BOOKMAKERS: fanduel,draftkings,fanatics
@@ -275,6 +277,46 @@ Resources:
         - AttributeName: metric_date
           KeyType: RANGE
 
+  InQsiMembersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: member_id
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+      KeySchema:
+        - AttributeName: member_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: EmailIndex
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InQsiMemberSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: session_id
+          AttributeType: S
+        - AttributeName: member_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: session_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: MemberSessionIndex
+          KeySchema:
+            - AttributeName: member_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
   SilversApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -303,6 +345,10 @@ Resources:
             TableName: !Ref InQsiMembershipTable
         - DynamoDBCrudPolicy:
             TableName: !Ref InQsiCreatorMetricsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InQsiMembersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InQsiMemberSessionsTable
       Events:
         FrontendRoot:
           Type: HttpApi
@@ -399,6 +445,21 @@ Resources:
           Properties:
             Path: /v1/memberships/webhook
             Method: POST
+        MemberSession:
+          Type: HttpApi
+          Properties:
+            Path: /v1/member/session
+            Method: ANY
+        MemberSessionEnd:
+          Type: HttpApi
+          Properties:
+            Path: /v1/member/session/end
+            Method: POST
+        OpsSummary:
+          Type: HttpApi
+          Properties:
+            Path: /v1/ops/summary
+            Method: GET
         FifteenMinuteOddsPull:
           Type: Schedule
           Properties:
@@ -456,3 +517,9 @@ Outputs:
   MembershipTableName:
     Description: DynamoDB membership table
     Value: !Ref InQsiMembershipTable
+  MembersTableName:
+    Description: DynamoDB members table
+    Value: !Ref InQsiMembersTable
+  MemberSessionsTableName:
+    Description: DynamoDB member sessions table
+    Value: !Ref InQsiMemberSessionsTable
