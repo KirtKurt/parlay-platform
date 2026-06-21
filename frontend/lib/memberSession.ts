@@ -9,7 +9,9 @@ export type MemberSession = {
   freeWeekEndsAt?: string;
 };
 
-export const memberSessionKey = 'silvers_member_session_v1';
+export const memberSessionKey = 'inqsi_member_session_v1';
+const legacyMemberSessionKey = 'silvers_member_session_v1';
+const memberSessionEvent = 'inqsi-member-session-change';
 
 function isBrowser() {
   return typeof window !== 'undefined';
@@ -19,7 +21,7 @@ export function getMemberSession(): MemberSession | null {
   if (!isBrowser()) return null;
 
   try {
-    const raw = window.localStorage.getItem(memberSessionKey);
+    const raw = window.localStorage.getItem(memberSessionKey) || window.localStorage.getItem(legacyMemberSessionKey);
     if (!raw) return null;
     return JSON.parse(raw) as MemberSession;
   } catch {
@@ -30,13 +32,15 @@ export function getMemberSession(): MemberSession | null {
 export function saveMemberSession(session: MemberSession) {
   if (!isBrowser()) return;
   window.localStorage.setItem(memberSessionKey, JSON.stringify(session));
-  window.dispatchEvent(new Event('silvers-member-session-change'));
+  window.localStorage.removeItem(legacyMemberSessionKey);
+  window.dispatchEvent(new Event(memberSessionEvent));
 }
 
 export function clearMemberSession() {
   if (!isBrowser()) return;
   window.localStorage.removeItem(memberSessionKey);
-  window.dispatchEvent(new Event('silvers-member-session-change'));
+  window.localStorage.removeItem(legacyMemberSessionKey);
+  window.dispatchEvent(new Event(memberSessionEvent));
 }
 
 export function createDemoMemberSession(email: string, plan: 'Core' | 'Pro' | 'Master' = 'Pro'): MemberSession {
