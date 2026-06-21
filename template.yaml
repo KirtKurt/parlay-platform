@@ -107,7 +107,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: hello_world/
-      Handler: api.lambda_handler
+      Handler: frontend_app.lambda_handler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
@@ -370,6 +370,26 @@ Resources:
           Properties:
             Path: /v1/app/soccer/cards
             Method: GET
+
+  InqsiAutopsySchedulerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: inqsi_autopsy_scheduler.lambda_handler
+      Timeout: 300
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalLedgerTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PredictionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
+      Events:
+        InqsiNightlyAutopsyAt1AM:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 6 * * ? *)
+            Input: '{"sport_key":"all","mode":"grade","run":"nightly_autopsy_1am_et"}'
 
 Outputs:
   ApiUrl:
