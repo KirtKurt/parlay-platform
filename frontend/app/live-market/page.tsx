@@ -2,8 +2,8 @@ import type { Metadata } from 'next';
 import { InqsiSeoPage } from '@/components/InqsiSeoPage';
 
 export const metadata: Metadata = {
-  title: 'Live Status Mode',
-  description: 'Review current status, signal changes, and verified data availability in InQsi.',
+  title: 'Live Market',
+  description: 'Review current market movement, signal changes, and risk pressure in InQsi.',
   alternates: { canonical: '/live-market' }
 };
 
@@ -11,14 +11,14 @@ export default function Page() {
   return (
     <InqsiSeoPage
       path="/live-market"
-      eyebrow="Live status"
-      title="Live status mode."
-      intro="InQsi is designed to show current status and signal changes when supported data is connected. Missing feeds show Working on it."
+      eyebrow="Live market"
+      title="See how the market is moving right now."
+      intro="The live market page is built to help you spot pressure, resistance, and signal changes as the board develops. Use it to slow down before you trust a pick that may be moving against you."
       sections={[
-        { title: 'Current status', copy: 'Show active status when supported by connected providers.' },
-        { title: 'Signal changes', copy: 'Highlight when stability or movement changes.' },
-        { title: 'Watchlist friendly', copy: 'Give users a focused place to review what they are following.' },
-        { title: 'Clear unavailable state', copy: 'If live data is not connected, InQsi does not invent it.' }
+        { title: 'Movement pressure', copy: 'See where a game is starting to shift and whether the move supports or weakens your read.' },
+        { title: 'Signal changes', copy: 'Watch for changes in stability, resistance, steam, and coin-flip pressure.' },
+        { title: 'Watchlist friendly', copy: 'Use your saved games to focus only on the markets you care about.' },
+        { title: 'Clear wait states', copy: 'If verified market data is not available yet, InQsi tells you clearly instead of filling gaps.' }
       ]}
     />
   );
