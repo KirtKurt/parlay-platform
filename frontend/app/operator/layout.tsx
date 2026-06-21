@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { headers } from 'next/headers';
 
 function canOpenDashboard() {
@@ -9,6 +10,10 @@ function canOpenDashboard() {
 function LockedDashboard() {
   return (
     <main className="inqsi-shell">
+      <header className="inqsi-topbar">
+        <Link className="inqsi-brand" href="/"><span className="inqsi-logo-mark">Q</span><span><b>InQsi</b><small>Restricted Operator</small></span></Link>
+        <nav className="inqsi-nav-actions"><Link href="/">Home</Link><Link href="/sports">Sports</Link><Link href="/pricing">Pricing</Link></nav>
+      </header>
       <section className="inqsi-hero">
         <div className="inqsi-hero-card">
           <p className="inqsi-promo">Restricted</p>
