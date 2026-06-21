@@ -41,7 +41,7 @@ export type InqsiSnapshot = {
 const defaultSports = ['americanfootball_nfl', 'basketball_nba', 'baseball_mlb', 'icehockey_nhl', 'basketball_ncaab', 'soccer_epl', 'tennis_atp'];
 
 function apiBase() {
-  const value = process.env.NEXT_PUBLIC_INQSI_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || '';
+  const value = process.env.NEXT_PUBLIC_INQSI_API_URL || process.env.NEXT_PUBLIC_INQSI_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || '';
   return value.trim().replace(/\/$/, '');
 }
 
@@ -82,7 +82,7 @@ export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAUL
 
   return {
     apiStatus: base ? (games.length || predictions.length || parlayPayload?.built ? 'CONNECTED' : 'WAITING') : 'WAITING',
-    apiDetail: base ? 'Connected to InQsi API. Waiting areas will appear until sportsbook data is available.' : 'Waiting on API URL. Set NEXT_PUBLIC_INQSI_API_BASE_URL to your current backend URL.',
+    apiDetail: base ? 'Connected to InQsi API. Waiting areas will appear until sportsbook data is available.' : 'Waiting on API URL. Set NEXT_PUBLIC_INQSI_API_URL to your current backend URL.',
     sports,
     selectedSport,
     games,
@@ -93,3 +93,5 @@ export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAUL
     performance: performancePayload
   };
 }
+
+export const getApiSnapshot = getInqsiSnapshot;
