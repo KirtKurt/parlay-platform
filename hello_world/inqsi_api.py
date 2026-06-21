@@ -3,6 +3,7 @@ from typing import Any, Dict, List
 
 from inqsi_core import InqsiError, active_sport_keys, analyze_sport, auto_parlay, discover_sports, game_detail, graph_data, json_default, latest_game_states, pull_and_analyze_all, pull_and_analyze_sport, user_parlay
 from inqsi_live import ingest_live_sport, latest_live_games
+from inqsi_winner_predictions import store_winner_predictions_for_sport, visible_winner_predictions
 
 
 def response(status: int, body: Any) -> Dict[str, Any]:
@@ -44,6 +45,14 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             if not sport:
                 return response(400, {"ok": False, "error": "sport_key is required"})
             return response(200, latest_live_games(sport))
+        if p.endswith("/winner-predictions"):
+            if not sport:
+                return response(400, {"ok": False, "error": "sport_key is required"})
+            return response(200, visible_winner_predictions(sport))
+        if p.endswith("/build-winner-predictions"):
+            if not sport:
+                return response(400, {"ok": False, "error": "sport_key is required"})
+            return response(200, store_winner_predictions_for_sport(sport))
         if p.endswith("/games"):
             if not sport:
                 return response(400, {"ok": False, "error": "sport_key is required"})
