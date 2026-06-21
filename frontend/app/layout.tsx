@@ -8,6 +8,8 @@ import './tracking.css';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app';
 const ogImage = '/og-inqsi.svg';
+const googleVerification = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION;
+const bingVerification = process.env.NEXT_PUBLIC_BING_SITE_VERIFICATION;
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
@@ -33,6 +35,10 @@ export const metadata: Metadata = {
     'sports risk review'
   ],
   alternates: { canonical: '/' },
+  verification: {
+    google: googleVerification,
+    other: bingVerification ? { 'msvalidate.01': bingVerification } : undefined
+  },
   openGraph: {
     type: 'website',
     url: siteUrl,
