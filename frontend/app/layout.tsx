@@ -3,44 +3,46 @@ import './globals.css';
 import './inqsi.css';
 
 const siteUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://inqsi.app';
+const ogImage = '/og-inqsi.svg';
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   applicationName: 'InQsi',
   title: {
-    default: 'InQsi | Sports Market Intelligence, Line Movement & Parlay Scanner',
+    default: 'InQsi | Sports Market Intelligence, Market Movement & Review Tools',
     template: '%s | InQsi'
   },
   description:
-    'InQsi tracks sportsbook line movement, live odds, predicted winners, 3-leg parlay rankings, alerts, best available lines, and market risk signals before you lock it in.',
+    'InQsi tracks sports market movement, live data status, game leans, selection structure, alerts, data comparison, and review signals in a mobile-first interface.',
   keywords: [
     'InQsi',
     'sports market intelligence',
-    'line movement tracker',
-    'parlay scanner',
+    'market movement tracker',
     'sports analytics',
-    'odds comparison',
+    'data comparison',
     'closing line value',
     'sportsbook signals',
-    'predicted winners',
-    'live odds app',
-    'bet slip scanner',
+    'game leans',
+    'live sports data',
+    'selection scanner',
     'market stability',
-    'parlay risk checker'
+    'risk review'
   ],
   alternates: { canonical: '/' },
   openGraph: {
     type: 'website',
     url: siteUrl,
     siteName: 'InQsi',
-    title: 'InQsi | Find What Looks Wrong Before You Lock It In',
+    title: 'InQsi | Sports Market Intelligence',
     description:
-      'A mobile-first sports market intelligence platform for signals, live odds, predicted winners, parlay scanning, watchlists, alerts, and best available lines.'
+      'A mobile-first sports market intelligence platform for signals, live status, game leans, scanning, watchlists, alerts, and market data review.',
+    images: [{ url: ogImage, width: 1200, height: 630, alt: 'InQsi sports market intelligence' }]
   },
   twitter: {
     card: 'summary_large_image',
     title: 'InQsi | Sports Market Intelligence',
-    description: 'Find what looks wrong before you lock it in.'
+    description: 'Sports market intelligence for sharper review.',
+    images: [ogImage]
   },
   robots: {
     index: true,
@@ -60,13 +62,6 @@ const organizationJsonLd = {
   '@type': 'Organization',
   name: 'InQsi',
   url: siteUrl,
-  sameAs: [
-    'https://x.com/inqsi',
-    'https://instagram.com/inqsi',
-    'https://tiktok.com/@inqsi',
-    'https://youtube.com/@inqsi',
-    'https://discord.gg/inqsi'
-  ],
   contactPoint: {
     '@type': 'ContactPoint',
     contactType: 'customer support',
@@ -79,7 +74,7 @@ const websiteJsonLd = {
   '@type': 'WebSite',
   name: 'InQsi',
   url: siteUrl,
-  description: 'Sports market intelligence for market movement, game signals, line comparison, parlay scanning, alerts, and performance tracking.',
+  description: 'Sports market intelligence for market movement, game signals, data comparison, scanning, alerts, and performance tracking.',
   potentialAction: {
     '@type': 'SearchAction',
     target: `${siteUrl}/sports?query={search_term_string}`,
@@ -94,7 +89,7 @@ const softwareJsonLd = {
   applicationCategory: 'SportsApplication',
   operatingSystem: 'Web, iOS, Android',
   url: siteUrl,
-  description: 'Sports market intelligence application for reviewing line movement, game signals, best available lines, parlay structure, alerts, and performance tracking.',
+  description: 'Sports market intelligence application for reviewing market movement, game signals, data comparison, structure, alerts, and performance tracking.',
   offers: {
     '@type': 'Offer',
     price: '0',
