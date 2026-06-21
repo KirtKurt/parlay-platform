@@ -17,8 +17,7 @@ export default async function SportsPage() {
           <p className="eyebrow blue">All sports · 5 days free</p>
           <h2>Pick your sport. We’ll organize the board.</h2>
           <p className="hero-copy">
-            Start with the sport you care about today. Each board uses the same visual language: equipment icons for the sport,
-            jersey-style badges for teams, and clean signal labels for market pressure.
+            Start with the sport you care about today. InQsi helps you see where the market is showing support, pressure, and warning signs before you lock in a pick.
           </p>
           <div className="hero-actions">
             <Link className="primary-button large" href="/register?promo=5-days" style={{ textDecoration: 'none' }}>Start 5 Days Free</Link>
@@ -28,9 +27,9 @@ export default async function SportsPage() {
         </div>
         <aside className="sport-hero-panel accent-blue">
           <SportEquipmentIcon slug="nfl" size="large" showLabel />
-          <h3>Equipment-first navigation</h3>
-          <p>Every sport gets a familiar ball, helmet, puck, stick, racket, board, or paddle so the board feels faster to read.</p>
-          <div className="mini-equipment-line"><span>Custom icons</span><span>Team badges</span><span>Clear labels</span></div>
+          <h3>Find the board faster</h3>
+          <p>Choose your sport, scan the slate, and look for the signals that could make a pick stronger, weaker, or too risky to force.</p>
+          <div className="mini-equipment-line"><span>Sports</span><span>Signals</span><span>Risk checks</span></div>
         </aside>
       </section>
 
@@ -45,21 +44,21 @@ export default async function SportsPage() {
               <SportEquipmentIcon slug={sport.slug} />
               <span className="eyebrow blue">{visual.equipmentLabel}</span>
               <strong>{sport.title}</strong>
-              <p>{count ? `${count} active example on the board.` : 'Ready for slate data.'} {visual.description}</p>
+              <p>{count ? `${count} active example on the board.` : 'Ready for slate data.'} Open the board when you want to review market pressure and risk signals for this sport.</p>
             </Link>
           );
         })}
       </section>
 
       <ContentBlock
-        eyebrow="Best-practice structure"
-        title="The sport page should be obvious before anyone reads a paragraph."
-        body="A visitor should know where they are in one second. The site now uses equipment icons for each sport, jersey-style badges for team identity, and the same signal language across every market board."
+        eyebrow="How to use the board"
+        title="Start with the sport. Then check the risk."
+        body="You should not have to dig through complicated screens to understand what matters. Pick the sport, review the slate, scan the signals, and look for the places where your ticket may be weaker than it feels."
         items={[
-          { title: 'Sport identity', detail: 'Football, basketball, puck, bat, racket, soccer ball, dartboard, lacrosse stick, and paddle graphics make the sport visible instantly.' },
-          { title: 'Team identity', detail: 'Team names and abbreviations sit inside custom jersey-style badges.' },
-          { title: 'Signal identity', detail: 'Steam, resistance, coin flip, anomaly, and no-overlap structure stay consistent across every route.' },
-          { title: 'Search-friendly pages', detail: 'Every board keeps natural text around the visual system so users, search engines, and AI tools understand the coverage.' }
+          { title: 'Choose the sport', detail: 'Open the board that matches what you are watching today.' },
+          { title: 'Scan the slate', detail: 'See which games are showing support, resistance, coin-flip pressure, or unusual movement.' },
+          { title: 'Check the weak spots', detail: 'Use the same signal language across every sport so the warning signs stay easy to read.' },
+          { title: 'Avoid forced confidence', detail: 'If the board is messy, InQsi should slow you down instead of dressing up a risky answer.' }
         ]}
       />
     </main>
