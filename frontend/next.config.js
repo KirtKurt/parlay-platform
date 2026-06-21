@@ -1,8 +1,6 @@
 /** @type {import('next').NextConfig} */
 const lineGuideRoute = '/sports-' + 'betting-line-movement-guide';
 const accountConnectionRoute = '/does-inqsi-connect-to-sports' + 'books';
-const comparePicksRoute = '/compare/inqsi-vs-pick-' + 'sellers';
-const compareTrackingRoute = '/compare/inqsi-vs-bet-' + 'tracking-apps';
 
 const nextConfig = {
   reactStrictMode: true,
@@ -26,8 +24,6 @@ const nextConfig = {
       { source: '/post-game-slip-autopsy', destination: '/post-game-review' },
       { source: '/how-inqsi-analyzes-a-slip', destination: '/how-it-works' },
       { source: accountConnectionRoute, destination: '/account-connection' },
-      { source: comparePicksRoute, destination: '/what-is-inqsi' },
-      { source: compareTrackingRoute, destination: '/accuracy-tracker' },
       { source: '/why-4-leg-parlays-are-risky', destination: '/four-leg-guide' }
     ];
   },
