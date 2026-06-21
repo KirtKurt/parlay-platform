@@ -18,7 +18,7 @@ const menuLinks = [
   { href: '/', label: 'Home' },
   { href: '/parlay-scanner', label: 'AI Bet Slip Scanner' },
   { href: '/sports', label: 'Sports board' },
-  { href: '/predicted-winners', label: 'Predicted winners' },
+  { href: '/game-leans', label: 'Game Leans' },
   { href: '/best-lines', label: 'Best lines' },
   { href: '/live-market', label: 'Live market' },
   { href: '/alerts', label: 'Alerts' },
