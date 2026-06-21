@@ -53,6 +53,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             window = q.get("window") or body.get("window") or "full"
             return response(200, graph_data(sport, game_id, window))
         if p.endswith("/auto-parlay"):
+            if not sport:
+                return response(400, {"ok": False, "error": "sport_key is required. Auto-parlay is sport-isolated and cannot mix sports."})
             return response(200, auto_parlay(sport))
         if p.endswith("/user-parlay"):
             game_ids: List[str] = body.get("game_ids") or []
