@@ -54,13 +54,13 @@ export default function Home() {
       <section className="inqsi-hero inqsi-mockup-hero" id="main-content">
         <div className="inqsi-hero-card">
           <p className="inqsi-promo">5 days free promo · Cancel anytime</p>
-          <h1>Find what looks wrong <span>before you lock it in.</span></h1>
+          <h1>Find where your picks go wrong <span>before you lock it in.</span></h1>
           <p>InQsi helps bettors find hidden risk before they lock in a slip. The platform evaluates sportsbook markets, analyzes thousands of market signals, and scans your bet slip for weak legs, instability, and warning signs.</p>
           <div className="inqsi-stat-grid" aria-label="InQsi value proposition">
             <div><b>Sportsbooks Evaluated</b><span>Major sportsbook markets monitored</span></div>
             <div><b>Market Signals</b><span>Thousands of data points analyzed</span></div>
             <div><b>Risk Detection</b><span>Weak legs surfaced before lock-in</span></div>
-            <div><b>AI Bet Slip Scanner</b><span>Your slip scanned for what looks wrong</span></div>
+            <div><b>AI Bet Slip Scanner</b><span>Your picks scanned for where they go wrong</span></div>
           </div>
         </div>
         <aside className="inqsi-signup-card" aria-label="Create account"><h2>Start with 5 days free</h2><p>Save watchlists, alerts, scans, dashboards, and InQsi game leans.</p><a href="/parlay-scanner">Open AI Bet Slip Scanner</a><a href="/register">Continue with Google</a><a href="/register">Continue with Apple</a><a className="inqsi-primary" href="/register">Create account</a><small>Google and Apple sign-in are ready visually. Provider keys still need to be connected.</small></aside>
