@@ -80,23 +80,28 @@ def _prediction_side(game: Dict[str, Any]) -> str:
 
 
 def build_winner_prediction(game: Dict[str, Any], model_version: str = "INQSI_WINNER_V1") -> Dict[str, Any]:
+    sport_key = game.get("sport_key")
+    if not sport_key:
+        raise RuntimeError("sport_key missing; winner prediction cannot be stored")
     side = _prediction_side(game)
     side_scores = game.get("side_scores") or {}
     team = game.get("home_team") if side == "home" else game.get("away_team")
     confidence = int(max(1, min(99, side_scores.get(side, game.get("signal_score", 50)))))
-    prediction_id = f"{game.get('sport_key')}#{game.get('game_id')}#{game.get('asof')}"
+    prediction_id = f"{sport_key}#{game.get('game_id')}#{game.get('asof')}"
     return {
-        "PK": f"INQSI#WINNER_LATEST#{game.get('sport_key')}",
+        "PK": f"INQSI#WINNER_LATEST#{sport_key}",
         "SK": f"GAME#{game.get('game_id')}",
         "entity_type": "INQSI_WINNER_PREDICTION",
-        "sport_key": game.get("sport_key"),
+        "sport_key": sport_key,
         "game_id": game.get("game_id"),
         "prediction_id": prediction_id,
         "status": "OPEN",
+        "source": "platform_predicted_winner",
         "model_version": model_version,
         "created_at": now_iso(),
         "asof": game.get("asof"),
         "visible_at": visible_at(game.get("commence_time")),
+        "visibility_rule": "customer_visible_one_hour_before_event_start",
         "commence_time": game.get("commence_time"),
         "home_team": game.get("home_team"),
         "away_team": game.get("away_team"),
@@ -106,8 +111,10 @@ def build_winner_prediction(game: Dict[str, Any], model_version: str = "INQSI_WI
         "primary_signal": game.get("primary_signal"),
         "signal_score": game.get("signal_score"),
         "stability_classification": game.get("stability_classification"),
-        "short_explanation": f"InQsi currently leans {team} based on market direction, signal score, and stability classification.",
+        "market_direction": game.get("market_direction"),
+        "short_explanation": f"InQsi leans {team} based on market direction, signal score, and stability classification.",
         "what_to_watch": game.get("what_looks_wrong"),
+        "result": {},
     }
 
 
@@ -116,16 +123,18 @@ def store_winner_predictions_for_sport(sport_key: str) -> Dict[str, Any]:
         raise RuntimeError("PREDICTIONS_TABLE not configured")
     games = latest_game_states(sport_key)
     written = 0
+    skipped_missing_start = 0
     for game in games:
         if game.get("sport_key") != sport_key:
             raise RuntimeError("Sport isolation violation in winner prediction generation")
         if not game.get("commence_time"):
+            skipped_missing_start += 1
             continue
         item = build_winner_prediction(game)
         _predictions.put_item(Item=_to_ddb(item))
         _predictions.put_item(Item=_to_ddb({**item, "PK": f"INQSI#WINNER_HISTORY#{sport_key}", "SK": f"PRED#{item['created_at']}#GAME#{game.get('game_id')}"}))
         written += 1
-    return {"ok": True, "sport_key": sport_key, "predictions_written": written}
+    return {"ok": True, "sport_key": sport_key, "predictions_written": written, "skipped_missing_start_time": skipped_missing_start}
 
 
 def visible_winner_predictions(sport_key: str) -> Dict[str, Any]:
@@ -164,6 +173,8 @@ def grade_winner_predictions_for_sport(sport_key: str) -> Dict[str, Any]:
     checked = graded = 0
     for raw in response.get("Items", []):
         item = _from_ddb(raw)
+        if item.get("sport_key") != sport_key:
+            raise RuntimeError("Sport isolation violation in winner prediction grading")
         if item.get("status") == "GRADED":
             continue
         game_id = item.get("game_id")
@@ -172,7 +183,7 @@ def grade_winner_predictions_for_sport(sport_key: str) -> Dict[str, Any]:
         checked += 1
         actual = winners[game_id]
         hit = actual == item.get("predicted_winner")
-        graded_item = {**item, "status": "GRADED", "graded_at": now_iso(), "actual_winner": actual, "prediction_hit": hit}
+        graded_item = {**item, "status": "GRADED", "graded_at": now_iso(), "actual_winner": actual, "prediction_hit": hit, "result": {"actual_winner": actual, "prediction_hit": hit}}
         _predictions.put_item(Item=_to_ddb(graded_item))
         learning = {
             "PK": f"INQSI#WINNER_LEARNING#{sport_key}",
@@ -191,5 +202,7 @@ def grade_winner_predictions_for_sport(sport_key: str) -> Dict[str, Any]:
             "created_at": now_iso(),
         }
         _predictions.put_item(Item=_to_ddb(learning))
+        if _signal_ledger is not None:
+            _signal_ledger.put_item(Item=_to_ddb(learning))
         graded += 1
     return {"ok": True, "sport_key": sport_key, "checked": checked, "graded": graded}
