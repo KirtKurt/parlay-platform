@@ -49,10 +49,10 @@ export function InqsiSeoPage({ eyebrow, title, intro, sections, faqs = [], path 
         </div>
         <aside className="inqsi-signup-card">
           <h2>Start with 5 days free</h2>
-          <p>Use InQsi to review market movement, risk signals, game leans, and account dashboards in one clean interface.</p>
+          <p>Use InQsi to review market movement, risk signals, game leans, and saved review history in one clean interface.</p>
           <a href="/register">Create account</a>
           <a href="/picks-audit">Review selections</a>
-          <small>No fake data. If a verified feed is unavailable, InQsi shows Working on it.</small>
+          <small>No fake data. If verified market data is unavailable, InQsi uses a clear waiting state.</small>
         </aside>
       </section>
 
