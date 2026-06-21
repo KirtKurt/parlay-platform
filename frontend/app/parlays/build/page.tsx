@@ -6,55 +6,73 @@ import { RankingCard } from '@/components/RankingCard';
 import { PaidPreviewGate } from '@/components/PaidPreviewGate';
 
 export default async function BuildParlayPage() {
-  const { games, rankings, apiStatus, apiDetail } = await getApiSnapshot();
-  const anchors = games.filter((game) => game.risk !== 'HIGH').slice(0, 3);
-  const reviewQueue = games.filter((game) => game.risk === 'HIGH');
+  const { games, rankings } = await getApiSnapshot();
+  const anchorCandidates = games.filter((game) => game.risk !== 'HIGH').slice(0, 3);
+  const cautionQueue = games.filter((game) => game.risk === 'HIGH');
 
   return (
     <main className="shell">
-      <AppHeader title="Build parlay" apiStatus={apiStatus} apiDetail={apiDetail} />
+      <AppHeader title="AI Slip Builder" />
 
       <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
-        <p className="eyebrow blue">Paid builder preview</p>
-        <h2>Choose games. Enforce anchors. Refuse unsafe structures.</h2>
-        <p className="hero-copy">The builder is the paid workflow: sport selection, number of legs, zero-overlap mode, risk tolerance, eligible games, Top-8 combinations, and reason-coded refusals.</p>
+        <p className="eyebrow blue">Build with discipline</p>
+        <h2>Choose games. Check the structure. Do not force the slip.</h2>
+        <p className="hero-copy">The AI Slip Builder helps turn a group of games into a cleaner 3-leg slip. It looks for strong anchors, flags the coin-flip leg, checks zero-overlap options, and warns you when the market is not supporting the build.</p>
         <div className="hero-actions">
-          <Link className="primary-button large" href="/register" style={{ textDecoration: 'none' }}>Unlock Builder</Link>
-          <Link className="ghost-button large" href="/pricing" style={{ textDecoration: 'none' }}>View Plans</Link>
-          <Link className="ghost-button large" href="/login" style={{ textDecoration: 'none' }}>Log In</Link>
+          <Link className="primary-button large" href="/register" style={{ textDecoration: 'none' }}>Start 5 Days Free</Link>
+          <Link className="ghost-button large" href="/pricing" style={{ textDecoration: 'none' }}>View Pricing</Link>
+          <Link className="ghost-button large" href="/parlay-scanner" style={{ textDecoration: 'none' }}>Scan Existing Slip</Link>
         </div>
       </section>
 
       <section className="status-row">
-        <article className="status-card"><span>Structure</span><strong>3-leg</strong><p>Top-8 two-outcome combinations</p></article>
-        <article className="status-card"><span>Gate</span><strong>2 Solid</strong><p>At least two strong solid anchors required</p></article>
-        <article className="status-card"><span>Variable</span><strong>0–1 CF</strong><p>No forced coin-flip exposure</p></article>
-        <article className="status-card"><span>Overlap</span><strong>Zero</strong><p>Multi-build mode avoids team reuse</p></article>
+        <article className="status-card"><span>Slip type</span><strong>3-leg</strong><p>Eight possible outcome paths reviewed.</p></article>
+        <article className="status-card"><span>Anchor check</span><strong>2 Solid</strong><p>Looks for at least two legs with cleaner support.</p></article>
+        <article className="status-card"><span>Variable leg</span><strong>0-1 CF</strong><p>Coin-flip exposure stays visible instead of hidden.</p></article>
+        <article className="status-card"><span>Overlap</span><strong>Zero</strong><p>Multi-slip builds avoid repeating the same team when possible.</p></article>
       </section>
 
-      <PaidPreviewGate title="Builder unlocks after registration" message="Preview the discipline, but hide the actual ranked output until the user has an account and active monthly access.">
+      <PaidPreviewGate title="Unlock the full AI Slip Builder" message="Preview the discipline now. Full ranked builds, weak-leg review, and saved slip history unlock with member access.">
         <section className="content-grid">
           <div className="panel">
-            <div className="panel-header"><div><p className="eyebrow">Eligible pool</p><h3>Anchor candidates</h3></div></div>
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Anchor candidates</p>
+                <h3>Start with the legs that look cleaner.</h3>
+              </div>
+            </div>
+            <p className="movement">Anchor candidates are the games InQsi sees as having cleaner market support. They are not guarantees. They are the legs that deserve to be checked first when building the slip.</p>
             <div className="game-list">
-              {anchors.map((game) => <GameCard game={game} key={game.id} />)}
+              {anchorCandidates.map((game) => <GameCard game={game} key={game.id} />)}
             </div>
           </div>
 
           <aside className="panel rank-panel">
-            <div className="panel-header compact"><div><p className="eyebrow">Output</p><h3>Current ranking</h3></div></div>
+            <div className="panel-header compact">
+              <div>
+                <p className="eyebrow">Ranked structure</p>
+                <h3>Current top paths</h3>
+              </div>
+            </div>
+            <p className="movement">The builder ranks the strongest-looking structure first, then shows where the risk starts to enter the slip.</p>
             <div className="rank-list">
               {rankings.slice(0, 3).map((ranking) => <RankingCard ranking={ranking} key={ranking.rank} />)}
             </div>
-            <Link className="ghost-button" href="/parlays" style={{ display: 'inline-block', marginTop: 16, textDecoration: 'none' }}>View full ranking</Link>
+            <Link className="ghost-button" href="/parlays" style={{ display: 'inline-block', marginTop: 16, textDecoration: 'none' }}>View builder overview</Link>
           </aside>
         </section>
 
-        {reviewQueue.length > 0 && (
+        {cautionQueue.length > 0 && (
           <section className="panel" style={{ marginTop: 20 }}>
-            <div className="panel-header"><div><p className="eyebrow">Human Gate</p><h3>Review queue</h3></div></div>
+            <div className="panel-header">
+              <div>
+                <p className="eyebrow">Caution queue</p>
+                <h3>Games that need a slower review</h3>
+              </div>
+            </div>
+            <p className="movement">These games may still be useful, but InQsi is flagging them for extra caution because the risk profile is less clean.</p>
             <div className="game-list">
-              {reviewQueue.map((game) => <GameCard game={game} key={game.id} />)}
+              {cautionQueue.map((game) => <GameCard game={game} key={game.id} />)}
             </div>
           </section>
         )}
