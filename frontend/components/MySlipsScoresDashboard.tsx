@@ -91,8 +91,12 @@ function SlipCard({ slip, onVisibilityChange }: { slip: SavedSlip; onVisibilityC
 
 export function MySlipsScoresDashboard() {
   const [slips, setSlips] = useState(savedSlips);
+  const [showWeekScore, setShowWeekScore] = useState(true);
+  const [showMonthScore, setShowMonthScore] = useState(true);
   const accuracyWindows = useMemo(() => buildAccuracyWindows(slips), [slips]);
   const publicCount = slips.filter((slip) => slip.visibility === 'public').length;
+  const weekScore = accuracyWindows.find((window) => window.label === '1 week');
+  const monthScore = accuracyWindows.find((window) => window.label === '1 month');
 
   function setVisibility(id: string, visibility: SlipVisibility) {
     setSlips((current) => current.map((slip) => slip.id === id ? { ...slip, visibility } : slip));
@@ -124,9 +128,16 @@ export function MySlipsScoresDashboard() {
           <div className="panel-header compact"><div><p className="eyebrow blue">Public profile card</p><h3>{publicProfileSnapshot.displayName}</h3></div></div>
           <p className="movement">@{publicProfileSnapshot.handle}</p>
           <p className="movement">{publicProfileSnapshot.headline}</p>
+          <p className="movement">The customer controls whether the public card shows 1-week and 1-month cumulative score percentages.</p>
+          <div className="hero-actions" style={{ marginTop: 14 }}>
+            <button className={showWeekScore ? 'primary-button large' : 'ghost-button large'} type="button" onClick={() => setShowWeekScore((current) => !current)}>Show 1 Week %</button>
+            <button className={showMonthScore ? 'primary-button large' : 'ghost-button large'} type="button" onClick={() => setShowMonthScore((current) => !current)}>Show 1 Month %</button>
+          </div>
           <div className="status-row" style={{ marginTop: 14 }}>
             <article className="status-card"><span>Public slips</span><strong>{publicCount}</strong><p>Owner controlled.</p></article>
             <article className="status-card"><span>Comments</span><strong>Off</strong><p>No comments enabled.</p></article>
+            {showWeekScore && weekScore && <article className="status-card"><span>1 week score</span><strong>{weekScore.accuracy}%</strong><p>{weekScore.record}</p></article>}
+            {showMonthScore && monthScore && <article className="status-card"><span>1 month score</span><strong>{monthScore.accuracy}%</strong><p>{monthScore.record}</p></article>}
           </div>
         </article>
 
