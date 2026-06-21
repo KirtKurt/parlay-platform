@@ -15,17 +15,17 @@ export const sportVisuals: Record<SportSlug, SportVisual> = {
     slug: 'nfl',
     label: 'NFL',
     equipment: '🏈',
-    equipmentLabel: 'football and helmet',
+    equipmentLabel: 'football',
     accent: 'blue',
-    description: 'Pro football market movement, helmet-to-helmet matchup cards, and late board pressure.'
+    description: 'NFL market board.'
   },
   cfb: {
     slug: 'cfb',
     label: 'CFB',
     equipment: '🏈',
-    equipmentLabel: 'college football helmet',
+    equipmentLabel: 'college football',
     accent: 'teal',
-    description: 'College football boards with rivalry volatility, public-fade checks, and T-snapshot movement.'
+    description: 'College football market board.'
   },
   nba: {
     slug: 'nba',
@@ -33,7 +33,7 @@ export const sportVisuals: Record<SportSlug, SportVisual> = {
     equipment: '🏀',
     equipmentLabel: 'basketball',
     accent: 'gold',
-    description: 'Basketball line movement, totals pressure, and late confirmation before tip.'
+    description: 'NBA market board.'
   },
   ncaam: {
     slug: 'ncaam',
@@ -41,63 +41,63 @@ export const sportVisuals: Record<SportSlug, SportVisual> = {
     equipment: '🏀',
     equipmentLabel: 'college basketball',
     accent: 'purple',
-    description: 'College hoops volatility, compressed pricing, and Top-4 hedge awareness when the board gets tight.'
+    description: 'College basketball market board.'
   },
   nhl: {
     slug: 'nhl',
     label: 'NHL',
     equipment: '🏒',
-    equipmentLabel: 'puck and stick',
+    equipmentLabel: 'hockey',
     accent: 'ice',
-    description: 'Hockey market compression, goalie sensitivity, puck-line movement, and late travel checks.'
+    description: 'NHL market board.'
   },
   mlb: {
     slug: 'mlb',
     label: 'MLB',
     equipment: '⚾',
-    equipmentLabel: 'baseball and bat',
+    equipmentLabel: 'baseball',
     accent: 'cream',
-    description: 'Baseball moneyline, run-line, totals movement, pitcher sensitivity, and news-triggered movement.'
+    description: 'MLB market board.'
   },
   tennis: {
     slug: 'tennis',
     label: 'Tennis',
     equipment: '🎾',
-    equipmentLabel: 'racket and tennis ball',
+    equipmentLabel: 'tennis',
     accent: 'lime',
-    description: 'Singles and doubles match movement, set-format volatility, and coin-flip exposure.'
+    description: 'Tennis match board.'
   },
   soccer: {
     slug: 'soccer',
     label: 'Soccer',
     equipment: '⚽',
-    equipmentLabel: 'soccer ball and kit',
+    equipmentLabel: 'soccer',
     accent: 'green',
-    description: 'Three-way markets, draw risk, total pressure, and clean match boards.'
+    description: 'Soccer match board.'
   },
   darts: {
     slug: 'darts',
     label: 'Darts',
     equipment: '🎯',
-    equipmentLabel: 'dartboard and darts',
+    equipmentLabel: 'darts',
     accent: 'red',
-    description: 'Short-match volatility, leg/set pressure, favorite hold checks, and checkout momentum.'
+    description: 'Darts match board.'
   },
   lacrosse: {
     slug: 'lacrosse',
     label: 'Lacrosse',
     equipment: '🥍',
-    equipmentLabel: 'lacrosse stick and ball',
+    equipmentLabel: 'lacrosse',
     accent: 'aqua',
-    description: 'Goalie/news sensitivity, spread pressure, totals movement, and late compression.'
+    description: 'Lacrosse market board.'
   },
   'table-tennis': {
     slug: 'table-tennis',
     label: 'Table Tennis',
     equipment: '🏓',
-    equipmentLabel: 'paddle and ping pong ball',
+    equipmentLabel: 'table tennis',
     accent: 'mint',
-    description: 'Fast-cycle match movement, short-market volatility, and anomaly alerts.'
+    description: 'Table tennis match board.'
   }
 };
 
@@ -130,7 +130,7 @@ export function getTeamVisual(name: string) {
 export function SportEquipmentIcon({ slug, size = 'normal', showLabel = false }: { slug: SportSlug | string; size?: 'small' | 'normal' | 'large'; showLabel?: boolean }) {
   const visual = sportVisuals[slug as SportSlug] ?? sportVisuals.nfl;
   return (
-    <span className={`sport-equipment sport-equipment-${size} accent-${visual.accent}`} aria-label={`${visual.label} ${visual.equipmentLabel} icon`} title={`${visual.label} ${visual.equipmentLabel}`}>
+    <span className={`sport-equipment sport-equipment-${size} accent-${visual.accent}`} aria-label={`${visual.label} icon`} title={visual.label}>
       <span className="sport-equipment-symbol">{visual.equipment}</span>
       {showLabel && <strong>{visual.label}</strong>}
     </span>
@@ -143,9 +143,8 @@ export function SportIconStrip({ compact = false }: { compact?: boolean }) {
       {sports.map((sport) => {
         const visual = sportVisuals[sport.slug];
         return (
-          <Link href={`/sports/${sport.slug}`} className={`equipment-card accent-${visual.accent}`} key={sport.slug} style={{ textDecoration: 'none' }}>
+          <Link href={`/sports/${sport.slug}`} className={`equipment-card accent-${visual.accent}`} key={sport.slug} style={{ textDecoration: 'none' }} aria-label={`Open ${sport.label} board`}>
             <SportEquipmentIcon slug={sport.slug} />
-            <span>{visual.equipmentLabel}</span>
             <strong>{sport.label}</strong>
           </Link>
         );
@@ -157,7 +156,7 @@ export function SportIconStrip({ compact = false }: { compact?: boolean }) {
 export function TeamJerseyBadge({ teamName, abbr, tone, number, size = 'normal' }: { teamName?: string; abbr?: string; tone?: string; number?: string; size?: 'small' | 'normal' | 'large' }) {
   const team = teamName ? getTeamVisual(teamName) : { abbr: abbr ?? 'SS', name: abbr ?? 'Team', tone: tone ?? 'blue', number: number ?? '00' };
   return (
-    <span className={`jersey-badge jersey-${size} tone-${tone ?? team.tone}`} aria-label={`${team.abbr} custom jersey badge`} title={`${team.abbr} custom jersey badge`}>
+    <span className={`jersey-badge jersey-${size} tone-${tone ?? team.tone}`} aria-label={`${team.abbr} team marker`} title={`${team.abbr} team marker`}>
       <span className="jersey-collar" />
       <b>{abbr ?? team.abbr}</b>
       <small>{number ?? team.number ?? '00'}</small>
@@ -186,7 +185,7 @@ export function TeamBadgeRow({ leftTeam, rightTeam, league }: { leftTeam: string
 export function SportHeroPanel({ sportSlug, title, copy }: { sportSlug: SportSlug | string; title: string; copy: string }) {
   const visual = sportVisuals[sportSlug as SportSlug] ?? sportVisuals.nfl;
   return (
-    <aside className={`sport-hero-panel accent-${visual.accent}`} aria-label={`${visual.label} visual panel`}>
+    <aside className={`sport-hero-panel accent-${visual.accent}`} aria-label={`${visual.label} panel`}>
       <SportEquipmentIcon slug={sportSlug} size="large" showLabel />
       <h3>{title}</h3>
       <p>{copy}</p>
