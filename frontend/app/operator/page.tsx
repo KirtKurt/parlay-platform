@@ -1,9 +1,11 @@
 import type { Metadata } from 'next';
+import { OperatorNav } from '@/components/OperatorNav';
 import { getAdminHealth } from '@/lib/inqsi-admin-health';
+import { OPERATOR_DASHBOARD_CARDS, formatStatus } from '@/lib/inqsi-operator-dashboard';
 
 export const metadata: Metadata = {
-  title: 'Operator Health',
-  description: 'Internal InQsi readiness dashboard.',
+  title: 'Operator Command Center',
+  description: 'Internal InQsi operator dashboard.',
   robots: { index: false, follow: false }
 };
 
@@ -12,19 +14,29 @@ export default function OperatorPage() {
   return (
     <main className="inqsi-shell">
       <header className="inqsi-topbar">
-        <a className="inqsi-brand" href="/"><span className="inqsi-logo-mark">Q</span><span><b>InQsi</b><small>Operator Health</small></span></a>
-        <nav className="inqsi-nav-actions"><a href="/">Home</a><a href="/launch-checklist">Launch checklist</a></nav>
+        <a className="inqsi-brand" href="/"><span className="inqsi-logo-mark">Q</span><span><b>InQsi</b><small>Operator Command Center</small></span></a>
+        <OperatorNav />
       </header>
       <section className="inqsi-hero">
         <div className="inqsi-hero-card">
-          <p className="inqsi-promo">Internal</p>
-          <h1>Operator readiness dashboard.</h1>
-          <p>Generated at {health.generatedAt}. This page shows infrastructure readiness only and does not expose user records.</p>
+          <p className="inqsi-promo">Internal dashboard</p>
+          <h1>Operator command center.</h1>
+          <p>Generated at {health.generatedAt}. This dashboard is built to manage members, creators, attribution, data health, privacy, support, and launch readiness.</p>
         </div>
         <aside className="inqsi-signup-card">
-          <h2>Next actions</h2>
-          {health.actionItems.length ? health.actionItems.map((item) => <p key={item}>{item}</p>) : <p>All monitored launch items are ready.</p>}
+          <h2>Immediate actions</h2>
+          {health.actionItems.length ? health.actionItems.slice(0, 5).map((item) => <p key={item}>{item}</p>) : <p>All monitored launch items are ready.</p>}
         </aside>
+      </section>
+      <section className="inqsi-feature-grid">
+        {OPERATOR_DASHBOARD_CARDS.map((card) => (
+          <article key={card.title}>
+            <b>{card.title}</b>
+            <span>{card.value} · {formatStatus(card.status)}</span>
+            <p>{card.detail}</p>
+            {card.href && <a href={card.href}>Open</a>}
+          </article>
+        ))}
       </section>
       <section className="inqsi-feature-grid">
         <article><b>Data layer</b><span>{health.dataLayer}</span></article>
