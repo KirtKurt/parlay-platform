@@ -15,11 +15,11 @@ export function HeaderAuthControls() {
     }
 
     window.addEventListener('storage', refresh);
-    window.addEventListener('silvers-member-session-change', refresh);
+    window.addEventListener('inqsi-member-session-change', refresh);
 
     return () => {
       window.removeEventListener('storage', refresh);
-      window.removeEventListener('silvers-member-session-change', refresh);
+      window.removeEventListener('inqsi-member-session-change', refresh);
     };
   }, []);
 
