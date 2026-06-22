@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound, redirect } from 'next/navigation';
 import { AppHeader } from '@/components/AppHeader';
 import { adminAuditEvents, adminFeatureFlags, adminMembers, adminSeoPages, adminSlipReviews, adminSupportItems, adminTrafficSources } from '@/lib/inqsi-admin-data';
@@ -22,7 +23,8 @@ export default function Page() {
       <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
         <p className="eyebrow blue">Owner portal</p>
         <h2>Internal admin dashboard</h2>
-        <p className="hero-copy">Owner-only view for members, score-card visibility, source attribution, SEO operations, IndexNow, support notes, audit events, feature flags, and content settings.</p>
+        <p className="hero-copy">Owner-only view for members, score-card visibility, source attribution, SEO operations, IndexNow, support notes, audit events, feature flags, content settings, and internal AI tools.</p>
+        <Link className="primary-button" href="/admin/ai" style={{ display: 'inline-block', marginTop: 16, textDecoration: 'none' }}>Open internal AI tools</Link>
       </section>
 
       <section className="status-row" style={{ marginBottom: 20 }}>
