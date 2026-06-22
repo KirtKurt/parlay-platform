@@ -5,6 +5,7 @@ from inqsi_core import InqsiError, active_sport_keys, analyze_sport, auto_parlay
 from inqsi_live import ingest_live_sport, latest_live_games
 from inqsi_winner_predictions import store_winner_predictions_for_sport, visible_winner_predictions
 from inqsi_market_features import alert_candidates, best_available_lines, check_bet_slip, closing_line_value_record, community_leaderboard_stub, context_layer_stub, live_market_mode, public_performance_dashboard, save_bet_slip_scan, save_watchlist_item, user_dashboard, watchlist
+from inqsi_runtime_features import access_check, build_parlay, build_signals, data_quality_check, manual_result_grade, normalize_market_data, scan_slip, store_manual_snapshot
 
 
 def response(status: int, body: Any) -> Dict[str, Any]:
@@ -29,12 +30,30 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         p = request_path(event)
         q = event.get("queryStringParameters") or {}
         body = parse_body(event)
-        sport = q.get("sport_key") or body.get("sport_key")
+        sport = q.get("sport_key") or q.get("sport") or body.get("sport_key") or body.get("sport")
         game_id = q.get("game_id") or body.get("game_id")
-        user_id = q.get("user_id") or body.get("user_id") or "anonymous"
+        user_id = q.get("user_id") or body.get("user_id") or body.get("memberId") or "anonymous"
+        method = (event.get("httpMethod") or "GET").upper()
+
+        if p in {"/v1/inqsi/market/snapshots", "/v1/market/snapshots"} and method == "POST":
+            return response(201, store_manual_snapshot(body))
+        if p in {"/v1/inqsi/market/normalize", "/v1/market/normalize"}:
+            return response(200, normalize_market_data(body if body else {**q, "sport": sport}))
+        if p in {"/v1/inqsi/signals/build", "/v1/signals/build"} and method == "POST":
+            return response(200, build_signals(body))
+        if p in {"/v1/inqsi/slip-scanner/scan", "/v1/slip-scanner/scan"} and method == "POST":
+            return response(200, scan_slip({**body, "memberId": user_id}))
+        if p in {"/v1/inqsi/parlays/build", "/v1/parlays/build"} and method == "POST":
+            return response(200, build_parlay(body))
+        if p in {"/v1/inqsi/results/grade-manual", "/v1/results/grade-manual"} and method == "POST":
+            return response(200, manual_result_grade(body))
+        if p in {"/v1/inqsi/access/check", "/v1/access/check"} and method == "POST":
+            return response(200, access_check(body))
+        if p in {"/v1/inqsi/monitoring/data-quality", "/v1/monitoring/data-quality"}:
+            return response(200, data_quality_check())
 
         if p.endswith("/health"):
-            return response(200, {"ok": True, "service": "inqsi-backend", "version": "v1"})
+            return response(200, {"ok": True, "service": "inqsi-backend", "version": "v1", "nonOddsApiRuntime": True})
         if p.endswith("/sports"):
             return response(200, {"ok": True, "configured_sports": active_sport_keys(), "available_sports": discover_sports()})
         if p.endswith("/pull"):
@@ -124,6 +143,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return response(200, user_parlay(sport, game_ids))
         return response(404, {"ok": False, "error": "route not found", "path": p})
     except InqsiError as exc:
+        return response(400, {"ok": False, "error": str(exc)})
+    except ValueError as exc:
         return response(400, {"ok": False, "error": str(exc)})
     except Exception as exc:
         return response(500, {"ok": False, "error": str(exc)})
