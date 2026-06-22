@@ -31,6 +31,12 @@ const menuLinks = [
   { href: '/register', label: 'Start 5 days free' }
 ];
 
+const menuItemStyle = {
+  justifyContent: 'flex-start',
+  textAlign: 'left' as const,
+  width: '100%'
+};
+
 export function AppHeader({ eyebrow = 'InQsi', title = 'Sports market intelligence', apiStatus, apiDetail }: AppHeaderProps) {
   return (
     <header className="inqsi-topbar inqsi-global-nav">
@@ -47,9 +53,9 @@ export function AppHeader({ eyebrow = 'InQsi', title = 'Sports market intelligen
 
       <details className="inqsi-menu">
         <summary aria-label="Open navigation menu">Menu</summary>
-        <nav aria-label="Site navigation menu">
-          {apiStatus && <span className={`api-badge api-${apiStatus.toLowerCase()}`} title={apiDetail}>{apiStatus}</span>}
-          {menuLinks.map((link) => <Link href={link.href} key={link.href}>{link.label}</Link>)}
+        <nav aria-label="Site navigation menu" style={{ textAlign: 'left' }}>
+          {apiStatus && <span className={`api-badge api-${apiStatus.toLowerCase()}`} title={apiDetail} style={menuItemStyle}>{apiStatus}</span>}
+          {menuLinks.map((link) => <Link href={link.href} key={link.href} style={menuItemStyle}>{link.label}</Link>)}
         </nav>
       </details>
     </header>
