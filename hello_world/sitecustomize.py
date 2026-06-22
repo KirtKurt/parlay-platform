@@ -78,3 +78,19 @@ try:
     inqsi_api.moderation_dashboard = moderation_dashboard
 except Exception:
     pass
+
+try:
+    import frontend_app
+    import influencer_portal
+
+    _original_frontend_handler = frontend_app.lambda_handler
+
+    def _patched_frontend_handler(event, context):
+        routed = influencer_portal.route(event or {})
+        if routed is not None:
+            return routed
+        return _original_frontend_handler(event, context)
+
+    frontend_app.lambda_handler = _patched_frontend_handler
+except Exception:
+    pass
