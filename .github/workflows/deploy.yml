@@ -52,6 +52,20 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides OddsApiKey=${{ secrets.ODDS_API_KEY }}
 
+      - name: Grant image moderation Rekognition access
+        run: |
+          ROLE_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --logical-resource-id ApiFunctionRole \
+            --query "StackResourceDetail.PhysicalResourceId" \
+            --output text)
+          test -n "$ROLE_NAME"
+          aws iam put-role-policy \
+            --role-name "$ROLE_NAME" \
+            --policy-name InqsiImageModerationRekognitionAccess \
+            --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["rekognition:DetectModerationLabels","rekognition:DetectText"],"Resource":"*"}]}'
+
       - name: Read stack outputs
         id: stack_outputs
         run: |
@@ -68,3 +82,8 @@ jobs:
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           test -n "$API_URL"
           curl --fail --silent --show-error "${API_URL}v1/health"
+
+      - name: Smoke test image moderation policy endpoint
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          curl --fail --silent --show-error "${API_URL}v1/inqsi/images/moderation-policy"
