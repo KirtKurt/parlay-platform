@@ -1,0 +1,63 @@
+name: Deploy Bedrock Agent Actions
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "backend/src/inqsi_bedrock_agent_actions.py"
+      - "bedrock/**"
+      - "bedrock-agent-template.yaml"
+      - ".github/workflows/deploy-bedrock-agent.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy-bedrock-agent-actions:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify AWS connection
+        run: aws sts get-caller-identity
+
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Validate Bedrock agent action template
+        run: sam validate --template-file bedrock-agent-template.yaml
+
+      - name: Build Bedrock agent action stack
+        run: sam build --template-file bedrock-agent-template.yaml --no-cached
+
+      - name: Deploy Bedrock agent action stack
+        run: |
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name inqsi-bedrock-agent-actions \
+            --region ${{ secrets.AWS_REGION }} \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Read Bedrock agent action outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name inqsi-bedrock-agent-actions \
+            --region ${{ secrets.AWS_REGION }} \
+            --query "Stacks[0].Outputs" \
+            --output table
