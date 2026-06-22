@@ -82,13 +82,17 @@ except Exception:
 try:
     import frontend_app
     import influencer_portal
+    import analytics_events
 
     _original_frontend_handler = frontend_app.lambda_handler
 
     def _patched_frontend_handler(event, context):
-        routed = influencer_portal.route(event or {})
-        if routed is not None:
-            return routed
+        analytics_routed = analytics_events.route(event or {})
+        if analytics_routed is not None:
+            return analytics_routed
+        influencer_routed = influencer_portal.route(event or {})
+        if influencer_routed is not None:
+            return influencer_routed
         return _original_frontend_handler(event, context)
 
     frontend_app.lambda_handler = _patched_frontend_handler
