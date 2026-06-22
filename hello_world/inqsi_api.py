@@ -6,6 +6,7 @@ from inqsi_live import ingest_live_sport, latest_live_games
 from inqsi_winner_predictions import store_winner_predictions_for_sport, visible_winner_predictions
 from inqsi_market_features import alert_candidates, best_available_lines, check_bet_slip, closing_line_value_record, community_leaderboard_stub, context_layer_stub, live_market_mode, public_performance_dashboard, save_bet_slip_scan, save_watchlist_item, user_dashboard, watchlist
 from inqsi_runtime_features import access_check, build_parlay, build_signals, data_quality_check, manual_result_grade, normalize_market_data, scan_slip, store_manual_snapshot
+from inqsi_pull_history import handle_pull_history_route
 
 
 def response(status: int, body: Any) -> Dict[str, Any]:
@@ -35,6 +36,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         user_id = q.get("user_id") or body.get("user_id") or body.get("memberId") or "anonymous"
         method = (event.get("httpMethod") or "GET").upper()
 
+        pull_history = handle_pull_history_route(p, method, q, body)
+        if pull_history is not None:
+            return response(200 if pull_history.get("ok", True) else 400, pull_history)
+
         if p in {"/v1/inqsi/market/snapshots", "/v1/market/snapshots"} and method == "POST":
             return response(201, store_manual_snapshot(body))
         if p in {"/v1/inqsi/market/normalize", "/v1/market/normalize"}:
@@ -53,7 +58,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return response(200, data_quality_check())
 
         if p.endswith("/health"):
-            return response(200, {"ok": True, "service": "inqsi-backend", "version": "v1", "nonOddsApiRuntime": True})
+            return response(200, {"ok": True, "service": "inqsi-backend", "version": "v1", "nonOddsApiRuntime": True, "pullHistoryAlgorithm": True, "architecture": "15_min_pull_history"})
         if p.endswith("/sports"):
             return response(200, {"ok": True, "configured_sports": active_sport_keys(), "available_sports": discover_sports()})
         if p.endswith("/pull"):
