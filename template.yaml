@@ -7,6 +7,15 @@ Parameters:
     Type: String
     NoEcho: true
     Description: External odds feed key
+  InqsiAdminApiToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Owner/admin API token for protected InQsi backend admin routes
+  PaymentProvider:
+    Type: String
+    Default: NONE
+    Description: Payment-provider-neutral switch. Use NONE until final provider is selected.
 
 Globals:
   Function:
@@ -102,6 +111,379 @@ Resources:
           KeyType: HASH
         - AttributeName: SK
           KeyType: RANGE
+
+  InqsiMembersTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inqsi_members
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: member_id
+          AttributeType: S
+        - AttributeName: email
+          AttributeType: S
+        - AttributeName: handle
+          AttributeType: S
+        - AttributeName: creator_ref
+          AttributeType: S
+      KeySchema:
+        - AttributeName: member_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: EmailIndex
+          KeySchema:
+            - AttributeName: email
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: HandleIndex
+          KeySchema:
+            - AttributeName: handle
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: CreatorRefIndex
+          KeySchema:
+            - AttributeName: creator_ref
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InqsiSocialAccountsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inqsi_social_accounts
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: member_id
+          AttributeType: S
+        - AttributeName: connection_id
+          AttributeType: S
+        - AttributeName: provider_account_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: member_id
+          KeyType: HASH
+        - AttributeName: connection_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: ProviderAccountIndex
+          KeySchema:
+            - AttributeName: provider_account_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: ProviderStatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InqsiSavedSlipsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inqsi_saved_slips
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: member_id
+          AttributeType: S
+        - AttributeName: slip_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+        - AttributeName: visibility
+          AttributeType: S
+      KeySchema:
+        - AttributeName: member_id
+          KeyType: HASH
+        - AttributeName: slip_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: SlipIdIndex
+          KeySchema:
+            - AttributeName: slip_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: StatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: VisibilityIndex
+          KeySchema:
+            - AttributeName: visibility
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InqsiScoreHistoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inqsi_score_history
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: member_id
+          AttributeType: S
+        - AttributeName: score_id
+          AttributeType: S
+        - AttributeName: window
+          AttributeType: S
+        - AttributeName: public_visible_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: member_id
+          KeyType: HASH
+        - AttributeName: score_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: WindowIndex
+          KeySchema:
+            - AttributeName: window
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: PublicScoreIndex
+          KeySchema:
+            - AttributeName: public_visible_key
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InqsiCreatorAttributionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inqsi_creator_attribution
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: attribution_id
+          AttributeType: S
+        - AttributeName: creator_ref
+          AttributeType: S
+        - AttributeName: member_id
+          AttributeType: S
+        - AttributeName: anonymous_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: attribution_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: CreatorRefIndex
+          KeySchema:
+            - AttributeName: creator_ref
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: MemberAttributionIndex
+          KeySchema:
+            - AttributeName: member_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: AnonymousAttributionIndex
+          KeySchema:
+            - AttributeName: anonymous_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InqsiSubscriptionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inqsi_subscriptions
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: member_id
+          AttributeType: S
+        - AttributeName: subscription_id
+          AttributeType: S
+        - AttributeName: provider_customer_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: member_id
+          KeyType: HASH
+        - AttributeName: subscription_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: ProviderCustomerIndex
+          KeySchema:
+            - AttributeName: provider_customer_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: SubscriptionStatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InqsiAdminAuditLogsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inqsi_admin_audit_logs
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: target_id
+          AttributeType: S
+        - AttributeName: audit_id
+          AttributeType: S
+        - AttributeName: actor_member_id
+          AttributeType: S
+        - AttributeName: action
+          AttributeType: S
+      KeySchema:
+        - AttributeName: target_id
+          KeyType: HASH
+        - AttributeName: audit_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: ActorIndex
+          KeySchema:
+            - AttributeName: actor_member_id
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+        - IndexName: ActionIndex
+          KeySchema:
+            - AttributeName: action
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InqsiSupportNotesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inqsi_support_notes
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: member_id
+          AttributeType: S
+        - AttributeName: support_id
+          AttributeType: S
+        - AttributeName: status
+          AttributeType: S
+      KeySchema:
+        - AttributeName: member_id
+          KeyType: HASH
+        - AttributeName: support_id
+          KeyType: RANGE
+      GlobalSecondaryIndexes:
+        - IndexName: SupportStatusIndex
+          KeySchema:
+            - AttributeName: status
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+
+  InqsiFeatureFlagsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: inqsi_feature_flags
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: flag_key
+          AttributeType: S
+      KeySchema:
+        - AttributeName: flag_key
+          KeyType: HASH
+
+  InqsiBackendApiFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/src/
+      Handler: inqsi_backend_api.lambda_handler
+      Timeout: 60
+      MemorySize: 1024
+      Environment:
+        Variables:
+          MEMBERS_TABLE: !Ref InqsiMembersTable
+          SOCIAL_ACCOUNTS_TABLE: !Ref InqsiSocialAccountsTable
+          SAVED_SLIPS_TABLE: !Ref InqsiSavedSlipsTable
+          SCORE_HISTORY_TABLE: !Ref InqsiScoreHistoryTable
+          CREATOR_ATTRIBUTION_TABLE: !Ref InqsiCreatorAttributionTable
+          SUBSCRIPTIONS_TABLE: !Ref InqsiSubscriptionsTable
+          ADMIN_AUDIT_LOGS_TABLE: !Ref InqsiAdminAuditLogsTable
+          SUPPORT_NOTES_TABLE: !Ref InqsiSupportNotesTable
+          FEATURE_FLAGS_TABLE: !Ref InqsiFeatureFlagsTable
+          INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken
+          PAYMENT_PROVIDER: !Ref PaymentProvider
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InqsiMembersTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InqsiSocialAccountsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InqsiSavedSlipsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InqsiScoreHistoryTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InqsiCreatorAttributionTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InqsiSubscriptionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InqsiAdminAuditLogsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InqsiSupportNotesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref InqsiFeatureFlagsTable
+      Events:
+        InqsiHealth:
+          Type: Api
+          Properties:
+            Path: /v1/health
+            Method: GET
+        InqsiMembersRegister:
+          Type: Api
+          Properties:
+            Path: /v1/members/register
+            Method: POST
+        InqsiMembersProxy:
+          Type: Api
+          Properties:
+            Path: /v1/members/{proxy+}
+            Method: ANY
+        InqsiSlipsRoot:
+          Type: Api
+          Properties:
+            Path: /v1/slips
+            Method: ANY
+        InqsiSlipsProxy:
+          Type: Api
+          Properties:
+            Path: /v1/slips/{proxy+}
+            Method: ANY
+        InqsiScoresProxy:
+          Type: Api
+          Properties:
+            Path: /v1/scores/{proxy+}
+            Method: ANY
+        InqsiPublicProxy:
+          Type: Api
+          Properties:
+            Path: /v1/public/{proxy+}
+            Method: ANY
+        InqsiAttributionProxy:
+          Type: Api
+          Properties:
+            Path: /v1/attribution/{proxy+}
+            Method: ANY
+        InqsiSubscriptionsProxy:
+          Type: Api
+          Properties:
+            Path: /v1/subscriptions/{proxy+}
+            Method: ANY
+        InqsiAdminProxy:
+          Type: Api
+          Properties:
+            Path: /v1/admin/{proxy+}
+            Method: ANY
 
   ApiFunction:
     Type: AWS::Serverless::Function
@@ -395,3 +777,6 @@ Outputs:
   ApiUrl:
     Description: API Gateway endpoint base URL
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  InqsiBackendApiFunctionArn:
+    Description: InQsi backend member/slip/social/admin Lambda function ARN
+    Value: !GetAtt InqsiBackendApiFunction.Arn
