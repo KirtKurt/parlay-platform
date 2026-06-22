@@ -83,8 +83,10 @@ try:
     import frontend_app
     import influencer_portal
     import analytics_events
+    import inqsi_api as _inqsi_api_for_routes
 
     _original_frontend_handler = frontend_app.lambda_handler
+    _original_inqsi_handler = _inqsi_api_for_routes.lambda_handler
 
     def _patched_frontend_handler(event, context):
         analytics_routed = analytics_events.route(event or {})
@@ -95,6 +97,16 @@ try:
             return influencer_routed
         return _original_frontend_handler(event, context)
 
+    def _patched_inqsi_handler(event, context):
+        analytics_routed = analytics_events.route(event or {})
+        if analytics_routed is not None:
+            return analytics_routed
+        influencer_routed = influencer_portal.route(event or {})
+        if influencer_routed is not None:
+            return influencer_routed
+        return _original_inqsi_handler(event, context)
+
     frontend_app.lambda_handler = _patched_frontend_handler
+    _inqsi_api_for_routes.lambda_handler = _patched_inqsi_handler
 except Exception:
     pass
