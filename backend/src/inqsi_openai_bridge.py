@@ -107,13 +107,13 @@ def extract_text(openai_payload: Dict[str, Any]) -> str:
 
 def call_openai(task: str, prompt: str, context: str = "") -> Dict[str, Any]:
     api_key = load_openai_key()
-    model = os.environ.get("OPENAI_MODEL", "gpt-5-pro")
-    reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT", "high")
+    model = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+    reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT", "medium")
     reasoning_summary = os.environ.get("OPENAI_REASONING_SUMMARY", "auto")
-    max_output_tokens = int(os.environ.get("OPENAI_MAX_OUTPUT_TOKENS", "2600"))
+    max_output_tokens = int(os.environ.get("OPENAI_MAX_OUTPUT_TOKENS", "1200"))
 
     system_message = (
-        "You are the InQsi internal AI bridge running in high-reasoning mode. "
+        "You are the InQsi internal AI bridge running in medium-reasoning mode. "
         "Be direct, operational, and careful. No fake data, no default zeros, no pretending a step is complete. "
         "For code/debug work, reason through architecture, security, deployment risk, and failure modes before answering. "
         "Prefer GitHub/CloudFormation controlled changes over direct production mutation. Never expose secrets or credentials."
@@ -169,8 +169,8 @@ def call_openai(task: str, prompt: str, context: str = "") -> Dict[str, Any]:
 
 def handle_health() -> Dict[str, Any]:
     secret_name = os.environ.get("OPENAI_SECRET_NAME", "inqsi/openai/api-key")
-    model = os.environ.get("OPENAI_MODEL", "gpt-5-pro")
-    reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT", "high")
+    model = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+    reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT", "medium")
     try:
         SECRETS.describe_secret(SecretId=secret_name)
         secret_status = "found"
