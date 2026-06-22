@@ -107,14 +107,16 @@ def extract_text(openai_payload: Dict[str, Any]) -> str:
 
 def call_openai(task: str, prompt: str, context: str = "") -> Dict[str, Any]:
     api_key = load_openai_key()
-    model = os.environ.get("OPENAI_MODEL", "gpt-5.5")
-    max_output_tokens = int(os.environ.get("OPENAI_MAX_OUTPUT_TOKENS", "1600"))
+    model = os.environ.get("OPENAI_MODEL", "gpt-5-pro")
+    reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT", "high")
+    reasoning_summary = os.environ.get("OPENAI_REASONING_SUMMARY", "auto")
+    max_output_tokens = int(os.environ.get("OPENAI_MAX_OUTPUT_TOKENS", "2600"))
 
     system_message = (
-        "You are the InQsi internal AI bridge. Be direct and operational. "
-        "No fake data, no default zeros, no pretending a step is complete. "
-        "For code/debug work, explain risk clearly and prefer GitHub/CloudFormation controlled changes. "
-        "Never expose secrets or credentials."
+        "You are the InQsi internal AI bridge running in high-reasoning mode. "
+        "Be direct, operational, and careful. No fake data, no default zeros, no pretending a step is complete. "
+        "For code/debug work, reason through architecture, security, deployment risk, and failure modes before answering. "
+        "Prefer GitHub/CloudFormation controlled changes over direct production mutation. Never expose secrets or credentials."
     )
 
     user_message = f"Task: {task}\n\nPrompt:\n{prompt[:20000]}"
@@ -123,6 +125,10 @@ def call_openai(task: str, prompt: str, context: str = "") -> Dict[str, Any]:
 
     payload = {
         "model": model,
+        "reasoning": {
+            "effort": reasoning_effort,
+            "summary": reasoning_summary,
+        },
         "input": [
             {"role": "system", "content": system_message},
             {"role": "user", "content": user_message},
@@ -141,12 +147,13 @@ def call_openai(task: str, prompt: str, context: str = "") -> Dict[str, Any]:
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=65) as result:
+        with urllib.request.urlopen(request, timeout=85) as result:
             raw = result.read().decode("utf-8")
             parsed = json.loads(raw)
             return {
                 "ok": True,
                 "model": model,
+                "reasoningEffort": reasoning_effort,
                 "text": extract_text(parsed),
                 "openaiResponseId": parsed.get("id"),
             }
@@ -162,7 +169,8 @@ def call_openai(task: str, prompt: str, context: str = "") -> Dict[str, Any]:
 
 def handle_health() -> Dict[str, Any]:
     secret_name = os.environ.get("OPENAI_SECRET_NAME", "inqsi/openai/api-key")
-    model = os.environ.get("OPENAI_MODEL", "gpt-5.5")
+    model = os.environ.get("OPENAI_MODEL", "gpt-5-pro")
+    reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT", "high")
     try:
         SECRETS.describe_secret(SecretId=secret_name)
         secret_status = "found"
@@ -174,6 +182,7 @@ def handle_health() -> Dict[str, Any]:
         "secretName": secret_name,
         "secretStatus": secret_status,
         "model": model,
+        "reasoningEffort": reasoning_effort,
         "postRoutes": [
             "/v1/ai/debug-summary",
             "/v1/ai/code-review",
