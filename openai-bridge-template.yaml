@@ -1,0 +1,66 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: InQsi OpenAI Bridge - API Gateway + Lambda + Secrets Manager
+
+Parameters:
+  OpenAISecretName:
+    Type: String
+    Default: inqsi/openai/api-key
+    Description: AWS Secrets Manager secret containing OPENAI_API_KEY.
+  OpenAIModel:
+    Type: String
+    Default: gpt-5.5
+    Description: OpenAI model used by the InQsi bridge.
+  InqsiBridgeAdminToken:
+    Type: String
+    NoEcho: true
+    Default: DISABLED_UNTIL_OWNER_TOKEN_IS_SET
+    Description: Owner token required in x-inqsi-admin-token for POST routes.
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Timeout: 90
+    MemorySize: 512
+
+Resources:
+  InqsiOpenAIBridgeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/src/
+      Handler: inqsi_openai_bridge.lambda_handler
+      Environment:
+        Variables:
+          OPENAI_SECRET_NAME: !Ref OpenAISecretName
+          OPENAI_MODEL: !Ref OpenAIModel
+          INQSI_BRIDGE_ADMIN_TOKEN: !Ref InqsiBridgeAdminToken
+          OPENAI_MAX_OUTPUT_TOKENS: "1600"
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:DescribeSecret
+                - secretsmanager:GetSecretValue
+              Resource: !Sub "arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:${OpenAISecretName}*"
+      Events:
+        InqsiAiHealth:
+          Type: Api
+          Properties:
+            Path: /v1/ai/health
+            Method: GET
+        InqsiAiProxy:
+          Type: Api
+          Properties:
+            Path: /v1/ai/{proxy+}
+            Method: ANY
+
+Outputs:
+  InqsiOpenAIBridgeFunctionArn:
+    Description: InQsi OpenAI bridge Lambda ARN
+    Value: !GetAtt InqsiOpenAIBridgeFunction.Arn
+  InqsiOpenAIBridgeApiUrl:
+    Description: InQsi OpenAI bridge API Gateway base URL
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  InqsiOpenAIBridgeHealthUrl:
+    Description: InQsi OpenAI bridge health URL
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/ai/health"
