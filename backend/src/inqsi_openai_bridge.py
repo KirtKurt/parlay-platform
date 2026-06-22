@@ -193,7 +193,20 @@ def handle_health() -> Dict[str, Any]:
     })
 
 
+def handle_direct_smoke_test(event: Dict[str, Any]) -> Dict[str, Any]:
+    # This path is only for direct Lambda invocation by IAM-authenticated tooling.
+    # It is not reachable through API Gateway because API Gateway does not create
+    # the top-level directSmokeTest flag used here.
+    prompt = event.get("prompt") or "Confirm the InQsi OpenAI bridge is working. Keep the answer under 20 words."
+    result = call_openai(task="direct_smoke_test", prompt=prompt)
+    status = 200 if result.get("ok") else 502
+    return response(status, result)
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
+    if event.get("directSmokeTest") is True and "requestContext" not in event:
+        return handle_direct_smoke_test(event)
+
     method, path = method_and_path(event)
 
     if method == "OPTIONS":
