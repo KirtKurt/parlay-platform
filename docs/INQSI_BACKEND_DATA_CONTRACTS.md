@@ -9,6 +9,7 @@ This document tracks the backend foundation needed to move InQsi from frontend s
 - No silent fallback if a table, provider, or route is not wired.
 - Public member score cards are opt-in.
 - Connected social accounts are member-owned, revocable, and must never expose raw tokens in admin responses.
+- Subscriptions remain payment-provider neutral until the final provider is selected.
 
 ## Database Tables Needed
 
@@ -57,10 +58,10 @@ The production backend contract currently expects these storage areas:
    - paid conversion timing
 
 6. `subscriptions`
-   - Stripe/manual/none provider status
+   - payment-provider-neutral subscription status
    - trial status
    - active/past-due/canceled status
-   - provider customer and subscription IDs
+   - provider customer and subscription IDs when a provider is selected
 
 7. `admin_audit_logs`
    - all owner/admin actions
@@ -199,8 +200,8 @@ Create tables for:
 - creator/ref visit tracking
 - signup attribution
 - paid conversion tracking
-- Stripe checkout
-- Stripe webhooks
+- payment-provider checkout route when the final provider is selected
+- payment-provider webhooks when the final provider is selected
 
 ### Phase 6 — Admin Wiring
 
