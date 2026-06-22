@@ -1,0 +1,86 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: InQsi Bedrock Engineering Agent Action Layer
+
+Parameters:
+  InqsiStackName:
+    Type: String
+    Default: parlay-platform-dev
+    Description: Existing InQsi application stack the agent inspects.
+  GitHubRepository:
+    Type: String
+    Default: KirtKurt/parlay-platform
+    Description: GitHub repository in owner/name format.
+  GitHubDeployWorkflow:
+    Type: String
+    Default: deploy.yml
+    Description: Existing GitHub Actions deploy workflow file.
+  GitHubDeployBranch:
+    Type: String
+    Default: main
+    Description: Branch/ref used by the deploy workflow.
+  GitHubTokenSecretName:
+    Type: String
+    Default: ""
+    Description: Optional AWS Secrets Manager secret containing GITHUB_TOKEN or token for workflow dispatch/read access.
+
+Resources:
+  InqsiBedrockAgentActionsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: backend/src/
+      Handler: inqsi_bedrock_agent_actions.lambda_handler
+      Runtime: python3.11
+      Timeout: 60
+      MemorySize: 512
+      Environment:
+        Variables:
+          INQSI_STACK_NAME: !Ref InqsiStackName
+          GITHUB_REPOSITORY: !Ref GitHubRepository
+          GITHUB_DEPLOY_WORKFLOW: !Ref GitHubDeployWorkflow
+          GITHUB_DEPLOY_BRANCH: !Ref GitHubDeployBranch
+          GITHUB_TOKEN_SECRET_NAME: !Ref GitHubTokenSecretName
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - sts:GetCallerIdentity
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - cloudformation:DescribeStacks
+                - cloudformation:DescribeStackResources
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - dynamodb:ListTables
+                - dynamodb:DescribeTable
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - lambda:ListFunctions
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - apigateway:GET
+              Resource: "*"
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: "*"
+
+  InqsiBedrockInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref InqsiBedrockAgentActionsFunction
+      Action: lambda:InvokeFunction
+      Principal: bedrock.amazonaws.com
+      SourceAccount: !Ref AWS::AccountId
+
+Outputs:
+  InqsiBedrockAgentActionsFunctionArn:
+    Description: Lambda ARN to use as the Bedrock Agent action group executor.
+    Value: !GetAtt InqsiBedrockAgentActionsFunction.Arn
+  InqsiBedrockAgentOpenApiSchemaPath:
+    Description: Repository path for the Bedrock Agent OpenAPI action schema.
+    Value: bedrock/inqsi-agent-openapi.yaml
