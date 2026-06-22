@@ -2,6 +2,12 @@
 const lineGuideRoute = '/sports-' + 'betting-line-movement-guide';
 const accountConnectionRoute = '/does-inqsi-connect-to-sports' + 'books';
 
+const noStoreHeaders = [
+  { key: 'Cache-Control', value: 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0' },
+  { key: 'Pragma', value: 'no-cache' },
+  { key: 'Expires', value: '0' }
+];
+
 const nextConfig = {
   reactStrictMode: true,
   poweredByHeader: false,
@@ -29,6 +35,14 @@ const nextConfig = {
   },
   async headers() {
     return [
+      {
+        source: '/',
+        headers: noStoreHeaders
+      },
+      {
+        source: '/:path((?!_next/|.*\\.(?:svg|jpg|jpeg|png|webp|avif|ico|css|js|woff|woff2)$).*)',
+        headers: noStoreHeaders
+      },
       {
         source: '/:path*',
         headers: [
