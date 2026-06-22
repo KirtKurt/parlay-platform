@@ -17,7 +17,6 @@ jobs:
     env:
       AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
       STACK_NAME: inqsi-openai-bridge
-      BRIDGE_ADMIN_TOKEN: ${{ secrets.INQSI_BRIDGE_ADMIN_TOKEN }}
     steps:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -26,7 +25,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
-      - name: Read bridge URL
+      - name: Read bridge outputs
         id: bridge
         run: |
           HEALTH_URL=$(aws cloudformation describe-stacks \
@@ -34,61 +33,61 @@ jobs:
             --region "$AWS_REGION" \
             --query "Stacks[0].Outputs[?OutputKey=='InqsiOpenAIBridgeHealthUrl'].OutputValue | [0]" \
             --output text)
-          API_URL="${HEALTH_URL%/v1/ai/health}"
-          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+          FUNCTION_ARN=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='InqsiOpenAIBridgeFunctionArn'].OutputValue | [0]" \
+            --output text)
           echo "health_url=$HEALTH_URL" >> "$GITHUB_OUTPUT"
+          echo "function_arn=$FUNCTION_ARN" >> "$GITHUB_OUTPUT"
 
       - name: Verify health route
         run: |
           curl -sS "${{ steps.bridge.outputs.health_url }}" | python -m json.tool
 
-      - name: Run protected OpenAI POST test
+      - name: Run direct Lambda OpenAI smoke test
         run: |
           python - <<'PY'
           import json
           import os
+          import subprocess
           import sys
-          import urllib.request
-          import urllib.error
 
-          api_url = os.environ["API_URL"].rstrip("/")
-          token = os.environ.get("BRIDGE_ADMIN_TOKEN", "")
-          if not token:
-              print("INQSI_BRIDGE_ADMIN_TOKEN GitHub secret is missing")
+          function_arn = os.environ.get("FUNCTION_ARN", "")
+          region = os.environ.get("AWS_REGION", "us-east-1")
+          if not function_arn:
+              print("InqsiOpenAIBridgeFunctionArn output is missing")
               sys.exit(1)
 
-          payload = {
+          event = {
+              "directSmokeTest": True,
               "prompt": "Confirm the InQsi OpenAI bridge is working. Keep the answer under 20 words."
           }
-          request = urllib.request.Request(
-              f"{api_url}/v1/ai/debug-summary",
-              data=json.dumps(payload).encode("utf-8"),
-              headers={
-                  "Content-Type": "application/json",
-                  "x-inqsi-admin-token": token,
-              },
-              method="POST",
+          subprocess.run(
+              [
+                  "aws", "lambda", "invoke",
+                  "--region", region,
+                  "--function-name", function_arn,
+                  "--cli-binary-format", "raw-in-base64-out",
+                  "--payload", json.dumps(event),
+                  "response.json",
+              ],
+              check=True,
           )
-          try:
-              with urllib.request.urlopen(request, timeout=120) as response:
-                  status = response.status
-                  body = response.read().decode("utf-8")
-          except urllib.error.HTTPError as exc:
-              status = exc.code
-              body = exc.read().decode("utf-8")
-
+          outer = json.load(open("response.json"))
+          status = outer.get("statusCode")
+          body = json.loads(outer.get("body") or "{}")
           print(f"statusCode: {status}")
-          parsed = json.loads(body)
           print(json.dumps({
-              "ok": parsed.get("ok"),
-              "model": parsed.get("model"),
-              "reasoningEffort": parsed.get("reasoningEffort"),
-              "text": parsed.get("text"),
-              "error": parsed.get("error"),
-              "status": parsed.get("status"),
+              "ok": body.get("ok"),
+              "model": body.get("model"),
+              "reasoningEffort": body.get("reasoningEffort"),
+              "text": body.get("text"),
+              "error": body.get("error"),
+              "status": body.get("status"),
           }, indent=2))
-          if status != 200 or not parsed.get("ok"):
+          if status != 200 or not body.get("ok"):
               sys.exit(1)
           PY
         env:
-          API_URL: ${{ steps.bridge.outputs.api_url }}
+          FUNCTION_ARN: ${{ steps.bridge.outputs.function_arn }}
