@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { AppHeader } from '@/components/AppHeader';
+import { SlipScannerClient } from '@/components/SlipScannerClient';
 
 export const metadata: Metadata = {
   title: 'AI Slip Scanner',
@@ -45,7 +46,9 @@ export default function Page() {
         </aside>
       </section>
 
-      <section className="inqsi-layout">
+      <SlipScannerClient />
+
+      <section className="inqsi-layout" style={{ marginTop: 20 }}>
         <div className="inqsi-panel">
           <div className="inqsi-section-head"><h2>Your slip</h2><span>3-leg scan</span></div>
           <div className="inqsi-game-list">
