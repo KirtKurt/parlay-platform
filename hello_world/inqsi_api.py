@@ -1,5 +1,7 @@
+import base64
+import binascii
 import json
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 from inqsi_core import InqsiError, active_sport_keys, analyze_sport, auto_parlay, discover_sports, game_detail, graph_data, json_default, latest_game_states, pull_and_analyze_all, pull_and_analyze_sport, user_parlay
 from inqsi_live import ingest_live_sport, latest_live_games
@@ -7,6 +9,40 @@ from inqsi_winner_predictions import store_winner_predictions_for_sport, visible
 from inqsi_market_features import alert_candidates, best_available_lines, check_bet_slip, closing_line_value_record, community_leaderboard_stub, context_layer_stub, live_market_mode, public_performance_dashboard, save_bet_slip_scan, save_watchlist_item, user_dashboard, watchlist
 from inqsi_runtime_features import access_check, build_parlay, build_signals, data_quality_check, manual_result_grade, normalize_market_data, scan_slip, store_manual_snapshot
 from inqsi_pull_history import handle_pull_history_route
+
+
+IMAGE_MODERATION_POLICY = {
+    "ok": True,
+    "service": "inqsi-image-moderation",
+    "version": "v1",
+    "mode": "pre_post_gate",
+    "publishDefault": "quarantine_until_approved",
+    "allow": [
+        "clean_profile_photo",
+        "clean_sports_photo",
+        "clean_fan_photo_without_readable_text",
+        "inqsi_generated_slip_cards",
+        "inqsi_generated_badges_and_scores",
+    ],
+    "reject": [
+        "any_uploaded_image_with_readable_text",
+        "political_content",
+        "racial_or_hateful_content",
+        "profanity_or_obscene_gestures",
+        "violence_weapons_gore_or_threats",
+        "nudity_or_sexual_content",
+        "drug_content",
+        "memes_screenshots_watermarks_or_external_slogans",
+    ],
+    "rule": "User-uploaded images with words are rejected. Inqsi-generated text is allowed.",
+}
+
+
+REJECT_MODERATION_LABEL_TERMS = {
+    "explicit nudity", "nudity", "sexual activity", "sexual situations", "suggestive",
+    "violence", "graphic violence", "weapons", "weapon violence", "visually disturbing",
+    "hate symbols", "drugs", "tobacco", "alcohol", "rude gestures", "middle finger",
+}
 
 
 def response(status: int, body: Any) -> Dict[str, Any]:
@@ -24,6 +60,111 @@ def request_path(event: Dict[str, Any]) -> str:
     return (event.get("rawPath") or event.get("path") or "/").rstrip("/") or "/"
 
 
+def _decode_image_bytes(body: Dict[str, Any]) -> Tuple[Optional[bytes], Optional[str]]:
+    raw = body.get("image_base64") or body.get("imageBase64") or body.get("base64")
+    if not raw:
+        return None, "image_base64 is required"
+    if isinstance(raw, str) and "," in raw and raw.strip().lower().startswith("data:"):
+        raw = raw.split(",", 1)[1]
+    try:
+        data = base64.b64decode(raw, validate=True)
+    except (binascii.Error, ValueError):
+        return None, "image_base64 is not valid base64"
+    if not data:
+        return None, "image is empty"
+    max_bytes = int(body.get("max_bytes") or body.get("maxBytes") or 5000000)
+    if len(data) > max_bytes:
+        return None, f"image exceeds {max_bytes} byte limit"
+    return data, None
+
+
+def _rekognition_scan(image_bytes: bytes, min_confidence: float = 70.0) -> Dict[str, Any]:
+    try:
+        import boto3
+        client = boto3.client("rekognition")
+        moderation = client.detect_moderation_labels(Image={"Bytes": image_bytes}, MinConfidence=float(min_confidence))
+        text = client.detect_text(Image={"Bytes": image_bytes})
+        return {
+            "ok": True,
+            "provider": "aws_rekognition",
+            "moderationLabels": moderation.get("ModerationLabels", []),
+            "textDetections": text.get("TextDetections", []),
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "provider": "aws_rekognition",
+            "errorType": type(exc).__name__,
+            "error": str(exc),
+        }
+
+
+def _evaluate_image_scan(scan: Dict[str, Any], text_confidence_threshold: float = 70.0) -> Dict[str, Any]:
+    if not scan.get("ok"):
+        return {
+            "approved": False,
+            "decision": "MANUAL_REVIEW",
+            "manual_review_required": True,
+            "publish": False,
+            "reason": "moderation_provider_not_available",
+            "providerStatus": scan,
+            "policy": IMAGE_MODERATION_POLICY,
+        }
+
+    text_hits = []
+    for item in scan.get("textDetections") or []:
+        detected = (item.get("DetectedText") or "").strip()
+        confidence = float(item.get("Confidence") or 0)
+        if detected and confidence >= text_confidence_threshold:
+            text_hits.append({"text": detected, "confidence": round(confidence, 2), "type": item.get("Type")})
+
+    moderation_hits = []
+    for item in scan.get("moderationLabels") or []:
+        name = (item.get("Name") or "").strip()
+        parent = (item.get("ParentName") or "").strip()
+        confidence = float(item.get("Confidence") or 0)
+        lowered = {name.lower(), parent.lower()}
+        if confidence >= 70 and (lowered & REJECT_MODERATION_LABEL_TERMS):
+            moderation_hits.append({"name": name, "parent": parent, "confidence": round(confidence, 2)})
+
+    violations = []
+    if text_hits:
+        violations.append({"rule": "reject_if_any_readable_text_detected", "matches": text_hits})
+    if moderation_hits:
+        violations.append({"rule": "reject_unsafe_or_brand_risk_image_content", "matches": moderation_hits})
+
+    approved = not violations
+    return {
+        "approved": approved,
+        "decision": "APPROVED" if approved else "REJECTED",
+        "manual_review_required": False,
+        "publish": approved,
+        "reason": "passed_inqsi_image_policy" if approved else "violates_inqsi_image_policy",
+        "violations": violations,
+        "policy": IMAGE_MODERATION_POLICY,
+        "provider": scan.get("provider"),
+    }
+
+
+def moderate_member_image(body: Dict[str, Any]) -> Dict[str, Any]:
+    if body.get("policyOnly") or body.get("policy_only"):
+        return IMAGE_MODERATION_POLICY
+    image_bytes, err = _decode_image_bytes(body)
+    if err:
+        return {
+            "ok": False,
+            "approved": False,
+            "decision": "REJECTED",
+            "publish": False,
+            "manual_review_required": False,
+            "reason": err,
+            "policy": IMAGE_MODERATION_POLICY,
+        }
+    scan = _rekognition_scan(image_bytes, float(body.get("minConfidence") or body.get("min_confidence") or 70))
+    result = _evaluate_image_scan(scan, float(body.get("textConfidence") or body.get("text_confidence") or 70))
+    return {"ok": True, "imageModeration": result}
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     if event.get("httpMethod") == "OPTIONS":
         return response(200, {"ok": True})
@@ -35,6 +176,12 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         game_id = q.get("game_id") or body.get("game_id")
         user_id = q.get("user_id") or body.get("user_id") or body.get("memberId") or "anonymous"
         method = (event.get("httpMethod") or "GET").upper()
+
+        if p in {"/v1/inqsi/images/moderation-policy", "/v1/images/moderation-policy"} and method == "GET":
+            return response(200, IMAGE_MODERATION_POLICY)
+        if p in {"/v1/inqsi/images/moderate", "/v1/images/moderate"} and method == "POST":
+            result = moderate_member_image({**q, **body})
+            return response(200 if result.get("ok", True) else 400, result)
 
         pull_history = handle_pull_history_route(p, method, q, body)
         if pull_history is not None:
@@ -58,7 +205,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return response(200, data_quality_check())
 
         if p.endswith("/health"):
-            return response(200, {"ok": True, "service": "inqsi-backend", "version": "v1", "nonOddsApiRuntime": True, "pullHistoryAlgorithm": True, "architecture": "15_min_pull_history"})
+            return response(200, {"ok": True, "service": "inqsi-backend", "version": "v1", "nonOddsApiRuntime": True, "pullHistoryAlgorithm": True, "imageModeration": True, "architecture": "15_min_pull_history"})
         if p.endswith("/sports"):
             return response(200, {"ok": True, "configured_sports": active_sport_keys(), "available_sports": discover_sports()})
         if p.endswith("/pull"):
