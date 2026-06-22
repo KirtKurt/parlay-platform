@@ -60,10 +60,10 @@ export default function Home() {
             <div><b>AI Slip Scanner</b><span>Your picks scanned for where they go wrong</span></div>
           </div>
         </div>
-        <aside className="inqsi-signup-card" aria-label="Create account">
+        <aside className="inqsi-signup-card" aria-label="Create account or login">
           <h2>Start with 5 days free</h2>
           <p>Scan your slip, save watchlists, review alerts, and track market intelligence in one member dashboard.</p>
-          <a href="/parlay-scanner">Open AI Slip Scanner</a>
+          <a href="/login">Login</a>
           <a className="inqsi-primary" href="/register">Create account</a>
           <small>Start with the scanner, review the board, and decide whether InQsi earns a place in your routine.</small>
         </aside>
