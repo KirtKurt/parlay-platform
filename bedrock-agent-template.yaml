@@ -6,23 +6,21 @@ Parameters:
   InqsiStackName:
     Type: String
     Default: parlay-platform-dev
-    Description: Existing InQsi application stack the agent inspects.
   GitHubRepository:
     Type: String
     Default: KirtKurt/parlay-platform
-    Description: GitHub repository in owner/name format.
   GitHubDeployWorkflow:
     Type: String
     Default: deploy.yml
-    Description: Existing GitHub Actions deploy workflow file.
   GitHubDeployBranch:
     Type: String
     Default: main
-    Description: Branch/ref used by the deploy workflow.
   GitHubTokenSecretName:
     Type: String
     Default: ""
-    Description: Optional AWS Secrets Manager secret containing GITHUB_TOKEN or token for workflow dispatch/read access.
+  InqsiBedrockFoundationModel:
+    Type: String
+    Default: amazon.nova-lite-v1:0
 
 Resources:
   InqsiBedrockAgentActionsFunction:
@@ -45,29 +43,38 @@ Resources:
             - Effect: Allow
               Action:
                 - sts:GetCallerIdentity
-              Resource: "*"
-            - Effect: Allow
-              Action:
                 - cloudformation:DescribeStacks
                 - cloudformation:DescribeStackResources
-              Resource: "*"
-            - Effect: Allow
-              Action:
                 - dynamodb:ListTables
                 - dynamodb:DescribeTable
-              Resource: "*"
-            - Effect: Allow
-              Action:
                 - lambda:ListFunctions
-              Resource: "*"
-            - Effect: Allow
-              Action:
                 - apigateway:GET
-              Resource: "*"
-            - Effect: Allow
-              Action:
                 - secretsmanager:GetSecretValue
               Resource: "*"
+
+  InqsiBedrockAgentServiceRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: bedrock.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: InqsiBedrockAgentServicePolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - bedrock:InvokeModel
+                  - bedrock:InvokeModelWithResponseStream
+                Resource: "*"
+              - Effect: Allow
+                Action: lambda:InvokeFunction
+                Resource: !GetAtt InqsiBedrockAgentActionsFunction.Arn
 
   InqsiBedrockInvokePermission:
     Type: AWS::Lambda::Permission
@@ -77,10 +84,83 @@ Resources:
       Principal: bedrock.amazonaws.com
       SourceAccount: !Ref AWS::AccountId
 
+  InqsiEngineeringBedrockAgent:
+    Type: AWS::Bedrock::Agent
+    DependsOn:
+      - InqsiBedrockInvokePermission
+      - InqsiBedrockAgentServiceRole
+    Properties:
+      AgentName: inqsi-engineering-agent-managed
+      Description: InQsi AWS and GitHub engineering agent.
+      AgentResourceRoleArn: !GetAtt InqsiBedrockAgentServiceRole.Arn
+      FoundationModel: !Ref InqsiBedrockFoundationModel
+      AutoPrepare: true
+      IdleSessionTTLInSeconds: 900
+      Instruction: >-
+        You are the InQsi engineering and operations agent. Inspect AWS deployment state,
+        DynamoDB tables, Lambda functions, API health targets, and GitHub deployment runs.
+        Do not invent deployment state. Do not directly mutate production AWS resources except
+        by approved GitHub deployment workflows. No fake data, no default zeros, no pretending
+        a build is complete, and no unsafe production changes without owner approval.
+      ActionGroups:
+        - ActionGroupName: InqsiEngineeringActions
+          ActionGroupState: ENABLED
+          Description: Safe InQsi AWS and GitHub operations.
+          ActionGroupExecutor:
+            Lambda: !GetAtt InqsiBedrockAgentActionsFunction.Arn
+          ApiSchema:
+            Payload: |
+              openapi: 3.0.3
+              info:
+                title: InQsi Agent Actions
+                version: 1.0.0
+              paths:
+                /aws/stack-status:
+                  get:
+                    operationId: getStackStatus
+                    description: Inspect the InQsi CloudFormation stack.
+                    parameters:
+                      - name: stackName
+                        in: query
+                        required: false
+                        schema:
+                          type: string
+                    responses:
+                      '200':
+                        description: Stack status response
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+                /aws/inqsi-tables:
+                  get:
+                    operationId: listInqsiTables
+                    description: List InQsi DynamoDB tables.
+                    responses:
+                      '200':
+                        description: Table list response
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+                /aws/backend-health-target:
+                  get:
+                    operationId: getBackendHealthTarget
+                    description: Return InQsi backend health URL.
+                    responses:
+                      '200':
+                        description: Health target response
+                        content:
+                          application/json:
+                            schema:
+                              type: object
+
 Outputs:
   InqsiBedrockAgentActionsFunctionArn:
-    Description: Lambda ARN to use as the Bedrock Agent action group executor.
     Value: !GetAtt InqsiBedrockAgentActionsFunction.Arn
-  InqsiBedrockAgentOpenApiSchemaPath:
-    Description: Repository path for the Bedrock Agent OpenAPI action schema.
-    Value: bedrock/inqsi-agent-openapi.yaml
+  InqsiEngineeringBedrockAgentId:
+    Value: !Ref InqsiEngineeringBedrockAgent
+  InqsiEngineeringBedrockAgentArn:
+    Value: !GetAtt InqsiEngineeringBedrockAgent.AgentArn
+  InqsiEngineeringBedrockAgentStatus:
+    Value: !GetAtt InqsiEngineeringBedrockAgent.AgentStatus
