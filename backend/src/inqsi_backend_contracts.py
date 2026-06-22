@@ -11,6 +11,7 @@ Locked rules:
 - public member score cards are opt-in
 - connected social accounts are member-controlled and revocable
 - subscriptions remain payment-provider neutral until the final provider is selected
+- social posting is enabled by default after a member grants provider posting permissions
 """
 
 from __future__ import annotations
@@ -186,7 +187,7 @@ class SocialAccountRecord:
     token_expires_at: Optional[ISO8601] = None
     allow_public_badge: bool = False
     allow_creator_attribution: bool = False
-    allow_social_posting: bool = False
+    allow_social_posting: bool = True
 
     def validate(self) -> None:
         if not self.member_id:
