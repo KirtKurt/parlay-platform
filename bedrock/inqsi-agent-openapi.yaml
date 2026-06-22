@@ -1,0 +1,126 @@
+openapi: 3.0.3
+info:
+  title: InQsi Engineering Agent Actions
+  version: 1.0.0
+  description: Safe AWS and GitHub operations exposed to the InQsi Bedrock engineering agent.
+paths:
+  /aws/identity:
+    get:
+      operationId: getAwsIdentity
+      description: Return the AWS caller identity used by the agent action Lambda.
+      responses:
+        '200':
+          description: AWS identity response
+          content:
+            application/json:
+              schema:
+                type: object
+  /aws/stack-status:
+    get:
+      operationId: getStackStatus
+      description: Inspect the CloudFormation stack and list InQsi resources inside the stack.
+      parameters:
+        - name: stackName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: CloudFormation stack name. Defaults to parlay-platform-dev.
+      responses:
+        '200':
+          description: Stack status, outputs, and InQsi resources.
+          content:
+            application/json:
+              schema:
+                type: object
+  /aws/inqsi-tables:
+    get:
+      operationId: listInqsiTables
+      description: List DynamoDB tables whose names start with inqsi_ and their status.
+      responses:
+        '200':
+          description: InQsi DynamoDB table list.
+          content:
+            application/json:
+              schema:
+                type: object
+  /aws/inqsi-lambdas:
+    get:
+      operationId: listInqsiLambdas
+      description: List Lambda functions with InQsi in their function name.
+      responses:
+        '200':
+          description: InQsi Lambda function list.
+          content:
+            application/json:
+              schema:
+                type: object
+  /aws/backend-health-target:
+    get:
+      operationId: getBackendHealthTarget
+      description: Return the API Gateway base URL and health-check URL from the CloudFormation stack outputs.
+      parameters:
+        - name: stackName
+          in: query
+          required: false
+          schema:
+            type: string
+          description: CloudFormation stack name. Defaults to parlay-platform-dev.
+      responses:
+        '200':
+          description: API URL and health URL.
+          content:
+            application/json:
+              schema:
+                type: object
+  /github/trigger-deploy:
+    post:
+      operationId: triggerGitHubDeploy
+      description: Trigger the existing GitHub Actions deployment workflow for the InQsi repository.
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                repo:
+                  type: string
+                  description: Repository in owner/name format. Defaults to KirtKurt/parlay-platform.
+                workflow:
+                  type: string
+                  description: Workflow file name. Defaults to deploy.yml.
+                branch:
+                  type: string
+                  description: Branch/ref to deploy. Defaults to main.
+      responses:
+        '200':
+          description: GitHub workflow dispatch result.
+          content:
+            application/json:
+              schema:
+                type: object
+  /github/latest-runs:
+    get:
+      operationId: getLatestGitHubRuns
+      description: Return the latest GitHub Actions workflow runs for the deploy workflow.
+      parameters:
+        - name: repo
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Repository in owner/name format. Defaults to KirtKurt/parlay-platform.
+        - name: workflow
+          in: query
+          required: false
+          schema:
+            type: string
+          description: Workflow file name. Defaults to deploy.yml.
+      responses:
+        '200':
+          description: Recent GitHub workflow runs.
+          content:
+            application/json:
+              schema:
+                type: object
