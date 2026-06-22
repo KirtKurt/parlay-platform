@@ -1,8 +1,8 @@
 """InQsi OpenAI bridge Lambda.
 
-This is a controlled AWS-side bridge to OpenAI. It intentionally avoids the
-OpenAI SDK so Lambda can deploy without a custom dependency package. The API key
-is pulled from AWS Secrets Manager at runtime.
+Controlled AWS-side bridge to OpenAI. API Gateway routes are protected by an
+admin token. Direct internal jobs are protected by AWS IAM because they require
+permission to invoke this Lambda.
 """
 
 from __future__ import annotations
@@ -25,13 +25,37 @@ CORS_HEADERS = {
 
 SECRETS = boto3.client("secretsmanager")
 
+DIRECT_TASKS: Dict[str, Dict[str, str]] = {
+    "code_review": {
+        "model": "gpt-5-mini",
+        "reasoning": "medium",
+        "system": "Review InQsi code for bugs, security risks, broken deploy paths, and missing tests. Return exact fixes.",
+    },
+    "deployment_diagnosis": {
+        "model": "gpt-5-mini",
+        "reasoning": "medium",
+        "system": "Diagnose failed GitHub or AWS deployments. Identify root cause, exact file/line if possible, and next fix.",
+    },
+    "failed_log_summary": {
+        "model": "gpt-5-mini",
+        "reasoning": "medium",
+        "system": "Summarize failed logs into plain English. Separate cause, impact, and next action.",
+    },
+    "admin_tool_plan": {
+        "model": "gpt-5-mini",
+        "reasoning": "medium",
+        "system": "Design internal admin AI tools for InQsi. Keep controls private and avoid exposing secrets in the browser.",
+    },
+    "sports_api_algorithm_lab": {
+        "model": "gpt-5-pro",
+        "reasoning": "high",
+        "system": "Analyze sports API/market data for stronger InQsi algorithm design. Do not invent data, do not claim guaranteed wins, and recommend testable scoring improvements only.",
+    },
+}
+
 
 def response(status_code: int, body: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "statusCode": status_code,
-        "headers": CORS_HEADERS,
-        "body": json.dumps(body),
-    }
+    return {"statusCode": status_code, "headers": CORS_HEADERS, "body": json.dumps(body)}
 
 
 def method_and_path(event: Dict[str, Any]) -> Tuple[str, str]:
@@ -80,13 +104,11 @@ def load_openai_key() -> str:
     secret_string = result.get("SecretString") or ""
     if not secret_string:
         raise RuntimeError("OpenAI secret has no SecretString")
-
     try:
         parsed = json.loads(secret_string)
         key = parsed.get("OPENAI_API_KEY") or parsed.get("openai_api_key")
     except json.JSONDecodeError:
         key = secret_string
-
     if not key or not str(key).startswith("sk-"):
         raise RuntimeError("OPENAI_API_KEY is missing or malformed in Secrets Manager")
     return str(key)
@@ -95,7 +117,6 @@ def load_openai_key() -> str:
 def extract_text(openai_payload: Dict[str, Any]) -> str:
     if isinstance(openai_payload.get("output_text"), str):
         return openai_payload["output_text"]
-
     parts = []
     for item in openai_payload.get("output", []) or []:
         for content in item.get("content", []) or []:
@@ -105,30 +126,36 @@ def extract_text(openai_payload: Dict[str, Any]) -> str:
     return "\n".join(parts).strip()
 
 
-def call_openai(task: str, prompt: str, context: str = "") -> Dict[str, Any]:
+def call_openai(
+    task: str,
+    prompt: str,
+    context: str = "",
+    system_override: str = "",
+    model_override: str = "",
+    reasoning_override: str = "",
+    max_tokens_override: Optional[int] = None,
+) -> Dict[str, Any]:
     api_key = load_openai_key()
-    model = os.environ.get("OPENAI_MODEL", "gpt-5-mini")
-    reasoning_effort = os.environ.get("OPENAI_REASONING_EFFORT", "medium")
+    model = model_override or os.environ.get("OPENAI_MODEL", "gpt-5-mini")
+    reasoning_effort = reasoning_override or os.environ.get("OPENAI_REASONING_EFFORT", "medium")
     reasoning_summary = os.environ.get("OPENAI_REASONING_SUMMARY", "auto")
-    max_output_tokens = int(os.environ.get("OPENAI_MAX_OUTPUT_TOKENS", "1200"))
+    max_output_tokens = max_tokens_override or int(os.environ.get("OPENAI_MAX_OUTPUT_TOKENS", "1200"))
 
     system_message = (
-        "You are the InQsi internal AI bridge running in medium-reasoning mode. "
-        "Be direct, operational, and careful. No fake data, no default zeros, no pretending a step is complete. "
-        "For code/debug work, reason through architecture, security, deployment risk, and failure modes before answering. "
-        "Prefer GitHub/CloudFormation controlled changes over direct production mutation. Never expose secrets or credentials."
-    )
+        "You are the InQsi internal AI bridge. Be direct, operational, and careful. "
+        "No fake data, no default zeros, no pretending a step is complete. "
+        "Prefer GitHub/CloudFormation controlled changes over direct production mutation. "
+        "Never expose secrets or credentials. "
+        + system_override
+    ).strip()
 
-    user_message = f"Task: {task}\n\nPrompt:\n{prompt[:20000]}"
+    user_message = f"Task: {task}\n\nPrompt:\n{prompt[:30000]}"
     if context:
-        user_message += f"\n\nContext:\n{context[:20000]}"
+        user_message += f"\n\nContext:\n{context[:30000]}"
 
     payload = {
         "model": model,
-        "reasoning": {
-            "effort": reasoning_effort,
-            "summary": reasoning_summary,
-        },
+        "reasoning": {"effort": reasoning_effort, "summary": reasoning_summary},
         "input": [
             {"role": "system", "content": system_message},
             {"role": "user", "content": user_message},
@@ -139,31 +166,28 @@ def call_openai(task: str, prompt: str, context: str = "") -> Dict[str, Any]:
     request = urllib.request.Request(
         OPENAI_RESPONSES_URL,
         data=json.dumps(payload).encode("utf-8"),
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
         method="POST",
     )
 
     try:
-        with urllib.request.urlopen(request, timeout=85) as result:
-            raw = result.read().decode("utf-8")
-            parsed = json.loads(raw)
+        with urllib.request.urlopen(request, timeout=250) as result:
+            parsed = json.loads(result.read().decode("utf-8"))
             return {
                 "ok": True,
+                "task": task,
                 "model": model,
                 "reasoningEffort": reasoning_effort,
                 "text": extract_text(parsed),
                 "openaiResponseId": parsed.get("id"),
             }
     except urllib.error.HTTPError as exc:
-        error_body = exc.read().decode("utf-8")
         return {
             "ok": False,
+            "task": task,
             "error": "openai_http_error",
             "status": exc.code,
-            "detail": error_body[:2000],
+            "detail": exc.read().decode("utf-8")[:2000],
         }
 
 
@@ -174,7 +198,7 @@ def handle_health() -> Dict[str, Any]:
     try:
         SECRETS.describe_secret(SecretId=secret_name)
         secret_status = "found"
-    except Exception as exc:  # deliberately summarized; never return secret content
+    except Exception as exc:
         secret_status = f"not_found_or_no_access: {type(exc).__name__}"
     return response(200, {
         "ok": True,
@@ -183,38 +207,42 @@ def handle_health() -> Dict[str, Any]:
         "secretStatus": secret_status,
         "model": model,
         "reasoningEffort": reasoning_effort,
-        "postRoutes": [
-            "/v1/ai/debug-summary",
-            "/v1/ai/code-review",
-            "/v1/ai/deploy-diagnosis",
-            "/v1/ai/product-workflow",
-        ],
+        "apiGatewayDefault": "fast-medium",
+        "directTasks": sorted(DIRECT_TASKS.keys()),
         "adminProtected": True,
     })
 
 
-def handle_direct_smoke_test(event: Dict[str, Any]) -> Dict[str, Any]:
-    # This path is only for direct Lambda invocation by IAM-authenticated tooling.
-    # It is not reachable through API Gateway because API Gateway does not create
-    # the top-level directSmokeTest flag used here.
-    prompt = event.get("prompt") or "Confirm the InQsi OpenAI bridge is working. Keep the answer under 20 words."
-    result = call_openai(task="direct_smoke_test", prompt=prompt)
-    status = 200 if result.get("ok") else 502
-    return response(status, result)
+def handle_direct_task(event: Dict[str, Any]) -> Dict[str, Any]:
+    task = str(event.get("task") or "direct_smoke_test").strip().replace("-", "_")
+    if event.get("directSmokeTest") is True:
+        task = "deployment_diagnosis"
+    if task not in DIRECT_TASKS:
+        return response(400, {"ok": False, "error": "unknown_direct_task", "allowedTasks": sorted(DIRECT_TASKS.keys())})
+    config = DIRECT_TASKS[task]
+    prompt = str(event.get("prompt") or "Confirm the InQsi OpenAI bridge is working. Keep the answer under 20 words.")
+    context = str(event.get("context") or "")
+    result = call_openai(
+        task=task,
+        prompt=prompt,
+        context=context,
+        system_override=config["system"],
+        model_override=str(event.get("model") or config["model"]),
+        reasoning_override=str(event.get("reasoningEffort") or config["reasoning"]),
+        max_tokens_override=int(event.get("maxOutputTokens") or (3200 if config["model"] == "gpt-5-pro" else 1200)),
+    )
+    return response(200 if result.get("ok") else 502, result)
 
 
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    if event.get("directSmokeTest") is True and "requestContext" not in event:
-        return handle_direct_smoke_test(event)
+    if (event.get("directTask") is True or event.get("directSmokeTest") is True) and "requestContext" not in event:
+        return handle_direct_task(event)
 
     method, path = method_and_path(event)
-
     if method == "OPTIONS":
         return response(200, {"ok": True})
-
     if method == "GET" and path == "/v1/ai/health":
         return handle_health()
-
     if method != "POST" or not path.startswith("/v1/ai/"):
         return response(404, {"error": "route_not_found", "path": path})
 
@@ -226,8 +254,6 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     prompt = (body.get("prompt") or body.get("message") or "").strip()
     if not prompt:
         return response(400, {"error": "prompt_required"})
-
     task = path.split("/v1/ai/", 1)[-1].replace("-", "_")
     result = call_openai(task=task, prompt=prompt, context=body.get("context") or "")
-    status = 200 if result.get("ok") else 502
-    return response(status, result)
+    return response(200 if result.get("ok") else 502, result)
