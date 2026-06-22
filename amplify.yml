@@ -5,9 +5,10 @@ applications:
       phases:
         preBuild:
           commands:
-            - npm install
+            - npm ci || npm install
         build:
           commands:
+            - rm -rf .next/cache
             - npm run build
       artifacts:
         baseDirectory: .next
@@ -16,4 +17,3 @@ applications:
       cache:
         paths:
           - node_modules/**/*
-          - .next/cache/**/*
