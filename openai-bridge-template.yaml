@@ -9,11 +9,11 @@ Parameters:
     Description: AWS Secrets Manager secret containing OPENAI_API_KEY.
   OpenAIModel:
     Type: String
-    Default: gpt-5-pro
-    Description: High-intelligence OpenAI reasoning model used by the InQsi bridge.
+    Default: gpt-5-mini
+    Description: Faster OpenAI model used by the InQsi bridge to reduce synchronous API timeouts.
   OpenAIReasoningEffort:
     Type: String
-    Default: high
+    Default: medium
     AllowedValues:
       - low
       - medium
@@ -44,7 +44,7 @@ Resources:
           OPENAI_REASONING_EFFORT: !Ref OpenAIReasoningEffort
           OPENAI_REASONING_SUMMARY: auto
           INQSI_BRIDGE_ADMIN_TOKEN: !Ref InqsiBridgeAdminToken
-          OPENAI_MAX_OUTPUT_TOKENS: "2600"
+          OPENAI_MAX_OUTPUT_TOKENS: "1200"
       Policies:
         - Statement:
             - Effect: Allow
