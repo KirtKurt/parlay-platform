@@ -10,6 +10,7 @@ Locked rules:
 - no silent fallback when a table/provider is not wired
 - public member score cards are opt-in
 - connected social accounts are member-controlled and revocable
+- subscriptions remain payment-provider neutral until the final provider is selected
 """
 
 from __future__ import annotations
@@ -93,6 +94,15 @@ class SubscriptionStatus(str, Enum):
     PAST_DUE = "PAST_DUE"
     CANCELED = "CANCELED"
     INCOMPLETE = "INCOMPLETE"
+
+
+class PaymentProvider(str, Enum):
+    NONE = "NONE"
+    MANUAL = "MANUAL"
+    PAYMENT_PROCESSOR = "PAYMENT_PROCESSOR"
+    APP_STORE = "APP_STORE"
+    GOOGLE_PLAY = "GOOGLE_PLAY"
+    OTHER = "OTHER"
 
 
 class AttributionTouch(str, Enum):
@@ -261,7 +271,7 @@ class CreatorAttributionRecord:
 class SubscriptionRecord:
     subscription_id: str
     member_id: str
-    provider: Literal["STRIPE", "MANUAL", "NONE"]
+    provider: PaymentProvider
     status: SubscriptionStatus
     plan: MemberPlan
     created_at: ISO8601
@@ -316,65 +326,15 @@ class ApiRouteContract:
 
 
 DYNAMODB_TABLE_CONTRACTS: Dict[str, Dict[str, Any]] = {
-    "members": {
-        "env": "MEMBERS_TABLE",
-        "pk": "member_id",
-        "gsis": ["EmailIndex", "HandleIndex", "CreatorRefIndex"],
-        "stores": "member identity, status, profile visibility, role, and source attribution",
-    },
-    "social_accounts": {
-        "env": "SOCIAL_ACCOUNTS_TABLE",
-        "pk": "member_id",
-        "sk": "connection_id",
-        "gsis": ["ProviderAccountIndex", "ProviderStatusIndex"],
-        "stores": "member-owned OAuth/social connections and revocation status",
-    },
-    "saved_slips": {
-        "env": "SAVED_SLIPS_TABLE",
-        "pk": "member_id",
-        "sk": "slip_id",
-        "gsis": ["SlipIdIndex", "StatusIndex", "VisibilityIndex"],
-        "stores": "member slips, max-three-leg compliance, visibility, scanner/builder source",
-    },
-    "score_history": {
-        "env": "SCORE_HISTORY_TABLE",
-        "pk": "member_id",
-        "sk": "score_id",
-        "gsis": ["WindowIndex", "PublicScoreIndex"],
-        "stores": "rolling 7-day, 30-day, and lifetime member score cards",
-    },
-    "creator_attribution": {
-        "env": "CREATOR_ATTRIBUTION_TABLE",
-        "pk": "attribution_id",
-        "gsis": ["CreatorRefIndex", "MemberAttributionIndex", "AnonymousAttributionIndex"],
-        "stores": "first-touch and last-touch creator/referral attribution",
-    },
-    "subscriptions": {
-        "env": "SUBSCRIPTIONS_TABLE",
-        "pk": "member_id",
-        "sk": "subscription_id",
-        "gsis": ["ProviderCustomerIndex", "SubscriptionStatusIndex"],
-        "stores": "trial, paid, past-due, cancellation, provider IDs",
-    },
-    "admin_audit_logs": {
-        "env": "ADMIN_AUDIT_LOGS_TABLE",
-        "pk": "target_id",
-        "sk": "audit_id",
-        "gsis": ["ActorIndex", "ActionIndex"],
-        "stores": "owner/admin actions across members, slips, score cards, support, and flags",
-    },
-    "support_notes": {
-        "env": "SUPPORT_NOTES_TABLE",
-        "pk": "member_id",
-        "sk": "support_id",
-        "gsis": ["SupportStatusIndex"],
-        "stores": "member support notes and owner/admin handling state",
-    },
-    "feature_flags": {
-        "env": "FEATURE_FLAGS_TABLE",
-        "pk": "flag_key",
-        "stores": "launch controls for public score cards, challenges, social posting, and admin features",
-    },
+    "members": {"env": "MEMBERS_TABLE", "pk": "member_id", "gsis": ["EmailIndex", "HandleIndex", "CreatorRefIndex"], "stores": "member identity, status, profile visibility, role, and source attribution"},
+    "social_accounts": {"env": "SOCIAL_ACCOUNTS_TABLE", "pk": "member_id", "sk": "connection_id", "gsis": ["ProviderAccountIndex", "ProviderStatusIndex"], "stores": "member-owned OAuth/social connections and revocation status"},
+    "saved_slips": {"env": "SAVED_SLIPS_TABLE", "pk": "member_id", "sk": "slip_id", "gsis": ["SlipIdIndex", "StatusIndex", "VisibilityIndex"], "stores": "member slips, max-three-leg compliance, visibility, scanner/builder source"},
+    "score_history": {"env": "SCORE_HISTORY_TABLE", "pk": "member_id", "sk": "score_id", "gsis": ["WindowIndex", "PublicScoreIndex"], "stores": "rolling 7-day, 30-day, and lifetime member score cards"},
+    "creator_attribution": {"env": "CREATOR_ATTRIBUTION_TABLE", "pk": "attribution_id", "gsis": ["CreatorRefIndex", "MemberAttributionIndex", "AnonymousAttributionIndex"], "stores": "first-touch and last-touch creator/referral attribution"},
+    "subscriptions": {"env": "SUBSCRIPTIONS_TABLE", "pk": "member_id", "sk": "subscription_id", "gsis": ["ProviderCustomerIndex", "SubscriptionStatusIndex"], "stores": "trial, paid, past-due, cancellation, provider IDs"},
+    "admin_audit_logs": {"env": "ADMIN_AUDIT_LOGS_TABLE", "pk": "target_id", "sk": "audit_id", "gsis": ["ActorIndex", "ActionIndex"], "stores": "owner/admin actions across members, slips, score cards, support, and flags"},
+    "support_notes": {"env": "SUPPORT_NOTES_TABLE", "pk": "member_id", "sk": "support_id", "gsis": ["SupportStatusIndex"], "stores": "member support notes and owner/admin handling state"},
+    "feature_flags": {"env": "FEATURE_FLAGS_TABLE", "pk": "flag_key", "stores": "launch controls for public score cards, challenges, social posting, and admin features"},
 }
 
 
@@ -392,8 +352,8 @@ API_ROUTE_CONTRACTS: List[ApiRouteContract] = [
     ApiRouteContract("GET", "/v1/public/u/{handle}", False, False, "Return opt-in public member score card", ["members", "score_history"]),
     ApiRouteContract("POST", "/v1/attribution/visit", False, False, "Record anonymous creator/referral visit", ["creator_attribution"], live_data_required=False),
     ApiRouteContract("POST", "/v1/attribution/convert", True, False, "Attach attribution to member signup", ["creator_attribution", "members"]),
-    ApiRouteContract("POST", "/v1/subscriptions/checkout", True, False, "Create provider checkout/session", ["subscriptions", "members"], live_data_required=False),
-    ApiRouteContract("POST", "/v1/subscriptions/webhook", False, False, "Process provider subscription webhook", ["subscriptions", "members", "admin_audit_logs"], live_data_required=False),
+    ApiRouteContract("POST", "/v1/subscriptions/checkout", True, False, "Create payment-provider checkout/session", ["subscriptions", "members"], live_data_required=False),
+    ApiRouteContract("POST", "/v1/subscriptions/webhook", False, False, "Process payment-provider subscription webhook", ["subscriptions", "members", "admin_audit_logs"], live_data_required=False),
     ApiRouteContract("GET", "/v1/admin/dashboard", True, True, "Owner/admin dashboard aggregate", ["members", "saved_slips", "score_history", "creator_attribution", "subscriptions", "support_notes", "feature_flags"]),
     ApiRouteContract("GET", "/v1/admin/members", True, True, "Owner/admin member management list", ["members", "subscriptions", "creator_attribution", "social_accounts"]),
     ApiRouteContract("GET", "/v1/admin/social-accounts", True, True, "Owner/admin social connection overview without exposing raw tokens", ["social_accounts", "members"]),
