@@ -85,6 +85,7 @@ export default function Home() {
 
       <footer className="inqsi-footer-links" aria-label="InQsi footer navigation">
         {FOOTER_LINKS.map(([label, href]) => <Link key={label} href={href}>{label}</Link>)}
+        <span aria-label="deployment version">deploy: member-fix-2026-06-21-01</span>
       </footer>
     </main>
   );
