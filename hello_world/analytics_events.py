@@ -2,10 +2,12 @@ import json
 import os
 import time
 import uuid
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import boto3
+from boto3.dynamodb.conditions import Key
 
 
 dynamodb = boto3.resource("dynamodb")
@@ -29,12 +31,36 @@ ALLOWED_EVENT_TYPES = {
 }
 
 
+ACTIVITY_EVENT_TYPES = {
+    "member_registered",
+    "member_logged_in",
+    "sport_selected",
+    "games_selected",
+    "slip_scanned",
+    "parlay_built",
+    "parlay_refused",
+    "public_slip_created",
+    "image_uploaded",
+    "creator_page_viewed",
+}
+
+
 def utc_now() -> str:
     return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 
 def date_key(ts: str) -> str:
     return ts[:10]
+
+
+def today_utc() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+
+
+def date_range(days: int) -> List[str]:
+    days = max(1, min(int(days or 1), 14))
+    today = datetime.now(timezone.utc).date()
+    return [(today - timedelta(days=offset)).isoformat() for offset in range(days)]
 
 
 def safe(value: Any) -> Any:
@@ -72,6 +98,10 @@ def headers(event: Dict[str, Any]) -> Dict[str, str]:
     return {str(k).lower(): str(v) for k, v in (event.get("headers") or {}).items() if v is not None}
 
 
+def query_params(event: Dict[str, Any]) -> Dict[str, str]:
+    return event.get("queryStringParameters") or {}
+
+
 def table():
     if not TABLE_NAME:
         raise RuntimeError("SNAPSHOTS_TABLE is not configured")
@@ -91,9 +121,14 @@ def handle_health() -> Dict[str, Any]:
         "version": "v1",
         "tableConfigured": bool(TABLE_NAME),
         "collectorReady": bool(TABLE_NAME),
+        "memberActivityDashboardReady": True,
         "supportedEventTypes": sorted(ALLOWED_EVENT_TYPES),
+        "liveEndpoints": [
+            "/v1/inqsi/analytics/health",
+            "/v1/inqsi/analytics/event",
+            "/v1/inqsi/admin/analytics/members",
+        ],
         "nextBuilds": [
-            "member_activity_dashboard",
             "subscription_funnel_dashboard",
             "algorithm_performance_dashboard",
             "market_data_quality_dashboard",
@@ -142,14 +177,85 @@ def handle_event(event: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
     return resp(201, {"ok": True, "stored": True, "eventId": event_id, "eventType": event_type, "createdAt": created_at})
 
 
+def events_for_days(days: int, limit_per_day: int = 500) -> List[Dict[str, Any]]:
+    out: List[Dict[str, Any]] = []
+    for day in date_range(days):
+        result = table().query(KeyConditionExpression=Key("PK").eq(f"ANALYTICS#{day}"), Limit=limit_per_day)
+        out.extend(result.get("Items") or [])
+    out.sort(key=lambda row: row.get("createdAt", ""), reverse=True)
+    return out
+
+
+def count_by(items: List[Dict[str, Any]], field: str) -> Dict[str, int]:
+    counts: Dict[str, int] = {}
+    for item in items:
+        key = str(item.get(field) or "unknown")
+        counts[key] = counts.get(key, 0) + 1
+    return counts
+
+
+def handle_member_activity(event: Dict[str, Any]) -> Dict[str, Any]:
+    q = query_params(event)
+    try:
+        days = max(1, min(int(q.get("days") or 1), 14))
+    except Exception:
+        days = 1
+    try:
+        limit = max(1, min(int(q.get("limit") or 50), 200))
+    except Exception:
+        limit = 50
+
+    all_events = events_for_days(days)
+    activity_events = [item for item in all_events if item.get("eventType") in ACTIVITY_EVENT_TYPES]
+    member_ids = {item.get("memberId") for item in activity_events if item.get("memberId")}
+    anonymous_ids = {item.get("anonymousId") for item in activity_events if item.get("anonymousId")}
+    session_ids = {item.get("sessionId") for item in activity_events if item.get("sessionId")}
+    sports = count_by([item for item in activity_events if item.get("sport")], "sport")
+    by_event_type = count_by(activity_events, "eventType")
+    by_source = count_by(activity_events, "source")
+
+    per_member: Dict[str, Dict[str, Any]] = {}
+    for item in activity_events:
+        member_id = item.get("memberId") or "anonymous"
+        row = per_member.setdefault(member_id, {"memberId": member_id, "events": 0, "eventTypes": {}, "lastSeenAt": "", "sports": {}})
+        row["events"] += 1
+        row["eventTypes"][item.get("eventType") or "unknown"] = row["eventTypes"].get(item.get("eventType") or "unknown", 0) + 1
+        if item.get("sport"):
+            row["sports"][item.get("sport")] = row["sports"].get(item.get("sport"), 0) + 1
+        if item.get("createdAt", "") > row["lastSeenAt"]:
+            row["lastSeenAt"] = item.get("createdAt", "")
+    top_members = sorted(per_member.values(), key=lambda row: (row["events"], row["lastSeenAt"]), reverse=True)[:limit]
+
+    return resp(200, {
+        "ok": True,
+        "dashboard": "member_activity",
+        "windowDays": days,
+        "totalActivityEvents": len(activity_events),
+        "uniqueMembers": len(member_ids),
+        "uniqueAnonymousUsers": len(anonymous_ids),
+        "uniqueSessions": len(session_ids),
+        "byEventType": by_event_type,
+        "bySport": sports,
+        "bySource": by_source,
+        "topMembers": top_members,
+        "recentEvents": activity_events[:limit],
+        "notes": [
+            "This dashboard uses analytics events collected by /v1/inqsi/analytics/event.",
+            "It does not infer missing activity or fabricate usage.",
+        ],
+    })
+
+
 def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     event = event or {}
     method = (event.get("httpMethod") or event.get("requestContext", {}).get("http", {}).get("method") or "GET").upper()
     path = (event.get("rawPath") or event.get("path") or "/").rstrip("/") or "/"
-    if method == "OPTIONS" and (path.startswith("/v1/inqsi/analytics") or path.startswith("/v1/analytics")):
+    if method == "OPTIONS" and (path.startswith("/v1/inqsi/analytics") or path.startswith("/v1/analytics") or path.startswith("/v1/inqsi/admin/analytics") or path.startswith("/v1/admin/analytics")):
         return resp(200, {"ok": True})
     if path in {"/v1/inqsi/analytics/health", "/v1/analytics/health"} and method == "GET":
         return handle_health()
     if path in {"/v1/inqsi/analytics/event", "/v1/analytics/event"} and method == "POST":
         return handle_event(event, parse_body(event))
+    if path in {"/v1/inqsi/admin/analytics/members", "/v1/admin/analytics/members"} and method == "GET":
+        return handle_member_activity(event)
     return None
