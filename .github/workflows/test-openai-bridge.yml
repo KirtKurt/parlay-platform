@@ -1,0 +1,94 @@
+name: Test OpenAI Bridge
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - .github/workflows/test-openai-bridge.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test-openai-bridge:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+      STACK_NAME: inqsi-openai-bridge
+      BRIDGE_ADMIN_TOKEN: ${{ secrets.INQSI_BRIDGE_ADMIN_TOKEN }}
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read bridge URL
+        id: bridge
+        run: |
+          HEALTH_URL=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='InqsiOpenAIBridgeHealthUrl'].OutputValue | [0]" \
+            --output text)
+          API_URL="${HEALTH_URL%/v1/ai/health}"
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+          echo "health_url=$HEALTH_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Verify health route
+        run: |
+          curl -sS "${{ steps.bridge.outputs.health_url }}" | python -m json.tool
+
+      - name: Run protected OpenAI POST test
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import sys
+          import urllib.request
+          import urllib.error
+
+          api_url = os.environ["API_URL"].rstrip("/")
+          token = os.environ.get("BRIDGE_ADMIN_TOKEN", "")
+          if not token:
+              print("INQSI_BRIDGE_ADMIN_TOKEN GitHub secret is missing")
+              sys.exit(1)
+
+          payload = {
+              "prompt": "Confirm the InQsi OpenAI bridge is working. Keep the answer under 20 words."
+          }
+          request = urllib.request.Request(
+              f"{api_url}/v1/ai/debug-summary",
+              data=json.dumps(payload).encode("utf-8"),
+              headers={
+                  "Content-Type": "application/json",
+                  "x-inqsi-admin-token": token,
+              },
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=120) as response:
+                  status = response.status
+                  body = response.read().decode("utf-8")
+          except urllib.error.HTTPError as exc:
+              status = exc.code
+              body = exc.read().decode("utf-8")
+
+          print(f"statusCode: {status}")
+          parsed = json.loads(body)
+          print(json.dumps({
+              "ok": parsed.get("ok"),
+              "model": parsed.get("model"),
+              "reasoningEffort": parsed.get("reasoningEffort"),
+              "text": parsed.get("text"),
+              "error": parsed.get("error"),
+              "status": parsed.get("status"),
+          }, indent=2))
+          if status != 200 or not parsed.get("ok"):
+              sys.exit(1)
+          PY
+        env:
+          API_URL: ${{ steps.bridge.outputs.api_url }}
