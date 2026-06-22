@@ -1,0 +1,63 @@
+name: Deploy OpenAI Bridge
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - openai-bridge-template.yaml
+      - backend/src/inqsi_openai_bridge.py
+      - .github/workflows/deploy-openai-bridge.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  deploy-openai-bridge:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+      STACK_NAME: inqsi-openai-bridge
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install AWS SAM CLI
+        run: pip install aws-sam-cli
+
+      - name: Validate SAM template
+        run: sam validate --template-file openai-bridge-template.yaml
+
+      - name: Build SAM app
+        run: sam build --template-file openai-bridge-template.yaml --no-cached
+
+      - name: Deploy OpenAI bridge
+        run: |
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset
+
+      - name: Print stack outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs" \
+            --output table
