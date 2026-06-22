@@ -53,10 +53,6 @@ def date_key(ts: str) -> str:
     return ts[:10]
 
 
-def today_utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
-
-
 def date_range(days: int) -> List[str]:
     days = max(1, min(int(days or 1), 14))
     today = datetime.now(timezone.utc).date()
@@ -122,14 +118,15 @@ def handle_health() -> Dict[str, Any]:
         "tableConfigured": bool(TABLE_NAME),
         "collectorReady": bool(TABLE_NAME),
         "memberActivityDashboardReady": True,
+        "subscriptionFunnelDashboardReady": True,
         "supportedEventTypes": sorted(ALLOWED_EVENT_TYPES),
         "liveEndpoints": [
             "/v1/inqsi/analytics/health",
             "/v1/inqsi/analytics/event",
             "/v1/inqsi/admin/analytics/members",
+            "/v1/inqsi/admin/analytics/funnel",
         ],
         "nextBuilds": [
-            "subscription_funnel_dashboard",
             "algorithm_performance_dashboard",
             "market_data_quality_dashboard",
             "moderation_analytics_dashboard",
@@ -194,6 +191,20 @@ def count_by(items: List[Dict[str, Any]], field: str) -> Dict[str, int]:
     return counts
 
 
+def user_key(item: Dict[str, Any]) -> str:
+    return str(item.get("memberId") or item.get("anonymousId") or item.get("sessionId") or item.get("eventId") or "unknown")
+
+
+def users_for(items: List[Dict[str, Any]], event_type: str) -> set:
+    return {user_key(item) for item in items if item.get("eventType") == event_type}
+
+
+def pct(numerator: int, denominator: int) -> Decimal:
+    if denominator <= 0:
+        return Decimal("0")
+    return Decimal(str(round((numerator / denominator) * 100, 2)))
+
+
 def handle_member_activity(event: Dict[str, Any]) -> Dict[str, Any]:
     q = query_params(event)
     try:
@@ -219,7 +230,8 @@ def handle_member_activity(event: Dict[str, Any]) -> Dict[str, Any]:
         member_id = item.get("memberId") or "anonymous"
         row = per_member.setdefault(member_id, {"memberId": member_id, "events": 0, "eventTypes": {}, "lastSeenAt": "", "sports": {}})
         row["events"] += 1
-        row["eventTypes"][item.get("eventType") or "unknown"] = row["eventTypes"].get(item.get("eventType") or "unknown", 0) + 1
+        event_type = item.get("eventType") or "unknown"
+        row["eventTypes"][event_type] = row["eventTypes"].get(event_type, 0) + 1
         if item.get("sport"):
             row["sports"][item.get("sport")] = row["sports"].get(item.get("sport"), 0) + 1
         if item.get("createdAt", "") > row["lastSeenAt"]:
@@ -239,10 +251,47 @@ def handle_member_activity(event: Dict[str, Any]) -> Dict[str, Any]:
         "bySource": by_source,
         "topMembers": top_members,
         "recentEvents": activity_events[:limit],
-        "notes": [
-            "This dashboard uses analytics events collected by /v1/inqsi/analytics/event.",
-            "It does not infer missing activity or fabricate usage.",
+        "notes": ["This dashboard uses analytics events collected by /v1/inqsi/analytics/event.", "It does not infer missing activity or fabricate usage."],
+    })
+
+
+def handle_funnel(event: Dict[str, Any]) -> Dict[str, Any]:
+    q = query_params(event)
+    try:
+        days = max(1, min(int(q.get("days") or 7), 14))
+    except Exception:
+        days = 7
+    events = events_for_days(days)
+    all_users = {user_key(item) for item in events if user_key(item) != "unknown"}
+    registered = users_for(events, "member_registered")
+    logged_in = users_for(events, "member_logged_in")
+    scanned = users_for(events, "slip_scanned")
+    built = users_for(events, "parlay_built")
+    sub_started = users_for(events, "subscription_started")
+    sub_cancelled = users_for(events, "subscription_cancelled")
+    return resp(200, {
+        "ok": True,
+        "dashboard": "subscription_funnel",
+        "windowDays": days,
+        "totalEvents": len(events),
+        "steps": [
+            {"step": "event_users", "users": len(all_users), "pctFromPrior": Decimal("100")},
+            {"step": "registered", "users": len(registered), "pctFromPrior": pct(len(registered), len(all_users))},
+            {"step": "logged_in", "users": len(logged_in), "pctFromPrior": pct(len(logged_in), len(registered) or len(all_users))},
+            {"step": "slip_scanned", "users": len(scanned), "pctFromPrior": pct(len(scanned), len(logged_in) or len(registered) or len(all_users))},
+            {"step": "parlay_built", "users": len(built), "pctFromPrior": pct(len(built), len(scanned))},
+            {"step": "subscription_started", "users": len(sub_started), "pctFromPrior": pct(len(sub_started), len(scanned) or len(built))},
         ],
+        "summary": {
+            "eventUsers": len(all_users),
+            "registered": len(registered),
+            "loggedIn": len(logged_in),
+            "scanned": len(scanned),
+            "parlayBuilt": len(built),
+            "subscriptionStarted": len(sub_started),
+            "subscriptionCancelled": len(sub_cancelled),
+            "scanToSubscriptionPct": pct(len(sub_started), len(scanned)),
+        },
     })
 
 
@@ -258,4 +307,6 @@ def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         return handle_event(event, parse_body(event))
     if path in {"/v1/inqsi/admin/analytics/members", "/v1/admin/analytics/members"} and method == "GET":
         return handle_member_activity(event)
+    if path in {"/v1/inqsi/admin/analytics/funnel", "/v1/admin/analytics/funnel"} and method == "GET":
+        return handle_funnel(event)
     return None
