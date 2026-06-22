@@ -41,6 +41,8 @@ function MarketPreviewCard({ label }: { label: string }) {
 }
 
 export default function Home() {
+  const boardSlots = ['Game slot 1', 'Game slot 2', 'Game slot 3'];
+
   return (
     <main className="inqsi-shell">
       <a className="inqsi-skip-link" href="#main-content">Skip to main content</a>
@@ -73,7 +75,7 @@ export default function Home() {
         <div>
           <section className="inqsi-panel">
             <div className="inqsi-section-head"><h2>Sports Market Board</h2><span>Market data pending</span></div>
-            <div className="inqsi-game-list"><MarketPreviewCard label="Game slot 1" /><MarketPreviewCard label="Game slot 2" /></div>
+            <div className="inqsi-game-list">{boardSlots.map((slot) => <MarketPreviewCard key={slot} label={slot} />)}</div>
           </section>
         </div>
         <aside className="inqsi-panel">
