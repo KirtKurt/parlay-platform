@@ -1,0 +1,99 @@
+name: InQsi AI Tools
+
+on:
+  workflow_dispatch:
+    inputs:
+      tool:
+        description: Internal AI tool to run
+        required: true
+        type: choice
+        options:
+          - code_review
+          - deployment_diagnosis
+          - failed_log_summary
+          - admin_tool_plan
+          - sports_api_algorithm_lab
+      prompt:
+        description: What should the AI analyze?
+        required: true
+        type: string
+      context:
+        description: Optional logs, API sample, code notes, or deployment output
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  inqsi-ai-tools:
+    runs-on: ubuntu-latest
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION || 'us-east-1' }}
+      STACK_NAME: inqsi-openai-bridge
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Read bridge Lambda ARN
+        id: bridge
+        run: |
+          FUNCTION_ARN=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='InqsiOpenAIBridgeFunctionArn'].OutputValue | [0]" \
+            --output text)
+          echo "function_arn=$FUNCTION_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Run selected InQsi AI tool
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+
+          function_arn = os.environ.get("FUNCTION_ARN", "")
+          if not function_arn:
+              print("InqsiOpenAIBridgeFunctionArn output is missing")
+              sys.exit(1)
+
+          tool = os.environ["TOOL"]
+          prompt = os.environ["PROMPT"]
+          context = os.environ.get("CONTEXT", "")
+
+          event = {
+              "directTask": True,
+              "task": tool,
+              "prompt": prompt,
+              "context": context,
+          }
+          subprocess.run([
+              "aws", "lambda", "invoke",
+              "--region", os.environ.get("AWS_REGION", "us-east-1"),
+              "--function-name", function_arn,
+              "--cli-binary-format", "raw-in-base64-out",
+              "--payload", json.dumps(event),
+              "response.json",
+          ], check=True)
+
+          outer = json.load(open("response.json"))
+          body = json.loads(outer.get("body") or "{}")
+          print("statusCode:", outer.get("statusCode"))
+          print("tool:", body.get("task"))
+          print("model:", body.get("model"))
+          print("reasoningEffort:", body.get("reasoningEffort"))
+          print("\n--- InQsi AI Result ---\n")
+          print(body.get("text") or body.get("detail") or body)
+          if outer.get("statusCode") != 200 or not body.get("ok"):
+              sys.exit(1)
+          PY
+        env:
+          FUNCTION_ARN: ${{ steps.bridge.outputs.function_arn }}
+          TOOL: ${{ inputs.tool }}
+          PROMPT: ${{ inputs.prompt }}
+          CONTEXT: ${{ inputs.context }}
