@@ -12,7 +12,7 @@ export function RegisterForm() {
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    saveMemberSession(createDemoMemberSession(email, 'Pro'));
+    saveMemberSession(createDemoMemberSession(email, 'Full Access'));
     const params = new URLSearchParams({ plan: planId });
     if (email) params.set('email', email);
     router.push(`/checkout?${params.toString()}`);
