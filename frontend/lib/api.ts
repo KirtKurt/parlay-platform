@@ -83,26 +83,47 @@ const providerToInqisSport: Record<string, string> = {
   tennis_wta_singles: 'tennis'
 };
 
-function apiBase() {
+function configuredApiBase() {
   const value = process.env.NEXT_PUBLIC_INQSI_API_URL || process.env.NEXT_PUBLIC_INQSI_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || '';
   return value.trim().replace(/\/$/, '');
 }
 
-function joinUrl(base: string, path: string) {
-  if (!base) return '';
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+function siteOrigin() {
+  const explicit = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || '';
+  if (explicit) return explicit.trim().replace(/\/$/, '');
+  const vercel = process.env.VERCEL_URL || '';
+  if (vercel) return `https://${vercel.replace(/\/$/, '')}`;
+  return '';
 }
 
-async function safeFetch<T>(path: string, fallback: T): Promise<T> {
-  const base = apiBase();
-  if (!base) return fallback;
-  try {
-    const res = await fetch(joinUrl(base, path), { cache: 'no-store' });
-    if (!res.ok) return fallback;
-    return (await res.json()) as T;
-  } catch {
-    return fallback;
+function requestTargets(path: string) {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  const base = configuredApiBase();
+  const origin = siteOrigin();
+  const targets = [] as string[];
+  if (base) targets.push(`${base}${cleanPath}`);
+  if (origin) targets.push(`${origin}${cleanPath}`);
+  targets.push(cleanPath);
+  return Array.from(new Set(targets));
+}
+
+async function safeFetch<T>(path: string, fallback: T): Promise<T & { __inqsiFetchMeta?: any }> {
+  const errors: string[] = [];
+  for (const target of requestTargets(path)) {
+    try {
+      const res = await fetch(target, { cache: 'no-store' });
+      if (!res.ok) {
+        errors.push(`${target} -> HTTP ${res.status}`);
+        continue;
+      }
+      const payload = (await res.json()) as T & { __inqsiFetchMeta?: any };
+      payload.__inqsiFetchMeta = { target, ok: true };
+      return payload;
+    } catch (exc: any) {
+      errors.push(`${target} -> ${exc?.message || String(exc)}`);
+    }
   }
+  return { ...(fallback as any), __inqsiFetchMeta: { ok: false, attempted: requestTargets(path), errors } };
 }
 
 function formatAmerican(value: any): string {
@@ -226,7 +247,6 @@ function gamesFromMarketBoard(boardPayload: any): InqsiGame[] {
 }
 
 export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAULT_SPORT || 'nfl'): Promise<InqsiSnapshot> {
-  const base = apiBase();
   const selectedSport = providerToInqisSport[sportKey] || sportKey || defaultSports[0];
 
   const [marketBoardPayload, predictionsPayload, parlayPayload, livePayload, alertsPayload, performancePayload] = await Promise.all([
@@ -243,14 +263,15 @@ export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAUL
   const games = marketBoardGames.length ? marketBoardGames : legacyGames;
   const predictions = (predictionsPayload.predictions || []) as InqsiPrediction[];
   const rankings = parlayPayload.rankings || parlayPayload.combinations || parlayPayload.top_rankings || [];
+  const marketFetch = marketBoardPayload.__inqsiFetchMeta || {};
 
   return {
-    apiStatus: base ? (games.length || predictions.length || parlayPayload?.built ? 'CONNECTED' : 'WAITING') : 'WAITING',
-    apiDetail: base
-      ? marketBoardGames.length
-        ? 'Connected to InQsi active-slate market board.'
-        : 'Connected to InQsi API. Waiting for active-slate market board games.'
-      : 'Waiting on API URL. Set NEXT_PUBLIC_INQSI_API_URL to your current backend URL.',
+    apiStatus: games.length || predictions.length || parlayPayload?.built ? 'CONNECTED' : marketFetch.ok === false ? 'FAILED' : 'WAITING',
+    apiDetail: marketBoardGames.length
+      ? `Connected to InQsi active-slate market board via ${marketFetch.target || '/v1/inqsi/markets/board'}.`
+      : marketFetch.ok === false
+        ? `Market board not connected. Tried: ${(marketFetch.attempted || []).join(', ')}`
+        : 'Connected to InQsi API. Waiting for active-slate market board games.',
     sports: defaultSports,
     selectedSport,
     games,
