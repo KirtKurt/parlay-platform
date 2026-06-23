@@ -198,10 +198,21 @@ jobs:
               f.write('\n')
           PY
 
+      - name: Enforce live odds storage proof
+        run: |
+          python - <<'PY'
+          import json, sys
+          report = json.load(open('runtime_reports/live_odds_latest.json', encoding='utf-8'))
+          if not report.get('ok'):
+              print(json.dumps(report, indent=2, default=str))
+              sys.exit('Live odds proof failed. See runtime_reports/live_odds_latest.json for the exact reason.')
+          print('Live odds proof passed.')
+          PY
+
       - name: Commit safe proof report
         if: always()
         run: |
-          set -euo pipefail
+          set -u
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           if [ ! -f runtime_reports/live_odds_latest.json ]; then
@@ -213,16 +224,6 @@ jobs:
             echo "No proof report changes to commit."
           else
             git commit -m "Update live odds pull proof report"
-            git push
+            git pull --rebase --autostash origin main || echo "Proof report rebase skipped due concurrent update."
+            git push || echo "Proof report push skipped due concurrent workflow update. The local proof was already enforced above."
           fi
-
-      - name: Enforce live odds storage proof
-        run: |
-          python - <<'PY'
-          import json, sys
-          report = json.load(open('runtime_reports/live_odds_latest.json', encoding='utf-8'))
-          if not report.get('ok'):
-              print(json.dumps(report, indent=2, default=str))
-              sys.exit('Live odds proof failed. See runtime_reports/live_odds_latest.json for the exact reason.')
-          print('Live odds proof passed.')
-          PY
