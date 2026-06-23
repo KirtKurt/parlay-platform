@@ -8,11 +8,7 @@ on:
       sports:
         description: 'Comma-separated Inqis sports to pull'
         required: false
-        default: 'mlb,soccer,tennis,nfl,cfb,college_baseball_men,nba,wnba,ncaam,nhl'
-      all:
-        description: 'Pull all listed sports'
-        required: false
-        default: 'true'
+        default: 'mlb,soccer,tennis,nfl,cfb,nba,wnba,ncaam,nhl'
   workflow_run:
     workflows: ["Deploy SAM to AWS"]
     types: [completed]
@@ -22,6 +18,17 @@ jobs:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install runtime dependencies
+        run: python -m pip install --upgrade boto3
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -29,112 +36,55 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Read API URL
-        id: stack_outputs
-        run: |
-          API_URL=$(aws cloudformation describe-stacks \
-            --stack-name parlay-platform-dev \
-            --region ${{ secrets.AWS_REGION }} \
-            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
-            --output text)
-          test -n "$API_URL"
-          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
-
-      - name: Pull live odds into Inqis pull history and confirm stored rows
+      - name: Pull live odds directly into Inqis pull history and confirm stored rows
         env:
-          ADMIN_TOKEN: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          ODDS_REGIONS: us
+          ODDS_MARKETS: h2h,spreads,totals
+          ODDS_FORMAT: american
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
           INPUT_SPORTS: ${{ github.event.inputs.sports }}
-          INPUT_ALL: ${{ github.event.inputs.all }}
         run: |
           set -euo pipefail
-          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          SPORTS="${INPUT_SPORTS:-mlb,soccer,tennis,nfl,cfb,college_baseball_men,nba,wnba,ncaam,nhl}"
-          ALL_FLAG="${INPUT_ALL:-true}"
-
-          if [ -z "${ADMIN_TOKEN:-}" ]; then
-            echo "GitHub Actions secret INQSI_ADMIN_API_TOKEN is empty. Trying deployed Lambda environment fallback."
-            LAMBDA_NAME=$(aws cloudformation describe-stack-resource \
-              --stack-name parlay-platform-dev \
-              --region ${{ secrets.AWS_REGION }} \
-              --logical-resource-id ApiFunction \
-              --query "StackResourceDetail.PhysicalResourceId" \
-              --output text 2>/dev/null || true)
-            if [ -n "$LAMBDA_NAME" ] && [ "$LAMBDA_NAME" != "None" ]; then
-              ADMIN_TOKEN=$(aws lambda get-function-configuration \
-                --function-name "$LAMBDA_NAME" \
-                --region ${{ secrets.AWS_REGION }} \
-                --query "Environment.Variables.INQSI_ADMIN_API_TOKEN" \
-                --output text 2>/dev/null || true)
-            fi
-          fi
-
-          if [ -z "${ADMIN_TOKEN:-}" ] || [ "$ADMIN_TOKEN" = "None" ]; then
-            echo "Missing admin token. Add GitHub repo secret INQSI_ADMIN_API_TOKEN and rerun Deploy SAM to AWS so Lambda receives the same token."
-            exit 1
-          fi
-          echo "::add-mask::$ADMIN_TOKEN"
-          echo "Admin token is available to workflow."
-
-          print_body () {
-            FILE="$1"
-            python - "$FILE" <<'PY'
-          import json, sys
-          path = sys.argv[1]
-          raw = open(path, 'r', encoding='utf-8', errors='replace').read()
-          try:
-              print(json.dumps(json.loads(raw), indent=2))
-          except Exception:
-              print(raw)
-          PY
-          }
-
-          call_api () {
-            LABEL="$1"
-            URL="$2"
-            OUT="$3"
-            shift 3
-            echo "$LABEL"
-            HTTP_CODE=$(curl --silent --show-error --output "$OUT" --write-out "%{http_code}" "$@" "$URL")
-            echo "HTTP status: $HTTP_CODE"
-            print_body "$OUT"
-            if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-              echo "$LABEL failed with HTTP $HTTP_CODE"
-              exit 1
-            fi
-          }
-
-          call_api "Provider status" \
-            "${API_URL}v1/inqsi/odds/provider-status?probe=true" \
-            provider-status.json \
-            -H "x-inqsi-admin-token: $ADMIN_TOKEN"
-
-          call_api "Pulling live odds for: $SPORTS" \
-            "${API_URL}v1/inqsi/odds/pull?all=${ALL_FLAG}&sports=${SPORTS}" \
-            pull-response.json \
-            -H "x-inqsi-admin-token: $ADMIN_TOKEN"
-
-          call_api "Reading public market board for stored row confirmation" \
-            "${API_URL}v1/inqsi/markets/board?sports=${SPORTS}" \
-            market-board.json
+          test -n "$ODDS_API_KEY"
+          export PYTHONPATH="$GITHUB_WORKSPACE/hello_world:$PYTHONPATH"
 
           python - <<'PY'
-          import json, sys
-          pull = json.load(open('pull-response.json'))
-          board = json.load(open('market-board.json'))
-          pull_results = pull.get('results') or []
-          stored = [r for r in pull_results if (r.get('gamesStored') or 0) > 0]
-          board_rows = [b for b in (board.get('boards') or []) if (b.get('gameCount') or 0) > 0]
+          import json
+          import os
+          import sys
+
+          import odds_live_ingestion
+          import market_board
+
+          sports = [s.strip() for s in os.environ.get('INPUT_SPORTS', '').split(',') if s.strip()]
+          if not sports:
+              sports = ['mlb', 'soccer', 'tennis', 'nfl', 'cfb', 'nba', 'wnba', 'ncaam', 'nhl']
+
+          print('Pulling sports:', ','.join(sports))
+          pull = odds_live_ingestion.pull_many(sports)
+          print('PULL_RESPONSE')
+          print(json.dumps(pull, indent=2, default=str))
+
+          board = market_board.board_all({'sports': ','.join(sports)})
+          print('MARKET_BOARD_RESPONSE')
+          print(json.dumps(board, indent=2, default=str))
+
+          stored = [r for r in pull.get('results', []) if int(r.get('gamesStored') or 0) > 0]
+          visible = [b for b in board.get('boards', []) if int(b.get('gameCount') or 0) > 0]
           summary = {
+              'sportsRequested': sports,
               'sportsWithStoredGamesFromPull': [r.get('appSport') for r in stored],
-              'sportsVisibleOnMarketBoard': [b.get('sport') for b in board_rows],
-              'totalGamesVisibleOnMarketBoard': sum(int(b.get('gameCount') or 0) for b in board_rows),
-              'pullEndpointOk': pull.get('ok'),
+              'sportsVisibleOnMarketBoard': [b.get('sport') for b in visible],
+              'totalGamesVisibleOnMarketBoard': sum(int(b.get('gameCount') or 0) for b in visible),
+              'pullOk': pull.get('ok'),
               'marketBoardOk': board.get('ok'),
           }
           print('INQIS_LIVE_PULL_CONFIRMATION')
           print(json.dumps(summary, indent=2))
+
           if not stored:
-              sys.exit('Live pull did not store any game rows. The response above contains the provider or storage reason.')
-          if not board_rows:
-              sys.exit('Market board does not show stored games. The response above contains the visibility reason.')
+              sys.exit('No live odds rows were stored in DynamoDB. See PULL_RESPONSE above for provider/status reasons.')
+          if not visible:
+              sys.exit('Stored rows were not visible through the market board reader. See MARKET_BOARD_RESPONSE above.')
           PY
