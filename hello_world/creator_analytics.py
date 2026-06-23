@@ -6,6 +6,11 @@ from typing import Any, Dict, List, Optional, Set
 import boto3
 from boto3.dynamodb.conditions import Attr
 
+try:
+    import admin_alerts
+except Exception:
+    admin_alerts = None
+
 
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -150,6 +155,7 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
         "ok": True,
         "dashboard": "creator_analytics",
         "recordsScanned": len(records),
+        "adminAlertsDelegated": admin_alerts is not None,
         "summary": {
             "creatorProfiles": len(profiles),
             "creatorApplications": len(applications),
@@ -175,6 +181,10 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     event = event or {}
+    if admin_alerts is not None:
+        alert_routed = admin_alerts.route(event)
+        if alert_routed is not None:
+            return alert_routed
     method = (event.get("httpMethod") or event.get("requestContext", {}).get("http", {}).get("method") or "GET").upper()
     path = (event.get("rawPath") or event.get("path") or "/").rstrip("/") or "/"
     if method == "OPTIONS" and (path.startswith("/v1/inqsi/admin/analytics") or path.startswith("/v1/admin/analytics")):
