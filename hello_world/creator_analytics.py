@@ -26,6 +26,11 @@ try:
 except Exception:
     official_parlay_lifecycle = None
 
+try:
+    import pull_integrity_audit
+except Exception:
+    pull_integrity_audit = None
+
 
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -174,6 +179,7 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
         "cyberSecurityDelegated": cyber_security is not None,
         "oddsLiveIngestionDelegated": odds_live_ingestion is not None,
         "officialParlayLifecycleDelegated": official_parlay_lifecycle is not None,
+        "pullIntegrityAuditDelegated": pull_integrity_audit is not None,
         "summary": {
             "creatorProfiles": len(profiles),
             "creatorApplications": len(applications),
@@ -199,6 +205,10 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     event = event or {}
+    if pull_integrity_audit is not None:
+        integrity_routed = pull_integrity_audit.route(event)
+        if integrity_routed is not None:
+            return integrity_routed
     if official_parlay_lifecycle is not None:
         official_parlay_routed = official_parlay_lifecycle.route(event)
         if official_parlay_routed is not None:
