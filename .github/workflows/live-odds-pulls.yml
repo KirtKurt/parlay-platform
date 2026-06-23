@@ -8,7 +8,7 @@ on:
       sports:
         description: 'Comma-separated Inqis sports to pull'
         required: false
-        default: 'nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer'
+        default: 'mlb,soccer,tennis,nfl,cfb,college_baseball_men,nba,wnba,ncaam,nhl'
       all:
         description: 'Pull all listed sports'
         required: false
@@ -48,29 +48,51 @@ jobs:
         run: |
           set -euo pipefail
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          SPORTS="${INPUT_SPORTS:-mlb,college_baseball_men,soccer,tennis,nfl,cfb,nba,wnba,ncaam,nhl}"
+          SPORTS="${INPUT_SPORTS:-mlb,soccer,tennis,nfl,cfb,college_baseball_men,nba,wnba,ncaam,nhl}"
           ALL_FLAG="${INPUT_ALL:-true}"
           test -n "$ADMIN_TOKEN"
 
-          echo "Provider status"
-          curl --fail --silent --show-error \
-            -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
+          print_body () {
+            FILE="$1"
+            python - "$FILE" <<'PY'
+          import json, sys
+          path = sys.argv[1]
+          raw = open(path, 'r', encoding='utf-8', errors='replace').read()
+          try:
+              print(json.dumps(json.loads(raw), indent=2))
+          except Exception:
+              print(raw)
+          PY
+          }
+
+          call_api () {
+            LABEL="$1"
+            URL="$2"
+            OUT="$3"
+            shift 3
+            echo "$LABEL"
+            HTTP_CODE=$(curl --silent --show-error --output "$OUT" --write-out "%{http_code}" "$@" "$URL")
+            echo "HTTP status: $HTTP_CODE"
+            print_body "$OUT"
+            if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+              echo "$LABEL failed with HTTP $HTTP_CODE"
+              exit 1
+            fi
+          }
+
+          call_api "Provider status" \
             "${API_URL}v1/inqsi/odds/provider-status?probe=true" \
-            | tee provider-status.json \
-            | python -m json.tool
+            provider-status.json \
+            -H "x-inqsi-admin-token: $ADMIN_TOKEN"
 
-          echo "Pulling live odds for: $SPORTS"
-          curl --fail --silent --show-error \
-            -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
+          call_api "Pulling live odds for: $SPORTS" \
             "${API_URL}v1/inqsi/odds/pull?all=${ALL_FLAG}&sports=${SPORTS}" \
-            | tee pull-response.json \
-            | python -m json.tool
+            pull-response.json \
+            -H "x-inqsi-admin-token: $ADMIN_TOKEN"
 
-          echo "Reading public market board for stored row confirmation"
-          curl --fail --silent --show-error \
+          call_api "Reading public market board for stored row confirmation" \
             "${API_URL}v1/inqsi/markets/board?sports=${SPORTS}" \
-            | tee market-board.json \
-            | python -m json.tool
+            market-board.json
 
           python - <<'PY'
           import json, sys
@@ -83,11 +105,13 @@ jobs:
               'sportsWithStoredGamesFromPull': [r.get('appSport') for r in stored],
               'sportsVisibleOnMarketBoard': [b.get('sport') for b in board_rows],
               'totalGamesVisibleOnMarketBoard': sum(int(b.get('gameCount') or 0) for b in board_rows),
+              'pullEndpointOk': pull.get('ok'),
+              'marketBoardOk': board.get('ok'),
           }
           print('INQIS_LIVE_PULL_CONFIRMATION')
           print(json.dumps(summary, indent=2))
           if not stored:
-              sys.exit('Live pull did not store any game rows. Green is not allowed until at least one sport stores data.')
+              sys.exit('Live pull did not store any game rows. The response above contains the provider or storage reason.')
           if not board_rows:
-              sys.exit('Market board does not show stored games. Green is not allowed until front-end readable data exists.')
+              sys.exit('Market board does not show stored games. The response above contains the visibility reason.')
           PY
