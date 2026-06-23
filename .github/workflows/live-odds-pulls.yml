@@ -57,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p runtime_reports
-          export PYTHONPATH="$GITHUB_WORKSPACE/hello_world:$PYTHONPATH"
+          export PYTHONPATH="$GITHUB_WORKSPACE/hello_world:${PYTHONPATH:-}"
 
           python - <<'PY'
           import json
@@ -184,6 +184,10 @@ jobs:
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          if [ ! -f runtime_reports/live_odds_latest.json ]; then
+            mkdir -p runtime_reports
+            printf '{"ok":false,"error":{"type":"missing_proof_report","message":"runtime_reports/live_odds_latest.json was not created"}}\n' > runtime_reports/live_odds_latest.json
+          fi
           git add runtime_reports/live_odds_latest.json
           if git diff --cached --quiet; then
             echo "No proof report changes to commit."
