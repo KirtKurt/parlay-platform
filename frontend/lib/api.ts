@@ -10,6 +10,7 @@ export type InqsiGame = {
   favorite: string;
   underdog: string;
   total: string;
+  spread?: string;
   movement: string;
   signals: string[];
   risk: 'LOW' | 'MODERATE' | 'HIGH' | string;
@@ -104,6 +105,27 @@ async function safeFetch<T>(path: string, fallback: T): Promise<T> {
   }
 }
 
+function formatAmerican(value: any): string {
+  if (value === undefined || value === null || value === '') return '—';
+  const numeric = Number(value);
+  if (!Number.isNaN(numeric)) return numeric > 0 ? `+${numeric}` : `${numeric}`;
+  return String(value);
+}
+
+function formatSpreadFromBooks(books: any[] | undefined, favorite: string): string {
+  const firstSpread = (books || []).map((b) => b?.spread).find(Boolean);
+  if (!firstSpread) return 'Waiting';
+  const homePoint = firstSpread.home_point;
+  const awayPoint = firstSpread.away_point;
+  const homePrice = firstSpread.home_price !== undefined ? formatAmerican(firstSpread.home_price) : '';
+  const awayPrice = firstSpread.away_price !== undefined ? formatAmerican(firstSpread.away_price) : '';
+  const favLooksHome = homePoint !== undefined && Number(homePoint) < 0;
+  const point = favLooksHome ? homePoint : awayPoint;
+  const price = favLooksHome ? homePrice : awayPrice;
+  if (point === undefined || point === null || point === '') return 'Waiting';
+  return `${favorite} ${point}${price ? ` (${price})` : ''}`;
+}
+
 function formatTotalFromBooks(books: any[] | undefined): string {
   const firstTotal = (books || []).map((b) => b?.total || b?.overUnder).find(Boolean);
   if (!firstTotal) return 'Waiting';
@@ -111,13 +133,6 @@ function formatTotalFromBooks(books: any[] | undefined): string {
   const overPrice = firstTotal.over_price !== undefined ? ` (${formatAmerican(firstTotal.over_price)})` : '';
   const underPrice = firstTotal.under_price !== undefined ? ` / U ${formatAmerican(firstTotal.under_price)}` : '';
   return over !== '' ? `O/U ${over}${overPrice}${underPrice}` : 'O/U';
-}
-
-function formatAmerican(value: any): string {
-  if (value === undefined || value === null || value === '') return '—';
-  const numeric = Number(value);
-  if (!Number.isNaN(numeric)) return numeric > 0 ? `+${numeric}` : `${numeric}`;
-  return String(value);
 }
 
 function bestBook(game: any): any | undefined {
@@ -153,6 +168,7 @@ function normalizeMarketBoardGame(raw: any, sport: string): InqsiGame {
     favorite_ml: favoriteMl,
     underdogMl,
     underdog_ml: underdogMl,
+    spread: formatSpreadFromBooks(raw.books, favorite),
     total: formatTotalFromBooks(raw.books),
     movement: `${raw.bookCount || 0} books · active-slate market board`,
     signals: ['ACTIVE_SLATE', 'MARKET_BOARD'],
@@ -184,6 +200,7 @@ function normalizeLegacyGame(raw: any): InqsiGame {
     away_team: away,
     favorite,
     underdog,
+    spread: String(raw.spread ?? raw.line ?? 'Waiting'),
     total: String(raw.total ?? raw.over_under ?? 'Waiting'),
     movement: raw.movement || raw.what_looks_wrong || raw.status_label || 'Waiting on verified market movement.',
     signals: Array.isArray(raw.signals) ? raw.signals : raw.primary_signal ? [raw.primary_signal] : ['WAITING'],
