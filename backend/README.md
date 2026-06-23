@@ -1,6 +1,6 @@
-# Silvers Syndicate Backend
+# Inqis Backend
 
-AWS SAM backend for the Silvers Syndicate API.
+AWS SAM backend for the Inqis API.
 
 ## API routes
 
@@ -15,11 +15,7 @@ GET /v1/parlays/{build_id}
 
 ## Deploy
 
-This backend is deployed by GitHub Actions using the workflow:
-
-```bash
-.github/workflows/deploy-silvers-backend.yml
-```
+This backend is deployed by GitHub Actions using the active SAM deploy workflow.
 
 Manual local deploy remains available:
 
@@ -32,7 +28,7 @@ sam deploy --guided
 Use these values when prompted:
 
 ```bash
-Stack Name: silvers-syndicate-api
+Stack Name: parlay-platform-dev
 AWS Region: us-east-1
 Confirm changes before deploy: Y
 Allow SAM CLI IAM role creation: Y
@@ -48,13 +44,14 @@ After deployment, copy the output value named:
 ApiUrl
 ```
 
-Add it to Amplify environment variables:
+Add it to the frontend environment variables:
 
 ```bash
 NEXT_PUBLIC_API_BASE_URL=<ApiUrl>
 ```
 
-Then redeploy the Amplify frontend.
+Then redeploy the frontend.
 
 Deployment trigger: backend README updated to start the GitHub Actions deploy pipeline.
 Deployment trigger: fresh backend push to AWS after workflow credential fix.
+Deployment trigger: runtime verification after admin token setup.
