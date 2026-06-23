@@ -7,57 +7,48 @@ export type AppHeaderProps = {
   apiDetail?: string;
 };
 
-const primaryLinks = [
-  { href: '/sports', label: 'Sports' },
-  { href: '/parlay-scanner', label: 'AI Slip Scanner' },
-  { href: '/parlays', label: 'AI Slip Builder' },
-  { href: '/pricing', label: 'Pricing' }
-];
-
 const menuLinks = [
   { href: '/', label: 'Home' },
-  { href: '/parlay-scanner', label: 'AI Slip Scanner' },
-  { href: '/parlays', label: 'AI Slip Builder' },
-  { href: '/sports', label: 'Sports board' },
-  { href: '/game-leans', label: 'Game Leans' },
-  { href: '/best-lines', label: 'Best lines' },
-  { href: '/live-market', label: 'Live market' },
-  { href: '/line-movement-review', label: 'Line Movement Review' },
-  { href: '/alerts', label: 'Alerts' },
-  { href: '/watchlist', label: 'Watchlist' },
-  { href: '/performance', label: 'Review History' },
-  { href: '/methodology', label: 'Methodology' },
+  { href: '/sports/mlb', label: 'Markets' },
+  { href: '/parlays', label: 'Parlays' },
+  { href: '/parlay-scanner', label: 'Scan' },
+  { href: '/account', label: 'Account' },
   { href: '/login', label: 'Login' },
-  { href: '/register', label: 'Start 5 days free' }
+  { href: '/register', label: 'Start Membership' }
 ];
 
-const menuItemStyle = {
-  justifyContent: 'flex-start',
-  textAlign: 'left' as const,
-  width: '100%'
-};
+const bottomLinks = [
+  { href: '/', label: 'Home', icon: 'H' },
+  { href: '/sports/mlb', label: 'Markets', icon: 'M' },
+  { href: '/parlays', label: 'Parlays', icon: 'P' },
+  { href: '/parlay-scanner', label: 'Scan', icon: 'S' },
+  { href: '/account', label: 'Account', icon: 'A' }
+];
+
+function readableStatus(status?: string) {
+  if (!status || status === 'FAILED') return null;
+  if (status === 'CONNECTED') return 'Live';
+  if (status === 'WAITING') return 'Syncing';
+  if (status === 'MOCK') return 'Preview';
+  return status;
+}
 
 export function AppHeader({ eyebrow = 'InQsi', title = 'Sports market intelligence', apiStatus, apiDetail }: AppHeaderProps) {
+  const status = readableStatus(apiStatus);
   return (
-    <header className="inqsi-topbar inqsi-global-nav">
-      <Link className="inqsi-brand" href="/" aria-label="InQsi home">
-        <span className="inqsi-logo-mark" aria-hidden="true">Q</span>
-        <span><b>{eyebrow}</b><small>{title}</small></span>
-      </Link>
-
-      <nav className="inqsi-nav-actions inqsi-desktop-nav" aria-label="Primary navigation">
-        {apiStatus && <span className={`api-badge api-${apiStatus.toLowerCase()}`} title={apiDetail}>{apiStatus}</span>}
-        {primaryLinks.map((link) => <Link href={link.href} key={link.href}>{link.label}</Link>)}
-        <Link className="inqsi-primary" href="/register">Start 5 Days Free</Link>
+    <>
+      <header className="inqsi-topbar inqsi-mobile-header">
+        <Link className="inqsi-menu-button" href="/account" aria-label="Open menu">Menu</Link>
+        <Link className="inqsi-wordmark" href="/" aria-label="InQsi home"><span>IN</span><b>Q</b><span>IS</span></Link>
+        <Link className="inqsi-bell" href="/alerts" aria-label="Alerts">Alerts</Link>
+      </header>
+      <nav className="inqsi-desktop-links" aria-label="Site navigation">
+        {status && <span className={`api-badge api-${apiStatus?.toLowerCase()}`} title={apiDetail}>{status}</span>}
+        {menuLinks.map((link) => <Link href={link.href} key={link.href}>{link.label}</Link>)}
       </nav>
-
-      <details className="inqsi-menu">
-        <summary aria-label="Open navigation menu">Menu</summary>
-        <nav aria-label="Site navigation menu" style={{ textAlign: 'left' }}>
-          {apiStatus && <span className={`api-badge api-${apiStatus.toLowerCase()}`} title={apiDetail} style={menuItemStyle}>{apiStatus}</span>}
-          {menuLinks.map((link) => <Link href={link.href} key={link.href} style={menuItemStyle}>{link.label}</Link>)}
-        </nav>
-      </details>
-    </header>
+      <nav className="inqsi-bottom-nav" aria-label="Primary app navigation">
+        {bottomLinks.map((link) => <Link href={link.href} key={link.href}><span>{link.icon}</span><small>{link.label}</small></Link>)}
+      </nav>
+    </>
   );
 }
