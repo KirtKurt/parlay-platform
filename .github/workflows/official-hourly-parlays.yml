@@ -1,0 +1,46 @@
+name: Inqis Official Hourly Parlays
+
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+    inputs:
+      sports:
+        description: 'Comma-separated sports to evaluate for official Inqis parlays'
+        required: false
+        default: 'nfl,cfb,mlb,nba,wnba,ncaam,nhl,tennis,soccer'
+
+jobs:
+  build-official-parlays:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Read API URL
+        id: stack_outputs
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+          test -n "$API_URL"
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Build or update official hourly three-leg parlays
+        env:
+          ADMIN_TOKEN: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+          INPUT_SPORTS: ${{ github.event.inputs.sports }}
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          SPORTS="${INPUT_SPORTS:-nfl,cfb,mlb,nba,wnba,ncaam,nhl,tennis,soccer}"
+          test -n "$ADMIN_TOKEN"
+          curl --fail --silent --show-error \
+            -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
+            "${API_URL}v1/inqsi/admin/parlays/hourly-build?sports=${SPORTS}" \
+            | python -m json.tool
