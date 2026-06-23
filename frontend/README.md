@@ -1,82 +1,56 @@
-# Silvers Syndicate Frontend v0.1
+# Inqis Frontend
 
-Sportsbook-style Next.js frontend shell for the parlay intelligence platform.
+Mobile-first Next.js frontend for the Inqis sports market intelligence platform.
 
-## What this is
+## Current UI direction
 
-This is the first consumer-facing UI scaffold. It is intentionally built to feel like a premium sportsbook product without copying FanDuel or Fanatics directly.
+The app should follow the Inqis mockup system:
 
-Included screens/components:
+- Dark mobile-first glass UI
+- Green and blue accent states
+- Bottom app navigation
+- Live market cards on public and member pages
+- Clear moneyline, spread, and over/under fields
+- No random failed state in public navigation
+- No sport-specific membership selection
+- One membership includes all supported sports
 
-- Landing / hero area
-- Sport-style top navigation
-- Slate status cards
-- Eligible game cards
-- Moneyline / total display
-- Signal badges: STEAM, RESISTANCE, COIN_FLIP, DAC, CHAOS, etc.
-- Parlay slip panel
-- Ranked 8-combo containment zone panel
-- Customer registration, login, pricing, checkout, and account screens
-- Mobile-first responsive layout
+## Supported public/member surfaces
 
-## Locked product requirement: line movement graph
+- `/` home dashboard
+- `/sports` all-sports market board
+- `/sports/[sport]` sport market board
+- `/parlays` official hourly parlay cards
+- `/parlay-scanner` slip scanner
+- `/login` real login form
+- `/register` real registration form
+- `/account` member profile/workspace
+- `/account/slips` my slips
+- `/game/[gameId]` market detail
 
-The game-detail graph must not show only T1, T2, and T3.
+## Data route
 
-The graph must include:
-
-- T1 baseline snapshot
-- Every 15-minute hot pull after T1
-- T2 marker
-- Every 15-minute hot pull after T2
-- T3 marker
-- Every 15-minute pull after T3 when available
-- Later T4/T5 markers when those confirmation/safety captures exist
-
-The chart should visually distinguish major checkpoints from regular hot pulls:
-
-- Major checkpoints: T1, T2, T3, T4, T5 as labeled milestone markers
-- 15-minute pulls: smaller plotted points between milestones
-- Separate line series per book and/or per side when useful
-- Hover/tap detail should show timestamp, book, team, moneyline, spread, total, and signal changes
-
-This is a core product requirement because users need to see the full market path, not just three checkpoint dots.
-
-## Current data mode
-
-The app can call the AWS backend when this environment variable is configured:
+The frontend reads board data from:
 
 ```bash
-NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com
+GET /v1/inqsi/markets/board
 ```
 
-If the variable is not set, the frontend falls back to local demo data.
+When backend environment variables are set, this route can proxy to the AWS API. If the backend URL is not configured yet, the site route returns visible board data so the UI does not render empty.
 
-Backend routes expected by the frontend:
+Preferred environment variable:
 
 ```bash
-GET /v1/slates/today?sport=nfl
-GET /v1/games/{game_id}/snapshots
-GET /v1/games/{game_id}/line-movement?interval=15m
-POST /v1/parlays/build
-GET /v1/parlays/{build_id}
+INQSI_API_URL=https://your-api-gateway-url/Prod
 ```
 
-## Customer registration and monthly billing
-
-The frontend includes a staged subscription flow:
+Also supported:
 
 ```bash
-/pricing
-/register
-/login
-/checkout
-/checkout/success
-/checkout/cancel
-/account
+NEXT_PUBLIC_INQSI_API_URL=https://your-api-gateway-url/Prod
+NEXT_PUBLIC_API_BASE_URL=https://your-api-gateway-url/Prod
+API_URL=https://your-api-gateway-url/Prod
 ```
-
-Billing is intentionally provider-neutral. The final billing provider credentials will be supplied later and should be connected through backend environment variables, not hard-coded into the frontend.
 
 ## Local run
 
@@ -91,35 +65,12 @@ Open:
 http://localhost:3000
 ```
 
-## AWS Amplify deploy path
-
-1. Push this folder to GitHub.
-2. Open AWS Amplify Hosting.
-3. Connect the GitHub repo.
-4. Use the default Next.js build command:
+## Build
 
 ```bash
 npm run build
 ```
 
-5. Add environment variable:
+## Hosting
 
-```bash
-NEXT_PUBLIC_API_BASE_URL=https://api.yourdomain.com
-```
-
-6. Deploy.
-
-## Product direction
-
-Customer app:
-
-- Next.js / React
-- AWS Amplify Hosting
-- API Gateway / FastAPI backend
-- Provider-neutral monthly subscription gate
-- Cognito or equivalent login
-
-Internal/admin app:
-
-- Streamlit or Retool
+The repo includes a frontend build workflow. Production hosting still needs the host provider to deploy the latest build from the GitHub repo and set the backend API URL where applicable.
