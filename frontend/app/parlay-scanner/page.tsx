@@ -3,90 +3,68 @@ import { AppHeader } from '@/components/AppHeader';
 import { SlipScannerClient } from '@/components/SlipScannerClient';
 
 export const metadata: Metadata = {
-  title: 'AI Slip Scanner',
-  description: 'Enter your own slip and let InQsi review line movement, weak-leg risk, signals, and market stability before you lock it in.',
+  title: 'Scan My Slip | InQsi',
+  description: 'Upload or enter a slip and let InQsi review line movement, weak-leg risk, signals, and market stability before lock-in.',
   alternates: { canonical: '/parlay-scanner' }
 };
 
-const reviewChecks = [
-  'Market movement path',
-  'Steam, resistance, reversal, and chaos flags',
-  'Weak-leg exposure',
-  'Favorite and underdog pressure',
-  'Line shopping and best available number',
-  'Do-not-force warning when the slip looks unstable'
-];
+const reviewChecks = ['Risk Review', 'Market Signals', 'AI Scan'];
 
 export default function Page() {
   return (
     <main className="inqsi-shell">
-      <AppHeader eyebrow="InQsi" title="AI Slip Scanner" />
+      <AppHeader eyebrow="InQsi" title="Scan My Slip" />
 
-      <section className="inqsi-hero inqsi-seo-hero">
-        <div className="inqsi-hero-card">
-          <p className="inqsi-promo">AI Slip Scanner</p>
-          <h1>Paste your slip. Find where your picks go wrong.</h1>
-          <p>
-            Bring the picks you already like. InQsi checks the slip against market movement, signal strength, weak-leg risk, and stability before you lock anything in.
-          </p>
-          <div className="inqsi-stat-grid" aria-label="Scanner flow">
-            <div><b>1</b><span>Enter your picks</span></div>
-            <div><b>2</b><span>Match to the market</span></div>
-            <div><b>3</b><span>Scan the risk</span></div>
-            <div><b>4</b><span>See the warning signs</span></div>
-          </div>
+      <section className="inqsi-panel" style={{ textAlign: 'center', marginBottom: 18 }}>
+        <p className="eyebrow blue">Scan My Slip</p>
+        <h2>Scan Your Bet Slip</h2>
+        <p className="movement" style={{ maxWidth: 620, margin: '0 auto 18px' }}>Scan or enter a 3-leg slip to break down each leg, review risk, and compare the pick to live market context.</p>
+        <div className="hero-actions" style={{ justifyContent: 'center' }}>
+          <button className="primary-button large" type="button">Upload Screenshot</button>
+          <button className="ghost-button large" type="button">Open Camera</button>
         </div>
-
-        <aside className="inqsi-signup-card">
-          <h2>AI Slip Scanner</h2>
-          <p>Start with the picks you already have. The scanner is built to slow you down, show weak spots, and help you decide whether the slip still deserves your trust.</p>
-          <a href="/register?source=ai-slip-scanner">Start 5 days free</a>
-          <a href="/sports">View sports board</a>
-          <small>No fake grades. If verified market data is unavailable, InQsi shows a clear waiting state.</small>
-        </aside>
       </section>
 
       <SlipScannerClient />
 
-      <section className="inqsi-layout" style={{ marginTop: 20 }}>
-        <div className="inqsi-panel">
-          <div className="inqsi-section-head"><h2>Your slip</h2><span>3-leg scan</span></div>
-          <div className="inqsi-game-list">
-            {[1, 2, 3].map((leg) => (
-              <article className="inqsi-game-card" key={leg}>
-                <div className="inqsi-game-row"><b>Leg {leg}</b><span className="inqsi-score-chip">Ready</span></div>
-                <div className="inqsi-market-grid">
-                  <div><span>Sport</span>Select sport</div>
-                  <div><span>Pick type</span>ML / Spread / Total</div>
-                  <div><span>Your line</span>Enter odds</div>
-                </div>
-                <p className="inqsi-empty" style={{ marginTop: 12 }}>Add the team, player, market, line, or odds you want scanned.</p>
-              </article>
-            ))}
-          </div>
+      <section className="inqsi-panel" style={{ marginTop: 18 }}>
+        <div className="inqsi-section-head"><h2>Analyzed Slip</h2><span className="data-status">3 Legs Detected</span></div>
+        <div className="game-list">
+          {[
+            ['BOS Celtics -6.5', 'Spread', '-110', '6:00 PM'],
+            ['LA Dodgers -1.5', 'Run Line', '-120', '7:15 PM'],
+            ['OKC Thunder -4.0', 'Spread', '-105', '8:30 PM']
+          ].map(([team, type, odds, start]) => (
+            <article className="game-card" key={team}>
+              <div className="game-topline"><span className="league-chip">LEG</span><span>{start}</span></div>
+              <h4>{team}</h4>
+              <div className="market-row">
+                <div><span>Market</span><strong>{type}</strong><b>{odds}</b></div>
+                <div><span>Signal</span><strong>Market Match</strong><b>Ready</b></div>
+                <div><span>Risk</span><strong>Review</strong><b>Pending</b></div>
+                <div><span>Status</span><strong>AI Scan</strong><b>Ready</b></div>
+              </div>
+            </article>
+          ))}
         </div>
-
-        <aside className="inqsi-panel">
-          <div className="inqsi-section-head"><h2>What the AI scans</h2><span>Risk review</span></div>
-          <div className="inqsi-game-list">
-            {reviewChecks.map((check) => (
-              <article className="inqsi-mini-card" key={check}>
-                <b>{check}</b>
-                <small>Runs when your pick is matched to verified market data.</small>
-              </article>
-            ))}
-          </div>
-        </aside>
       </section>
 
-      <section className="inqsi-panel">
-        <div className="inqsi-section-head"><h2>Scan result preview</h2><span>Risk check</span></div>
-        <div className="inqsi-feature-grid">
-          <article><b>Overall read</b><span>Clear / caution / do not force</span></article>
-          <article><b>Strongest leg</b><span>The cleanest market support in the slip</span></article>
-          <article><b>Weakest leg</b><span>The leg most likely to break structure</span></article>
-          <article><b>Best available line</b><span>Line-shopping note when market data supports it</span></article>
+      <section className="inqsi-layout" style={{ marginTop: 18 }}>
+        <div className="inqsi-panel">
+          <div className="inqsi-section-head"><h2>Scan Results</h2><span>AI Analysis</span></div>
+          <div className="inqsi-stat-grid">
+            {reviewChecks.map((check) => <div key={check}><b>{check}</b><span>Runs when your pick is matched to market-board data.</span></div>)}
+          </div>
         </div>
+        <aside className="inqsi-panel">
+          <div className="inqsi-section-head"><h2>Parlay Summary</h2><span>Preview</span></div>
+          <div className="market-row">
+            <div><span>Odds</span><strong>Overall</strong><b>+342</b></div>
+            <div><span>Confidence</span><strong>Score</strong><b>72</b></div>
+            <div><span>Structure</span><strong>3 Legs</strong><b>Clean</b></div>
+            <div><span>Result</span><strong>Read</strong><b>Pending</b></div>
+          </div>
+        </aside>
       </section>
     </main>
   );
