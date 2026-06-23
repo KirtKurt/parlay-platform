@@ -11,6 +11,11 @@ try:
 except Exception:
     admin_alerts = None
 
+try:
+    import cyber_security
+except Exception:
+    cyber_security = None
+
 
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -33,7 +38,7 @@ def out(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
             "content-type": "application/json",
             "access-control-allow-origin": "*",
             "access-control-allow-methods": "GET,OPTIONS",
-            "access-control-allow-headers": "content-type,authorization,x-inqsi-member-id",
+            "access-control-allow-headers": "content-type,authorization,x-inqsi-member-id,x-inqsi-admin-token",
         },
         "body": json.dumps(clean(body)),
     }
@@ -156,6 +161,7 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
         "dashboard": "creator_analytics",
         "recordsScanned": len(records),
         "adminAlertsDelegated": admin_alerts is not None,
+        "cyberSecurityDelegated": cyber_security is not None,
         "summary": {
             "creatorProfiles": len(profiles),
             "creatorApplications": len(applications),
@@ -181,6 +187,10 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     event = event or {}
+    if cyber_security is not None:
+        cyber_routed = cyber_security.route(event)
+        if cyber_routed is not None:
+            return cyber_routed
     if admin_alerts is not None:
         alert_routed = admin_alerts.route(event)
         if alert_routed is not None:
