@@ -16,6 +16,11 @@ try:
 except Exception:
     cyber_security = None
 
+try:
+    import odds_live_ingestion
+except Exception:
+    odds_live_ingestion = None
+
 
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -162,6 +167,7 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
         "recordsScanned": len(records),
         "adminAlertsDelegated": admin_alerts is not None,
         "cyberSecurityDelegated": cyber_security is not None,
+        "oddsLiveIngestionDelegated": odds_live_ingestion is not None,
         "summary": {
             "creatorProfiles": len(profiles),
             "creatorApplications": len(applications),
@@ -187,6 +193,10 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     event = event or {}
+    if odds_live_ingestion is not None:
+        odds_routed = odds_live_ingestion.route(event)
+        if odds_routed is not None:
+            return odds_routed
     if cyber_security is not None:
         cyber_routed = cyber_security.route(event)
         if cyber_routed is not None:
