@@ -31,6 +31,11 @@ try:
 except Exception:
     pull_integrity_audit = None
 
+try:
+    import market_board
+except Exception:
+    market_board = None
+
 
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -180,6 +185,7 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
         "oddsLiveIngestionDelegated": odds_live_ingestion is not None,
         "officialParlayLifecycleDelegated": official_parlay_lifecycle is not None,
         "pullIntegrityAuditDelegated": pull_integrity_audit is not None,
+        "marketBoardDelegated": market_board is not None,
         "summary": {
             "creatorProfiles": len(profiles),
             "creatorApplications": len(applications),
@@ -205,6 +211,10 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     event = event or {}
+    if market_board is not None:
+        market_routed = market_board.route(event)
+        if market_routed is not None:
+            return market_routed
     if pull_integrity_audit is not None:
         integrity_routed = pull_integrity_audit.route(event)
         if integrity_routed is not None:
