@@ -18,6 +18,7 @@ type GameLike = {
   favorite_ml?: number | string;
   underdogMl?: number | string;
   underdog_ml?: number | string;
+  spread?: number | string;
   total?: number | string;
   movement?: string;
   what_looks_wrong?: string;
@@ -61,6 +62,11 @@ export function GameCard({ game }: { game: GameLike }) {
           <span>Underdog</span>
           <strong>{game.underdog || game.away_team || 'Waiting'}</strong>
           <b>{formatOdds(game.underdogMl ?? game.underdog_ml)}</b>
+        </div>
+        <div>
+          <span>Spread</span>
+          <strong>Line</strong>
+          <b>{game.spread ?? 'Waiting'}</b>
         </div>
         <div>
           <span>Total</span>
