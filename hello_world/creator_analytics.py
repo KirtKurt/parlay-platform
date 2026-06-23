@@ -21,6 +21,11 @@ try:
 except Exception:
     odds_live_ingestion = None
 
+try:
+    import official_parlay_lifecycle
+except Exception:
+    official_parlay_lifecycle = None
+
 
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -168,6 +173,7 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
         "adminAlertsDelegated": admin_alerts is not None,
         "cyberSecurityDelegated": cyber_security is not None,
         "oddsLiveIngestionDelegated": odds_live_ingestion is not None,
+        "officialParlayLifecycleDelegated": official_parlay_lifecycle is not None,
         "summary": {
             "creatorProfiles": len(profiles),
             "creatorApplications": len(applications),
@@ -193,6 +199,10 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     event = event or {}
+    if official_parlay_lifecycle is not None:
+        official_parlay_routed = official_parlay_lifecycle.route(event)
+        if official_parlay_routed is not None:
+            return official_parlay_routed
     if odds_live_ingestion is not None:
         odds_routed = odds_live_ingestion.route(event)
         if odds_routed is not None:
