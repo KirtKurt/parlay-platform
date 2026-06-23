@@ -14,6 +14,11 @@ try:
 except Exception:
     account_integrity = None
 
+try:
+    import algorithm_analytics
+except Exception:
+    algorithm_analytics = None
+
 
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -125,18 +130,19 @@ def handle_health() -> Dict[str, Any]:
         "memberActivityDashboardReady": True,
         "subscriptionFunnelDashboardReady": True,
         "accountIntegrityStage1Delegated": account_integrity is not None,
+        "algorithmPerformanceDashboardDelegated": algorithm_analytics is not None,
         "supportedEventTypes": sorted(ALLOWED_EVENT_TYPES),
         "liveEndpoints": [
             "/v1/inqsi/analytics/health",
             "/v1/inqsi/analytics/event",
             "/v1/inqsi/admin/analytics/members",
             "/v1/inqsi/admin/analytics/funnel",
+            "/v1/inqsi/admin/analytics/algorithm",
             "/v1/inqsi/account-integrity/policy",
             "/v1/inqsi/account-integrity/signup-check",
             "/v1/inqsi/admin/account-integrity/summary",
         ],
         "nextBuilds": [
-            "algorithm_performance_dashboard",
             "market_data_quality_dashboard",
             "moderation_analytics_dashboard",
             "creator_analytics_dashboard",
@@ -310,6 +316,10 @@ def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         integrity_routed = account_integrity.route(event)
         if integrity_routed is not None:
             return integrity_routed
+    if algorithm_analytics is not None:
+        algorithm_routed = algorithm_analytics.route(event)
+        if algorithm_routed is not None:
+            return algorithm_routed
     method = (event.get("httpMethod") or event.get("requestContext", {}).get("http", {}).get("method") or "GET").upper()
     path = (event.get("rawPath") or event.get("path") or "/").rstrip("/") or "/"
     if method == "OPTIONS" and (path.startswith("/v1/inqsi/analytics") or path.startswith("/v1/analytics") or path.startswith("/v1/inqsi/admin/analytics") or path.startswith("/v1/admin/analytics")):
