@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AppHeader } from '@/components/AppHeader';
+import { GameCard } from '@/components/GameCard';
+import { getApiSnapshot } from '@/lib/api';
 
 const SPORTS = ['NFL', 'CFB', 'NBA', 'NCAAM', 'NHL', 'MLB', 'WNBA', 'Soccer', 'Tennis', 'MMA', 'Boxing', 'Golf', 'eSports'];
 const FOOTER_LINKS = [
@@ -31,7 +33,7 @@ function MarketPreviewCard({ label }: { label: string }) {
     <article className="inqsi-game-card">
       <div className="inqsi-game-row"><b>{label}</b><span className="inqsi-score-chip">Pending</span></div>
       <div className="inqsi-team-stack">
-        <div className="inqsi-team"><span className="inqsi-jersey">A</span><span><b>Market side A</b><small>Waiting for market data</small></span></div>
+        <div className="inqsi-team"><span className="inqsi-jersey">A</span><span><b>Market side A</b><small>Waiting for active-slate market data</small></span></div>
         <div className="inqsi-team"><span className="inqsi-jersey">B</span><span><b>Market side B</b><small>No artificial data shown</small></span></div>
       </div>
       <div className="inqsi-market-grid"><div><span>ML</span>Pending</div><div><span>Spread</span>Pending</div><div><span>Total</span>Pending</div></div>
@@ -40,13 +42,16 @@ function MarketPreviewCard({ label }: { label: string }) {
   );
 }
 
-export default function Home() {
+export default async function Home() {
+  const { games, apiStatus, apiDetail } = await getApiSnapshot();
+  const activeGames = games.slice(0, 6);
+  const hasMarketData = activeGames.length > 0;
   const boardSlots = ['Game slot 1', 'Game slot 2', 'Game slot 3'];
 
   return (
     <main className="inqsi-shell">
       <a className="inqsi-skip-link" href="#main-content">Skip to main content</a>
-      <AppHeader eyebrow="InQsi" title="Market Intelligence" />
+      <AppHeader eyebrow="InQsi" title="Market Intelligence" apiStatus={apiStatus} apiDetail={apiDetail} />
 
       <section className="inqsi-hero inqsi-mockup-hero" id="main-content">
         <div className="inqsi-hero-card">
@@ -55,7 +60,7 @@ export default function Home() {
           <p>InQsi helps members find hidden risk before they lock in a slip. The platform reviews market movement, scans thousands of market signals, and checks each slip for weak legs, instability, and warning signs.</p>
           <div className="inqsi-stat-grid" aria-label="InQsi value proposition">
             <div><b>Sportsbooks Evaluated</b><span>Major sportsbook markets monitored</span></div>
-            <div><b>Market Signals</b><span>Thousands of data points analyzed</span></div>
+            <div><b>Market Signals</b><span>{hasMarketData ? `${activeGames.length} active games showing now` : 'Active slate feed connected'}</span></div>
             <div><b>Risk Detection</b><span>Weak legs surfaced before lock-in</span></div>
             <div><b>AI Slip Scanner</b><span>Your picks scanned for where they go wrong</span></div>
           </div>
@@ -74,8 +79,15 @@ export default function Home() {
       <section className="inqsi-layout inqsi-mock-dashboard">
         <div>
           <section className="inqsi-panel">
-            <div className="inqsi-section-head"><h2>Sports Market Board</h2><span>Market data pending</span></div>
-            <div className="inqsi-game-list">{boardSlots.map((slot) => <MarketPreviewCard key={slot} label={slot} />)}</div>
+            <div className="inqsi-section-head">
+              <h2>Sports Market Board</h2>
+              <span>{hasMarketData ? 'Active-slate data live' : 'Waiting for active slate'}</span>
+            </div>
+            <div className="inqsi-game-list">
+              {hasMarketData
+                ? activeGames.map((game) => <GameCard game={game} key={game.id} />)
+                : boardSlots.map((slot) => <MarketPreviewCard key={slot} label={slot} />)}
+            </div>
           </section>
         </div>
         <aside className="inqsi-panel">
@@ -87,7 +99,7 @@ export default function Home() {
 
       <footer className="inqsi-footer-links" aria-label="InQsi footer navigation">
         {FOOTER_LINKS.map(([label, href]) => <Link key={label} href={href}>{label}</Link>)}
-        <span aria-label="deployment version">deploy: member-fix-2026-06-21-01</span>
+        <span aria-label="deployment version">deploy: active-market-board-home-2026-06-23</span>
       </footer>
     </main>
   );
