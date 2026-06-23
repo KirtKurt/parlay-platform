@@ -1,0 +1,434 @@
+{
+  "ok": true,
+  "createdAt": "2026-06-23T17:58:41.241332+00:00",
+  "repo": "KirtKurt/parlay-platform",
+  "workflow": "Inqis Live Odds Pulls",
+  "runId": "28046188863",
+  "runNumber": "14",
+  "eventName": "push",
+  "oddsApiKeyPresent": true,
+  "snapshotsTable": "parlay_platform_snapshots",
+  "sportsRequested": [
+    "mlb",
+    "soccer",
+    "tennis",
+    "nfl",
+    "cfb",
+    "nba",
+    "wnba",
+    "ncaam",
+    "nhl"
+  ],
+  "sportsWithStoredGamesFromPull": [
+    "mlb",
+    "soccer",
+    "nfl",
+    "college_football_men",
+    "wnba"
+  ],
+  "sportsVisibleOnMarketBoard": [
+    "mlb",
+    "soccer",
+    "nfl",
+    "wnba"
+  ],
+  "totalGamesVisibleOnMarketBoard": 108,
+  "pullOk": true,
+  "marketBoardOk": true,
+  "pullResults": [
+    {
+      "ok": true,
+      "appSport": "mlb",
+      "gamesStored": 17,
+      "providerPulls": [
+        {
+          "ok": true,
+          "providerSportKey": "baseball_mlb",
+          "rawGamesReturned": 17,
+          "gamesStored": 17,
+          "stored": {
+            "pk": "PULLS#mlb#2026-06-23",
+            "sk": "PULL#2026-06-23T17:58:41.605520+00:00#pull_21f6669044c5437e",
+            "pull_id": "pull_21f6669044c5437e",
+            "game_count": 17
+          },
+          "error": null
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "appSport": "soccer",
+      "gamesStored": 10,
+      "providerPulls": [
+        {
+          "ok": false,
+          "providerSportKey": "soccer_usa_mls",
+          "rawGamesReturned": 0,
+          "gamesStored": 0,
+          "stored": null,
+          "error": "games_required"
+        },
+        {
+          "ok": true,
+          "providerSportKey": "soccer_epl",
+          "rawGamesReturned": 10,
+          "gamesStored": 10,
+          "stored": {
+            "pk": "PULLS#soccer#2026-06-23",
+            "sk": "PULL#2026-06-23T17:58:42.373083+00:00#pull_e4f6beaccad74e81",
+            "pull_id": "pull_e4f6beaccad74e81",
+            "game_count": 10
+          },
+          "error": null
+        },
+        {
+          "ok": false,
+          "providerSportKey": "soccer_uefa_champs_league",
+          "rawGamesReturned": 0,
+          "gamesStored": 0,
+          "stored": null,
+          "error": "games_required"
+        }
+      ]
+    },
+    {
+      "ok": false,
+      "appSport": "tennis",
+      "gamesStored": 0,
+      "providerPulls": [
+        {
+          "ok": false,
+          "providerSportKey": "tennis_atp_singles",
+          "rawGamesReturned": null,
+          "gamesStored": null,
+          "stored": null,
+          "error": {
+            "errorType": "HTTPError",
+            "message": "HTTP Error 404: Not Found",
+            "httpStatus": 404,
+            "reason": "Not Found",
+            "upstreamBodySample": "{\"message\":\"Unknown sport\",\"error_code\":\"UNKNOWN_SPORT\",\"details_url\":\"https://the-odds-api.com/liveapi/guides/v4/api-error-codes.html#unknown-sport\"}\n"
+          }
+        },
+        {
+          "ok": false,
+          "providerSportKey": "tennis_wta_singles",
+          "rawGamesReturned": null,
+          "gamesStored": null,
+          "stored": null,
+          "error": {
+            "errorType": "HTTPError",
+            "message": "HTTP Error 404: Not Found",
+            "httpStatus": 404,
+            "reason": "Not Found",
+            "upstreamBodySample": "{\"message\":\"Unknown sport\",\"error_code\":\"UNKNOWN_SPORT\",\"details_url\":\"https://the-odds-api.com/liveapi/guides/v4/api-error-codes.html#unknown-sport\"}\n"
+          }
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "appSport": "nfl",
+      "gamesStored": 75,
+      "providerPulls": [
+        {
+          "ok": true,
+          "providerSportKey": "americanfootball_nfl",
+          "rawGamesReturned": 75,
+          "gamesStored": 75,
+          "stored": {
+            "pk": "PULLS#nfl#2026-06-23",
+            "sk": "PULL#2026-06-23T17:58:43.446684+00:00#pull_7381b936f2d54a64",
+            "pull_id": "pull_7381b936f2d54a64",
+            "game_count": 75
+          },
+          "error": null
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "appSport": "college_football_men",
+      "gamesStored": 78,
+      "providerPulls": [
+        {
+          "ok": true,
+          "providerSportKey": "americanfootball_ncaaf",
+          "rawGamesReturned": 78,
+          "gamesStored": 78,
+          "stored": {
+            "pk": "PULLS#cfb#2026-06-23",
+            "sk": "PULL#2026-06-23T17:58:44.029585+00:00#pull_f09b9f2d6934495a",
+            "pull_id": "pull_f09b9f2d6934495a",
+            "game_count": 55
+          },
+          "error": null
+        }
+      ]
+    },
+    {
+      "ok": false,
+      "appSport": "nba",
+      "gamesStored": 0,
+      "providerPulls": [
+        {
+          "ok": false,
+          "providerSportKey": "basketball_nba",
+          "rawGamesReturned": 0,
+          "gamesStored": 0,
+          "stored": null,
+          "error": "games_required"
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "appSport": "wnba",
+      "gamesStored": 6,
+      "providerPulls": [
+        {
+          "ok": true,
+          "providerSportKey": "basketball_wnba",
+          "rawGamesReturned": 6,
+          "gamesStored": 6,
+          "stored": {
+            "pk": "PULLS#wnba#2026-06-23",
+            "sk": "PULL#2026-06-23T17:58:44.525326+00:00#pull_5b0d8e99517a47df",
+            "pull_id": "pull_5b0d8e99517a47df",
+            "game_count": 6
+          },
+          "error": null
+        }
+      ]
+    },
+    {
+      "ok": false,
+      "appSport": "ncaam",
+      "gamesStored": 0,
+      "providerPulls": [
+        {
+          "ok": false,
+          "providerSportKey": "basketball_ncaab",
+          "rawGamesReturned": 0,
+          "gamesStored": 0,
+          "stored": null,
+          "error": "games_required"
+        }
+      ]
+    },
+    {
+      "ok": false,
+      "appSport": "nhl",
+      "gamesStored": 0,
+      "providerPulls": [
+        {
+          "ok": false,
+          "providerSportKey": "icehockey_nhl",
+          "rawGamesReturned": 0,
+          "gamesStored": 0,
+          "stored": null,
+          "error": "games_required"
+        }
+      ]
+    }
+  ],
+  "marketBoards": [
+    {
+      "ok": true,
+      "sport": "mlb",
+      "slate_date": "2026-06-23",
+      "pullCount": 1,
+      "latestPulledAt": "2026-06-23T17:58:41.605520+00:00",
+      "source": "the_odds_api",
+      "providerSportKey": null,
+      "gameCount": 17,
+      "sampleGames": [
+        {
+          "gameId": "6bdf881264922e973fe4c3736ec56434",
+          "homeTeam": "Toronto Blue Jays",
+          "awayTeam": "Houston Astros",
+          "commenceTime": "2026-06-23T20:08:00Z",
+          "bookCount": 11
+        },
+        {
+          "gameId": "a43d950c1c96c23836217db2342cee9e",
+          "homeTeam": "Detroit Tigers",
+          "awayTeam": "New York Yankees",
+          "commenceTime": "2026-06-23T22:41:00Z",
+          "bookCount": 11
+        },
+        {
+          "gameId": "9fa5e76b55b273aa4d6f75fb24292c4b",
+          "homeTeam": "Tampa Bay Rays",
+          "awayTeam": "Kansas City Royals",
+          "commenceTime": "2026-06-23T22:41:00Z",
+          "bookCount": 11
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "sport": "soccer",
+      "slate_date": "2026-06-23",
+      "pullCount": 1,
+      "latestPulledAt": "2026-06-23T17:58:42.373083+00:00",
+      "source": "the_odds_api",
+      "providerSportKey": null,
+      "gameCount": 10,
+      "sampleGames": [
+        {
+          "gameId": "eb2553d10d63dc912b99f8fd0d675721",
+          "homeTeam": "Arsenal",
+          "awayTeam": "Coventry City",
+          "commenceTime": "2026-08-21T19:00:00Z",
+          "bookCount": 7
+        },
+        {
+          "gameId": "95bb16d19debff3ec39919f361f072a4",
+          "homeTeam": "Hull City",
+          "awayTeam": "Manchester United",
+          "commenceTime": "2026-08-22T11:30:00Z",
+          "bookCount": 7
+        },
+        {
+          "gameId": "cd1f0173ec061d9b8a8b22ab8f2f8393",
+          "homeTeam": "Everton",
+          "awayTeam": "Crystal Palace",
+          "commenceTime": "2026-08-22T14:00:00Z",
+          "bookCount": 7
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "sport": "tennis",
+      "slate_date": null,
+      "pullCount": 0,
+      "latestPulledAt": null,
+      "source": null,
+      "providerSportKey": null,
+      "gameCount": 0,
+      "sampleGames": []
+    },
+    {
+      "ok": true,
+      "sport": "nfl",
+      "slate_date": "2026-06-23",
+      "pullCount": 1,
+      "latestPulledAt": "2026-06-23T17:58:43.446684+00:00",
+      "source": "the_odds_api",
+      "providerSportKey": null,
+      "gameCount": 75,
+      "sampleGames": [
+        {
+          "gameId": "8c94552d022acec4a0458d70c19d3da9",
+          "homeTeam": "Seattle Seahawks",
+          "awayTeam": "New England Patriots",
+          "commenceTime": "2026-09-10T00:15:00Z",
+          "bookCount": 11
+        },
+        {
+          "gameId": "acc580d74344ea3b31bbcdd057fe6a9c",
+          "homeTeam": "Los Angeles Rams",
+          "awayTeam": "San Francisco 49ers",
+          "commenceTime": "2026-09-11T00:35:00Z",
+          "bookCount": 10
+        },
+        {
+          "gameId": "95c01d1bb797d6df14824b106c5a9130",
+          "homeTeam": "Pittsburgh Steelers",
+          "awayTeam": "Atlanta Falcons",
+          "commenceTime": "2026-09-13T17:00:00Z",
+          "bookCount": 11
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "sport": "cfb",
+      "slate_date": null,
+      "pullCount": 0,
+      "latestPulledAt": null,
+      "source": null,
+      "providerSportKey": null,
+      "gameCount": 0,
+      "sampleGames": []
+    },
+    {
+      "ok": true,
+      "sport": "nba",
+      "slate_date": null,
+      "pullCount": 0,
+      "latestPulledAt": null,
+      "source": null,
+      "providerSportKey": null,
+      "gameCount": 0,
+      "sampleGames": []
+    },
+    {
+      "ok": true,
+      "sport": "wnba",
+      "slate_date": "2026-06-23",
+      "pullCount": 1,
+      "latestPulledAt": "2026-06-23T17:58:44.525326+00:00",
+      "source": "the_odds_api",
+      "providerSportKey": null,
+      "gameCount": 6,
+      "sampleGames": [
+        {
+          "gameId": "af1aeef79363a87b5281548ad03acd9b",
+          "homeTeam": "Las Vegas Aces",
+          "awayTeam": "New York Liberty",
+          "commenceTime": "2026-06-24T02:05:00Z",
+          "bookCount": 11
+        },
+        {
+          "gameId": "f150838f56bc7336247f553661f55a32",
+          "homeTeam": "Indiana Fever",
+          "awayTeam": "Phoenix Mercury",
+          "commenceTime": "2026-06-24T23:30:00Z",
+          "bookCount": 7
+        },
+        {
+          "gameId": "e4cee4945c1e6df74d07a00971eecd19",
+          "homeTeam": "Washington Mystics",
+          "awayTeam": "Minnesota Lynx",
+          "commenceTime": "2026-06-24T23:40:00Z",
+          "bookCount": 7
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "sport": "ncaam",
+      "slate_date": null,
+      "pullCount": 0,
+      "latestPulledAt": null,
+      "source": null,
+      "providerSportKey": null,
+      "gameCount": 0,
+      "sampleGames": []
+    },
+    {
+      "ok": true,
+      "sport": "nhl",
+      "slate_date": null,
+      "pullCount": 0,
+      "latestPulledAt": null,
+      "source": null,
+      "providerSportKey": null,
+      "gameCount": 0,
+      "sampleGames": []
+    }
+  ],
+  "storageShape": {
+    "table": "parlay_platform_snapshots",
+    "partitionKeyPattern": "PULLS#{sport}#{slate_date}",
+    "sortKeyPattern": "PULL#{pulled_at}#{pull_id}",
+    "recordType": "pull_run",
+    "siloedBySport": true,
+    "siloedByDay": true,
+    "timestamped": true
+  }
+}
