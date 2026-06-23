@@ -4,6 +4,8 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
 
+from boto3.dynamodb.conditions import Key
+
 try:
     import inqsi_pull_history
 except Exception:
@@ -13,6 +15,7 @@ except Exception:
 DEFAULT_SPORTS = ["nfl", "cfb", "mlb", "nba", "wnba", "ncaam", "nhl", "tennis", "soccer"]
 MIN_OFFICIAL_PULLS = int(os.environ.get("INQSI_MIN_PARLAY_PULLS", "12"))
 BUILD_CUTOFF_MINUTES = int(os.environ.get("INQSI_PARLAY_BUILD_CUTOFF_MINUTES", "60"))
+OFFICIAL_BUILD_MODES = {"official_hourly_lifecycle", "auto_after_live_pull"}
 
 
 def clean(value: Any) -> Any:
@@ -221,6 +224,107 @@ def run_many(p: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _latest_official_item(sport: str, slate_date: Optional[str]) -> Optional[Dict[str, Any]]:
+    if inqsi_pull_history is None or getattr(inqsi_pull_history, "PULLS", None) is None:
+        return None
+    sport = sport_key(sport)
+    slate = slate_date or today()
+    res = inqsi_pull_history.PULLS.query(
+        KeyConditionExpression=Key("PK").eq(f"PARLAY_BUILDS#{sport}#{slate}"),
+        ScanIndexForward=False,
+        Limit=25,
+    )
+    for item in res.get("Items") or []:
+        if item.get("record_type") != "three_leg_parlay_build":
+            continue
+        mode = str(item.get("mode") or "")
+        data = item.get("data") or {}
+        if mode in OFFICIAL_BUILD_MODES or data.get("officialParlayLifecycle") is True or data.get("officialBuild") is True:
+            return item
+    return None
+
+
+def _audit_build_item(item: Optional[Dict[str, Any]], sport: str, slate_date: Optional[str]) -> Dict[str, Any]:
+    if not item:
+        return {
+            "ok": True,
+            "sport": sport,
+            "slate_date": slate_date or today(),
+            "auditStatus": "NO_OFFICIAL_BUILD_FOUND",
+            "memberSlipsIncluded": False,
+            "sourcePartition": f"PARLAY_BUILDS#{sport}#{slate_date or today()}",
+            "message": "No official Inqis parlay build exists yet for this sport/slate. Member slips were not scanned or included.",
+        }
+    data = item.get("data") or {}
+    legs = data.get("legs") or []
+    ranked = data.get("rankedCombos") or []
+    issues: List[Dict[str, Any]] = []
+    if item.get("record_type") != "three_leg_parlay_build":
+        issues.append({"severity": "ERROR", "type": "wrong_record_type", "actual": item.get("record_type")})
+    if str(item.get("mode") or "") not in OFFICIAL_BUILD_MODES and not data.get("officialParlayLifecycle") and not data.get("officialBuild"):
+        issues.append({"severity": "ERROR", "type": "non_official_build_mode", "mode": item.get("mode")})
+    if data.get("sport") != sport:
+        issues.append({"severity": "ERROR", "type": "sport_mismatch", "expected": sport, "actual": data.get("sport")})
+    if data.get("buildStatus") == "BUILT" and len(legs) != 3:
+        issues.append({"severity": "ERROR", "type": "official_build_does_not_have_three_legs", "legCount": len(legs)})
+    if data.get("buildStatus") == "BUILT" and len(ranked) != 8:
+        issues.append({"severity": "ERROR", "type": "official_build_does_not_have_eight_ranked_combos", "comboCount": len(ranked)})
+    game_ids = [leg.get("gameId") or leg.get("game_id") for leg in legs]
+    if len([g for g in game_ids if g]) != len(set([g for g in game_ids if g])):
+        issues.append({"severity": "ERROR", "type": "duplicate_game_in_official_three_leg_build", "gameIds": game_ids})
+    if data.get("pullCount") is not None and int(data.get("pullCount") or 0) < MIN_OFFICIAL_PULLS and data.get("buildStatus") == "BUILT":
+        issues.append({"severity": "ERROR", "type": "built_before_12_pull_gate", "pullCount": data.get("pullCount")})
+    return {
+        "ok": not issues,
+        "sport": sport,
+        "slate_date": slate_date or today(),
+        "auditStatus": "PASS" if not issues else "FAIL",
+        "memberSlipsIncluded": False,
+        "memberSlipSourceExcluded": True,
+        "auditScope": "latest_official_inqis_build_only",
+        "sourcePartition": item.get("PK"),
+        "sourceSortKey": item.get("SK"),
+        "recordType": item.get("record_type"),
+        "mode": item.get("mode"),
+        "createdAt": item.get("created_at"),
+        "buildId": item.get("build_id"),
+        "buildStatus": data.get("buildStatus"),
+        "reason": data.get("reason"),
+        "pullCount": data.get("pullCount"),
+        "minimumOfficialParlayPulls": MIN_OFFICIAL_PULLS,
+        "legCount": len(legs),
+        "rankedComboCount": len(ranked),
+        "topThreeCombos": [c for c in ranked if c.get("top3")][:3],
+        "latestOfficialBuild": data,
+        "issues": issues,
+    }
+
+
+def audit_latest_official(p: Dict[str, Any]) -> Dict[str, Any]:
+    sports = sports_from(p.get("sports") or p.get("sport"))
+    slate_date = p.get("slate_date")
+    reports = []
+    for sport in sports:
+        item = _latest_official_item(sport, slate_date)
+        reports.append(_audit_build_item(item, sport, slate_date))
+    return {
+        "ok": all(r.get("ok") for r in reports),
+        "audit": "latest_official_parlay_build_only_v1",
+        "checkedAt": now_iso(),
+        "sportsChecked": sports,
+        "memberSlipsIncluded": False,
+        "memberSlipsExcludedByDesign": True,
+        "source": "PARLAY_BUILDS partition only",
+        "summary": {
+            "reports": len(reports),
+            "passed": sum(1 for r in reports if r.get("ok")),
+            "failed": sum(1 for r in reports if not r.get("ok")),
+            "noOfficialBuildFound": sum(1 for r in reports if r.get("auditStatus") == "NO_OFFICIAL_BUILD_FOUND"),
+        },
+        "reports": reports,
+    }
+
+
 def latest(sport: str, slate_date: Optional[str]) -> Dict[str, Any]:
     if inqsi_pull_history is None:
         return {"ok": False, "error": "pull_history_module_unavailable"}
@@ -242,6 +346,8 @@ def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     p = params(event)
     if path in {"/v1/inqsi/admin/parlays/hourly-build", "/v1/admin/parlays/hourly-build"} and method in {"GET", "POST"}:
         return out(200, run_many(p))
+    if path in {"/v1/inqsi/admin/parlays/audit-latest", "/v1/admin/parlays/audit-latest", "/v1/inqsi/admin/parlays/latest-audit"} and method == "GET":
+        return out(200, audit_latest_official(p))
     if path in {"/v1/inqsi/parlays/official/status", "/v1/inqsi/parlays/official/run-status"} and method == "GET":
         return out(200, run_many({**p, "store": "false"}))
     if path in {"/v1/inqsi/parlays/official/latest", "/v1/inqsi/pull-history/parlay/official/latest"} and method == "GET":
