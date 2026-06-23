@@ -54,3 +54,7 @@ jobs:
             -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
             "${API_URL}v1/inqsi/odds/pull?all=${ALL_FLAG}&sports=${SPORTS}" \
             | python -m json.tool
+          curl --fail --silent --show-error \
+            -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
+            "${API_URL}v1/inqsi/admin/parlays/auto-build?sports=${SPORTS}&store=true" \
+            | python -m json.tool
