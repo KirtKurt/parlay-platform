@@ -66,6 +66,38 @@ jobs:
             --policy-name InqsiImageModerationRekognitionAccess \
             --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["rekognition:DetectModerationLabels","rekognition:DetectText"],"Resource":"*"}]}'
 
+      - name: Configure admin API token
+        env:
+          INQSI_ADMIN_API_TOKEN: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+        run: |
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --logical-resource-id ApiFunction \
+            --query "StackResourceDetail.PhysicalResourceId" \
+            --output text)
+          test -n "$FUNCTION_NAME"
+          aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --query "Environment.Variables" \
+            --output json > current-env.json
+          python - <<'PY'
+          import json, os
+          with open('current-env.json') as f:
+              variables = json.load(f) or {}
+          token = os.environ.get('INQSI_ADMIN_API_TOKEN', '').strip()
+          if token:
+              variables['INQSI_ADMIN_API_TOKEN'] = token
+          else:
+              variables.pop('INQSI_ADMIN_API_TOKEN', None)
+          with open('lambda-env.json', 'w') as f:
+              json.dump({'Variables': variables}, f)
+          PY
+          aws lambda update-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --environment file://lambda-env.json >/tmp/lambda-update.json
+          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
+
       - name: Read stack outputs
         id: stack_outputs
         run: |
@@ -89,6 +121,8 @@ jobs:
           curl --fail --silent --show-error "${API_URL}v1/inqsi/images/moderation-policy"
 
       - name: Smoke test moderation queue workflow
+        env:
+          INQSI_ADMIN_API_TOKEN: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           test -n "$API_URL"
