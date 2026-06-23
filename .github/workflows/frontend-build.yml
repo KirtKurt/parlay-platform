@@ -1,0 +1,41 @@
+name: Inqis Frontend Build
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-build.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'frontend/**'
+      - '.github/workflows/frontend-build.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build frontend
+        env:
+          NEXT_PUBLIC_INQSI_API_URL: ${{ secrets.NEXT_PUBLIC_INQSI_API_URL }}
+          NEXT_PUBLIC_INQSI_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_INQSI_API_BASE_URL }}
+          NEXT_PUBLIC_API_BASE_URL: ${{ secrets.NEXT_PUBLIC_API_BASE_URL }}
+          INQSI_API_URL: ${{ secrets.INQSI_API_URL }}
+          API_URL: ${{ secrets.API_URL }}
+        run: npm run build
