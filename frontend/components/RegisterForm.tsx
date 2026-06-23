@@ -3,7 +3,7 @@
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createDemoMemberSession, saveMemberSession } from '@/lib/memberSession';
-import { registrationSports, registrationStates } from '@/lib/subscription';
+import { registrationStates } from '@/lib/subscription';
 
 export function RegisterForm() {
   const router = useRouter();
@@ -28,7 +28,7 @@ export function RegisterForm() {
         <div>
           <p className="eyebrow blue">New member</p>
           <h3>Create your InQsi account</h3>
-          <p className="slip-note">Start the 5-day free promo and enter your workspace.</p>
+          <p className="slip-note">Start the 5-day free promo. One membership includes every supported sport.</p>
         </div>
       </div>
 
@@ -37,8 +37,11 @@ export function RegisterForm() {
         <label className="field-card"><span>Last name</span><input required name="lastName" placeholder="Last name" /></label>
         <label className="field-card"><span>Email</span><input required name="email" type="email" placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
         <label className="field-card"><span>Phone</span><input name="phone" type="tel" placeholder="Mobile number" /></label>
-        <label className="field-card"><span>State</span><select required name="state"><option value="">Select state</option>{registrationStates.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
-        <label className="field-card"><span>Primary sport</span><select required name="primarySport"><option value="">Select sport</option>{registrationSports.map((sport) => <option key={sport} value={sport}>{sport}</option>)}</select></label>
+        <label className="field-card full-span"><span>State</span><select required name="state"><option value="">Select state</option>{registrationStates.map((state) => <option key={state} value={state}>{state}</option>)}</select></label>
+      </div>
+
+      <div className="compliance-box">
+        Full Access includes NFL, CFB, NBA, NCAAM, MLB, WNBA, NHL, Soccer, Tennis, and future supported sports as they are added.
       </div>
 
       <button className="primary-button large" type="submit">Create account and enter workspace</button>
