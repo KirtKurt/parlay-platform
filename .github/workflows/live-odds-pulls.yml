@@ -1,6 +1,13 @@
 name: Inqis Live Odds Pulls
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/live-odds-pulls.yml'
+      - 'hello_world/odds_live_ingestion.py'
+      - 'hello_world/market_board.py'
+      - 'hello_world/inqsi_pull_history.py'
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
