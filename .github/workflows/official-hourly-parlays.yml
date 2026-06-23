@@ -8,7 +8,7 @@ on:
       sports:
         description: 'Comma-separated sports to evaluate for official Inqis parlays'
         required: false
-        default: 'nfl,cfb,mlb,nba,wnba,ncaam,nhl,tennis,soccer'
+        default: 'nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer'
 
 jobs:
   build-official-parlays:
@@ -38,7 +38,7 @@ jobs:
           INPUT_SPORTS: ${{ github.event.inputs.sports }}
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          SPORTS="${INPUT_SPORTS:-nfl,cfb,mlb,nba,wnba,ncaam,nhl,tennis,soccer}"
+          SPORTS="${INPUT_SPORTS:-nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer}"
           test -n "$ADMIN_TOKEN"
           curl --fail --silent --show-error \
             -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
