@@ -3,6 +3,11 @@ import os
 from hmac import compare_digest
 from typing import Any, Dict, Optional
 
+try:
+    import cyber_security
+except Exception:
+    cyber_security = None
+
 
 TOKEN_ENV = "INQSI_ADMIN_API_TOKEN"
 
@@ -51,6 +56,15 @@ def supplied_token(event: Dict[str, Any]) -> str:
     return str(token).strip()
 
 
+def log_auth_event(event_type: str, event: Dict[str, Any], p: str, m: str) -> None:
+    if cyber_security is None:
+        return
+    try:
+        cyber_security.record_security_event(event_type, event, {"path": p, "method": m})
+    except Exception:
+        pass
+
+
 def check(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     event = event or {}
     p = path(event)
@@ -62,6 +76,7 @@ def check(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     configured = str(os.environ.get(TOKEN_ENV) or "").strip()
     if not configured:
+        log_auth_event("ADMIN_AUTH_NOT_CONFIGURED", event, p, m)
         return response(503, {
             "ok": False,
             "error": "admin_auth_not_configured",
@@ -70,7 +85,9 @@ def check(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
     provided = supplied_token(event)
     if not provided:
+        log_auth_event("ADMIN_TOKEN_MISSING", event, p, m)
         return response(401, {"ok": False, "error": "admin_token_required"})
     if not compare_digest(provided, configured):
+        log_auth_event("ADMIN_TOKEN_INVALID", event, p, m)
         return response(403, {"ok": False, "error": "admin_token_invalid"})
     return None
