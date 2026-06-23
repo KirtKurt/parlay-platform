@@ -1,0 +1,47 @@
+name: Inqis Verify Market Pulls
+
+on:
+  workflow_dispatch:
+    inputs:
+      sports:
+        description: 'Comma-separated sports to verify'
+        required: false
+        default: 'mlb,soccer,tennis,nfl,cfb'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Read API URL
+        id: stack_outputs
+        run: |
+          API_URL=$(aws cloudformation describe-stacks --stack-name parlay-platform-dev --region ${{ secrets.AWS_REGION }} --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          test -n "$API_URL"
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+
+      - name: Pull and verify rows
+        env:
+          ADMIN_TOKEN: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+          INPUT_SPORTS: ${{ github.event.inputs.sports }}
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          SPORTS="${INPUT_SPORTS:-mlb,soccer,tennis,nfl,cfb}"
+          test -n "$ADMIN_TOKEN"
+          curl --fail --silent --show-error -H "x-inqsi-admin-token: $ADMIN_TOKEN" "${API_URL}v1/inqsi/odds/pull?all=true&sports=${SPORTS}" | tee pull.json | python -m json.tool
+          curl --fail --silent --show-error -H "x-inqsi-admin-token: $ADMIN_TOKEN" "${API_URL}v1/inqsi/admin/data/pull-integrity?sports=${SPORTS}" | tee audit.json | python -m json.tool
+          python - <<'PY'
+          import json, sys
+          audit = json.load(open('audit.json'))
+          reports = audit.get('reports') or []
+          active = [r for r in reports if (r.get('pullCount') or 0) >= 1 and (r.get('gameRowsScanned') or 0) >= 1]
+          print('activeSportsWithStoredRows=', [r.get('sport') for r in active])
+          if not active:
+              sys.exit('No stored market rows confirmed yet')
+          PY
