@@ -4,14 +4,7 @@ import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
 import { SignalPill } from '@/components/SignalPill';
 import { LineMovementGraph } from '@/components/LineMovementGraph';
-import { PaidPreviewGate } from '@/components/PaidPreviewGate';
 import { getSportSlugForLeague } from '@/lib/sports';
-import { SportEquipmentIcon, TeamJerseyBadge } from '@/components/SportVisuals';
-
-function splitMatchup(matchup: string) {
-  const pieces = matchup.split(/\s+@\s+|\s+vs\.?\s+/i).map((piece) => piece.trim()).filter(Boolean);
-  return pieces.length >= 2 ? [pieces[0], pieces[1]] : [matchup, 'Opponent'];
-}
 
 export default async function GameDetailPage({ params }: { params: { gameId: string } }) {
   const { games, lineMovement, apiStatus, apiDetail } = await getApiSnapshot();
@@ -19,89 +12,56 @@ export default async function GameDetailPage({ params }: { params: { gameId: str
 
   if (!game) notFound();
 
-  const sportSlug = getSportSlugForLeague(game.league);
-  const [leftTeam, rightTeam] = splitMatchup(game.matchup);
+  const sportSlug = getSportSlugForLeague(game.league || game.sport_key);
 
   return (
     <main className="shell">
-      <AppHeader title="Game detail terminal" apiStatus={apiStatus} apiDetail={apiDetail} />
+      <AppHeader title="Game Detail" apiStatus={apiStatus} apiDetail={apiDetail} />
 
-      <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
-        <p className="eyebrow blue"><SportEquipmentIcon slug={sportSlug} size="small" /> {game.league} · {game.start}</p>
-        <div className="team-badge-row" style={{ margin: '10px 0 12px' }}>
-          <TeamJerseyBadge teamName={leftTeam} size="large" />
-          <b>vs</b>
-          <TeamJerseyBadge teamName={rightTeam} size="large" />
-        </div>
-        <h2>{game.matchup}</h2>
-        <p className="hero-copy">{game.movement}</p>
+      <section className="panel" style={{ marginBottom: 18 }}>
+        <div className="game-topline"><span className="league-chip">{game.league}</span><span>{game.start}</span><span className="data-status">{game.status_label || 'Live'}</span></div>
+        <h2 style={{ marginBottom: 12 }}>{game.matchup}</h2>
+        <p className="movement">{game.movement}</p>
         <div className="hero-actions">
-          <Link className="primary-button large" href="/register" style={{ textDecoration: 'none' }}>Unlock Full Detail</Link>
-          <Link className="ghost-button large" href={`/sports/${sportSlug}`} style={{ textDecoration: 'none' }}>Back to {game.league}</Link>
-          <Link className="ghost-button large" href="/login" style={{ textDecoration: 'none' }}>Log In</Link>
+          <Link className="ghost-button" href={`/sports/${sportSlug}`} style={{ textDecoration: 'none' }}>Back to Market Board</Link>
+          <Link className="inqsi-primary" href="/parlays" style={{ textDecoration: 'none' }}>Build With This Game</Link>
+        </div>
+      </section>
+
+      <section className="panel" style={{ marginBottom: 18 }}>
+        <div className="panel-header"><div><p className="eyebrow">Live Market Snapshot</p><h3>Moneyline, spread, and total</h3></div></div>
+        <div className="market-row">
+          <div><span>Favorite</span><strong>{game.favorite}</strong><b>{game.favoriteMl || game.favorite_ml || 'Waiting'}</b></div>
+          <div><span>Underdog</span><strong>{game.underdog}</strong><b>{game.underdogMl || game.underdog_ml || 'Waiting'}</b></div>
+          <div><span>Spread</span><strong>Line</strong><b>{game.spread || 'Waiting'}</b></div>
+          <div><span>Total</span><strong>O/U</strong><b>{game.total || 'Waiting'}</b></div>
         </div>
       </section>
 
       <section className="status-row">
-        <article className="status-card"><TeamJerseyBadge teamName={game.favorite} /><span>Favorite</span><strong>{game.favorite}</strong><p>Preview only. Full moneyline path is locked.</p></article>
-        <article className="status-card"><TeamJerseyBadge teamName={game.underdog} /><span>Underdog</span><strong>{game.underdog}</strong><p>Preview only. Comparator book detail is locked.</p></article>
-        <article className="status-card"><SportEquipmentIcon slug={sportSlug} /><span>Total</span><strong>{game.total}</strong><p>O/U market tracked across verified snapshots.</p></article>
-        <article className="status-card"><SportEquipmentIcon slug={sportSlug} /><span>Risk</span><strong>{game.risk}</strong><p>{game.confidence} confidence</p></article>
+        <article className="status-card"><span>Favorite</span><strong>{game.favorite}</strong><p>Primary favorite from current board.</p></article>
+        <article className="status-card"><span>Underdog</span><strong>{game.underdog}</strong><p>Secondary side from current board.</p></article>
+        <article className="status-card"><span>Book Count</span><strong>{game.bookCount || 'Live'}</strong><p>Market sources represented.</p></article>
+        <article className="status-card"><span>Risk</span><strong>{game.risk}</strong><p>{game.confidence}</p></article>
       </section>
 
-      <section className="panel" style={{ marginBottom: 20 }}>
-        <div className="panel-header">
-          <div>
-            <p className="eyebrow">Free signal preview</p>
-            <h3>Signal types detected</h3>
+      <section className="content-grid" style={{ marginTop: 18 }}>
+        <div className="panel">
+          <div className="panel-header"><div><p className="eyebrow">Market Signals</p><h3>Signal types detected</h3></div></div>
+          <div className="signal-row" style={{ marginBottom: 14 }}>
+            {game.signals.map((signal) => <SignalPill signal={signal} key={signal} />)}
           </div>
+          <p className="movement">{game.marketNote ?? 'Signals reflect market movement only. They do not guarantee outcomes and they do not replace refusal rules.'}</p>
         </div>
-        <div className="signal-row">
-          {game.signals.slice(0, 3).map((signal) => <SignalPill signal={signal} key={signal} />)}
-        </div>
+        <aside className="panel">
+          <p className="eyebrow">Build Gate</p>
+          <h3>Eligibility review</h3>
+          <p className="movement">Eligible only if the rest of the slate preserves anchor discipline and avoids forced confidence.</p>
+          <Link className="inqsi-primary" href="/parlays" style={{ textDecoration: 'none', width: '100%' }}>Open Parlays</Link>
+        </aside>
       </section>
 
-      <PaidPreviewGate title="Unlock full game movement">
-        <section className="content-grid">
-          <div className="panel">
-            <div className="panel-header">
-              <div>
-                <p className="eyebrow">Signals</p>
-                <h3>Market explanation</h3>
-              </div>
-            </div>
-            <div className="signal-row" style={{ marginBottom: 16 }}>
-              {game.signals.map((signal) => <SignalPill signal={signal} key={signal} />)}
-            </div>
-            <p className="movement">{game.marketNote ?? 'Signals reflect market movement only. They do not guarantee outcomes and they do not replace the refusal rules.'}</p>
-            <div className="rank-list">
-              <article className="rank-card top-zone">
-                <div className="rank-head"><span>Baseline</span><b>CAPTURED</b></div>
-                <h4>Verified market capture</h4>
-                <p>Both-side moneyline, spread, and total are captured before signal review.</p>
-              </article>
-              <article className="rank-card">
-                <div className="rank-head"><span>Confirmation</span><b>REVIEW</b></div>
-                <h4>Book agreement and divergence</h4>
-                <p>Multiple sportsbook markets are evaluated for agreement, resistance, and unusual divergence.</p>
-              </article>
-            </div>
-          </div>
-
-          <aside className="panel rank-panel">
-            <div className="panel-header compact">
-              <div>
-                <p className="eyebrow">Eligibility</p>
-                <h3>Build gate</h3>
-              </div>
-            </div>
-            <div className={`risk risk-${game.risk.toLowerCase()}`} style={{ marginBottom: 14 }}>{game.risk} RISK</div>
-            <p className="movement">{game.risk === 'HIGH' ? 'High-risk games can be blocked or forced into human gate review.' : 'Eligible only if the rest of the slate preserves anchor discipline.'}</p>
-          </aside>
-        </section>
-
-        <LineMovementGraph data={lineMovement} />
-      </PaidPreviewGate>
+      <LineMovementGraph data={lineMovement} />
     </main>
   );
 }
