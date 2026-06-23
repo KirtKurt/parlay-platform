@@ -3,14 +3,25 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from datetime import datetime, timedelta, timezone
+from typing import Any, Dict, List, Optional, Tuple
 
 try:
     import inqsi_pull_history
 except Exception:
     inqsi_pull_history = None
 
+# Keep CFB canonical in live ingestion even if older pull-history aliases drift.
+if inqsi_pull_history is not None and hasattr(inqsi_pull_history, "ALIASES"):
+    try:
+        inqsi_pull_history.ALIASES.update({
+            "cfb": "cfb",
+            "ncaaf": "cfb",
+            "college_football": "cfb",
+            "college_football_men": "cfb",
+        })
+    except Exception:
+        pass
 
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 ODDS_REGIONS = os.environ.get("ODDS_REGIONS", "us")
@@ -33,6 +44,38 @@ SPORT_PROVIDER_MAP = {
 }
 
 DEFAULT_PULL_SEQUENCE = ["nfl", "cfb", "mlb", "college_baseball_men", "nba", "wnba", "ncaam", "nhl", "tennis", "soccer"]
+
+# Active-slate windows prevent future-season betting markets from polluting today's parlay board.
+# Values are days from pull time, with a small back buffer for just-started/live markets.
+DEFAULT_SLATE_WINDOW_DAYS = {
+    "mlb": 2,
+    "college_baseball_men": 2,
+    "nba": 2,
+    "wnba": 2,
+    "ncaam": 2,
+    "ncaaw": 2,
+    "nhl": 2,
+    "nfl": 7,
+    "cfb": 7,
+    "college_football_men": 7,
+    "soccer": 14,
+    "tennis": 7,
+}
+ACTIVE_WINDOW_BACK_BUFFER_HOURS = int(os.environ.get("INQSI_ACTIVE_WINDOW_BACK_BUFFER_HOURS", "6"))
+
+CANONICAL_ALIASES = {
+    "ncaaf": "cfb",
+    "college_football": "cfb",
+    "college_football_men": "cfb",
+    "college_fb": "cfb",
+    "ncaa_football": "cfb",
+    "college_basketball_men": "ncaam",
+    "ncaab": "ncaam",
+    "college_basketball_women": "ncaaw",
+    "ncaawb": "ncaaw",
+    "college_baseball": "college_baseball_men",
+    "ncaa_baseball": "college_baseball_men",
+}
 
 
 def now() -> str:
@@ -112,9 +155,17 @@ def safe_error(exc: Exception) -> Dict[str, Any]:
 
 
 def sport_key(value: str) -> str:
+    raw = (value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if raw in CANONICAL_ALIASES:
+        return CANONICAL_ALIASES[raw]
+    if raw == "cfb":
+        return "cfb"
     if inqsi_pull_history is not None:
-        return inqsi_pull_history.sport_key(value)
-    return (value or "").strip().lower().replace("-", "_").replace(" ", "_")
+        try:
+            return inqsi_pull_history.sport_key(raw)
+        except Exception:
+            pass
+    return raw
 
 
 def market(book: Dict[str, Any], key: str) -> Optional[Dict[str, Any]]:
@@ -170,6 +221,56 @@ def total(book: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result if len(result) == 4 else None
 
 
+def parse_commence_time(raw: Any) -> Optional[datetime]:
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(raw).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def slate_window_days(app_sport: str) -> int:
+    sport = sport_key(app_sport)
+    env_key = "INQSI_SLATE_WINDOW_DAYS_" + sport.upper()
+    if os.environ.get(env_key):
+        try:
+            return max(1, int(os.environ[env_key]))
+        except Exception:
+            pass
+    if os.environ.get("INQSI_SLATE_WINDOW_DAYS_ALL"):
+        try:
+            return max(1, int(os.environ["INQSI_SLATE_WINDOW_DAYS_ALL"]))
+        except Exception:
+            pass
+    return int(DEFAULT_SLATE_WINDOW_DAYS.get(sport, 2))
+
+
+def active_window(app_sport: str) -> Tuple[datetime, datetime, int]:
+    days = slate_window_days(app_sport)
+    current = datetime.now(timezone.utc)
+    start = current - timedelta(hours=ACTIVE_WINDOW_BACK_BUFFER_HOURS)
+    end = current + timedelta(days=days)
+    return start, end, days
+
+
+def is_in_active_window(raw: Dict[str, Any], app_sport: str) -> bool:
+    start, end, _ = active_window(app_sport)
+    commence = parse_commence_time(raw.get("commence_time"))
+    if commence is None:
+        return False
+    return start <= commence <= end
+
+
+def filter_active_slate(raw_games: Any, app_sport: str) -> List[Dict[str, Any]]:
+    if not isinstance(raw_games, list):
+        return []
+    return [g for g in raw_games if isinstance(g, dict) and is_in_active_window(g, app_sport)]
+
+
 def convert_game(raw: Dict[str, Any], app_sport: str, provider_sport_key: str) -> Optional[Dict[str, Any]]:
     home = raw.get("home_team")
     away = raw.get("away_team")
@@ -214,8 +315,42 @@ def provider_keys_for(app_sport: str) -> List[str]:
 
 
 def pull_one(app_sport: str, provider_sport_key: str) -> Dict[str, Any]:
+    app_sport = sport_key(app_sport)
     raw = http_get_json(odds_url(provider_sport_key))
-    games = [g for g in (convert_game(item, app_sport, provider_sport_key) for item in raw if isinstance(item, dict)) if g]
+    raw_count = len(raw) if isinstance(raw, list) else 0
+    active_raw = filter_active_slate(raw, app_sport)
+    window_start, window_end, window_days = active_window(app_sport)
+    window_payload = {
+        "activeWindowStart": window_start.isoformat(),
+        "activeWindowEnd": window_end.isoformat(),
+        "slateWindowDays": window_days,
+        "activeWindowBackBufferHours": ACTIVE_WINDOW_BACK_BUFFER_HOURS,
+    }
+    if not active_raw:
+        return {
+            "ok": False,
+            "appSport": app_sport,
+            "providerSportKey": provider_sport_key,
+            "rawGamesReturned": raw_count,
+            "rawGamesInWindow": 0,
+            "gamesStored": 0,
+            "stored": None,
+            "error": "active_slate_window_empty",
+            **window_payload,
+        }
+    games = [g for g in (convert_game(item, app_sport, provider_sport_key) for item in active_raw) if g]
+    if not games:
+        return {
+            "ok": False,
+            "appSport": app_sport,
+            "providerSportKey": provider_sport_key,
+            "rawGamesReturned": raw_count,
+            "rawGamesInWindow": len(active_raw),
+            "gamesStored": 0,
+            "stored": None,
+            "error": "active_slate_games_missing_supported_books_or_markets",
+            **window_payload,
+        }
     payload = {
         "sport": app_sport,
         "pulled_at": now(),
@@ -224,6 +359,11 @@ def pull_one(app_sport: str, provider_sport_key: str) -> Dict[str, Any]:
         "interval_minutes": 15,
         "provider_sport_key": provider_sport_key,
         "games": games,
+        "meta": {
+            "rawGamesReturned": raw_count,
+            "rawGamesInWindow": len(active_raw),
+            **window_payload,
+        },
     }
     if inqsi_pull_history is None:
         return {"ok": False, "error": "pull_history_module_unavailable"}
@@ -232,10 +372,12 @@ def pull_one(app_sport: str, provider_sport_key: str) -> Dict[str, Any]:
         "ok": bool(stored.get("ok")),
         "appSport": app_sport,
         "providerSportKey": provider_sport_key,
-        "rawGamesReturned": len(raw) if isinstance(raw, list) else 0,
+        "rawGamesReturned": raw_count,
+        "rawGamesInWindow": len(active_raw),
         "gamesStored": len(games),
         "stored": stored.get("stored"),
         "error": stored.get("error"),
+        **window_payload,
     }
 
 
@@ -248,12 +390,15 @@ def pull_sport(app_sport: str) -> Dict[str, Any]:
         except Exception as exc:
             results.append({"ok": False, "appSport": app_sport, "providerSportKey": provider_key, "error": safe_error(exc)})
     games_stored = sum(int(r.get("gamesStored") or 0) for r in results)
-    return {"ok": any(r.get("ok") for r in results), "appSport": app_sport, "gamesStored": games_stored, "providerPulls": results}
+    raw_games = sum(int(r.get("rawGamesReturned") or 0) for r in results if isinstance(r.get("rawGamesReturned"), int))
+    in_window = sum(int(r.get("rawGamesInWindow") or 0) for r in results if isinstance(r.get("rawGamesInWindow"), int))
+    return {"ok": any(r.get("ok") for r in results), "appSport": app_sport, "rawGamesReturned": raw_games, "rawGamesInWindow": in_window, "gamesStored": games_stored, "providerPulls": results}
 
 
 def pull_many(sports: List[str]) -> Dict[str, Any]:
-    results = [pull_sport(s) for s in sports]
-    return {"ok": any(r.get("ok") for r in results), "sportsRequested": sports, "sportsPulled": len(results), "results": results}
+    canonical_sports = [sport_key(s) for s in sports]
+    results = [pull_sport(s) for s in canonical_sports]
+    return {"ok": any(r.get("ok") for r in results), "sportsRequested": sports, "sportsCanonical": canonical_sports, "sportsPulled": len(results), "results": results}
 
 
 def provider_status(probe: bool = False) -> Dict[str, Any]:
@@ -268,6 +413,8 @@ def provider_status(probe: bool = False) -> Dict[str, Any]:
         "oddsFormat": ODDS_FORMAT,
         "pullHistoryModuleReady": inqsi_pull_history is not None,
         "sportProviderMap": SPORT_PROVIDER_MAP,
+        "activeSlateWindowsDays": DEFAULT_SLATE_WINDOW_DAYS,
+        "activeWindowBackBufferHours": ACTIVE_WINDOW_BACK_BUFFER_HOURS,
     }
     if probe:
         try:
@@ -291,7 +438,7 @@ def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         p = params(event)
         return out(200, provider_status(str(p.get("probe") or "").lower() == "true"))
     if path in {"/v1/inqsi/odds/sports-map", "/v1/odds/sports-map"} and method == "GET":
-        return out(200, {"ok": True, "defaultPullSequence": DEFAULT_PULL_SEQUENCE, "sportProviderMap": SPORT_PROVIDER_MAP})
+        return out(200, {"ok": True, "defaultPullSequence": DEFAULT_PULL_SEQUENCE, "sportProviderMap": SPORT_PROVIDER_MAP, "activeSlateWindowsDays": DEFAULT_SLATE_WINDOW_DAYS})
     if path in {"/v1/inqsi/odds/pull", "/v1/odds/pull"} and method in {"GET", "POST"}:
         p = params(event)
         sport = p.get("sport") or p.get("sport_key")
