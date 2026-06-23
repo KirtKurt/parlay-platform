@@ -1,3 +1,5 @@
+import { headers } from 'next/headers';
+
 export type InqsiGame = {
   id: string;
   game_id: string;
@@ -84,13 +86,32 @@ const providerToInqisSport: Record<string, string> = {
 };
 
 function configuredApiBase() {
-  const value = process.env.NEXT_PUBLIC_INQSI_API_URL || process.env.NEXT_PUBLIC_INQSI_API_BASE_URL || process.env.NEXT_PUBLIC_API_BASE_URL || '';
+  const value =
+    process.env.NEXT_PUBLIC_INQSI_API_URL ||
+    process.env.NEXT_PUBLIC_INQSI_API_BASE_URL ||
+    process.env.NEXT_PUBLIC_API_BASE_URL ||
+    process.env.INQSI_API_URL ||
+    process.env.API_URL ||
+    '';
   return value.trim().replace(/\/$/, '');
+}
+
+function runtimeOrigin() {
+  try {
+    const h = headers();
+    const host = h.get('x-forwarded-host') || h.get('host') || '';
+    const proto = h.get('x-forwarded-proto') || (host.includes('localhost') ? 'http' : 'https');
+    return host ? `${proto}://${host}` : '';
+  } catch {
+    return '';
+  }
 }
 
 function siteOrigin() {
   const explicit = process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_APP_URL || '';
   if (explicit) return explicit.trim().replace(/\/$/, '');
+  const runtime = runtimeOrigin();
+  if (runtime) return runtime;
   const vercel = process.env.VERCEL_URL || '';
   if (vercel) return `https://${vercel.replace(/\/$/, '')}`;
   return '';
@@ -247,7 +268,7 @@ function gamesFromMarketBoard(boardPayload: any): InqsiGame[] {
 }
 
 export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAULT_SPORT || 'nfl'): Promise<InqsiSnapshot> {
-  const selectedSport = providerToInqisSport[sportKey] || sportKey || defaultSports[0];
+  const selectedSport = providerToInqsiSport[sportKey] || sportKey || defaultSports[0];
 
   const [marketBoardPayload, predictionsPayload, parlayPayload, livePayload, alertsPayload, performancePayload] = await Promise.all([
     safeFetch<any>('/v1/inqsi/markets/board', { boards: [] }),
