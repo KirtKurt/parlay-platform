@@ -50,7 +50,30 @@ jobs:
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           SPORTS="${INPUT_SPORTS:-mlb,soccer,tennis,nfl,cfb,college_baseball_men,nba,wnba,ncaam,nhl}"
           ALL_FLAG="${INPUT_ALL:-true}"
-          test -n "$ADMIN_TOKEN"
+
+          if [ -z "${ADMIN_TOKEN:-}" ]; then
+            echo "GitHub Actions secret INQSI_ADMIN_API_TOKEN is empty. Trying deployed Lambda environment fallback."
+            LAMBDA_NAME=$(aws cloudformation describe-stack-resource \
+              --stack-name parlay-platform-dev \
+              --region ${{ secrets.AWS_REGION }} \
+              --logical-resource-id ApiFunction \
+              --query "StackResourceDetail.PhysicalResourceId" \
+              --output text 2>/dev/null || true)
+            if [ -n "$LAMBDA_NAME" ] && [ "$LAMBDA_NAME" != "None" ]; then
+              ADMIN_TOKEN=$(aws lambda get-function-configuration \
+                --function-name "$LAMBDA_NAME" \
+                --region ${{ secrets.AWS_REGION }} \
+                --query "Environment.Variables.INQSI_ADMIN_API_TOKEN" \
+                --output text 2>/dev/null || true)
+            fi
+          fi
+
+          if [ -z "${ADMIN_TOKEN:-}" ] || [ "$ADMIN_TOKEN" = "None" ]; then
+            echo "Missing admin token. Add GitHub repo secret INQSI_ADMIN_API_TOKEN and rerun Deploy SAM to AWS so Lambda receives the same token."
+            exit 1
+          fi
+          echo "::add-mask::$ADMIN_TOKEN"
+          echo "Admin token is available to workflow."
 
           print_body () {
             FILE="$1"
