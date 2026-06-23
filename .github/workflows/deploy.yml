@@ -113,6 +113,10 @@ jobs:
         continue-on-error: true
         run: bash scripts/configure_api_protection.sh "${{ steps.stack_outputs.outputs.api_url }}" "${{ secrets.AWS_REGION }}"
 
+      - name: Configure security alarms and budget guardrail
+        continue-on-error: true
+        run: bash scripts/configure_security_alarms.sh "parlay-platform-dev" "${{ secrets.AWS_REGION }}" "100"
+
       - name: Smoke test live health endpoint
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
