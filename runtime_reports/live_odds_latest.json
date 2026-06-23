@@ -1,11 +1,11 @@
 {
   "ok": true,
-  "createdAt": "2026-06-23T18:00:20.254555+00:00",
+  "createdAt": "2026-06-23T18:17:36.909526+00:00",
   "repo": "KirtKurt/parlay-platform",
   "workflow": "Inqis Live Odds Pulls",
-  "runId": "28046284514",
-  "runNumber": "15",
-  "eventName": "workflow_run",
+  "runId": "28047297287",
+  "runNumber": "16",
+  "eventName": "push",
   "oddsApiKeyPresent": true,
   "snapshotsTable": "parlay_platform_snapshots",
   "sportsRequested": [
@@ -21,45 +21,43 @@
   ],
   "sportsWithStoredGamesFromPull": [
     "mlb",
-    "soccer",
-    "nfl",
-    "college_football_men",
     "wnba"
   ],
   "sportsVisibleOnMarketBoard": [
     "mlb",
     "soccer",
     "nfl",
+    "cfb",
     "wnba"
   ],
-  "totalGamesVisibleOnMarketBoard": 108,
+  "totalGamesVisibleOnMarketBoard": 168,
   "pullOk": true,
   "marketBoardOk": true,
   "pullResults": [
     {
       "ok": true,
       "appSport": "mlb",
-      "gamesStored": 17,
+      "gamesStored": 23,
       "providerPulls": [
         {
           "ok": true,
           "providerSportKey": "baseball_mlb",
-          "rawGamesReturned": 17,
-          "gamesStored": 17,
+          "rawGamesReturned": 23,
+          "gamesStored": 23,
           "stored": {
             "pk": "PULLS#mlb#2026-06-23",
-            "sk": "PULL#2026-06-23T18:00:20.642706+00:00#pull_275dce55191347cc",
-            "pull_id": "pull_275dce55191347cc",
-            "game_count": 17
+            "sk": "PULL#2026-06-23T18:17:37.110806+00:00#pull_8333a3db71c945fe",
+            "pull_id": "pull_8333a3db71c945fe",
+            "game_count": 23
           },
           "error": null
         }
       ]
     },
     {
-      "ok": true,
+      "ok": false,
       "appSport": "soccer",
-      "gamesStored": 10,
+      "gamesStored": 0,
       "providerPulls": [
         {
           "ok": false,
@@ -67,20 +65,15 @@
           "rawGamesReturned": 0,
           "gamesStored": 0,
           "stored": null,
-          "error": "games_required"
+          "error": "active_slate_window_empty"
         },
         {
-          "ok": true,
+          "ok": false,
           "providerSportKey": "soccer_epl",
           "rawGamesReturned": 10,
-          "gamesStored": 10,
-          "stored": {
-            "pk": "PULLS#soccer#2026-06-23",
-            "sk": "PULL#2026-06-23T18:00:21.509856+00:00#pull_afc1115d40504ec4",
-            "pull_id": "pull_afc1115d40504ec4",
-            "game_count": 10
-          },
-          "error": null
+          "gamesStored": 0,
+          "stored": null,
+          "error": "active_slate_window_empty"
         },
         {
           "ok": false,
@@ -88,7 +81,7 @@
           "rawGamesReturned": 0,
           "gamesStored": 0,
           "stored": null,
-          "error": "games_required"
+          "error": "active_slate_window_empty"
         }
       ]
     },
@@ -128,42 +121,32 @@
       ]
     },
     {
-      "ok": true,
+      "ok": false,
       "appSport": "nfl",
-      "gamesStored": 75,
+      "gamesStored": 0,
       "providerPulls": [
         {
-          "ok": true,
+          "ok": false,
           "providerSportKey": "americanfootball_nfl",
           "rawGamesReturned": 75,
-          "gamesStored": 75,
-          "stored": {
-            "pk": "PULLS#nfl#2026-06-23",
-            "sk": "PULL#2026-06-23T18:00:22.822915+00:00#pull_ed00959dcbab4f8e",
-            "pull_id": "pull_ed00959dcbab4f8e",
-            "game_count": 75
-          },
-          "error": null
+          "gamesStored": 0,
+          "stored": null,
+          "error": "active_slate_window_empty"
         }
       ]
     },
     {
-      "ok": true,
-      "appSport": "college_football_men",
-      "gamesStored": 78,
+      "ok": false,
+      "appSport": "cfb",
+      "gamesStored": 0,
       "providerPulls": [
         {
-          "ok": true,
+          "ok": false,
           "providerSportKey": "americanfootball_ncaaf",
           "rawGamesReturned": 78,
-          "gamesStored": 78,
-          "stored": {
-            "pk": "PULLS#cfb#2026-06-23",
-            "sk": "PULL#2026-06-23T18:00:23.473689+00:00#pull_72463713861146a8",
-            "pull_id": "pull_72463713861146a8",
-            "game_count": 55
-          },
-          "error": null
+          "gamesStored": 0,
+          "stored": null,
+          "error": "active_slate_window_empty"
         }
       ]
     },
@@ -178,25 +161,25 @@
           "rawGamesReturned": 0,
           "gamesStored": 0,
           "stored": null,
-          "error": "games_required"
+          "error": "active_slate_window_empty"
         }
       ]
     },
     {
       "ok": true,
       "appSport": "wnba",
-      "gamesStored": 6,
+      "gamesStored": 5,
       "providerPulls": [
         {
           "ok": true,
           "providerSportKey": "basketball_wnba",
           "rawGamesReturned": 6,
-          "gamesStored": 6,
+          "gamesStored": 5,
           "stored": {
             "pk": "PULLS#wnba#2026-06-23",
-            "sk": "PULL#2026-06-23T18:00:24.056035+00:00#pull_e8464816b2fe4b96",
-            "pull_id": "pull_e8464816b2fe4b96",
-            "game_count": 6
+            "sk": "PULL#2026-06-23T18:17:38.254405+00:00#pull_588862910e61400a",
+            "pull_id": "pull_588862910e61400a",
+            "game_count": 5
           },
           "error": null
         }
@@ -213,7 +196,7 @@
           "rawGamesReturned": 0,
           "gamesStored": 0,
           "stored": null,
-          "error": "games_required"
+          "error": "active_slate_window_empty"
         }
       ]
     },
@@ -228,7 +211,7 @@
           "rawGamesReturned": 0,
           "gamesStored": 0,
           "stored": null,
-          "error": "games_required"
+          "error": "active_slate_window_empty"
         }
       ]
     }
@@ -238,11 +221,11 @@
       "ok": true,
       "sport": "mlb",
       "slate_date": "2026-06-23",
-      "pullCount": 2,
-      "latestPulledAt": "2026-06-23T18:00:20.642706+00:00",
+      "pullCount": 3,
+      "latestPulledAt": "2026-06-23T18:17:37.110806+00:00",
       "source": "the_odds_api",
       "providerSportKey": null,
-      "gameCount": 17,
+      "gameCount": 23,
       "sampleGames": [
         {
           "gameId": "6bdf881264922e973fe4c3736ec56434",
@@ -347,13 +330,35 @@
     {
       "ok": true,
       "sport": "cfb",
-      "slate_date": null,
-      "pullCount": 0,
-      "latestPulledAt": null,
-      "source": null,
+      "slate_date": "2026-06-23",
+      "pullCount": 2,
+      "latestPulledAt": "2026-06-23T18:00:23.473689+00:00",
+      "source": "the_odds_api",
       "providerSportKey": null,
-      "gameCount": 0,
-      "sampleGames": []
+      "gameCount": 55,
+      "sampleGames": [
+        {
+          "gameId": "123a238486098cc9e8f71fea0cf4e7b0",
+          "homeTeam": "Virginia Cavaliers",
+          "awayTeam": "NC State Wolfpack",
+          "commenceTime": "2026-08-29T16:00:00Z",
+          "bookCount": 6
+        },
+        {
+          "gameId": "2c288580da16e12d35355f2548721be6",
+          "homeTeam": "TCU Horned Frogs",
+          "awayTeam": "North Carolina Tar Heels",
+          "commenceTime": "2026-08-29T16:00:00Z",
+          "bookCount": 6
+        },
+        {
+          "gameId": "b9d8d9eeb4afdebe9f91de7f8253eb07",
+          "homeTeam": "North Dakota State Bison",
+          "awayTeam": "Jacksonville State Gamecocks",
+          "commenceTime": "2026-08-29T21:30:00Z",
+          "bookCount": 3
+        }
+      ]
     },
     {
       "ok": true,
@@ -370,11 +375,11 @@
       "ok": true,
       "sport": "wnba",
       "slate_date": "2026-06-23",
-      "pullCount": 2,
-      "latestPulledAt": "2026-06-23T18:00:24.056035+00:00",
+      "pullCount": 3,
+      "latestPulledAt": "2026-06-23T18:17:38.254405+00:00",
       "source": "the_odds_api",
       "providerSportKey": null,
-      "gameCount": 6,
+      "gameCount": 5,
       "sampleGames": [
         {
           "gameId": "af1aeef79363a87b5281548ad03acd9b",
