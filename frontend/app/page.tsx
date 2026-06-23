@@ -5,6 +5,8 @@ import { GameCard } from '@/components/GameCard';
 import { getApiSnapshot } from '@/lib/api';
 import { sports as sportNav } from '@/lib/sports';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata: Metadata = {
   title: 'InQsi | Live Markets, Official Parlays & AI Slip Scanner',
   description: 'InQsi shows live market data, moneyline, spread, over/under, official parlay structure, and AI slip scanning across supported sports.',
@@ -70,10 +72,7 @@ export default async function Home() {
         <div>
           <section className="inqsi-panel">
             <div className="inqsi-section-head">
-              <div>
-                <p className="eyebrow">Live Snapshot</p>
-                <h2>Sports Market Board</h2>
-              </div>
+              <div><p className="eyebrow">Live Snapshot</p><h2>Sports Market Board</h2></div>
               <Link className="ghost-button" href="/sports/mlb">View All</Link>
             </div>
             <div className="inqsi-game-list">
