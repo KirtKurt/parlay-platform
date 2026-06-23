@@ -48,7 +48,6 @@ function sendFirstPartyEvent(name: string, consentType: 'analytics' | 'marketing
 
 function installTracking(consent: ConsentState) {
   maskSensitiveInputs();
-
   if (consent.analytics) sendFirstPartyEvent('page_view', 'analytics');
 
   const gaId = process.env.NEXT_PUBLIC_GA4_MEASUREMENT_ID;
@@ -71,10 +70,7 @@ function installTracking(consent: ConsentState) {
         capture_pageview: true,
         autocapture: consent.analytics,
         disable_session_recording: !consent.replay,
-        session_recording: {
-          maskAllInputs: true,
-          maskInputOptions: { password: true, email: true, text: true, textarea: true }
-        }
+        session_recording: { maskAllInputs: true, maskInputOptions: { password: true, email: true, text: true, textarea: true } }
       });
     });
   }
@@ -117,9 +113,7 @@ export function TrackingConsent() {
     installTracking(value);
   }
 
-  if (!open) {
-    return <button className="inqsi-privacy-floating" onClick={() => setOpen(true)}>Privacy choices</button>;
-  }
+  if (!open) return null;
 
   return (
     <section className="inqsi-cookie-banner" role="dialog" aria-modal="false" aria-label="Privacy and cookie choices">
