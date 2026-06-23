@@ -20,6 +20,9 @@ on:
     workflows: ["Deploy SAM to AWS"]
     types: [completed]
 
+permissions:
+  contents: write
+
 jobs:
   pull:
     if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
@@ -43,7 +46,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Pull live odds directly into Inqis pull history and confirm stored rows
+      - name: Pull live odds directly into Inqis pull history and write proof report
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           ODDS_REGIONS: us
@@ -53,45 +56,149 @@ jobs:
           INPUT_SPORTS: ${{ github.event.inputs.sports }}
         run: |
           set -euo pipefail
-          test -n "$ODDS_API_KEY"
+          mkdir -p runtime_reports
           export PYTHONPATH="$GITHUB_WORKSPACE/hello_world:$PYTHONPATH"
 
           python - <<'PY'
           import json
           import os
           import sys
+          import traceback
+          from datetime import datetime, timezone
 
-          import odds_live_ingestion
-          import market_board
+          def safe_error(exc):
+              return {"type": type(exc).__name__, "message": str(exc), "tracebackTail": traceback.format_exc().splitlines()[-8:]}
 
-          sports = [s.strip() for s in os.environ.get('INPUT_SPORTS', '').split(',') if s.strip()]
-          if not sports:
-              sports = ['mlb', 'soccer', 'tennis', 'nfl', 'cfb', 'nba', 'wnba', 'ncaam', 'nhl']
+          def compact_pull_result(row):
+              providers = []
+              for provider in row.get('providerPulls') or []:
+                  err = provider.get('error')
+                  if isinstance(err, dict):
+                      err = {k: v for k, v in err.items() if 'key' not in str(k).lower() and 'secret' not in str(k).lower() and 'token' not in str(k).lower()}
+                  providers.append({
+                      'ok': provider.get('ok'),
+                      'providerSportKey': provider.get('providerSportKey'),
+                      'rawGamesReturned': provider.get('rawGamesReturned'),
+                      'gamesStored': provider.get('gamesStored'),
+                      'stored': provider.get('stored'),
+                      'error': err,
+                  })
+              return {
+                  'ok': row.get('ok'),
+                  'appSport': row.get('appSport'),
+                  'gamesStored': row.get('gamesStored'),
+                  'providerPulls': providers,
+              }
 
-          print('Pulling sports:', ','.join(sports))
-          pull = odds_live_ingestion.pull_many(sports)
-          print('PULL_RESPONSE')
-          print(json.dumps(pull, indent=2, default=str))
+          def compact_board(row):
+              return {
+                  'ok': row.get('ok'),
+                  'sport': row.get('sport'),
+                  'slate_date': row.get('slate_date'),
+                  'pullCount': row.get('pullCount'),
+                  'latestPulledAt': row.get('latestPulledAt'),
+                  'source': row.get('source'),
+                  'providerSportKey': row.get('providerSportKey'),
+                  'gameCount': row.get('gameCount'),
+                  'sampleGames': [
+                      {
+                          'gameId': g.get('gameId'),
+                          'homeTeam': g.get('homeTeam'),
+                          'awayTeam': g.get('awayTeam'),
+                          'commenceTime': g.get('commenceTime'),
+                          'bookCount': g.get('bookCount'),
+                      }
+                      for g in (row.get('games') or [])[:3]
+                  ],
+              }
 
-          board = market_board.board_all({'sports': ','.join(sports)})
-          print('MARKET_BOARD_RESPONSE')
-          print(json.dumps(board, indent=2, default=str))
-
-          stored = [r for r in pull.get('results', []) if int(r.get('gamesStored') or 0) > 0]
-          visible = [b for b in board.get('boards', []) if int(b.get('gameCount') or 0) > 0]
-          summary = {
-              'sportsRequested': sports,
-              'sportsWithStoredGamesFromPull': [r.get('appSport') for r in stored],
-              'sportsVisibleOnMarketBoard': [b.get('sport') for b in visible],
-              'totalGamesVisibleOnMarketBoard': sum(int(b.get('gameCount') or 0) for b in visible),
-              'pullOk': pull.get('ok'),
-              'marketBoardOk': board.get('ok'),
+          report = {
+              'ok': False,
+              'createdAt': datetime.now(timezone.utc).isoformat(),
+              'repo': os.environ.get('GITHUB_REPOSITORY'),
+              'workflow': os.environ.get('GITHUB_WORKFLOW'),
+              'runId': os.environ.get('GITHUB_RUN_ID'),
+              'runNumber': os.environ.get('GITHUB_RUN_NUMBER'),
+              'eventName': os.environ.get('GITHUB_EVENT_NAME'),
+              'oddsApiKeyPresent': bool(os.environ.get('ODDS_API_KEY')),
+              'snapshotsTable': os.environ.get('SNAPSHOTS_TABLE'),
           }
-          print('INQIS_LIVE_PULL_CONFIRMATION')
-          print(json.dumps(summary, indent=2))
 
-          if not stored:
-              sys.exit('No live odds rows were stored in DynamoDB. See PULL_RESPONSE above for provider/status reasons.')
-          if not visible:
-              sys.exit('Stored rows were not visible through the market board reader. See MARKET_BOARD_RESPONSE above.')
+          try:
+              if not os.environ.get('ODDS_API_KEY'):
+                  raise RuntimeError('ODDS_API_KEY secret is not available to this workflow')
+              import odds_live_ingestion
+              import market_board
+
+              sports = [s.strip() for s in os.environ.get('INPUT_SPORTS', '').split(',') if s.strip()]
+              if not sports:
+                  sports = ['mlb', 'soccer', 'tennis', 'nfl', 'cfb', 'nba', 'wnba', 'ncaam', 'nhl']
+
+              pull = odds_live_ingestion.pull_many(sports)
+              board = market_board.board_all({'sports': ','.join(sports)})
+              pull_rows = [compact_pull_result(r) for r in pull.get('results', [])]
+              board_rows = [compact_board(b) for b in board.get('boards', [])]
+              stored_sports = [r.get('appSport') for r in pull_rows if int(r.get('gamesStored') or 0) > 0]
+              visible_sports = [b.get('sport') for b in board_rows if int(b.get('gameCount') or 0) > 0]
+              total_visible = sum(int(b.get('gameCount') or 0) for b in board_rows)
+              report.update({
+                  'ok': bool(stored_sports and visible_sports and total_visible > 0),
+                  'sportsRequested': sports,
+                  'sportsWithStoredGamesFromPull': stored_sports,
+                  'sportsVisibleOnMarketBoard': visible_sports,
+                  'totalGamesVisibleOnMarketBoard': total_visible,
+                  'pullOk': pull.get('ok'),
+                  'marketBoardOk': board.get('ok'),
+                  'pullResults': pull_rows,
+                  'marketBoards': board_rows,
+                  'storageShape': {
+                      'table': os.environ.get('SNAPSHOTS_TABLE'),
+                      'partitionKeyPattern': 'PULLS#{sport}#{slate_date}',
+                      'sortKeyPattern': 'PULL#{pulled_at}#{pull_id}',
+                      'recordType': 'pull_run',
+                      'siloedBySport': True,
+                      'siloedByDay': True,
+                      'timestamped': True,
+                  },
+              })
+          except Exception as exc:
+              report['error'] = safe_error(exc)
+
+          print('INQIS_LIVE_PULL_CONFIRMATION')
+          print(json.dumps({
+              'ok': report.get('ok'),
+              'sportsWithStoredGamesFromPull': report.get('sportsWithStoredGamesFromPull'),
+              'sportsVisibleOnMarketBoard': report.get('sportsVisibleOnMarketBoard'),
+              'totalGamesVisibleOnMarketBoard': report.get('totalGamesVisibleOnMarketBoard'),
+              'error': report.get('error'),
+          }, indent=2, default=str))
+
+          with open('runtime_reports/live_odds_latest.json', 'w', encoding='utf-8') as f:
+              json.dump(report, f, indent=2, default=str)
+              f.write('\n')
+          PY
+
+      - name: Commit safe proof report
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/live_odds_latest.json
+          if git diff --cached --quiet; then
+            echo "No proof report changes to commit."
+          else
+            git commit -m "Update live odds pull proof report"
+            git push
+          fi
+
+      - name: Enforce live odds storage proof
+        run: |
+          python - <<'PY'
+          import json, sys
+          report = json.load(open('runtime_reports/live_odds_latest.json', encoding='utf-8'))
+          if not report.get('ok'):
+              print(json.dumps(report, indent=2, default=str))
+              sys.exit('Live odds proof failed. See runtime_reports/live_odds_latest.json for the exact reason.')
+          print('Live odds proof passed.')
           PY
