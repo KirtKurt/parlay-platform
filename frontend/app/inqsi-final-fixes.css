@@ -28,6 +28,24 @@
   text-align: left !important;
 }
 
+.inqsi-mobile-header { position: sticky; top: 0; z-index: 40; display: grid; grid-template-columns: 56px 1fr 56px; align-items: center; min-height: 74px; margin: -24px -24px 18px; padding: 16px 24px; background: rgba(2, 7, 18, .86); backdrop-filter: blur(20px); border-bottom: 1px solid rgba(255,255,255,.08); }
+.inqsi-wordmark { justify-self: center; text-decoration: none; font-size: clamp(2rem, 9vw, 3.2rem); line-height: 1; font-weight: 950; letter-spacing: .06em; }
+.inqsi-wordmark b { color: #20e5ff; text-shadow: 0 0 24px rgba(32,229,255,.45); }
+.inqsi-menu-button, .inqsi-bell { width: 46px; height: 46px; border-radius: 999px; border: 1px solid rgba(255,255,255,.12); background: rgba(255,255,255,.04); color: transparent; text-decoration: none; display: grid; place-items: center; position: relative; }
+.inqsi-menu-button:before { content: ''; width: 24px; height: 16px; background: linear-gradient(#fff,#fff) 0 0/24px 2px no-repeat, linear-gradient(#fff,#fff) 0 7px/24px 2px no-repeat, linear-gradient(#fff,#fff) 0 14px/24px 2px no-repeat; }
+.inqsi-bell:before { content: ''; width: 18px; height: 20px; border: 2px solid white; border-radius: 12px 12px 8px 8px; opacity: .9; }
+.inqsi-bell:after { content: ''; position: absolute; right: 9px; top: 9px; width: 10px; height: 10px; border-radius: 50%; background: #26f37c; box-shadow: 0 0 16px rgba(38,243,124,.85); }
+.inqsi-desktop-links { display: none; }
+.inqsi-bottom-nav { position: fixed; z-index: 50; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); width: min(900px, calc(100vw - 24px)); display: grid; grid-template-columns: repeat(5,1fr); gap: 4px; padding: 12px; border-radius: 28px; background: rgba(6,14,27,.96); border: 1px solid rgba(255,255,255,.12); backdrop-filter: blur(22px); box-shadow: 0 28px 90px rgba(0,0,0,.6); }
+.inqsi-bottom-nav a { display: grid; gap: 5px; place-items: center; text-decoration: none; color: #a9b3c5; font-weight: 800; }
+.inqsi-bottom-nav a span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 12px; border: 1px solid rgba(255,255,255,.12); color: #26f37c; }
+.inqsi-bottom-nav small { font-size: .74rem; }
+.api-badge.api-failed { display: none; }
+.game-card, .inqsi-game-card, .panel, .inqsi-panel, .status-card, .glass-card, .inqsi-hero-card, .inqsi-signup-card { border-radius: 26px !important; border: 1px solid rgba(38,142,255,.35) !important; background: linear-gradient(180deg, rgba(10,25,47,.92), rgba(4,12,24,.94)) !important; box-shadow: 0 28px 90px rgba(0,0,0,.52); }
+.market-row { display: grid !important; grid-template-columns: repeat(4,1fr) !important; gap: 10px !important; }
+.market-row b { color: #26f37c; font-size: clamp(1.05rem, 3.5vw, 1.45rem); }
+.sport-hero-grid, .sport-icon-strip, .sport-visual-card { display: none !important; }
+.inqsi-privacy-floating { display: none !important; }
 @media (max-width: 640px) {
   .inqsi-menu nav,
   .inqsi-menu[open] nav {
@@ -44,4 +62,5 @@
     padding-left: 16px !important;
     padding-right: 16px !important;
   }
+  .market-row { grid-template-columns: repeat(2,1fr) !important; }
 }
