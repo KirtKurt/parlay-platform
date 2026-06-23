@@ -3,8 +3,8 @@ import Link from 'next/link';
 import { AppHeader } from '@/components/AppHeader';
 import { GameCard } from '@/components/GameCard';
 import { getApiSnapshot } from '@/lib/api';
+import { sports as sportNav } from '@/lib/sports';
 
-const SPORTS = ['NFL', 'CFB', 'NBA', 'NCAAM', 'NHL', 'MLB', 'WNBA', 'Soccer', 'Tennis', 'MMA', 'Boxing', 'Golf', 'eSports'];
 const FOOTER_LINKS = [
   ['AI Slip Scanner', '/parlay-scanner'],
   ['AI Slip Builder', '/parlays'],
@@ -74,7 +74,9 @@ export default async function Home() {
         </aside>
       </section>
 
-      <nav className="inqsi-tabs" aria-label="Sports navigation">{SPORTS.map((sport) => <Link key={sport} href={`/sports?tab=${encodeURIComponent(sport)}`}>{sport}</Link>)}</nav>
+      <nav className="inqsi-tabs" aria-label="Sports navigation">
+        {sportNav.map((sport) => <Link key={sport.slug} href={`/sports/${sport.slug}`}>{sport.label}</Link>)}
+      </nav>
 
       <section className="inqsi-layout inqsi-mock-dashboard">
         <div>
@@ -99,7 +101,7 @@ export default async function Home() {
 
       <footer className="inqsi-footer-links" aria-label="InQsi footer navigation">
         {FOOTER_LINKS.map(([label, href]) => <Link key={label} href={href}>{label}</Link>)}
-        <span aria-label="deployment version">deploy: active-market-board-home-2026-06-23</span>
+        <span aria-label="deployment version">deploy: active-market-board-home-routes-2026-06-23</span>
       </footer>
     </main>
   );
