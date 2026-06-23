@@ -1,29 +1,35 @@
 import type { Metadata } from 'next';
-import { InqsiSeoPage } from '@/components/InqsiSeoPage';
+import Link from 'next/link';
+import { AppHeader } from '@/components/AppHeader';
+import { RegisterForm } from '@/components/RegisterForm';
 
 export const metadata: Metadata = {
-  title: 'Create Account',
+  title: 'Create Account | InQsi',
   description: 'Create an InQsi account and start the 5-day free promo.',
   alternates: { canonical: '/register' }
 };
 
 export default function RegisterPage() {
   return (
-    <InqsiSeoPage
-      path="/register"
-      eyebrow="Create account"
-      title="Start your InQsi workspace."
-      intro="Start with 5 days free. Scan a slip, review the sports board, and see whether InQsi helps you catch risk before you lock anything in."
-      sections={[
-        { title: 'Quick access', copy: 'Create your workspace and get to the scanner without a complicated setup.' },
-        { title: 'AI Slip Scanner', copy: 'Bring the picks you already like and check for weak legs, resistance, and warning signs.' },
-        { title: 'Sports board', copy: 'Review market pressure, support, and unusual movement across supported sports.' },
-        { title: 'Full Access', copy: 'One membership opens the full InQsi workspace after the 5-day promo.' }
-      ]}
-      faqs={[
-        { question: 'What should I do first?', answer: 'Start with the AI Slip Scanner. Bring a pick you already like and see where the market may be warning you.' },
-        { question: 'Is the 5-day promo included?', answer: 'Yes. InQsi is built around a 5-day free promo before monthly membership.' }
-      ]}
-    />
+    <main className="inqsi-shell">
+      <AppHeader eyebrow="InQsi" title="Create Account" />
+      <section className="inqsi-hero inqsi-seo-hero">
+        <div className="inqsi-hero-card">
+          <p className="inqsi-promo">5 days free</p>
+          <h1>Start your InQsi workspace.</h1>
+          <p>Create your account, open the member workspace, scan slips, review sport boards, and see whether InQsi earns a place in your routine.</p>
+          <div className="inqsi-stat-grid">
+            <div><b>Quick access</b><span>Create your workspace without a complicated setup.</span></div>
+            <div><b>AI Slip Scanner</b><span>Bring the picks you already like.</span></div>
+            <div><b>Sports board</b><span>Odds, spread, O/U, and market movement.</span></div>
+            <div><b>Full access</b><span>Member tools after registration.</span></div>
+          </div>
+        </div>
+        <aside className="inqsi-signup-card">
+          <RegisterForm />
+          <small style={{ display: 'block', marginTop: 12 }}>Already have access? <Link href="/login">Log in here.</Link></small>
+        </aside>
+      </section>
+    </main>
   );
 }
