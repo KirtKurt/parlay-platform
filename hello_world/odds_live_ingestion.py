@@ -22,6 +22,7 @@ SPORT_PROVIDER_MAP = {
     "cfb": ["americanfootball_ncaaf"],
     "college_football_men": ["americanfootball_ncaaf"],
     "mlb": ["baseball_mlb"],
+    "college_baseball_men": ["baseball_ncaa"],
     "nba": ["basketball_nba"],
     "wnba": ["basketball_wnba"],
     "ncaam": ["basketball_ncaab"],
@@ -31,7 +32,7 @@ SPORT_PROVIDER_MAP = {
     "soccer": ["soccer_usa_mls", "soccer_epl", "soccer_uefa_champs_league"],
 }
 
-DEFAULT_PULL_SEQUENCE = ["nfl", "cfb", "mlb", "nba", "wnba", "ncaam", "nhl", "tennis", "soccer"]
+DEFAULT_PULL_SEQUENCE = ["nfl", "cfb", "mlb", "college_baseball_men", "nba", "wnba", "ncaam", "nhl", "tennis", "soccer"]
 
 
 def now() -> str:
