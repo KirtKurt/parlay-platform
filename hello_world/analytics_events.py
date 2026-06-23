@@ -29,6 +29,11 @@ try:
 except Exception:
     moderation_analytics = None
 
+try:
+    import creator_analytics
+except Exception:
+    creator_analytics = None
+
 
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -143,6 +148,7 @@ def handle_health() -> Dict[str, Any]:
         "algorithmPerformanceDashboardDelegated": algorithm_analytics is not None,
         "marketDataQualityDashboardDelegated": market_data_quality is not None,
         "moderationAnalyticsDashboardDelegated": moderation_analytics is not None,
+        "creatorAnalyticsDashboardDelegated": creator_analytics is not None,
         "supportedEventTypes": sorted(ALLOWED_EVENT_TYPES),
         "liveEndpoints": [
             "/v1/inqsi/analytics/health",
@@ -152,12 +158,12 @@ def handle_health() -> Dict[str, Any]:
             "/v1/inqsi/admin/analytics/algorithm",
             "/v1/inqsi/admin/analytics/data-quality",
             "/v1/inqsi/admin/analytics/moderation",
+            "/v1/inqsi/admin/analytics/creators",
             "/v1/inqsi/account-integrity/policy",
             "/v1/inqsi/account-integrity/signup-check",
             "/v1/inqsi/admin/account-integrity/summary",
         ],
         "nextBuilds": [
-            "creator_analytics_dashboard",
             "admin_alert_system",
         ],
     })
@@ -340,6 +346,10 @@ def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         moderation_routed = moderation_analytics.route(event)
         if moderation_routed is not None:
             return moderation_routed
+    if creator_analytics is not None:
+        creator_routed = creator_analytics.route(event)
+        if creator_routed is not None:
+            return creator_routed
     method = (event.get("httpMethod") or event.get("requestContext", {}).get("http", {}).get("method") or "GET").upper()
     path = (event.get("rawPath") or event.get("path") or "/").rstrip("/") or "/"
     if method == "OPTIONS" and (path.startswith("/v1/inqsi/analytics") or path.startswith("/v1/analytics") or path.startswith("/v1/inqsi/admin/analytics") or path.startswith("/v1/admin/analytics")):
