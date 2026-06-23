@@ -10,6 +10,8 @@ DDB = boto3.resource("dynamodb")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
 PULLS = DDB.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
 BOOKS = ["fanatics", "draftkings", "fanduel", "betmgm", "caesars", "betrivers", "bovada", "lowvig"]
+MIN_PARLAY_PULLS = int(os.environ.get("INQSI_MIN_PARLAY_PULLS", "12"))
+DEFAULT_AUTO_PARLAY_SPORTS = ["nfl", "cfb", "mlb", "nba", "wnba", "ncaam", "nhl", "tennis", "soccer"]
 SUPPORTED = {
     "nfl": {"label": "NFL", "level": "pro", "gender": "men"},
     "cfb": {"label": "College Football", "level": "college", "gender": "men", "aliases": ["ncaaf", "college_football", "college_football_men"]},
@@ -37,6 +39,10 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def today() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
 def sport_key(s: Optional[str]) -> str:
     raw = (s or "").strip().lower().replace(" ", "_").replace("-", "_")
     return ALIASES.get(raw, raw)
@@ -56,7 +62,7 @@ def slate_date(ts: str) -> str:
     try:
         return datetime.fromisoformat(ts.replace("Z", "+00:00")).date().isoformat()
     except Exception:
-        return datetime.now(timezone.utc).date().isoformat()
+        return today()
 
 
 def team_key(name: Optional[str]) -> str:
@@ -85,7 +91,15 @@ def vig(home: Any, away: Any) -> Optional[tuple]:
 
 
 def supported_sports() -> Dict[str, Any]:
-    return {"ok": True, "architecture": "15_min_pull_history", "sports": [{"key": k, **v} for k, v in SUPPORTED.items()], "collegeCoverage": {"football": ["college_football_men", "college_football_women"], "baseball": ["college_baseball_men", "college_baseball_women", "college_softball_women"], "basketball": ["ncaam", "ncaaw"]}, "note": "Algorithm accepts these keys from manual/provider-shaped pulls now. Live provider coverage must still be verified before enabling Odds API ingestion."}
+    return {
+        "ok": True,
+        "architecture": "15_min_pull_history",
+        "minimumParlayPulls": MIN_PARLAY_PULLS,
+        "minimumParlayHistoryMinutes": MIN_PARLAY_PULLS * 15,
+        "sports": [{"key": k, **v} for k, v in SUPPORTED.items()],
+        "collegeCoverage": {"football": ["college_football_men", "college_football_women"], "baseball": ["college_baseball_men", "college_baseball_women", "college_softball_women"], "basketball": ["ncaam", "ncaaw"]},
+        "note": "Three-leg parlays are refused until the 12th 15-minute pull for the sport/slate.",
+    }
 
 
 def normalize_pull(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -119,10 +133,21 @@ def normalize_pull(body: Dict[str, Any]) -> Dict[str, Any]:
             if "total" in data:
                 books[key]["total"] = data["total"]
         if home and away and books:
-            games.append({"game_id": str(raw.get("game_id") or raw.get("id") or game_key(sport, raw)), "game_key": game_key(sport, raw), "home_team": home, "away_team": away, "commence_time": raw.get("commence_time") or raw.get("start_time") or raw.get("startTime"), "league": raw.get("league") or SUPPORTED[sport]["label"], "level": raw.get("level") or SUPPORTED[sport].get("level"), "gender": raw.get("gender") or SUPPORTED[sport].get("gender"), "books": books})
+            games.append({
+                "game_id": str(raw.get("game_id") or raw.get("id") or game_key(sport, raw)),
+                "game_key": game_key(sport, raw),
+                "home_team": home,
+                "away_team": away,
+                "commence_time": raw.get("commence_time") or raw.get("start_time") or raw.get("startTime"),
+                "league": raw.get("league") or SUPPORTED[sport]["label"],
+                "level": raw.get("level") or SUPPORTED[sport].get("level"),
+                "gender": raw.get("gender") or SUPPORTED[sport].get("gender"),
+                "provider_sport_key": raw.get("provider_sport_key"),
+                "books": books,
+            })
     if not games:
         return {"ok": False, "error": "games_required", "message": "Provide at least one game with home/away teams and moneyline books."}
-    return {"ok": True, "pull": {"pull_id": body.get("pull_id") or f"pull_{uuid.uuid4().hex[:16]}", "sport": sport, "pulled_at": pulled_at, "slate_date": body.get("slate_date") or slate_date(pulled_at), "source": body.get("source") or "manual_or_provider_payload", "interval_minutes": int(body.get("interval_minutes") or 15), "games": games, "meta": {"oddsApiOperational": False, "architecture": "15_min_pull_history"}}}
+    return {"ok": True, "pull": {"pull_id": body.get("pull_id") or f"pull_{uuid.uuid4().hex[:16]}", "sport": sport, "pulled_at": pulled_at, "slate_date": body.get("slate_date") or slate_date(pulled_at), "source": body.get("source") or "manual_or_provider_payload", "interval_minutes": int(body.get("interval_minutes") or 15), "games": games, "meta": {"oddsApiOperational": body.get("source") == "the_odds_api", "architecture": "15_min_pull_history"}}}
 
 
 def store_pull(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -141,7 +166,7 @@ def query_pulls(sport: str, date: Optional[str] = None, limit: int = 500) -> Lis
     if PULLS is None:
         raise RuntimeError("SNAPSHOTS_TABLE is not configured")
     sport = sport_key(sport)
-    date = date or datetime.now(timezone.utc).date().isoformat()
+    date = date or today()
     res = PULLS.query(KeyConditionExpression=Key("PK").eq(f"PULLS#{sport}#{date}"), ScanIndexForward=True, Limit=min(max(int(limit), 1), 500))
     return [i.get("data", {}) for i in res.get("Items", [])]
 
@@ -225,29 +250,39 @@ def signals(params: Dict[str, Any]) -> Dict[str, Any]:
         if not series: continue
         hs, aws = side_signal(series, "home"), side_signal(series, "away")
         best = hs if hs["score"] >= aws["score"] else aws
-        out.append({"gameId": game.get("game_id"), "gameKey": key, "sport": sport, "homeTeam": game.get("home_team"), "awayTeam": game.get("away_team"), "commenceTime": game.get("commence_time"), "level": game.get("level"), "gender": game.get("gender"), "selection": game.get("home_team") if best["side"] == "home" else game.get("away_team"), "selectedSide": best["side"], "grade": best["grade"], "score": best["score"], "tags": best["tags"], "homeSignal": hs, "awaySignal": aws})
+        out.append({"gameId": game.get("game_id"), "gameKey": key, "sport": sport, "homeTeam": game.get("home_team"), "awayTeam": game.get("away_team"), "commenceTime": game.get("commence_time"), "level": game.get("level"), "gender": game.get("gender"), "providerSportKey": game.get("provider_sport_key"), "selection": game.get("home_team") if best["side"] == "home" else game.get("away_team"), "selectedSide": best["side"], "grade": best["grade"], "score": best["score"], "tags": best["tags"], "homeSignal": hs, "awaySignal": aws})
     out.sort(key=lambda x: x.get("score", 0), reverse=True)
-    return {"ok": True, "sport": sport, "slate_date": pulls[-1].get("slate_date"), "pullCount": len(pulls), "architecture": "15_min_pull_history", "signals": out}
+    return {"ok": True, "sport": sport, "slate_date": pulls[-1].get("slate_date"), "pullCount": len(pulls), "minimumParlayPulls": MIN_PARLAY_PULLS, "architecture": "15_min_pull_history", "signals": out}
 
 
 def readiness(p: Dict[str, Any]) -> Dict[str, Any]:
     r = signals(p); ss = r.get("signals", [])
     elig = [s for s in ss if s.get("grade") in {"STRONG_SOLID", "SOLID", "COIN_FLIP"}]
     strong = [s for s in elig if s.get("grade") == "STRONG_SOLID"]
-    status = "READY" if r.get("pullCount", 0) >= 4 and len(elig) >= 3 and strong else "BUILDING_HISTORY" if r.get("pullCount", 0) >= 2 else "NOT_READY"
-    return {"ok": True, "sport": r.get("sport"), "slate_date": r.get("slate_date"), "status": status, "pullCount": r.get("pullCount"), "eligibleSignals": len(elig), "strongSignals": len(strong), "minimumRecommendedPulls": 4, "notes": ["Uses many timestamped pulls, not fixed T1-T3 snapshots."]}
+    pull_count = int(r.get("pullCount") or 0)
+    if pull_count < MIN_PARLAY_PULLS:
+        status = "WAITING_FOR_12TH_PULL"
+    elif len(elig) >= 3 and strong:
+        status = "READY"
+    else:
+        status = "BUILDING_ELIGIBLE_SIGNAL_DEPTH"
+    return {"ok": True, "sport": r.get("sport"), "slate_date": r.get("slate_date"), "status": status, "pullCount": pull_count, "eligibleSignals": len(elig), "strongSignals": len(strong), "minimumParlayPulls": MIN_PARLAY_PULLS, "minimumParlayHistoryMinutes": MIN_PARLAY_PULLS * 15, "parlayEligible": status == "READY", "notes": ["Uses many timestamped pulls, not fixed T1-T3 snapshots.", "Three-leg parlays are refused until the 12th 15-minute pull for this sport/slate."]}
 
 
 def parlay(p: Dict[str, Any]) -> Dict[str, Any]:
-    r = signals(p); elig = [s for s in r.get("signals", []) if s.get("grade") in {"STRONG_SOLID", "SOLID", "COIN_FLIP"}]
+    r = signals(p)
+    pull_count = int(r.get("pullCount") or 0)
+    if pull_count < MIN_PARLAY_PULLS:
+        return {"ok": True, "buildStatus": "NO_BUILD", "reason": "WAITING_FOR_12TH_PULL", "pullCount": pull_count, "minimumParlayPulls": MIN_PARLAY_PULLS, "minimumParlayHistoryMinutes": MIN_PARLAY_PULLS * 15, "sport": r.get("sport"), "slate_date": r.get("slate_date"), "message": "Inqis refused to build a three-leg parlay before the 12th 15-minute pull."}
+    elig = [s for s in r.get("signals", []) if s.get("grade") in {"STRONG_SOLID", "SOLID", "COIN_FLIP"}]
     if len(elig) < 3:
-        return {"ok": True, "buildStatus": "NO_BUILD", "reason": "not_enough_eligible_pull_history_signals", "eligibleCount": len(elig), "pullCount": r.get("pullCount"), "message": "InQsi refused to force a parlay."}
+        return {"ok": True, "buildStatus": "NO_BUILD", "reason": "not_enough_eligible_pull_history_signals", "eligibleCount": len(elig), "pullCount": pull_count, "sport": r.get("sport"), "slate_date": r.get("slate_date"), "message": "Inqsi refused to force a parlay."}
     selected, used = [], set()
     for s in [x for x in elig if x.get("grade") == "STRONG_SOLID"][:2] + elig:
         if s.get("gameId") not in used and len(selected) < 3:
             selected.append(s); used.add(s.get("gameId"))
     if len(selected) < 3:
-        return {"ok": True, "buildStatus": "NO_BUILD", "reason": "could_not_create_three_unique_games"}
+        return {"ok": True, "buildStatus": "NO_BUILD", "reason": "could_not_create_three_unique_games", "pullCount": pull_count, "sport": r.get("sport"), "slate_date": r.get("slate_date")}
     combos = []
     for mask in range(8):
         legs, score = [], 0
@@ -258,7 +293,47 @@ def parlay(p: Dict[str, Any]) -> Dict[str, Any]:
         combos.append({"rank": 0, "score": round(score/3, 2), "legs": legs})
     combos.sort(key=lambda x: x["score"], reverse=True)
     for i, c in enumerate(combos, 1): c.update({"rank": i, "top3": i <= 3})
-    return {"ok": True, "buildStatus": "BUILT", "architecture": "15_min_pull_history", "sport": r.get("sport"), "slate_date": r.get("slate_date"), "pullCount": r.get("pullCount"), "structure": "PULL_HISTORY_BEST_AVAILABLE", "legs": selected, "rankedCombos": combos}
+    return {"ok": True, "buildStatus": "BUILT", "architecture": "15_min_pull_history", "sport": r.get("sport"), "slate_date": r.get("slate_date"), "pullCount": pull_count, "minimumParlayPulls": MIN_PARLAY_PULLS, "structure": "PULL_HISTORY_12_PULL_GATE", "legs": selected, "rankedCombos": combos}
+
+
+def store_parlay_build(result: Dict[str, Any], mode: str = "auto") -> Dict[str, Any]:
+    if PULLS is None:
+        raise RuntimeError("SNAPSHOTS_TABLE is not configured")
+    sport = sport_key(result.get("sport"))
+    slate = result.get("slate_date") or today()
+    created_at = now()
+    build_id = f"parlay_{uuid.uuid4().hex[:16]}"
+    item = {"PK": f"PARLAY_BUILDS#{sport}#{slate}", "SK": f"BUILD#{created_at}#{build_id}", "record_type": "three_leg_parlay_build", "sport": sport, "slate_date": slate, "created_at": created_at, "build_id": build_id, "build_status": result.get("buildStatus"), "mode": mode, "minimum_parlay_pulls": MIN_PARLAY_PULLS, "pull_count": int(result.get("pullCount") or 0), "data": ddb_safe(result)}
+    PULLS.put_item(Item=item)
+    return {"pk": item["PK"], "sk": item["SK"], "build_id": build_id, "build_status": item["build_status"]}
+
+
+def auto_parlay_builds(p: Dict[str, Any]) -> Dict[str, Any]:
+    raw_sports = p.get("sports") or p.get("sport") or ",".join(DEFAULT_AUTO_PARLAY_SPORTS)
+    sports = [sport_key(s.strip()) for s in str(raw_sports).split(",") if s.strip()]
+    store = str(p.get("store") if p.get("store") is not None else "true").lower() != "false"
+    results = []
+    for sport in sports:
+        if sport not in SUPPORTED:
+            results.append({"ok": False, "sport": sport, "error": "unsupported_sport"}); continue
+        result = parlay({"sport": sport, "slate_date": p.get("slate_date")})
+        if store:
+            try:
+                result["stored"] = store_parlay_build(result, mode="auto_after_live_pull")
+            except Exception as exc:
+                result["storeError"] = str(exc)
+        results.append(result)
+    return {"ok": True, "autoBuild": True, "minimumParlayPulls": MIN_PARLAY_PULLS, "sportsChecked": sports, "builtCount": sum(1 for r in results if r.get("buildStatus") == "BUILT"), "waitingCount": sum(1 for r in results if r.get("reason") == "WAITING_FOR_12TH_PULL"), "results": results}
+
+
+def latest_parlay_build(p: Dict[str, Any]) -> Dict[str, Any]:
+    if PULLS is None:
+        raise RuntimeError("SNAPSHOTS_TABLE is not configured")
+    sport = sport_key(p.get("sport") or p.get("sport_key"))
+    slate = p.get("slate_date") or today()
+    res = PULLS.query(KeyConditionExpression=Key("PK").eq(f"PARLAY_BUILDS#{sport}#{slate}"), ScanIndexForward=False, Limit=1)
+    item = (res.get("Items") or [None])[0]
+    return {"ok": True, "sport": sport, "slate_date": slate, "build": item.get("data") if item else None, "stored": {"pk": item.get("PK"), "sk": item.get("SK")} if item else None}
 
 
 def scan_slip(p: Dict[str, Any]) -> Dict[str, Any]:
@@ -288,15 +363,15 @@ def quality(p: Dict[str, Any]) -> Dict[str, Any]:
         except Exception as e: reports.append({"sport": k, "status": "ERROR", "error": str(e)}); continue
         issues = []
         if not pulls: issues.append({"severity": "WARN", "type": "no_pull_history"})
-        elif len(pulls) < 4: issues.append({"severity": "WARN", "type": "low_pull_depth", "pullCount": len(pulls)})
+        elif len(pulls) < MIN_PARLAY_PULLS: issues.append({"severity": "WARN", "type": "below_12_pull_parlay_gate", "pullCount": len(pulls), "minimumParlayPulls": MIN_PARLAY_PULLS})
         status = "WARN" if issues else "PASS"
-        reports.append({"sport": k, "label": SUPPORTED[k]["label"], "status": status, "pullCount": len(pulls), "issues": issues})
-    return {"ok": True, "checkedAt": now(), "architecture": "15_min_pull_history", "oddsApiOperational": False, "reports": reports}
+        reports.append({"sport": k, "label": SUPPORTED[k]["label"], "status": status, "pullCount": len(pulls), "minimumParlayPulls": MIN_PARLAY_PULLS, "issues": issues})
+    return {"ok": True, "checkedAt": now(), "architecture": "15_min_pull_history", "minimumParlayPulls": MIN_PARLAY_PULLS, "oddsApiOperational": False, "reports": reports}
 
 
 def latest(p: Dict[str, Any]) -> Dict[str, Any]:
     sport = sport_key(p.get("sport") or p.get("sport_key")); pulls = query_pulls(sport, p.get("slate_date"), 500)
-    return {"ok": True, "sport": sport, "pull": pulls[-1] if pulls else None, "pullCount": len(pulls)}
+    return {"ok": True, "sport": sport, "pull": pulls[-1] if pulls else None, "pullCount": len(pulls), "minimumParlayPulls": MIN_PARLAY_PULLS}
 
 
 def handle_pull_history_route(path: str, method: str, query: Dict[str, Any], body: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -308,6 +383,8 @@ def handle_pull_history_route(path: str, method: str, query: Dict[str, Any], bod
     if p in {"/v1/inqsi/algorithm/signals", "/v1/inqsi/pull-history/signals"}: return signals(params)
     if p in {"/v1/inqsi/algorithm/readiness", "/v1/inqsi/pull-history/readiness"}: return readiness(params)
     if p in {"/v1/inqsi/parlays/build-pull-history", "/v1/inqsi/pull-history/parlay"}: return parlay(params)
+    if p in {"/v1/inqsi/admin/parlays/auto-build", "/v1/admin/parlays/auto-build", "/v1/inqsi/pull-history/auto-parlay"}: return auto_parlay_builds(params)
+    if p in {"/v1/inqsi/parlays/latest-pull-history", "/v1/inqsi/pull-history/parlay/latest"}: return latest_parlay_build(params)
     if p in {"/v1/inqsi/slips/scan-pull-history", "/v1/inqsi/pull-history/scan-slip"}: return scan_slip(params)
     if p in {"/v1/inqsi/monitoring/pull-data-quality", "/v1/inqsi/pull-history/data-quality"}: return quality(params)
     return None
