@@ -268,7 +268,7 @@ function gamesFromMarketBoard(boardPayload: any): InqsiGame[] {
 }
 
 export async function getInqsiSnapshot(sportKey = process.env.NEXT_PUBLIC_DEFAULT_SPORT || 'nfl'): Promise<InqsiSnapshot> {
-  const selectedSport = providerToInqsiSport[sportKey] || sportKey || defaultSports[0];
+  const selectedSport = providerToInqisSport[sportKey] || sportKey || defaultSports[0];
 
   const [marketBoardPayload, predictionsPayload, parlayPayload, livePayload, alertsPayload, performancePayload] = await Promise.all([
     safeFetch<any>('/v1/inqsi/markets/board', { boards: [] }),
