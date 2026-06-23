@@ -79,13 +79,19 @@ jobs:
                       'ok': provider.get('ok'),
                       'providerSportKey': provider.get('providerSportKey'),
                       'rawGamesReturned': provider.get('rawGamesReturned'),
+                      'rawGamesInWindow': provider.get('rawGamesInWindow'),
                       'gamesStored': provider.get('gamesStored'),
+                      'activeWindowStart': provider.get('activeWindowStart'),
+                      'activeWindowEnd': provider.get('activeWindowEnd'),
+                      'slateWindowDays': provider.get('slateWindowDays'),
                       'stored': provider.get('stored'),
                       'error': err,
                   })
               return {
                   'ok': row.get('ok'),
                   'appSport': row.get('appSport'),
+                  'rawGamesReturned': row.get('rawGamesReturned'),
+                  'rawGamesInWindow': row.get('rawGamesInWindow'),
                   'gamesStored': row.get('gamesStored'),
                   'providerPulls': providers,
               }
@@ -144,6 +150,7 @@ jobs:
               report.update({
                   'ok': bool(stored_sports and visible_sports and total_visible > 0),
                   'sportsRequested': sports,
+                  'sportsCanonical': pull.get('sportsCanonical'),
                   'sportsWithStoredGamesFromPull': stored_sports,
                   'sportsVisibleOnMarketBoard': visible_sports,
                   'totalGamesVisibleOnMarketBoard': total_visible,
@@ -151,6 +158,19 @@ jobs:
                   'marketBoardOk': board.get('ok'),
                   'pullResults': pull_rows,
                   'marketBoards': board_rows,
+                  'activeSlatePolicy': {
+                      'mlb': 'today_plus_tomorrow',
+                      'college_baseball_men': 'today_plus_tomorrow',
+                      'nba': 'today_plus_tomorrow',
+                      'wnba': 'today_plus_tomorrow',
+                      'ncaam': 'today_plus_tomorrow',
+                      'ncaaw': 'today_plus_tomorrow',
+                      'nhl': 'today_plus_tomorrow',
+                      'nfl': 'next_7_days_only',
+                      'cfb': 'next_7_days_only',
+                      'soccer': 'next_14_days_only',
+                      'tennis': 'next_7_days_only_when_provider_keys_are_valid',
+                  },
                   'storageShape': {
                       'table': os.environ.get('SNAPSHOTS_TABLE'),
                       'partitionKeyPattern': 'PULLS#{sport}#{slate_date}',
