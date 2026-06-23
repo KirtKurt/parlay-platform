@@ -3,19 +3,23 @@
 import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { createDemoMemberSession, saveMemberSession } from '@/lib/memberSession';
-import { defaultPlanId, registrationSports, registrationStates, type PlanId } from '@/lib/subscription';
+import { registrationSports, registrationStates } from '@/lib/subscription';
 
 export function RegisterForm() {
   const router = useRouter();
-  const [planId] = useState<PlanId>(defaultPlanId);
   const [email, setEmail] = useState('');
+  const [status, setStatus] = useState<'idle' | 'created'>('idle');
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    saveMemberSession(createDemoMemberSession(email, 'Full Access'));
-    const params = new URLSearchParams({ plan: planId });
-    if (email) params.set('email', email);
-    router.push(`/checkout?${params.toString()}`);
+    const formData = new FormData(event.currentTarget);
+    const submittedEmail = String(formData.get('email') ?? email).trim();
+    saveMemberSession(createDemoMemberSession(submittedEmail, 'Full Access'));
+    setStatus('created');
+
+    window.setTimeout(() => {
+      router.push('/account');
+    }, 450);
   }
 
   return (
@@ -24,6 +28,7 @@ export function RegisterForm() {
         <div>
           <p className="eyebrow blue">New member</p>
           <h3>Create your InQsi account</h3>
+          <p className="slip-note">Start the 5-day free promo and enter your workspace.</p>
         </div>
       </div>
 
@@ -36,7 +41,8 @@ export function RegisterForm() {
         <label className="field-card"><span>Primary sport</span><select required name="primarySport"><option value="">Select sport</option>{registrationSports.map((sport) => <option key={sport} value={sport}>{sport}</option>)}</select></label>
       </div>
 
-      <button className="primary-button large" type="submit">Continue</button>
+      <button className="primary-button large" type="submit">Create account and enter workspace</button>
+      {status === 'created' && <div className="compliance-box success-box">Account created. Opening your workspace now.</div>}
     </form>
   );
 }
