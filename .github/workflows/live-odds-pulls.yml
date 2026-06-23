@@ -13,9 +13,13 @@ on:
         description: 'Pull all listed sports'
         required: false
         default: 'true'
+  workflow_run:
+    workflows: ["Deploy SAM to AWS"]
+    types: [completed]
 
 jobs:
   pull:
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     steps:
       - name: Configure AWS credentials
@@ -36,7 +40,7 @@ jobs:
           test -n "$API_URL"
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
 
-      - name: Pull live odds into Inqis pull history
+      - name: Pull live odds into Inqis pull history and confirm stored rows
         env:
           ADMIN_TOKEN: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
           INPUT_SPORTS: ${{ github.event.inputs.sports }}
@@ -44,36 +48,46 @@ jobs:
         run: |
           set -euo pipefail
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          SPORTS="${INPUT_SPORTS:-nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer}"
+          SPORTS="${INPUT_SPORTS:-mlb,college_baseball_men,soccer,tennis,nfl,cfb,nba,wnba,ncaam,nhl}"
           ALL_FLAG="${INPUT_ALL:-true}"
           test -n "$ADMIN_TOKEN"
 
           echo "Provider status"
-          curl --silent --show-error \
+          curl --fail --silent --show-error \
             -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
             "${API_URL}v1/inqsi/odds/provider-status?probe=true" \
             | tee provider-status.json \
             | python -m json.tool
 
           echo "Pulling live odds for: $SPORTS"
-          HTTP_CODE=$(curl --silent --show-error --output pull-response.json --write-out "%{http_code}" \
+          curl --fail --silent --show-error \
             -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
-            "${API_URL}v1/inqsi/odds/pull?all=${ALL_FLAG}&sports=${SPORTS}")
+            "${API_URL}v1/inqsi/odds/pull?all=${ALL_FLAG}&sports=${SPORTS}" \
+            | tee pull-response.json \
+            | python -m json.tool
 
-          cat pull-response.json | python -m json.tool
-          echo "HTTP status: $HTTP_CODE"
-
-          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
-            echo "Live odds pull failed. Response body is printed above."
-            exit 1
-          fi
+          echo "Reading public market board for stored row confirmation"
+          curl --fail --silent --show-error \
+            "${API_URL}v1/inqsi/markets/board?sports=${SPORTS}" \
+            | tee market-board.json \
+            | python -m json.tool
 
           python - <<'PY'
           import json, sys
-          data = json.load(open('pull-response.json'))
-          results = data.get('results') or []
-          stored = [r for r in results if (r.get('gamesStored') or 0) > 0]
-          print('sportsWithStoredGames=', [r.get('appSport') for r in stored])
+          pull = json.load(open('pull-response.json'))
+          board = json.load(open('market-board.json'))
+          pull_results = pull.get('results') or []
+          stored = [r for r in pull_results if (r.get('gamesStored') or 0) > 0]
+          board_rows = [b for b in (board.get('boards') or []) if (b.get('gameCount') or 0) > 0]
+          summary = {
+              'sportsWithStoredGamesFromPull': [r.get('appSport') for r in stored],
+              'sportsVisibleOnMarketBoard': [b.get('sport') for b in board_rows],
+              'totalGamesVisibleOnMarketBoard': sum(int(b.get('gameCount') or 0) for b in board_rows),
+          }
+          print('INQIS_LIVE_PULL_CONFIRMATION')
+          print(json.dumps(summary, indent=2))
           if not stored:
-              print('No games were stored. This can be normal for inactive sports, but no first pull is confirmed.')
+              sys.exit('Live pull did not store any game rows. Green is not allowed until at least one sport stores data.')
+          if not board_rows:
+              sys.exit('Market board does not show stored games. Green is not allowed until front-end readable data exists.')
           PY
