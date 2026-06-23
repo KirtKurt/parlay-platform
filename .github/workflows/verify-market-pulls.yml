@@ -6,7 +6,7 @@ on:
       sports:
         description: 'Comma-separated sports to verify'
         required: false
-        default: 'mlb,soccer,tennis,nfl,cfb'
+        default: 'mlb,college_baseball_men,soccer,tennis,nfl,cfb'
 
 jobs:
   verify:
@@ -32,7 +32,7 @@ jobs:
           INPUT_SPORTS: ${{ github.event.inputs.sports }}
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          SPORTS="${INPUT_SPORTS:-mlb,soccer,tennis,nfl,cfb}"
+          SPORTS="${INPUT_SPORTS:-mlb,college_baseball_men,soccer,tennis,nfl,cfb}"
           test -n "$ADMIN_TOKEN"
           curl --fail --silent --show-error -H "x-inqsi-admin-token: $ADMIN_TOKEN" "${API_URL}v1/inqsi/odds/pull?all=true&sports=${SPORTS}" | tee pull.json | python -m json.tool
           curl --fail --silent --show-error -H "x-inqsi-admin-token: $ADMIN_TOKEN" "${API_URL}v1/inqsi/admin/data/pull-integrity?sports=${SPORTS}" | tee audit.json | python -m json.tool
