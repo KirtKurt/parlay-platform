@@ -42,19 +42,38 @@ jobs:
           INPUT_SPORTS: ${{ github.event.inputs.sports }}
           INPUT_ALL: ${{ github.event.inputs.all }}
         run: |
+          set -euo pipefail
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           SPORTS="${INPUT_SPORTS:-nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer}"
           ALL_FLAG="${INPUT_ALL:-true}"
           test -n "$ADMIN_TOKEN"
-          curl --fail --silent --show-error \
+
+          echo "Provider status"
+          curl --silent --show-error \
             -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
-            "${API_URL}v1/inqsi/odds/provider-status" \
+            "${API_URL}v1/inqsi/odds/provider-status?probe=true" \
+            | tee provider-status.json \
             | python -m json.tool
-          curl --fail --silent --show-error \
+
+          echo "Pulling live odds for: $SPORTS"
+          HTTP_CODE=$(curl --silent --show-error --output pull-response.json --write-out "%{http_code}" \
             -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
-            "${API_URL}v1/inqsi/odds/pull?all=${ALL_FLAG}&sports=${SPORTS}" \
-            | python -m json.tool
-          curl --fail --silent --show-error \
-            -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
-            "${API_URL}v1/inqsi/admin/parlays/auto-build?sports=${SPORTS}&store=true" \
-            | python -m json.tool
+            "${API_URL}v1/inqsi/odds/pull?all=${ALL_FLAG}&sports=${SPORTS}")
+
+          cat pull-response.json | python -m json.tool
+          echo "HTTP status: $HTTP_CODE"
+
+          if [ "$HTTP_CODE" -lt 200 ] || [ "$HTTP_CODE" -ge 300 ]; then
+            echo "Live odds pull failed. Response body is printed above."
+            exit 1
+          fi
+
+          python - <<'PY'
+          import json, sys
+          data = json.load(open('pull-response.json'))
+          results = data.get('results') or []
+          stored = [r for r in results if (r.get('gamesStored') or 0) > 0]
+          print('sportsWithStoredGames=', [r.get('appSport') for r in stored])
+          if not stored:
+              print('No games were stored. This can be normal for inactive sports, but no first pull is confirmed.')
+          PY
