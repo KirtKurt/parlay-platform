@@ -9,6 +9,11 @@ from typing import Any, Dict, List, Optional
 import boto3
 from boto3.dynamodb.conditions import Key
 
+try:
+    import admin_auth
+except Exception:
+    admin_auth = None
+
 
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -58,7 +63,7 @@ def out(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
             "content-type": "application/json",
             "access-control-allow-origin": "*",
             "access-control-allow-methods": "GET,POST,OPTIONS",
-            "access-control-allow-headers": "content-type,authorization,x-inqsi-member-id,x-inqsi-session-id,x-inqsi-device-id",
+            "access-control-allow-headers": "content-type,authorization,x-inqsi-member-id,x-inqsi-session-id,x-inqsi-device-id,x-inqsi-admin-token",
         },
         "body": json.dumps(clean(body)),
     }
@@ -286,6 +291,10 @@ def summary(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def route(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     event = event or {}
+    if admin_auth is not None:
+        auth_response = admin_auth.check(event)
+        if auth_response is not None:
+            return auth_response
     method = (event.get("httpMethod") or event.get("requestContext", {}).get("http", {}).get("method") or "GET").upper()
     path = (event.get("rawPath") or event.get("path") or "/").rstrip("/") or "/"
     if method == "OPTIONS" and (path.startswith("/v1/inqsi/account-integrity") or path.startswith("/v1/account-integrity") or path.startswith("/v1/inqsi/admin/account-integrity") or path.startswith("/v1/admin/account-integrity")):
