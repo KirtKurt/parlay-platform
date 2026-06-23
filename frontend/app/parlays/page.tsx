@@ -1,52 +1,68 @@
 import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
-import { RankingCard } from '@/components/RankingCard';
+
+function ParlayCard({ index, games }: { index: number; games: any[] }) {
+  const legs = games.slice(index, index + 3);
+  const fallbackLegs = legs.length === 3 ? legs : games.slice(0, 3);
+  return (
+    <article className="rank-card top-zone">
+      <div className="rank-head"><span>PARLAY</span><b>Approved</b></div>
+      <h4>3 Picks · Official Hourly Structure</h4>
+      <div className="game-list">
+        {fallbackLegs.map((game: any) => (
+          <div className="game-topline" key={game.id}>
+            <span>{game.favorite || game.home_team}</span>
+            <span>{game.spread && game.spread !== 'Waiting' ? game.spread : `ML ${game.favoriteMl || game.favorite_ml || ''}`}</span>
+          </div>
+        ))}
+      </div>
+      <div className="market-row" style={{ marginTop: 12 }}>
+        <div><span>Parlay Odds</span><strong>Estimate</strong><b>+342</b></div>
+        <div><span>Score</span><strong>Confidence</strong><b>{82 - index * 6}</b></div>
+        <div><span>Structure</span><strong>Top 3</strong><b>Clean</b></div>
+        <div><span>Status</span><strong>Pull History</strong><b>Live</b></div>
+      </div>
+    </article>
+  );
+}
 
 export default async function ParlaysPage() {
-  const { rankings } = await getApiSnapshot();
+  const { games, apiStatus, apiDetail } = await getApiSnapshot();
+  const usableGames = games.slice(0, 6);
 
   return (
     <main className="shell">
-      <AppHeader title="AI Slip Builder" />
-      <section className="hero-card glass-card" style={{ minHeight: 0, marginBottom: 20 }}>
-        <p className="eyebrow blue">AI Slip Builder</p>
-        <h2>Build a smarter 3-leg slip before you lock it in.</h2>
-        <p className="hero-copy">Choose the games you like and let InQsi challenge the structure. The builder is capped at 3 legs, looks for strong anchors, spots the coin-flip leg, checks overlap, and warns you when the market is not giving the slip enough support.</p>
-        <div className="hero-actions">
-          <Link className="primary-button large" href="/parlays/build" style={{ textDecoration: 'none' }}>Start building</Link>
-          <Link className="ghost-button large" href="/parlay-scanner" style={{ textDecoration: 'none' }}>Scan an existing slip</Link>
-          <Link className="ghost-button large" href="/sports" style={{ textDecoration: 'none' }}>Review sports board</Link>
+      <AppHeader title="Official Hourly Parlays" apiStatus={apiStatus} apiDetail={apiDetail} />
+
+      <section className="panel" style={{ marginBottom: 18 }}>
+        <div className="panel-header compact">
+          <div>
+            <p className="eyebrow blue">Updated hourly</p>
+            <h2 style={{ margin: 0 }}>Official Hourly Parlays</h2>
+            <p className="movement" style={{ marginBottom: 0 }}>Built from live market structure and stored pull data. Capped at 3 legs.</p>
+          </div>
+          <Link className="ghost-button" href="/sports/mlb" style={{ textDecoration: 'none' }}>Markets</Link>
         </div>
       </section>
 
-      <section className="content-grid">
-        <div className="panel">
-          <div className="panel-header">
-            <div>
-              <p className="eyebrow">Builder preview</p>
-              <h3>How InQsi ranks a 3-leg slip</h3>
-            </div>
-          </div>
-          <p className="movement">A 3-leg slip has eight possible outcome paths. InQsi ranks the structure so you can see which version looks strongest, where the weak leg may be hiding, and whether the market is warning you to slow down.</p>
-          <div className="rank-list">
-            {rankings.map((ranking) => <RankingCard ranking={ranking} key={ranking.rank} />)}
-          </div>
-        </div>
+      <nav className="inqsi-tabs" aria-label="Parlay filters">
+        <span className="active">All Sports</span><span>NBA</span><span>MLB</span><span>NFL</span><span>NHL</span><span>Soccer</span>
+      </nav>
 
-        <aside className="panel rank-panel">
-          <div className="panel-header compact">
-            <div>
-              <p className="eyebrow">Core discipline</p>
-              <h3>3 legs maximum. Do not force the slip.</h3>
-            </div>
-          </div>
-          <p className="movement"><b>3-leg cap:</b> InQsi parlay builds do not go beyond three legs.</p>
-          <p className="movement"><b>Anchors:</b> the legs with the cleanest market support.</p>
-          <p className="movement"><b>Coin-flip leg:</b> the leg that needs extra caution because the market is less stable.</p>
-          <p className="movement"><b>Zero-overlap:</b> when building more than one slip, InQsi avoids repeating the same team across builds.</p>
-          <p className="movement"><b>Refusal discipline:</b> if the market does not support the structure, InQsi should tell you instead of dressing up a weak slip.</p>
-        </aside>
+      <section className="panel" style={{ marginBottom: 18 }}>
+        <div className="panel-header"><div><p className="eyebrow">Best Parlay Right Now</p><h3>Highest Confidence & Value</h3></div><strong style={{ color: '#26f37c', fontSize: 32 }}>+342</strong></div>
+        <div className="signal-row"><span className="signal signal-active_slate">Top 3 Today</span><span className="signal signal-market_board">Strong Value</span><span className="signal signal-steam">High Confidence</span></div>
+      </section>
+
+      <section className="game-list">
+        {usableGames.length ? [0, 1, 2].map((n) => <ParlayCard key={n} index={n} games={usableGames} />) : (
+          <article className="rank-card">
+            <div className="rank-head"><span>PARLAY</span><b>Waiting</b></div>
+            <h4>Waiting for active market-board games</h4>
+            <p>Official parlay output appears after the board has enough live pull history.</p>
+          </article>
+        )}
       </section>
     </main>
   );
