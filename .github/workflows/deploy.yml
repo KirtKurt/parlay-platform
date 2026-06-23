@@ -109,6 +109,9 @@ jobs:
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "API_URL=$API_URL"
 
+      - name: Configure API WAF and throttling
+        run: bash scripts/configure_api_protection.sh "${{ steps.stack_outputs.outputs.api_url }}" "${{ secrets.AWS_REGION }}"
+
       - name: Smoke test live health endpoint
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
