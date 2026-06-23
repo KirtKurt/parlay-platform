@@ -8,7 +8,7 @@ on:
       sports:
         description: 'Comma-separated Inqis sports to pull'
         required: false
-        default: 'nfl,cfb,mlb,nba,wnba,ncaam,nhl,tennis,soccer'
+        default: 'nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer'
       all:
         description: 'Pull all listed sports'
         required: false
@@ -43,7 +43,7 @@ jobs:
           INPUT_ALL: ${{ github.event.inputs.all }}
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          SPORTS="${INPUT_SPORTS:-nfl,cfb,mlb,nba,wnba,ncaam,nhl,tennis,soccer}"
+          SPORTS="${INPUT_SPORTS:-nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer}"
           ALL_FLAG="${INPUT_ALL:-true}"
           test -n "$ADMIN_TOKEN"
           curl --fail --silent --show-error \
