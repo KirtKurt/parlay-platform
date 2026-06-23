@@ -40,6 +40,8 @@ def path(event: Dict[str, Any]) -> str:
 def is_admin_path(p: str, m: str) -> bool:
     if p.startswith("/v1/inqsi/admin/") or p.startswith("/v1/admin/"):
         return True
+    if p.startswith("/v1/inqsi/odds/") or p.startswith("/v1/odds/"):
+        return True
     if p in {"/v1/inqsi/creators", "/v1/creators"} and m == "GET":
         return True
     if p.startswith("/v1/inqsi/moderation/") or p.startswith("/v1/moderation/"):
