@@ -32,11 +32,49 @@ jobs:
           test -n "$API_URL"
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
 
+      - name: Check market data gate
+        id: market_gate
+        env:
+          INPUT_SPORTS: ${{ github.event.inputs.sports }}
+        run: |
+          set -euo pipefail
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          SPORTS="${INPUT_SPORTS:-nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer}"
+
+          curl --silent --show-error --output market-board.json --write-out "%{http_code}" \
+            "${API_URL}v1/inqsi/markets/board?sports=${SPORTS}" > http-code.txt
+
+          cat market-board.json | python -m json.tool
+          HTTP_CODE=$(cat http-code.txt)
+          echo "HTTP status: $HTTP_CODE"
+
+          python - <<'PY' >> "$GITHUB_OUTPUT"
+          import json
+          try:
+              board = json.load(open('market-board.json'))
+          except Exception:
+              board = {}
+          rows = [b for b in board.get('boards', []) if (b.get('gameCount') or 0) > 0]
+          game_count = sum(int(b.get('gameCount') or 0) for b in rows)
+          sports = ','.join([str(b.get('sport')) for b in rows])
+          print(f"has_market_rows={'true' if game_count > 0 else 'false'}")
+          print(f"market_game_count={game_count}")
+          print(f"sports_with_games={sports}")
+          PY
+
+      - name: Skip official parlay build when no market data exists
+        if: steps.market_gate.outputs.has_market_rows != 'true'
+        run: |
+          echo "No stored market rows visible yet. Skipping official hourly parlay build cleanly."
+          echo "Official parlays require confirmed pull history and the 12-pull gate."
+
       - name: Build or update official hourly three-leg parlays
+        if: steps.market_gate.outputs.has_market_rows == 'true'
         env:
           ADMIN_TOKEN: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
           INPUT_SPORTS: ${{ github.event.inputs.sports }}
         run: |
+          set -euo pipefail
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           SPORTS="${INPUT_SPORTS:-nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer}"
           test -n "$ADMIN_TOKEN"
