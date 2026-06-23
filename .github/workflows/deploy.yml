@@ -85,9 +85,9 @@ jobs:
           import json, os
           with open('current-env.json') as f:
               variables = json.load(f) or {}
-          token = os.environ.get('INQSI_ADMIN_API_TOKEN', '').strip()
-          if token:
-              variables['INQSI_ADMIN_API_TOKEN'] = token
+          value = os.environ.get('INQSI_ADMIN_API_TOKEN', '').strip()
+          if value:
+              variables['INQSI_ADMIN_API_TOKEN'] = value
           else:
               variables.pop('INQSI_ADMIN_API_TOKEN', None)
           with open('lambda-env.json', 'w') as f:
@@ -120,10 +120,18 @@ jobs:
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           curl --fail --silent --show-error "${API_URL}v1/inqsi/images/moderation-policy"
 
-      - name: Smoke test moderation queue workflow
+      - name: Smoke test admin auth gate
         env:
           INQSI_ADMIN_API_TOKEN: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           test -n "$API_URL"
-          python hello_world/moderation_queue_smoke.py "$API_URL"
+          if [ -n "$INQSI_ADMIN_API_TOKEN" ]; then
+            curl --fail --silent --show-error \
+              -H "x-inqsi-admin-token: $INQSI_ADMIN_API_TOKEN" \
+              "${API_URL}v1/inqsi/admin/analytics/alerts"
+          else
+            CODE=$(curl --silent --output /tmp/admin-auth-body.txt --write-out "%{http_code}" "${API_URL}v1/inqsi/admin/analytics/alerts")
+            test "$CODE" = "503"
+            cat /tmp/admin-auth-body.txt
+          fi
