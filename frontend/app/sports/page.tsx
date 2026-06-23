@@ -1,60 +1,47 @@
 import Link from 'next/link';
 import { getApiSnapshot } from '@/lib/api';
 import { AppHeader } from '@/components/AppHeader';
-import { ContentBlock } from '@/components/ContentBlock';
-import { SportEquipmentIcon, SportIconStrip } from '@/components/SportVisuals';
+import { GameCard } from '@/components/GameCard';
 import { sports } from '@/lib/sports';
 
 export default async function SportsPage() {
-  const { apiStatus, apiDetail } = await getApiSnapshot();
+  const { games, apiStatus, apiDetail } = await getApiSnapshot();
+  const activeGames = games.slice(0, 8);
 
   return (
     <main className="shell">
-      <AppHeader title="Sports lobby" apiStatus={apiStatus} apiDetail={apiDetail} />
+      <AppHeader title="Sports Market Board" apiStatus={apiStatus} apiDetail={apiDetail} />
 
-      <section className="sport-hero-grid">
-        <div className="hero-card glass-card" style={{ minHeight: 0 }}>
-          <p className="eyebrow blue">All sports · 5 days free</p>
-          <h2>Pick your sport. We’ll organize the board.</h2>
-          <p className="hero-copy">
-            Start with the sport you care about today. InQsi helps you see where the market is showing support, pressure, and warning signs before you lock in a pick.
-          </p>
-          <div className="hero-actions">
-            <Link className="primary-button large" href="/register?promo=5-days" style={{ textDecoration: 'none' }}>Start 5 Days Free</Link>
-            <Link className="ghost-button large" href="/picks-audit" style={{ textDecoration: 'none' }}>Test Your Picks</Link>
-            <Link className="ghost-button large" href="/methodology" style={{ textDecoration: 'none' }}>Read Methodology</Link>
+      <section className="panel" style={{ marginBottom: 18 }}>
+        <div className="panel-header compact">
+          <div>
+            <p className="eyebrow blue">All sports included</p>
+            <h2 style={{ margin: 0 }}>Sports Market Board</h2>
+            <p className="movement" style={{ marginBottom: 0 }}>One membership opens every supported sport.</p>
           </div>
+          <span className="data-status">{apiStatus === 'CONNECTED' ? 'Live' : 'Syncing'}</span>
         </div>
-        <aside className="sport-hero-panel accent-blue">
-          <SportEquipmentIcon slug="nfl" size="large" showLabel />
-          <h3>Find the board faster</h3>
-          <p>Choose your sport, scan the slate, and look for the signals that could make a pick stronger, weaker, or too risky to force.</p>
-          <div className="mini-equipment-line"><span>Sports</span><span>Signals</span><span>Risk checks</span></div>
-        </aside>
       </section>
 
-      <SportIconStrip />
+      <nav className="inqsi-tabs" aria-label="Sports boards">
+        {sports.map((sport) => <Link href={`/sports/${sport.slug}`} key={sport.slug}>{sport.label}</Link>)}
+      </nav>
 
-      <section className="visual-route-strip" aria-label="Sports boards">
-        {sports.map((sport) => (
-          <Link className="visual-route-card" href={`/sports/${sport.slug}`} key={sport.slug} style={{ textDecoration: 'none', color: 'inherit' }} aria-label={`Open ${sport.label} board`}>
-            <SportEquipmentIcon slug={sport.slug} />
-            <strong>{sport.title}</strong>
-          </Link>
-        ))}
+      <section className="status-row">
+        <article className="status-card"><span>Active Games</span><strong>{activeGames.length}</strong><p>Visible games from the board feed.</p></article>
+        <article className="status-card"><span>Markets</span><strong>ML / Spread / O-U</strong><p>Core markets visible on every game card.</p></article>
+        <article className="status-card"><span>Sports</span><strong>{sports.length}</strong><p>Supported boards in one membership.</p></article>
+        <article className="status-card"><span>Status</span><strong>{apiStatus === 'CONNECTED' ? 'Live' : 'Syncing'}</strong><p>{apiDetail}</p></article>
       </section>
 
-      <ContentBlock
-        eyebrow="How to use the board"
-        title="Start with the sport. Then check the risk."
-        body="You should not have to dig through complicated screens to understand what matters. Pick the sport, review the slate, scan the signals, and look for the places where your ticket may be weaker than it feels."
-        items={[
-          { title: 'Choose the sport', detail: 'Open the board that matches what you are watching today.' },
-          { title: 'Scan the slate', detail: 'See which games are showing support, resistance, coin-flip pressure, or unusual movement.' },
-          { title: 'Check the weak spots', detail: 'Use the same signal language across every sport so the warning signs stay easy to read.' },
-          { title: 'Avoid forced confidence', detail: 'If the board is messy, InQsi should slow you down instead of dressing up a risky answer.' }
-        ]}
-      />
+      <section className="panel">
+        <div className="panel-header"><div><p className="eyebrow">Live Snapshot</p><h3>All active markets</h3></div><Link className="ghost-button" href="/parlays">Parlays</Link></div>
+        <div className="game-list">
+          {activeGames.length ? activeGames.map((game) => <GameCard game={game} key={game.id} />) : (
+            <article className="game-card"><div className="game-topline"><span className="league-chip">SYNCING</span><span className="data-status">Waiting</span></div><h4>Waiting for market-board data</h4><p className="movement">Active games will show moneyline, spread, over/under, start time, and market signal status.</p></article>
+          )}
+        </div>
+      </section>
     </main>
   );
 }
