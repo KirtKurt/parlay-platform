@@ -7,6 +7,11 @@ from typing import Any, Dict, List, Optional
 import boto3
 from boto3.dynamodb.conditions import Attr, Key
 
+try:
+    import cyber_security
+except Exception:
+    cyber_security = None
+
 
 dynamodb = boto3.resource("dynamodb")
 TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -31,7 +36,7 @@ def out(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
             "content-type": "application/json",
             "access-control-allow-origin": "*",
             "access-control-allow-methods": "GET,OPTIONS",
-            "access-control-allow-headers": "content-type,authorization,x-inqsi-member-id",
+            "access-control-allow-headers": "content-type,authorization,x-inqsi-member-id,x-inqsi-admin-token",
         },
         "body": json.dumps(clean(body)),
     }
@@ -171,8 +176,18 @@ def analytics_alerts() -> List[Dict[str, Any]]:
     return rows
 
 
+def cyber_alerts() -> List[Dict[str, Any]]:
+    if cyber_security is None:
+        return []
+    try:
+        return cyber_security.security_alerts()
+    except Exception:
+        return []
+
+
 def handle(event: Dict[str, Any]) -> Dict[str, Any]:
     alerts = []
+    alerts.extend(cyber_alerts())
     alerts.extend(market_alerts())
     alerts.extend(moderation_alerts())
     alerts.extend(integrity_alerts())
@@ -183,6 +198,7 @@ def handle(event: Dict[str, Any]) -> Dict[str, Any]:
     return out(200, {
         "ok": True,
         "dashboard": "admin_alerts",
+        "cyberSecurityAlertsDelegated": cyber_security is not None,
         "generatedAt": datetime.now(timezone.utc).isoformat(),
         "summary": {
             "totalAlerts": len(alerts),
