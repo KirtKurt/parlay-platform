@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "createdAt": "2026-06-24T17:43:09.968278+00:00",
+  "createdAt": "2026-06-24T17:47:53.596338+00:00",
   "sportsRequested": [
     "mlb",
     "soccer",
@@ -55,27 +55,27 @@
       "sport": "mlb",
       "slate_date": "2026-06-24",
       "build": {
-        "pullCount": "17",
-        "reason": "MISSING_TWO_STRONG_LEGS",
-        "coinFlipCount": "4",
-        "rawSignalCount": "16",
+        "pullCount": "18",
+        "freezeMinutesBeforeGame": "120",
+        "minimumGameHistoryPoints": "4",
+        "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
+        "gameCount": "19",
+        "leanCount": "0",
+        "gameHistoryStored": "19",
         "strongCount": "0",
-        "message": "Refused all-coin-flip, wrong-slate, or weak build.",
-        "sameSlateSignalCount": "14",
-        "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
+        "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG.",
         "buildStatus": "NO_BUILD",
         "slate_date": "2026-06-24",
-        "maximumCoinFlipLegs": "1",
-        "eligibleCount": "4",
-        "strictDailySlate": true,
-        "minimumStrongLegs": "2",
+        "candidates": [],
+        "engine": "MLB-B1.0",
         "ok": true,
         "sport": "mlb",
-        "minimumParlayPulls": "12"
+        "candidateCount": "0",
+        "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default"
       },
       "stored": {
         "pk": "PARLAY_BUILDS#mlb#2026-06-24",
-        "sk": "BUILD#2026-06-24T17:43:09.739868+00:00#parlay_a7bbc3db48aa4239"
+        "sk": "BUILD#2026-06-24T17:47:52.063880+00:00#parlay_48f6d9865cbe47d6"
       }
     },
     "result": {
@@ -87,24 +87,24 @@
           "ok": true,
           "sport": "mlb",
           "slate_date": "2026-06-24",
-          "pullCount": 17,
-          "rawSignalCount": 16,
-          "sameSlateSignalCount": 14,
-          "minimumParlayPulls": 12,
-          "minimumStrongLegs": 2,
-          "maximumCoinFlipLegs": 1,
-          "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
-          "strictDailySlate": true,
-          "buildStatus": "NO_BUILD",
-          "reason": "MISSING_TWO_STRONG_LEGS",
-          "eligibleCount": 4,
+          "engine": "MLB-B1.0",
+          "pullCount": 18,
+          "gameCount": 19,
+          "gameHistoryStored": 19,
+          "candidateCount": 0,
           "strongCount": 0,
-          "coinFlipCount": 4,
-          "message": "Refused all-coin-flip, wrong-slate, or weak build.",
+          "leanCount": 0,
+          "freezeMinutesBeforeGame": 120,
+          "minimumGameHistoryPoints": 4,
+          "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default",
+          "buildStatus": "NO_BUILD",
+          "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
+          "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG.",
+          "candidates": [],
           "stored": {
             "pk": "PARLAY_BUILDS#mlb#2026-06-24",
-            "sk": "BUILD#2026-06-24T17:43:09.739868+00:00#parlay_a7bbc3db48aa4239",
-            "build_id": "parlay_a7bbc3db48aa4239",
+            "sk": "BUILD#2026-06-24T17:47:52.063880+00:00#parlay_48f6d9865cbe47d6",
+            "build_id": "parlay_48f6d9865cbe47d6",
             "build_status": "NO_BUILD"
           }
         },
@@ -112,7 +112,7 @@
           "ok": true,
           "sport": "wnba",
           "slate_date": "2026-06-24",
-          "pullCount": 17,
+          "pullCount": 18,
           "rawSignalCount": 7,
           "sameSlateSignalCount": 2,
           "minimumParlayPulls": 12,
@@ -128,8 +128,8 @@
           "message": "Refused all-coin-flip, wrong-slate, or weak build.",
           "stored": {
             "pk": "PARLAY_BUILDS#wnba#2026-06-24",
-            "sk": "BUILD#2026-06-24T17:43:09.861462+00:00#parlay_283ffb4c94764d25",
-            "build_id": "parlay_283ffb4c94764d25",
+            "sk": "BUILD#2026-06-24T17:47:52.387042+00:00#parlay_38a9c5fa97d34dcd",
+            "build_id": "parlay_38a9c5fa97d34dcd",
             "build_status": "NO_BUILD"
           }
         },
@@ -150,8 +150,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nfl#2026-06-24",
-            "sk": "BUILD#2026-06-24T17:43:09.874371+00:00#parlay_b4e8a6fe2fe24410",
-            "build_id": "parlay_b4e8a6fe2fe24410",
+            "sk": "BUILD#2026-06-24T17:47:52.535851+00:00#parlay_71716e7eb8a94846",
+            "build_id": "parlay_71716e7eb8a94846",
             "build_status": "NO_BUILD"
           }
         },
@@ -172,8 +172,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#cfb#2026-06-24",
-            "sk": "BUILD#2026-06-24T17:43:09.890156+00:00#parlay_12580957e5054d6e",
-            "build_id": "parlay_12580957e5054d6e",
+            "sk": "BUILD#2026-06-24T17:47:52.685164+00:00#parlay_6bb3e73a8fef4aa1",
+            "build_id": "parlay_6bb3e73a8fef4aa1",
             "build_status": "NO_BUILD"
           }
         },
@@ -194,8 +194,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nba#2026-06-24",
-            "sk": "BUILD#2026-06-24T17:43:09.902953+00:00#parlay_280a7531d50f4ad4",
-            "build_id": "parlay_280a7531d50f4ad4",
+            "sk": "BUILD#2026-06-24T17:47:52.834399+00:00#parlay_7dd4c9e59ec64b59",
+            "build_id": "parlay_7dd4c9e59ec64b59",
             "build_status": "NO_BUILD"
           }
         },
@@ -216,8 +216,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#ncaam#2026-06-24",
-            "sk": "BUILD#2026-06-24T17:43:09.916639+00:00#parlay_c976b6f856af4075",
-            "build_id": "parlay_c976b6f856af4075",
+            "sk": "BUILD#2026-06-24T17:47:52.983337+00:00#parlay_ab26932f817c4079",
+            "build_id": "parlay_ab26932f817c4079",
             "build_status": "NO_BUILD"
           }
         },
@@ -238,8 +238,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nhl#2026-06-24",
-            "sk": "BUILD#2026-06-24T17:43:09.928739+00:00#parlay_f5ba58dd34004fba",
-            "build_id": "parlay_f5ba58dd34004fba",
+            "sk": "BUILD#2026-06-24T17:47:53.134210+00:00#parlay_55274e3a831c4637",
+            "build_id": "parlay_55274e3a831c4637",
             "build_status": "NO_BUILD"
           }
         },
@@ -260,8 +260,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#soccer#2026-06-24",
-            "sk": "BUILD#2026-06-24T17:43:09.942201+00:00#parlay_0ee0fe8d62804c26",
-            "build_id": "parlay_0ee0fe8d62804c26",
+            "sk": "BUILD#2026-06-24T17:47:53.283060+00:00#parlay_069df578c3de4e2a",
+            "build_id": "parlay_069df578c3de4e2a",
             "build_status": "NO_BUILD"
           }
         },
@@ -282,8 +282,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#tennis#2026-06-24",
-            "sk": "BUILD#2026-06-24T17:43:09.954336+00:00#parlay_b57adc2525c24fed",
-            "build_id": "parlay_b57adc2525c24fed",
+            "sk": "BUILD#2026-06-24T17:47:53.437461+00:00#parlay_bb9e635bd92a4226",
+            "build_id": "parlay_bb9e635bd92a4226",
             "build_status": "NO_BUILD"
           }
         }
