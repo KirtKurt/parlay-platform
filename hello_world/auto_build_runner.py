@@ -3,6 +3,7 @@ import os
 from datetime import datetime, timezone
 
 import inqsi_pull_history as history
+import mlb_b10_engine
 
 MIN_PULLS = int(os.environ.get("INQSI_MIN_PARLAY_PULLS", "12"))
 MIN_STRONG = int(os.environ.get("INQSI_MIN_STRONG_LEGS", "2"))
@@ -84,9 +85,8 @@ def strict_result(sport):
         legs, score = [], 0
         for i, s in enumerate(selected):
             home_pick = bool(mask & (1 << i))
-            side = "home" if home_pick else "away"
             side_sig = s["homeSignal"] if home_pick else s["awaySignal"]
-            legs.append({"gameId": s["gameId"], "selection": s["homeTeam"] if home_pick else s["awayTeam"], "side": side, "grade": side_sig["grade"], "tags": side_sig["tags"], "commenceTime": s.get("commenceTime")})
+            legs.append({"gameId": s["gameId"], "selection": s["homeTeam"] if home_pick else s["awayTeam"], "side": "home" if home_pick else "away", "grade": side_sig["grade"], "tags": side_sig["tags"], "commenceTime": s.get("commenceTime")})
             score += side_sig["score"]
         combos.append({"rank": 0, "score": round(score / 3, 2), "legs": legs})
     combos.sort(key=lambda x: x["score"], reverse=True)
@@ -102,9 +102,9 @@ def main():
     latest_fn = getattr(history, "latest_" + "parlay_build")
     results = []
     for sport in sports_list:
-        result = strict_result(sport)
+        result = mlb_b10_engine.build(today_utc()) if sport == "mlb" else strict_result(sport)
         try:
-            result["stored"] = store_fn(result, mode="strict_auto_after_live_pull")
+            result["stored"] = store_fn(result, mode="mlb_b10_or_strict_auto_after_live_pull")
         except Exception as exc:
             result["storeError"] = str(exc)
         results.append(result)
