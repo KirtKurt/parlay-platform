@@ -1,5 +1,5 @@
 {
-  "ok": true,
+  "ok": false,
   "sports": [
     "mlb",
     "wnba",
@@ -11,25 +11,26 @@
     "soccer",
     "tennis"
   ],
-  "builtSports": [
-    "wnba"
-  ],
+  "builtSports": [],
   "mlbBuilt": false,
   "mlbLatestBuild": {
     "ok": true,
     "sport": "mlb",
     "slate_date": "2026-06-24",
     "build": {
-      "pullCount": "15",
+      "pullCount": "16",
       "reason": "MISSING_TWO_STRONG_LEGS",
-      "coinFlipCount": "4",
+      "coinFlipCount": "3",
+      "rawSignalCount": "16",
       "strongCount": "0",
-      "message": "Refused all-coin-flip or weak build.",
+      "message": "Refused all-coin-flip, wrong-slate, or weak build.",
+      "sameSlateSignalCount": "14",
       "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
       "buildStatus": "NO_BUILD",
       "slate_date": "2026-06-24",
       "maximumCoinFlipLegs": "1",
-      "eligibleCount": "4",
+      "eligibleCount": "3",
+      "strictDailySlate": true,
       "minimumStrongLegs": "2",
       "ok": true,
       "sport": "mlb",
@@ -37,33 +38,36 @@
     },
     "stored": {
       "pk": "PARLAY_BUILDS#mlb#2026-06-24",
-      "sk": "BUILD#2026-06-24T17:40:50.409832+00:00#parlay_d942192aa19042eb"
+      "sk": "BUILD#2026-06-24T17:41:24.887074+00:00#parlay_c376cdbe0af643bb"
     }
   },
   "result": {
     "ok": true,
     "autoBuild": true,
-    "builtCount": 1,
+    "builtCount": 0,
     "results": [
       {
         "ok": true,
         "sport": "mlb",
         "slate_date": "2026-06-24",
-        "pullCount": 15,
+        "pullCount": 16,
+        "rawSignalCount": 16,
+        "sameSlateSignalCount": 14,
         "minimumParlayPulls": 12,
         "minimumStrongLegs": 2,
         "maximumCoinFlipLegs": 1,
         "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
+        "strictDailySlate": true,
         "buildStatus": "NO_BUILD",
         "reason": "MISSING_TWO_STRONG_LEGS",
-        "eligibleCount": 4,
+        "eligibleCount": 3,
         "strongCount": 0,
-        "coinFlipCount": 4,
-        "message": "Refused all-coin-flip or weak build.",
+        "coinFlipCount": 3,
+        "message": "Refused all-coin-flip, wrong-slate, or weak build.",
         "stored": {
           "pk": "PARLAY_BUILDS#mlb#2026-06-24",
-          "sk": "BUILD#2026-06-24T17:40:50.409832+00:00#parlay_d942192aa19042eb",
-          "build_id": "parlay_d942192aa19042eb",
+          "sk": "BUILD#2026-06-24T17:41:24.887074+00:00#parlay_c376cdbe0af643bb",
+          "build_id": "parlay_c376cdbe0af643bb",
           "build_status": "NO_BUILD"
         }
       },
@@ -71,651 +75,178 @@
         "ok": true,
         "sport": "wnba",
         "slate_date": "2026-06-24",
-        "pullCount": 15,
+        "pullCount": 16,
+        "rawSignalCount": 7,
+        "sameSlateSignalCount": 2,
         "minimumParlayPulls": 12,
         "minimumStrongLegs": 2,
         "maximumCoinFlipLegs": 1,
         "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
-        "buildStatus": "BUILT",
-        "selectedStrongCount": 3,
-        "selectedCoinFlipCount": 0,
-        "legs": [
-          {
-            "gameId": "ec33f8a44ddd8f268967a3035f6ade2c",
-            "gameKey": "wnba|basketball_wnba|portland fire|chicago sky|2026-06-25T00:10:00Z",
-            "sport": "wnba",
-            "homeTeam": "Chicago Sky",
-            "awayTeam": "Portland Fire",
-            "commenceTime": "2026-06-25T00:10:00Z",
-            "level": "pro",
-            "gender": "women",
-            "providerSportKey": "basketball_wnba",
-            "selection": "Chicago Sky",
-            "selectedSide": "home",
-            "grade": "STRONG_SOLID",
-            "score": 82.26,
-            "tags": [
-              "CERTAINTY_ANCHOR",
-              "STEAM"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "probStart": 0.55867,
-              "probLatest": 0.60206,
-              "delta": 0.04339,
-              "velocityPpHr": 0.252,
-              "acceleration": -0.00286,
-              "pullCount": 15,
-              "durationMinutes": 1032.52,
-              "latestGap": 0.20413,
-              "bookCount": 11,
-              "bookDivergence": 0.02093,
-              "reversals": 0,
-              "tags": [
-                "CERTAINTY_ANCHOR",
-                "STEAM"
-              ],
-              "grade": "STRONG_SOLID",
-              "score": 82.26
-            },
-            "awaySignal": {
-              "side": "away",
-              "probStart": 0.44133,
-              "probLatest": 0.39794,
-              "delta": -0.04339,
-              "velocityPpHr": -0.252,
-              "acceleration": 0.00286,
-              "pullCount": 15,
-              "durationMinutes": 1032.52,
-              "latestGap": 0.20413,
-              "bookCount": 11,
-              "bookDivergence": 0.02093,
-              "reversals": 0,
-              "tags": [
-                "RESISTANCE"
-              ],
-              "grade": "FRAGILE",
-              "score": 5.18
-            }
-          },
-          {
-            "gameId": "e4cee4945c1e6df74d07a00971eecd19",
-            "gameKey": "wnba|basketball_wnba|minnesota lynx|washington mystics|2026-06-24T23:40:00Z",
-            "sport": "wnba",
-            "homeTeam": "Washington Mystics",
-            "awayTeam": "Minnesota Lynx",
-            "commenceTime": "2026-06-24T23:40:00Z",
-            "level": "pro",
-            "gender": "women",
-            "providerSportKey": "basketball_wnba",
-            "selection": "Minnesota Lynx",
-            "selectedSide": "away",
-            "grade": "STRONG_SOLID",
-            "score": 71.07,
-            "tags": [
-              "CERTAINTY_ANCHOR",
-              "DECELERATION",
-              "REVERSAL",
-              "STEAM"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "probStart": 0.24469,
-              "probLatest": 0.22451,
-              "delta": -0.02018,
-              "velocityPpHr": -0.117,
-              "acceleration": 0.0044,
-              "pullCount": 15,
-              "durationMinutes": 1032.52,
-              "latestGap": 0.55098,
-              "bookCount": 11,
-              "bookDivergence": 0.02367,
-              "reversals": 1,
-              "tags": [
-                "ACCELERATION",
-                "RESISTANCE",
-                "REVERSAL"
-              ],
-              "grade": "FRAGILE",
-              "score": 0
-            },
-            "awaySignal": {
-              "side": "away",
-              "probStart": 0.75531,
-              "probLatest": 0.77549,
-              "delta": 0.02018,
-              "velocityPpHr": 0.117,
-              "acceleration": -0.0044,
-              "pullCount": 15,
-              "durationMinutes": 1032.52,
-              "latestGap": 0.55098,
-              "bookCount": 11,
-              "bookDivergence": 0.02367,
-              "reversals": 1,
-              "tags": [
-                "CERTAINTY_ANCHOR",
-                "DECELERATION",
-                "REVERSAL",
-                "STEAM"
-              ],
-              "grade": "STRONG_SOLID",
-              "score": 71.07
-            }
-          },
-          {
-            "gameId": "b70a3ec7f76076acec4fad6176089bf5",
-            "gameKey": "wnba|basketball_wnba|atlanta dream|golden state valkyries|2026-06-25T02:10:00Z",
-            "sport": "wnba",
-            "homeTeam": "Golden State Valkyries",
-            "awayTeam": "Atlanta Dream",
-            "commenceTime": "2026-06-25T02:10:00Z",
-            "level": "pro",
-            "gender": "women",
-            "providerSportKey": "basketball_wnba",
-            "selection": "Atlanta Dream",
-            "selectedSide": "away",
-            "grade": "SOLID",
-            "score": 60.38,
-            "tags": [
-              "DECELERATION",
-              "REVERSAL",
-              "STEAM"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "probStart": 0.4723,
-              "probLatest": 0.44329,
-              "delta": -0.029,
-              "velocityPpHr": -0.169,
-              "acceleration": 0.00823,
-              "pullCount": 15,
-              "durationMinutes": 1032.52,
-              "latestGap": 0.11341,
-              "bookCount": 11,
-              "bookDivergence": 0.02153,
-              "reversals": 1,
-              "tags": [
-                "ACCELERATION",
-                "RESISTANCE",
-                "REVERSAL"
-              ],
-              "grade": "FRAGILE",
-              "score": 10.7
-            },
-            "awaySignal": {
-              "side": "away",
-              "probStart": 0.5277,
-              "probLatest": 0.55671,
-              "delta": 0.029,
-              "velocityPpHr": 0.169,
-              "acceleration": -0.00823,
-              "pullCount": 15,
-              "durationMinutes": 1032.52,
-              "latestGap": 0.11341,
-              "bookCount": 11,
-              "bookDivergence": 0.02153,
-              "reversals": 1,
-              "tags": [
-                "DECELERATION",
-                "REVERSAL",
-                "STEAM"
-              ],
-              "grade": "SOLID",
-              "score": 60.38
-            }
-          }
-        ],
-        "rankedCombos": [
-          {
-            "rank": 1,
-            "score": 71.24,
-            "legs": [
-              {
-                "gameId": "ec33f8a44ddd8f268967a3035f6ade2c",
-                "selection": "Chicago Sky",
-                "side": "home",
-                "grade": "STRONG_SOLID",
-                "tags": [
-                  "CERTAINTY_ANCHOR",
-                  "STEAM"
-                ]
-              },
-              {
-                "gameId": "e4cee4945c1e6df74d07a00971eecd19",
-                "selection": "Minnesota Lynx",
-                "side": "away",
-                "grade": "STRONG_SOLID",
-                "tags": [
-                  "CERTAINTY_ANCHOR",
-                  "DECELERATION",
-                  "REVERSAL",
-                  "STEAM"
-                ]
-              },
-              {
-                "gameId": "b70a3ec7f76076acec4fad6176089bf5",
-                "selection": "Atlanta Dream",
-                "side": "away",
-                "grade": "SOLID",
-                "tags": [
-                  "DECELERATION",
-                  "REVERSAL",
-                  "STEAM"
-                ]
-              }
-            ],
-            "top3": true
-          },
-          {
-            "rank": 2,
-            "score": 54.68,
-            "legs": [
-              {
-                "gameId": "ec33f8a44ddd8f268967a3035f6ade2c",
-                "selection": "Chicago Sky",
-                "side": "home",
-                "grade": "STRONG_SOLID",
-                "tags": [
-                  "CERTAINTY_ANCHOR",
-                  "STEAM"
-                ]
-              },
-              {
-                "gameId": "e4cee4945c1e6df74d07a00971eecd19",
-                "selection": "Minnesota Lynx",
-                "side": "away",
-                "grade": "STRONG_SOLID",
-                "tags": [
-                  "CERTAINTY_ANCHOR",
-                  "DECELERATION",
-                  "REVERSAL",
-                  "STEAM"
-                ]
-              },
-              {
-                "gameId": "b70a3ec7f76076acec4fad6176089bf5",
-                "selection": "Golden State Valkyries",
-                "side": "home",
-                "grade": "FRAGILE",
-                "tags": [
-                  "ACCELERATION",
-                  "RESISTANCE",
-                  "REVERSAL"
-                ]
-              }
-            ],
-            "top3": true
-          },
-          {
-            "rank": 3,
-            "score": 47.55,
-            "legs": [
-              {
-                "gameId": "ec33f8a44ddd8f268967a3035f6ade2c",
-                "selection": "Chicago Sky",
-                "side": "home",
-                "grade": "STRONG_SOLID",
-                "tags": [
-                  "CERTAINTY_ANCHOR",
-                  "STEAM"
-                ]
-              },
-              {
-                "gameId": "e4cee4945c1e6df74d07a00971eecd19",
-                "selection": "Washington Mystics",
-                "side": "home",
-                "grade": "FRAGILE",
-                "tags": [
-                  "ACCELERATION",
-                  "RESISTANCE",
-                  "REVERSAL"
-                ]
-              },
-              {
-                "gameId": "b70a3ec7f76076acec4fad6176089bf5",
-                "selection": "Atlanta Dream",
-                "side": "away",
-                "grade": "SOLID",
-                "tags": [
-                  "DECELERATION",
-                  "REVERSAL",
-                  "STEAM"
-                ]
-              }
-            ],
-            "top3": true
-          },
-          {
-            "rank": 4,
-            "score": 45.54,
-            "legs": [
-              {
-                "gameId": "ec33f8a44ddd8f268967a3035f6ade2c",
-                "selection": "Portland Fire",
-                "side": "away",
-                "grade": "FRAGILE",
-                "tags": [
-                  "RESISTANCE"
-                ]
-              },
-              {
-                "gameId": "e4cee4945c1e6df74d07a00971eecd19",
-                "selection": "Minnesota Lynx",
-                "side": "away",
-                "grade": "STRONG_SOLID",
-                "tags": [
-                  "CERTAINTY_ANCHOR",
-                  "DECELERATION",
-                  "REVERSAL",
-                  "STEAM"
-                ]
-              },
-              {
-                "gameId": "b70a3ec7f76076acec4fad6176089bf5",
-                "selection": "Atlanta Dream",
-                "side": "away",
-                "grade": "SOLID",
-                "tags": [
-                  "DECELERATION",
-                  "REVERSAL",
-                  "STEAM"
-                ]
-              }
-            ],
-            "top3": false
-          },
-          {
-            "rank": 5,
-            "score": 30.99,
-            "legs": [
-              {
-                "gameId": "ec33f8a44ddd8f268967a3035f6ade2c",
-                "selection": "Chicago Sky",
-                "side": "home",
-                "grade": "STRONG_SOLID",
-                "tags": [
-                  "CERTAINTY_ANCHOR",
-                  "STEAM"
-                ]
-              },
-              {
-                "gameId": "e4cee4945c1e6df74d07a00971eecd19",
-                "selection": "Washington Mystics",
-                "side": "home",
-                "grade": "FRAGILE",
-                "tags": [
-                  "ACCELERATION",
-                  "RESISTANCE",
-                  "REVERSAL"
-                ]
-              },
-              {
-                "gameId": "b70a3ec7f76076acec4fad6176089bf5",
-                "selection": "Golden State Valkyries",
-                "side": "home",
-                "grade": "FRAGILE",
-                "tags": [
-                  "ACCELERATION",
-                  "RESISTANCE",
-                  "REVERSAL"
-                ]
-              }
-            ],
-            "top3": false
-          },
-          {
-            "rank": 6,
-            "score": 28.98,
-            "legs": [
-              {
-                "gameId": "ec33f8a44ddd8f268967a3035f6ade2c",
-                "selection": "Portland Fire",
-                "side": "away",
-                "grade": "FRAGILE",
-                "tags": [
-                  "RESISTANCE"
-                ]
-              },
-              {
-                "gameId": "e4cee4945c1e6df74d07a00971eecd19",
-                "selection": "Minnesota Lynx",
-                "side": "away",
-                "grade": "STRONG_SOLID",
-                "tags": [
-                  "CERTAINTY_ANCHOR",
-                  "DECELERATION",
-                  "REVERSAL",
-                  "STEAM"
-                ]
-              },
-              {
-                "gameId": "b70a3ec7f76076acec4fad6176089bf5",
-                "selection": "Golden State Valkyries",
-                "side": "home",
-                "grade": "FRAGILE",
-                "tags": [
-                  "ACCELERATION",
-                  "RESISTANCE",
-                  "REVERSAL"
-                ]
-              }
-            ],
-            "top3": false
-          },
-          {
-            "rank": 7,
-            "score": 21.85,
-            "legs": [
-              {
-                "gameId": "ec33f8a44ddd8f268967a3035f6ade2c",
-                "selection": "Portland Fire",
-                "side": "away",
-                "grade": "FRAGILE",
-                "tags": [
-                  "RESISTANCE"
-                ]
-              },
-              {
-                "gameId": "e4cee4945c1e6df74d07a00971eecd19",
-                "selection": "Washington Mystics",
-                "side": "home",
-                "grade": "FRAGILE",
-                "tags": [
-                  "ACCELERATION",
-                  "RESISTANCE",
-                  "REVERSAL"
-                ]
-              },
-              {
-                "gameId": "b70a3ec7f76076acec4fad6176089bf5",
-                "selection": "Atlanta Dream",
-                "side": "away",
-                "grade": "SOLID",
-                "tags": [
-                  "DECELERATION",
-                  "REVERSAL",
-                  "STEAM"
-                ]
-              }
-            ],
-            "top3": false
-          },
-          {
-            "rank": 8,
-            "score": 5.29,
-            "legs": [
-              {
-                "gameId": "ec33f8a44ddd8f268967a3035f6ade2c",
-                "selection": "Portland Fire",
-                "side": "away",
-                "grade": "FRAGILE",
-                "tags": [
-                  "RESISTANCE"
-                ]
-              },
-              {
-                "gameId": "e4cee4945c1e6df74d07a00971eecd19",
-                "selection": "Washington Mystics",
-                "side": "home",
-                "grade": "FRAGILE",
-                "tags": [
-                  "ACCELERATION",
-                  "RESISTANCE",
-                  "REVERSAL"
-                ]
-              },
-              {
-                "gameId": "b70a3ec7f76076acec4fad6176089bf5",
-                "selection": "Golden State Valkyries",
-                "side": "home",
-                "grade": "FRAGILE",
-                "tags": [
-                  "ACCELERATION",
-                  "RESISTANCE",
-                  "REVERSAL"
-                ]
-              }
-            ],
-            "top3": false
-          }
-        ],
+        "strictDailySlate": true,
+        "buildStatus": "NO_BUILD",
+        "reason": "MISSING_TWO_STRONG_LEGS",
+        "eligibleCount": 1,
+        "strongCount": 1,
+        "coinFlipCount": 0,
+        "message": "Refused all-coin-flip, wrong-slate, or weak build.",
         "stored": {
           "pk": "PARLAY_BUILDS#wnba#2026-06-24",
-          "sk": "BUILD#2026-06-24T17:40:50.543928+00:00#parlay_210a562cde474745",
-          "build_id": "parlay_210a562cde474745",
-          "build_status": "BUILT"
+          "sk": "BUILD#2026-06-24T17:41:25.166759+00:00#parlay_5435f0fde1f84498",
+          "build_id": "parlay_5435f0fde1f84498",
+          "build_status": "NO_BUILD"
         }
       },
       {
         "ok": true,
         "sport": "nfl",
-        "slate_date": null,
+        "slate_date": "2026-06-24",
         "pullCount": 0,
+        "rawSignalCount": 0,
+        "sameSlateSignalCount": 0,
         "minimumParlayPulls": 12,
         "minimumStrongLegs": 2,
         "maximumCoinFlipLegs": 1,
         "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
+        "strictDailySlate": false,
         "buildStatus": "NO_BUILD",
         "reason": "WAITING_FOR_12TH_PULL",
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#nfl#2026-06-24",
-          "sk": "BUILD#2026-06-24T17:40:50.591764+00:00#parlay_3e88e916c8154a9f",
-          "build_id": "parlay_3e88e916c8154a9f",
+          "sk": "BUILD#2026-06-24T17:41:25.307139+00:00#parlay_2cc606115f864c88",
+          "build_id": "parlay_2cc606115f864c88",
           "build_status": "NO_BUILD"
         }
       },
       {
         "ok": true,
         "sport": "cfb",
-        "slate_date": null,
+        "slate_date": "2026-06-24",
         "pullCount": 0,
+        "rawSignalCount": 0,
+        "sameSlateSignalCount": 0,
         "minimumParlayPulls": 12,
         "minimumStrongLegs": 2,
         "maximumCoinFlipLegs": 1,
         "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
+        "strictDailySlate": false,
         "buildStatus": "NO_BUILD",
         "reason": "WAITING_FOR_12TH_PULL",
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#cfb#2026-06-24",
-          "sk": "BUILD#2026-06-24T17:40:50.633943+00:00#parlay_1736e0d7dd374c4f",
-          "build_id": "parlay_1736e0d7dd374c4f",
+          "sk": "BUILD#2026-06-24T17:41:25.447267+00:00#parlay_3a5f41cad99746cc",
+          "build_id": "parlay_3a5f41cad99746cc",
           "build_status": "NO_BUILD"
         }
       },
       {
         "ok": true,
         "sport": "nba",
-        "slate_date": null,
+        "slate_date": "2026-06-24",
         "pullCount": 0,
+        "rawSignalCount": 0,
+        "sameSlateSignalCount": 0,
         "minimumParlayPulls": 12,
         "minimumStrongLegs": 2,
         "maximumCoinFlipLegs": 1,
         "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
+        "strictDailySlate": true,
         "buildStatus": "NO_BUILD",
         "reason": "WAITING_FOR_12TH_PULL",
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#nba#2026-06-24",
-          "sk": "BUILD#2026-06-24T17:40:50.677653+00:00#parlay_60029cadf42d401b",
-          "build_id": "parlay_60029cadf42d401b",
+          "sk": "BUILD#2026-06-24T17:41:25.586950+00:00#parlay_8c44f2669b794e80",
+          "build_id": "parlay_8c44f2669b794e80",
           "build_status": "NO_BUILD"
         }
       },
       {
         "ok": true,
         "sport": "ncaam",
-        "slate_date": null,
+        "slate_date": "2026-06-24",
         "pullCount": 0,
+        "rawSignalCount": 0,
+        "sameSlateSignalCount": 0,
         "minimumParlayPulls": 12,
         "minimumStrongLegs": 2,
         "maximumCoinFlipLegs": 1,
         "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
+        "strictDailySlate": true,
         "buildStatus": "NO_BUILD",
         "reason": "WAITING_FOR_12TH_PULL",
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#ncaam#2026-06-24",
-          "sk": "BUILD#2026-06-24T17:40:50.719782+00:00#parlay_e94b98c9db144808",
-          "build_id": "parlay_e94b98c9db144808",
+          "sk": "BUILD#2026-06-24T17:41:25.725717+00:00#parlay_e5ee1a9877ff4444",
+          "build_id": "parlay_e5ee1a9877ff4444",
           "build_status": "NO_BUILD"
         }
       },
       {
         "ok": true,
         "sport": "nhl",
-        "slate_date": null,
+        "slate_date": "2026-06-24",
         "pullCount": 0,
+        "rawSignalCount": 0,
+        "sameSlateSignalCount": 0,
         "minimumParlayPulls": 12,
         "minimumStrongLegs": 2,
         "maximumCoinFlipLegs": 1,
         "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
+        "strictDailySlate": true,
         "buildStatus": "NO_BUILD",
         "reason": "WAITING_FOR_12TH_PULL",
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#nhl#2026-06-24",
-          "sk": "BUILD#2026-06-24T17:40:50.762251+00:00#parlay_82d59366f7cc454e",
-          "build_id": "parlay_82d59366f7cc454e",
+          "sk": "BUILD#2026-06-24T17:41:25.865728+00:00#parlay_d1cc3d9cba6040e9",
+          "build_id": "parlay_d1cc3d9cba6040e9",
           "build_status": "NO_BUILD"
         }
       },
       {
         "ok": true,
         "sport": "soccer",
-        "slate_date": null,
+        "slate_date": "2026-06-24",
         "pullCount": 0,
+        "rawSignalCount": 0,
+        "sameSlateSignalCount": 0,
         "minimumParlayPulls": 12,
         "minimumStrongLegs": 2,
         "maximumCoinFlipLegs": 1,
         "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
+        "strictDailySlate": false,
         "buildStatus": "NO_BUILD",
         "reason": "WAITING_FOR_12TH_PULL",
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#soccer#2026-06-24",
-          "sk": "BUILD#2026-06-24T17:40:50.805757+00:00#parlay_7243404188014835",
-          "build_id": "parlay_7243404188014835",
+          "sk": "BUILD#2026-06-24T17:41:26.005659+00:00#parlay_cb1b80fb33a0441f",
+          "build_id": "parlay_cb1b80fb33a0441f",
           "build_status": "NO_BUILD"
         }
       },
       {
         "ok": true,
         "sport": "tennis",
-        "slate_date": null,
+        "slate_date": "2026-06-24",
         "pullCount": 0,
+        "rawSignalCount": 0,
+        "sameSlateSignalCount": 0,
         "minimumParlayPulls": 12,
         "minimumStrongLegs": 2,
         "maximumCoinFlipLegs": 1,
         "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
+        "strictDailySlate": false,
         "buildStatus": "NO_BUILD",
         "reason": "WAITING_FOR_12TH_PULL",
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#tennis#2026-06-24",
-          "sk": "BUILD#2026-06-24T17:40:50.848944+00:00#parlay_f7261d7dbaae45df",
-          "build_id": "parlay_f7261d7dbaae45df",
+          "sk": "BUILD#2026-06-24T17:41:26.147049+00:00#parlay_64f462efdfd544dc",
+          "build_id": "parlay_64f462efdfd544dc",
           "build_status": "NO_BUILD"
         }
       }
