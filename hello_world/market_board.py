@@ -25,6 +25,7 @@ DEFAULT_SLATE_WINDOW_DAYS = {
     "soccer": 14,
     "tennis": 7,
 }
+STRICT_DAILY_SPORTS = {"mlb", "college_baseball_men", "nba", "wnba", "ncaam", "ncaaw", "nhl"}
 ACTIVE_WINDOW_BACK_BUFFER_HOURS = 6
 CANONICAL_ALIASES = {
     "ncaaf": "cfb",
@@ -46,19 +47,11 @@ def clean(value: Any) -> Any:
 
 
 def response(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "statusCode": status,
-        "headers": {"content-type": "application/json", "access-control-allow-origin": "*"},
-        "body": json.dumps(clean(body)),
-    }
+    return {"statusCode": status, "headers": {"content-type": "application/json", "access-control-allow-origin": "*"}, "body": json.dumps(clean(body))}
 
 
 def html_response(status: int, body: str) -> Dict[str, Any]:
-    return {
-        "statusCode": status,
-        "headers": {"content-type": "text/html; charset=utf-8", "access-control-allow-origin": "*"},
-        "body": body,
-    }
+    return {"statusCode": status, "headers": {"content-type": "text/html; charset=utf-8", "access-control-allow-origin": "*"}, "body": body}
 
 
 def params(event: Dict[str, Any]) -> Dict[str, Any]:
@@ -97,6 +90,15 @@ def parse_time(raw: Any) -> Optional[datetime]:
         return None
 
 
+def today_utc() -> str:
+    return datetime.now(timezone.utc).date().isoformat()
+
+
+def game_slate_date(game: Dict[str, Any]) -> Optional[str]:
+    commence = parse_time(game.get("commence_time") or game.get("commenceTime"))
+    return commence.date().isoformat() if commence else None
+
+
 def active_window(sport: str) -> Tuple[datetime, datetime, int]:
     sport = sport_key(sport)
     days = int(DEFAULT_SLATE_WINDOW_DAYS.get(sport, 2))
@@ -112,32 +114,33 @@ def game_in_active_window(game: Dict[str, Any], sport: str) -> bool:
     return start <= commence <= end
 
 
+def game_is_on_slate(game: Dict[str, Any], sport: str, slate_date: Optional[str]) -> bool:
+    sport = sport_key(sport)
+    requested = slate_date or today_utc()
+    game_day = game_slate_date(game)
+    if sport in STRICT_DAILY_SPORTS:
+        return game_day == requested
+    return game_in_active_window(game, sport)
+
+
 def latest_pull_for(sport: str, slate_date: Optional[str] = None) -> Dict[str, Any]:
     if inqsi_pull_history is None:
         return {"ok": False, "sport": sport, "error": "pull_history_module_unavailable"}
     sport = sport_key(sport)
-    pulls = inqsi_pull_history.query_pulls(sport, slate_date, 500)
+    requested = slate_date or today_utc()
+    pulls = inqsi_pull_history.query_pulls(sport, requested, 500)
     latest_visible = None
     for pull in reversed(pulls):
         games = pull.get("games") or []
-        if any(game_in_active_window(g, sport) for g in games):
+        if any(game_is_on_slate(g, sport, requested) for g in games):
             latest_visible = pull
             break
-    return {"ok": True, "sport": sport, "pullCount": len(pulls), "latestPull": latest_visible, "rawLatestPull": pulls[-1] if pulls else None}
+    return {"ok": True, "sport": sport, "slateDateRequested": requested, "pullCount": len(pulls), "latestPull": latest_visible, "rawLatestPull": pulls[-1] if pulls else None}
 
 
 def book_market(book_name: str, book: Dict[str, Any]) -> Dict[str, Any]:
     ml = book.get("ml") or book.get("moneyline") or {}
-    return {
-        "book": book_name,
-        "moneyline": {
-            "home": ml.get("home"),
-            "away": ml.get("away"),
-        },
-        "spread": book.get("spread"),
-        "total": book.get("total"),
-        "overUnder": book.get("total"),
-    }
+    return {"book": book_name, "moneyline": {"home": ml.get("home"), "away": ml.get("away")}, "spread": book.get("spread"), "total": book.get("total"), "overUnder": book.get("total")}
 
 
 def game_row(game: Dict[str, Any]) -> Dict[str, Any]:
@@ -149,6 +152,7 @@ def game_row(game: Dict[str, Any]) -> Dict[str, Any]:
         "homeTeam": game.get("home_team"),
         "awayTeam": game.get("away_team"),
         "commenceTime": game.get("commence_time"),
+        "slateDate": game_slate_date(game),
         "league": game.get("league"),
         "level": game.get("level"),
         "gender": game.get("gender"),
@@ -160,18 +164,20 @@ def game_row(game: Dict[str, Any]) -> Dict[str, Any]:
 
 def board_for_sport(sport: str, slate_date: Optional[str] = None) -> Dict[str, Any]:
     sport = sport_key(sport)
-    latest = latest_pull_for(sport, slate_date)
+    requested = slate_date or today_utc()
+    latest = latest_pull_for(sport, requested)
     if not latest.get("ok"):
         return latest
     pull = latest.get("latestPull") or {}
     raw_latest = latest.get("rawLatestPull") or {}
     start, end, days = active_window(sport)
-    active_games = [g for g in (pull.get("games") or []) if game_in_active_window(g, sport)]
+    active_games = [g for g in (pull.get("games") or []) if game_is_on_slate(g, sport, requested)]
     games = [game_row(g) for g in active_games]
     return {
         "ok": True,
         "sport": sport,
-        "slate_date": pull.get("slate_date") or slate_date,
+        "slate_date": requested,
+        "pull_slate_date": pull.get("slate_date"),
         "pullCount": latest.get("pullCount", 0),
         "latestPulledAt": pull.get("pulled_at"),
         "rawLatestPulledAt": raw_latest.get("pulled_at"),
@@ -181,30 +187,22 @@ def board_for_sport(sport: str, slate_date: Optional[str] = None) -> Dict[str, A
         "activeWindowStart": start.isoformat(),
         "activeWindowEnd": end.isoformat(),
         "slateWindowDays": days,
+        "strictDailySlate": sport in STRICT_DAILY_SPORTS,
         "marketTypes": ["moneyline", "spread", "total", "over_under"],
         "games": games,
-        "note": "Market board applies active-slate filtering and reads only playable-window provider pulls. Member-uploaded slips are not included.",
+        "note": "Daily sports are filtered by actual game commence_time date. Future-day games are excluded from today's slate.",
     }
 
 
 def board_all(p: Dict[str, Any]) -> Dict[str, Any]:
-    slate_date = p.get("slate_date")
+    slate_date = p.get("slate_date") or today_utc()
     sports = sports_from(p.get("sports") or p.get("sport"))
     boards = [board_for_sport(s, slate_date) for s in sports]
-    return {
-        "ok": True,
-        "board": "market_board_active_slate_latest_pull",
-        "sportsChecked": sports,
-        "sportsWithGames": sum(1 for b in boards if (b.get("gameCount") or 0) > 0),
-        "memberSlipsIncluded": False,
-        "boards": boards,
-    }
+    return {"ok": True, "board": "market_board_slate_date_strict", "slate_date": slate_date, "sportsChecked": sports, "sportsWithGames": sum(1 for b in boards if (b.get("gameCount") or 0) > 0), "memberSlipsIncluded": False, "boards": boards}
 
 
 def render_book(book: Dict[str, Any]) -> str:
-    ml = book.get("moneyline") or {}
-    spread = book.get("spread") or {}
-    total = book.get("total") or {}
+    ml = book.get("moneyline") or {}; spread = book.get("spread") or {}; total = book.get("total") or {}
     return f"""
     <div class='book'>
       <div class='book-name'>{html.escape(str(book.get('book') or 'book'))}</div>
@@ -217,14 +215,13 @@ def render_book(book: Dict[str, Any]) -> str:
 
 
 def render_page(board: Dict[str, Any]) -> str:
-    sport = html.escape(str(board.get("sport") or "all"))
-    cards = []
+    sport = html.escape(str(board.get("sport") or "all")); cards = []
     for game in board.get("games", []) or []:
         books = "".join(render_book(b) for b in game.get("books", [])[:24])
         cards.append(f"""
         <section class='card'>
           <div class='game-top'><span>{html.escape(str(game.get('awayTeam') or 'Away'))} @ {html.escape(str(game.get('homeTeam') or 'Home'))}</span><small>{html.escape(str(game.get('commenceTime') or ''))}</small></div>
-          <div class='meta'>Provider: {html.escape(str(game.get('providerSportKey') or '-'))} · Books: {html.escape(str(game.get('bookCount') or 0))}</div>
+          <div class='meta'>Slate: {html.escape(str(game.get('slateDate') or '-'))} · Provider: {html.escape(str(game.get('providerSportKey') or '-'))} · Books: {html.escape(str(game.get('bookCount') or 0))}</div>
           <div class='books'>{books}</div>
         </section>
         """)
@@ -232,24 +229,8 @@ def render_page(board: Dict[str, Any]) -> str:
     return f"""
     <!doctype html><html><head><meta name='viewport' content='width=device-width, initial-scale=1'>
     <title>Inqis Market Board</title>
-    <style>
-      body{{margin:0;background:#080b12;color:#f4f7fb;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif}}
-      .wrap{{max-width:1120px;margin:0 auto;padding:24px}}
-      h1{{margin:0 0 8px;font-size:28px}} .sub{{color:#8b98aa;margin-bottom:18px}}
-      .card{{background:#111827;border:1px solid #263244;border-radius:18px;padding:16px;margin:14px 0;box-shadow:0 20px 60px rgba(0,0,0,.22)}}
-      .game-top{{display:flex;justify-content:space-between;gap:12px;font-weight:800;font-size:18px}}
-      .game-top small{{color:#8b98aa;font-weight:600;font-size:12px;text-align:right}}
-      .meta{{color:#9aa7b8;font-size:12px;margin:8px 0 14px}}
-      .books{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}}
-      .book{{background:#0b1020;border:1px solid #263244;border-radius:14px;padding:12px}}
-      .book-name{{font-weight:800;margin-bottom:8px;text-transform:capitalize}}
-      .odds-row{{display:flex;justify-content:space-between;color:#aeb9c8;font-size:13px;padding:4px 0}}
-      .odds-row b{{color:#f7fafc}} .empty{{padding:24px;background:#111827;border-radius:16px;color:#9aa7b8}}
-    </style></head><body><div class='wrap'>
-      <h1>Inqis Market Board · {sport}</h1>
-      <div class='sub'>Latest active pull: {html.escape(str(board.get('latestPulledAt') or 'none'))} · Games: {html.escape(str(board.get('gameCount') or 0))}</div>
-      {body}
-    </div></body></html>
+    <style>body{{margin:0;background:#080b12;color:#f4f7fb;font-family:-apple-system,BlinkMacSystemFont,Segoe UI,sans-serif}}.wrap{{max-width:1120px;margin:0 auto;padding:24px}}h1{{margin:0 0 8px;font-size:28px}}.sub{{color:#8b98aa;margin-bottom:18px}}.card{{background:#111827;border:1px solid #263244;border-radius:18px;padding:16px;margin:14px 0;box-shadow:0 20px 60px rgba(0,0,0,.22)}}.game-top{{display:flex;justify-content:space-between;gap:12px;font-weight:800;font-size:18px}}.game-top small{{color:#8b98aa;font-weight:600;font-size:12px;text-align:right}}.meta{{color:#9aa7b8;font-size:12px;margin:8px 0 14px}}.books{{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px}}.book{{background:#0b1020;border:1px solid #263244;border-radius:14px;padding:12px}}.book-name{{font-weight:800;margin-bottom:8px;text-transform:capitalize}}.odds-row{{display:flex;justify-content:space-between;color:#aeb9c8;font-size:13px;padding:4px 0}}.odds-row b{{color:#f7fafc}}.empty{{padding:24px;background:#111827;border-radius:16px;color:#9aa7b8}}</style></head><body><div class='wrap'>
+      <h1>Inqis Market Board · {sport}</h1><div class='sub'>Slate: {html.escape(str(board.get('slate_date') or ''))} · Latest pull: {html.escape(str(board.get('latestPulledAt') or 'none'))} · Games: {html.escape(str(board.get('gameCount') or 0))}</div>{body}</div></body></html>
     """
 
 
