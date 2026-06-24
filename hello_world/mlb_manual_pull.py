@@ -24,8 +24,9 @@ signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE e
 
 SPORT_KEY = "baseball_mlb"
 ODDS_MARKETS = "h2h,spreads,totals"
-DEFAULT_DAYS_AHEAD = 1  # Today + tomorrow, so next-day MLB lines are captured as soon as available.
+DEFAULT_DAYS_AHEAD = 1
 ML_FEATURE_VERSION = "mlb_hot_pull_movement_features_v1"
+HOT_ONLY_POLICY = "MLB_B1_15_MIN_HOT_ONLY"
 
 
 def _ddb_safe(value: Any) -> Any:
@@ -112,7 +113,6 @@ def _odds_url() -> str:
 
 
 def _oddsapi_auth_diagnostic(exc: Exception) -> Optional[Dict[str, Any]]:
-    """Return a non-secret diagnostic when The Odds API blocks the live pull."""
     if isinstance(exc, urllib.error.HTTPError):
         try:
             upstream_body = exc.read().decode("utf-8")[:300]
@@ -142,18 +142,12 @@ def _oddsapi_auth_diagnostic(exc: Exception) -> Optional[Dict[str, Any]]:
 
 
 def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_error: Exception) -> Optional[Dict[str, Any]]:
-    """
-    For pre-start display runs, keep the product usable when the external feed rejects
-    the refresh by explicitly returning the latest stored MLB snapshot analysis.
-    """
     run = str(payload.get("run") or "")
     if "pre_start" not in run and "final" not in run:
         return None
-
     diagnostic = _oddsapi_auth_diagnostic(live_pull_error)
     if not diagnostic:
         return None
-
     try:
         from mlb_date_signal_api import hot_sides
         game_date = payload.get("game_date_et") or payload.get("slate_date_et") or _slate_date_et()
@@ -171,11 +165,7 @@ def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_er
                 "predictions_storage": cached.get("storage_status"),
             },
             "upstream_error": diagnostic,
-            "message": (
-                "Live MLB odds refresh failed because the upstream odds feed rejected authorization. "
-                "Returned latest stored MLB date-isolated game-winner attempts and 3-leg parlay. "
-                "Fix ODDS_API_KEY in AWS/GitHub secrets to restore fresh live pulls."
-            ),
+            "message": "Live MLB odds refresh failed because the upstream odds feed rejected authorization. Returned latest stored MLB date-isolated analysis.",
         }
     except Exception as fallback_exc:
         return {
@@ -183,10 +173,7 @@ def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_er
             "sport": "mlb",
             "live_pull_ok": False,
             "fallback_used": False,
-            "source_status": {
-                "live_odds_feed": "AUTH_FAILED",
-                "cached_snapshot_analysis": "FAILED",
-            },
+            "source_status": {"live_odds_feed": "AUTH_FAILED", "cached_snapshot_analysis": "FAILED"},
             "upstream_error": diagnostic,
             "fallback_error": str(fallback_exc),
             "message": "Live pull failed and cached pre-start analysis could not be generated.",
@@ -194,11 +181,6 @@ def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_er
 
 
 def _filter_upcoming_et(games: List[Dict[str, Any]], *, start_date: str, days_ahead: int) -> List[Dict[str, Any]]:
-    """Keep games from ET start_date through start_date + days_ahead.
-
-    Permanent MLB behavior: pull today + tomorrow every 15 minutes so next-day lines
-    are captured immediately when books/the feed first publish ML, spread, and total.
-    """
     eastern = ZoneInfo("America/New_York")
     start = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=eastern)
     allowed = {(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(max(0, days_ahead) + 1)}
@@ -303,26 +285,13 @@ def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
             "books": books,
             "markets_stored": ["ml", "spread", "total"],
         })
-    return {
-        "games": games_out,
-        "count": len(games_out),
-        "game_dates_et": sorted(game_dates_seen),
-        "available_book_keys": sorted(books_seen),
-        "markets": ["ml", "spread", "total"],
-    }
+    return {"games": games_out, "count": len(games_out), "game_dates_et": sorted(game_dates_seen), "available_book_keys": sorted(books_seen), "markets": ["ml", "spread", "total"]}
 
 
 def _compact_for_game_date(compact: Dict[str, Any], game_date: str) -> Dict[str, Any]:
     games = [game for game in compact.get("games", []) or [] if game.get("game_date_et") == game_date]
     books_seen = sorted({book for game in games for book in (game.get("books") or {}).keys()})
-    return {
-        **compact,
-        "games": games,
-        "count": len(games),
-        "game_dates_et": [game_date] if games else [],
-        "available_book_keys": books_seen,
-        "date_isolated": True,
-    }
+    return {**compact, "games": games, "count": len(games), "game_dates_et": [game_date] if games else [], "available_book_keys": books_seen, "date_isolated": True}
 
 
 def _store_snapshot_item(*, t: str, slate_date: str, game_date: str, asof: str, run: str, compact: Dict[str, Any], date_isolated: bool, pk: str) -> Dict[str, str]:
@@ -347,8 +316,8 @@ def _store_snapshot_item(*, t: str, slate_date: str, game_date: str, asof: str, 
             "run_type": run,
             "pulled_at": asof,
             "markets": ["h2h", "spreads", "totals"],
-            "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min_date_isolated",
-            "purpose": "Capture early MLB movement immediately when each actual game date's lines become available, without cross-day bleed.",
+            "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min_date_isolated_hot_only",
+            "hot_only_policy": HOT_ONLY_POLICY,
         },
     }
     item = _ddb_safe(item)
@@ -360,11 +329,7 @@ def _latest_two_hot_snapshots_for_game_date(game_date: str, limit: int = 12) -> 
     if snapshots_tbl is None:
         return []
     pk = f"SPORT#mlb#DATE#{game_date}"
-    resp = snapshots_tbl.query(
-        KeyConditionExpression=Key("PK").eq(pk) & Key("SK").begins_with(f"HOT#GAME_DATE#{game_date}"),
-        ScanIndexForward=False,
-        Limit=limit,
-    )
+    resp = snapshots_tbl.query(KeyConditionExpression=Key("PK").eq(pk) & Key("SK").begins_with(f"HOT#GAME_DATE#{game_date}"), ScanIndexForward=False, Limit=limit)
     rows = sorted(resp.get("Items", []), key=lambda x: x.get("asof") or "")
     return rows[-2:]
 
@@ -381,11 +346,6 @@ def _movement_strength(delta: float, agreeing_books: int, disagreeing_books: int
 
 
 def _store_hot_movement_features(*, game_date: str, asof: str, run: str) -> Dict[str, Any]:
-    """Persist one ML-ready feature row per game for the latest HOT-to-HOT comparison only.
-
-    This is intentionally HOT-only and date-isolated. These rows are the research layer
-    used later to learn which small 15-minute movements predicted the winner.
-    """
     if signal_ledger_tbl is None:
         return {"ok": False, "stored": 0, "error": "SIGNAL_LEDGER_TABLE not configured"}
     snaps = _latest_two_hot_snapshots_for_game_date(game_date)
@@ -406,8 +366,6 @@ def _store_hot_movement_features(*, game_date: str, asof: str, run: str) -> Dict
             continue
         agreement = row.get("book_agreement") or {}
         hot_delta = float(row.get("hot_delta") or 0)
-        home_delta = float(row.get("home_delta") or 0)
-        away_delta = float(row.get("away_delta") or 0)
         favorite = row.get("favorite") or {}
         signal_tags = list(row.get("reason_codes") or [])
         strength = _movement_strength(hot_delta, int(agreement.get("agreeing_books") or 0), int(agreement.get("disagreeing_books") or 0))
@@ -420,10 +378,6 @@ def _store_hot_movement_features(*, game_date: str, asof: str, run: str) -> Dict
             "sport": "mlb",
             "game_date_et": game_date,
             "game_key": game_key,
-            "game_id": row.get("game_id"),
-            "home_team": row.get("home_team"),
-            "away_team": row.get("away_team"),
-            "commence_time": row.get("commence_time"),
             "feature_version": ML_FEATURE_VERSION,
             "created_at": _now_iso(),
             "run": run,
@@ -431,10 +385,6 @@ def _store_hot_movement_features(*, game_date: str, asof: str, run: str) -> Dict
             "hot_only": True,
             "previous_asof": prev_snap.get("asof"),
             "latest_asof": latest_snap.get("asof"),
-            "minutes_between_hot_pulls": None,
-            "home_delta": home_delta,
-            "away_delta": away_delta,
-            "hot_side": row.get("hot_side"),
             "hot_team": row.get("hot_team"),
             "hot_delta": hot_delta,
             "movement_strength": strength,
@@ -442,25 +392,12 @@ def _store_hot_movement_features(*, game_date: str, asof: str, run: str) -> Dict
             "favorite_team": favorite.get("team"),
             "dog_side": favorite.get("dog_side"),
             "dog_team": favorite.get("dog_team"),
-            "favorite_gap": favorite.get("gap"),
             "book_agreement": agreement,
-            "agreeing_books_count": agreement.get("agreeing_books", 0),
-            "disagreeing_books_count": agreement.get("disagreeing_books", 0),
-            "spread_signal": row.get("spread_signal"),
-            "total_signal": row.get("total_signal"),
             "latest_consensus": row.get("latest_consensus"),
             "previous_consensus": row.get("previous_consensus"),
             "prediction_status_at_feature_time": row.get("prediction_status"),
-            "attempted_winner_side_at_feature_time": row.get("hot_side") if row.get("prediction_status") != "NO_EDGE" else favorite.get("side"),
             "signal_tags": sorted(set(signal_tags)),
             "label_status": "PENDING_RESULT",
-            "actual_winner_side": None,
-            "actual_winner_team": None,
-            "feature_correct": None,
-            "notes": [
-                "HOT-to-HOT movement feature row for ML research.",
-                "Use only with rows from same game_date_et partition to avoid data bleed.",
-            ],
         }
         try:
             signal_ledger_tbl.put_item(Item=_ddb_safe(feature))
@@ -468,26 +405,6 @@ def _store_hot_movement_features(*, game_date: str, asof: str, run: str) -> Dict
             feature_rows.append({"game_key": game_key, "hot_team": row.get("hot_team"), "hot_delta": round(hot_delta, 6), "movement_strength": strength})
         except Exception as exc:
             errors.append(f"{game_key}: {exc}")
-    summary = {
-        "PK": f"ML_FEATURE#mlb#{game_date}",
-        "SK": f"HOT_DELTA_SUMMARY#{latest_snap.get('asof')}",
-        "entity_type": "HOT_PULL_MOVEMENT_FEATURE_SUMMARY",
-        "sport": "mlb",
-        "game_date_et": game_date,
-        "feature_version": ML_FEATURE_VERSION,
-        "created_at": _now_iso(),
-        "run": run,
-        "date_isolated": True,
-        "hot_only": True,
-        "previous_asof": prev_snap.get("asof"),
-        "latest_asof": latest_snap.get("asof"),
-        "feature_rows_stored": stored,
-        "errors": errors,
-    }
-    try:
-        signal_ledger_tbl.put_item(Item=_ddb_safe(summary))
-    except Exception as exc:
-        errors.append(f"summary: {exc}")
     return {"ok": len(errors) == 0, "stored": stored, "previous_asof": prev_snap.get("asof"), "latest_asof": latest_snap.get("asof"), "feature_version": ML_FEATURE_VERSION, "errors": errors, "sample": feature_rows[:10]}
 
 
@@ -497,8 +414,18 @@ def lambda_handler(event, context):
         return _resp(200, {"ok": True})
     try:
         payload = _event_payload(event)
-        t = payload.get("t") or "HOT"
+        t = str(payload.get("t") or "HOT").upper()
         run = payload.get("run") or "rolling_open_hot_pull"
+        if t != "HOT":
+            return _resp(200, {
+                "ok": True,
+                "sport": "mlb",
+                "skipped": True,
+                "t": t,
+                "run": run,
+                "hot_only_policy": HOT_ONLY_POLICY,
+                "message": "Legacy MLB T1/T2/T3/T4 pull ignored. MLB now stores HOT 15-minute snapshots only.",
+            })
         days_ahead = int(payload.get("days_ahead", DEFAULT_DAYS_AHEAD))
         slate_date = _slate_date_et()
         asof = _now_iso()
@@ -507,16 +434,7 @@ def lambda_handler(event, context):
         if snapshots_tbl is None:
             raise RuntimeError("SNAPSHOTS_TABLE not configured")
 
-        combined_stored = _store_snapshot_item(
-            t=t,
-            slate_date=slate_date,
-            game_date=slate_date,
-            asof=asof,
-            run=run,
-            compact=compact,
-            date_isolated=False,
-            pk="SPORT#mlb",
-        )
+        combined_stored = _store_snapshot_item(t=t, slate_date=slate_date, game_date=slate_date, asof=asof, run=run, compact=compact, date_isolated=False, pk="SPORT#mlb")
 
         isolated_stored = []
         audit_results = []
@@ -526,30 +444,11 @@ def lambda_handler(event, context):
             date_compact = _compact_for_game_date(compact, game_date)
             if not date_compact.get("games"):
                 continue
-            stored_item = _store_snapshot_item(
-                t=t,
-                slate_date=slate_date,
-                game_date=game_date,
-                asof=asof,
-                run=run,
-                compact=date_compact,
-                date_isolated=True,
-                pk=f"SPORT#mlb#DATE#{game_date}",
-            )
+            stored_item = _store_snapshot_item(t=t, slate_date=slate_date, game_date=game_date, asof=asof, run=run, compact=date_compact, date_isolated=True, pk=f"SPORT#mlb#DATE#{game_date}")
             isolated_stored.append({"game_date_et": game_date, **stored_item, "count": date_compact.get("count")})
-            audit_results.append({
-                "game_date_et": game_date,
-                **record_snapshot_audit(sport="mlb", slate_date_et=game_date, asof=asof, t=t, run_type=run, compact_snapshot=date_compact, raw_games=raw),
-            })
-            prediction_audit_results.append({
-                "game_date_et": game_date,
-                **record_no_edge_prediction_rows(sport="mlb", slate_date_et=game_date, asof=asof, compact_snapshot=date_compact),
-            })
-            if str(t).upper() == "HOT":
-                hot_movement_feature_results.append({
-                    "game_date_et": game_date,
-                    **_store_hot_movement_features(game_date=game_date, asof=asof, run=run),
-                })
+            audit_results.append({"game_date_et": game_date, **record_snapshot_audit(sport="mlb", slate_date_et=game_date, asof=asof, t=t, run_type=run, compact_snapshot=date_compact, raw_games=raw)})
+            prediction_audit_results.append({"game_date_et": game_date, **record_no_edge_prediction_rows(sport="mlb", slate_date_et=game_date, asof=asof, compact_snapshot=date_compact)})
+            hot_movement_feature_results.append({"game_date_et": game_date, **_store_hot_movement_features(game_date=game_date, asof=asof, run=run)})
 
         return _resp(200, {
             "ok": True,
@@ -558,19 +457,10 @@ def lambda_handler(event, context):
             "fallback_used": False,
             "t": t,
             "run": run,
-            "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min_date_isolated",
-            "ml_research_policy": {
-                "enabled": True,
-                "scope": "HOT pulls only",
-                "feature_partition_pk_pattern": "ML_FEATURE#mlb#YYYY-MM-DD",
-                "rule": "Each HOT-to-HOT movement comparison is stored as a feature row for later winner-signal learning.",
-            },
-            "data_isolation": {
-                "enabled": True,
-                "rule": "Every game is stored, audited, predicted, and later graded under its actual ET game date, not under the pull date.",
-                "date_partition_pk_pattern": "SPORT#mlb#DATE#YYYY-MM-DD",
-                "game_key_pattern": "mlb|YYYY-MM-DD|away|home",
-            },
+            "hot_only_policy": HOT_ONLY_POLICY,
+            "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min_date_isolated_hot_only",
+            "ml_research_policy": {"enabled": True, "scope": "HOT pulls only", "feature_partition_pk_pattern": "ML_FEATURE#mlb#YYYY-MM-DD"},
+            "data_isolation": {"enabled": True, "date_partition_pk_pattern": "SPORT#mlb#DATE#YYYY-MM-DD", "game_key_pattern": "mlb|YYYY-MM-DD|away|home"},
             "pull_date_et": slate_date,
             "game_dates_et": compact.get("game_dates_et") or [],
             "days_ahead": days_ahead,
@@ -589,11 +479,4 @@ def lambda_handler(event, context):
         fallback = _transparent_cached_pre_start_response(payload, exc)
         if fallback is not None:
             return _resp(200 if fallback.get("ok") else 500, fallback)
-        return _resp(500, {
-            "ok": False,
-            "sport": "mlb",
-            "live_pull_ok": False,
-            "fallback_used": False,
-            "upstream_error": _oddsapi_auth_diagnostic(exc),
-            "error": str(exc),
-        })
+        return _resp(500, {"ok": False, "sport": "mlb", "live_pull_ok": False, "fallback_used": False, "upstream_error": _oddsapi_auth_diagnostic(exc), "error": str(exc)})
