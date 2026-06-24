@@ -28,6 +28,8 @@ SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
 PREDICTIONS_TABLE = os.environ.get("PREDICTIONS_TABLE", "")
 
 TARGET_SUCCESS_RATE = Decimal("75")
+MLB_PULL_MODE = "ROLLING_15_MIN_ONLY"
+MLB_PULL_T = "HOT"
 
 
 dynamodb = boto3.resource("dynamodb")
@@ -72,7 +74,7 @@ def _game_date_from_params(params: Dict[str, str]) -> str:
     return params.get("game_date_et") or params.get("slate_date_et") or _today_et()
 
 
-def _recent_snapshots_for_date(game_date: str, limit: int = 40, t: Optional[str] = None) -> List[Dict[str, Any]]:
+def _recent_snapshots_for_date(game_date: str, limit: int = 40, t: Optional[str] = MLB_PULL_T) -> List[Dict[str, Any]]:
     if snapshots_tbl is None:
         raise RuntimeError("SNAPSHOTS_TABLE not configured")
     pk = f"SPORT#mlb#DATE#{game_date}"
@@ -85,15 +87,18 @@ def _recent_snapshots_for_date(game_date: str, limit: int = 40, t: Optional[str]
 
 
 def movement_deltas(game_date: str, limit: int = 40) -> Dict[str, Any]:
-    snapshots = _recent_snapshots_for_date(game_date, limit=limit)
+    # MLB-B1.0 now reads only 15-minute HOT pull history. Legacy T1/T2/T3/T4 snapshots are ignored.
+    snapshots = _recent_snapshots_for_date(game_date, limit=limit, t=MLB_PULL_T)
     if len(snapshots) < 2:
         return {
             "ok": True,
             "sport": "mlb",
             "game_date_et": game_date,
             "date_isolated": True,
+            "pull_mode": MLB_PULL_MODE,
+            "snapshot_t_filter": MLB_PULL_T,
             "count": 0,
-            "message": "Need at least two date-isolated MLB snapshots for this game date.",
+            "message": "Need at least two 15-minute HOT MLB snapshots for this game date.",
         }
     prev_snap = snapshots[-2]
     latest_snap = snapshots[-1]
@@ -110,6 +115,8 @@ def movement_deltas(game_date: str, limit: int = 40) -> Dict[str, Any]:
         if row.get("ok"):
             row["game_date_et"] = game_date
             row["date_isolated"] = True
+            row["pull_mode"] = MLB_PULL_MODE
+            row["snapshot_t_filter"] = MLB_PULL_T
             deltas.append(row)
     deltas.sort(key=lambda x: abs(float(x.get("hot_delta") or 0)), reverse=True)
     return {
@@ -117,6 +124,8 @@ def movement_deltas(game_date: str, limit: int = 40) -> Dict[str, Any]:
         "sport": "mlb",
         "game_date_et": game_date,
         "date_isolated": True,
+        "pull_mode": MLB_PULL_MODE,
+        "snapshot_t_filter": MLB_PULL_T,
         "snapshot_partition": f"SPORT#mlb#DATE#{game_date}",
         "previous_asof": prev_snap.get("asof"),
         "latest_asof": latest_snap.get("asof"),
@@ -127,7 +136,7 @@ def movement_deltas(game_date: str, limit: int = 40) -> Dict[str, Any]:
 
 def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_edge: bool = True) -> Dict[str, Any]:
     data = movement_deltas(game_date=game_date, limit=limit)
-    snapshots = _recent_snapshots_for_date(game_date, limit=limit)
+    snapshots = _recent_snapshots_for_date(game_date, limit=limit, t=MLB_PULL_T)
     latest_snapshot = snapshots[-1] if snapshots else {}
     latest_games = _game_index(latest_snapshot) if latest_snapshot else {}
     rows_by_key: Dict[str, Dict[str, Any]] = {}
@@ -145,7 +154,7 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
         is_actionable = status != "NO_EDGE"
         if not include_no_edge and not is_actionable:
             continue
-        row = {**row, "display_confidence_scores": True, "confidence_score": _confidence_score(row), "confidence_label": _confidence_label(row), "game_date_et": game_date, "date_isolated": True}
+        row = {**row, "display_confidence_scores": True, "confidence_score": _confidence_score(row), "confidence_label": _confidence_label(row), "game_date_et": game_date, "date_isolated": True, "pull_mode": MLB_PULL_MODE, "snapshot_t_filter": MLB_PULL_T}
         row = _enrich_attempted_winner(row, latest_game)
         rows_by_key[row.get("game_key")] = row
 
@@ -154,7 +163,7 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
         if game_key not in rows_by_key:
             simple = _simple_no_edge_row(game, latest_snapshot.get("asof"))
             if simple:
-                simple = {**simple, "game_date_et": game_date, "date_isolated": True}
+                simple = {**simple, "game_date_et": game_date, "date_isolated": True, "pull_mode": MLB_PULL_MODE, "snapshot_t_filter": MLB_PULL_T}
                 rows_by_key[game_key] = _enrich_attempted_winner(simple, game)
 
     for row in rows_by_key.values():
@@ -165,6 +174,8 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
         item = _prediction_item(row, game_date, now)
         item["game_date_et"] = game_date
         item["date_isolated"] = True
+        item["pull_mode"] = MLB_PULL_MODE
+        item["snapshot_t_filter"] = MLB_PULL_T
         item["snapshot_partition"] = f"SPORT#mlb#DATE#{game_date}"
         stored_prediction_key = None
         if store:
@@ -181,6 +192,8 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
     if isinstance(parlay, dict):
         parlay["game_date_et"] = game_date
         parlay["date_isolated"] = True
+        parlay["pull_mode"] = MLB_PULL_MODE
+        parlay["snapshot_t_filter"] = MLB_PULL_T
         parlay["snapshot_partition"] = f"SPORT#mlb#DATE#{game_date}"
 
     return {
@@ -188,6 +201,8 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
         "sport": "mlb",
         "game_date_et": game_date,
         "date_isolated": True,
+        "pull_mode": MLB_PULL_MODE,
+        "snapshot_t_filter": MLB_PULL_T,
         "snapshot_partition": f"SPORT#mlb#DATE#{game_date}",
         "stored": store,
         "stored_count": stored_count,
@@ -200,7 +215,7 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
         "status_counts": status_counts,
         "target_success_rate": 75,
         "display_confidence_scores": True,
-        "message": "MLB game-winner attempts and 3-leg parlay are date-isolated by actual ET game date. No cross-date snapshots are compared.",
+        "message": "MLB game-winner attempts and 3-leg parlay are built only from date-isolated 15-minute HOT pull history. Legacy T1/T2/T3/T4 snapshots are ignored.",
         "previous_asof": data.get("previous_asof"),
         "latest_asof": latest_snapshot.get("asof") or data.get("latest_asof"),
         "game_predictions": rows,
@@ -221,6 +236,8 @@ def audit_snapshots(game_date: str, limit: int = 20) -> Dict[str, Any]:
         "sport": "mlb",
         "game_date_et": game_date,
         "date_isolated": True,
+        "pull_mode": MLB_PULL_MODE,
+        "snapshot_t_filter": MLB_PULL_T,
         "snapshot_partition": f"SPORT#mlb#DATE#{game_date}",
         "count": len(items),
         "summary_count": len(summaries),
@@ -239,6 +256,8 @@ def audit_game(game_date: str, game_key: Optional[str], limit: int = 50) -> Dict
         "sport": "mlb",
         "game_date_et": game_date,
         "date_isolated": True,
+        "pull_mode": MLB_PULL_MODE,
+        "snapshot_t_filter": MLB_PULL_T,
         "game_key": game_key,
         "count": len(items),
         "items": items,
@@ -249,27 +268,33 @@ def source_status() -> Dict[str, Any]:
     return {
         "ok": True,
         "sport": "mlb",
-        "algorithm_silo": "MLB-B1.0A.4.2-date-isolated-reader",
+        "algorithm_silo": "MLB-B1.0-rolling-15min-only",
+        "pull_history_policy": {
+            "status": "CONNECTED_15_MIN_ONLY",
+            "allowed_snapshot_t": "HOT",
+            "legacy_t1_t2_t3_t4": "IGNORED_BY_SIGNAL_READER",
+            "rule": "MLB signals, individual game picks, and 3-leg parlay attempts are built from HOT 15-minute pull history only.",
+        },
         "data_isolation": {
             "status": "CONNECTED",
-            "rule": "MLB signals read SPORT#mlb#DATE#YYYY-MM-DD only. They do not compare broad mixed-date snapshots.",
+            "rule": "MLB signals read SPORT#mlb#DATE#YYYY-MM-DD only with SK beginning HOT#GAME_DATE#YYYY-MM-DD. They do not compare T1/T2/T3/T4 or broad mixed-date snapshots.",
             "game_key_pattern": "mlb|YYYY-MM-DD|away|home",
             "prediction_pk_pattern": "PRED#mlb#YYYY-MM-DD",
             "audit_pk_pattern": "AUDIT#mlb#YYYY-MM-DD",
         },
         "items_1_to_5_status": {
             "1_audit_view_endpoints": "CONNECTED_DATE_ISOLATED",
-            "2_movement_delta_engine": "CONNECTED_DATE_ISOLATED",
-            "3_hot_side_prediction_endpoint": "CONNECTED_DATE_ISOLATED",
+            "2_movement_delta_engine": "CONNECTED_15_MIN_ONLY",
+            "3_hot_side_prediction_endpoint": "CONNECTED_15_MIN_ONLY",
             "4_results_evaluation_visibility": "CONNECTED",
             "5_source_status_visibility": "CONNECTED",
-            "6_game_winner_attempts_all_games": "CONNECTED_DATE_ISOLATED",
-            "7_three_leg_parlay_attempt": "CONNECTED_DATE_ISOLATED",
+            "6_game_winner_attempts_all_games": "CONNECTED_15_MIN_ONLY",
+            "7_three_leg_parlay_attempt": "CONNECTED_15_MIN_ONLY",
         },
         "external_data_sources": {
             "odds_ml_spread_total": "CONNECTED",
             "all_returned_books": "CONNECTED",
-            "timestamps": "CONNECTED",
+            "timestamps": "CONNECTED_15_MIN_HISTORY",
             "audit_ledger_schema": "CONNECTED_DATE_ISOLATED",
             "results_scores": "CONNECTED_PENDING_COMPLETED_GAMES",
             "pitching": "NOT_CONNECTED_YET",
