@@ -31,6 +31,9 @@ jobs:
       - name: Setup AWS SAM
         uses: aws-actions/setup-sam@v2
 
+      - name: Patch SAM template for MLB v1
+        run: python scripts/patch_template_mlb_v1.py
+
       - name: Validate
         run: sam validate
 
@@ -122,6 +125,16 @@ jobs:
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           test -n "$API_URL"
           curl --fail --silent --show-error "${API_URL}v1/health"
+
+      - name: Smoke test MLB v1 model version endpoint
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          curl --fail --silent --show-error "${API_URL}v1/mlb/model/version"
+
+      - name: Smoke test MLB v1 today endpoint
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          curl --fail --silent --show-error "${API_URL}v1/mlb/today"
 
       - name: Smoke test image moderation policy endpoint
         run: |
