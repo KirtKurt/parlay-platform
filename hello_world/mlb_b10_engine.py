@@ -1,12 +1,15 @@
 import os
 from datetime import datetime, timedelta, timezone
 from statistics import mean
+from zoneinfo import ZoneInfo
 
 import inqsi_pull_history as history
 
 FREEZE_MINUTES = int(os.environ.get("INQSI_MLB_FREEZE_MINUTES", "120"))
 MIN_POINTS = int(os.environ.get("INQSI_MLB_MIN_GAME_POINTS", "4"))
+SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
 ENGINE = "MLB-B1.0"
+THRESHOLD_VERSION = os.environ.get("INQSI_MLB_THRESHOLD_VERSION", "MLB-B1.0-2026-06")
 
 
 def now():
@@ -14,7 +17,7 @@ def now():
 
 
 def today():
-    return now().date().isoformat()
+    return datetime.now(SLATE_TZ).date().isoformat()
 
 
 def parse_dt(value):
@@ -31,7 +34,7 @@ def parse_dt(value):
 
 def game_day(game):
     dt = parse_dt(game.get("commence_time") or game.get("commenceTime"))
-    return dt.date().isoformat() if dt else None
+    return dt.astimezone(SLATE_TZ).date().isoformat() if dt else None
 
 
 def gid(game):
@@ -55,6 +58,7 @@ def store_history(slate, game_id, item):
         "record_type": "mlb_game_history_b10",
         "sport": "mlb",
         "slate_date": slate,
+        "slate_timezone": str(SLATE_TZ),
         "game_id": game_id,
         "home_team": item.get("homeTeam"),
         "away_team": item.get("awayTeam"),
@@ -90,6 +94,8 @@ def histories(slate=None):
                 "homeTeam": game.get("home_team"),
                 "awayTeam": game.get("away_team"),
                 "commenceTime": game.get("commence_time"),
+                "slateDate": game_day(game),
+                "slateTimezone": str(SLATE_TZ),
                 "providerSportKey": game.get("provider_sport_key"),
                 "points": [],
             })
@@ -170,7 +176,7 @@ def build(slate=None):
             candidates.append(game)
     strong = [g for g in candidates if g.get("grade") == "MLB_STRONG"]
     lean = [g for g in candidates if g.get("grade") == "MLB_LEAN"]
-    base = {"ok": True, "sport": "mlb", "slate_date": slate, "engine": ENGINE, "pullCount": len(pulls), "gameCount": len(games), "gameHistoryStored": len([x for x in stored if x]), "candidateCount": len(candidates), "strongCount": len(strong), "leanCount": len(lean), "freezeMinutesBeforeGame": FREEZE_MINUTES, "minimumGameHistoryPoints": MIN_POINTS, "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default"}
+    base = {"ok": True, "sport": "mlb", "slate_date": slate, "slateTimezone": str(SLATE_TZ), "engine": ENGINE, "thresholdVersion": THRESHOLD_VERSION, "pullCount": len(pulls), "gameCount": len(games), "gameHistoryStored": len([x for x in stored if x]), "candidateCount": len(candidates), "strongCount": len(strong), "leanCount": len(lean), "freezeMinutesBeforeGame": FREEZE_MINUTES, "minimumGameHistoryPoints": MIN_POINTS, "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default", "audit": {"status": "PENDING_RESULTS", "tracks": ["top1", "top3", "top5"]}}
     if len(strong) < 2 or (len(strong) + len(lean)) < 3:
         return {**base, "buildStatus": "NO_BUILD", "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET", "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG.", "candidates": candidates[:16]}
     selected = strong[:2]
