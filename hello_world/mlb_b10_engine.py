@@ -41,12 +41,46 @@ def gid(game):
     return str(game.get("game_id") or game.get("id") or game.get("game_key") or "")
 
 
+def avg(values):
+    clean = [float(v) for v in values if v is not None]
+    return mean(clean) if clean else None
+
+
+def run_line_snapshot(game):
+    books = game.get("books") or {}
+    hp, ap, hpt, apt = [], [], [], []
+    for book in books.values():
+        if not isinstance(book, dict):
+            continue
+        spread = book.get("spread") or {}
+        if not isinstance(spread, dict):
+            continue
+        hp.append(spread.get("home_price"))
+        ap.append(spread.get("away_price"))
+        hpt.append(spread.get("home_point"))
+        apt.append(spread.get("away_point"))
+    return {
+        "homeRunLinePrice": avg(hp),
+        "awayRunLinePrice": avg(ap),
+        "homeRunLinePoint": avg(hpt),
+        "awayRunLinePoint": avg(apt),
+    }
+
+
 def reversals(values):
     signs = []
     for i in range(1, len(values)):
         diff = values[i] - values[i - 1]
         signs.append(1 if diff > 0.0005 else -1 if diff < -0.0005 else 0)
     return sum(1 for i in range(1, len(signs)) if signs[i] and signs[i - 1] and signs[i] != signs[i - 1])
+
+
+def run_line_movement(points, side):
+    key = "homeRunLinePrice" if side == "home" else "awayRunLinePrice"
+    vals = [float(p.get(key)) for p in points if p.get(key) is not None]
+    if len(vals) < 2:
+        return None
+    return vals[-1] - vals[0]
 
 
 def store_history(slate, game_id, item):
@@ -99,6 +133,7 @@ def histories(slate=None):
                 "providerSportKey": game.get("provider_sport_key"),
                 "points": [],
             })
+            rl = run_line_snapshot(game)
             row["points"].append({
                 "pulledAt": pulled_at.isoformat(),
                 "home": float(probs.get("home")),
@@ -106,6 +141,7 @@ def histories(slate=None):
                 "bookCount": int(probs.get("book_count") or 0),
                 "bookDivergence": float(probs.get("book_divergence") or 0),
                 "bookAgreement": round(1.0 - float(probs.get("book_divergence") or 0), 5),
+                **rl,
             })
     output = []
     for game_id, row in by_game.items():
@@ -135,6 +171,7 @@ def score_side(game, side):
     late = vals[-3:] if len(vals) >= 3 else vals
     instability = max(late) - min(late) if len(late) > 1 else 0
     total_move = abs(delta)
+    rl_move = run_line_movement(pts, side)
     tags = []
     if delta >= 0.010: tags.append("STEAM")
     if delta <= -0.010: tags.append("RESISTANCE")
@@ -144,7 +181,9 @@ def score_side(game, side):
     if rev: tags.append("REVERSAL")
     if instability >= 0.018: tags.append("LATE_INSTABILITY")
     if total_move >= 0.018: tags.append("TOTAL_MOVEMENT")
-    score = round(max(0, min(100, 50 + delta * 900 + (latest - 0.5) * 75 - avg_div * 275 - rev * 7 - instability * 140)), 2)
+    if rl_move is not None and abs(rl_move) >= 10: tags.append("RUN_LINE_MOVEMENT")
+    if rl_move is not None and delta > 0 and rl_move < -10: tags.append("RUN_LINE_CONFIRMATION")
+    score = round(max(0, min(100, 50 + delta * 900 + (latest - 0.5) * 75 - avg_div * 275 - rev * 7 - instability * 140 + (3 if "RUN_LINE_CONFIRMATION" in tags else 0))), 2)
     if avg_div >= 0.055 or rev >= 3 or instability >= 0.030:
         grade = "FRAGILE"
     elif latest >= 0.535 and delta >= 0.012 and avg_div <= 0.030 and rev <= 1 and instability < 0.020:
@@ -155,7 +194,7 @@ def score_side(game, side):
         grade = "COIN_FLIP"
     else:
         grade = "FRAGILE"
-    return {"side": side, "grade": grade, "score": score, "probStart": round(start, 5), "probLatest": round(latest, 5), "delta": round(delta, 5), "velocityPpHr": round(velocity, 3), "bookDivergenceAvg": round(avg_div, 5), "bookAgreementAvg": round(1.0 - avg_div, 5), "reversalCount": rev, "lateInstability": round(instability, 5), "totalMovement": round(total_move, 5), "tags": sorted(set(tags)), "pointCount": len(vals)}
+    return {"side": side, "grade": grade, "score": score, "probStart": round(start, 5), "probLatest": round(latest, 5), "delta": round(delta, 5), "velocityPpHr": round(velocity, 3), "bookDivergenceAvg": round(avg_div, 5), "bookAgreementAvg": round(1.0 - avg_div, 5), "reversalCount": rev, "lateInstability": round(instability, 5), "totalMovement": round(total_move, 5), "runLineMovement": round(rl_move, 3) if rl_move is not None else None, "tags": sorted(set(tags)), "pointCount": len(vals)}
 
 
 def build(slate=None):
