@@ -1,14 +1,17 @@
 import html
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional, Tuple
+from zoneinfo import ZoneInfo
 
 try:
     import inqsi_pull_history
 except Exception:
     inqsi_pull_history = None
 
+SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
 DEFAULT_SPORTS = ["nfl", "cfb", "mlb", "college_baseball_men", "nba", "wnba", "ncaam", "nhl", "tennis", "soccer"]
 
 DEFAULT_SLATE_WINDOW_DAYS = {
@@ -90,13 +93,13 @@ def parse_time(raw: Any) -> Optional[datetime]:
         return None
 
 
-def today_utc() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+def today_slate() -> str:
+    return datetime.now(SLATE_TZ).date().isoformat()
 
 
 def game_slate_date(game: Dict[str, Any]) -> Optional[str]:
     commence = parse_time(game.get("commence_time") or game.get("commenceTime"))
-    return commence.date().isoformat() if commence else None
+    return commence.astimezone(SLATE_TZ).date().isoformat() if commence else None
 
 
 def active_window(sport: str) -> Tuple[datetime, datetime, int]:
@@ -116,7 +119,7 @@ def game_in_active_window(game: Dict[str, Any], sport: str) -> bool:
 
 def game_is_on_slate(game: Dict[str, Any], sport: str, slate_date: Optional[str]) -> bool:
     sport = sport_key(sport)
-    requested = slate_date or today_utc()
+    requested = slate_date or today_slate()
     game_day = game_slate_date(game)
     if sport in STRICT_DAILY_SPORTS:
         return game_day == requested
@@ -127,7 +130,7 @@ def latest_pull_for(sport: str, slate_date: Optional[str] = None) -> Dict[str, A
     if inqsi_pull_history is None:
         return {"ok": False, "sport": sport, "error": "pull_history_module_unavailable"}
     sport = sport_key(sport)
-    requested = slate_date or today_utc()
+    requested = slate_date or today_slate()
     pulls = inqsi_pull_history.query_pulls(sport, requested, 500)
     latest_visible = None
     for pull in reversed(pulls):
@@ -135,7 +138,7 @@ def latest_pull_for(sport: str, slate_date: Optional[str] = None) -> Dict[str, A
         if any(game_is_on_slate(g, sport, requested) for g in games):
             latest_visible = pull
             break
-    return {"ok": True, "sport": sport, "slateDateRequested": requested, "pullCount": len(pulls), "latestPull": latest_visible, "rawLatestPull": pulls[-1] if pulls else None}
+    return {"ok": True, "sport": sport, "slateDateRequested": requested, "slateTimezone": str(SLATE_TZ), "pullCount": len(pulls), "latestPull": latest_visible, "rawLatestPull": pulls[-1] if pulls else None}
 
 
 def book_market(book_name: str, book: Dict[str, Any]) -> Dict[str, Any]:
@@ -153,6 +156,7 @@ def game_row(game: Dict[str, Any]) -> Dict[str, Any]:
         "awayTeam": game.get("away_team"),
         "commenceTime": game.get("commence_time"),
         "slateDate": game_slate_date(game),
+        "slateTimezone": str(SLATE_TZ),
         "league": game.get("league"),
         "level": game.get("level"),
         "gender": game.get("gender"),
@@ -164,7 +168,7 @@ def game_row(game: Dict[str, Any]) -> Dict[str, Any]:
 
 def board_for_sport(sport: str, slate_date: Optional[str] = None) -> Dict[str, Any]:
     sport = sport_key(sport)
-    requested = slate_date or today_utc()
+    requested = slate_date or today_slate()
     latest = latest_pull_for(sport, requested)
     if not latest.get("ok"):
         return latest
@@ -177,6 +181,7 @@ def board_for_sport(sport: str, slate_date: Optional[str] = None) -> Dict[str, A
         "ok": True,
         "sport": sport,
         "slate_date": requested,
+        "slateTimezone": str(SLATE_TZ),
         "pull_slate_date": pull.get("slate_date"),
         "pullCount": latest.get("pullCount", 0),
         "latestPulledAt": pull.get("pulled_at"),
@@ -190,15 +195,15 @@ def board_for_sport(sport: str, slate_date: Optional[str] = None) -> Dict[str, A
         "strictDailySlate": sport in STRICT_DAILY_SPORTS,
         "marketTypes": ["moneyline", "spread", "total", "over_under"],
         "games": games,
-        "note": "Daily sports are filtered by actual game commence_time date. Future-day games are excluded from today's slate.",
+        "note": "Daily sports are filtered by actual game commence_time in America/New_York slate date. Future-day games are excluded from today's slate.",
     }
 
 
 def board_all(p: Dict[str, Any]) -> Dict[str, Any]:
-    slate_date = p.get("slate_date") or today_utc()
+    slate_date = p.get("slate_date") or today_slate()
     sports = sports_from(p.get("sports") or p.get("sport"))
     boards = [board_for_sport(s, slate_date) for s in sports]
-    return {"ok": True, "board": "market_board_slate_date_strict", "slate_date": slate_date, "sportsChecked": sports, "sportsWithGames": sum(1 for b in boards if (b.get("gameCount") or 0) > 0), "memberSlipsIncluded": False, "boards": boards}
+    return {"ok": True, "board": "market_board_slate_date_strict", "slate_date": slate_date, "slateTimezone": str(SLATE_TZ), "sportsChecked": sports, "sportsWithGames": sum(1 for b in boards if (b.get("gameCount") or 0) > 0), "memberSlipsIncluded": False, "boards": boards}
 
 
 def render_book(book: Dict[str, Any]) -> str:
