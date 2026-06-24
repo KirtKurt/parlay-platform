@@ -27,23 +27,13 @@ def _today_et() -> str:
 
 
 def _resp(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "statusCode": status,
-        "headers": {"content-type": "application/json", "access-control-allow-origin": "*"},
-        "body": json.dumps(body, default=str),
-    }
+    return {"statusCode": status, "headers": {"content-type": "application/json", "access-control-allow-origin": "*"}, "body": json.dumps(body, default=str)}
 
 
 def _odds_url() -> str:
     if not ODDS_API_KEY:
         raise RuntimeError("ODDS_API_KEY missing")
-    params = {
-        "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": ODDS_MARKETS,
-        "oddsFormat": "american",
-        "dateFormat": "iso",
-    }
+    params = {"apiKey": ODDS_API_KEY, "regions": "us", "markets": ODDS_MARKETS, "oddsFormat": "american", "dateFormat": "iso"}
     return f"https://api.the-odds-api.com/v4/sports/{SPORT_KEY}/odds/?" + urllib.parse.urlencode(params)
 
 
@@ -55,28 +45,14 @@ def _http_get_json(url: str, timeout: int = 20) -> Any:
 
 def archive_raw_snapshot(run: str = "hot_raw_archive") -> Dict[str, Any]:
     if not RAW_ARCHIVE_BUCKET:
-        raise RuntimeError("RAW_ARCHIVE_BUCKET missing")
+        return {"ok": False, "sport": "mlb", "archive_enabled": False, "error": "RAW_ARCHIVE_BUCKET missing", "message": "S3 archive code is deployed but bucket/env wiring is not configured yet."}
     now = _now_iso()
     date = _today_et()
     raw = _http_get_json(_odds_url())
     key = f"raw/odds_api/mlb/date={date}/asof={now.replace(':', '-')}/{run}.json"
-    payload = {
-        "sport": "mlb",
-        "sport_key": SPORT_KEY,
-        "source": "theOddsAPI",
-        "markets": ODDS_MARKETS.split(','),
-        "asof": now,
-        "date_et": date,
-        "run": run,
-        "raw": raw,
-    }
-    s3.put_object(
-        Bucket=RAW_ARCHIVE_BUCKET,
-        Key=key,
-        Body=json.dumps(payload, default=str).encode("utf-8"),
-        ContentType="application/json",
-    )
-    return {"ok": True, "sport": "mlb", "bucket": RAW_ARCHIVE_BUCKET, "key": key, "game_count": len(raw or [])}
+    payload = {"sport": "mlb", "sport_key": SPORT_KEY, "source": "theOddsAPI", "markets": ODDS_MARKETS.split(','), "asof": now, "date_et": date, "run": run, "raw": raw}
+    s3.put_object(Bucket=RAW_ARCHIVE_BUCKET, Key=key, Body=json.dumps(payload, default=str).encode("utf-8"), ContentType="application/json")
+    return {"ok": True, "sport": "mlb", "archive_enabled": True, "bucket": RAW_ARCHIVE_BUCKET, "key": key, "game_count": len(raw or [])}
 
 
 def lambda_handler(event, context):
