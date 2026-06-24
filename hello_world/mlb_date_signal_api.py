@@ -10,6 +10,7 @@ from datetime import datetime
 import boto3
 from boto3.dynamodb.conditions import Key
 
+from mlb_advanced_context import advanced_context_status, build_advanced_context, enrich_row_with_advanced_context
 from mlb_signal_api import (
     _build_three_leg_parlay,
     _confidence_label,
@@ -86,6 +87,12 @@ def _recent_snapshots_for_date(game_date: str, limit: int = 40, t: Optional[str]
     return sorted(resp.get("Items", []), key=lambda x: x.get("asof") or "")
 
 
+def _latest_games_for_date(game_date: str, limit: int = 40) -> Dict[str, Dict[str, Any]]:
+    snapshots = _recent_snapshots_for_date(game_date, limit=limit, t=MLB_PULL_T)
+    latest_snapshot = snapshots[-1] if snapshots else {}
+    return _game_index(latest_snapshot) if latest_snapshot else {}
+
+
 def movement_deltas(game_date: str, limit: int = 40) -> Dict[str, Any]:
     # MLB-B1.0 now reads only 15-minute HOT pull history. Legacy T1/T2/T3/T4 snapshots are ignored.
     snapshots = _recent_snapshots_for_date(game_date, limit=limit, t=MLB_PULL_T)
@@ -134,6 +141,48 @@ def movement_deltas(game_date: str, limit: int = 40) -> Dict[str, Any]:
     }
 
 
+def _advanced_counts(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    eligible = [row for row in rows if row.get("advanced_eligible")]
+    blockers: Dict[str, int] = {}
+    for row in rows:
+        for blocker in row.get("advanced_blockers") or []:
+            blockers[blocker] = blockers.get(blocker, 0) + 1
+    return {
+        "eligible_count": len(eligible),
+        "blocked_count": len(rows) - len(eligible),
+        "blockers": blockers,
+        "policy": "Advanced eligibility requires every requested MLB context source. Missing context blocks ADVANCED_ELIGIBLE but does not hide market-only rows.",
+    }
+
+
+def _attach_parlay_advanced_context(parlay: Dict[str, Any], rows_by_key: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    if not isinstance(parlay, dict) or not parlay.get("ok"):
+        return parlay
+    leg_contexts = []
+    blockers = set()
+    for leg in parlay.get("legs") or []:
+        row = rows_by_key.get(leg.get("game_key")) or {}
+        context = row.get("advanced_context") or {}
+        leg_blockers = row.get("advanced_blockers") or []
+        blockers.update(leg_blockers)
+        leg_contexts.append({
+            "game_key": leg.get("game_key"),
+            "match": leg.get("match"),
+            "advanced_eligible": bool(row.get("advanced_eligible")),
+            "advanced_blockers": leg_blockers,
+            "confirmed_probable_pitchers": context.get("confirmed_probable_pitchers"),
+            "venue": context.get("venue"),
+            "closing_line_value": context.get("closing_line_value"),
+        })
+    parlay["advanced_context"] = {
+        "advanced_eligible": bool(leg_contexts) and all(item.get("advanced_eligible") for item in leg_contexts),
+        "blockers": sorted(blockers),
+        "leg_contexts": leg_contexts,
+        "policy": "This parlay is not ADVANCED_ELIGIBLE until every leg has FIP/xFIP, wRC+, handedness splits, probable pitchers, bullpen, lineups, weather/roof, park factors, injuries/news, public handle, and CLV connected.",
+    }
+    return parlay
+
+
 def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_edge: bool = True) -> Dict[str, Any]:
     data = movement_deltas(game_date=game_date, limit=limit)
     snapshots = _recent_snapshots_for_date(game_date, limit=limit, t=MLB_PULL_T)
@@ -156,6 +205,7 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
             continue
         row = {**row, "display_confidence_scores": True, "confidence_score": _confidence_score(row), "confidence_label": _confidence_label(row), "game_date_et": game_date, "date_isolated": True, "pull_mode": MLB_PULL_MODE, "snapshot_t_filter": MLB_PULL_T}
         row = _enrich_attempted_winner(row, latest_game)
+        row = enrich_row_with_advanced_context(game_date, row, latest_game)
         rows_by_key[row.get("game_key")] = row
 
     # Guarantee one attempted game-winner row for every available MLB moneyline game in this actual game-date partition.
@@ -164,7 +214,9 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
             simple = _simple_no_edge_row(game, latest_snapshot.get("asof"))
             if simple:
                 simple = {**simple, "game_date_et": game_date, "date_isolated": True, "pull_mode": MLB_PULL_MODE, "snapshot_t_filter": MLB_PULL_T}
-                rows_by_key[game_key] = _enrich_attempted_winner(simple, game)
+                simple = _enrich_attempted_winner(simple, game)
+                simple = enrich_row_with_advanced_context(game_date, simple, game)
+                rows_by_key[game_key] = simple
 
     for row in rows_by_key.values():
         status = row.get("prediction_status") or "UNKNOWN"
@@ -177,6 +229,9 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
         item["pull_mode"] = MLB_PULL_MODE
         item["snapshot_t_filter"] = MLB_PULL_T
         item["snapshot_partition"] = f"SPORT#mlb#DATE#{game_date}"
+        item["advanced_context"] = row.get("advanced_context")
+        item["advanced_eligible"] = row.get("advanced_eligible")
+        item["advanced_blockers"] = row.get("advanced_blockers")
         stored_prediction_key = None
         if store:
             if predictions_tbl is None:
@@ -187,7 +242,7 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
                 stored_prediction_key = item["SK"]
         rows.append({**row, "stored_prediction_key": stored_prediction_key})
 
-    rows.sort(key=lambda x: (x.get("prediction_status") != "NO_EDGE", x.get("confidence_score") or 0, (x.get("favorite") or {}).get("gap") or 0), reverse=True)
+    rows.sort(key=lambda x: (x.get("prediction_status") != "NO_EDGE", x.get("advanced_eligible") is True, x.get("confidence_score") or 0, (x.get("favorite") or {}).get("gap") or 0), reverse=True)
     parlay = _build_three_leg_parlay(rows, latest_games)
     if isinstance(parlay, dict):
         parlay["game_date_et"] = game_date
@@ -195,6 +250,7 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
         parlay["pull_mode"] = MLB_PULL_MODE
         parlay["snapshot_t_filter"] = MLB_PULL_T
         parlay["snapshot_partition"] = f"SPORT#mlb#DATE#{game_date}"
+        parlay = _attach_parlay_advanced_context(parlay, {row.get("game_key"): row for row in rows})
 
     return {
         "ok": True,
@@ -213,9 +269,11 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
         "individual_prediction_count": len(rows),
         "actionable_count": len(actionable_rows),
         "status_counts": status_counts,
+        "advanced_context_status": advanced_context_status(),
+        "advanced_context_counts": _advanced_counts(rows),
         "target_success_rate": 75,
         "display_confidence_scores": True,
-        "message": "MLB game-winner attempts and 3-leg parlay are built only from date-isolated 15-minute HOT pull history. Legacy T1/T2/T3/T4 snapshots are ignored.",
+        "message": "MLB game-winner attempts and 3-leg parlay are built only from date-isolated 15-minute HOT pull history. Advanced context is scored into eligibility and blocks ADVANCED_ELIGIBLE when required feeds are missing.",
         "previous_asof": data.get("previous_asof"),
         "latest_asof": latest_snapshot.get("asof") or data.get("latest_asof"),
         "game_predictions": rows,
@@ -264,17 +322,27 @@ def audit_game(game_date: str, game_key: Optional[str], limit: int = 50) -> Dict
     }
 
 
+def game_context(game_date: str, game_key: str, limit: int = 40) -> Dict[str, Any]:
+    games = _latest_games_for_date(game_date, limit=limit)
+    game = games.get(game_key)
+    if not game:
+        return {"ok": False, "sport": "mlb", "game_date_et": game_date, "game_key": game_key, "error": "Game not found in latest 15-minute HOT snapshot."}
+    return {"ok": True, "sport": "mlb", "game_date_et": game_date, "game_key": game_key, "advanced_context": build_advanced_context(game_date, game, None)}
+
+
 def source_status() -> Dict[str, Any]:
+    advanced = advanced_context_status()
     return {
         "ok": True,
         "sport": "mlb",
-        "algorithm_silo": "MLB-B1.0-rolling-15min-only",
+        "algorithm_silo": "MLB-B1.0-rolling-15min-only-plus-advanced-context",
         "pull_history_policy": {
             "status": "CONNECTED_15_MIN_ONLY",
             "allowed_snapshot_t": "HOT",
             "legacy_t1_t2_t3_t4": "IGNORED_BY_SIGNAL_READER",
             "rule": "MLB signals, individual game picks, and 3-leg parlay attempts are built from HOT 15-minute pull history only.",
         },
+        "advanced_context_policy": advanced,
         "data_isolation": {
             "status": "CONNECTED",
             "rule": "MLB signals read SPORT#mlb#DATE#YYYY-MM-DD only with SK beginning HOT#GAME_DATE#YYYY-MM-DD. They do not compare T1/T2/T3/T4 or broad mixed-date snapshots.",
@@ -285,23 +353,13 @@ def source_status() -> Dict[str, Any]:
         "items_1_to_5_status": {
             "1_audit_view_endpoints": "CONNECTED_DATE_ISOLATED",
             "2_movement_delta_engine": "CONNECTED_15_MIN_ONLY",
-            "3_hot_side_prediction_endpoint": "CONNECTED_15_MIN_ONLY",
+            "3_hot_side_prediction_endpoint": "CONNECTED_15_MIN_ONLY_PLUS_ADVANCED_CONTEXT",
             "4_results_evaluation_visibility": "CONNECTED",
             "5_source_status_visibility": "CONNECTED",
-            "6_game_winner_attempts_all_games": "CONNECTED_15_MIN_ONLY",
-            "7_three_leg_parlay_attempt": "CONNECTED_15_MIN_ONLY",
+            "6_game_winner_attempts_all_games": "CONNECTED_15_MIN_ONLY_PLUS_ADVANCED_CONTEXT",
+            "7_three_leg_parlay_attempt": "CONNECTED_15_MIN_ONLY_ADVANCED_ELIGIBILITY_SCORED",
         },
-        "external_data_sources": {
-            "odds_ml_spread_total": "CONNECTED",
-            "all_returned_books": "CONNECTED",
-            "timestamps": "CONNECTED_15_MIN_HISTORY",
-            "audit_ledger_schema": "CONNECTED_DATE_ISOLATED",
-            "results_scores": "CONNECTED_PENDING_COMPLETED_GAMES",
-            "pitching": "NOT_CONNECTED_YET",
-            "weather": "NOT_CONNECTED_YET",
-            "injuries_lineups_news": "NOT_CONNECTED_YET",
-            "public_betting_handle": "NOT_CONNECTED_YET",
-        },
+        "external_data_sources": advanced.get("source_status", {}),
     }
 
 
@@ -323,6 +381,10 @@ def lambda_handler(event, context):
         if method == "GET" and path == "/v1/predictions/mlb/hot-sides":
             include_no_edge = params.get("include_no_edge", "true").lower() != "false"
             return _resp(200, hot_sides(game_date, min(int(params.get("limit") or 40), 200), params.get("store", "false").lower() == "true", include_no_edge))
+        if method == "GET" and path == "/v1/mlb/context/status":
+            return _resp(200, advanced_context_status())
+        if method == "GET" and path == "/v1/mlb/context/game":
+            return _resp(200, game_context(game_date, params.get("game_key") or "", min(int(params.get("limit") or 40), 200)))
         if method == "GET" and path == "/v1/results/mlb/status":
             return _resp(200, _base_results_status(params.get("slate_date_et") or game_date))
         if method == "GET" and path == "/v1/sources/mlb/status":
