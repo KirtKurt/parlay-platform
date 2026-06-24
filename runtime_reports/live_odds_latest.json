@@ -1,13 +1,6 @@
 {
   "ok": true,
-  "createdAt": "2026-06-24T16:00:45.806751+00:00",
-  "repo": "KirtKurt/parlay-platform",
-  "workflow": "Inqis Live Odds Pulls",
-  "runId": "28111895321",
-  "runNumber": "71",
-  "eventName": "schedule",
-  "oddsApiKeyPresent": true,
-  "snapshotsTable": "parlay_platform_snapshots",
+  "createdAt": "2026-06-24T16:19:40.413991+00:00",
   "sportsRequested": [
     "mlb",
     "soccer",
@@ -30,6 +23,8 @@
     "ncaam",
     "nhl"
   ],
+  "pullOk": true,
+  "marketBoardOk": true,
   "sportsWithStoredGamesFromPull": [
     "mlb",
     "wnba"
@@ -39,422 +34,214 @@
     "wnba"
   ],
   "totalGamesVisibleOnMarketBoard": 23,
-  "pullOk": true,
-  "marketBoardOk": true,
-  "pullResults": [
-    {
-      "ok": true,
-      "appSport": "mlb",
-      "rawGamesReturned": 16,
-      "rawGamesInWindow": 16,
-      "gamesStored": 16,
-      "providerPulls": [
-        {
-          "ok": true,
-          "providerSportKey": "baseball_mlb",
-          "rawGamesReturned": 16,
-          "rawGamesInWindow": 16,
-          "gamesStored": 16,
-          "activeWindowStart": "2026-06-24T10:00:46.118183+00:00",
-          "activeWindowEnd": "2026-06-26T16:00:46.118183+00:00",
-          "slateWindowDays": 2,
-          "stored": {
-            "pk": "PULLS#mlb#2026-06-24",
-            "sk": "PULL#2026-06-24T16:00:46.118799+00:00#pull_499e92a872a64e7b",
-            "pull_id": "pull_499e92a872a64e7b",
-            "game_count": 16
-          },
-          "error": null
-        }
-      ]
-    },
-    {
-      "ok": false,
-      "appSport": "soccer",
-      "rawGamesReturned": 10,
-      "rawGamesInWindow": 0,
-      "gamesStored": 0,
-      "providerPulls": [
-        {
-          "ok": false,
-          "providerSportKey": "soccer_usa_mls",
-          "rawGamesReturned": 0,
-          "rawGamesInWindow": 0,
-          "gamesStored": 0,
-          "activeWindowStart": "2026-06-24T10:00:46.628415+00:00",
-          "activeWindowEnd": "2026-07-08T16:00:46.628415+00:00",
-          "slateWindowDays": 14,
-          "stored": null,
-          "error": "active_slate_window_empty"
-        },
-        {
-          "ok": false,
-          "providerSportKey": "soccer_epl",
-          "rawGamesReturned": 10,
-          "rawGamesInWindow": 0,
-          "gamesStored": 0,
-          "activeWindowStart": "2026-06-24T10:00:46.737139+00:00",
-          "activeWindowEnd": "2026-07-08T16:00:46.737139+00:00",
-          "slateWindowDays": 14,
-          "stored": null,
-          "error": "active_slate_window_empty"
-        },
-        {
-          "ok": false,
-          "providerSportKey": "soccer_uefa_champs_league",
-          "rawGamesReturned": 0,
-          "rawGamesInWindow": 0,
-          "gamesStored": 0,
-          "activeWindowStart": "2026-06-24T10:00:46.872101+00:00",
-          "activeWindowEnd": "2026-07-08T16:00:46.872101+00:00",
-          "slateWindowDays": 14,
-          "stored": null,
-          "error": "active_slate_window_empty"
-        }
-      ]
-    },
-    {
-      "ok": false,
-      "appSport": "tennis",
-      "rawGamesReturned": 0,
-      "rawGamesInWindow": 0,
-      "gamesStored": 0,
-      "providerPulls": [
-        {
-          "ok": false,
-          "providerSportKey": "tennis_atp_singles",
-          "rawGamesReturned": null,
-          "rawGamesInWindow": null,
-          "gamesStored": null,
-          "activeWindowStart": null,
-          "activeWindowEnd": null,
-          "slateWindowDays": null,
-          "stored": null,
-          "error": {
-            "errorType": "HTTPError",
-            "message": "HTTP Error 404: Not Found",
-            "httpStatus": 404,
-            "reason": "Not Found",
-            "upstreamBodySample": "{\"message\":\"Unknown sport\",\"error_code\":\"UNKNOWN_SPORT\",\"details_url\":\"https://the-odds-api.com/liveapi/guides/v4/api-error-codes.html#unknown-sport\"}\n"
-          }
-        },
-        {
-          "ok": false,
-          "providerSportKey": "tennis_wta_singles",
-          "rawGamesReturned": null,
-          "rawGamesInWindow": null,
-          "gamesStored": null,
-          "activeWindowStart": null,
-          "activeWindowEnd": null,
-          "slateWindowDays": null,
-          "stored": null,
-          "error": {
-            "errorType": "HTTPError",
-            "message": "HTTP Error 404: Not Found",
-            "httpStatus": 404,
-            "reason": "Not Found",
-            "upstreamBodySample": "{\"message\":\"Unknown sport\",\"error_code\":\"UNKNOWN_SPORT\",\"details_url\":\"https://the-odds-api.com/liveapi/guides/v4/api-error-codes.html#unknown-sport\"}\n"
-          }
-        }
-      ]
-    },
-    {
-      "ok": false,
-      "appSport": "nfl",
-      "rawGamesReturned": 75,
-      "rawGamesInWindow": 0,
-      "gamesStored": 0,
-      "providerPulls": [
-        {
-          "ok": false,
-          "providerSportKey": "americanfootball_nfl",
-          "rawGamesReturned": 75,
-          "rawGamesInWindow": 0,
-          "gamesStored": 0,
-          "activeWindowStart": "2026-06-24T10:00:47.374473+00:00",
-          "activeWindowEnd": "2026-07-01T16:00:47.374473+00:00",
-          "slateWindowDays": 7,
-          "stored": null,
-          "error": "active_slate_window_empty"
-        }
-      ]
-    },
-    {
-      "ok": false,
-      "appSport": "cfb",
-      "rawGamesReturned": 78,
-      "rawGamesInWindow": 0,
-      "gamesStored": 0,
-      "providerPulls": [
-        {
-          "ok": false,
-          "providerSportKey": "americanfootball_ncaaf",
-          "rawGamesReturned": 78,
-          "rawGamesInWindow": 0,
-          "gamesStored": 0,
-          "activeWindowStart": "2026-06-24T10:00:47.535291+00:00",
-          "activeWindowEnd": "2026-07-01T16:00:47.535291+00:00",
-          "slateWindowDays": 7,
-          "stored": null,
-          "error": "active_slate_window_empty"
-        }
-      ]
-    },
-    {
-      "ok": false,
-      "appSport": "nba",
-      "rawGamesReturned": 0,
-      "rawGamesInWindow": 0,
-      "gamesStored": 0,
-      "providerPulls": [
-        {
-          "ok": false,
-          "providerSportKey": "basketball_nba",
-          "rawGamesReturned": 0,
-          "rawGamesInWindow": 0,
-          "gamesStored": 0,
-          "activeWindowStart": "2026-06-24T10:00:47.684434+00:00",
-          "activeWindowEnd": "2026-06-26T16:00:47.684434+00:00",
-          "slateWindowDays": 2,
-          "stored": null,
-          "error": "active_slate_window_empty"
-        }
-      ]
-    },
-    {
-      "ok": true,
-      "appSport": "wnba",
-      "rawGamesReturned": 8,
-      "rawGamesInWindow": 7,
-      "gamesStored": 7,
-      "providerPulls": [
-        {
-          "ok": true,
-          "providerSportKey": "basketball_wnba",
-          "rawGamesReturned": 8,
-          "rawGamesInWindow": 7,
-          "gamesStored": 7,
-          "activeWindowStart": "2026-06-24T10:00:47.815018+00:00",
-          "activeWindowEnd": "2026-06-26T16:00:47.815018+00:00",
-          "slateWindowDays": 2,
-          "stored": {
-            "pk": "PULLS#wnba#2026-06-24",
-            "sk": "PULL#2026-06-24T16:00:47.815239+00:00#pull_4817e89493834288",
-            "pull_id": "pull_4817e89493834288",
-            "game_count": 7
-          },
-          "error": null
-        }
-      ]
-    },
-    {
-      "ok": false,
-      "appSport": "ncaam",
-      "rawGamesReturned": 0,
-      "rawGamesInWindow": 0,
-      "gamesStored": 0,
-      "providerPulls": [
-        {
-          "ok": false,
-          "providerSportKey": "basketball_ncaab",
-          "rawGamesReturned": 0,
-          "rawGamesInWindow": 0,
-          "gamesStored": 0,
-          "activeWindowStart": "2026-06-24T10:00:47.971022+00:00",
-          "activeWindowEnd": "2026-06-26T16:00:47.971022+00:00",
-          "slateWindowDays": 2,
-          "stored": null,
-          "error": "active_slate_window_empty"
-        }
-      ]
-    },
-    {
-      "ok": false,
-      "appSport": "nhl",
-      "rawGamesReturned": 0,
-      "rawGamesInWindow": 0,
-      "gamesStored": 0,
-      "providerPulls": [
-        {
-          "ok": false,
-          "providerSportKey": "icehockey_nhl",
-          "rawGamesReturned": 0,
-          "rawGamesInWindow": 0,
-          "gamesStored": 0,
-          "activeWindowStart": "2026-06-24T10:00:48.074128+00:00",
-          "activeWindowEnd": "2026-06-26T16:00:48.074128+00:00",
-          "slateWindowDays": 2,
-          "stored": null,
-          "error": "active_slate_window_empty"
-        }
-      ]
-    }
-  ],
-  "marketBoards": [
-    {
+  "mlbParlayBuilt": false,
+  "parlayProof": {
+    "ok": true,
+    "sports": [
+      "mlb",
+      "wnba",
+      "nfl",
+      "cfb",
+      "nba",
+      "ncaam",
+      "nhl",
+      "soccer",
+      "tennis"
+    ],
+    "builtSports": [],
+    "mlbBuilt": false,
+    "mlbLatestBuild": {
       "ok": true,
       "sport": "mlb",
       "slate_date": "2026-06-24",
-      "pullCount": 10,
-      "latestPulledAt": "2026-06-24T16:00:46.118799+00:00",
-      "source": "the_odds_api",
-      "providerSportKey": null,
-      "gameCount": 16,
-      "sampleGames": [
+      "build": {
+        "pullCount": "11",
+        "slate_date": "2026-06-24",
+        "reason": "WAITING_FOR_12TH_PULL",
+        "ok": true,
+        "message": "Inqis refused to build a three-leg parlay before the 12th 15-minute pull.",
+        "sport": "mlb",
+        "buildStatus": "NO_BUILD",
+        "minimumParlayPulls": "12",
+        "minimumParlayHistoryMinutes": "180"
+      },
+      "stored": {
+        "pk": "PARLAY_BUILDS#mlb#2026-06-24",
+        "sk": "BUILD#2026-06-24T16:19:39.854340+00:00#parlay_29b3a669df0f44a4"
+      }
+    },
+    "result": {
+      "ok": true,
+      "autoBuild": true,
+      "minimumParlayPulls": 12,
+      "sportsChecked": [
+        "mlb",
+        "wnba",
+        "nfl",
+        "cfb",
+        "nba",
+        "ncaam",
+        "nhl",
+        "soccer",
+        "tennis"
+      ],
+      "builtCount": 0,
+      "waitingCount": 9,
+      "results": [
         {
-          "gameId": "6493d60c5df2964d50009d111534865e",
-          "homeTeam": "Miami Marlins",
-          "awayTeam": "Texas Rangers",
-          "commenceTime": "2026-06-24T16:11:00Z",
-          "bookCount": 11
+          "ok": true,
+          "buildStatus": "NO_BUILD",
+          "reason": "WAITING_FOR_12TH_PULL",
+          "pullCount": 11,
+          "minimumParlayPulls": 12,
+          "minimumParlayHistoryMinutes": 180,
+          "sport": "mlb",
+          "slate_date": "2026-06-24",
+          "message": "Inqis refused to build a three-leg parlay before the 12th 15-minute pull.",
+          "stored": {
+            "pk": "PARLAY_BUILDS#mlb#2026-06-24",
+            "sk": "BUILD#2026-06-24T16:19:39.854340+00:00#parlay_29b3a669df0f44a4",
+            "build_id": "parlay_29b3a669df0f44a4",
+            "build_status": "NO_BUILD"
+          }
         },
         {
-          "gameId": "b03e189e275017dfd8549bdf781bd2cc",
-          "homeTeam": "New York Mets",
-          "awayTeam": "Chicago Cubs",
-          "commenceTime": "2026-06-24T17:11:00Z",
-          "bookCount": 10
+          "ok": true,
+          "buildStatus": "NO_BUILD",
+          "reason": "WAITING_FOR_12TH_PULL",
+          "pullCount": 11,
+          "minimumParlayPulls": 12,
+          "minimumParlayHistoryMinutes": 180,
+          "sport": "wnba",
+          "slate_date": "2026-06-24",
+          "message": "Inqis refused to build a three-leg parlay before the 12th 15-minute pull.",
+          "stored": {
+            "pk": "PARLAY_BUILDS#wnba#2026-06-24",
+            "sk": "BUILD#2026-06-24T16:19:39.955853+00:00#parlay_2c85277f357d4039",
+            "build_id": "parlay_2c85277f357d4039",
+            "build_status": "NO_BUILD"
+          }
         },
         {
-          "gameId": "1f144a9853388d9cfff4f46b16fb544f",
-          "homeTeam": "Chicago White Sox",
-          "awayTeam": "Cleveland Guardians",
-          "commenceTime": "2026-06-24T18:11:00Z",
-          "bookCount": 11
+          "ok": true,
+          "buildStatus": "NO_BUILD",
+          "reason": "WAITING_FOR_12TH_PULL",
+          "pullCount": 0,
+          "minimumParlayPulls": 12,
+          "minimumParlayHistoryMinutes": 180,
+          "sport": "nfl",
+          "slate_date": null,
+          "message": "Inqis refused to build a three-leg parlay before the 12th 15-minute pull.",
+          "stored": {
+            "pk": "PARLAY_BUILDS#nfl#2026-06-24",
+            "sk": "BUILD#2026-06-24T16:19:40.010256+00:00#parlay_974a4a7f4bfe47d0",
+            "build_id": "parlay_974a4a7f4bfe47d0",
+            "build_status": "NO_BUILD"
+          }
+        },
+        {
+          "ok": true,
+          "buildStatus": "NO_BUILD",
+          "reason": "WAITING_FOR_12TH_PULL",
+          "pullCount": 0,
+          "minimumParlayPulls": 12,
+          "minimumParlayHistoryMinutes": 180,
+          "sport": "cfb",
+          "slate_date": null,
+          "message": "Inqis refused to build a three-leg parlay before the 12th 15-minute pull.",
+          "stored": {
+            "pk": "PARLAY_BUILDS#cfb#2026-06-24",
+            "sk": "BUILD#2026-06-24T16:19:40.069308+00:00#parlay_7e0f74a055a34baa",
+            "build_id": "parlay_7e0f74a055a34baa",
+            "build_status": "NO_BUILD"
+          }
+        },
+        {
+          "ok": true,
+          "buildStatus": "NO_BUILD",
+          "reason": "WAITING_FOR_12TH_PULL",
+          "pullCount": 0,
+          "minimumParlayPulls": 12,
+          "minimumParlayHistoryMinutes": 180,
+          "sport": "nba",
+          "slate_date": null,
+          "message": "Inqis refused to build a three-leg parlay before the 12th 15-minute pull.",
+          "stored": {
+            "pk": "PARLAY_BUILDS#nba#2026-06-24",
+            "sk": "BUILD#2026-06-24T16:19:40.125055+00:00#parlay_51789b15cc274c71",
+            "build_id": "parlay_51789b15cc274c71",
+            "build_status": "NO_BUILD"
+          }
+        },
+        {
+          "ok": true,
+          "buildStatus": "NO_BUILD",
+          "reason": "WAITING_FOR_12TH_PULL",
+          "pullCount": 0,
+          "minimumParlayPulls": 12,
+          "minimumParlayHistoryMinutes": 180,
+          "sport": "ncaam",
+          "slate_date": null,
+          "message": "Inqis refused to build a three-leg parlay before the 12th 15-minute pull.",
+          "stored": {
+            "pk": "PARLAY_BUILDS#ncaam#2026-06-24",
+            "sk": "BUILD#2026-06-24T16:19:40.180791+00:00#parlay_665ba965b7f7479c",
+            "build_id": "parlay_665ba965b7f7479c",
+            "build_status": "NO_BUILD"
+          }
+        },
+        {
+          "ok": true,
+          "buildStatus": "NO_BUILD",
+          "reason": "WAITING_FOR_12TH_PULL",
+          "pullCount": 0,
+          "minimumParlayPulls": 12,
+          "minimumParlayHistoryMinutes": 180,
+          "sport": "nhl",
+          "slate_date": null,
+          "message": "Inqis refused to build a three-leg parlay before the 12th 15-minute pull.",
+          "stored": {
+            "pk": "PARLAY_BUILDS#nhl#2026-06-24",
+            "sk": "BUILD#2026-06-24T16:19:40.237742+00:00#parlay_f87b7d9bfec7462d",
+            "build_id": "parlay_f87b7d9bfec7462d",
+            "build_status": "NO_BUILD"
+          }
+        },
+        {
+          "ok": true,
+          "buildStatus": "NO_BUILD",
+          "reason": "WAITING_FOR_12TH_PULL",
+          "pullCount": 0,
+          "minimumParlayPulls": 12,
+          "minimumParlayHistoryMinutes": 180,
+          "sport": "soccer",
+          "slate_date": null,
+          "message": "Inqis refused to build a three-leg parlay before the 12th 15-minute pull.",
+          "stored": {
+            "pk": "PARLAY_BUILDS#soccer#2026-06-24",
+            "sk": "BUILD#2026-06-24T16:19:40.301060+00:00#parlay_b53aaccee6c8441f",
+            "build_id": "parlay_b53aaccee6c8441f",
+            "build_status": "NO_BUILD"
+          }
+        },
+        {
+          "ok": true,
+          "buildStatus": "NO_BUILD",
+          "reason": "WAITING_FOR_12TH_PULL",
+          "pullCount": 0,
+          "minimumParlayPulls": 12,
+          "minimumParlayHistoryMinutes": 180,
+          "sport": "tennis",
+          "slate_date": null,
+          "message": "Inqis refused to build a three-leg parlay before the 12th 15-minute pull.",
+          "stored": {
+            "pk": "PARLAY_BUILDS#tennis#2026-06-24",
+            "sk": "BUILD#2026-06-24T16:19:40.356441+00:00#parlay_7ee9eb24e6544d30",
+            "build_id": "parlay_7ee9eb24e6544d30",
+            "build_status": "NO_BUILD"
+          }
         }
       ]
-    },
-    {
-      "ok": true,
-      "sport": "soccer",
-      "slate_date": null,
-      "pullCount": 0,
-      "latestPulledAt": null,
-      "source": null,
-      "providerSportKey": null,
-      "gameCount": 0,
-      "sampleGames": []
-    },
-    {
-      "ok": true,
-      "sport": "tennis",
-      "slate_date": null,
-      "pullCount": 0,
-      "latestPulledAt": null,
-      "source": null,
-      "providerSportKey": null,
-      "gameCount": 0,
-      "sampleGames": []
-    },
-    {
-      "ok": true,
-      "sport": "nfl",
-      "slate_date": null,
-      "pullCount": 0,
-      "latestPulledAt": null,
-      "source": null,
-      "providerSportKey": null,
-      "gameCount": 0,
-      "sampleGames": []
-    },
-    {
-      "ok": true,
-      "sport": "cfb",
-      "slate_date": null,
-      "pullCount": 0,
-      "latestPulledAt": null,
-      "source": null,
-      "providerSportKey": null,
-      "gameCount": 0,
-      "sampleGames": []
-    },
-    {
-      "ok": true,
-      "sport": "nba",
-      "slate_date": null,
-      "pullCount": 0,
-      "latestPulledAt": null,
-      "source": null,
-      "providerSportKey": null,
-      "gameCount": 0,
-      "sampleGames": []
-    },
-    {
-      "ok": true,
-      "sport": "wnba",
-      "slate_date": "2026-06-24",
-      "pullCount": 10,
-      "latestPulledAt": "2026-06-24T16:00:47.815239+00:00",
-      "source": "the_odds_api",
-      "providerSportKey": null,
-      "gameCount": 7,
-      "sampleGames": [
-        {
-          "gameId": "f150838f56bc7336247f553661f55a32",
-          "homeTeam": "Indiana Fever",
-          "awayTeam": "Phoenix Mercury",
-          "commenceTime": "2026-06-24T23:30:00Z",
-          "bookCount": 11
-        },
-        {
-          "gameId": "e4cee4945c1e6df74d07a00971eecd19",
-          "homeTeam": "Washington Mystics",
-          "awayTeam": "Minnesota Lynx",
-          "commenceTime": "2026-06-24T23:40:00Z",
-          "bookCount": 11
-        },
-        {
-          "gameId": "ec33f8a44ddd8f268967a3035f6ade2c",
-          "homeTeam": "Chicago Sky",
-          "awayTeam": "Portland Fire",
-          "commenceTime": "2026-06-25T00:10:00Z",
-          "bookCount": 11
-        }
-      ]
-    },
-    {
-      "ok": true,
-      "sport": "ncaam",
-      "slate_date": null,
-      "pullCount": 0,
-      "latestPulledAt": null,
-      "source": null,
-      "providerSportKey": null,
-      "gameCount": 0,
-      "sampleGames": []
-    },
-    {
-      "ok": true,
-      "sport": "nhl",
-      "slate_date": null,
-      "pullCount": 0,
-      "latestPulledAt": null,
-      "source": null,
-      "providerSportKey": null,
-      "gameCount": 0,
-      "sampleGames": []
     }
-  ],
-  "activeSlatePolicy": {
-    "mlb": "today_plus_tomorrow",
-    "college_baseball_men": "today_plus_tomorrow",
-    "nba": "today_plus_tomorrow",
-    "wnba": "today_plus_tomorrow",
-    "ncaam": "today_plus_tomorrow",
-    "ncaaw": "today_plus_tomorrow",
-    "nhl": "today_plus_tomorrow",
-    "nfl": "next_7_days_only",
-    "cfb": "next_7_days_only",
-    "soccer": "next_14_days_only",
-    "tennis": "next_7_days_only_when_provider_keys_are_valid"
-  },
-  "storageShape": {
-    "table": "parlay_platform_snapshots",
-    "partitionKeyPattern": "PULLS#{sport}#{slate_date}",
-    "sortKeyPattern": "PULL#{pulled_at}#{pull_id}",
-    "recordType": "pull_run",
-    "siloedBySport": true,
-    "siloedByDay": true,
-    "timestamped": true
   }
 }
