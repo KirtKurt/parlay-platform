@@ -3,6 +3,7 @@ from typing import Any, Dict
 
 from mlb_audit import final_mlb_scores_report, settlement_proof_report, settle_mlb_slate
 from mlb_signal_learning import build_signal_learning_report
+from mlb_result_signals import build_result_signals, latest_result_signals
 
 
 def _json_default(value: Any) -> Any:
@@ -45,7 +46,7 @@ def _payload(event: Dict[str, Any]) -> Dict[str, Any]:
     payload: Dict[str, Any] = {}
     payload.update(event.get("queryStringParameters") or {})
     payload.update(_parse_body(event))
-    for key in ("slate_date_et", "date", "days_from", "daysFrom", "fetch_scores"):
+    for key in ("slate_date_et", "date", "days_from", "daysFrom", "fetch_scores", "store"):
         if key in event and key not in payload:
             payload[key] = event[key]
     return payload
@@ -77,6 +78,7 @@ def lambda_handler(event, context):
     try:
         payload = _payload(event)
         args = _settlement_args(payload)
+        slate_date = args.get("slate_date")
 
         if method in {"GET", "POST"} and path in {"/v1/mlb/scores/final", "/v1/results/mlb/final-scores"}:
             return _resp(200, final_mlb_scores_report(**args))
@@ -92,16 +94,20 @@ def lambda_handler(event, context):
             learn_args = {**args, "fetch_scores": _bool(payload.get("fetch_scores"), False)}
             return _resp(200, build_signal_learning_report(**learn_args))
 
+        if method in {"GET", "POST"} and path in {"/v1/results/mlb/result-signals", "/v1/mlb/result-signals"}:
+            if not slate_date:
+                return _resp(400, {"ok": False, "sport": "mlb", "error": "date or slate_date_et is required"})
+            if method == "POST" or _bool(payload.get("build"), False):
+                return _resp(200, build_result_signals(slate_date, fetch_scores=_bool(payload.get("fetch_scores"), True), store=_bool(payload.get("store"), True)))
+            return _resp(200, latest_result_signals(slate_date))
+
         # EventBridge scheduled execution: fetch final scores, settle all completed games,
-        # and attach an observe-only signal-learning report. No live games are graded.
+        # build observe-only signal-learning and winner-labeled result-signal rows. No live games are graded.
         if not method:
             settlement = settle_mlb_slate(**args)
-            learning = build_signal_learning_report(
-                slate_date=args.get("slate_date"),
-                days_from=args.get("days_from", 3),
-                fetch_scores=False,
-            )
-            return _resp(200, {**settlement, "signal_learning": learning})
+            learning = build_signal_learning_report(slate_date=args.get("slate_date"), days_from=args.get("days_from", 3), fetch_scores=False)
+            result_signals = build_result_signals(args.get("slate_date") or settlement.get("slate_date_et") or learning.get("slate_date_et"), fetch_scores=False, store=True) if (args.get("slate_date") or settlement.get("slate_date_et") or learning.get("slate_date_et")) else {"ok": False, "error": "No slate_date available for result signals"}
+            return _resp(200, {**settlement, "signal_learning": learning, "result_signals": result_signals})
 
         return _resp(404, {"ok": False, "sport": "mlb", "error": f"Route not found: {method} {path}"})
     except Exception as exc:
