@@ -20,6 +20,12 @@ try:
         odds_live_ingestion = None
 
     try:
+        import sport_key_patch
+        sport_key_patch.apply(odds_live_ingestion)
+    except Exception:
+        pass
+
+    try:
         import market_board
     except Exception:
         market_board = None
