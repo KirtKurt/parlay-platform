@@ -138,4 +138,5 @@ if "MLBResultSignalsFunction:" not in text:
     text = text.replace(marker, resource + marker)
 
 TEMPLATE.write_text(text)
-print("Patched template.yaml for INQSI MLB v1 routes, result-signal learning, raw S3 archive, and HOT-only scheduled MLB pulls.")
+exec(Path("scripts/patch_template_mlb_hot_start_v2.py").read_text())
+print("Patched template.yaml for INQSI MLB v1 routes, result-signal learning, raw S3 archive, 1 AM ET HOT kickoff, and HOT-only scheduled MLB pulls.")
