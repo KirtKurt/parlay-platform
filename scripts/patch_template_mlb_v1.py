@@ -137,6 +137,45 @@ if "MLBResultSignalsFunction:" not in text:
 """
     text = text.replace(marker, resource + marker)
 
+if "AllSportsLiveSchedulerFunction:" not in text:
+    marker = "  InqsiAutopsySchedulerFunction:\n"
+    resource = """
+  AllSportsLiveSchedulerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: all_sports_live_scheduler.lambda_handler
+      Timeout: 300
+      MemorySize: 1024
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalLedgerTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PredictionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
+      Events:
+        AllSportsHotEvery15Min:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_every_15_min","policy":"1am_et_start_plus_15min"}'
+        AllSportsHotKickoff1amEtDst:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 5 * * ? *)
+            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_dst","policy":"1am_et_start_plus_15min"}'
+        AllSportsHotKickoff1amEtStandard:
+          Type: Schedule
+          Properties:
+            Schedule: cron(0 6 * * ? *)
+            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_standard","policy":"1am_et_start_plus_15min"}'
+
+"""
+    text = text.replace(marker, resource + marker)
+
 TEMPLATE.write_text(text)
 exec(Path("scripts/patch_template_mlb_hot_start_v2.py").read_text())
-print("Patched template.yaml for INQSI MLB v1 routes, result-signal learning, raw S3 archive, 1 AM ET HOT kickoff, and HOT-only scheduled MLB pulls.")
+print("Patched template.yaml for INQSI MLB v1 routes, result-signal learning, raw S3 archive, 1 AM ET HOT kickoff, HOT-only MLB pulls, and all-sports 1 AM ET plus 15-minute live scheduler.")
