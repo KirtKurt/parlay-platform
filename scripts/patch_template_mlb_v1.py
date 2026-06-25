@@ -104,5 +104,38 @@ if "InqsiMLBV1CoreFunction:" not in text:
 """
     text = text.replace(marker, resource + marker)
 
+if "MLBResultSignalsFunction:" not in text:
+    marker = "  MLBResultsSchedulerFunction:\n"
+    resource = """
+  MLBResultSignalsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_result_signals.lambda_handler
+      Timeout: 300
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalLedgerTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PredictionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
+      Events:
+        MLBResultSignalsGet:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/result-signals
+            Method: GET
+        MLBResultSignalsBuild:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/result-signals
+            Method: POST
+
+"""
+    text = text.replace(marker, resource + marker)
+
 TEMPLATE.write_text(text)
-print("Patched template.yaml for INQSI MLB v1 routes, raw S3 archive, and HOT-only scheduled MLB pulls.")
+print("Patched template.yaml for INQSI MLB v1 routes, result-signal learning, raw S3 archive, and HOT-only scheduled MLB pulls.")
