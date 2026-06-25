@@ -1,5 +1,5 @@
 import os
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from statistics import mean
 from zoneinfo import ZoneInfo
 
@@ -8,6 +8,8 @@ import inqsi_pull_history as history
 FREEZE_MINUTES = int(os.environ.get("INQSI_MLB_FREEZE_MINUTES", "120"))
 MIN_POINTS = int(os.environ.get("INQSI_MLB_MIN_GAME_POINTS", "4"))
 SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
+HOT_PULL_START_HOUR_ET = int(os.environ.get("INQSI_MLB_HOT_PULL_START_HOUR_ET", "1"))
+HOT_PULL_INTERVAL_MINUTES = int(os.environ.get("INQSI_MLB_HOT_PULL_INTERVAL_MINUTES", "15"))
 ENGINE = "MLB-B1.0"
 THRESHOLD_VERSION = os.environ.get("INQSI_MLB_THRESHOLD_VERSION", "MLB-B1.0-2026-06")
 
@@ -44,6 +46,49 @@ def gid(game):
 def avg(values):
     clean = [float(v) for v in values if v is not None]
     return mean(clean) if clean else None
+
+
+def slate_hot_start_utc(slate):
+    try:
+        slate_day = date.fromisoformat(slate)
+    except Exception:
+        slate_day = datetime.now(SLATE_TZ).date()
+    start_local = datetime.combine(slate_day, time(HOT_PULL_START_HOUR_ET, 0), tzinfo=SLATE_TZ)
+    return start_local.astimezone(timezone.utc)
+
+
+def et_iso(dt):
+    return dt.astimezone(SLATE_TZ).isoformat() if dt else None
+
+
+def pull_coverage(pulls, slate):
+    times = sorted([parse_dt(p.get("pulled_at")) for p in pulls if parse_dt(p.get("pulled_at"))])
+    start = slate_hot_start_utc(slate)
+    first = times[0] if times else None
+    latest = times[-1] if times else None
+    since_start = [t for t in times if t >= start]
+    reference = latest or now()
+    expected = 0
+    if reference >= start:
+        expected = int((reference - start).total_seconds() // (HOT_PULL_INTERVAL_MINUTES * 60)) + 1
+    actual = len(since_start)
+    return {
+        "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
+        "startHourEt": HOT_PULL_START_HOUR_ET,
+        "intervalMinutes": HOT_PULL_INTERVAL_MINUTES,
+        "expectedStartAtUtc": start.isoformat(),
+        "expectedStartAtEt": et_iso(start),
+        "firstPullAtUtc": first.isoformat() if first else None,
+        "firstPullAtEt": et_iso(first),
+        "latestPullAtUtc": latest.isoformat() if latest else None,
+        "latestPullAtEt": et_iso(latest),
+        "actualPullCount": len(times),
+        "actualPullCountSinceStart": actual,
+        "expectedPullCountSinceStart": expected,
+        "missingPullCountSinceStart": max(expected - actual, 0),
+        "coverageRatio": round(actual / expected, 4) if expected else None,
+        "overnightCoverageComplete": expected > 0 and actual >= expected,
+    }
 
 
 def run_line_snapshot(game):
@@ -200,6 +245,7 @@ def score_side(game, side):
 def build(slate=None):
     slate = slate or today()
     pulls, games = histories(slate)
+    coverage = pull_coverage(pulls, slate)
     candidates = []
     stored = []
     for game in games:
@@ -215,9 +261,12 @@ def build(slate=None):
             candidates.append(game)
     strong = [g for g in candidates if g.get("grade") == "MLB_STRONG"]
     lean = [g for g in candidates if g.get("grade") == "MLB_LEAN"]
-    base = {"ok": True, "sport": "mlb", "slate_date": slate, "slateTimezone": str(SLATE_TZ), "engine": ENGINE, "thresholdVersion": THRESHOLD_VERSION, "pullCount": len(pulls), "gameCount": len(games), "gameHistoryStored": len([x for x in stored if x]), "candidateCount": len(candidates), "strongCount": len(strong), "leanCount": len(lean), "freezeMinutesBeforeGame": FREEZE_MINUTES, "minimumGameHistoryPoints": MIN_POINTS, "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default", "audit": {"status": "PENDING_RESULTS", "tracks": ["top1", "top3", "top5"]}}
+    base = {"ok": True, "sport": "mlb", "slate_date": slate, "slateTimezone": str(SLATE_TZ), "engine": ENGINE, "thresholdVersion": THRESHOLD_VERSION, "pullCount": len(pulls), "pullCoverage": coverage, "gameCount": len(games), "gameHistoryStored": len([x for x in stored if x]), "candidateCount": len(candidates), "strongCount": len(strong), "leanCount": len(lean), "freezeMinutesBeforeGame": FREEZE_MINUTES, "minimumGameHistoryPoints": MIN_POINTS, "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default", "audit": {"status": "PENDING_RESULTS", "tracks": ["top1", "top3", "top5"]}}
     if len(strong) < 2 or (len(strong) + len(lean)) < 3:
-        return {**base, "buildStatus": "NO_BUILD", "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET", "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG.", "candidates": candidates[:16]}
+        message = "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG."
+        if not coverage.get("overnightCoverageComplete"):
+            message += " Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy."
+        return {**base, "buildStatus": "NO_BUILD", "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET", "message": message, "candidates": candidates[:16]}
     selected = strong[:2]
     used = {g["gameId"] for g in selected}
     for g in [x for x in strong if x["gameId"] not in used] + [x for x in lean if x["gameId"] not in used]:
