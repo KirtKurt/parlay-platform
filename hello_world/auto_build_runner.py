@@ -11,6 +11,11 @@ try:
 except Exception:
     odds_live_ingestion = None
 
+try:
+    import pull_health_diagnostics
+except Exception:
+    pull_health_diagnostics = None
+
 MIN_PULLS = int(os.environ.get("INQSI_MIN_PARLAY_PULLS", "12"))
 MIN_STRONG = int(os.environ.get("INQSI_MIN_STRONG_LEGS", "2"))
 MAX_COIN = int(os.environ.get("INQSI_MAX_COIN_FLIP_LEGS", "1"))
@@ -161,12 +166,15 @@ def strict_result(sport):
 
 
 def latest_pull_diagnostics():
-    if odds_live_ingestion is not None:
-        data = getattr(odds_live_ingestion, "LAST_PULL_REPORT", None)
-        if data:
-            return data
+    if pull_health_diagnostics is not None:
+        try:
+            sports = os.environ.get("INQSI_AUTO_BUILD_SPORTS", "mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis")
+            sports_list = [s.strip() for s in sports.split(",") if s.strip()]
+            return pull_health_diagnostics.build(sports_list)
+        except Exception as exc:
+            return {"ok": False, "error": {"type": type(exc).__name__, "message": str(exc)}}
     try:
-        with open("runtime_reports/pull_diagnostics_latest.json", encoding="utf-8") as f:
+        with open("runtime_reports/pull_health_latest.json", encoding="utf-8") as f:
             return json.load(f)
     except Exception:
         return None
@@ -187,7 +195,8 @@ def main():
         results.append(result)
     built = [row.get("sport") for row in results if row.get("buildStatus") == "BUILT"]
     pull_diag = latest_pull_diagnostics()
-    report = {"ok": bool(built), "sports": sports_list, "builtSports": built, "mlbBuilt": "mlb" in built, "mlbLatestBuild": latest_fn({"sport": "mlb", "slate_date": today_utc()}), "result": {"ok": True, "autoBuild": True, "builtCount": len(built), "results": results}}
+    health_ok = True if not pull_diag else bool(pull_diag.get("ok", True))
+    report = {"ok": bool(built) and health_ok, "sports": sports_list, "builtSports": built, "mlbBuilt": "mlb" in built, "mlbLatestBuild": latest_fn({"sport": "mlb", "slate_date": today_utc()}), "result": {"ok": True, "autoBuild": True, "builtCount": len(built), "results": results}}
     if pull_diag:
         report["pullDiagnostics"] = pull_diag
     os.makedirs("runtime_reports", exist_ok=True)
