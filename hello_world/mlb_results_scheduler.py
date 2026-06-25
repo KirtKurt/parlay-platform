@@ -2,6 +2,7 @@ import json
 from typing import Any, Dict
 
 from mlb_audit import final_mlb_scores_report, settlement_proof_report, settle_mlb_slate
+from mlb_signal_learning import build_signal_learning_report
 
 
 def _json_default(value: Any) -> Any:
@@ -87,9 +88,20 @@ def lambda_handler(event, context):
         if method in {"GET", "POST"} and path in {"/v1/results/mlb/settlement", "/v1/mlb/settlement/slate"}:
             return _resp(200, settle_mlb_slate(**args))
 
-        # EventBridge scheduled execution: fetch final scores and settle all completed games available.
+        if method in {"GET", "POST"} and path in {"/v1/results/mlb/signal-learning", "/v1/mlb/signal-learning"}:
+            learn_args = {**args, "fetch_scores": _bool(payload.get("fetch_scores"), False)}
+            return _resp(200, build_signal_learning_report(**learn_args))
+
+        # EventBridge scheduled execution: fetch final scores, settle all completed games,
+        # and attach an observe-only signal-learning report. No live games are graded.
         if not method:
-            return _resp(200, settle_mlb_slate(**args))
+            settlement = settle_mlb_slate(**args)
+            learning = build_signal_learning_report(
+                slate_date=args.get("slate_date"),
+                days_from=args.get("days_from", 3),
+                fetch_scores=False,
+            )
+            return _resp(200, {**settlement, "signal_learning": learning})
 
         return _resp(404, {"ok": False, "sport": "mlb", "error": f"Route not found: {method} {path}"})
     except Exception as exc:
