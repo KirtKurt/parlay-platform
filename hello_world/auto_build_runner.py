@@ -16,6 +16,11 @@ try:
 except Exception:
     pull_health_diagnostics = None
 
+try:
+    import build_deadline_gate
+except Exception:
+    build_deadline_gate = None
+
 MIN_PULLS = int(os.environ.get("INQSI_MIN_PARLAY_PULLS", "12"))
 MIN_STRONG = int(os.environ.get("INQSI_MIN_STRONG_LEGS", "2"))
 MAX_COIN = int(os.environ.get("INQSI_MAX_COIN_FLIP_LEGS", "1"))
@@ -25,6 +30,7 @@ STRICT_DAILY_SPORTS = {"mlb", "college_baseball_men", "nba", "wnba", "ncaam", "n
 SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
 PULL_START_HOUR_ET = int(os.environ.get("INQSI_ALL_SPORTS_PULL_START_HOUR_ET", "1"))
 PULL_INTERVAL_MINUTES = int(os.environ.get("INQSI_PULL_INTERVAL_MINUTES", "15"))
+BUILD_DEADLINE_HOURS = int(os.environ.get("INQSI_BUILD_DEADLINE_HOURS_BEFORE_FIRST_EVENT", "2"))
 
 
 def today_utc():
@@ -95,6 +101,12 @@ def pull_coverage(sport, slate_date):
     }
 
 
+def deadline_status(rows):
+    if build_deadline_gate is None:
+        return {"ok": False, "reason": "BUILD_DEADLINE_GATE_UNAVAILABLE"}
+    return build_deadline_gate.check(rows, BUILD_DEADLINE_HOURS)
+
+
 def unique(rows):
     seen, out = set(), []
     for row in rows:
@@ -118,12 +130,14 @@ def strict_result(sport):
     raw_signals = sig.get("signals", [])
     filtered_signals = same_slate(raw_signals, sport, slate_date)
     coverage = pull_coverage(sport, slate_date)
+    deadline = deadline_status(filtered_signals)
     base = {
         "ok": True,
         "sport": sig.get("sport") or sport,
         "slate_date": slate_date,
         "pullCount": pull_count,
         "pullCoverage": coverage,
+        "buildDeadline": deadline,
         "rawSignalCount": len(raw_signals),
         "sameSlateSignalCount": len(filtered_signals),
         "minimumParlayPulls": MIN_PULLS,
@@ -132,6 +146,8 @@ def strict_result(sport):
         "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
         "strictDailySlate": sport in STRICT_DAILY_SPORTS,
     }
+    if deadline.get("deadlinePassed"):
+        return {**base, "buildStatus": "NO_BUILD", "reason": "MISSED_2_HOUR_BUILD_DEADLINE", "message": "Refused because the 3-leg build must be created no later than 2 hours before the first game or match."}
     if pull_count < MIN_PULLS:
         return {**base, "buildStatus": "NO_BUILD", "reason": "WAITING_FOR_12TH_PULL", "message": "Refused before minimum pull depth."}
     eligible = unique([s for s in filtered_signals if s.get("grade") in STRONG_GRADES or s.get("grade") == COIN])
