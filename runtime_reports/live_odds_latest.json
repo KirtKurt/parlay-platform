@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "createdAt": "2026-06-25T13:12:44.724564+00:00",
+  "createdAt": "2026-06-25T19:01:44.798318+00:00",
   "sportsRequested": [
     "mlb",
     "soccer",
@@ -33,7 +33,7 @@
     "mlb",
     "wnba"
   ],
-  "totalGamesVisibleOnMarketBoard": 12,
+  "totalGamesVisibleOnMarketBoard": 11,
   "mlbParlayBuilt": false,
   "parlayProof": {
     "ok": false,
@@ -55,7 +55,7 @@
       "sport": "mlb",
       "slate_date": "2026-06-25",
       "build": {
-        "pullCount": "5",
+        "pullCount": "9",
         "freezeMinutesBeforeGame": "120",
         "minimumGameHistoryPoints": "4",
         "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
@@ -65,11 +65,28 @@
         "gameHistoryStored": "9",
         "thresholdVersion": "MLB-B1.0-2026-06",
         "strongCount": "0",
-        "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG.",
+        "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG. Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy.",
         "buildStatus": "NO_BUILD",
         "slate_date": "2026-06-25",
         "candidates": [],
         "engine": "MLB-B1.0",
+        "pullCoverage": {
+          "expectedStartAtUtc": "2026-06-25T05:00:00+00:00",
+          "firstPullAtUtc": "2026-06-25T00:01:13.325975+00:00",
+          "actualPullCount": "9",
+          "intervalMinutes": "15",
+          "firstPullAtEt": "2026-06-24T20:01:13.325975-04:00",
+          "latestPullAtEt": "2026-06-25T15:01:38.859446-04:00",
+          "coverageRatio": "0.1228",
+          "startHourEt": "1",
+          "latestPullAtUtc": "2026-06-25T19:01:38.859446+00:00",
+          "actualPullCountSinceStart": "7",
+          "expectedPullCountSinceStart": "57",
+          "missingPullCountSinceStart": "50",
+          "overnightCoverageComplete": false,
+          "expectedStartAtEt": "2026-06-25T01:00:00-04:00",
+          "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes."
+        },
         "audit": {
           "tracks": [
             "top1",
@@ -85,7 +102,7 @@
       },
       "stored": {
         "pk": "PARLAY_BUILDS#mlb#2026-06-25",
-        "sk": "BUILD#2026-06-25T13:12:44.611057+00:00#parlay_29d653cbdba547e1"
+        "sk": "BUILD#2026-06-25T19:01:43.354198+00:00#parlay_f3702b389db74fad"
       }
     },
     "result": {
@@ -100,7 +117,24 @@
           "slateTimezone": "America/New_York",
           "engine": "MLB-B1.0",
           "thresholdVersion": "MLB-B1.0-2026-06",
-          "pullCount": 5,
+          "pullCount": 9,
+          "pullCoverage": {
+            "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
+            "startHourEt": 1,
+            "intervalMinutes": 15,
+            "expectedStartAtUtc": "2026-06-25T05:00:00+00:00",
+            "expectedStartAtEt": "2026-06-25T01:00:00-04:00",
+            "firstPullAtUtc": "2026-06-25T00:01:13.325975+00:00",
+            "firstPullAtEt": "2026-06-24T20:01:13.325975-04:00",
+            "latestPullAtUtc": "2026-06-25T19:01:38.859446+00:00",
+            "latestPullAtEt": "2026-06-25T15:01:38.859446-04:00",
+            "actualPullCount": 9,
+            "actualPullCountSinceStart": 7,
+            "expectedPullCountSinceStart": 57,
+            "missingPullCountSinceStart": 50,
+            "coverageRatio": 0.1228,
+            "overnightCoverageComplete": false
+          },
           "gameCount": 9,
           "gameHistoryStored": 9,
           "candidateCount": 0,
@@ -119,12 +153,12 @@
           },
           "buildStatus": "NO_BUILD",
           "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
-          "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG.",
+          "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG. Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy.",
           "candidates": [],
           "stored": {
             "pk": "PARLAY_BUILDS#mlb#2026-06-25",
-            "sk": "BUILD#2026-06-25T13:12:44.611057+00:00#parlay_29d653cbdba547e1",
-            "build_id": "parlay_29d653cbdba547e1",
+            "sk": "BUILD#2026-06-25T19:01:43.354198+00:00#parlay_f3702b389db74fad",
+            "build_id": "parlay_f3702b389db74fad",
             "build_status": "NO_BUILD"
           }
         },
@@ -132,7 +166,26 @@
           "ok": true,
           "sport": "wnba",
           "slate_date": "2026-06-25",
-          "pullCount": 5,
+          "pullCount": 9,
+          "pullCoverage": {
+            "ok": true,
+            "sport": "wnba",
+            "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
+            "startHourEt": 1,
+            "intervalMinutes": 15,
+            "expectedStartAtUtc": "2026-06-25T05:00:00+00:00",
+            "expectedStartAtEt": "2026-06-25T01:00:00-04:00",
+            "firstPullAtUtc": "2026-06-25T00:01:15.859727+00:00",
+            "firstPullAtEt": "2026-06-24T20:01:15.859727-04:00",
+            "latestPullAtUtc": "2026-06-25T19:01:41.373049+00:00",
+            "latestPullAtEt": "2026-06-25T15:01:41.373049-04:00",
+            "actualPullCount": 9,
+            "actualPullCountSinceStart": 7,
+            "expectedPullCountSinceStart": 57,
+            "missingPullCountSinceStart": 50,
+            "coverageRatio": 0.1228,
+            "coverageComplete": false
+          },
           "rawSignalCount": 6,
           "sameSlateSignalCount": 1,
           "minimumParlayPulls": 12,
@@ -145,8 +198,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#wnba#2026-06-25",
-            "sk": "BUILD#2026-06-25T13:12:44.645741+00:00#parlay_82378945326d40c2",
-            "build_id": "parlay_82378945326d40c2",
+            "sk": "BUILD#2026-06-25T19:01:43.589466+00:00#parlay_2f91e0bb440e42d9",
+            "build_id": "parlay_2f91e0bb440e42d9",
             "build_status": "NO_BUILD"
           }
         },
@@ -155,6 +208,25 @@
           "sport": "nfl",
           "slate_date": "2026-06-25",
           "pullCount": 0,
+          "pullCoverage": {
+            "ok": true,
+            "sport": "nfl",
+            "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
+            "startHourEt": 1,
+            "intervalMinutes": 15,
+            "expectedStartAtUtc": "2026-06-25T05:00:00+00:00",
+            "expectedStartAtEt": "2026-06-25T01:00:00-04:00",
+            "firstPullAtUtc": null,
+            "firstPullAtEt": null,
+            "latestPullAtUtc": null,
+            "latestPullAtEt": null,
+            "actualPullCount": 0,
+            "actualPullCountSinceStart": 0,
+            "expectedPullCountSinceStart": 57,
+            "missingPullCountSinceStart": 57,
+            "coverageRatio": 0.0,
+            "coverageComplete": false
+          },
           "rawSignalCount": 0,
           "sameSlateSignalCount": 0,
           "minimumParlayPulls": 12,
@@ -167,8 +239,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nfl#2026-06-25",
-            "sk": "BUILD#2026-06-25T13:12:44.655190+00:00#parlay_9e9ec2326c564fdf",
-            "build_id": "parlay_9e9ec2326c564fdf",
+            "sk": "BUILD#2026-06-25T19:01:43.743598+00:00#parlay_7c98ade2bed84c75",
+            "build_id": "parlay_7c98ade2bed84c75",
             "build_status": "NO_BUILD"
           }
         },
@@ -177,6 +249,25 @@
           "sport": "cfb",
           "slate_date": "2026-06-25",
           "pullCount": 0,
+          "pullCoverage": {
+            "ok": true,
+            "sport": "cfb",
+            "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
+            "startHourEt": 1,
+            "intervalMinutes": 15,
+            "expectedStartAtUtc": "2026-06-25T05:00:00+00:00",
+            "expectedStartAtEt": "2026-06-25T01:00:00-04:00",
+            "firstPullAtUtc": null,
+            "firstPullAtEt": null,
+            "latestPullAtUtc": null,
+            "latestPullAtEt": null,
+            "actualPullCount": 0,
+            "actualPullCountSinceStart": 0,
+            "expectedPullCountSinceStart": 57,
+            "missingPullCountSinceStart": 57,
+            "coverageRatio": 0.0,
+            "coverageComplete": false
+          },
           "rawSignalCount": 0,
           "sameSlateSignalCount": 0,
           "minimumParlayPulls": 12,
@@ -189,8 +280,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#cfb#2026-06-25",
-            "sk": "BUILD#2026-06-25T13:12:44.665437+00:00#parlay_222e4b705b2c4497",
-            "build_id": "parlay_222e4b705b2c4497",
+            "sk": "BUILD#2026-06-25T19:01:43.898767+00:00#parlay_49390321ac8f47b6",
+            "build_id": "parlay_49390321ac8f47b6",
             "build_status": "NO_BUILD"
           }
         },
@@ -199,6 +290,25 @@
           "sport": "nba",
           "slate_date": "2026-06-25",
           "pullCount": 0,
+          "pullCoverage": {
+            "ok": true,
+            "sport": "nba",
+            "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
+            "startHourEt": 1,
+            "intervalMinutes": 15,
+            "expectedStartAtUtc": "2026-06-25T05:00:00+00:00",
+            "expectedStartAtEt": "2026-06-25T01:00:00-04:00",
+            "firstPullAtUtc": null,
+            "firstPullAtEt": null,
+            "latestPullAtUtc": null,
+            "latestPullAtEt": null,
+            "actualPullCount": 0,
+            "actualPullCountSinceStart": 0,
+            "expectedPullCountSinceStart": 57,
+            "missingPullCountSinceStart": 57,
+            "coverageRatio": 0.0,
+            "coverageComplete": false
+          },
           "rawSignalCount": 0,
           "sameSlateSignalCount": 0,
           "minimumParlayPulls": 12,
@@ -211,8 +321,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nba#2026-06-25",
-            "sk": "BUILD#2026-06-25T13:12:44.674531+00:00#parlay_43b923344af14c9a",
-            "build_id": "parlay_43b923344af14c9a",
+            "sk": "BUILD#2026-06-25T19:01:44.052774+00:00#parlay_ac706fbec2094dcf",
+            "build_id": "parlay_ac706fbec2094dcf",
             "build_status": "NO_BUILD"
           }
         },
@@ -221,6 +331,25 @@
           "sport": "ncaam",
           "slate_date": "2026-06-25",
           "pullCount": 0,
+          "pullCoverage": {
+            "ok": true,
+            "sport": "ncaam",
+            "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
+            "startHourEt": 1,
+            "intervalMinutes": 15,
+            "expectedStartAtUtc": "2026-06-25T05:00:00+00:00",
+            "expectedStartAtEt": "2026-06-25T01:00:00-04:00",
+            "firstPullAtUtc": null,
+            "firstPullAtEt": null,
+            "latestPullAtUtc": null,
+            "latestPullAtEt": null,
+            "actualPullCount": 0,
+            "actualPullCountSinceStart": 0,
+            "expectedPullCountSinceStart": 57,
+            "missingPullCountSinceStart": 57,
+            "coverageRatio": 0.0,
+            "coverageComplete": false
+          },
           "rawSignalCount": 0,
           "sameSlateSignalCount": 0,
           "minimumParlayPulls": 12,
@@ -233,8 +362,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#ncaam#2026-06-25",
-            "sk": "BUILD#2026-06-25T13:12:44.683162+00:00#parlay_5336707cbf9b4a75",
-            "build_id": "parlay_5336707cbf9b4a75",
+            "sk": "BUILD#2026-06-25T19:01:44.208308+00:00#parlay_451155e5daf94975",
+            "build_id": "parlay_451155e5daf94975",
             "build_status": "NO_BUILD"
           }
         },
@@ -243,6 +372,25 @@
           "sport": "nhl",
           "slate_date": "2026-06-25",
           "pullCount": 0,
+          "pullCoverage": {
+            "ok": true,
+            "sport": "nhl",
+            "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
+            "startHourEt": 1,
+            "intervalMinutes": 15,
+            "expectedStartAtUtc": "2026-06-25T05:00:00+00:00",
+            "expectedStartAtEt": "2026-06-25T01:00:00-04:00",
+            "firstPullAtUtc": null,
+            "firstPullAtEt": null,
+            "latestPullAtUtc": null,
+            "latestPullAtEt": null,
+            "actualPullCount": 0,
+            "actualPullCountSinceStart": 0,
+            "expectedPullCountSinceStart": 57,
+            "missingPullCountSinceStart": 57,
+            "coverageRatio": 0.0,
+            "coverageComplete": false
+          },
           "rawSignalCount": 0,
           "sameSlateSignalCount": 0,
           "minimumParlayPulls": 12,
@@ -255,8 +403,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nhl#2026-06-25",
-            "sk": "BUILD#2026-06-25T13:12:44.691937+00:00#parlay_14ca8d081b46406d",
-            "build_id": "parlay_14ca8d081b46406d",
+            "sk": "BUILD#2026-06-25T19:01:44.363489+00:00#parlay_23e788f0e7ba4362",
+            "build_id": "parlay_23e788f0e7ba4362",
             "build_status": "NO_BUILD"
           }
         },
@@ -265,6 +413,25 @@
           "sport": "soccer",
           "slate_date": "2026-06-25",
           "pullCount": 0,
+          "pullCoverage": {
+            "ok": true,
+            "sport": "soccer",
+            "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
+            "startHourEt": 1,
+            "intervalMinutes": 15,
+            "expectedStartAtUtc": "2026-06-25T05:00:00+00:00",
+            "expectedStartAtEt": "2026-06-25T01:00:00-04:00",
+            "firstPullAtUtc": null,
+            "firstPullAtEt": null,
+            "latestPullAtUtc": null,
+            "latestPullAtEt": null,
+            "actualPullCount": 0,
+            "actualPullCountSinceStart": 0,
+            "expectedPullCountSinceStart": 57,
+            "missingPullCountSinceStart": 57,
+            "coverageRatio": 0.0,
+            "coverageComplete": false
+          },
           "rawSignalCount": 0,
           "sameSlateSignalCount": 0,
           "minimumParlayPulls": 12,
@@ -277,8 +444,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#soccer#2026-06-25",
-            "sk": "BUILD#2026-06-25T13:12:44.704692+00:00#parlay_03bbddd47f3c497d",
-            "build_id": "parlay_03bbddd47f3c497d",
+            "sk": "BUILD#2026-06-25T19:01:44.520169+00:00#parlay_912f558abf824eb2",
+            "build_id": "parlay_912f558abf824eb2",
             "build_status": "NO_BUILD"
           }
         },
@@ -287,6 +454,25 @@
           "sport": "tennis",
           "slate_date": "2026-06-25",
           "pullCount": 0,
+          "pullCoverage": {
+            "ok": true,
+            "sport": "tennis",
+            "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
+            "startHourEt": 1,
+            "intervalMinutes": 15,
+            "expectedStartAtUtc": "2026-06-25T05:00:00+00:00",
+            "expectedStartAtEt": "2026-06-25T01:00:00-04:00",
+            "firstPullAtUtc": null,
+            "firstPullAtEt": null,
+            "latestPullAtUtc": null,
+            "latestPullAtEt": null,
+            "actualPullCount": 0,
+            "actualPullCountSinceStart": 0,
+            "expectedPullCountSinceStart": 57,
+            "missingPullCountSinceStart": 57,
+            "coverageRatio": 0.0,
+            "coverageComplete": false
+          },
           "rawSignalCount": 0,
           "sameSlateSignalCount": 0,
           "minimumParlayPulls": 12,
@@ -299,8 +485,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#tennis#2026-06-25",
-            "sk": "BUILD#2026-06-25T13:12:44.713550+00:00#parlay_5cbcdaf4187844e3",
-            "build_id": "parlay_5cbcdaf4187844e3",
+            "sk": "BUILD#2026-06-25T19:01:44.693420+00:00#parlay_9020476d2f974a9c",
+            "build_id": "parlay_9020476d2f974a9c",
             "build_status": "NO_BUILD"
           }
         }
