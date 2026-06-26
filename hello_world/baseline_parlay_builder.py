@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Set
 import inqsi_pull_history as history
 
 MIN_PULLS = 12
+DEADLINE_REASONS = {"MISSED_2_HOUR_BUILD_DEADLINE"}
 
 
 def _unique(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -40,6 +41,8 @@ def _leg_from_signal(signal: Dict[str, Any], force_side: str | None = None) -> D
 
 
 def build_baseline(sport: str, slate_date: str | None = None, previous: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    if previous and previous.get("reason") in DEADLINE_REASONS:
+        return previous
     signal_report = history.signals({"sport": sport, "slate_date": slate_date})
     pull_count = int(signal_report.get("pullCount") or 0)
     slate = signal_report.get("slate_date") or slate_date or history.today()
@@ -111,5 +114,7 @@ def build_baseline(sport: str, slate_date: str | None = None, previous: Dict[str
 
 def apply_if_needed(result: Dict[str, Any], sport: str, slate_date: str | None = None) -> Dict[str, Any]:
     if result.get("buildStatus") == "BUILT":
+        return result
+    if result.get("reason") in DEADLINE_REASONS:
         return result
     return build_baseline(sport, slate_date or result.get("slate_date"), previous=result)
