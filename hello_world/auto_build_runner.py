@@ -7,6 +7,11 @@ import inqsi_pull_history as history
 import mlb_b10_engine
 
 try:
+    import baseline_parlay_builder
+except Exception:
+    baseline_parlay_builder = None
+
+try:
     import odds_live_ingestion
 except Exception:
     odds_live_ingestion = None
@@ -123,6 +128,16 @@ def same_slate(rows, sport, slate_date):
     return [r for r in rows if game_date(r) == slate_date]
 
 
+def apply_baseline_if_needed(result, sport, slate_date):
+    if baseline_parlay_builder is None:
+        return result
+    try:
+        return baseline_parlay_builder.apply_if_needed(result, sport, slate_date)
+    except Exception as exc:
+        result["baselineBuildError"] = str(exc)
+        return result
+
+
 def strict_result(sport):
     slate_date = today_utc()
     sig = history.signals({"sport": sport, "slate_date": slate_date})
@@ -143,7 +158,7 @@ def strict_result(sport):
         "minimumParlayPulls": MIN_PULLS,
         "minimumStrongLegs": MIN_STRONG,
         "maximumCoinFlipLegs": MAX_COIN,
-        "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
+        "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP_WITH_BASELINE_AFTER_12",
         "strictDailySlate": sport in STRICT_DAILY_SPORTS,
     }
     if deadline.get("deadlinePassed"):
@@ -154,7 +169,7 @@ def strict_result(sport):
     strong = unique([s for s in eligible if s.get("grade") in STRONG_GRADES])
     coins = unique([s for s in eligible if s.get("grade") == COIN])
     if len(strong) < MIN_STRONG:
-        return {**base, "buildStatus": "NO_BUILD", "reason": "MISSING_TWO_STRONG_LEGS", "eligibleCount": len(eligible), "strongCount": len(strong), "coinFlipCount": len(coins), "message": "Refused all-coin-flip, wrong-slate, or weak build."}
+        return apply_baseline_if_needed({**base, "buildStatus": "NO_BUILD", "reason": "MISSING_TWO_STRONG_LEGS", "eligibleCount": len(eligible), "strongCount": len(strong), "coinFlipCount": len(coins), "message": "Strict strong-leg gate failed; baseline 12-snapshot builder may still build from top available signals."}, sport, slate_date)
     selected, used = [], set()
     for row in strong:
         if len(selected) < MIN_STRONG and row.get("gameId") not in used:
@@ -165,7 +180,7 @@ def strict_result(sport):
     selected_strong = sum(1 for s in selected if s.get("grade") in STRONG_GRADES)
     selected_coin = sum(1 for s in selected if s.get("grade") == COIN)
     if len(selected) < 3 or selected_strong < MIN_STRONG or selected_coin > MAX_COIN:
-        return {**base, "buildStatus": "NO_BUILD", "reason": "STRICT_STRUCTURE_NOT_MET", "selectedStrongCount": selected_strong, "selectedCoinFlipCount": selected_coin, "eligibleCount": len(eligible), "strongCount": len(strong), "coinFlipCount": len(coins), "message": "Refused structure that is not 2 strong plus max 1 coin flip."}
+        return apply_baseline_if_needed({**base, "buildStatus": "NO_BUILD", "reason": "STRICT_STRUCTURE_NOT_MET", "selectedStrongCount": selected_strong, "selectedCoinFlipCount": selected_coin, "eligibleCount": len(eligible), "strongCount": len(strong), "coinFlipCount": len(coins), "message": "Strict structure failed; baseline 12-snapshot builder may still build from top available signals."}, sport, slate_date)
     combos = []
     for mask in range(8):
         legs, score = [], 0
@@ -202,17 +217,19 @@ def main():
     store_fn = getattr(history, "store_" + "parlay_build")
     latest_fn = getattr(history, "latest_" + "parlay_build")
     results = []
+    slate_date = today_utc()
     for sport in sports_list:
-        result = mlb_b10_engine.build(today_utc()) if sport == "mlb" else strict_result(sport)
+        result = mlb_b10_engine.build(slate_date) if sport == "mlb" else strict_result(sport)
+        result = apply_baseline_if_needed(result, sport, slate_date)
         try:
-            result["stored"] = store_fn(result, mode="mlb_b10_or_strict_auto_after_live_pull")
+            result["stored"] = store_fn(result, mode="mlb_b10_or_strict_auto_after_live_pull_with_12_snapshot_baseline")
         except Exception as exc:
             result["storeError"] = str(exc)
         results.append(result)
     built = [row.get("sport") for row in results if row.get("buildStatus") == "BUILT"]
     pull_diag = latest_pull_diagnostics()
     health_ok = True if not pull_diag else bool(pull_diag.get("ok", True))
-    report = {"ok": bool(built) and health_ok, "sports": sports_list, "builtSports": built, "mlbBuilt": "mlb" in built, "mlbLatestBuild": latest_fn({"sport": "mlb", "slate_date": today_utc()}), "result": {"ok": True, "autoBuild": True, "builtCount": len(built), "results": results}}
+    report = {"ok": bool(built) and health_ok, "sports": sports_list, "builtSports": built, "mlbBuilt": "mlb" in built, "mlbLatestBuild": latest_fn({"sport": "mlb", "slate_date": slate_date}), "result": {"ok": True, "autoBuild": True, "builtCount": len(built), "results": results}}
     if pull_diag:
         report["pullDiagnostics"] = pull_diag
     os.makedirs("runtime_reports", exist_ok=True)
