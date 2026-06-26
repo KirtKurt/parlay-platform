@@ -69,3 +69,10 @@ try:
     inqsi_api.lambda_handler = _inqsi_handler
 except Exception:
     pass
+
+try:
+    import odds_live_ingestion as _inqsi_odds_for_tennis
+    import sport_key_patch as _inqsi_sport_key_patch
+    _inqsi_sport_key_patch.apply(_inqsi_odds_for_tennis)
+except Exception:
+    pass
