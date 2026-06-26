@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "createdAt": "2026-06-26T19:29:55.127468+00:00",
+  "createdAt": "2026-06-26T21:07:35.107750+00:00",
   "sportsRequested": [
     "mlb",
     "soccer",
@@ -35,10 +35,10 @@
     "tennis",
     "wnba"
   ],
-  "totalGamesVisibleOnMarketBoard": 76,
+  "totalGamesVisibleOnMarketBoard": 77,
   "mlbParlayBuilt": false,
   "parlayProof": {
-    "ok": false,
+    "ok": true,
     "sports": [
       "mlb",
       "wnba",
@@ -50,14 +50,16 @@
       "soccer",
       "tennis"
     ],
-    "builtSports": [],
+    "builtSports": [
+      "tennis"
+    ],
     "mlbBuilt": false,
     "mlbLatestBuild": {
       "ok": true,
       "sport": "mlb",
       "slate_date": "2026-06-26",
       "build": {
-        "pullCount": "8",
+        "pullCount": "9",
         "freezeMinutesBeforeGame": "120",
         "minimumGameHistoryPoints": "4",
         "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
@@ -75,16 +77,16 @@
         "pullCoverage": {
           "expectedStartAtUtc": "2026-06-26T05:00:00+00:00",
           "firstPullAtUtc": "2026-06-26T01:35:02.410275+00:00",
-          "actualPullCount": "8",
+          "actualPullCount": "9",
           "intervalMinutes": "15",
           "firstPullAtEt": "2026-06-25T21:35:02.410275-04:00",
-          "latestPullAtEt": "2026-06-26T15:29:44.892120-04:00",
-          "coverageRatio": "0.1207",
+          "latestPullAtEt": "2026-06-26T17:07:29.213797-04:00",
+          "coverageRatio": "0.1231",
           "startHourEt": "1",
-          "latestPullAtUtc": "2026-06-26T19:29:44.892120+00:00",
-          "actualPullCountSinceStart": "7",
-          "expectedPullCountSinceStart": "58",
-          "missingPullCountSinceStart": "51",
+          "latestPullAtUtc": "2026-06-26T21:07:29.213797+00:00",
+          "actualPullCountSinceStart": "8",
+          "expectedPullCountSinceStart": "65",
+          "missingPullCountSinceStart": "57",
           "overnightCoverageComplete": false,
           "expectedStartAtEt": "2026-06-26T01:00:00-04:00",
           "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes."
@@ -104,13 +106,13 @@
       },
       "stored": {
         "pk": "PARLAY_BUILDS#mlb#2026-06-26",
-        "sk": "BUILD#2026-06-26T19:29:50.620591+00:00#parlay_a6bbf6048ceb4573"
+        "sk": "BUILD#2026-06-26T21:07:32.524852+00:00#parlay_078273d662384812"
       }
     },
     "result": {
       "ok": true,
       "autoBuild": true,
-      "builtCount": 0,
+      "builtCount": 1,
       "results": [
         {
           "ok": true,
@@ -119,7 +121,7 @@
           "slateTimezone": "America/New_York",
           "engine": "MLB-B1.0",
           "thresholdVersion": "MLB-B1.0-2026-06",
-          "pullCount": 8,
+          "pullCount": 9,
           "pullCoverage": {
             "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
             "startHourEt": 1,
@@ -128,13 +130,13 @@
             "expectedStartAtEt": "2026-06-26T01:00:00-04:00",
             "firstPullAtUtc": "2026-06-26T01:35:02.410275+00:00",
             "firstPullAtEt": "2026-06-25T21:35:02.410275-04:00",
-            "latestPullAtUtc": "2026-06-26T19:29:44.892120+00:00",
-            "latestPullAtEt": "2026-06-26T15:29:44.892120-04:00",
-            "actualPullCount": 8,
-            "actualPullCountSinceStart": 7,
-            "expectedPullCountSinceStart": 58,
-            "missingPullCountSinceStart": 51,
-            "coverageRatio": 0.1207,
+            "latestPullAtUtc": "2026-06-26T21:07:29.213797+00:00",
+            "latestPullAtEt": "2026-06-26T17:07:29.213797-04:00",
+            "actualPullCount": 9,
+            "actualPullCountSinceStart": 8,
+            "expectedPullCountSinceStart": 65,
+            "missingPullCountSinceStart": 57,
+            "coverageRatio": 0.1231,
             "overnightCoverageComplete": false
           },
           "gameCount": 15,
@@ -159,8 +161,8 @@
           "candidates": [],
           "stored": {
             "pk": "PARLAY_BUILDS#mlb#2026-06-26",
-            "sk": "BUILD#2026-06-26T19:29:50.620591+00:00#parlay_a6bbf6048ceb4573",
-            "build_id": "parlay_a6bbf6048ceb4573",
+            "sk": "BUILD#2026-06-26T21:07:32.524852+00:00#parlay_078273d662384812",
+            "build_id": "parlay_078273d662384812",
             "build_status": "NO_BUILD"
           }
         },
@@ -168,7 +170,7 @@
           "ok": true,
           "sport": "wnba",
           "slate_date": "2026-06-26",
-          "pullCount": 8,
+          "pullCount": 9,
           "pullCoverage": {
             "ok": true,
             "sport": "wnba",
@@ -179,13 +181,13 @@
             "expectedStartAtEt": "2026-06-26T01:00:00-04:00",
             "firstPullAtUtc": "2026-06-26T01:35:04.896819+00:00",
             "firstPullAtEt": "2026-06-25T21:35:04.896819-04:00",
-            "latestPullAtUtc": "2026-06-26T19:29:48.119720+00:00",
-            "latestPullAtEt": "2026-06-26T15:29:48.119720-04:00",
-            "actualPullCount": 8,
-            "actualPullCountSinceStart": 7,
-            "expectedPullCountSinceStart": 58,
-            "missingPullCountSinceStart": 51,
-            "coverageRatio": 0.1207,
+            "latestPullAtUtc": "2026-06-26T21:07:31.197198+00:00",
+            "latestPullAtEt": "2026-06-26T17:07:31.197198-04:00",
+            "actualPullCount": 9,
+            "actualPullCountSinceStart": 8,
+            "expectedPullCountSinceStart": 65,
+            "missingPullCountSinceStart": 57,
+            "coverageRatio": 0.1231,
             "coverageComplete": false
           },
           "buildDeadline": {
@@ -196,8 +198,8 @@
             "buildDeadlineEt": "2026-06-26T17:30:00-04:00",
             "deadlineHoursBeforeFirstEvent": 2,
             "deadlinePassed": false,
-            "currentUtc": "2026-06-26T19:29:50.836717+00:00",
-            "currentEt": "2026-06-26T15:29:50.836717-04:00"
+            "currentUtc": "2026-06-26T21:07:32.666158+00:00",
+            "currentEt": "2026-06-26T17:07:32.666158-04:00"
           },
           "rawSignalCount": 5,
           "sameSlateSignalCount": 2,
@@ -211,8 +213,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#wnba#2026-06-26",
-            "sk": "BUILD#2026-06-26T19:29:50.836751+00:00#parlay_249a540a7a6f47c0",
-            "build_id": "parlay_249a540a7a6f47c0",
+            "sk": "BUILD#2026-06-26T21:07:32.666182+00:00#parlay_d09cfe804f4e4dc8",
+            "build_id": "parlay_d09cfe804f4e4dc8",
             "build_status": "NO_BUILD"
           }
         },
@@ -235,8 +237,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 58,
-            "missingPullCountSinceStart": 58,
+            "expectedPullCountSinceStart": 65,
+            "missingPullCountSinceStart": 65,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -257,8 +259,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nfl#2026-06-26",
-            "sk": "BUILD#2026-06-26T19:29:50.991626+00:00#parlay_aeafc3ed546b4787",
-            "build_id": "parlay_aeafc3ed546b4787",
+            "sk": "BUILD#2026-06-26T21:07:32.745162+00:00#parlay_40f01d2867494b3c",
+            "build_id": "parlay_40f01d2867494b3c",
             "build_status": "NO_BUILD"
           }
         },
@@ -281,8 +283,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 58,
-            "missingPullCountSinceStart": 58,
+            "expectedPullCountSinceStart": 65,
+            "missingPullCountSinceStart": 65,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -303,8 +305,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#cfb#2026-06-26",
-            "sk": "BUILD#2026-06-26T19:29:51.158427+00:00#parlay_e8c9d5d7bc734d11",
-            "build_id": "parlay_e8c9d5d7bc734d11",
+            "sk": "BUILD#2026-06-26T21:07:32.809397+00:00#parlay_c8064e409ddf4b7f",
+            "build_id": "parlay_c8064e409ddf4b7f",
             "build_status": "NO_BUILD"
           }
         },
@@ -327,8 +329,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 58,
-            "missingPullCountSinceStart": 58,
+            "expectedPullCountSinceStart": 65,
+            "missingPullCountSinceStart": 65,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -349,8 +351,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nba#2026-06-26",
-            "sk": "BUILD#2026-06-26T19:29:51.313071+00:00#parlay_ba0dfafd66784727",
-            "build_id": "parlay_ba0dfafd66784727",
+            "sk": "BUILD#2026-06-26T21:07:32.872758+00:00#parlay_484a123120db420e",
+            "build_id": "parlay_484a123120db420e",
             "build_status": "NO_BUILD"
           }
         },
@@ -373,8 +375,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 58,
-            "missingPullCountSinceStart": 58,
+            "expectedPullCountSinceStart": 65,
+            "missingPullCountSinceStart": 65,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -395,8 +397,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#ncaam#2026-06-26",
-            "sk": "BUILD#2026-06-26T19:29:51.467780+00:00#parlay_b2ce2201f32747d8",
-            "build_id": "parlay_b2ce2201f32747d8",
+            "sk": "BUILD#2026-06-26T21:07:32.935997+00:00#parlay_b6f4d6b375914869",
+            "build_id": "parlay_b6f4d6b375914869",
             "build_status": "NO_BUILD"
           }
         },
@@ -419,8 +421,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 58,
-            "missingPullCountSinceStart": 58,
+            "expectedPullCountSinceStart": 65,
+            "missingPullCountSinceStart": 65,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -441,8 +443,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nhl#2026-06-26",
-            "sk": "BUILD#2026-06-26T19:29:51.622051+00:00#parlay_01fc1fe1a7b9463b",
-            "build_id": "parlay_01fc1fe1a7b9463b",
+            "sk": "BUILD#2026-06-26T21:07:32.998424+00:00#parlay_9d9b5d439e5f47de",
+            "build_id": "parlay_9d9b5d439e5f47de",
             "build_status": "NO_BUILD"
           }
         },
@@ -465,8 +467,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 58,
-            "missingPullCountSinceStart": 58,
+            "expectedPullCountSinceStart": 65,
+            "missingPullCountSinceStart": 65,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -487,8 +489,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#soccer#2026-06-26",
-            "sk": "BUILD#2026-06-26T19:29:51.776845+00:00#parlay_716cf6c912964c4a",
-            "build_id": "parlay_716cf6c912964c4a",
+            "sk": "BUILD#2026-06-26T21:07:33.062393+00:00#parlay_67acd673d2824a62",
+            "build_id": "parlay_67acd673d2824a62",
             "build_status": "NO_BUILD"
           }
         },
@@ -496,7 +498,7 @@
           "ok": true,
           "sport": "tennis",
           "slate_date": "2026-06-26",
-          "pullCount": 13,
+          "pullCount": 16,
           "pullCoverage": {
             "ok": true,
             "sport": "tennis",
@@ -507,13 +509,13 @@
             "expectedStartAtEt": "2026-06-26T01:00:00-04:00",
             "firstPullAtUtc": "2026-06-26T01:35:03.808390+00:00",
             "firstPullAtEt": "2026-06-25T21:35:03.808390-04:00",
-            "latestPullAtUtc": "2026-06-26T19:29:46.948176+00:00",
-            "latestPullAtEt": "2026-06-26T15:29:46.948176-04:00",
-            "actualPullCount": 13,
-            "actualPullCountSinceStart": 12,
-            "expectedPullCountSinceStart": 58,
-            "missingPullCountSinceStart": 46,
-            "coverageRatio": 0.2069,
+            "latestPullAtUtc": "2026-06-26T21:07:30.511884+00:00",
+            "latestPullAtEt": "2026-06-26T17:07:30.511884-04:00",
+            "actualPullCount": 16,
+            "actualPullCountSinceStart": 15,
+            "expectedPullCountSinceStart": 65,
+            "missingPullCountSinceStart": 50,
+            "coverageRatio": 0.2308,
             "coverageComplete": false
           },
           "buildDeadline": {
@@ -524,27 +526,521 @@
             "buildDeadlineEt": "2026-06-29T03:00:00-04:00",
             "deadlineHoursBeforeFirstEvent": 2,
             "deadlinePassed": false,
-            "currentUtc": "2026-06-26T19:29:52.042403+00:00",
-            "currentEt": "2026-06-26T15:29:52.042403-04:00"
+            "currentUtc": "2026-06-26T21:07:33.275059+00:00",
+            "currentEt": "2026-06-26T17:07:33.275059-04:00"
           },
-          "rawSignalCount": 58,
-          "sameSlateSignalCount": 58,
+          "rawSignalCount": 59,
+          "sameSlateSignalCount": 59,
           "minimumParlayPulls": 12,
           "minimumStrongLegs": 2,
           "maximumCoinFlipLegs": 1,
           "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP",
           "strictDailySlate": false,
-          "buildStatus": "NO_BUILD",
-          "reason": "MISSING_TWO_STRONG_LEGS",
-          "eligibleCount": 2,
-          "strongCount": 1,
-          "coinFlipCount": 1,
-          "message": "Refused all-coin-flip, wrong-slate, or weak build.",
+          "buildStatus": "BUILT",
+          "selectedStrongCount": 3,
+          "selectedCoinFlipCount": 0,
+          "legs": [
+            {
+              "gameId": "ad418491f95a205a1207f1c061536d2b",
+              "gameKey": "tennis|tennis_wta_wimbledon|tyra caterina grant|katie boulter|2026-06-29T09:00:00Z",
+              "sport": "tennis",
+              "homeTeam": "Katie Boulter",
+              "awayTeam": "Tyra Caterina Grant",
+              "commenceTime": "2026-06-29T09:00:00Z",
+              "level": "mixed",
+              "gender": null,
+              "providerSportKey": "tennis_wta_wimbledon",
+              "selection": "Katie Boulter",
+              "selectedSide": "home",
+              "grade": "STRONG_SOLID",
+              "score": 88.66,
+              "tags": [
+                "ACCELERATION",
+                "CERTAINTY_ANCHOR",
+                "STEAM"
+              ],
+              "homeSignal": {
+                "side": "home",
+                "probStart": 0.66298,
+                "probLatest": 0.70022,
+                "delta": 0.03724,
+                "velocityPpHr": 1.142,
+                "acceleration": 0.01862,
+                "pullCount": 3,
+                "durationMinutes": 195.69,
+                "latestGap": 0.40044,
+                "bookCount": 2,
+                "bookDivergence": 0.01144,
+                "reversals": 0,
+                "tags": [
+                  "ACCELERATION",
+                  "CERTAINTY_ANCHOR",
+                  "STEAM"
+                ],
+                "grade": "STRONG_SOLID",
+                "score": 88.66
+              },
+              "awaySignal": {
+                "side": "away",
+                "probStart": 0.33702,
+                "probLatest": 0.29978,
+                "delta": -0.03724,
+                "velocityPpHr": -1.142,
+                "acceleration": -0.01862,
+                "pullCount": 3,
+                "durationMinutes": 195.69,
+                "latestGap": 0.40044,
+                "bookCount": 2,
+                "bookDivergence": 0.01144,
+                "reversals": 0,
+                "tags": [
+                  "DECELERATION",
+                  "RESISTANCE"
+                ],
+                "grade": "FRAGILE",
+                "score": 4.48
+              }
+            },
+            {
+              "gameId": "c540af5ffd2f3f481985903837b6c917",
+              "gameKey": "tennis|tennis_wta_wimbledon|emma raducanu|antonia ruzic|2026-06-29T09:00:00Z",
+              "sport": "tennis",
+              "homeTeam": "Antonia Ruzic",
+              "awayTeam": "Emma Raducanu",
+              "commenceTime": "2026-06-29T09:00:00Z",
+              "level": "mixed",
+              "gender": null,
+              "providerSportKey": "tennis_wta_wimbledon",
+              "selection": "Emma Raducanu",
+              "selectedSide": "away",
+              "grade": "SOLID",
+              "score": 74.66,
+              "tags": [
+                "ACCELERATION",
+                "CERTAINTY_ANCHOR"
+              ],
+              "homeSignal": {
+                "side": "home",
+                "probStart": 0.26554,
+                "probLatest": 0.24898,
+                "delta": -0.01656,
+                "velocityPpHr": -0.508,
+                "acceleration": -0.00828,
+                "pullCount": 3,
+                "durationMinutes": 195.69,
+                "latestGap": 0.50204,
+                "bookCount": 5,
+                "bookDivergence": 0.02338,
+                "reversals": 0,
+                "tags": [
+                  "DECELERATION"
+                ],
+                "grade": "FRAGILE",
+                "score": 11.31
+              },
+              "awaySignal": {
+                "side": "away",
+                "probStart": 0.73446,
+                "probLatest": 0.75102,
+                "delta": 0.01656,
+                "velocityPpHr": 0.508,
+                "acceleration": 0.00828,
+                "pullCount": 3,
+                "durationMinutes": 195.69,
+                "latestGap": 0.50204,
+                "bookCount": 5,
+                "bookDivergence": 0.02338,
+                "reversals": 0,
+                "tags": [
+                  "ACCELERATION",
+                  "CERTAINTY_ANCHOR"
+                ],
+                "grade": "SOLID",
+                "score": 74.66
+              }
+            },
+            {
+              "gameId": "39a70eb742ef5a7cc85ccdedd797529c",
+              "gameKey": "tennis|tennis_wta_wimbledon|tatjana maria|yulia putintseva|2026-06-29T09:00:00Z",
+              "sport": "tennis",
+              "homeTeam": "Yulia Putintseva",
+              "awayTeam": "Tatjana Maria",
+              "commenceTime": "2026-06-29T09:00:00Z",
+              "level": "mixed",
+              "gender": null,
+              "providerSportKey": "tennis_wta_wimbledon",
+              "selection": "Tatjana Maria",
+              "selectedSide": "away",
+              "grade": "SOLID",
+              "score": 67.41,
+              "tags": [
+                "CERTAINTY_ANCHOR",
+                "DECELERATION"
+              ],
+              "homeSignal": {
+                "side": "home",
+                "probStart": 0.34078,
+                "probLatest": 0.32877,
+                "delta": -0.01201,
+                "velocityPpHr": -0.234,
+                "acceleration": 0.01201,
+                "pullCount": 4,
+                "durationMinutes": 308.11,
+                "latestGap": 0.34246,
+                "bookCount": 5,
+                "bookDivergence": 0.01565,
+                "reversals": 0,
+                "tags": [
+                  "ACCELERATION"
+                ],
+                "grade": "FRAGILE",
+                "score": 23.2
+              },
+              "awaySignal": {
+                "side": "away",
+                "probStart": 0.65922,
+                "probLatest": 0.67123,
+                "delta": 0.01201,
+                "velocityPpHr": 0.234,
+                "acceleration": -0.01201,
+                "pullCount": 4,
+                "durationMinutes": 308.11,
+                "latestGap": 0.34246,
+                "bookCount": 5,
+                "bookDivergence": 0.01565,
+                "reversals": 0,
+                "tags": [
+                  "CERTAINTY_ANCHOR",
+                  "DECELERATION"
+                ],
+                "grade": "SOLID",
+                "score": 67.41
+              }
+            }
+          ],
+          "rankedCombos": [
+            {
+              "rank": 1,
+              "score": 76.91,
+              "legs": [
+                {
+                  "gameId": "ad418491f95a205a1207f1c061536d2b",
+                  "selection": "Katie Boulter",
+                  "side": "home",
+                  "grade": "STRONG_SOLID",
+                  "tags": [
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR",
+                    "STEAM"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "c540af5ffd2f3f481985903837b6c917",
+                  "selection": "Emma Raducanu",
+                  "side": "away",
+                  "grade": "SOLID",
+                  "tags": [
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "39a70eb742ef5a7cc85ccdedd797529c",
+                  "selection": "Tatjana Maria",
+                  "side": "away",
+                  "grade": "SOLID",
+                  "tags": [
+                    "CERTAINTY_ANCHOR",
+                    "DECELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                }
+              ],
+              "top3": true
+            },
+            {
+              "rank": 2,
+              "score": 62.17,
+              "legs": [
+                {
+                  "gameId": "ad418491f95a205a1207f1c061536d2b",
+                  "selection": "Katie Boulter",
+                  "side": "home",
+                  "grade": "STRONG_SOLID",
+                  "tags": [
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR",
+                    "STEAM"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "c540af5ffd2f3f481985903837b6c917",
+                  "selection": "Emma Raducanu",
+                  "side": "away",
+                  "grade": "SOLID",
+                  "tags": [
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "39a70eb742ef5a7cc85ccdedd797529c",
+                  "selection": "Yulia Putintseva",
+                  "side": "home",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "ACCELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                }
+              ],
+              "top3": true
+            },
+            {
+              "rank": 3,
+              "score": 55.79,
+              "legs": [
+                {
+                  "gameId": "ad418491f95a205a1207f1c061536d2b",
+                  "selection": "Katie Boulter",
+                  "side": "home",
+                  "grade": "STRONG_SOLID",
+                  "tags": [
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR",
+                    "STEAM"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "c540af5ffd2f3f481985903837b6c917",
+                  "selection": "Antonia Ruzic",
+                  "side": "home",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "DECELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "39a70eb742ef5a7cc85ccdedd797529c",
+                  "selection": "Tatjana Maria",
+                  "side": "away",
+                  "grade": "SOLID",
+                  "tags": [
+                    "CERTAINTY_ANCHOR",
+                    "DECELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                }
+              ],
+              "top3": true
+            },
+            {
+              "rank": 4,
+              "score": 48.85,
+              "legs": [
+                {
+                  "gameId": "ad418491f95a205a1207f1c061536d2b",
+                  "selection": "Tyra Caterina Grant",
+                  "side": "away",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "DECELERATION",
+                    "RESISTANCE"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "c540af5ffd2f3f481985903837b6c917",
+                  "selection": "Emma Raducanu",
+                  "side": "away",
+                  "grade": "SOLID",
+                  "tags": [
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "39a70eb742ef5a7cc85ccdedd797529c",
+                  "selection": "Tatjana Maria",
+                  "side": "away",
+                  "grade": "SOLID",
+                  "tags": [
+                    "CERTAINTY_ANCHOR",
+                    "DECELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                }
+              ],
+              "top3": false
+            },
+            {
+              "rank": 5,
+              "score": 41.06,
+              "legs": [
+                {
+                  "gameId": "ad418491f95a205a1207f1c061536d2b",
+                  "selection": "Katie Boulter",
+                  "side": "home",
+                  "grade": "STRONG_SOLID",
+                  "tags": [
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR",
+                    "STEAM"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "c540af5ffd2f3f481985903837b6c917",
+                  "selection": "Antonia Ruzic",
+                  "side": "home",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "DECELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "39a70eb742ef5a7cc85ccdedd797529c",
+                  "selection": "Yulia Putintseva",
+                  "side": "home",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "ACCELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                }
+              ],
+              "top3": false
+            },
+            {
+              "rank": 6,
+              "score": 34.11,
+              "legs": [
+                {
+                  "gameId": "ad418491f95a205a1207f1c061536d2b",
+                  "selection": "Tyra Caterina Grant",
+                  "side": "away",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "DECELERATION",
+                    "RESISTANCE"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "c540af5ffd2f3f481985903837b6c917",
+                  "selection": "Emma Raducanu",
+                  "side": "away",
+                  "grade": "SOLID",
+                  "tags": [
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "39a70eb742ef5a7cc85ccdedd797529c",
+                  "selection": "Yulia Putintseva",
+                  "side": "home",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "ACCELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                }
+              ],
+              "top3": false
+            },
+            {
+              "rank": 7,
+              "score": 27.73,
+              "legs": [
+                {
+                  "gameId": "ad418491f95a205a1207f1c061536d2b",
+                  "selection": "Tyra Caterina Grant",
+                  "side": "away",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "DECELERATION",
+                    "RESISTANCE"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "c540af5ffd2f3f481985903837b6c917",
+                  "selection": "Antonia Ruzic",
+                  "side": "home",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "DECELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "39a70eb742ef5a7cc85ccdedd797529c",
+                  "selection": "Tatjana Maria",
+                  "side": "away",
+                  "grade": "SOLID",
+                  "tags": [
+                    "CERTAINTY_ANCHOR",
+                    "DECELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                }
+              ],
+              "top3": false
+            },
+            {
+              "rank": 8,
+              "score": 13.0,
+              "legs": [
+                {
+                  "gameId": "ad418491f95a205a1207f1c061536d2b",
+                  "selection": "Tyra Caterina Grant",
+                  "side": "away",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "DECELERATION",
+                    "RESISTANCE"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "c540af5ffd2f3f481985903837b6c917",
+                  "selection": "Antonia Ruzic",
+                  "side": "home",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "DECELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                },
+                {
+                  "gameId": "39a70eb742ef5a7cc85ccdedd797529c",
+                  "selection": "Yulia Putintseva",
+                  "side": "home",
+                  "grade": "FRAGILE",
+                  "tags": [
+                    "ACCELERATION"
+                  ],
+                  "commenceTime": "2026-06-29T09:00:00Z"
+                }
+              ],
+              "top3": false
+            }
+          ],
           "stored": {
             "pk": "PARLAY_BUILDS#tennis#2026-06-26",
-            "sk": "BUILD#2026-06-26T19:29:52.042504+00:00#parlay_f40d122558c74cad",
-            "build_id": "parlay_f40d122558c74cad",
-            "build_status": "NO_BUILD"
+            "sk": "BUILD#2026-06-26T21:07:33.275155+00:00#parlay_3bc56b6a4fad492c",
+            "build_id": "parlay_3bc56b6a4fad492c",
+            "build_status": "BUILT"
           }
         }
       ]
@@ -552,7 +1048,7 @@
     "pullDiagnostics": {
       "ok": true,
       "source": "diagnostic_provider_probe_no_snapshot_storage",
-      "createdAt": "2026-06-26T19:29:55.074304+00:00",
+      "createdAt": "2026-06-26T21:07:35.084298+00:00",
       "sportsRequested": [
         "mlb",
         "wnba",
@@ -666,8 +1162,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:52.474269+00:00",
-              "activeWindowEnd": "2026-06-28T19:29:52.474269+00:00",
+              "activeWindowStart": "2026-06-26T15:07:33.485933+00:00",
+              "activeWindowEnd": "2026-06-28T21:07:33.485933+00:00",
               "slateWindowDays": 2,
               "error": null
             }
@@ -693,8 +1189,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:52.636104+00:00",
-              "activeWindowEnd": "2026-06-28T19:29:52.636104+00:00",
+              "activeWindowStart": "2026-06-26T15:07:33.572771+00:00",
+              "activeWindowEnd": "2026-06-28T21:07:33.572771+00:00",
               "slateWindowDays": 2,
               "error": null
             }
@@ -720,8 +1216,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:53.028307+00:00",
-              "activeWindowEnd": "2026-07-03T19:29:53.028307+00:00",
+              "activeWindowStart": "2026-06-26T15:07:33.817350+00:00",
+              "activeWindowEnd": "2026-07-03T21:07:33.817350+00:00",
               "slateWindowDays": 7,
               "error": "active_slate_window_empty"
             }
@@ -747,8 +1243,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:53.309269+00:00",
-              "activeWindowEnd": "2026-07-03T19:29:53.309269+00:00",
+              "activeWindowStart": "2026-06-26T15:07:34.015081+00:00",
+              "activeWindowEnd": "2026-07-03T21:07:34.015081+00:00",
               "slateWindowDays": 7,
               "error": "active_slate_window_empty"
             }
@@ -774,8 +1270,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:53.509473+00:00",
-              "activeWindowEnd": "2026-06-28T19:29:53.509473+00:00",
+              "activeWindowStart": "2026-06-26T15:07:34.095309+00:00",
+              "activeWindowEnd": "2026-06-28T21:07:34.095309+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -801,8 +1297,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:53.710912+00:00",
-              "activeWindowEnd": "2026-06-28T19:29:53.710912+00:00",
+              "activeWindowStart": "2026-06-26T15:07:34.207552+00:00",
+              "activeWindowEnd": "2026-06-28T21:07:34.207552+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -828,8 +1324,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:53.853784+00:00",
-              "activeWindowEnd": "2026-06-28T19:29:53.853784+00:00",
+              "activeWindowStart": "2026-06-26T15:07:34.337737+00:00",
+              "activeWindowEnd": "2026-06-28T21:07:34.337737+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -855,8 +1351,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:53.990204+00:00",
-              "activeWindowEnd": "2026-07-10T19:29:53.990204+00:00",
+              "activeWindowStart": "2026-06-26T15:07:34.418295+00:00",
+              "activeWindowEnd": "2026-07-10T21:07:34.418295+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             },
@@ -870,8 +1366,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:54.171989+00:00",
-              "activeWindowEnd": "2026-07-10T19:29:54.171989+00:00",
+              "activeWindowStart": "2026-06-26T15:07:34.532841+00:00",
+              "activeWindowEnd": "2026-07-10T21:07:34.532841+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             },
@@ -885,8 +1381,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:54.314989+00:00",
-              "activeWindowEnd": "2026-07-10T19:29:54.314989+00:00",
+              "activeWindowStart": "2026-06-26T15:07:34.625490+00:00",
+              "activeWindowEnd": "2026-07-10T21:07:34.625490+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             }
@@ -895,9 +1391,9 @@
         {
           "ok": true,
           "appSport": "tennis",
-          "rawGamesReturned": 109,
-          "rawGamesInWindow": 109,
-          "gamesConvertible": 109,
+          "rawGamesReturned": 117,
+          "rawGamesInWindow": 117,
+          "gamesConvertible": 117,
           "gamesStored": null,
           "diagnosticOnlyNoSnapshotStored": true,
           "activeStorageFailure": false,
@@ -906,14 +1402,29 @@
               "ok": true,
               "appSport": "tennis",
               "providerSportKey": "tennis_atp_wimbledon",
-              "rawGamesReturned": 51,
-              "rawGamesInWindow": 51,
-              "gamesConvertible": 51,
+              "rawGamesReturned": 57,
+              "rawGamesInWindow": 57,
+              "gamesConvertible": 57,
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:54.729581+00:00",
-              "activeWindowEnd": "2026-07-03T19:29:54.729581+00:00",
+              "activeWindowStart": "2026-06-26T15:07:34.826418+00:00",
+              "activeWindowEnd": "2026-07-03T21:07:34.826418+00:00",
+              "slateWindowDays": 7,
+              "error": null
+            },
+            {
+              "ok": true,
+              "appSport": "tennis",
+              "providerSportKey": "tennis_wta_bad_homburg_open",
+              "rawGamesReturned": 1,
+              "rawGamesInWindow": 1,
+              "gamesConvertible": 1,
+              "gamesDroppedDuringConversion": 0,
+              "gamesStored": 0,
+              "diagnosticOnlyNoSnapshotStored": true,
+              "activeWindowStart": "2026-06-26T15:07:34.909900+00:00",
+              "activeWindowEnd": "2026-07-03T21:07:34.909900+00:00",
               "slateWindowDays": 7,
               "error": null
             },
@@ -921,14 +1432,14 @@
               "ok": true,
               "appSport": "tennis",
               "providerSportKey": "tennis_wta_wimbledon",
-              "rawGamesReturned": 58,
-              "rawGamesInWindow": 58,
-              "gamesConvertible": 58,
+              "rawGamesReturned": 59,
+              "rawGamesInWindow": 59,
+              "gamesConvertible": 59,
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-26T13:29:55.074148+00:00",
-              "activeWindowEnd": "2026-07-03T19:29:55.074148+00:00",
+              "activeWindowStart": "2026-06-26T15:07:35.084156+00:00",
+              "activeWindowEnd": "2026-07-03T21:07:35.084156+00:00",
               "slateWindowDays": 7,
               "error": null
             }
