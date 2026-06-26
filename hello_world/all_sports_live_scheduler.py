@@ -7,6 +7,11 @@ import mlb_b10_engine
 import odds_live_ingestion
 
 try:
+    import baseline_parlay_builder
+except Exception:
+    baseline_parlay_builder = None
+
+try:
     import sport_key_patch
     sport_key_patch.apply(odds_live_ingestion)
 except Exception:
@@ -31,17 +36,27 @@ def _today() -> str:
     return datetime.now(timezone.utc).date().isoformat()
 
 
+def _baseline(result: Dict[str, Any], sport: str) -> Dict[str, Any]:
+    if baseline_parlay_builder is None:
+        return result
+    try:
+        return baseline_parlay_builder.apply_if_needed(result, sport, result.get("slate_date") or _today())
+    except Exception as exc:
+        result["baselineBuildError"] = str(exc)
+        return result
+
+
 def _strict_build(sport: str) -> Dict[str, Any]:
     if sport == "mlb":
-        return mlb_b10_engine.build(_today())
+        return _baseline(mlb_b10_engine.build(_today()), sport)
     if auto_build_runner is None:
         return {"ok": False, "sport": sport, "buildStatus": "NO_BUILD", "reason": "AUTO_BUILD_RUNNER_UNAVAILABLE"}
-    return auto_build_runner.strict_result(sport)
+    return _baseline(auto_build_runner.strict_result(sport), sport)
 
 
 def _store_build(result: Dict[str, Any]) -> Dict[str, Any]:
     try:
-        return history.store_parlay_build(result, mode="aws_all_sports_1am_15min_live_scheduler")
+        return history.store_parlay_build(result, mode="aws_all_sports_15min_with_baseline")
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -49,26 +64,21 @@ def _store_build(result: Dict[str, Any]) -> Dict[str, Any]:
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     event = event or {}
     sports = _sports_from_event(event)
-    run_type = event.get("run") or "all_sports_hot_pull"
     started_at = datetime.now(timezone.utc).isoformat()
-
     pull_report = odds_live_ingestion.pull_many(sports)
     results = []
     for sport in sports:
         build = _strict_build(odds_live_ingestion.sport_key(sport))
         build["stored"] = _store_build(build)
         results.append(build)
-
-    built = [r.get("sport") for r in results if r.get("buildStatus") == "BUILT"]
     body = {
         "ok": True,
-        "run": run_type,
+        "run": event.get("run") or "all_sports_hot_pull",
         "startedAt": started_at,
         "finishedAt": datetime.now(timezone.utc).isoformat(),
-        "policy": "All configured sports with active games or matches use timestamped HOT pulls starting at 1:00 AM ET, then every 15 minutes, and attempt strict 3-leg build after 12 snapshots before the 2-hour event deadline.",
         "sports": sports,
         "pullReport": pull_report,
-        "builtSports": built,
+        "builtSports": [r.get("sport") for r in results if r.get("buildStatus") == "BUILT"],
         "buildResults": results,
     }
     return {"statusCode": 200, "body": json.dumps(body, default=str)}
