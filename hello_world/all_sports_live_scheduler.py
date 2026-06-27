@@ -8,6 +8,11 @@ import mlb_b10_engine
 import odds_live_ingestion
 
 try:
+    import mlb_game_winner_engine
+except Exception:
+    mlb_game_winner_engine = None
+
+try:
     import slate_date_patch
     slate_date_patch.apply_to_history(history)
     slate_date_patch.apply_to_odds(odds_live_ingestion)
@@ -88,11 +93,21 @@ def _store_build(result: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
+def _mlb_game_winners() -> Dict[str, Any]:
+    if mlb_game_winner_engine is None:
+        return {"ok": False, "error": "mlb_game_winner_engine_unavailable"}
+    try:
+        return mlb_game_winner_engine.predict_all(_today(), store=True, limit=500)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     event = event or {}
     sports = _sports_from_event(event)
     started_at = datetime.now(timezone.utc).isoformat()
     pull_report = odds_live_ingestion.pull_many(sports)
+    mlb_winners = _mlb_game_winners() if "mlb" in [odds_live_ingestion.sport_key(s) for s in sports] else None
     results = []
     for sport in sports:
         build = _strict_build(odds_live_ingestion.sport_key(sport))
@@ -106,6 +121,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "slateDateEt": _today(),
         "sports": sports,
         "pullReport": pull_report,
+        "mlbGameWinnerPredictions": mlb_winners,
         "builtSports": [r.get("sport") for r in results if r.get("buildStatus") == "BUILT"],
         "buildResults": results,
     }
