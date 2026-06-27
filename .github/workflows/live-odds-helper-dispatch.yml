@@ -1,0 +1,31 @@
+name: Live Odds Helper Change Dispatch
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/baseline_parlay_builder.py'
+      - 'hello_world/build_deadline_gate.py'
+      - 'hello_world/pull_health_diagnostics.py'
+      - 'hello_world/signal_score_guard.py'
+      - 'hello_world/slate_date_patch.py'
+      - 'hello_world/sport_key_patch.py'
+      - 'hello_world/sport_key_lookup.py'
+      - 'hello_world/pull_dedupe_guard.py'
+      - 'hello_world/pull_report_guard.py'
+      - 'hello_world/usercustomize.py'
+      - 'hello_world/all_sports_live_scheduler.py'
+      - '.github/workflows/live-odds-helper-dispatch.yml'
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-live-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch live odds proof workflow
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run live-odds-pulls.yml --ref main
