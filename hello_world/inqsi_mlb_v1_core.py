@@ -13,6 +13,7 @@ from boto3.dynamodb.conditions import Key
 
 from mlb_date_signal_api import hot_sides, source_status
 from mlb_audit import evaluate_mlb_predictions, settlement_proof_report
+import mlb_game_winner_engine
 
 MODEL_VERSION = "INQSI-MLB-v1.0-core"
 MODEL_CREATED_AT = "2026-06-24"
@@ -99,21 +100,22 @@ def score_prediction_row(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def today(game_date: Optional[str] = None) -> Dict[str, Any]:
     game_date = game_date or _today_et()
-    return {"ok": True, "sport": "mlb", "date": game_date, "model_version": MODEL_VERSION, "source_status": source_status(), "message": "INQSI MLB v1.0 core is available. Premium eligibility depends on connected advanced data sources."}
+    return {"ok": True, "sport": "mlb", "date": game_date, "model_version": MODEL_VERSION, "game_winner_model": mlb_game_winner_engine.MODEL_VERSION, "source_status": source_status(), "message": "INQSI MLB v1.0 core is available. Individual game-winner prediction is now the first priority; parlays are secondary assembly."}
 
 
 def games(game_date: Optional[str] = None, limit: int = 80) -> Dict[str, Any]:
     game_date = game_date or _today_et()
-    data = hot_sides(game_date=game_date, limit=limit, store=False, include_no_edge=True)
-    return {"ok": True, "sport": "mlb", "date": game_date, "model_version": MODEL_VERSION, "count": len(data.get("game_predictions") or []), "games": data.get("game_predictions") or [], "pull_mode": data.get("pull_mode")}
+    winners = mlb_game_winner_engine.predict_all(game_date, store=False, limit=limit)
+    return {"ok": True, "sport": "mlb", "date": game_date, "model_version": MODEL_VERSION, "game_winner_model": winners.get("modelVersion"), "count": winners.get("count", 0), "allGamesPredicted": winners.get("allGamesPredicted"), "games": winners.get("predictions") or [], "pullCount": winners.get("pullCount"), "latestPullAt": winners.get("latestPullAt")}
 
 
 def predictions(game_date: Optional[str] = None, limit: int = 80, store: bool = False) -> Dict[str, Any]:
     game_date = game_date or _today_et()
     data = hot_sides(game_date=game_date, limit=limit, store=store, include_no_edge=True)
-    rows = [{**row, "inqsi_v1_score": score_prediction_row(row)} for row in data.get("game_predictions") or []]
-    rows.sort(key=lambda r: (r.get("inqsi_v1_score") or {}).get("overall_score", 0), reverse=True)
-    return {"ok": True, "sport": "mlb", "date": game_date, "model_version": MODEL_VERSION, "count": len(rows), "predictions": rows, "parlay_analysis": parlay_analysis(rows, data.get("three_leg_parlay") or {})}
+    market_rows = [{**row, "inqsi_v1_score": score_prediction_row(row)} for row in data.get("game_predictions") or []]
+    market_rows.sort(key=lambda r: (r.get("inqsi_v1_score") or {}).get("overall_score", 0), reverse=True)
+    winners = mlb_game_winner_engine.predict_all(game_date, store=store, limit=500)
+    return {"ok": True, "sport": "mlb", "date": game_date, "model_version": MODEL_VERSION, "game_winner_model": winners.get("modelVersion"), "priority": "individual_game_winners", "count": winners.get("count", 0), "allGamesPredicted": winners.get("allGamesPredicted"), "winner_predictions": winners.get("predictions") or [], "market_research_count": len(market_rows), "market_research_rows": market_rows, "parlay_analysis": parlay_analysis(market_rows, data.get("three_leg_parlay") or {}), "storage": {"requested": store, "gameWinnerStoredCount": winners.get("storedCount"), "marketRowsStoredCount": data.get("stored_count")}}
 
 
 def _prediction_items(game_date: str) -> List[Dict[str, Any]]:
@@ -183,7 +185,7 @@ def suggested_weight_adjustments(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def model_version() -> Dict[str, Any]:
-    return {"ok": True, "sport": "mlb", "model_version": MODEL_VERSION, "created_at": MODEL_CREATED_AT, "weights": WEIGHTS, "confidence_tiers": CONFIDENCE_TIERS, "probability_engine": "logistic(score_diff, k=0.075)", "data_architecture": {"lambda": True, "api_gateway": True, "dynamodb": True, "s3_raw_archive": bool(RAW_ARCHIVE_BUCKET), "eventbridge_15_min": True}}
+    return {"ok": True, "sport": "mlb", "model_version": MODEL_VERSION, "game_winner_model": mlb_game_winner_engine.MODEL_VERSION, "created_at": MODEL_CREATED_AT, "weights": WEIGHTS, "confidence_tiers": CONFIDENCE_TIERS, "probability_engine": "logistic(score_diff, k=0.075)", "data_architecture": {"lambda": True, "api_gateway": True, "dynamodb": True, "s3_raw_archive": bool(RAW_ARCHIVE_BUCKET), "eventbridge_15_min": True}}
 
 
 def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
@@ -200,7 +202,7 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return _resp(200, today(game_date))
         if path.endswith("/games"):
             return _resp(200, games(game_date, limit))
-        if path.endswith("/predictions"):
+        if path.endswith("/predictions") or path.endswith("/game-winners"):
             return _resp(200, predictions(game_date, limit, params.get("store", "false").lower() == "true"))
         if path.endswith("/audit"):
             return _resp(200, audit(game_date))
