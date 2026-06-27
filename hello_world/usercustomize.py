@@ -43,6 +43,12 @@ try:
         pass
 
     try:
+        import pull_report_guard
+        pull_report_guard.apply(odds_live_ingestion)
+    except Exception:
+        pass
+
+    try:
         import market_board
     except Exception:
         market_board = None
@@ -91,7 +97,9 @@ try:
     import odds_live_ingestion as _inqsi_odds_for_tennis
     import slate_date_patch as _inqsi_slate_patch_for_odds
     import sport_key_patch as _inqsi_sport_key_patch
+    import pull_report_guard as _inqsi_pull_report_guard
     _inqsi_slate_patch_for_odds.apply_to_odds(_inqsi_odds_for_tennis)
     _inqsi_sport_key_patch.apply(_inqsi_odds_for_tennis)
+    _inqsi_pull_report_guard.apply(_inqsi_odds_for_tennis)
 except Exception:
     pass
