@@ -14,6 +14,7 @@ on:
       - 'hello_world/mlb_b10_engine.py'
       - 'hello_world/mlb_game_winner_engine.py'
       - 'hello_world/mlb_all_games_signal_proof.py'
+      - 'hello_world/mlb_snapshot_replay_audit.py'
       - 'hello_world/inqsi_mlb_v1_core.py'
       - 'hello_world/baseline_parlay_builder.py'
       - 'hello_world/build_deadline_gate.py'
@@ -86,6 +87,7 @@ jobs:
           import auto_build_runner
           import mlb_game_winner_engine
           import mlb_all_games_signal_proof
+          import mlb_snapshot_replay_audit
 
           sports = [s.strip() for s in os.environ.get('INPUT_SPORTS', '').split(',') if s.strip()]
           if not sports:
@@ -96,6 +98,7 @@ jobs:
           board = market_board.board_all({'sports': ','.join(sports)})
           mlb_game_winners = mlb_game_winner_engine.predict_all(store=True, limit=500)
           mlb_all_games_proof = mlb_all_games_signal_proof.build(store=True, write_file=True)
+          mlb_snapshot_replay = mlb_snapshot_replay_audit.build(write_file=True)
           auto_build_runner.main()
 
           parlay_report = json.load(open('runtime_reports/parlay_latest.json', encoding='utf-8'))
@@ -112,13 +115,21 @@ jobs:
               'mlbGameWinnerPredictions': mlb_game_winners,
               'mlbAllGamesSignalProofSummary': mlb_all_games_proof.get('summary'),
               'mlbAllGamesSignalProofPath': 'runtime_reports/mlb_all_games_signal_proof_latest.json',
+              'mlbSnapshotReplayAuditSummary': {
+                  'pullCount': mlb_snapshot_replay.get('pullCount'),
+                  'snapshotCount': mlb_snapshot_replay.get('snapshotCount'),
+                  'finalScoredGameCount': mlb_snapshot_replay.get('finalScoredGameCount'),
+                  'finalIdentifiedSignalCount': mlb_snapshot_replay.get('finalIdentifiedSignalCount'),
+                  'coverage': mlb_snapshot_replay.get('coverage'),
+              },
+              'mlbSnapshotReplayAuditPath': 'runtime_reports/mlb_snapshot_replay_audit_latest.json',
               'builtSports': parlay_report.get('builtSports') or [],
               'mlbParlayBuilt': bool(parlay_report.get('mlbBuilt')),
               'pullDiagnostics': parlay_report.get('pullDiagnostics'),
               'parlayProof': parlay_report,
           }
           open('runtime_reports/live_odds_latest.json','w',encoding='utf-8').write(json.dumps(report, indent=2, default=str)+'\n')
-          print(json.dumps({'ok': report['ok'], 'mlbGameWinnerCount': mlb_game_winners.get('count'), 'mlbAllGamesRows': mlb_all_games_proof.get('summary', {}).get('totalRows'), 'builtSports': report['builtSports'], 'mlbParlayBuilt': report['mlbParlayBuilt']}, indent=2))
+          print(json.dumps({'ok': report['ok'], 'mlbGameWinnerCount': mlb_game_winners.get('count'), 'mlbAllGamesRows': mlb_all_games_proof.get('summary', {}).get('totalRows'), 'snapshotReplay': report['mlbSnapshotReplayAuditSummary'], 'builtSports': report['builtSports'], 'mlbParlayBuilt': report['mlbParlayBuilt']}, indent=2, default=str))
           PY
 
       - name: Commit runtime proof reports
@@ -126,7 +137,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add runtime_reports/live_odds_latest.json runtime_reports/parlay_latest.json runtime_reports/pull_health_latest.json runtime_reports/mlb_all_games_signal_proof_latest.json || true
+          git add runtime_reports/live_odds_latest.json runtime_reports/parlay_latest.json runtime_reports/pull_health_latest.json runtime_reports/mlb_all_games_signal_proof_latest.json runtime_reports/mlb_snapshot_replay_audit_latest.json || true
           git commit -m "Update live odds and build proof reports" || true
           git pull --rebase --autostash origin main || true
           git push || true
