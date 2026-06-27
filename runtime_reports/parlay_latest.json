@@ -20,7 +20,7 @@
     "sport": "mlb",
     "slate_date": "2026-06-27",
     "build": {
-      "pullCount": "6",
+      "pullCount": "7",
       "freezeMinutesBeforeGame": "120",
       "minimumGameHistoryPoints": "4",
       "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
@@ -29,25 +29,169 @@
       "slateTimezone": "America/New_York",
       "gameHistoryStored": "15",
       "thresholdVersion": "MLB-B1.0-2026-06",
-      "strongCount": "0",
+      "strongCount": "1",
       "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG. Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy.",
       "buildStatus": "NO_BUILD",
       "slate_date": "2026-06-27",
-      "candidates": [],
+      "candidates": [
+        {
+          "gameId": "8f9b5d46e691ee3915dbf6dec944d737",
+          "providerSportKey": "baseball_mlb",
+          "slateTimezone": "America/New_York",
+          "awayTeam": "Houston Astros",
+          "cutoffTime": "2026-06-27T15:11:00+00:00",
+          "frozen": true,
+          "commenceTime": "2026-06-27T17:11:00Z",
+          "points": [
+            {
+              "away": "0.46816203770438314",
+              "bookCount": "6",
+              "bookDivergence": "0.004167976602170054",
+              "bookAgreement": "0.99583",
+              "homeRunLinePrice": "164",
+              "awayRunLinePoint": "1.5",
+              "pulledAt": "2026-06-27T00:40:07.427020+00:00",
+              "awayRunLinePrice": "-195.66666666666666",
+              "home": "0.5318379622956169",
+              "homeRunLinePoint": "-1.5"
+            },
+            {
+              "away": "0.4565900152950687",
+              "bookCount": "10",
+              "bookDivergence": "0.006892226869627538",
+              "bookAgreement": "0.99311",
+              "homeRunLinePrice": "157.9",
+              "awayRunLinePoint": "1.5",
+              "pulledAt": "2026-06-27T05:38:06.557218+00:00",
+              "awayRunLinePrice": "-189.5",
+              "home": "0.5434099847049314",
+              "homeRunLinePoint": "-1.5"
+            },
+            {
+              "away": "0.453640513410722",
+              "bookCount": "11",
+              "bookDivergence": "0.008314138907235313",
+              "bookAgreement": "0.99169",
+              "homeRunLinePrice": "156.9090909090909",
+              "awayRunLinePoint": "1.5",
+              "pulledAt": "2026-06-27T08:15:33.222385+00:00",
+              "awayRunLinePrice": "-187.54545454545453",
+              "home": "0.546359486589278",
+              "homeRunLinePoint": "-1.5"
+            },
+            {
+              "away": "0.45231749174533353",
+              "bookCount": "11",
+              "bookDivergence": "0.0098504640883873",
+              "bookAgreement": "0.99015",
+              "homeRunLinePrice": "157.72727272727272",
+              "awayRunLinePoint": "1.5",
+              "pulledAt": "2026-06-27T10:31:28.437358+00:00",
+              "awayRunLinePrice": "-188.63636363636363",
+              "home": "0.5476825082546665",
+              "homeRunLinePoint": "-1.5"
+            },
+            {
+              "away": "0.447982274411876",
+              "bookCount": "11",
+              "bookDivergence": "0.015336680668386227",
+              "bookAgreement": "0.98466",
+              "homeRunLinePrice": "157.72727272727272",
+              "awayRunLinePoint": "1.5",
+              "pulledAt": "2026-06-27T12:01:21.501883+00:00",
+              "awayRunLinePrice": "-188.63636363636363",
+              "home": "0.552017725588124",
+              "homeRunLinePoint": "-1.5"
+            },
+            {
+              "away": "0.44989225439139435",
+              "bookCount": "11",
+              "bookDivergence": "0.01556479225260854",
+              "bookAgreement": "0.98444",
+              "homeRunLinePrice": "155.8181818181818",
+              "awayRunLinePoint": "1.5",
+              "pulledAt": "2026-06-27T14:04:57.288814+00:00",
+              "awayRunLinePrice": "-185.72727272727272",
+              "home": "0.5501077456086056",
+              "homeRunLinePoint": "-1.5"
+            }
+          ],
+          "tags": [
+            "BOOK_AGREEMENT",
+            "REVERSAL",
+            "STEAM",
+            "TOTAL_MOVEMENT"
+          ],
+          "score": "59.84",
+          "pointCount": "6",
+          "selection": "Detroit Tigers",
+          "engine": "MLB-B1.0",
+          "homeSignal": {
+            "probStart": "0.53184",
+            "probLatest": "0.55011",
+            "side": "home",
+            "bookAgreementAvg": "0.98998",
+            "delta": "0.01827",
+            "runLineMovement": "-8.182",
+            "velocityPpHr": "0.136",
+            "tags": [
+              "BOOK_AGREEMENT",
+              "REVERSAL",
+              "STEAM",
+              "TOTAL_MOVEMENT"
+            ],
+            "score": "59.84",
+            "lateInstability": "0.00434",
+            "pointCount": "6",
+            "totalMovement": "0.01827",
+            "grade": "MLB_STRONG",
+            "reversalCount": "1",
+            "bookDivergenceAvg": "0.01002"
+          },
+          "awaySignal": {
+            "probStart": "0.46816",
+            "probLatest": "0.44989",
+            "side": "away",
+            "bookAgreementAvg": "0.98998",
+            "delta": "-0.01827",
+            "runLineMovement": "9.939",
+            "velocityPpHr": "-0.136",
+            "tags": [
+              "BOOK_AGREEMENT",
+              "RESISTANCE",
+              "REVERSAL",
+              "TOTAL_MOVEMENT"
+            ],
+            "score": "19.44",
+            "lateInstability": "0.00434",
+            "pointCount": "6",
+            "totalMovement": "0.01827",
+            "grade": "FRAGILE",
+            "reversalCount": "1",
+            "bookDivergenceAvg": "0.01002"
+          },
+          "grade": "MLB_STRONG",
+          "homeTeam": "Detroit Tigers",
+          "gameKey": "mlb|baseball_mlb|houston astros|detroit tigers|2026-06-27T17:11:00Z",
+          "slateDate": "2026-06-27",
+          "selectedSide": "home",
+          "status": "FROZEN"
+        }
+      ],
       "engine": "MLB-B1.0",
       "pullCoverage": {
         "expectedStartAtUtc": "2026-06-27T05:00:00+00:00",
         "firstPullAtUtc": "2026-06-27T00:40:07.427020+00:00",
-        "actualPullCount": "6",
+        "actualPullCount": "7",
         "intervalMinutes": "15",
         "firstPullAtEt": "2026-06-26T20:40:07.427020-04:00",
-        "latestPullAtEt": "2026-06-27T10:04:57.288814-04:00",
-        "coverageRatio": "0.1351",
+        "latestPullAtEt": "2026-06-27T11:37:51.596905-04:00",
+        "coverageRatio": "0.1395",
         "startHourEt": "1",
-        "latestPullAtUtc": "2026-06-27T14:04:57.288814+00:00",
-        "actualPullCountSinceStart": "5",
-        "expectedPullCountSinceStart": "37",
-        "missingPullCountSinceStart": "32",
+        "latestPullAtUtc": "2026-06-27T15:37:51.596905+00:00",
+        "actualPullCountSinceStart": "6",
+        "expectedPullCountSinceStart": "43",
+        "missingPullCountSinceStart": "37",
         "overnightCoverageComplete": false,
         "expectedStartAtEt": "2026-06-27T01:00:00-04:00",
         "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes."
@@ -62,12 +206,12 @@
       },
       "ok": true,
       "sport": "mlb",
-      "candidateCount": "0",
+      "candidateCount": "1",
       "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default"
     },
     "stored": {
       "pk": "PARLAY_BUILDS#mlb#2026-06-27",
-      "sk": "BUILD#2026-06-27T14:05:04.869981+00:00#parlay_18b9674c3bd14e8b"
+      "sk": "BUILD#2026-06-27T15:37:54.222832+00:00#parlay_84735522c80a422f"
     }
   },
   "result": {
@@ -82,7 +226,7 @@
         "slateTimezone": "America/New_York",
         "engine": "MLB-B1.0",
         "thresholdVersion": "MLB-B1.0-2026-06",
-        "pullCount": 6,
+        "pullCount": 7,
         "pullCoverage": {
           "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
           "startHourEt": 1,
@@ -91,19 +235,19 @@
           "expectedStartAtEt": "2026-06-27T01:00:00-04:00",
           "firstPullAtUtc": "2026-06-27T00:40:07.427020+00:00",
           "firstPullAtEt": "2026-06-26T20:40:07.427020-04:00",
-          "latestPullAtUtc": "2026-06-27T14:04:57.288814+00:00",
-          "latestPullAtEt": "2026-06-27T10:04:57.288814-04:00",
-          "actualPullCount": 6,
-          "actualPullCountSinceStart": 5,
-          "expectedPullCountSinceStart": 37,
-          "missingPullCountSinceStart": 32,
-          "coverageRatio": 0.1351,
+          "latestPullAtUtc": "2026-06-27T15:37:51.596905+00:00",
+          "latestPullAtEt": "2026-06-27T11:37:51.596905-04:00",
+          "actualPullCount": 7,
+          "actualPullCountSinceStart": 6,
+          "expectedPullCountSinceStart": 43,
+          "missingPullCountSinceStart": 37,
+          "coverageRatio": 0.1395,
           "overnightCoverageComplete": false
         },
         "gameCount": 15,
         "gameHistoryStored": 15,
-        "candidateCount": 0,
-        "strongCount": 0,
+        "candidateCount": 1,
+        "strongCount": 1,
         "leanCount": 0,
         "freezeMinutesBeforeGame": 120,
         "minimumGameHistoryPoints": 4,
@@ -119,11 +263,155 @@
         "buildStatus": "NO_BUILD",
         "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
         "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG. Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy.",
-        "candidates": [],
+        "candidates": [
+          {
+            "gameId": "8f9b5d46e691ee3915dbf6dec944d737",
+            "gameKey": "mlb|baseball_mlb|houston astros|detroit tigers|2026-06-27T17:11:00Z",
+            "homeTeam": "Detroit Tigers",
+            "awayTeam": "Houston Astros",
+            "commenceTime": "2026-06-27T17:11:00Z",
+            "slateDate": "2026-06-27",
+            "slateTimezone": "America/New_York",
+            "providerSportKey": "baseball_mlb",
+            "points": [
+              {
+                "pulledAt": "2026-06-27T00:40:07.427020+00:00",
+                "home": 0.5318379622956169,
+                "away": 0.46816203770438314,
+                "bookCount": 6,
+                "bookDivergence": 0.004167976602170054,
+                "bookAgreement": 0.99583,
+                "homeRunLinePrice": 164.0,
+                "awayRunLinePrice": -195.66666666666666,
+                "homeRunLinePoint": -1.5,
+                "awayRunLinePoint": 1.5
+              },
+              {
+                "pulledAt": "2026-06-27T05:38:06.557218+00:00",
+                "home": 0.5434099847049314,
+                "away": 0.4565900152950687,
+                "bookCount": 10,
+                "bookDivergence": 0.006892226869627538,
+                "bookAgreement": 0.99311,
+                "homeRunLinePrice": 157.9,
+                "awayRunLinePrice": -189.5,
+                "homeRunLinePoint": -1.5,
+                "awayRunLinePoint": 1.5
+              },
+              {
+                "pulledAt": "2026-06-27T08:15:33.222385+00:00",
+                "home": 0.546359486589278,
+                "away": 0.453640513410722,
+                "bookCount": 11,
+                "bookDivergence": 0.008314138907235313,
+                "bookAgreement": 0.99169,
+                "homeRunLinePrice": 156.9090909090909,
+                "awayRunLinePrice": -187.54545454545453,
+                "homeRunLinePoint": -1.5,
+                "awayRunLinePoint": 1.5
+              },
+              {
+                "pulledAt": "2026-06-27T10:31:28.437358+00:00",
+                "home": 0.5476825082546665,
+                "away": 0.45231749174533353,
+                "bookCount": 11,
+                "bookDivergence": 0.0098504640883873,
+                "bookAgreement": 0.99015,
+                "homeRunLinePrice": 157.72727272727272,
+                "awayRunLinePrice": -188.63636363636363,
+                "homeRunLinePoint": -1.5,
+                "awayRunLinePoint": 1.5
+              },
+              {
+                "pulledAt": "2026-06-27T12:01:21.501883+00:00",
+                "home": 0.552017725588124,
+                "away": 0.447982274411876,
+                "bookCount": 11,
+                "bookDivergence": 0.015336680668386227,
+                "bookAgreement": 0.98466,
+                "homeRunLinePrice": 157.72727272727272,
+                "awayRunLinePrice": -188.63636363636363,
+                "homeRunLinePoint": -1.5,
+                "awayRunLinePoint": 1.5
+              },
+              {
+                "pulledAt": "2026-06-27T14:04:57.288814+00:00",
+                "home": 0.5501077456086056,
+                "away": 0.44989225439139435,
+                "bookCount": 11,
+                "bookDivergence": 0.01556479225260854,
+                "bookAgreement": 0.98444,
+                "homeRunLinePrice": 155.8181818181818,
+                "awayRunLinePrice": -185.72727272727272,
+                "homeRunLinePoint": -1.5,
+                "awayRunLinePoint": 1.5
+              }
+            ],
+            "cutoffTime": "2026-06-27T15:11:00+00:00",
+            "frozen": true,
+            "pointCount": 6,
+            "status": "FROZEN",
+            "homeSignal": {
+              "side": "home",
+              "grade": "MLB_STRONG",
+              "score": 59.84,
+              "probStart": 0.53184,
+              "probLatest": 0.55011,
+              "delta": 0.01827,
+              "velocityPpHr": 0.136,
+              "bookDivergenceAvg": 0.01002,
+              "bookAgreementAvg": 0.98998,
+              "reversalCount": 1,
+              "lateInstability": 0.00434,
+              "totalMovement": 0.01827,
+              "runLineMovement": -8.182,
+              "tags": [
+                "BOOK_AGREEMENT",
+                "REVERSAL",
+                "STEAM",
+                "TOTAL_MOVEMENT"
+              ],
+              "pointCount": 6
+            },
+            "awaySignal": {
+              "side": "away",
+              "grade": "FRAGILE",
+              "score": 19.44,
+              "probStart": 0.46816,
+              "probLatest": 0.44989,
+              "delta": -0.01827,
+              "velocityPpHr": -0.136,
+              "bookDivergenceAvg": 0.01002,
+              "bookAgreementAvg": 0.98998,
+              "reversalCount": 1,
+              "lateInstability": 0.00434,
+              "totalMovement": 0.01827,
+              "runLineMovement": 9.939,
+              "tags": [
+                "BOOK_AGREEMENT",
+                "RESISTANCE",
+                "REVERSAL",
+                "TOTAL_MOVEMENT"
+              ],
+              "pointCount": 6
+            },
+            "selectedSide": "home",
+            "selection": "Detroit Tigers",
+            "grade": "MLB_STRONG",
+            "score": 59.84,
+            "tags": [
+              "BOOK_AGREEMENT",
+              "REVERSAL",
+              "STEAM",
+              "TOTAL_MOVEMENT"
+            ],
+            "engine": "MLB-B1.0"
+          }
+        ],
         "stored": {
           "pk": "PARLAY_BUILDS#mlb#2026-06-27",
-          "sk": "BUILD#2026-06-27T14:05:04.869981+00:00#parlay_18b9674c3bd14e8b",
-          "build_id": "parlay_18b9674c3bd14e8b",
+          "sk": "BUILD#2026-06-27T15:37:54.222832+00:00#parlay_84735522c80a422f",
+          "build_id": "parlay_84735522c80a422f",
           "build_status": "NO_BUILD"
         }
       },
@@ -131,7 +419,7 @@
         "ok": true,
         "sport": "wnba",
         "slate_date": "2026-06-27",
-        "pullCount": 6,
+        "pullCount": 7,
         "pullCoverage": {
           "ok": true,
           "sport": "wnba",
@@ -142,13 +430,13 @@
           "expectedStartAtEt": "2026-06-27T01:00:00-04:00",
           "firstPullAtUtc": "2026-06-27T00:40:10.053181+00:00",
           "firstPullAtEt": "2026-06-26T20:40:10.053181-04:00",
-          "latestPullAtUtc": "2026-06-27T14:05:01.399275+00:00",
-          "latestPullAtEt": "2026-06-27T10:05:01.399275-04:00",
-          "actualPullCount": 6,
-          "actualPullCountSinceStart": 5,
-          "expectedPullCountSinceStart": 37,
-          "missingPullCountSinceStart": 32,
-          "coverageRatio": 0.1351,
+          "latestPullAtUtc": "2026-06-27T15:37:53.219105+00:00",
+          "latestPullAtEt": "2026-06-27T11:37:53.219105-04:00",
+          "actualPullCount": 7,
+          "actualPullCountSinceStart": 6,
+          "expectedPullCountSinceStart": 43,
+          "missingPullCountSinceStart": 37,
+          "coverageRatio": 0.1395,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -159,10 +447,10 @@
           "buildDeadlineEt": "2026-06-27T12:00:00-04:00",
           "deadlineHoursBeforeFirstEvent": 2,
           "deadlinePassed": false,
-          "currentUtc": "2026-06-27T14:05:05.119742+00:00",
-          "currentEt": "2026-06-27T10:05:05.119742-04:00"
+          "currentUtc": "2026-06-27T15:37:54.284420+00:00",
+          "currentEt": "2026-06-27T11:37:54.284420-04:00"
         },
-        "rawSignalCount": 5,
+        "rawSignalCount": 7,
         "sameSlateSignalCount": 3,
         "minimumParlayPulls": 12,
         "minimumStrongLegs": 2,
@@ -174,8 +462,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#wnba#2026-06-27",
-          "sk": "BUILD#2026-06-27T14:05:05.229578+00:00#parlay_9a0d673430774579",
-          "build_id": "parlay_9a0d673430774579",
+          "sk": "BUILD#2026-06-27T15:37:54.310283+00:00#parlay_17a402d033104534",
+          "build_id": "parlay_17a402d033104534",
           "build_status": "NO_BUILD"
         }
       },
@@ -198,8 +486,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 37,
-          "missingPullCountSinceStart": 37,
+          "expectedPullCountSinceStart": 43,
+          "missingPullCountSinceStart": 43,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -220,8 +508,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#nfl#2026-06-27",
-          "sk": "BUILD#2026-06-27T14:05:05.518100+00:00#parlay_3866f77f2dd343df",
-          "build_id": "parlay_3866f77f2dd343df",
+          "sk": "BUILD#2026-06-27T15:37:54.337197+00:00#parlay_9e3ad5e201bc4d9e",
+          "build_id": "parlay_9e3ad5e201bc4d9e",
           "build_status": "NO_BUILD"
         }
       },
@@ -244,8 +532,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 37,
-          "missingPullCountSinceStart": 37,
+          "expectedPullCountSinceStart": 43,
+          "missingPullCountSinceStart": 43,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -266,8 +554,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#cfb#2026-06-27",
-          "sk": "BUILD#2026-06-27T14:05:05.803577+00:00#parlay_2635a774618e484a",
-          "build_id": "parlay_2635a774618e484a",
+          "sk": "BUILD#2026-06-27T15:37:54.361399+00:00#parlay_39dc001217334fcf",
+          "build_id": "parlay_39dc001217334fcf",
           "build_status": "NO_BUILD"
         }
       },
@@ -290,8 +578,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 37,
-          "missingPullCountSinceStart": 37,
+          "expectedPullCountSinceStart": 43,
+          "missingPullCountSinceStart": 43,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -312,8 +600,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#nba#2026-06-27",
-          "sk": "BUILD#2026-06-27T14:05:06.089416+00:00#parlay_dd4ad58cc7bf4eca",
-          "build_id": "parlay_dd4ad58cc7bf4eca",
+          "sk": "BUILD#2026-06-27T15:37:54.385154+00:00#parlay_e94e05de7d1a4efc",
+          "build_id": "parlay_e94e05de7d1a4efc",
           "build_status": "NO_BUILD"
         }
       },
@@ -336,8 +624,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 37,
-          "missingPullCountSinceStart": 37,
+          "expectedPullCountSinceStart": 43,
+          "missingPullCountSinceStart": 43,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -358,8 +646,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#ncaam#2026-06-27",
-          "sk": "BUILD#2026-06-27T14:05:06.374342+00:00#parlay_b1c5f2091cba4936",
-          "build_id": "parlay_b1c5f2091cba4936",
+          "sk": "BUILD#2026-06-27T15:37:54.413405+00:00#parlay_5ca7e13c44d442ed",
+          "build_id": "parlay_5ca7e13c44d442ed",
           "build_status": "NO_BUILD"
         }
       },
@@ -382,8 +670,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 37,
-          "missingPullCountSinceStart": 37,
+          "expectedPullCountSinceStart": 43,
+          "missingPullCountSinceStart": 43,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -404,8 +692,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#nhl#2026-06-27",
-          "sk": "BUILD#2026-06-27T14:05:06.659799+00:00#parlay_a19be66f030e4d2c",
-          "build_id": "parlay_a19be66f030e4d2c",
+          "sk": "BUILD#2026-06-27T15:37:54.438187+00:00#parlay_160f6a03803447eb",
+          "build_id": "parlay_160f6a03803447eb",
           "build_status": "NO_BUILD"
         }
       },
@@ -428,8 +716,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 37,
-          "missingPullCountSinceStart": 37,
+          "expectedPullCountSinceStart": 43,
+          "missingPullCountSinceStart": 43,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -450,8 +738,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#soccer#2026-06-27",
-          "sk": "BUILD#2026-06-27T14:05:06.946319+00:00#parlay_7fb742c0a08e4aa0",
-          "build_id": "parlay_7fb742c0a08e4aa0",
+          "sk": "BUILD#2026-06-27T15:37:54.464234+00:00#parlay_120e66f510b84db3",
+          "build_id": "parlay_120e66f510b84db3",
           "build_status": "NO_BUILD"
         }
       },
@@ -459,7 +747,7 @@
         "ok": true,
         "sport": "tennis",
         "slate_date": "2026-06-27",
-        "pullCount": 12,
+        "pullCount": 14,
         "minimumParlayPulls": 12,
         "buildStatus": "BUILT",
         "buildQuality": "BASELINE_12_SNAPSHOT",
@@ -467,175 +755,185 @@
         "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
         "officialStrength": "BASELINE_NOT_STRONG",
         "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
-        "selectedStrongCount": 1,
+        "selectedStrongCount": 0,
         "legs": [
           {
-            "gameId": "09517e91efe552b803ef4c28e4683234",
-            "gameKey": "tennis|tennis_wta_wimbledon|sinja kraus|oksana selekhmeteva|2026-06-29T09:00:00Z",
+            "gameId": "e19c363952aa0ccb9aa59102ccf6cd0f",
+            "gameKey": "tennis|tennis_wta_wimbledon|mika stojsavljevic|belinda bencic|2026-06-29T10:00:00Z",
             "sport": "tennis",
-            "homeTeam": "Oksana Selekhmeteva",
-            "awayTeam": "Sinja Kraus",
-            "commenceTime": "2026-06-29T09:00:00Z",
+            "homeTeam": "Belinda Bencic",
+            "awayTeam": "Mika Stojsavljevic",
+            "commenceTime": "2026-06-29T10:00:00Z",
             "level": "mixed",
             "gender": null,
             "providerSportKey": "tennis_wta_wimbledon",
-            "selection": "Sinja Kraus",
-            "selectedSide": "away",
-            "grade": "SOLID",
-            "score": 50.55,
+            "selection": "Belinda Bencic",
+            "selectedSide": "home",
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
             "tags": [
-              "DECELERATION"
+              "LOW_PULL_DEPTH"
             ],
             "homeSignal": {
               "side": "home",
-              "probStart": 0.47771,
-              "probLatest": 0.46852,
-              "delta": -0.0092,
-              "velocityPpHr": -0.069,
-              "acceleration": 0.0067,
-              "pullCount": 5,
-              "durationMinutes": 804.85,
-              "latestGap": 0.06297,
-              "bookCount": 8,
-              "bookDivergence": 0.02803,
+              "probStart": 0.86838,
+              "probLatest": 0.86838,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0,
+              "pullCount": 2,
+              "durationMinutes": 92.88,
+              "latestGap": 0.73677,
+              "bookCount": 9,
+              "bookDivergence": 0.0131,
               "reversals": 0,
               "tags": [
-                "ACCELERATION"
+                "LOW_PULL_DEPTH"
               ],
-              "grade": "COIN_FLIP",
-              "score": 32.63,
-              "rawScoreBeforeGuard": 32.63,
+              "grade": "INSUFFICIENT_HISTORY",
+              "score": 20.0,
+              "rawScoreBeforeGuard": 75.54,
               "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
-              "probStart": 0.52229,
-              "probLatest": 0.53148,
-              "delta": 0.0092,
-              "velocityPpHr": 0.069,
-              "acceleration": -0.0067,
-              "pullCount": 5,
-              "durationMinutes": 804.85,
-              "latestGap": 0.06297,
-              "bookCount": 8,
-              "bookDivergence": 0.02803,
+              "probStart": 0.13162,
+              "probLatest": 0.13162,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0,
+              "pullCount": 2,
+              "durationMinutes": 92.88,
+              "latestGap": 0.73677,
+              "bookCount": 9,
+              "bookDivergence": 0.0131,
               "reversals": 0,
               "tags": [
-                "DECELERATION"
+                "LOW_PULL_DEPTH"
               ],
-              "grade": "SOLID",
-              "score": 50.55,
-              "rawScoreBeforeGuard": 50.55,
+              "grade": "INSUFFICIENT_HISTORY",
+              "score": 16.6,
+              "rawScoreBeforeGuard": 16.6,
               "scoreGuardApplied": true
             }
           },
           {
-            "gameId": "effae0e3093be6a9d77679735984dab3",
-            "gameKey": "tennis|tennis_wta_wimbledon|karolina pliskova|tereza valentova|2026-06-29T09:00:00Z",
+            "gameId": "818f2131f55ad9fca895c5bd3b883155",
+            "gameKey": "tennis|tennis_wta_wimbledon|darja vidmanova|jessica pegula|2026-06-29T10:00:00Z",
             "sport": "tennis",
-            "homeTeam": "Tereza Valentova",
-            "awayTeam": "Karolina Pliskova",
-            "commenceTime": "2026-06-29T09:00:00Z",
+            "homeTeam": "Jessica Pegula",
+            "awayTeam": "Darja Vidmanova",
+            "commenceTime": "2026-06-29T10:00:00Z",
             "level": "mixed",
             "gender": null,
             "providerSportKey": "tennis_wta_wimbledon",
-            "selection": "Karolina Pliskova",
-            "selectedSide": "away",
-            "grade": "COIN_FLIP",
-            "score": 45.56,
-            "tags": [],
+            "selection": "Jessica Pegula",
+            "selectedSide": "home",
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
             "homeSignal": {
               "side": "home",
-              "probStart": 0.46496,
-              "probLatest": 0.46636,
-              "delta": 0.0014,
-              "velocityPpHr": 0.01,
-              "acceleration": 0.00058,
-              "pullCount": 5,
-              "durationMinutes": 804.85,
-              "latestGap": 0.06728,
-              "bookCount": 8,
-              "bookDivergence": 0.02049,
+              "probStart": 0.89419,
+              "probLatest": 0.90118,
+              "delta": 0.00698,
+              "velocityPpHr": 0.451,
+              "acceleration": 0,
+              "pullCount": 2,
+              "durationMinutes": 92.88,
+              "latestGap": 0.80235,
+              "bookCount": 9,
+              "bookDivergence": 0.0305,
               "reversals": 0,
               "tags": [
-                "PUBLIC_FADE_CANDIDATE"
+                "LOW_PULL_DEPTH"
               ],
-              "grade": "COIN_FLIP",
-              "score": 42.14,
-              "rawScoreBeforeGuard": 42.14,
+              "grade": "INSUFFICIENT_HISTORY",
+              "score": 20.0,
+              "rawScoreBeforeGuard": 77.83,
               "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
-              "probStart": 0.53504,
-              "probLatest": 0.53364,
-              "delta": -0.0014,
-              "velocityPpHr": -0.01,
-              "acceleration": -0.00058,
-              "pullCount": 5,
-              "durationMinutes": 804.85,
-              "latestGap": 0.06728,
-              "bookCount": 8,
-              "bookDivergence": 0.02049,
+              "probStart": 0.10581,
+              "probLatest": 0.09882,
+              "delta": -0.00698,
+              "velocityPpHr": -0.451,
+              "acceleration": 0,
+              "pullCount": 2,
+              "durationMinutes": 92.88,
+              "latestGap": 0.80235,
+              "bookCount": 9,
+              "bookDivergence": 0.0305,
               "reversals": 0,
-              "tags": [],
-              "grade": "COIN_FLIP",
-              "score": 45.56,
-              "rawScoreBeforeGuard": 45.56,
+              "tags": [
+                "LOW_PULL_DEPTH"
+              ],
+              "grade": "INSUFFICIENT_HISTORY",
+              "score": 3.87,
+              "rawScoreBeforeGuard": 3.87,
               "scoreGuardApplied": true
             }
           },
           {
-            "gameId": "6ad4350f8af91730f0ca127171f3c535",
-            "gameKey": "tennis|tennis_wta_wimbledon|iga swiatek|taylor townsend|2026-06-29T09:00:00Z",
+            "gameId": "41f10a996e7837136475a6cfc93a9d62",
+            "gameKey": "tennis|tennis_wta_wimbledon|iva jovi\u0107|jaqueline cristian|2026-06-29T10:00:00Z",
             "sport": "tennis",
-            "homeTeam": "Taylor Townsend",
-            "awayTeam": "Iga Swiatek",
-            "commenceTime": "2026-06-29T09:00:00Z",
+            "homeTeam": "Jaqueline Cristian",
+            "awayTeam": "Iva Jovi\u0107",
+            "commenceTime": "2026-06-29T10:00:00Z",
             "level": "mixed",
             "gender": null,
             "providerSportKey": "tennis_wta_wimbledon",
-            "selection": "Iga Swiatek",
+            "selection": "Iva Jovi\u0107",
             "selectedSide": "away",
-            "grade": "FRAGILE",
-            "score": 44.0,
-            "tags": [],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
             "homeSignal": {
               "side": "home",
-              "probStart": 0.16281,
-              "probLatest": 0.16047,
-              "delta": -0.00235,
-              "velocityPpHr": -0.018,
-              "acceleration": 9e-05,
-              "pullCount": 5,
-              "durationMinutes": 804.85,
-              "latestGap": 0.67907,
-              "bookCount": 8,
-              "bookDivergence": 0.033,
+              "probStart": 0.20133,
+              "probLatest": 0.20133,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0,
+              "pullCount": 2,
+              "durationMinutes": 92.88,
+              "latestGap": 0.59735,
+              "bookCount": 9,
+              "bookDivergence": 0.02055,
               "reversals": 0,
-              "tags": [],
-              "grade": "FRAGILE",
-              "score": 11.29,
-              "rawScoreBeforeGuard": 11.29,
+              "tags": [
+                "LOW_PULL_DEPTH"
+              ],
+              "grade": "INSUFFICIENT_HISTORY",
+              "score": 19.94,
+              "rawScoreBeforeGuard": 19.94,
               "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
-              "probStart": 0.83719,
-              "probLatest": 0.83953,
-              "delta": 0.00235,
-              "velocityPpHr": 0.018,
-              "acceleration": -9e-05,
-              "pullCount": 5,
-              "durationMinutes": 804.85,
-              "latestGap": 0.67907,
-              "bookCount": 8,
-              "bookDivergence": 0.033,
+              "probStart": 0.79867,
+              "probLatest": 0.79867,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0,
+              "pullCount": 2,
+              "durationMinutes": 92.88,
+              "latestGap": 0.59735,
+              "bookCount": 9,
+              "bookDivergence": 0.02055,
               "reversals": 0,
-              "tags": [],
-              "grade": "FRAGILE",
-              "score": 44.0,
-              "rawScoreBeforeGuard": 68.91,
+              "tags": [
+                "LOW_PULL_DEPTH"
+              ],
+              "grade": "INSUFFICIENT_HISTORY",
+              "score": 20.0,
+              "rawScoreBeforeGuard": 67.73,
               "scoreGuardApplied": true
             }
           }
@@ -643,368 +941,392 @@
         "rankedCombos": [
           {
             "rank": 1,
-            "score": 46.7,
+            "score": 20.0,
             "legs": [
               {
-                "gameId": "09517e91efe552b803ef4c28e4683234",
-                "gameKey": "tennis|tennis_wta_wimbledon|sinja kraus|oksana selekhmeteva|2026-06-29T09:00:00Z",
-                "selection": "Sinja Kraus",
-                "side": "away",
-                "grade": "SOLID",
-                "score": 50.55,
+                "gameId": "e19c363952aa0ccb9aa59102ccf6cd0f",
+                "gameKey": "tennis|tennis_wta_wimbledon|mika stojsavljevic|belinda bencic|2026-06-29T10:00:00Z",
+                "selection": "Belinda Bencic",
+                "side": "home",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
                 "tags": [
-                  "DECELERATION"
+                  "LOW_PULL_DEPTH"
                 ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Oksana Selekhmeteva",
-                "awayTeam": "Sinja Kraus"
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Belinda Bencic",
+                "awayTeam": "Mika Stojsavljevic"
               },
               {
-                "gameId": "effae0e3093be6a9d77679735984dab3",
-                "gameKey": "tennis|tennis_wta_wimbledon|karolina pliskova|tereza valentova|2026-06-29T09:00:00Z",
-                "selection": "Karolina Pliskova",
-                "side": "away",
-                "grade": "COIN_FLIP",
-                "score": 45.56,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Tereza Valentova",
-                "awayTeam": "Karolina Pliskova"
+                "gameId": "818f2131f55ad9fca895c5bd3b883155",
+                "gameKey": "tennis|tennis_wta_wimbledon|darja vidmanova|jessica pegula|2026-06-29T10:00:00Z",
+                "selection": "Jessica Pegula",
+                "side": "home",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Darja Vidmanova"
               },
               {
-                "gameId": "6ad4350f8af91730f0ca127171f3c535",
-                "gameKey": "tennis|tennis_wta_wimbledon|iga swiatek|taylor townsend|2026-06-29T09:00:00Z",
-                "selection": "Iga Swiatek",
+                "gameId": "41f10a996e7837136475a6cfc93a9d62",
+                "gameKey": "tennis|tennis_wta_wimbledon|iva jovi\u0107|jaqueline cristian|2026-06-29T10:00:00Z",
+                "selection": "Iva Jovi\u0107",
                 "side": "away",
-                "grade": "FRAGILE",
-                "score": 44.0,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Taylor Townsend",
-                "awayTeam": "Iga Swiatek"
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jaqueline Cristian",
+                "awayTeam": "Iva Jovi\u0107"
               }
             ],
             "top3": true
           },
           {
             "rank": 2,
-            "score": 45.56,
+            "score": 19.98,
             "legs": [
               {
-                "gameId": "09517e91efe552b803ef4c28e4683234",
-                "gameKey": "tennis|tennis_wta_wimbledon|sinja kraus|oksana selekhmeteva|2026-06-29T09:00:00Z",
-                "selection": "Sinja Kraus",
-                "side": "away",
-                "grade": "SOLID",
-                "score": 50.55,
-                "tags": [
-                  "DECELERATION"
-                ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Oksana Selekhmeteva",
-                "awayTeam": "Sinja Kraus"
-              },
-              {
-                "gameId": "effae0e3093be6a9d77679735984dab3",
-                "gameKey": "tennis|tennis_wta_wimbledon|karolina pliskova|tereza valentova|2026-06-29T09:00:00Z",
-                "selection": "Tereza Valentova",
+                "gameId": "e19c363952aa0ccb9aa59102ccf6cd0f",
+                "gameKey": "tennis|tennis_wta_wimbledon|mika stojsavljevic|belinda bencic|2026-06-29T10:00:00Z",
+                "selection": "Belinda Bencic",
                 "side": "home",
-                "grade": "COIN_FLIP",
-                "score": 42.14,
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
                 "tags": [
-                  "PUBLIC_FADE_CANDIDATE"
+                  "LOW_PULL_DEPTH"
                 ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Tereza Valentova",
-                "awayTeam": "Karolina Pliskova"
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Belinda Bencic",
+                "awayTeam": "Mika Stojsavljevic"
               },
               {
-                "gameId": "6ad4350f8af91730f0ca127171f3c535",
-                "gameKey": "tennis|tennis_wta_wimbledon|iga swiatek|taylor townsend|2026-06-29T09:00:00Z",
-                "selection": "Iga Swiatek",
-                "side": "away",
-                "grade": "FRAGILE",
-                "score": 44.0,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Taylor Townsend",
-                "awayTeam": "Iga Swiatek"
+                "gameId": "818f2131f55ad9fca895c5bd3b883155",
+                "gameKey": "tennis|tennis_wta_wimbledon|darja vidmanova|jessica pegula|2026-06-29T10:00:00Z",
+                "selection": "Jessica Pegula",
+                "side": "home",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Darja Vidmanova"
+              },
+              {
+                "gameId": "41f10a996e7837136475a6cfc93a9d62",
+                "gameKey": "tennis|tennis_wta_wimbledon|iva jovi\u0107|jaqueline cristian|2026-06-29T10:00:00Z",
+                "selection": "Jaqueline Cristian",
+                "side": "home",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 19.94,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jaqueline Cristian",
+                "awayTeam": "Iva Jovi\u0107"
               }
             ],
             "top3": true
           },
           {
             "rank": 3,
-            "score": 40.73,
+            "score": 18.87,
             "legs": [
               {
-                "gameId": "09517e91efe552b803ef4c28e4683234",
-                "gameKey": "tennis|tennis_wta_wimbledon|sinja kraus|oksana selekhmeteva|2026-06-29T09:00:00Z",
-                "selection": "Oksana Selekhmeteva",
-                "side": "home",
-                "grade": "COIN_FLIP",
-                "score": 32.63,
+                "gameId": "e19c363952aa0ccb9aa59102ccf6cd0f",
+                "gameKey": "tennis|tennis_wta_wimbledon|mika stojsavljevic|belinda bencic|2026-06-29T10:00:00Z",
+                "selection": "Mika Stojsavljevic",
+                "side": "away",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 16.6,
                 "tags": [
-                  "ACCELERATION"
+                  "LOW_PULL_DEPTH"
                 ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Oksana Selekhmeteva",
-                "awayTeam": "Sinja Kraus"
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Belinda Bencic",
+                "awayTeam": "Mika Stojsavljevic"
               },
               {
-                "gameId": "effae0e3093be6a9d77679735984dab3",
-                "gameKey": "tennis|tennis_wta_wimbledon|karolina pliskova|tereza valentova|2026-06-29T09:00:00Z",
-                "selection": "Karolina Pliskova",
-                "side": "away",
-                "grade": "COIN_FLIP",
-                "score": 45.56,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Tereza Valentova",
-                "awayTeam": "Karolina Pliskova"
+                "gameId": "818f2131f55ad9fca895c5bd3b883155",
+                "gameKey": "tennis|tennis_wta_wimbledon|darja vidmanova|jessica pegula|2026-06-29T10:00:00Z",
+                "selection": "Jessica Pegula",
+                "side": "home",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Darja Vidmanova"
               },
               {
-                "gameId": "6ad4350f8af91730f0ca127171f3c535",
-                "gameKey": "tennis|tennis_wta_wimbledon|iga swiatek|taylor townsend|2026-06-29T09:00:00Z",
-                "selection": "Iga Swiatek",
+                "gameId": "41f10a996e7837136475a6cfc93a9d62",
+                "gameKey": "tennis|tennis_wta_wimbledon|iva jovi\u0107|jaqueline cristian|2026-06-29T10:00:00Z",
+                "selection": "Iva Jovi\u0107",
                 "side": "away",
-                "grade": "FRAGILE",
-                "score": 44.0,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Taylor Townsend",
-                "awayTeam": "Iga Swiatek"
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jaqueline Cristian",
+                "awayTeam": "Iva Jovi\u0107"
               }
             ],
             "top3": true
           },
           {
             "rank": 4,
-            "score": 39.59,
+            "score": 18.85,
             "legs": [
               {
-                "gameId": "09517e91efe552b803ef4c28e4683234",
-                "gameKey": "tennis|tennis_wta_wimbledon|sinja kraus|oksana selekhmeteva|2026-06-29T09:00:00Z",
-                "selection": "Oksana Selekhmeteva",
-                "side": "home",
-                "grade": "COIN_FLIP",
-                "score": 32.63,
-                "tags": [
-                  "ACCELERATION"
-                ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Oksana Selekhmeteva",
-                "awayTeam": "Sinja Kraus"
-              },
-              {
-                "gameId": "effae0e3093be6a9d77679735984dab3",
-                "gameKey": "tennis|tennis_wta_wimbledon|karolina pliskova|tereza valentova|2026-06-29T09:00:00Z",
-                "selection": "Tereza Valentova",
-                "side": "home",
-                "grade": "COIN_FLIP",
-                "score": 42.14,
-                "tags": [
-                  "PUBLIC_FADE_CANDIDATE"
-                ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Tereza Valentova",
-                "awayTeam": "Karolina Pliskova"
-              },
-              {
-                "gameId": "6ad4350f8af91730f0ca127171f3c535",
-                "gameKey": "tennis|tennis_wta_wimbledon|iga swiatek|taylor townsend|2026-06-29T09:00:00Z",
-                "selection": "Iga Swiatek",
+                "gameId": "e19c363952aa0ccb9aa59102ccf6cd0f",
+                "gameKey": "tennis|tennis_wta_wimbledon|mika stojsavljevic|belinda bencic|2026-06-29T10:00:00Z",
+                "selection": "Mika Stojsavljevic",
                 "side": "away",
-                "grade": "FRAGILE",
-                "score": 44.0,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Taylor Townsend",
-                "awayTeam": "Iga Swiatek"
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 16.6,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Belinda Bencic",
+                "awayTeam": "Mika Stojsavljevic"
+              },
+              {
+                "gameId": "818f2131f55ad9fca895c5bd3b883155",
+                "gameKey": "tennis|tennis_wta_wimbledon|darja vidmanova|jessica pegula|2026-06-29T10:00:00Z",
+                "selection": "Jessica Pegula",
+                "side": "home",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Darja Vidmanova"
+              },
+              {
+                "gameId": "41f10a996e7837136475a6cfc93a9d62",
+                "gameKey": "tennis|tennis_wta_wimbledon|iva jovi\u0107|jaqueline cristian|2026-06-29T10:00:00Z",
+                "selection": "Jaqueline Cristian",
+                "side": "home",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 19.94,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jaqueline Cristian",
+                "awayTeam": "Iva Jovi\u0107"
               }
             ],
             "top3": false
           },
           {
             "rank": 5,
-            "score": 35.8,
+            "score": 14.62,
             "legs": [
               {
-                "gameId": "09517e91efe552b803ef4c28e4683234",
-                "gameKey": "tennis|tennis_wta_wimbledon|sinja kraus|oksana selekhmeteva|2026-06-29T09:00:00Z",
-                "selection": "Sinja Kraus",
-                "side": "away",
-                "grade": "SOLID",
-                "score": 50.55,
-                "tags": [
-                  "DECELERATION"
-                ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Oksana Selekhmeteva",
-                "awayTeam": "Sinja Kraus"
-              },
-              {
-                "gameId": "effae0e3093be6a9d77679735984dab3",
-                "gameKey": "tennis|tennis_wta_wimbledon|karolina pliskova|tereza valentova|2026-06-29T09:00:00Z",
-                "selection": "Karolina Pliskova",
-                "side": "away",
-                "grade": "COIN_FLIP",
-                "score": 45.56,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Tereza Valentova",
-                "awayTeam": "Karolina Pliskova"
-              },
-              {
-                "gameId": "6ad4350f8af91730f0ca127171f3c535",
-                "gameKey": "tennis|tennis_wta_wimbledon|iga swiatek|taylor townsend|2026-06-29T09:00:00Z",
-                "selection": "Taylor Townsend",
+                "gameId": "e19c363952aa0ccb9aa59102ccf6cd0f",
+                "gameKey": "tennis|tennis_wta_wimbledon|mika stojsavljevic|belinda bencic|2026-06-29T10:00:00Z",
+                "selection": "Belinda Bencic",
                 "side": "home",
-                "grade": "FRAGILE",
-                "score": 11.29,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Taylor Townsend",
-                "awayTeam": "Iga Swiatek"
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Belinda Bencic",
+                "awayTeam": "Mika Stojsavljevic"
+              },
+              {
+                "gameId": "818f2131f55ad9fca895c5bd3b883155",
+                "gameKey": "tennis|tennis_wta_wimbledon|darja vidmanova|jessica pegula|2026-06-29T10:00:00Z",
+                "selection": "Darja Vidmanova",
+                "side": "away",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 3.87,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Darja Vidmanova"
+              },
+              {
+                "gameId": "41f10a996e7837136475a6cfc93a9d62",
+                "gameKey": "tennis|tennis_wta_wimbledon|iva jovi\u0107|jaqueline cristian|2026-06-29T10:00:00Z",
+                "selection": "Iva Jovi\u0107",
+                "side": "away",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jaqueline Cristian",
+                "awayTeam": "Iva Jovi\u0107"
               }
             ],
             "top3": false
           },
           {
             "rank": 6,
-            "score": 34.66,
+            "score": 14.6,
             "legs": [
               {
-                "gameId": "09517e91efe552b803ef4c28e4683234",
-                "gameKey": "tennis|tennis_wta_wimbledon|sinja kraus|oksana selekhmeteva|2026-06-29T09:00:00Z",
-                "selection": "Sinja Kraus",
+                "gameId": "e19c363952aa0ccb9aa59102ccf6cd0f",
+                "gameKey": "tennis|tennis_wta_wimbledon|mika stojsavljevic|belinda bencic|2026-06-29T10:00:00Z",
+                "selection": "Belinda Bencic",
+                "side": "home",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Belinda Bencic",
+                "awayTeam": "Mika Stojsavljevic"
+              },
+              {
+                "gameId": "818f2131f55ad9fca895c5bd3b883155",
+                "gameKey": "tennis|tennis_wta_wimbledon|darja vidmanova|jessica pegula|2026-06-29T10:00:00Z",
+                "selection": "Darja Vidmanova",
                 "side": "away",
-                "grade": "SOLID",
-                "score": 50.55,
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 3.87,
                 "tags": [
-                  "DECELERATION"
+                  "LOW_PULL_DEPTH"
                 ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Oksana Selekhmeteva",
-                "awayTeam": "Sinja Kraus"
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Darja Vidmanova"
               },
               {
-                "gameId": "effae0e3093be6a9d77679735984dab3",
-                "gameKey": "tennis|tennis_wta_wimbledon|karolina pliskova|tereza valentova|2026-06-29T09:00:00Z",
-                "selection": "Tereza Valentova",
+                "gameId": "41f10a996e7837136475a6cfc93a9d62",
+                "gameKey": "tennis|tennis_wta_wimbledon|iva jovi\u0107|jaqueline cristian|2026-06-29T10:00:00Z",
+                "selection": "Jaqueline Cristian",
                 "side": "home",
-                "grade": "COIN_FLIP",
-                "score": 42.14,
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 19.94,
                 "tags": [
-                  "PUBLIC_FADE_CANDIDATE"
+                  "LOW_PULL_DEPTH"
                 ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Tereza Valentova",
-                "awayTeam": "Karolina Pliskova"
-              },
-              {
-                "gameId": "6ad4350f8af91730f0ca127171f3c535",
-                "gameKey": "tennis|tennis_wta_wimbledon|iga swiatek|taylor townsend|2026-06-29T09:00:00Z",
-                "selection": "Taylor Townsend",
-                "side": "home",
-                "grade": "FRAGILE",
-                "score": 11.29,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Taylor Townsend",
-                "awayTeam": "Iga Swiatek"
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jaqueline Cristian",
+                "awayTeam": "Iva Jovi\u0107"
               }
             ],
             "top3": false
           },
           {
             "rank": 7,
-            "score": 29.83,
+            "score": 13.49,
             "legs": [
               {
-                "gameId": "09517e91efe552b803ef4c28e4683234",
-                "gameKey": "tennis|tennis_wta_wimbledon|sinja kraus|oksana selekhmeteva|2026-06-29T09:00:00Z",
-                "selection": "Oksana Selekhmeteva",
-                "side": "home",
-                "grade": "COIN_FLIP",
-                "score": 32.63,
-                "tags": [
-                  "ACCELERATION"
-                ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Oksana Selekhmeteva",
-                "awayTeam": "Sinja Kraus"
-              },
-              {
-                "gameId": "effae0e3093be6a9d77679735984dab3",
-                "gameKey": "tennis|tennis_wta_wimbledon|karolina pliskova|tereza valentova|2026-06-29T09:00:00Z",
-                "selection": "Karolina Pliskova",
+                "gameId": "e19c363952aa0ccb9aa59102ccf6cd0f",
+                "gameKey": "tennis|tennis_wta_wimbledon|mika stojsavljevic|belinda bencic|2026-06-29T10:00:00Z",
+                "selection": "Mika Stojsavljevic",
                 "side": "away",
-                "grade": "COIN_FLIP",
-                "score": 45.56,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Tereza Valentova",
-                "awayTeam": "Karolina Pliskova"
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 16.6,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Belinda Bencic",
+                "awayTeam": "Mika Stojsavljevic"
               },
               {
-                "gameId": "6ad4350f8af91730f0ca127171f3c535",
-                "gameKey": "tennis|tennis_wta_wimbledon|iga swiatek|taylor townsend|2026-06-29T09:00:00Z",
-                "selection": "Taylor Townsend",
-                "side": "home",
-                "grade": "FRAGILE",
-                "score": 11.29,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Taylor Townsend",
-                "awayTeam": "Iga Swiatek"
+                "gameId": "818f2131f55ad9fca895c5bd3b883155",
+                "gameKey": "tennis|tennis_wta_wimbledon|darja vidmanova|jessica pegula|2026-06-29T10:00:00Z",
+                "selection": "Darja Vidmanova",
+                "side": "away",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 3.87,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Darja Vidmanova"
+              },
+              {
+                "gameId": "41f10a996e7837136475a6cfc93a9d62",
+                "gameKey": "tennis|tennis_wta_wimbledon|iva jovi\u0107|jaqueline cristian|2026-06-29T10:00:00Z",
+                "selection": "Iva Jovi\u0107",
+                "side": "away",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 20.0,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jaqueline Cristian",
+                "awayTeam": "Iva Jovi\u0107"
               }
             ],
             "top3": false
           },
           {
             "rank": 8,
-            "score": 28.69,
+            "score": 13.47,
             "legs": [
               {
-                "gameId": "09517e91efe552b803ef4c28e4683234",
-                "gameKey": "tennis|tennis_wta_wimbledon|sinja kraus|oksana selekhmeteva|2026-06-29T09:00:00Z",
-                "selection": "Oksana Selekhmeteva",
-                "side": "home",
-                "grade": "COIN_FLIP",
-                "score": 32.63,
+                "gameId": "e19c363952aa0ccb9aa59102ccf6cd0f",
+                "gameKey": "tennis|tennis_wta_wimbledon|mika stojsavljevic|belinda bencic|2026-06-29T10:00:00Z",
+                "selection": "Mika Stojsavljevic",
+                "side": "away",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 16.6,
                 "tags": [
-                  "ACCELERATION"
+                  "LOW_PULL_DEPTH"
                 ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Oksana Selekhmeteva",
-                "awayTeam": "Sinja Kraus"
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Belinda Bencic",
+                "awayTeam": "Mika Stojsavljevic"
               },
               {
-                "gameId": "effae0e3093be6a9d77679735984dab3",
-                "gameKey": "tennis|tennis_wta_wimbledon|karolina pliskova|tereza valentova|2026-06-29T09:00:00Z",
-                "selection": "Tereza Valentova",
-                "side": "home",
-                "grade": "COIN_FLIP",
-                "score": 42.14,
+                "gameId": "818f2131f55ad9fca895c5bd3b883155",
+                "gameKey": "tennis|tennis_wta_wimbledon|darja vidmanova|jessica pegula|2026-06-29T10:00:00Z",
+                "selection": "Darja Vidmanova",
+                "side": "away",
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 3.87,
                 "tags": [
-                  "PUBLIC_FADE_CANDIDATE"
+                  "LOW_PULL_DEPTH"
                 ],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Tereza Valentova",
-                "awayTeam": "Karolina Pliskova"
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Darja Vidmanova"
               },
               {
-                "gameId": "6ad4350f8af91730f0ca127171f3c535",
-                "gameKey": "tennis|tennis_wta_wimbledon|iga swiatek|taylor townsend|2026-06-29T09:00:00Z",
-                "selection": "Taylor Townsend",
+                "gameId": "41f10a996e7837136475a6cfc93a9d62",
+                "gameKey": "tennis|tennis_wta_wimbledon|iva jovi\u0107|jaqueline cristian|2026-06-29T10:00:00Z",
+                "selection": "Jaqueline Cristian",
                 "side": "home",
-                "grade": "FRAGILE",
-                "score": 11.29,
-                "tags": [],
-                "commenceTime": "2026-06-29T09:00:00Z",
-                "homeTeam": "Taylor Townsend",
-                "awayTeam": "Iga Swiatek"
+                "grade": "INSUFFICIENT_HISTORY",
+                "score": 19.94,
+                "tags": [
+                  "LOW_PULL_DEPTH"
+                ],
+                "commenceTime": "2026-06-29T10:00:00Z",
+                "homeTeam": "Jaqueline Cristian",
+                "awayTeam": "Iva Jovi\u0107"
               }
             ],
             "top3": false
@@ -1014,8 +1336,8 @@
         "fallbackApplied": true,
         "stored": {
           "pk": "PARLAY_BUILDS#tennis#2026-06-27",
-          "sk": "BUILD#2026-06-27T14:05:07.975055+00:00#parlay_5084b6bf6fd34bd2",
-          "build_id": "parlay_5084b6bf6fd34bd2",
+          "sk": "BUILD#2026-06-27T15:37:55.195408+00:00#parlay_e5244c81979b4c89",
+          "build_id": "parlay_e5244c81979b4c89",
           "build_status": "BUILT"
         }
       }
@@ -1024,7 +1346,7 @@
   "pullDiagnostics": {
     "ok": true,
     "source": "diagnostic_provider_probe_no_snapshot_storage",
-    "createdAt": "2026-06-27T14:05:10.656961+00:00",
+    "createdAt": "2026-06-27T15:37:56.851058+00:00",
     "sportsRequested": [
       "mlb",
       "wnba",
@@ -1138,8 +1460,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:08.404189+00:00",
-            "activeWindowEnd": "2026-06-29T14:05:08.404189+00:00",
+            "activeWindowStart": "2026-06-27T09:37:55.336169+00:00",
+            "activeWindowEnd": "2026-06-29T15:37:55.336169+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -1148,9 +1470,9 @@
       {
         "ok": true,
         "appSport": "wnba",
-        "rawGamesReturned": 6,
-        "rawGamesInWindow": 5,
-        "gamesConvertible": 5,
+        "rawGamesReturned": 8,
+        "rawGamesInWindow": 7,
+        "gamesConvertible": 7,
         "gamesStored": null,
         "diagnosticOnlyNoSnapshotStored": true,
         "activeStorageFailure": false,
@@ -1159,14 +1481,14 @@
             "ok": true,
             "appSport": "wnba",
             "providerSportKey": "basketball_wnba",
-            "rawGamesReturned": 6,
-            "rawGamesInWindow": 5,
-            "gamesConvertible": 5,
+            "rawGamesReturned": 8,
+            "rawGamesInWindow": 7,
+            "gamesConvertible": 7,
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:08.553841+00:00",
-            "activeWindowEnd": "2026-06-29T14:05:08.553841+00:00",
+            "activeWindowStart": "2026-06-27T09:37:55.494504+00:00",
+            "activeWindowEnd": "2026-06-29T15:37:55.494504+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -1192,8 +1514,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:08.865358+00:00",
-            "activeWindowEnd": "2026-07-04T14:05:08.865358+00:00",
+            "activeWindowStart": "2026-06-27T09:37:55.659317+00:00",
+            "activeWindowEnd": "2026-07-04T15:37:55.659317+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -1219,8 +1541,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:09.148498+00:00",
-            "activeWindowEnd": "2026-07-04T14:05:09.148498+00:00",
+            "activeWindowStart": "2026-06-27T09:37:55.788152+00:00",
+            "activeWindowEnd": "2026-07-04T15:37:55.788152+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -1246,8 +1568,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:09.297472+00:00",
-            "activeWindowEnd": "2026-06-29T14:05:09.297472+00:00",
+            "activeWindowStart": "2026-06-27T09:37:55.864251+00:00",
+            "activeWindowEnd": "2026-06-29T15:37:55.864251+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -1273,8 +1595,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:09.418757+00:00",
-            "activeWindowEnd": "2026-06-29T14:05:09.418757+00:00",
+            "activeWindowStart": "2026-06-27T09:37:55.932574+00:00",
+            "activeWindowEnd": "2026-06-29T15:37:55.932574+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -1300,8 +1622,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:09.533259+00:00",
-            "activeWindowEnd": "2026-06-29T14:05:09.533259+00:00",
+            "activeWindowStart": "2026-06-27T09:37:55.996632+00:00",
+            "activeWindowEnd": "2026-06-29T15:37:55.996632+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -1327,8 +1649,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:09.683210+00:00",
-            "activeWindowEnd": "2026-07-11T14:05:09.683210+00:00",
+            "activeWindowStart": "2026-06-27T09:37:56.146803+00:00",
+            "activeWindowEnd": "2026-07-11T15:37:56.146803+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           },
@@ -1342,8 +1664,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:09.887758+00:00",
-            "activeWindowEnd": "2026-07-11T14:05:09.887758+00:00",
+            "activeWindowStart": "2026-06-27T09:37:56.221218+00:00",
+            "activeWindowEnd": "2026-07-11T15:37:56.221218+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           },
@@ -1357,8 +1679,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:10.011599+00:00",
-            "activeWindowEnd": "2026-07-11T14:05:10.011599+00:00",
+            "activeWindowStart": "2026-06-27T09:37:56.433009+00:00",
+            "activeWindowEnd": "2026-07-11T15:37:56.433009+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           }
@@ -1384,8 +1706,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:10.486131+00:00",
-            "activeWindowEnd": "2026-07-04T14:05:10.486131+00:00",
+            "activeWindowStart": "2026-06-27T09:37:56.739118+00:00",
+            "activeWindowEnd": "2026-07-04T15:37:56.739118+00:00",
             "slateWindowDays": 7,
             "error": null
           },
@@ -1399,8 +1721,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-27T08:05:10.656610+00:00",
-            "activeWindowEnd": "2026-07-04T14:05:10.656610+00:00",
+            "activeWindowStart": "2026-06-27T09:37:56.850705+00:00",
+            "activeWindowEnd": "2026-07-04T15:37:56.850705+00:00",
             "slateWindowDays": 7,
             "error": null
           }
