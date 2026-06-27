@@ -42,6 +42,10 @@ def today_utc():
     return datetime.now(timezone.utc).date().isoformat()
 
 
+def today_et():
+    return datetime.now(SLATE_TZ).date().isoformat()
+
+
 def parse_dt(value):
     if not value:
         return None
@@ -57,7 +61,7 @@ def parse_dt(value):
 def game_date(row):
     raw = row.get("commenceTime") or row.get("commence_time")
     dt = parse_dt(raw)
-    return dt.date().isoformat() if dt else None
+    return dt.astimezone(SLATE_TZ).date().isoformat() if dt else None
 
 
 def et_iso(dt):
@@ -139,7 +143,7 @@ def apply_baseline_if_needed(result, sport, slate_date):
 
 
 def strict_result(sport):
-    slate_date = today_utc()
+    slate_date = today_et()
     sig = history.signals({"sport": sport, "slate_date": slate_date})
     pull_count = int(sig.get("pullCount") or 0)
     raw_signals = sig.get("signals", [])
@@ -217,7 +221,7 @@ def main():
     store_fn = getattr(history, "store_" + "parlay_build")
     latest_fn = getattr(history, "latest_" + "parlay_build")
     results = []
-    slate_date = today_utc()
+    slate_date = today_et()
     for sport in sports_list:
         result = mlb_b10_engine.build(slate_date) if sport == "mlb" else strict_result(sport)
         result = apply_baseline_if_needed(result, sport, slate_date)
