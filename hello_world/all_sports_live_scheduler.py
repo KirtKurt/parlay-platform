@@ -21,6 +21,12 @@ except Exception:
     pass
 
 try:
+    import pull_dedupe_guard
+    pull_dedupe_guard.apply(history)
+except Exception:
+    pass
+
+try:
     import baseline_parlay_builder
 except Exception:
     baseline_parlay_builder = None
