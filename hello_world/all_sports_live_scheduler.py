@@ -1,6 +1,7 @@
 import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List
+from zoneinfo import ZoneInfo
 
 import inqsi_pull_history as history
 import mlb_b10_engine
@@ -22,6 +23,7 @@ try:
 except Exception:
     auto_build_runner = None
 
+SLATE_TZ = ZoneInfo("America/New_York")
 DEFAULT_SPORTS = ["mlb", "wnba", "nfl", "cfb", "nba", "ncaam", "nhl", "soccer", "tennis"]
 
 
@@ -33,7 +35,7 @@ def _sports_from_event(event: Dict[str, Any]) -> List[str]:
 
 
 def _today() -> str:
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(SLATE_TZ).date().isoformat()
 
 
 def _baseline(result: Dict[str, Any], sport: str) -> Dict[str, Any]:
@@ -76,6 +78,7 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "run": event.get("run") or "all_sports_hot_pull",
         "startedAt": started_at,
         "finishedAt": datetime.now(timezone.utc).isoformat(),
+        "slateDateEt": _today(),
         "sports": sports,
         "pullReport": pull_report,
         "builtSports": [r.get("sport") for r in results if r.get("buildStatus") == "BUILT"],
