@@ -1,0 +1,108 @@
+name: One-Time 6:00 PM ET MLB All-Games Signal Proof
+
+on:
+  schedule:
+    # 6:00 PM America/New_York on 2026-06-27 is 22:00 UTC.
+    - cron: '0 22 27 6 *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install runtime dependencies
+        run: python -m pip install --upgrade boto3
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Generate MLB all-games signal proof
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          ODDS_REGIONS: us
+          ODDS_MARKETS: h2h,spreads,totals
+          ODDS_FORMAT: american
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          INQSI_AUTO_BUILD_SPORTS: mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          export PYTHONPATH="$GITHUB_WORKSPACE/hello_world:${PYTHONPATH:-}"
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+          import odds_live_ingestion
+          import mlb_all_games_signal_proof
+          import mlb_game_winner_engine
+          import mlb_b10_engine
+          import auto_build_runner
+
+          # Pull fresh MLB data first, then build a full pre-filter signal proof from all stored 15-minute pulls.
+          pull = odds_live_ingestion.pull_many(['mlb'])
+          mlb_winners = mlb_game_winner_engine.predict_all(store=True, limit=500)
+          all_games = mlb_all_games_signal_proof.build(store=True, write_file=True)
+          b10 = mlb_b10_engine.build()
+          auto_build_runner.main()
+          parlay_report = json.load(open('runtime_reports/parlay_latest.json', encoding='utf-8'))
+
+          summary = {
+              'ok': True,
+              'proofRun': 'one_time_6pm_et_mlb_all_games_signal_proof',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'createdAtEt': datetime.now(ZoneInfo('America/New_York')).isoformat(),
+              'question': 'Show every MLB game scored before the qualifying-leg filter was applied.',
+              'pull': pull,
+              'mlbGameWinnerPredictions': mlb_winners,
+              'mlbB10Build': b10,
+              'mlbAllGamesSignalProofPath': 'runtime_reports/mlb_all_games_signal_proof_latest.json',
+              'mlbAllGamesSignalProofSummary': all_games.get('summary'),
+              'mlbAllGamesSignalRows': all_games.get('rows'),
+              'parlayProof': parlay_report,
+          }
+          open('runtime_reports/proof_1800_et_mlb_all_signals_latest.json','w',encoding='utf-8').write(json.dumps(summary, indent=2, default=str)+'\n')
+          open('runtime_reports/live_odds_latest.json','w',encoding='utf-8').write(json.dumps({
+              'ok': True,
+              'createdAtUtc': summary['createdAtUtc'],
+              'createdAtEt': summary['createdAtEt'],
+              'sportsRequested': ['mlb'],
+              'mlbGameWinnerPredictions': mlb_winners,
+              'mlbAllGamesSignalProofPath': summary['mlbAllGamesSignalProofPath'],
+              'mlbAllGamesSignalProofSummary': summary['mlbAllGamesSignalProofSummary'],
+              'mlbParlayBuilt': bool(parlay_report.get('mlbBuilt')),
+              'builtSports': parlay_report.get('builtSports') or [],
+              'parlayProof': parlay_report,
+          }, indent=2, default=str)+'\n')
+          print(json.dumps({
+              'ok': True,
+              'createdAtEt': summary['createdAtEt'],
+              'mlbAllGamesRows': (all_games.get('summary') or {}).get('totalRows'),
+              'gamesWithWinnerPrediction': (all_games.get('summary') or {}).get('gamesWithWinnerPrediction'),
+              'b10QualifiedCandidates': (all_games.get('summary') or {}).get('b10QualifiedCandidates'),
+          }, indent=2, default=str))
+          PY
+
+      - name: Commit MLB all-games proof reports
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/mlb_all_games_signal_proof_latest.json runtime_reports/proof_1800_et_mlb_all_signals_latest.json runtime_reports/live_odds_latest.json runtime_reports/parlay_latest.json || true
+          git commit -m "Run 6 PM ET MLB all-games signal proof" || true
+          git pull --rebase --autostash origin main || true
+          git push || true
