@@ -72,6 +72,11 @@ if "InqsiMLBV1CoreFunction:" not in text:
           Properties:
             Path: /v1/mlb/predictions
             Method: GET
+        InqsiMLBV1GameWinners:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/game-winners
+            Method: GET
         InqsiMLBV1Audit:
           Type: Api
           Properties:
@@ -103,6 +108,8 @@ if "InqsiMLBV1CoreFunction:" not in text:
 
 """
     text = text.replace(marker, resource + marker)
+elif "Path: /v1/mlb/game-winners" not in text and "Path: /v1/mlb/predictions" in text:
+    text = text.replace("        InqsiMLBV1Audit:\n          Type: Api\n", "        InqsiMLBV1GameWinners:\n          Type: Api\n          Properties:\n            Path: /v1/mlb/game-winners\n            Method: GET\n        InqsiMLBV1Audit:\n          Type: Api\n")
 
 if "MLBResultSignalsFunction:" not in text:
     marker = "  MLBResultsSchedulerFunction:\n"
@@ -178,4 +185,4 @@ if "AllSportsLiveSchedulerFunction:" not in text:
 
 TEMPLATE.write_text(text)
 exec(Path("scripts/patch_template_mlb_hot_start_v2.py").read_text())
-print("Patched template.yaml for INQSI MLB v1 routes, result-signal learning, raw S3 archive, 1 AM ET HOT kickoff, HOT-only MLB pulls, and all-sports 1 AM ET plus 15-minute live scheduler.")
+print("Patched template.yaml for INQSI MLB v1 routes, MLB game-winner route, result-signal learning, raw S3 archive, 1 AM ET HOT kickoff, HOT-only MLB pulls, and all-sports 1 AM ET plus 15-minute live scheduler.")
