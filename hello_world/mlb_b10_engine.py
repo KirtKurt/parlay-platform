@@ -12,6 +12,7 @@ HOT_PULL_START_HOUR_ET = int(os.environ.get("INQSI_MLB_HOT_PULL_START_HOUR_ET", 
 HOT_PULL_INTERVAL_MINUTES = int(os.environ.get("INQSI_MLB_HOT_PULL_INTERVAL_MINUTES", "15"))
 ENGINE = "MLB-B1.0"
 THRESHOLD_VERSION = os.environ.get("INQSI_MLB_THRESHOLD_VERSION", "MLB-B1.0-2026-06")
+BASELINE_ENABLED = os.environ.get("INQSI_MLB_BASELINE_ENABLED", "true").lower() != "false"
 
 
 def now():
@@ -152,6 +153,26 @@ def store_history(slate, game_id, item):
     return {"pk": record["PK"], "sk": record["SK"]}
 
 
+def slate_deadline(games):
+    times = sorted([parse_dt(g.get("commenceTime")) for g in games if parse_dt(g.get("commenceTime"))])
+    if not times:
+        return {"ok": False, "reason": "NO_EVENT_TIME_AVAILABLE", "deadlineHoursBeforeFirstEvent": FREEZE_MINUTES // 60}
+    first = times[0]
+    deadline = first - timedelta(minutes=FREEZE_MINUTES)
+    current = now()
+    return {
+        "ok": True,
+        "firstEventAtUtc": first.isoformat(),
+        "firstEventAtEt": et_iso(first),
+        "buildDeadlineUtc": deadline.isoformat(),
+        "buildDeadlineEt": et_iso(deadline),
+        "deadlineHoursBeforeFirstEvent": round(FREEZE_MINUTES / 60, 2),
+        "deadlinePassed": current > deadline,
+        "currentUtc": current.isoformat(),
+        "currentEt": et_iso(current),
+    }
+
+
 def histories(slate=None):
     slate = slate or today()
     pulls = history.query_pulls("mlb", slate, 500)
@@ -197,7 +218,9 @@ def histories(slate=None):
             continue
         cutoff = commence - timedelta(minutes=FREEZE_MINUTES)
         frozen_points = [p for p in sorted(row.get("points") or [], key=lambda x: x.get("pulledAt") or "") if parse_dt(p.get("pulledAt")) and parse_dt(p.get("pulledAt")) <= cutoff]
-        row.update({"cutoffTime": cutoff.isoformat(), "frozen": now() >= cutoff, "pointCount": len(frozen_points), "points": frozen_points, "status": "FROZEN" if now() >= cutoff else "WAITING_FOR_FREEZE"})
+        # If the individual game is not frozen yet, keep the available points so a slate-level baseline can be built before the first game deadline.
+        available_points = frozen_points if now() >= cutoff else sorted(row.get("points") or [], key=lambda x: x.get("pulledAt") or "")
+        row.update({"cutoffTime": cutoff.isoformat(), "frozen": now() >= cutoff, "pointCount": len(available_points), "points": available_points, "status": "FROZEN" if now() >= cutoff else "WAITING_FOR_FREEZE"})
         output.append(row)
     return pulls, output
 
@@ -242,11 +265,29 @@ def score_side(game, side):
     return {"side": side, "grade": grade, "score": score, "probStart": round(start, 5), "probLatest": round(latest, 5), "delta": round(delta, 5), "velocityPpHr": round(velocity, 3), "bookDivergenceAvg": round(avg_div, 5), "bookAgreementAvg": round(1.0 - avg_div, 5), "reversalCount": rev, "lateInstability": round(instability, 5), "totalMovement": round(total_move, 5), "runLineMovement": round(rl_move, 3) if rl_move is not None else None, "tags": sorted(set(tags)), "pointCount": len(vals)}
 
 
+def ranked_combos(selected):
+    combos = []
+    for mask in range(8):
+        legs, total = [], 0.0
+        for i, g in enumerate(selected):
+            home_pick = bool(mask & (1 << i))
+            sig = g["homeSignal"] if home_pick else g["awaySignal"]
+            legs.append({"gameId": g["gameId"], "selection": g["homeTeam"] if home_pick else g["awayTeam"], "side": "home" if home_pick else "away", "grade": sig["grade"], "tags": sig["tags"], "score": sig.get("score"), "commenceTime": g.get("commenceTime"), "cutoffTime": g.get("cutoffTime")})
+            total += float(sig.get("score") or 0)
+        combos.append({"rank": 0, "score": round(total / 3.0, 2), "legs": legs})
+    combos.sort(key=lambda x: x["score"], reverse=True)
+    for i, row in enumerate(combos, 1):
+        row.update({"rank": i, "top3": i <= 3})
+    return combos
+
+
 def build(slate=None):
     slate = slate or today()
     pulls, games = histories(slate)
     coverage = pull_coverage(pulls, slate)
+    deadline = slate_deadline(games)
     candidates = []
+    scored_games = []
     stored = []
     for game in games:
         home = score_side(game, "home")
@@ -257,30 +298,28 @@ def build(slate=None):
             stored.append(store_history(slate, game["gameId"], game))
         except Exception as exc:
             game["historyStoreError"] = str(exc)
+        if game.get("pointCount", 0) >= MIN_POINTS and game.get("grade") != "NO_PLAY":
+            scored_games.append(game)
         if game.get("frozen") and game.get("grade") in {"MLB_STRONG", "MLB_LEAN"}:
             candidates.append(game)
     strong = [g for g in candidates if g.get("grade") == "MLB_STRONG"]
     lean = [g for g in candidates if g.get("grade") == "MLB_LEAN"]
-    base = {"ok": True, "sport": "mlb", "slate_date": slate, "slateTimezone": str(SLATE_TZ), "engine": ENGINE, "thresholdVersion": THRESHOLD_VERSION, "pullCount": len(pulls), "pullCoverage": coverage, "gameCount": len(games), "gameHistoryStored": len([x for x in stored if x]), "candidateCount": len(candidates), "strongCount": len(strong), "leanCount": len(lean), "freezeMinutesBeforeGame": FREEZE_MINUTES, "minimumGameHistoryPoints": MIN_POINTS, "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default", "audit": {"status": "PENDING_RESULTS", "tracks": ["top1", "top3", "top5"]}}
-    if len(strong) < 2 or (len(strong) + len(lean)) < 3:
-        message = "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG."
-        if not coverage.get("overnightCoverageComplete"):
-            message += " Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy."
-        return {**base, "buildStatus": "NO_BUILD", "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET", "message": message, "candidates": candidates[:16]}
-    selected = strong[:2]
-    used = {g["gameId"] for g in selected}
-    for g in [x for x in strong if x["gameId"] not in used] + [x for x in lean if x["gameId"] not in used]:
-        if len(selected) < 3:
-            selected.append(g); used.add(g["gameId"])
-    combos = []
-    for mask in range(8):
-        legs, total = [], 0.0
-        for i, g in enumerate(selected):
-            home_pick = bool(mask & (1 << i))
-            sig = g["homeSignal"] if home_pick else g["awaySignal"]
-            legs.append({"gameId": g["gameId"], "selection": g["homeTeam"] if home_pick else g["awayTeam"], "side": "home" if home_pick else "away", "grade": sig["grade"], "tags": sig["tags"], "commenceTime": g.get("commenceTime"), "cutoffTime": g.get("cutoffTime")})
-            total += float(sig.get("score") or 0)
-        combos.append({"rank": 0, "score": round(total / 3.0, 2), "legs": legs})
-    combos.sort(key=lambda x: x["score"], reverse=True)
-    for i, row in enumerate(combos, 1): row.update({"rank": i, "top3": i <= 3})
-    return {**base, "buildStatus": "BUILT", "selectedStrongCount": sum(1 for g in selected if g.get("grade") == "MLB_STRONG"), "selectedLeanCount": sum(1 for g in selected if g.get("grade") == "MLB_LEAN"), "legs": selected, "rankedCombos": combos}
+    base = {"ok": True, "sport": "mlb", "slate_date": slate, "slateTimezone": str(SLATE_TZ), "engine": ENGINE, "thresholdVersion": THRESHOLD_VERSION, "pullCount": len(pulls), "pullCoverage": coverage, "buildDeadline": deadline, "gameCount": len(games), "gameHistoryStored": len([x for x in stored if x]), "candidateCount": len(candidates), "strongCount": len(strong), "leanCount": len(lean), "scoredGameCount": len(scored_games), "freezeMinutesBeforeGame": FREEZE_MINUTES, "minimumGameHistoryPoints": MIN_POINTS, "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default", "audit": {"status": "PENDING_RESULTS", "tracks": ["top1", "top3", "top5"]}}
+    if len(strong) >= 2 and (len(strong) + len(lean)) >= 3:
+        selected = strong[:2]
+        used = {g["gameId"] for g in selected}
+        for g in [x for x in strong if x["gameId"] not in used] + [x for x in lean if x["gameId"] not in used]:
+            if len(selected) < 3:
+                selected.append(g); used.add(g["gameId"])
+        return {**base, "buildStatus": "BUILT", "buildQuality": "MLB_STRICT_B1", "selectedStrongCount": sum(1 for g in selected if g.get("grade") == "MLB_STRONG"), "selectedLeanCount": sum(1 for g in selected if g.get("grade") == "MLB_LEAN"), "legs": selected, "rankedCombos": ranked_combos(selected)}
+    # Baseline slate build: do not fake strength, but create a 3-leg MLB slate from best available scored games when strict structure is unavailable.
+    baseline_pool = sorted(scored_games, key=lambda x: float(x.get("score") or 0), reverse=True)
+    if BASELINE_ENABLED and len(baseline_pool) >= 3 and not deadline.get("deadlinePassed", False):
+        selected = baseline_pool[:3]
+        return {**base, "buildStatus": "BUILT", "buildQuality": "MLB_BASELINE_AVAILABLE_HISTORY", "officialStrength": "BASELINE_NOT_STRONG", "reason": "BUILT_MLB_BASELINE_FROM_TOP_AVAILABLE_HISTORY", "message": "Strict MLB-B1.0 structure was unavailable, so a baseline 3-leg MLB slate was built from top available scored games. Leg grades remain honest.", "selectedStrongCount": sum(1 for g in selected if g.get("grade") == "MLB_STRONG"), "selectedLeanCount": sum(1 for g in selected if g.get("grade") == "MLB_LEAN"), "previousNoBuildReason": "NO_BUILD_MLB_STRUCTURE_NOT_MET", "fallbackApplied": True, "legs": selected, "rankedCombos": ranked_combos(selected), "candidates": candidates[:16]}
+    message = "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG."
+    if not coverage.get("overnightCoverageComplete"):
+        message += " Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy."
+    if deadline.get("deadlinePassed"):
+        message += " The 2-hour slate build deadline has already passed."
+    return {**base, "buildStatus": "NO_BUILD", "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET", "message": message, "candidates": candidates[:16]}
