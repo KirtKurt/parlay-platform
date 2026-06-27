@@ -10,6 +10,8 @@ on:
       - 'hello_world/inqsi_pull_history.py'
       - 'hello_world/auto_build_runner.py'
       - 'hello_world/mlb_b10_engine.py'
+      - 'hello_world/mlb_game_winner_engine.py'
+      - 'hello_world/inqsi_mlb_v1_core.py'
       - 'hello_world/baseline_parlay_builder.py'
       - 'hello_world/build_deadline_gate.py'
       - 'hello_world/pull_health_diagnostics.py'
@@ -79,6 +81,7 @@ jobs:
           import odds_live_ingestion
           import market_board
           import auto_build_runner
+          import mlb_game_winner_engine
 
           sports = [s.strip() for s in os.environ.get('INPUT_SPORTS', '').split(',') if s.strip()]
           if not sports:
@@ -87,6 +90,7 @@ jobs:
           pull = odds_live_ingestion.pull_many(sports)
           open('runtime_reports/pull_health_latest.json','w',encoding='utf-8').write(json.dumps(pull, indent=2, default=str)+'\n')
           board = market_board.board_all({'sports': ','.join(sports)})
+          mlb_game_winners = mlb_game_winner_engine.predict_all(store=True, limit=500)
           auto_build_runner.main()
 
           parlay_report = json.load(open('runtime_reports/parlay_latest.json', encoding='utf-8'))
@@ -100,13 +104,14 @@ jobs:
               'sportsWithStoredGamesFromPull': [r.get('appSport') for r in pull.get('results', []) if int(r.get('gamesStored') or 0) > 0],
               'sportsVisibleOnMarketBoard': [b.get('sport') for b in board.get('boards', []) if int(b.get('gameCount') or 0) > 0],
               'totalGamesVisibleOnMarketBoard': sum(int(b.get('gameCount') or 0) for b in board.get('boards', [])),
+              'mlbGameWinnerPredictions': mlb_game_winners,
               'builtSports': parlay_report.get('builtSports') or [],
               'mlbParlayBuilt': bool(parlay_report.get('mlbBuilt')),
               'pullDiagnostics': parlay_report.get('pullDiagnostics'),
               'parlayProof': parlay_report,
           }
           open('runtime_reports/live_odds_latest.json','w',encoding='utf-8').write(json.dumps(report, indent=2, default=str)+'\n')
-          print(json.dumps({'ok': report['ok'], 'builtSports': report['builtSports'], 'mlbParlayBuilt': report['mlbParlayBuilt']}, indent=2))
+          print(json.dumps({'ok': report['ok'], 'mlbGameWinnerCount': mlb_game_winners.get('count'), 'builtSports': report['builtSports'], 'mlbParlayBuilt': report['mlbParlayBuilt']}, indent=2))
           PY
 
       - name: Commit runtime proof reports
