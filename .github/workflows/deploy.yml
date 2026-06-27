@@ -3,6 +3,8 @@ name: Deploy SAM to AWS
 on:
   push:
     branches: [ "main" ]
+    paths-ignore:
+      - 'runtime_reports/**'
   workflow_dispatch:
 
 jobs:
