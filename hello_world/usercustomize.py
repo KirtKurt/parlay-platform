@@ -6,6 +6,13 @@ return a generic 404.
 """
 
 try:
+    import inqsi_pull_history as _inqsi_pull_history
+    import slate_date_patch as _inqsi_slate_date_patch
+    _inqsi_slate_date_patch.apply_to_history(_inqsi_pull_history)
+except Exception:
+    pass
+
+try:
     import frontend_app
     import inqsi_api
 
@@ -18,6 +25,12 @@ try:
         import odds_live_ingestion
     except Exception:
         odds_live_ingestion = None
+
+    try:
+        import slate_date_patch
+        slate_date_patch.apply_to_odds(odds_live_ingestion)
+    except Exception:
+        pass
 
     try:
         import sport_key_patch
@@ -72,7 +85,9 @@ except Exception:
 
 try:
     import odds_live_ingestion as _inqsi_odds_for_tennis
+    import slate_date_patch as _inqsi_slate_patch_for_odds
     import sport_key_patch as _inqsi_sport_key_patch
+    _inqsi_slate_patch_for_odds.apply_to_odds(_inqsi_odds_for_tennis)
     _inqsi_sport_key_patch.apply(_inqsi_odds_for_tennis)
 except Exception:
     pass
