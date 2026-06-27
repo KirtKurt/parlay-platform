@@ -27,6 +27,12 @@ except Exception:
     pass
 
 try:
+    import pull_report_guard
+    pull_report_guard.apply(odds_live_ingestion)
+except Exception:
+    pass
+
+try:
     import baseline_parlay_builder
 except Exception:
     baseline_parlay_builder = None
