@@ -9,8 +9,10 @@ try:
     import inqsi_pull_history as _inqsi_pull_history
     import slate_date_patch as _inqsi_slate_date_patch
     import signal_score_guard as _inqsi_signal_score_guard
+    import pull_dedupe_guard as _inqsi_pull_dedupe_guard
     _inqsi_slate_date_patch.apply_to_history(_inqsi_pull_history)
     _inqsi_signal_score_guard.apply(_inqsi_pull_history)
+    _inqsi_pull_dedupe_guard.apply(_inqsi_pull_history)
 except Exception:
     pass
 
