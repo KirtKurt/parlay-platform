@@ -8,6 +8,19 @@ import mlb_b10_engine
 import odds_live_ingestion
 
 try:
+    import slate_date_patch
+    slate_date_patch.apply_to_history(history)
+    slate_date_patch.apply_to_odds(odds_live_ingestion)
+except Exception:
+    pass
+
+try:
+    import signal_score_guard
+    signal_score_guard.apply(history)
+except Exception:
+    pass
+
+try:
     import baseline_parlay_builder
 except Exception:
     baseline_parlay_builder = None
