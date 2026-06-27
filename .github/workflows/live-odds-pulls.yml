@@ -10,6 +10,17 @@ on:
       - 'hello_world/inqsi_pull_history.py'
       - 'hello_world/auto_build_runner.py'
       - 'hello_world/mlb_b10_engine.py'
+      - 'hello_world/baseline_parlay_builder.py'
+      - 'hello_world/build_deadline_gate.py'
+      - 'hello_world/pull_health_diagnostics.py'
+      - 'hello_world/signal_score_guard.py'
+      - 'hello_world/slate_date_patch.py'
+      - 'hello_world/sport_key_patch.py'
+      - 'hello_world/sport_key_lookup.py'
+      - 'hello_world/pull_dedupe_guard.py'
+      - 'hello_world/pull_report_guard.py'
+      - 'hello_world/usercustomize.py'
+      - 'hello_world/all_sports_live_scheduler.py'
   schedule:
     - cron: '*/15 * * * *'
   workflow_dispatch:
@@ -74,6 +85,7 @@ jobs:
               sports = ['mlb','soccer','tennis','nfl','cfb','nba','wnba','ncaam','nhl']
 
           pull = odds_live_ingestion.pull_many(sports)
+          open('runtime_reports/pull_health_latest.json','w',encoding='utf-8').write(json.dumps(pull, indent=2, default=str)+'\n')
           board = market_board.board_all({'sports': ','.join(sports)})
           auto_build_runner.main()
 
@@ -88,11 +100,13 @@ jobs:
               'sportsWithStoredGamesFromPull': [r.get('appSport') for r in pull.get('results', []) if int(r.get('gamesStored') or 0) > 0],
               'sportsVisibleOnMarketBoard': [b.get('sport') for b in board.get('boards', []) if int(b.get('gameCount') or 0) > 0],
               'totalGamesVisibleOnMarketBoard': sum(int(b.get('gameCount') or 0) for b in board.get('boards', [])),
+              'builtSports': parlay_report.get('builtSports') or [],
               'mlbParlayBuilt': bool(parlay_report.get('mlbBuilt')),
+              'pullDiagnostics': parlay_report.get('pullDiagnostics'),
               'parlayProof': parlay_report,
           }
           open('runtime_reports/live_odds_latest.json','w',encoding='utf-8').write(json.dumps(report, indent=2, default=str)+'\n')
-          print(json.dumps({'ok': report['ok'], 'mlbParlayBuilt': report['mlbParlayBuilt']}, indent=2))
+          print(json.dumps({'ok': report['ok'], 'builtSports': report['builtSports'], 'mlbParlayBuilt': report['mlbParlayBuilt']}, indent=2))
           PY
 
       - name: Commit runtime proof reports
@@ -100,7 +114,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add runtime_reports/live_odds_latest.json runtime_reports/parlay_latest.json || true
+          git add runtime_reports/live_odds_latest.json runtime_reports/parlay_latest.json runtime_reports/pull_health_latest.json || true
           git commit -m "Update live odds and build proof reports" || true
           git pull --rebase --autostash origin main || true
           git push || true
