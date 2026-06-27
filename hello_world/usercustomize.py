@@ -17,6 +17,13 @@ except Exception:
     pass
 
 try:
+    import mlb_b10_engine as _inqsi_mlb_b10_engine
+    import mlb_full_signal_board_patch as _inqsi_mlb_full_signal_board_patch
+    _inqsi_mlb_full_signal_board_patch.apply(_inqsi_mlb_b10_engine)
+except Exception:
+    pass
+
+try:
     import frontend_app
     import inqsi_api
 
