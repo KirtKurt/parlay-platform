@@ -13,6 +13,16 @@ except Exception:
     mlb_game_winner_engine = None
 
 try:
+    import mlb_snapshot_replay_audit
+except Exception:
+    mlb_snapshot_replay_audit = None
+
+try:
+    import mlb_all_games_signal_proof
+except Exception:
+    mlb_all_games_signal_proof = None
+
+try:
     import slate_date_patch
     slate_date_patch.apply_to_history(history)
     slate_date_patch.apply_to_odds(odds_live_ingestion)
@@ -68,6 +78,10 @@ def _today() -> str:
     return datetime.now(SLATE_TZ).date().isoformat()
 
 
+def _canonical_sports(sports: List[str]) -> List[str]:
+    return [odds_live_ingestion.sport_key(s) for s in sports]
+
+
 def _baseline(result: Dict[str, Any], sport: str) -> Dict[str, Any]:
     if baseline_parlay_builder is None:
         return result
@@ -102,12 +116,57 @@ def _mlb_game_winners() -> Dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
+def _mlb_snapshot_replay() -> Dict[str, Any]:
+    if mlb_snapshot_replay_audit is None:
+        return {"ok": False, "error": "mlb_snapshot_replay_audit_unavailable"}
+    try:
+        return mlb_snapshot_replay_audit.build(_today(), write_file=False)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _mlb_all_games_proof() -> Dict[str, Any]:
+    if mlb_all_games_signal_proof is None:
+        return {"ok": False, "error": "mlb_all_games_signal_proof_unavailable"}
+    try:
+        return mlb_all_games_signal_proof.build(_today(), store=True, write_file=False)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _mlb_score_package(include_full_snapshots: bool = True) -> Dict[str, Any]:
+    winners = _mlb_game_winners()
+    replay = _mlb_snapshot_replay()
+    all_games = _mlb_all_games_proof()
+    package = {
+        "ok": bool(winners.get("ok", True) and replay.get("ok", True) and all_games.get("ok", True)),
+        "slateDateEt": _today(),
+        "gameWinnerPredictions": winners,
+        "snapshotReplaySummary": {
+            "pullCount": replay.get("pullCount"),
+            "snapshotCount": replay.get("snapshotCount"),
+            "finalScoredGameCount": replay.get("finalScoredGameCount"),
+            "finalIdentifiedSignalCount": replay.get("finalIdentifiedSignalCount"),
+            "coverage": replay.get("coverage"),
+            "error": replay.get("error"),
+        },
+        "finalBoard": replay.get("finalBoard") or [],
+        "finalIdentifiedSignals": replay.get("finalIdentifiedSignals") or [],
+        "allGamesSignalProofSummary": all_games.get("summary"),
+    }
+    if include_full_snapshots:
+        package["snapshots"] = replay.get("snapshots") or []
+    return package
+
+
 def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     event = event or {}
     sports = _sports_from_event(event)
+    canonical = _canonical_sports(sports)
     started_at = datetime.now(timezone.utc).isoformat()
     pull_report = odds_live_ingestion.pull_many(sports)
-    mlb_winners = _mlb_game_winners() if "mlb" in [odds_live_ingestion.sport_key(s) for s in sports] else None
+    include_full_snapshots = str(event.get("includeFullMlbSnapshots", "true")).lower() != "false"
+    mlb_score_package = _mlb_score_package(include_full_snapshots) if "mlb" in canonical else None
     results = []
     for sport in sports:
         build = _strict_build(odds_live_ingestion.sport_key(sport))
@@ -120,8 +179,9 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "finishedAt": datetime.now(timezone.utc).isoformat(),
         "slateDateEt": _today(),
         "sports": sports,
+        "sportsCanonical": canonical,
         "pullReport": pull_report,
-        "mlbGameWinnerPredictions": mlb_winners,
+        "mlbScorePackage": mlb_score_package,
         "builtSports": [r.get("sport") for r in results if r.get("buildStatus") == "BUILT"],
         "buildResults": results,
     }
