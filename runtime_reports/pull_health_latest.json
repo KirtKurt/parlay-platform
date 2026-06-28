@@ -1,167 +1,163 @@
 {
   "ok": true,
+  "source": "diagnostic_provider_probe_no_snapshot_storage",
+  "createdAt": "2026-06-28T07:57:14.789794+00:00",
   "sportsRequested": [
     "mlb",
-    "soccer",
-    "tennis",
+    "wnba",
     "nfl",
     "cfb",
     "nba",
-    "wnba",
     "ncaam",
-    "nhl"
+    "nhl",
+    "soccer",
+    "tennis"
   ],
-  "sportsCanonical": [
+  "sportsWithConvertibleMarkets": [
     "mlb",
-    "soccer",
-    "tennis",
+    "wnba",
+    "tennis"
+  ],
+  "sportsWithZeroConvertibleMarkets": [
     "nfl",
     "cfb",
     "nba",
-    "wnba",
     "ncaam",
-    "nhl"
+    "nhl",
+    "soccer"
   ],
-  "sportsPulled": 9,
+  "sportsFailedActiveConversion": [],
+  "providerErrorCount": 8,
+  "providerErrors": [
+    {
+      "appSport": "nfl",
+      "providerSportKey": "americanfootball_nfl",
+      "rawGamesReturned": 75,
+      "rawGamesInWindow": 0,
+      "gamesConvertible": 0,
+      "error": "active_slate_window_empty"
+    },
+    {
+      "appSport": "cfb",
+      "providerSportKey": "americanfootball_ncaaf",
+      "rawGamesReturned": 78,
+      "rawGamesInWindow": 0,
+      "gamesConvertible": 0,
+      "error": "active_slate_window_empty"
+    },
+    {
+      "appSport": "nba",
+      "providerSportKey": "basketball_nba",
+      "rawGamesReturned": 0,
+      "rawGamesInWindow": 0,
+      "gamesConvertible": 0,
+      "error": "active_slate_window_empty"
+    },
+    {
+      "appSport": "ncaam",
+      "providerSportKey": "basketball_ncaab",
+      "rawGamesReturned": 0,
+      "rawGamesInWindow": 0,
+      "gamesConvertible": 0,
+      "error": "active_slate_window_empty"
+    },
+    {
+      "appSport": "nhl",
+      "providerSportKey": "icehockey_nhl",
+      "rawGamesReturned": 0,
+      "rawGamesInWindow": 0,
+      "gamesConvertible": 0,
+      "error": "active_slate_window_empty"
+    },
+    {
+      "appSport": "soccer",
+      "providerSportKey": "soccer_usa_mls",
+      "rawGamesReturned": 0,
+      "rawGamesInWindow": 0,
+      "gamesConvertible": 0,
+      "error": "active_slate_window_empty"
+    },
+    {
+      "appSport": "soccer",
+      "providerSportKey": "soccer_epl",
+      "rawGamesReturned": 10,
+      "rawGamesInWindow": 0,
+      "gamesConvertible": 0,
+      "error": "active_slate_window_empty"
+    },
+    {
+      "appSport": "soccer",
+      "providerSportKey": "soccer_uefa_champs_league",
+      "rawGamesReturned": 0,
+      "rawGamesInWindow": 0,
+      "gamesConvertible": 0,
+      "error": "active_slate_window_empty"
+    }
+  ],
   "results": [
     {
       "ok": true,
       "appSport": "mlb",
-      "rawGamesReturned": 22,
-      "rawGamesInWindow": 22,
-      "gamesStored": 22,
+      "rawGamesReturned": 15,
+      "rawGamesInWindow": 15,
+      "gamesConvertible": 15,
+      "gamesStored": null,
+      "diagnosticOnlyNoSnapshotStored": true,
+      "activeStorageFailure": false,
       "providerPulls": [
         {
           "ok": true,
           "appSport": "mlb",
           "providerSportKey": "baseball_mlb",
-          "rawGamesReturned": 22,
-          "rawGamesInWindow": 22,
-          "gamesStored": 22,
-          "stored": {
-            "pk": "PULLS#mlb#2026-06-27",
-            "sk": "PULL#2026-06-27T20:19:07.917404+00:00#pull_acb2579f676447cc",
-            "pull_id": "pull_acb2579f676447cc",
-            "game_count": 22
-          },
-          "error": null,
-          "activeWindowStart": "2026-06-27T14:19:07.916752+00:00",
-          "activeWindowEnd": "2026-06-29T20:19:07.916752+00:00",
+          "rawGamesReturned": 15,
+          "rawGamesInWindow": 15,
+          "gamesConvertible": 15,
+          "gamesDroppedDuringConversion": 0,
+          "gamesStored": 0,
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:11.870747+00:00",
+          "activeWindowEnd": "2026-06-30T07:57:11.870747+00:00",
           "slateWindowDays": 2,
-          "activeWindowBackBufferHours": 6
+          "error": null
         }
-      ],
-      "gamesSeen": 22,
-      "deduped": false
-    },
-    {
-      "ok": false,
-      "appSport": "soccer",
-      "rawGamesReturned": 10,
-      "rawGamesInWindow": 0,
-      "gamesStored": 0,
-      "providerPulls": [
-        {
-          "ok": false,
-          "appSport": "soccer",
-          "providerSportKey": "soccer_usa_mls",
-          "rawGamesReturned": 0,
-          "rawGamesInWindow": 0,
-          "gamesStored": 0,
-          "stored": null,
-          "error": "active_slate_window_empty",
-          "activeWindowStart": "2026-06-27T14:19:08.259517+00:00",
-          "activeWindowEnd": "2026-07-11T20:19:08.259517+00:00",
-          "slateWindowDays": 14,
-          "activeWindowBackBufferHours": 6
-        },
-        {
-          "ok": false,
-          "appSport": "soccer",
-          "providerSportKey": "soccer_epl",
-          "rawGamesReturned": 10,
-          "rawGamesInWindow": 0,
-          "gamesStored": 0,
-          "stored": null,
-          "error": "active_slate_window_empty",
-          "activeWindowStart": "2026-06-27T14:19:08.381172+00:00",
-          "activeWindowEnd": "2026-07-11T20:19:08.381172+00:00",
-          "slateWindowDays": 14,
-          "activeWindowBackBufferHours": 6
-        },
-        {
-          "ok": false,
-          "appSport": "soccer",
-          "providerSportKey": "soccer_uefa_champs_league",
-          "rawGamesReturned": 0,
-          "rawGamesInWindow": 0,
-          "gamesStored": 0,
-          "stored": null,
-          "error": "active_slate_window_empty",
-          "activeWindowStart": "2026-06-27T14:19:08.479365+00:00",
-          "activeWindowEnd": "2026-07-11T20:19:08.479365+00:00",
-          "slateWindowDays": 14,
-          "activeWindowBackBufferHours": 6
-        }
-      ],
-      "gamesSeen": 0,
-      "deduped": false
+      ]
     },
     {
       "ok": true,
-      "appSport": "tennis",
-      "rawGamesReturned": 128,
-      "rawGamesInWindow": 128,
-      "gamesStored": 128,
+      "appSport": "wnba",
+      "rawGamesReturned": 5,
+      "rawGamesInWindow": 4,
+      "gamesConvertible": 4,
+      "gamesStored": null,
+      "diagnosticOnlyNoSnapshotStored": true,
+      "activeStorageFailure": false,
       "providerPulls": [
         {
           "ok": true,
-          "appSport": "tennis",
-          "providerSportKey": "tennis_atp_wimbledon",
-          "rawGamesReturned": 64,
-          "rawGamesInWindow": 64,
-          "gamesStored": 64,
-          "stored": {
-            "pk": "PULLS#tennis#2026-06-27",
-            "sk": "PULL#2026-06-27T20:19:08.891263+00:00#pull_3b1cdd8af5a04ea4",
-            "pull_id": "pull_3b1cdd8af5a04ea4",
-            "game_count": 64
-          },
-          "error": null,
-          "activeWindowStart": "2026-06-27T14:19:08.889844+00:00",
-          "activeWindowEnd": "2026-07-04T20:19:08.889844+00:00",
-          "slateWindowDays": 7,
-          "activeWindowBackBufferHours": 6
-        },
-        {
-          "ok": true,
-          "appSport": "tennis",
-          "providerSportKey": "tennis_wta_wimbledon",
-          "rawGamesReturned": 64,
-          "rawGamesInWindow": 64,
-          "gamesStored": 64,
-          "stored": {
-            "pk": "PULLS#tennis#2026-06-27",
-            "sk": "PULL#2026-06-27T20:19:09.213460+00:00#pull_b6374a05997b48e8",
-            "pull_id": "pull_b6374a05997b48e8",
-            "game_count": 64
-          },
-          "error": null,
-          "activeWindowStart": "2026-06-27T14:19:09.211869+00:00",
-          "activeWindowEnd": "2026-07-04T20:19:09.211869+00:00",
-          "slateWindowDays": 7,
-          "activeWindowBackBufferHours": 6
+          "appSport": "wnba",
+          "providerSportKey": "basketball_wnba",
+          "rawGamesReturned": 5,
+          "rawGamesInWindow": 4,
+          "gamesConvertible": 4,
+          "gamesDroppedDuringConversion": 0,
+          "gamesStored": 0,
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:11.996982+00:00",
+          "activeWindowEnd": "2026-06-30T07:57:11.996982+00:00",
+          "slateWindowDays": 2,
+          "error": null
         }
-      ],
-      "gamesSeen": 128,
-      "deduped": false
+      ]
     },
     {
       "ok": false,
       "appSport": "nfl",
       "rawGamesReturned": 75,
       "rawGamesInWindow": 0,
-      "gamesStored": 0,
+      "gamesConvertible": 0,
+      "gamesStored": null,
+      "diagnosticOnlyNoSnapshotStored": true,
+      "activeStorageFailure": false,
       "providerPulls": [
         {
           "ok": false,
@@ -169,24 +165,26 @@
           "providerSportKey": "americanfootball_nfl",
           "rawGamesReturned": 75,
           "rawGamesInWindow": 0,
+          "gamesConvertible": 0,
+          "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
-          "stored": null,
-          "error": "active_slate_window_empty",
-          "activeWindowStart": "2026-06-27T14:19:09.460660+00:00",
-          "activeWindowEnd": "2026-07-04T20:19:09.460660+00:00",
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:12.471918+00:00",
+          "activeWindowEnd": "2026-07-05T07:57:12.471918+00:00",
           "slateWindowDays": 7,
-          "activeWindowBackBufferHours": 6
+          "error": "active_slate_window_empty"
         }
-      ],
-      "gamesSeen": 0,
-      "deduped": false
+      ]
     },
     {
       "ok": false,
       "appSport": "cfb",
       "rawGamesReturned": 78,
       "rawGamesInWindow": 0,
-      "gamesStored": 0,
+      "gamesConvertible": 0,
+      "gamesStored": null,
+      "diagnosticOnlyNoSnapshotStored": true,
+      "activeStorageFailure": false,
       "providerPulls": [
         {
           "ok": false,
@@ -194,24 +192,26 @@
           "providerSportKey": "americanfootball_ncaaf",
           "rawGamesReturned": 78,
           "rawGamesInWindow": 0,
+          "gamesConvertible": 0,
+          "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
-          "stored": null,
-          "error": "active_slate_window_empty",
-          "activeWindowStart": "2026-06-27T14:19:09.611332+00:00",
-          "activeWindowEnd": "2026-07-04T20:19:09.611332+00:00",
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:12.807034+00:00",
+          "activeWindowEnd": "2026-07-05T07:57:12.807034+00:00",
           "slateWindowDays": 7,
-          "activeWindowBackBufferHours": 6
+          "error": "active_slate_window_empty"
         }
-      ],
-      "gamesSeen": 0,
-      "deduped": false
+      ]
     },
     {
       "ok": false,
       "appSport": "nba",
       "rawGamesReturned": 0,
       "rawGamesInWindow": 0,
-      "gamesStored": 0,
+      "gamesConvertible": 0,
+      "gamesStored": null,
+      "diagnosticOnlyNoSnapshotStored": true,
+      "activeStorageFailure": false,
       "providerPulls": [
         {
           "ok": false,
@@ -219,54 +219,26 @@
           "providerSportKey": "basketball_nba",
           "rawGamesReturned": 0,
           "rawGamesInWindow": 0,
+          "gamesConvertible": 0,
+          "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
-          "stored": null,
-          "error": "active_slate_window_empty",
-          "activeWindowStart": "2026-06-27T14:19:09.683773+00:00",
-          "activeWindowEnd": "2026-06-29T20:19:09.683773+00:00",
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:12.937439+00:00",
+          "activeWindowEnd": "2026-06-30T07:57:12.937439+00:00",
           "slateWindowDays": 2,
-          "activeWindowBackBufferHours": 6
+          "error": "active_slate_window_empty"
         }
-      ],
-      "gamesSeen": 0,
-      "deduped": false
-    },
-    {
-      "ok": true,
-      "appSport": "wnba",
-      "rawGamesReturned": 8,
-      "rawGamesInWindow": 7,
-      "gamesStored": 7,
-      "providerPulls": [
-        {
-          "ok": true,
-          "appSport": "wnba",
-          "providerSportKey": "basketball_wnba",
-          "rawGamesReturned": 8,
-          "rawGamesInWindow": 7,
-          "gamesStored": 7,
-          "stored": {
-            "pk": "PULLS#wnba#2026-06-27",
-            "sk": "PULL#2026-06-27T20:19:09.797056+00:00#pull_4d269b36739b47ab",
-            "pull_id": "pull_4d269b36739b47ab",
-            "game_count": 7
-          },
-          "error": null,
-          "activeWindowStart": "2026-06-27T14:19:09.796801+00:00",
-          "activeWindowEnd": "2026-06-29T20:19:09.796801+00:00",
-          "slateWindowDays": 2,
-          "activeWindowBackBufferHours": 6
-        }
-      ],
-      "gamesSeen": 7,
-      "deduped": false
+      ]
     },
     {
       "ok": false,
       "appSport": "ncaam",
       "rawGamesReturned": 0,
       "rawGamesInWindow": 0,
-      "gamesStored": 0,
+      "gamesConvertible": 0,
+      "gamesStored": null,
+      "diagnosticOnlyNoSnapshotStored": true,
+      "activeStorageFailure": false,
       "providerPulls": [
         {
           "ok": false,
@@ -274,24 +246,26 @@
           "providerSportKey": "basketball_ncaab",
           "rawGamesReturned": 0,
           "rawGamesInWindow": 0,
+          "gamesConvertible": 0,
+          "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
-          "stored": null,
-          "error": "active_slate_window_empty",
-          "activeWindowStart": "2026-06-27T14:19:09.974462+00:00",
-          "activeWindowEnd": "2026-06-29T20:19:09.974462+00:00",
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:13.056351+00:00",
+          "activeWindowEnd": "2026-06-30T07:57:13.056351+00:00",
           "slateWindowDays": 2,
-          "activeWindowBackBufferHours": 6
+          "error": "active_slate_window_empty"
         }
-      ],
-      "gamesSeen": 0,
-      "deduped": false
+      ]
     },
     {
       "ok": false,
       "appSport": "nhl",
       "rawGamesReturned": 0,
       "rawGamesInWindow": 0,
-      "gamesStored": 0,
+      "gamesConvertible": 0,
+      "gamesStored": null,
+      "diagnosticOnlyNoSnapshotStored": true,
+      "activeStorageFailure": false,
       "providerPulls": [
         {
           "ok": false,
@@ -299,27 +273,116 @@
           "providerSportKey": "icehockey_nhl",
           "rawGamesReturned": 0,
           "rawGamesInWindow": 0,
+          "gamesConvertible": 0,
+          "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
-          "stored": null,
-          "error": "active_slate_window_empty",
-          "activeWindowStart": "2026-06-27T14:19:10.036735+00:00",
-          "activeWindowEnd": "2026-06-29T20:19:10.036735+00:00",
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:13.166378+00:00",
+          "activeWindowEnd": "2026-06-30T07:57:13.166378+00:00",
           "slateWindowDays": 2,
-          "activeWindowBackBufferHours": 6
+          "error": "active_slate_window_empty"
         }
-      ],
-      "gamesSeen": 0,
-      "deduped": false
+      ]
+    },
+    {
+      "ok": false,
+      "appSport": "soccer",
+      "rawGamesReturned": 10,
+      "rawGamesInWindow": 0,
+      "gamesConvertible": 0,
+      "gamesStored": null,
+      "diagnosticOnlyNoSnapshotStored": true,
+      "activeStorageFailure": false,
+      "providerPulls": [
+        {
+          "ok": false,
+          "appSport": "soccer",
+          "providerSportKey": "soccer_usa_mls",
+          "rawGamesReturned": 0,
+          "rawGamesInWindow": 0,
+          "gamesConvertible": 0,
+          "gamesDroppedDuringConversion": 0,
+          "gamesStored": 0,
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:13.301808+00:00",
+          "activeWindowEnd": "2026-07-12T07:57:13.301808+00:00",
+          "slateWindowDays": 14,
+          "error": "active_slate_window_empty"
+        },
+        {
+          "ok": false,
+          "appSport": "soccer",
+          "providerSportKey": "soccer_epl",
+          "rawGamesReturned": 10,
+          "rawGamesInWindow": 0,
+          "gamesConvertible": 0,
+          "gamesDroppedDuringConversion": 0,
+          "gamesStored": 0,
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:13.482377+00:00",
+          "activeWindowEnd": "2026-07-12T07:57:13.482377+00:00",
+          "slateWindowDays": 14,
+          "error": "active_slate_window_empty"
+        },
+        {
+          "ok": false,
+          "appSport": "soccer",
+          "providerSportKey": "soccer_uefa_champs_league",
+          "rawGamesReturned": 0,
+          "rawGamesInWindow": 0,
+          "gamesConvertible": 0,
+          "gamesDroppedDuringConversion": 0,
+          "gamesStored": 0,
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:13.623057+00:00",
+          "activeWindowEnd": "2026-07-12T07:57:13.623057+00:00",
+          "slateWindowDays": 14,
+          "error": "active_slate_window_empty"
+        }
+      ]
+    },
+    {
+      "ok": true,
+      "appSport": "tennis",
+      "rawGamesReturned": 128,
+      "rawGamesInWindow": 128,
+      "gamesConvertible": 128,
+      "gamesStored": null,
+      "diagnosticOnlyNoSnapshotStored": true,
+      "activeStorageFailure": false,
+      "providerPulls": [
+        {
+          "ok": true,
+          "appSport": "tennis",
+          "providerSportKey": "tennis_atp_wimbledon",
+          "rawGamesReturned": 64,
+          "rawGamesInWindow": 64,
+          "gamesConvertible": 64,
+          "gamesDroppedDuringConversion": 0,
+          "gamesStored": 0,
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:14.359640+00:00",
+          "activeWindowEnd": "2026-07-05T07:57:14.359640+00:00",
+          "slateWindowDays": 7,
+          "error": null
+        },
+        {
+          "ok": true,
+          "appSport": "tennis",
+          "providerSportKey": "tennis_wta_wimbledon",
+          "rawGamesReturned": 64,
+          "rawGamesInWindow": 64,
+          "gamesConvertible": 64,
+          "gamesDroppedDuringConversion": 0,
+          "gamesStored": 0,
+          "diagnosticOnlyNoSnapshotStored": true,
+          "activeWindowStart": "2026-06-28T01:57:14.789401+00:00",
+          "activeWindowEnd": "2026-07-05T07:57:14.789401+00:00",
+          "slateWindowDays": 7,
+          "error": null
+        }
+      ]
     }
   ],
-  "sportsWithStoredGames": [
-    "mlb",
-    "tennis",
-    "wnba"
-  ],
-  "sportsWithSeenGames": [
-    "mlb",
-    "tennis",
-    "wnba"
-  ]
+  "policy": "Every requested sport with active same-day games or matches must have convertible markets for timestamped storage. Diagnostic probes do not create snapshots."
 }
