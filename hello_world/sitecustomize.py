@@ -1,4 +1,11 @@
 try:
+    import mlb_b10_engine
+    import mlb_strength_gate_patch
+    mlb_strength_gate_patch.apply(mlb_b10_engine)
+except Exception:
+    pass
+
+try:
     import inqsi_api
 
     def _all_member_image_uploads():
