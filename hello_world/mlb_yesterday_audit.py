@@ -170,6 +170,40 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
+def learning_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def bucket_add(bucket: Dict[str, Dict[str, Any]], key: str, correct: bool):
+        row = bucket.setdefault(key, {"count": 0, "correct": 0, "accuracyPct": None})
+        row["count"] += 1
+        if correct:
+            row["correct"] += 1
+
+    def finish(bucket: Dict[str, Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        for row in bucket.values():
+            row["accuracyPct"] = round(row["correct"] / row["count"] * 100, 2) if row["count"] else None
+        return bucket
+
+    tag_stats: Dict[str, Dict[str, Any]] = {}
+    grade_stats: Dict[str, Dict[str, Any]] = {}
+    confidence_stats: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        if row.get("status") != "FINAL":
+            continue
+        for tag in row.get("gameWinnerTags") or []:
+            bucket_add(tag_stats, f"GW:{tag}", bool(row.get("gameWinnerCorrect")))
+        for tag in row.get("b10Tags") or []:
+            bucket_add(tag_stats, f"B10:{tag}", bool(row.get("b10Correct")))
+        if row.get("b10SelectedGrade"):
+            bucket_add(grade_stats, str(row.get("b10SelectedGrade")), bool(row.get("b10Correct")))
+        if row.get("gameWinnerConfidenceTier"):
+            bucket_add(confidence_stats, str(row.get("gameWinnerConfidenceTier")), bool(row.get("gameWinnerCorrect")))
+    return {
+        "tagStats": finish(tag_stats),
+        "gradeStats": finish(grade_stats),
+        "confidenceStats": finish(confidence_stats),
+        "usage": "Use this to review which signals helped or hurt before changing thresholds. Automatic hard weight mutation remains blocked until sample size is sufficient.",
+    }
+
+
 def store_audit(report: Dict[str, Any]) -> Dict[str, Any]:
     if history.PULLS is None:
         return {"ok": False, "error": "SNAPSHOTS_TABLE not configured"}
@@ -210,6 +244,7 @@ def build(slate_date: Optional[str] = None, days_from: int = 3, store: bool = Tr
         "slate_date": slate,
         "finalScoreCount": score_report.get("finalScoreCount"),
         "summary": summary,
+        "learningSummary": learning_summary(rows),
         "rows": rows,
         "finalScores": score_report.get("finalScores") or [],
         "policy": "Audit every completed MLB game from the previous ET slate. Grade the game-winner pick and the B10 selected pick against final winners.",
