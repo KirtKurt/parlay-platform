@@ -7,6 +7,12 @@ import inqsi_pull_history as history
 import mlb_b10_engine
 
 try:
+    import mlb_strength_gate_patch
+    mlb_strength_gate_patch.apply(mlb_b10_engine)
+except Exception:
+    pass
+
+try:
     import baseline_parlay_builder
 except Exception:
     baseline_parlay_builder = None
