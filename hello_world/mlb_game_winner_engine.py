@@ -218,7 +218,7 @@ def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any
 def _store_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
     if history.PULLS is None:
         return {"ok": False, "error": "SNAPSHOTS_TABLE not configured"}
-    item = {
+    item = history.ddb_safe({
         "PK": f"GAME_WINNERS#mlb#{row.get('slate_date')}",
         "SK": f"GAME#{row.get('commenceTime') or 'unknown'}#{row.get('gameId')}",
         "record_type": "mlb_game_winner_prediction",
@@ -231,8 +231,8 @@ def _store_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
         "score": row.get("score"),
         "win_probability": row.get("winProbability"),
         "created_at": row.get("createdAt"),
-        "data": history.ddb_safe(row),
-    }
+        "data": row,
+    })
     history.PULLS.put_item(Item=item)
     return {"ok": True, "pk": item["PK"], "sk": item["SK"]}
 
