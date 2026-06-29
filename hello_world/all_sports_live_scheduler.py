@@ -8,6 +8,12 @@ import mlb_b10_engine
 import odds_live_ingestion
 
 try:
+    import mlb_strength_gate_patch
+    mlb_strength_gate_patch.apply(mlb_b10_engine)
+except Exception:
+    pass
+
+try:
     import mlb_game_winner_engine
 except Exception:
     mlb_game_winner_engine = None
