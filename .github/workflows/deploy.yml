@@ -61,7 +61,9 @@ jobs:
             --force-upload \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --parameter-overrides OddsApiKey=${{ secrets.ODDS_API_KEY }}
+            --parameter-overrides \
+              OddsApiKey=${{ secrets.ODDS_API_KEY }} \
+              SportsDataIoApiKey=${{ secrets.SPORTSDATAIO_API_KEY }}
 
       - name: Grant image moderation Rekognition access
         run: |
@@ -148,6 +150,11 @@ jobs:
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           curl --fail --silent --show-error "${API_URL}v1/results/mlb/signal-learning?fetch_scores=false"
+
+      - name: Smoke test SportsDataIO route wiring
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          curl --fail --silent --show-error "${API_URL}v1/mlb/fundamentals/status?fetch=false"
 
       - name: Smoke test image moderation policy endpoint
         run: |
