@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "createdAt": "2026-06-30T04:51:14.976991+00:00",
+  "createdAt": "2026-06-30T04:59:39.305955+00:00",
   "sportsRequested": [
     "mlb",
     "soccer",
@@ -37,7 +37,7 @@
     "sport": "mlb",
     "slate_date": "2026-06-30",
     "engine": "MLB-GAME-WINNER-v1.0",
-    "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06+75pct-target",
+    "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06+rolling24h-target",
     "pullCount": 1,
     "latestPullAt": "2026-06-30T04:50:27.249279+00:00",
     "gameCount": 14,
@@ -117,24 +117,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:05.438389+00:00",
+        "createdAt": "2026-06-30T04:59:30.753018+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-06-30T22:41:00Z#f62667265f8ded9cddabcc82eecfb2a4"
         },
         "rank": 1,
-        "rawScoreBefore75TargetCalibration": 55.08,
-        "rawWinProbabilityPctBefore75TargetCalibration": 60.43,
+        "rawScoreBeforeLearning": 55.08,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 55.08,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -215,24 +221,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:06.284105+00:00",
+        "createdAt": "2026-06-30T04:59:31.395112+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-07-01T01:41:00Z#835944b5efc736fb06b73068a981fde5"
         },
         "rank": 2,
-        "rawScoreBefore75TargetCalibration": 52.49,
-        "rawWinProbabilityPctBefore75TargetCalibration": 55.17,
+        "rawScoreBeforeLearning": 52.49,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 52.49,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -313,24 +325,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:05.821835+00:00",
+        "createdAt": "2026-06-30T04:59:31.044833+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-06-30T23:41:00Z#1d26cb2e8c25cee366cca30f7ae6428a"
         },
         "rank": 3,
-        "rawScoreBefore75TargetCalibration": 52.2,
-        "rawWinProbabilityPctBefore75TargetCalibration": 54.57,
+        "rawScoreBeforeLearning": 52.2,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 52.2,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -411,24 +429,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:05.745566+00:00",
+        "createdAt": "2026-06-30T04:59:30.986591+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-06-30T23:16:00Z#6685cf659fbcccab05e1e35fcf4dcbb9"
         },
         "rank": 4,
-        "rawScoreBefore75TargetCalibration": 50.4,
-        "rawWinProbabilityPctBefore75TargetCalibration": 50.83,
+        "rawScoreBeforeLearning": 50.4,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 50.4,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -509,24 +533,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:05.975169+00:00",
+        "createdAt": "2026-06-30T04:59:31.161686+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-07-01T00:06:00Z#090b0370fb46541b0a17771a0d86e281"
         },
         "rank": 5,
-        "rawScoreBefore75TargetCalibration": 48.85,
-        "rawWinProbabilityPctBefore75TargetCalibration": 47.61,
+        "rawScoreBeforeLearning": 48.85,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 48.85,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -607,24 +637,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:05.266105+00:00",
+        "createdAt": "2026-06-30T04:59:30.622774+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-06-30T22:36:00Z#fc7f74688fa7a695570c6e2a546a1b4c"
         },
         "rank": 6,
-        "rawScoreBefore75TargetCalibration": 48.42,
-        "rawWinProbabilityPctBefore75TargetCalibration": 46.71,
+        "rawScoreBeforeLearning": 48.42,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 48.42,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -705,24 +741,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:06.129305+00:00",
+        "createdAt": "2026-06-30T04:59:31.278420+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-07-01T00:41:00Z#c9a7f8f74b4ae9a65c80d47993dfeb86"
         },
         "rank": 7,
-        "rawScoreBefore75TargetCalibration": 47.81,
-        "rawWinProbabilityPctBefore75TargetCalibration": 45.45,
+        "rawScoreBeforeLearning": 47.81,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 47.81,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -803,24 +845,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:06.206060+00:00",
+        "createdAt": "2026-06-30T04:59:31.336923+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-07-01T01:40:00Z#1c4be9313fc412b34cc158daa4b7fdac"
         },
         "rank": 8,
-        "rawScoreBefore75TargetCalibration": 47.73,
-        "rawWinProbabilityPctBefore75TargetCalibration": 45.28,
+        "rawScoreBeforeLearning": 47.73,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 47.73,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -901,24 +949,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:05.668974+00:00",
+        "createdAt": "2026-06-30T04:59:30.928339+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-06-30T23:11:00Z#ff56e951fb2920b6a40e41ddccbe184b"
         },
         "rank": 9,
-        "rawScoreBefore75TargetCalibration": 46.49,
-        "rawWinProbabilityPctBefore75TargetCalibration": 42.74,
+        "rawScoreBeforeLearning": 46.49,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 46.49,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -999,24 +1053,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:05.514872+00:00",
+        "createdAt": "2026-06-30T04:59:30.811544+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-06-30T23:06:00Z#5ee2ae64246b36c95376f981cb3551da"
         },
         "rank": 10,
-        "rawScoreBefore75TargetCalibration": 45.99,
-        "rawWinProbabilityPctBefore75TargetCalibration": 41.72,
+        "rawScoreBeforeLearning": 45.99,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 45.99,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -1100,24 +1160,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:06.052380+00:00",
+        "createdAt": "2026-06-30T04:59:31.219937+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-07-01T00:11:00Z#878878a6f002b3712f580e398e40dc1a"
         },
         "rank": 11,
-        "rawScoreBefore75TargetCalibration": 43.2,
-        "rawWinProbabilityPctBefore75TargetCalibration": 36.2,
+        "rawScoreBeforeLearning": 43.2,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 43.2,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -1198,24 +1264,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:05.591721+00:00",
+        "createdAt": "2026-06-30T04:59:30.869994+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-06-30T23:08:00Z#d394e34530919df3f80263c0e0176924"
         },
         "rank": 12,
-        "rawScoreBefore75TargetCalibration": 42.87,
-        "rawWinProbabilityPctBefore75TargetCalibration": 35.57,
+        "rawScoreBeforeLearning": 42.87,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 42.87,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -1299,24 +1371,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:05.361665+00:00",
+        "createdAt": "2026-06-30T04:59:30.693155+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-06-30T22:41:00Z#0673c603ed95036d0dd89744802e018b"
         },
         "rank": 13,
-        "rawScoreBefore75TargetCalibration": 42.57,
-        "rawWinProbabilityPctBefore75TargetCalibration": 35.0,
+        "rawScoreBeforeLearning": 42.57,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 42.57,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -1394,24 +1472,30 @@
           ]
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-06-30T04:51:05.898266+00:00",
+        "createdAt": "2026-06-30T04:59:31.103167+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-06-30",
           "sk": "GAME#2026-06-30T23:41:00Z#5a0c2a8da870604e8dffcb6d053cd738"
         },
         "rank": 14,
-        "rawScoreBefore75TargetCalibration": 41.42,
-        "rawWinProbabilityPctBefore75TargetCalibration": 32.85,
+        "rawScoreBeforeLearning": 41.42,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 41.42,
         "calibrationPenalty": 14.0,
-        "targetAccuracyPct": 75.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_75pct_official_pick_gate",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
-          "officialMinProbabilityPct": 75.0,
-          "officialMinScore": 62.0,
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
           "requiresRealSignalBeyondBookAgreement": true,
           "disqualifyingTags": [
             "BOOK_DIVERGENCE",
@@ -1422,13 +1506,25 @@
         }
       }
     ],
-    "accuracyTarget": {
+    "rolling24hAccuracyTarget": {
       "targetAccuracyPct": 75.0,
-      "officialPickCount": 0,
+      "windowHours": 24,
+      "actionablePickCount": 0,
       "watchlistCount": 0,
       "observeOnlyCount": 14,
-      "officialPicks": [],
-      "policy": "Every game remains scored. Only OFFICIAL_PICK_75_TARGET rows count as actionable individual picks toward the 75% accuracy target."
+      "actionablePicks": [],
+      "policy": "Every game remains scored. The 75% target is measured only by the rolling 24-hour audit of completed actionable picks.",
+      "latestLearningApplied": false
+    },
+    "accuracyTarget": {
+      "targetAccuracyPct": 75.0,
+      "windowHours": 24,
+      "actionablePickCount": 0,
+      "watchlistCount": 0,
+      "observeOnlyCount": 14,
+      "actionablePicks": [],
+      "policy": "Every game remains scored. The 75% target is measured only by the rolling 24-hour audit of completed actionable picks.",
+      "latestLearningApplied": false
     }
   },
   "mlbAllGamesSignalProofSummary": {
@@ -1468,7 +1564,7 @@
   "pullDiagnostics": {
     "ok": true,
     "source": "diagnostic_provider_probe_no_snapshot_storage",
-    "createdAt": "2026-06-30T04:51:14.805081+00:00",
+    "createdAt": "2026-06-30T04:59:39.190626+00:00",
     "sportsRequested": [
       "mlb",
       "wnba",
@@ -1565,9 +1661,9 @@
       {
         "ok": true,
         "appSport": "mlb",
-        "rawGamesReturned": 15,
-        "rawGamesInWindow": 15,
-        "gamesConvertible": 15,
+        "rawGamesReturned": 14,
+        "rawGamesInWindow": 14,
+        "gamesConvertible": 14,
         "gamesStored": null,
         "diagnosticOnlyNoSnapshotStored": true,
         "activeStorageFailure": false,
@@ -1576,14 +1672,14 @@
             "ok": true,
             "appSport": "mlb",
             "providerSportKey": "baseball_mlb",
-            "rawGamesReturned": 15,
-            "rawGamesInWindow": 15,
-            "gamesConvertible": 15,
+            "rawGamesReturned": 14,
+            "rawGamesInWindow": 14,
+            "gamesConvertible": 14,
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:12.068016+00:00",
-            "activeWindowEnd": "2026-07-02T04:51:12.068016+00:00",
+            "activeWindowStart": "2026-06-29T22:59:35.866732+00:00",
+            "activeWindowEnd": "2026-07-02T04:59:35.866732+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -1609,8 +1705,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:12.278860+00:00",
-            "activeWindowEnd": "2026-07-02T04:51:12.278860+00:00",
+            "activeWindowStart": "2026-06-29T22:59:36.117094+00:00",
+            "activeWindowEnd": "2026-07-02T04:59:36.117094+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -1636,8 +1732,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:12.567486+00:00",
-            "activeWindowEnd": "2026-07-07T04:51:12.567486+00:00",
+            "activeWindowStart": "2026-06-29T22:59:36.617006+00:00",
+            "activeWindowEnd": "2026-07-07T04:59:36.617006+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -1663,8 +1759,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:13.118035+00:00",
-            "activeWindowEnd": "2026-07-07T04:51:13.118035+00:00",
+            "activeWindowStart": "2026-06-29T22:59:37.117898+00:00",
+            "activeWindowEnd": "2026-07-07T04:59:37.117898+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -1690,8 +1786,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:13.270685+00:00",
-            "activeWindowEnd": "2026-07-02T04:51:13.270685+00:00",
+            "activeWindowStart": "2026-06-29T22:59:37.265801+00:00",
+            "activeWindowEnd": "2026-07-02T04:59:37.265801+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -1717,8 +1813,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:13.414728+00:00",
-            "activeWindowEnd": "2026-07-02T04:51:13.414728+00:00",
+            "activeWindowStart": "2026-06-29T22:59:37.415109+00:00",
+            "activeWindowEnd": "2026-07-02T04:59:37.415109+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -1744,8 +1840,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:13.551863+00:00",
-            "activeWindowEnd": "2026-07-02T04:51:13.551863+00:00",
+            "activeWindowStart": "2026-06-29T22:59:37.564494+00:00",
+            "activeWindowEnd": "2026-07-02T04:59:37.564494+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -1771,8 +1867,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:13.701780+00:00",
-            "activeWindowEnd": "2026-07-14T04:51:13.701780+00:00",
+            "activeWindowStart": "2026-06-29T22:59:37.707166+00:00",
+            "activeWindowEnd": "2026-07-14T04:59:37.707166+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           },
@@ -1786,8 +1882,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:13.894738+00:00",
-            "activeWindowEnd": "2026-07-14T04:51:13.894738+00:00",
+            "activeWindowStart": "2026-06-29T22:59:37.915220+00:00",
+            "activeWindowEnd": "2026-07-14T04:59:37.915220+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           },
@@ -1801,8 +1897,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:14.027081+00:00",
-            "activeWindowEnd": "2026-07-14T04:51:14.027081+00:00",
+            "activeWindowStart": "2026-06-29T22:59:38.066810+00:00",
+            "activeWindowEnd": "2026-07-14T04:59:38.066810+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           }
@@ -1828,8 +1924,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:14.408605+00:00",
-            "activeWindowEnd": "2026-07-07T04:51:14.408605+00:00",
+            "activeWindowStart": "2026-06-29T22:59:38.762334+00:00",
+            "activeWindowEnd": "2026-07-07T04:59:38.762334+00:00",
             "slateWindowDays": 7,
             "error": null
           },
@@ -1843,8 +1939,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-06-29T22:51:14.804761+00:00",
-            "activeWindowEnd": "2026-07-07T04:51:14.804761+00:00",
+            "activeWindowStart": "2026-06-29T22:59:39.190271+00:00",
+            "activeWindowEnd": "2026-07-07T04:59:39.190271+00:00",
             "slateWindowDays": 7,
             "error": null
           }
@@ -1896,9 +1992,9 @@
           "deadlinePassed": false,
           "buildDeadlineUtc": "2026-06-30T20:36:00+00:00",
           "firstEventAtEt": "2026-06-30T18:36:00-04:00",
-          "currentEt": "2026-06-30T00:51:07.790948-04:00",
+          "currentEt": "2026-06-30T00:59:32.602709-04:00",
           "ok": true,
-          "currentUtc": "2026-06-30T04:51:07.790948+00:00",
+          "currentUtc": "2026-06-30T04:59:32.602709+00:00",
           "buildDeadlineEt": "2026-06-30T16:36:00-04:00"
         },
         "ok": true,
@@ -2599,7 +2695,7 @@
       },
       "stored": {
         "pk": "PARLAY_BUILDS#mlb#2026-06-30",
-        "sk": "BUILD#2026-06-30T04:51:09.029247+00:00#parlay_79e833f875cd4f15"
+        "sk": "BUILD#2026-06-30T04:59:33.566798+00:00#parlay_5d880acaee714489"
       }
     },
     "result": {
@@ -2640,8 +2736,8 @@
             "buildDeadlineEt": "2026-06-30T16:36:00-04:00",
             "deadlineHoursBeforeFirstEvent": 2.0,
             "deadlinePassed": false,
-            "currentUtc": "2026-06-30T04:51:07.790948+00:00",
-            "currentEt": "2026-06-30T00:51:07.790948-04:00"
+            "currentUtc": "2026-06-30T04:59:32.602709+00:00",
+            "currentEt": "2026-06-30T00:59:32.602709-04:00"
           },
           "gameCount": 14,
           "gameHistoryStored": 14,
@@ -3334,8 +3430,8 @@
           "candidateFilterPolicy": "Candidates are the post-score subset where frozen=true and selected grade is MLB_STRONG or MLB_LEAN. This full board shows the pre-filter scoring pass for every MLB game.",
           "stored": {
             "pk": "PARLAY_BUILDS#mlb#2026-06-30",
-            "sk": "BUILD#2026-06-30T04:51:09.029247+00:00#parlay_79e833f875cd4f15",
-            "build_id": "parlay_79e833f875cd4f15",
+            "sk": "BUILD#2026-06-30T04:59:33.566798+00:00#parlay_5d880acaee714489",
+            "build_id": "parlay_5d880acaee714489",
             "build_status": "NO_BUILD"
           }
         },
@@ -3380,8 +3476,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#wnba#2026-06-30",
-            "sk": "BUILD#2026-06-30T04:51:09.405494+00:00#parlay_453a9836e3404268",
-            "build_id": "parlay_453a9836e3404268",
+            "sk": "BUILD#2026-06-30T04:59:33.855916+00:00#parlay_18d76aafedef48ed",
+            "build_id": "parlay_18d76aafedef48ed",
             "build_status": "NO_BUILD"
           }
         },
@@ -3426,8 +3522,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nfl#2026-06-30",
-            "sk": "BUILD#2026-06-30T04:51:09.703089+00:00#parlay_8cb7bdb91e584bb8",
-            "build_id": "parlay_8cb7bdb91e584bb8",
+            "sk": "BUILD#2026-06-30T04:59:34.083201+00:00#parlay_85e0d26b6e6d43d5",
+            "build_id": "parlay_85e0d26b6e6d43d5",
             "build_status": "NO_BUILD"
           }
         },
@@ -3472,8 +3568,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#cfb#2026-06-30",
-            "sk": "BUILD#2026-06-30T04:51:10.000359+00:00#parlay_e1440f1848394588",
-            "build_id": "parlay_e1440f1848394588",
+            "sk": "BUILD#2026-06-30T04:59:34.307509+00:00#parlay_18faa2afc4724014",
+            "build_id": "parlay_18faa2afc4724014",
             "build_status": "NO_BUILD"
           }
         },
@@ -3518,8 +3614,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nba#2026-06-30",
-            "sk": "BUILD#2026-06-30T04:51:10.294539+00:00#parlay_c01ff138bc234365",
-            "build_id": "parlay_c01ff138bc234365",
+            "sk": "BUILD#2026-06-30T04:59:34.532457+00:00#parlay_d3d2b8c4c96c4395",
+            "build_id": "parlay_d3d2b8c4c96c4395",
             "build_status": "NO_BUILD"
           }
         },
@@ -3564,8 +3660,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#ncaam#2026-06-30",
-            "sk": "BUILD#2026-06-30T04:51:10.591866+00:00#parlay_c5a86f0111b748d4",
-            "build_id": "parlay_c5a86f0111b748d4",
+            "sk": "BUILD#2026-06-30T04:59:34.756758+00:00#parlay_651fc0fa46984511",
+            "build_id": "parlay_651fc0fa46984511",
             "build_status": "NO_BUILD"
           }
         },
@@ -3610,8 +3706,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nhl#2026-06-30",
-            "sk": "BUILD#2026-06-30T04:51:10.886671+00:00#parlay_f707c3c8680044f7",
-            "build_id": "parlay_f707c3c8680044f7",
+            "sk": "BUILD#2026-06-30T04:59:34.984746+00:00#parlay_73162200ec374e31",
+            "build_id": "parlay_73162200ec374e31",
             "build_status": "NO_BUILD"
           }
         },
@@ -3656,8 +3752,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#soccer#2026-06-30",
-            "sk": "BUILD#2026-06-30T04:51:11.308363+00:00#parlay_d1ce0ba64c2543ba",
-            "build_id": "parlay_d1ce0ba64c2543ba",
+            "sk": "BUILD#2026-06-30T04:59:35.210864+00:00#parlay_fb3f1585c17a4895",
+            "build_id": "parlay_fb3f1585c17a4895",
             "build_status": "NO_BUILD"
           }
         },
@@ -3702,8 +3798,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#tennis#2026-06-30",
-            "sk": "BUILD#2026-06-30T04:51:11.681963+00:00#parlay_5c42d6d3337b4d6b",
-            "build_id": "parlay_5c42d6d3337b4d6b",
+            "sk": "BUILD#2026-06-30T04:59:35.492997+00:00#parlay_cc11c3b714d54cfd",
+            "build_id": "parlay_cc11c3b714d54cfd",
             "build_status": "NO_BUILD"
           }
         }
@@ -3712,7 +3808,7 @@
     "pullDiagnostics": {
       "ok": true,
       "source": "diagnostic_provider_probe_no_snapshot_storage",
-      "createdAt": "2026-06-30T04:51:14.805081+00:00",
+      "createdAt": "2026-06-30T04:59:39.190626+00:00",
       "sportsRequested": [
         "mlb",
         "wnba",
@@ -3809,9 +3905,9 @@
         {
           "ok": true,
           "appSport": "mlb",
-          "rawGamesReturned": 15,
-          "rawGamesInWindow": 15,
-          "gamesConvertible": 15,
+          "rawGamesReturned": 14,
+          "rawGamesInWindow": 14,
+          "gamesConvertible": 14,
           "gamesStored": null,
           "diagnosticOnlyNoSnapshotStored": true,
           "activeStorageFailure": false,
@@ -3820,14 +3916,14 @@
               "ok": true,
               "appSport": "mlb",
               "providerSportKey": "baseball_mlb",
-              "rawGamesReturned": 15,
-              "rawGamesInWindow": 15,
-              "gamesConvertible": 15,
+              "rawGamesReturned": 14,
+              "rawGamesInWindow": 14,
+              "gamesConvertible": 14,
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:12.068016+00:00",
-              "activeWindowEnd": "2026-07-02T04:51:12.068016+00:00",
+              "activeWindowStart": "2026-06-29T22:59:35.866732+00:00",
+              "activeWindowEnd": "2026-07-02T04:59:35.866732+00:00",
               "slateWindowDays": 2,
               "error": null
             }
@@ -3853,8 +3949,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:12.278860+00:00",
-              "activeWindowEnd": "2026-07-02T04:51:12.278860+00:00",
+              "activeWindowStart": "2026-06-29T22:59:36.117094+00:00",
+              "activeWindowEnd": "2026-07-02T04:59:36.117094+00:00",
               "slateWindowDays": 2,
               "error": null
             }
@@ -3880,8 +3976,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:12.567486+00:00",
-              "activeWindowEnd": "2026-07-07T04:51:12.567486+00:00",
+              "activeWindowStart": "2026-06-29T22:59:36.617006+00:00",
+              "activeWindowEnd": "2026-07-07T04:59:36.617006+00:00",
               "slateWindowDays": 7,
               "error": "active_slate_window_empty"
             }
@@ -3907,8 +4003,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:13.118035+00:00",
-              "activeWindowEnd": "2026-07-07T04:51:13.118035+00:00",
+              "activeWindowStart": "2026-06-29T22:59:37.117898+00:00",
+              "activeWindowEnd": "2026-07-07T04:59:37.117898+00:00",
               "slateWindowDays": 7,
               "error": "active_slate_window_empty"
             }
@@ -3934,8 +4030,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:13.270685+00:00",
-              "activeWindowEnd": "2026-07-02T04:51:13.270685+00:00",
+              "activeWindowStart": "2026-06-29T22:59:37.265801+00:00",
+              "activeWindowEnd": "2026-07-02T04:59:37.265801+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -3961,8 +4057,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:13.414728+00:00",
-              "activeWindowEnd": "2026-07-02T04:51:13.414728+00:00",
+              "activeWindowStart": "2026-06-29T22:59:37.415109+00:00",
+              "activeWindowEnd": "2026-07-02T04:59:37.415109+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -3988,8 +4084,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:13.551863+00:00",
-              "activeWindowEnd": "2026-07-02T04:51:13.551863+00:00",
+              "activeWindowStart": "2026-06-29T22:59:37.564494+00:00",
+              "activeWindowEnd": "2026-07-02T04:59:37.564494+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -4015,8 +4111,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:13.701780+00:00",
-              "activeWindowEnd": "2026-07-14T04:51:13.701780+00:00",
+              "activeWindowStart": "2026-06-29T22:59:37.707166+00:00",
+              "activeWindowEnd": "2026-07-14T04:59:37.707166+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             },
@@ -4030,8 +4126,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:13.894738+00:00",
-              "activeWindowEnd": "2026-07-14T04:51:13.894738+00:00",
+              "activeWindowStart": "2026-06-29T22:59:37.915220+00:00",
+              "activeWindowEnd": "2026-07-14T04:59:37.915220+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             },
@@ -4045,8 +4141,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:14.027081+00:00",
-              "activeWindowEnd": "2026-07-14T04:51:14.027081+00:00",
+              "activeWindowStart": "2026-06-29T22:59:38.066810+00:00",
+              "activeWindowEnd": "2026-07-14T04:59:38.066810+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             }
@@ -4072,8 +4168,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:14.408605+00:00",
-              "activeWindowEnd": "2026-07-07T04:51:14.408605+00:00",
+              "activeWindowStart": "2026-06-29T22:59:38.762334+00:00",
+              "activeWindowEnd": "2026-07-07T04:59:38.762334+00:00",
               "slateWindowDays": 7,
               "error": null
             },
@@ -4087,8 +4183,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-06-29T22:51:14.804761+00:00",
-              "activeWindowEnd": "2026-07-07T04:51:14.804761+00:00",
+              "activeWindowStart": "2026-06-29T22:59:39.190271+00:00",
+              "activeWindowEnd": "2026-07-07T04:59:39.190271+00:00",
               "slateWindowDays": 7,
               "error": null
             }
