@@ -20,6 +20,13 @@ except Exception:
     pass
 
 try:
+    import mlb_game_winner_engine as _mlb_game_winner_engine_for_final_gate
+    import mlb_last_possible_prediction_gate
+    mlb_last_possible_prediction_gate.apply(_mlb_game_winner_engine_for_final_gate)
+except Exception:
+    pass
+
+try:
     import api as _api_for_sportsdataio
     import sportsdataio_api_patch
     sportsdataio_api_patch.apply(_api_for_sportsdataio)
