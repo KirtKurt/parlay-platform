@@ -3,12 +3,56 @@ from pathlib import Path
 TEMPLATE = Path("template.yaml")
 text = TEMPLATE.read_text()
 
+
+def insert_once(current: str, marker: str, block: str, contains: str) -> str:
+    if contains in current:
+        return current
+    if marker not in current:
+        raise RuntimeError(f"Template marker not found: {marker.strip()}")
+    return current.replace(marker, block + marker, 1)
+
+
+def remove_indented_event_block(current: str, event_name: str) -> str:
+    """Remove a SAM Events child block indented under a Function Events map.
+
+    The previous remover searched for the next occurrence of eight spaces, which
+    could match nested properties and leave invalid YAML. This line-based remover
+    skips the whole child event until the next sibling event or resource block.
+    """
+    lines = current.splitlines(keepends=True)
+    output = []
+    i = 0
+    needle = f"        {event_name}:"
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith(needle):
+            i += 1
+            while i < len(lines):
+                nxt = lines[i]
+                is_next_event = nxt.startswith("        ") and not nxt.startswith("          ")
+                is_next_resource = nxt.startswith("  ") and not nxt.startswith("    ")
+                if is_next_event or is_next_resource:
+                    break
+                i += 1
+            continue
+        output.append(line)
+        i += 1
+    return "".join(output)
+
+
+# Make the raw archive bucket available to Lambda functions.
 if "RAW_ARCHIVE_BUCKET:" not in text:
-    text = text.replace("        OUTCOMES_TABLE: !Ref OutcomesTable\n", "        OUTCOMES_TABLE: !Ref OutcomesTable\n        RAW_ARCHIVE_BUCKET: !Ref RawArchiveBucket\n")
+    text = text.replace(
+        "        OUTCOMES_TABLE: !Ref OutcomesTable\n",
+        "        OUTCOMES_TABLE: !Ref OutcomesTable\n        RAW_ARCHIVE_BUCKET: !Ref RawArchiveBucket\n",
+        1,
+    )
 
 if "RawArchiveBucket:" not in text:
-    marker = "  InqsiMembersTable:\n"
-    bucket = """
+    text = insert_once(
+        text,
+        "  InqsiMembersTable:\n",
+        """
   RawArchiveBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -26,22 +70,20 @@ if "RawArchiveBucket:" not in text:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
-"""
-    text = text.replace(marker, bucket + marker)
+""",
+        "RawArchiveBucket:",
+    )
 
-legacy_blocks = ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4"]
-for name in legacy_blocks:
-    while f"        {name}:\n" in text:
-        start = text.index(f"        {name}:\n")
-        next_start = text.find("        ", start + 1)
-        if next_start == -1:
-            text = text[:start]
-        else:
-            text = text[:start] + text[next_start:]
+# Remove obsolete T1/T2/T3/T4 snapshot schedules. MLB production polling is HOT
+# 15-minute pull history; T labels are legacy only.
+for legacy_event in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4"]:
+    text = remove_indented_event_block(text, legacy_event)
 
 if "InqsiMLBV1CoreFunction:" not in text:
-    marker = "  MLBResultsSchedulerFunction:\n"
-    resource = """
+    text = insert_once(
+        text,
+        "  MLBResultsSchedulerFunction:\n",
+        """
   InqsiMLBV1CoreFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -106,14 +148,21 @@ if "InqsiMLBV1CoreFunction:" not in text:
             Schedule: rate(15 minutes)
             Input: '{"sport":"mlb","run":"hot_raw_archive"}'
 
-"""
-    text = text.replace(marker, resource + marker)
+""",
+        "InqsiMLBV1CoreFunction:",
+    )
 elif "Path: /v1/mlb/game-winners" not in text and "Path: /v1/mlb/predictions" in text:
-    text = text.replace("        InqsiMLBV1Audit:\n          Type: Api\n", "        InqsiMLBV1GameWinners:\n          Type: Api\n          Properties:\n            Path: /v1/mlb/game-winners\n            Method: GET\n        InqsiMLBV1Audit:\n          Type: Api\n")
+    text = text.replace(
+        "        InqsiMLBV1Audit:\n          Type: Api\n",
+        "        InqsiMLBV1GameWinners:\n          Type: Api\n          Properties:\n            Path: /v1/mlb/game-winners\n            Method: GET\n        InqsiMLBV1Audit:\n          Type: Api\n",
+        1,
+    )
 
 if "MLBResultSignalsFunction:" not in text:
-    marker = "  MLBResultsSchedulerFunction:\n"
-    resource = """
+    text = insert_once(
+        text,
+        "  MLBResultsSchedulerFunction:\n",
+        """
   MLBResultSignalsFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -141,12 +190,15 @@ if "MLBResultSignalsFunction:" not in text:
             Path: /v1/mlb/result-signals
             Method: POST
 
-"""
-    text = text.replace(marker, resource + marker)
+""",
+        "MLBResultSignalsFunction:",
+    )
 
 if "AllSportsLiveSchedulerFunction:" not in text:
-    marker = "  InqsiAutopsySchedulerFunction:\n"
-    resource = """
+    text = insert_once(
+        text,
+        "  InqsiAutopsySchedulerFunction:\n",
+        """
   AllSportsLiveSchedulerFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -168,21 +220,26 @@ if "AllSportsLiveSchedulerFunction:" not in text:
           Type: Schedule
           Properties:
             Schedule: rate(15 minutes)
-            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_every_15_min","policy":"1am_et_start_plus_15min"}'
+            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_every_15_min","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
         AllSportsHotKickoff1amEtDst:
           Type: Schedule
           Properties:
             Schedule: cron(0 5 * * ? *)
-            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_dst","policy":"1am_et_start_plus_15min"}'
+            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_dst","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
         AllSportsHotKickoff1amEtStandard:
           Type: Schedule
           Properties:
             Schedule: cron(0 6 * * ? *)
-            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_standard","policy":"1am_et_start_plus_15min"}'
+            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_standard","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
 
-"""
-    text = text.replace(marker, resource + marker)
+""",
+        "AllSportsLiveSchedulerFunction:",
+    )
 
 TEMPLATE.write_text(text)
 exec(Path("scripts/patch_template_mlb_hot_start_v2.py").read_text())
-print("Patched template.yaml for INQSI MLB v1 routes, MLB game-winner route, result-signal learning, raw S3 archive, 1 AM ET HOT kickoff, HOT-only MLB pulls, and all-sports 1 AM ET plus 15-minute live scheduler.")
+print(
+    "Patched template.yaml for INQSI MLB v1 routes, MLB game-winner route, "
+    "result-signal learning, raw S3 archive, AWS EventBridge primary all-sports "
+    "15-minute polling, 1 AM ET kickoffs, HOT-only MLB pulls, and legacy MLB T-schedule removal."
+)
