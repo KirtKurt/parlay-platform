@@ -49,8 +49,11 @@ def build_report(api_url: str) -> Dict[str, Any]:
     today_json = (checks.get("today") or {}).get("json") or {}
 
     today_target = today_json.get("rolling24hAccuracyTarget") or today_json.get("accuracyTarget") or {}
+    last_gate = today_json.get("lastPossiblePredictionGate") or today_target.get("lastPossiblePredictionGate") or {}
     predictions = today_json.get("predictions") or []
     fundamentals_rows = [row for row in predictions if (row.get("winnerOptimizer") or {}).get("fundamentalsApplied")]
+    final_gate_rows = [row for row in predictions if (row.get("lastPossiblePredictionGate") or {}).get("finalLocked")]
+    final_gate_sportsdata_rows = [row for row in final_gate_rows if (row.get("lastPossiblePredictionGate") or {}).get("sportsDataIoFundamentalsApplied")]
 
     proof = {
         "ok": True,
@@ -68,14 +71,19 @@ def build_report(api_url: str) -> Dict[str, Any]:
             "teamPowerOk": bool(team_power_json.get("ok")),
             "teamPowerCount": team_power_json.get("count"),
             "todayEndpointOk": bool((checks.get("today") or {}).get("ok")),
-            "modelVersion": today_json.get("modelVersion"),
+            "modelVersion": today_json.get("modelVersion") or today_json.get("model_version"),
             "fundamentalsEnabled": today_target.get("fundamentalsEnabled"),
             "fundamentalsAppliedCount": today_target.get("fundamentalsAppliedCount", len(fundamentals_rows)),
             "fundamentalsFlipCount": today_target.get("fundamentalsFlipCount"),
+            "lastPossibleGateApplied": bool(last_gate.get("applied")),
+            "lastPossibleGatePhaseCounts": last_gate.get("phaseCounts"),
+            "lastPossibleGateFinalLockedCount": last_gate.get("finalLockedCount", len(final_gate_rows)),
+            "lastPossibleGateSportsDataIoAppliedCount": last_gate.get("sportsDataIoFundamentalsAppliedCount", len(final_gate_sportsdata_rows)),
+            "lastPossibleGateSportsDataIoMissingCount": last_gate.get("sportsDataIoMissingFinalGateCount"),
         },
         "policy": "This report proves runtime endpoint behavior without exposing SPORTSDATAIO_API_KEY. A configured=false result means code is deployed but AWS Lambda does not yet have the key in its environment.",
     }
-    proof["ok"] = bool(proof["summary"]["apiHealthOk"] and proof["summary"]["sportsDataIoStatusEndpointOk"])
+    proof["ok"] = bool(proof["summary"]["apiHealthOk"] and proof["summary"]["todayEndpointOk"])
     return proof
 
 
