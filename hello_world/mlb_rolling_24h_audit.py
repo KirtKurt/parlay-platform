@@ -14,7 +14,7 @@ SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 REPORT_PATH = "runtime_reports/mlb_rolling_24h_audit_latest.json"
 WINDOW_HOURS = 24
-TARGET_ACCURACY_PCT = 75.0
+TARGET_ACCURACY_PCT = 90.0
 
 
 def now_utc() -> datetime:
@@ -290,7 +290,7 @@ def build(days_from: int = 3, store: bool = True, write_file: bool = True) -> Di
         "summary": summarize(rows),
         "scoreLearning": learning,
         "rows": rows,
-        "policy": "Audit every completed MLB game in the trailing 24 hours. The optimizer target is correct team-winner selection for every individual game; 75% is measured as rolling 24h accuracy across all optimized picks.",
+        "policy": "Audit every completed MLB game in the trailing 24 hours. The optimizer target is correct team-winner selection for every individual game; 90% is measured as rolling 24h accuracy across all optimized picks.",
     }
     if store:
         try:
