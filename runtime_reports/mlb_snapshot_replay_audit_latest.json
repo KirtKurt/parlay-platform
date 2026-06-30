@@ -1,11 +1,11 @@
 {
   "ok": true,
   "proofType": "MLB_SNAPSHOT_REPLAY_AUDIT",
-  "createdAtUtc": "2026-06-30T04:59:32.530503+00:00",
-  "createdAtEt": "2026-06-30T00:59:32.530507-04:00",
+  "createdAtUtc": "2026-06-30T05:00:58.888730+00:00",
+  "createdAtEt": "2026-06-30T01:00:58.888734-04:00",
   "sport": "mlb",
   "slate_date": "2026-06-30",
-  "pullCount": 1,
+  "pullCount": 2,
   "minimumParlayPulls": 12,
   "coverage": {
     "policy": "MLB pulls should start at 1:00 AM ET and continue every 15 minutes.",
@@ -13,17 +13,17 @@
     "expectedStartAtEt": "2026-06-30T01:00:00-04:00",
     "firstPullAtUtc": "2026-06-30T04:50:27.249279+00:00",
     "firstPullAtEt": "2026-06-30T00:50:27.249279-04:00",
-    "latestPullAtUtc": "2026-06-30T04:50:27.249279+00:00",
-    "latestPullAtEt": "2026-06-30T00:50:27.249279-04:00",
-    "actualPullCount": 1,
-    "actualPullCountSinceStart": 0,
-    "expectedPullCountSinceStart": 0,
+    "latestPullAtUtc": "2026-06-30T05:00:56.131861+00:00",
+    "latestPullAtEt": "2026-06-30T01:00:56.131861-04:00",
+    "actualPullCount": 2,
+    "actualPullCountSinceStart": 1,
+    "expectedPullCountSinceStart": 1,
     "missingPullCountSinceStart": 0,
-    "coverageRatio": null,
-    "coverageComplete": false,
+    "coverageRatio": 1.0,
+    "coverageComplete": true,
     "intervalMinutes": 15
   },
-  "snapshotCount": 1,
+  "snapshotCount": 2,
   "finalScoredGameCount": 14,
   "finalIdentifiedSignalCount": 28,
   "finalBoard": [
@@ -42,16 +42,16 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.57276,
         "probLatest": 0.57276,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.14552,
         "bookCount": 11,
         "bookDivergence": 0.01009,
@@ -69,10 +69,10 @@
         "probStart": 0.42724,
         "probLatest": 0.42724,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.14552,
         "bookCount": 11,
         "bookDivergence": 0.01009,
@@ -103,16 +103,16 @@
         "COMPRESSED_MARKET",
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.4828,
         "probLatest": 0.4828,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.0344,
         "bookCount": 11,
         "bookDivergence": 0.01339,
@@ -131,10 +131,10 @@
         "probStart": 0.5172,
         "probLatest": 0.5172,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.0344,
         "bookCount": 11,
         "bookDivergence": 0.01339,
@@ -163,49 +163,51 @@
       "grade": "INSUFFICIENT_HISTORY",
       "score": 20.0,
       "tags": [
-        "LOW_PULL_DEPTH"
+        "LOW_PULL_DEPTH",
+        "MOMENTUM"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.66638,
-        "probLatest": 0.66638,
-        "delta": 0.0,
-        "velocityPpHr": 0,
+        "probLatest": 0.67134,
+        "delta": 0.00496,
+        "velocityPpHr": 1.983,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
-        "latestGap": 0.33276,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
+        "latestGap": 0.34268,
         "bookCount": 11,
-        "bookDivergence": 0.01691,
+        "bookDivergence": 0.01954,
         "reversals": 0,
         "tags": [
-          "LOW_PULL_DEPTH"
+          "LOW_PULL_DEPTH",
+          "MOMENTUM"
         ],
         "grade": "INSUFFICIENT_HISTORY",
         "score": 20.0,
-        "rawScoreBeforeGuard": 58.24,
+        "rawScoreBeforeGuard": 61.32,
         "scoreGuardApplied": true
       },
       "awaySignal": {
         "side": "away",
         "probStart": 0.33362,
-        "probLatest": 0.33362,
-        "delta": 0.0,
-        "velocityPpHr": 0,
+        "probLatest": 0.32866,
+        "delta": -0.00496,
+        "velocityPpHr": -1.983,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
-        "latestGap": 0.33276,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
+        "latestGap": 0.34268,
         "bookCount": 11,
-        "bookDivergence": 0.01691,
+        "bookDivergence": 0.01954,
         "reversals": 0,
         "tags": [
           "LOW_PULL_DEPTH"
         ],
         "grade": "INSUFFICIENT_HISTORY",
         "score": 20.0,
-        "rawScoreBeforeGuard": 31.62,
+        "rawScoreBeforeGuard": 26.96,
         "scoreGuardApplied": true
       },
       "rankInSnapshot": 3
@@ -225,16 +227,16 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.55542,
         "probLatest": 0.55542,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.11084,
         "bookCount": 11,
         "bookDivergence": 0.01346,
@@ -252,10 +254,10 @@
         "probStart": 0.44458,
         "probLatest": 0.44458,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.11084,
         "bookCount": 11,
         "bookDivergence": 0.01346,
@@ -285,16 +287,16 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.53535,
         "probLatest": 0.53535,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.07069,
         "bookCount": 11,
         "bookDivergence": 0.01852,
@@ -312,10 +314,10 @@
         "probStart": 0.46465,
         "probLatest": 0.46465,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.07069,
         "bookCount": 11,
         "bookDivergence": 0.01852,
@@ -345,16 +347,16 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.56088,
         "probLatest": 0.56088,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.12175,
         "bookCount": 11,
         "bookDivergence": 0.01344,
@@ -372,10 +374,10 @@
         "probStart": 0.43912,
         "probLatest": 0.43912,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.12175,
         "bookCount": 11,
         "bookDivergence": 0.01344,
@@ -405,16 +407,16 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.59227,
         "probLatest": 0.59227,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.18454,
         "bookCount": 11,
         "bookDivergence": 0.00925,
@@ -432,10 +434,10 @@
         "probStart": 0.40773,
         "probLatest": 0.40773,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.18454,
         "bookCount": 11,
         "bookDivergence": 0.00925,
@@ -465,16 +467,16 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.61188,
         "probLatest": 0.61188,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.22377,
         "bookCount": 11,
         "bookDivergence": 0.00911,
@@ -492,10 +494,10 @@
         "probStart": 0.38812,
         "probLatest": 0.38812,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.22377,
         "bookCount": 11,
         "bookDivergence": 0.00911,
@@ -525,16 +527,16 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.47255,
         "probLatest": 0.47255,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.0549,
         "bookCount": 11,
         "bookDivergence": 0.02136,
@@ -552,10 +554,10 @@
         "probStart": 0.52745,
         "probLatest": 0.52745,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.0549,
         "bookCount": 11,
         "bookDivergence": 0.02136,
@@ -585,16 +587,16 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.58402,
         "probLatest": 0.58402,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.16804,
         "bookCount": 11,
         "bookDivergence": 0.01233,
@@ -612,10 +614,10 @@
         "probStart": 0.41598,
         "probLatest": 0.41598,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.16804,
         "bookCount": 11,
         "bookDivergence": 0.01233,
@@ -646,19 +648,19 @@
         "COMPRESSED_MARKET",
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.48579,
-        "probLatest": 0.48579,
-        "delta": 0.0,
-        "velocityPpHr": 0,
+        "probLatest": 0.48479,
+        "delta": -0.00099,
+        "velocityPpHr": -0.397,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
-        "latestGap": 0.02843,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
+        "latestGap": 0.03041,
         "bookCount": 11,
-        "bookDivergence": 0.00994,
+        "bookDivergence": 0.01431,
         "reversals": 0,
         "tags": [
           "COMPRESSED_MARKET",
@@ -666,21 +668,21 @@
         ],
         "grade": "INSUFFICIENT_HISTORY",
         "score": 20.0,
-        "rawScoreBeforeGuard": 45.88,
+        "rawScoreBeforeGuard": 43.8,
         "scoreGuardApplied": true
       },
       "awaySignal": {
         "side": "away",
         "probStart": 0.51421,
-        "probLatest": 0.51421,
-        "delta": 0.0,
-        "velocityPpHr": 0,
+        "probLatest": 0.51521,
+        "delta": 0.00099,
+        "velocityPpHr": 0.397,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
-        "latestGap": 0.02843,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
+        "latestGap": 0.03041,
         "bookCount": 11,
-        "bookDivergence": 0.00994,
+        "bookDivergence": 0.01431,
         "reversals": 0,
         "tags": [
           "COMPRESSED_MARKET",
@@ -688,7 +690,7 @@
         ],
         "grade": "INSUFFICIENT_HISTORY",
         "score": 20.0,
-        "rawScoreBeforeGuard": 48.16,
+        "rawScoreBeforeGuard": 47.62,
         "scoreGuardApplied": true
       },
       "rankInSnapshot": 11
@@ -708,16 +710,16 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.4212,
         "probLatest": 0.4212,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.1576,
         "bookCount": 8,
         "bookDivergence": 0.00876,
@@ -735,10 +737,10 @@
         "probStart": 0.5788,
         "probLatest": 0.5788,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.1576,
         "bookCount": 8,
         "bookDivergence": 0.00876,
@@ -768,16 +770,16 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.42359,
         "probLatest": 0.42359,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.15282,
         "bookCount": 11,
         "bookDivergence": 0.01403,
@@ -795,10 +797,10 @@
         "probStart": 0.57641,
         "probLatest": 0.57641,
         "delta": 0.0,
-        "velocityPpHr": 0,
+        "velocityPpHr": 0.0,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
         "latestGap": 0.15282,
         "bookCount": 11,
         "bookDivergence": 0.01403,
@@ -828,17 +830,17 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "homeSignal": {
         "side": "home",
         "probStart": 0.61485,
-        "probLatest": 0.61485,
-        "delta": 0.0,
-        "velocityPpHr": 0,
+        "probLatest": 0.61512,
+        "delta": 0.00026,
+        "velocityPpHr": 0.106,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
-        "latestGap": 0.22971,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
+        "latestGap": 0.23024,
         "bookCount": 11,
         "bookDivergence": 0.00902,
         "reversals": 0,
@@ -847,19 +849,19 @@
         ],
         "grade": "INSUFFICIENT_HISTORY",
         "score": 20.0,
-        "rawScoreBeforeGuard": 56.48,
+        "rawScoreBeforeGuard": 56.69,
         "scoreGuardApplied": true
       },
       "awaySignal": {
         "side": "away",
         "probStart": 0.38515,
-        "probLatest": 0.38515,
-        "delta": 0.0,
-        "velocityPpHr": 0,
+        "probLatest": 0.38488,
+        "delta": -0.00026,
+        "velocityPpHr": -0.106,
         "acceleration": 0,
-        "pullCount": 1,
-        "durationMinutes": 0,
-        "latestGap": 0.22971,
+        "pullCount": 2,
+        "durationMinutes": 10.48,
+        "latestGap": 0.23024,
         "bookCount": 11,
         "bookDivergence": 0.00902,
         "reversals": 0,
@@ -868,7 +870,7 @@
         ],
         "grade": "INSUFFICIENT_HISTORY",
         "score": 20.0,
-        "rawScoreBeforeGuard": 38.11,
+        "rawScoreBeforeGuard": 37.9,
         "scoreGuardApplied": true
       },
       "rankInSnapshot": 14
@@ -886,7 +888,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.57276,
       "probLatest": 0.57276,
       "delta": 0.0,
@@ -904,7 +906,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.42724,
       "probLatest": 0.42724,
       "delta": 0.0,
@@ -923,7 +925,7 @@
         "COMPRESSED_MARKET",
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.4828,
       "probLatest": 0.4828,
       "delta": 0.0,
@@ -942,7 +944,7 @@
         "COMPRESSED_MARKET",
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.5172,
       "probLatest": 0.5172,
       "delta": 0.0,
@@ -958,14 +960,15 @@
       "grade": "INSUFFICIENT_HISTORY",
       "score": 20.0,
       "tags": [
-        "LOW_PULL_DEPTH"
+        "LOW_PULL_DEPTH",
+        "MOMENTUM"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.66638,
-      "probLatest": 0.66638,
-      "delta": 0.0,
-      "bookDivergence": 0.01691,
-      "latestGap": 0.33276
+      "probLatest": 0.67134,
+      "delta": 0.00496,
+      "bookDivergence": 0.01954,
+      "latestGap": 0.34268
     },
     {
       "gameId": "f62667265f8ded9cddabcc82eecfb2a4",
@@ -978,12 +981,12 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.33362,
-      "probLatest": 0.33362,
-      "delta": 0.0,
-      "bookDivergence": 0.01691,
-      "latestGap": 0.33276
+      "probLatest": 0.32866,
+      "delta": -0.00496,
+      "bookDivergence": 0.01954,
+      "latestGap": 0.34268
     },
     {
       "gameId": "5ee2ae64246b36c95376f981cb3551da",
@@ -996,7 +999,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.55542,
       "probLatest": 0.55542,
       "delta": 0.0,
@@ -1014,7 +1017,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.44458,
       "probLatest": 0.44458,
       "delta": 0.0,
@@ -1032,7 +1035,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.53535,
       "probLatest": 0.53535,
       "delta": 0.0,
@@ -1050,7 +1053,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.46465,
       "probLatest": 0.46465,
       "delta": 0.0,
@@ -1068,7 +1071,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.56088,
       "probLatest": 0.56088,
       "delta": 0.0,
@@ -1086,7 +1089,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.43912,
       "probLatest": 0.43912,
       "delta": 0.0,
@@ -1104,7 +1107,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.59227,
       "probLatest": 0.59227,
       "delta": 0.0,
@@ -1122,7 +1125,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.40773,
       "probLatest": 0.40773,
       "delta": 0.0,
@@ -1140,7 +1143,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.61188,
       "probLatest": 0.61188,
       "delta": 0.0,
@@ -1158,7 +1161,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.38812,
       "probLatest": 0.38812,
       "delta": 0.0,
@@ -1176,7 +1179,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.47255,
       "probLatest": 0.47255,
       "delta": 0.0,
@@ -1194,7 +1197,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.52745,
       "probLatest": 0.52745,
       "delta": 0.0,
@@ -1212,7 +1215,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.58402,
       "probLatest": 0.58402,
       "delta": 0.0,
@@ -1230,7 +1233,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.41598,
       "probLatest": 0.41598,
       "delta": 0.0,
@@ -1249,12 +1252,12 @@
         "COMPRESSED_MARKET",
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.48579,
-      "probLatest": 0.48579,
-      "delta": 0.0,
-      "bookDivergence": 0.00994,
-      "latestGap": 0.02843
+      "probLatest": 0.48479,
+      "delta": -0.00099,
+      "bookDivergence": 0.01431,
+      "latestGap": 0.03041
     },
     {
       "gameId": "878878a6f002b3712f580e398e40dc1a",
@@ -1268,12 +1271,12 @@
         "COMPRESSED_MARKET",
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.51421,
-      "probLatest": 0.51421,
-      "delta": 0.0,
-      "bookDivergence": 0.00994,
-      "latestGap": 0.02843
+      "probLatest": 0.51521,
+      "delta": 0.00099,
+      "bookDivergence": 0.01431,
+      "latestGap": 0.03041
     },
     {
       "gameId": "c9a7f8f74b4ae9a65c80d47993dfeb86",
@@ -1286,7 +1289,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.4212,
       "probLatest": 0.4212,
       "delta": 0.0,
@@ -1304,7 +1307,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.5788,
       "probLatest": 0.5788,
       "delta": 0.0,
@@ -1322,7 +1325,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.42359,
       "probLatest": 0.42359,
       "delta": 0.0,
@@ -1340,7 +1343,7 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.57641,
       "probLatest": 0.57641,
       "delta": 0.0,
@@ -1358,12 +1361,12 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.61485,
-      "probLatest": 0.61485,
-      "delta": 0.0,
+      "probLatest": 0.61512,
+      "delta": 0.00026,
       "bookDivergence": 0.00902,
-      "latestGap": 0.22971
+      "latestGap": 0.23024
     },
     {
       "gameId": "835944b5efc736fb06b73068a981fde5",
@@ -1376,12 +1379,12 @@
       "tags": [
         "LOW_PULL_DEPTH"
       ],
-      "pullCountForGame": 1,
+      "pullCountForGame": 2,
       "probStart": 0.38515,
-      "probLatest": 0.38515,
-      "delta": 0.0,
+      "probLatest": 0.38488,
+      "delta": -0.00026,
       "bookDivergence": 0.00902,
-      "latestGap": 0.22971
+      "latestGap": 0.23024
     }
   ],
   "snapshots": [
@@ -2750,6 +2753,1377 @@
           "delta": 0.0,
           "bookDivergence": 0.00902,
           "latestGap": 0.22971
+        }
+      ]
+    },
+    {
+      "snapshotIndex": 2,
+      "pulledAtUtc": "2026-06-30T05:00:56.131861+00:00",
+      "pulledAtEt": "2026-06-30T01:00:56.131861-04:00",
+      "pullId": "pull_4c6407854e1a4ea8",
+      "gameCount": 14,
+      "scoredGameCount": 14,
+      "identifiedSignalCount": 28,
+      "strongOrSolidCount": 0,
+      "rows": [
+        {
+          "gameId": "fc7f74688fa7a695570c6e2a546a1b4c",
+          "gameKey": "mlb|baseball_mlb|chicago white sox|baltimore orioles|2026-06-30T22:36:00Z",
+          "homeTeam": "Baltimore Orioles",
+          "awayTeam": "Chicago White Sox",
+          "matchup": "Chicago White Sox at Baltimore Orioles",
+          "commenceTime": "2026-06-30T22:36:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Baltimore Orioles",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.57276,
+            "probLatest": 0.57276,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.14552,
+            "bookCount": 11,
+            "bookDivergence": 0.01009,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 52.79,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.42724,
+            "probLatest": 0.42724,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.14552,
+            "bookCount": 11,
+            "bookDivergence": 0.01009,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 41.15,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 1
+        },
+        {
+          "gameId": "0673c603ed95036d0dd89744802e018b",
+          "gameKey": "mlb|baseball_mlb|texas rangers|cleveland guardians|2026-06-30T22:41:00Z",
+          "homeTeam": "Cleveland Guardians",
+          "awayTeam": "Texas Rangers",
+          "matchup": "Texas Rangers at Cleveland Guardians",
+          "commenceTime": "2026-06-30T22:41:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Cleveland Guardians",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "COMPRESSED_MARKET",
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.4828,
+            "probLatest": 0.4828,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.0344,
+            "bookCount": 11,
+            "bookDivergence": 0.01339,
+            "reversals": 0,
+            "tags": [
+              "COMPRESSED_MARKET",
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 44.61,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.5172,
+            "probLatest": 0.5172,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.0344,
+            "bookCount": 11,
+            "bookDivergence": 0.01339,
+            "reversals": 0,
+            "tags": [
+              "COMPRESSED_MARKET",
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 47.36,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 2
+        },
+        {
+          "gameId": "f62667265f8ded9cddabcc82eecfb2a4",
+          "gameKey": "mlb|baseball_mlb|pittsburgh pirates|philadelphia phillies|2026-06-30T22:41:00Z",
+          "homeTeam": "Philadelphia Phillies",
+          "awayTeam": "Pittsburgh Pirates",
+          "matchup": "Pittsburgh Pirates at Philadelphia Phillies",
+          "commenceTime": "2026-06-30T22:41:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Philadelphia Phillies",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH",
+            "MOMENTUM"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.66638,
+            "probLatest": 0.67134,
+            "delta": 0.00496,
+            "velocityPpHr": 1.983,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.34268,
+            "bookCount": 11,
+            "bookDivergence": 0.01954,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH",
+              "MOMENTUM"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 61.32,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.33362,
+            "probLatest": 0.32866,
+            "delta": -0.00496,
+            "velocityPpHr": -1.983,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.34268,
+            "bookCount": 11,
+            "bookDivergence": 0.01954,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 26.96,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 3
+        },
+        {
+          "gameId": "5ee2ae64246b36c95376f981cb3551da",
+          "gameKey": "mlb|baseball_mlb|detroit tigers|new york yankees|2026-06-30T23:06:00Z",
+          "homeTeam": "New York Yankees",
+          "awayTeam": "Detroit Tigers",
+          "matchup": "Detroit Tigers at New York Yankees",
+          "commenceTime": "2026-06-30T23:06:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "New York Yankees",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.55542,
+            "probLatest": 0.55542,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.11084,
+            "bookCount": 11,
+            "bookDivergence": 0.01346,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 50.4,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.44458,
+            "probLatest": 0.44458,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.11084,
+            "bookCount": 11,
+            "bookDivergence": 0.01346,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 41.53,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 4
+        },
+        {
+          "gameId": "d394e34530919df3f80263c0e0176924",
+          "gameKey": "mlb|baseball_mlb|new york mets|toronto blue jays|2026-06-30T23:08:00Z",
+          "homeTeam": "Toronto Blue Jays",
+          "awayTeam": "New York Mets",
+          "matchup": "New York Mets at Toronto Blue Jays",
+          "commenceTime": "2026-06-30T23:08:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Toronto Blue Jays",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.53535,
+            "probLatest": 0.53535,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.07069,
+            "bookCount": 11,
+            "bookDivergence": 0.01852,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 47.27,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.46465,
+            "probLatest": 0.46465,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.07069,
+            "bookCount": 11,
+            "bookDivergence": 0.01852,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 41.62,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 5
+        },
+        {
+          "gameId": "ff56e951fb2920b6a40e41ddccbe184b",
+          "gameKey": "mlb|baseball_mlb|washington nationals|boston red sox|2026-06-30T23:11:00Z",
+          "homeTeam": "Boston Red Sox",
+          "awayTeam": "Washington Nationals",
+          "matchup": "Washington Nationals at Boston Red Sox",
+          "commenceTime": "2026-06-30T23:11:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Boston Red Sox",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.56088,
+            "probLatest": 0.56088,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.12175,
+            "bookCount": 11,
+            "bookDivergence": 0.01344,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 50.84,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.43912,
+            "probLatest": 0.43912,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.12175,
+            "bookCount": 11,
+            "bookDivergence": 0.01344,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 41.1,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 6
+        },
+        {
+          "gameId": "6685cf659fbcccab05e1e35fcf4dcbb9",
+          "gameKey": "mlb|baseball_mlb|st. louis cardinals|atlanta braves|2026-06-30T23:16:00Z",
+          "homeTeam": "Atlanta Braves",
+          "awayTeam": "St. Louis Cardinals",
+          "matchup": "St. Louis Cardinals at Atlanta Braves",
+          "commenceTime": "2026-06-30T23:16:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Atlanta Braves",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.59227,
+            "probLatest": 0.59227,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.18454,
+            "bookCount": 11,
+            "bookDivergence": 0.00925,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 54.61,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.40773,
+            "probLatest": 0.40773,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.18454,
+            "bookCount": 11,
+            "bookDivergence": 0.00925,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 39.84,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 7
+        },
+        {
+          "gameId": "1d26cb2e8c25cee366cca30f7ae6428a",
+          "gameKey": "mlb|baseball_mlb|cincinnati reds|milwaukee brewers|2026-06-30T23:41:00Z",
+          "homeTeam": "Milwaukee Brewers",
+          "awayTeam": "Cincinnati Reds",
+          "matchup": "Cincinnati Reds at Milwaukee Brewers",
+          "commenceTime": "2026-06-30T23:41:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Milwaukee Brewers",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.61188,
+            "probLatest": 0.61188,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.22377,
+            "bookCount": 11,
+            "bookDivergence": 0.00911,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 56.22,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.38812,
+            "probLatest": 0.38812,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.22377,
+            "bookCount": 11,
+            "bookDivergence": 0.00911,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 38.32,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 8
+        },
+        {
+          "gameId": "5a0c2a8da870604e8dffcb6d053cd738",
+          "gameKey": "mlb|baseball_mlb|tampa bay rays|kansas city royals|2026-06-30T23:41:00Z",
+          "homeTeam": "Kansas City Royals",
+          "awayTeam": "Tampa Bay Rays",
+          "matchup": "Tampa Bay Rays at Kansas City Royals",
+          "commenceTime": "2026-06-30T23:41:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Kansas City Royals",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.47255,
+            "probLatest": 0.47255,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.0549,
+            "bookCount": 11,
+            "bookDivergence": 0.02136,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 41.4,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.52745,
+            "probLatest": 0.52745,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.0549,
+            "bookCount": 11,
+            "bookDivergence": 0.02136,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 45.79,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 9
+        },
+        {
+          "gameId": "090b0370fb46541b0a17771a0d86e281",
+          "gameKey": "mlb|baseball_mlb|san diego padres|chicago cubs|2026-07-01T00:06:00Z",
+          "homeTeam": "Chicago Cubs",
+          "awayTeam": "San Diego Padres",
+          "matchup": "San Diego Padres at Chicago Cubs",
+          "commenceTime": "2026-07-01T00:06:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Chicago Cubs",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.58402,
+            "probLatest": 0.58402,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.16804,
+            "bookCount": 11,
+            "bookDivergence": 0.01233,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 53.02,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.41598,
+            "probLatest": 0.41598,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.16804,
+            "bookCount": 11,
+            "bookDivergence": 0.01233,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 39.58,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 10
+        },
+        {
+          "gameId": "878878a6f002b3712f580e398e40dc1a",
+          "gameKey": "mlb|baseball_mlb|minnesota twins|houston astros|2026-07-01T00:11:00Z",
+          "homeTeam": "Houston Astros",
+          "awayTeam": "Minnesota Twins",
+          "matchup": "Minnesota Twins at Houston Astros",
+          "commenceTime": "2026-07-01T00:11:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Houston Astros",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "COMPRESSED_MARKET",
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.48579,
+            "probLatest": 0.48479,
+            "delta": -0.00099,
+            "velocityPpHr": -0.397,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.03041,
+            "bookCount": 11,
+            "bookDivergence": 0.01431,
+            "reversals": 0,
+            "tags": [
+              "COMPRESSED_MARKET",
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 43.8,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.51421,
+            "probLatest": 0.51521,
+            "delta": 0.00099,
+            "velocityPpHr": 0.397,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.03041,
+            "bookCount": 11,
+            "bookDivergence": 0.01431,
+            "reversals": 0,
+            "tags": [
+              "COMPRESSED_MARKET",
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 47.62,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 11
+        },
+        {
+          "gameId": "c9a7f8f74b4ae9a65c80d47993dfeb86",
+          "gameKey": "mlb|baseball_mlb|miami marlins|colorado rockies|2026-07-01T00:41:00Z",
+          "homeTeam": "Colorado Rockies",
+          "awayTeam": "Miami Marlins",
+          "matchup": "Miami Marlins at Colorado Rockies",
+          "commenceTime": "2026-07-01T00:41:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Colorado Rockies",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.4212,
+            "probLatest": 0.4212,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.1576,
+            "bookCount": 8,
+            "bookDivergence": 0.00876,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 41.07,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.5788,
+            "probLatest": 0.5788,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.1576,
+            "bookCount": 8,
+            "bookDivergence": 0.00876,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 53.68,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 12
+        },
+        {
+          "gameId": "1c4be9313fc412b34cc158daa4b7fdac",
+          "gameKey": "mlb|baseball_mlb|los angeles dodgers|athletics|2026-07-01T01:40:00Z",
+          "homeTeam": "Athletics",
+          "awayTeam": "Los Angeles Dodgers",
+          "matchup": "Los Angeles Dodgers at Athletics",
+          "commenceTime": "2026-07-01T01:40:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Athletics",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.42359,
+            "probLatest": 0.42359,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.15282,
+            "bookCount": 11,
+            "bookDivergence": 0.01403,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 39.68,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.57641,
+            "probLatest": 0.57641,
+            "delta": 0.0,
+            "velocityPpHr": 0.0,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.15282,
+            "bookCount": 11,
+            "bookDivergence": 0.01403,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 51.9,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 13
+        },
+        {
+          "gameId": "835944b5efc736fb06b73068a981fde5",
+          "gameKey": "mlb|baseball_mlb|los angeles angels|seattle mariners|2026-07-01T01:41:00Z",
+          "homeTeam": "Seattle Mariners",
+          "awayTeam": "Los Angeles Angels",
+          "matchup": "Los Angeles Angels at Seattle Mariners",
+          "commenceTime": "2026-07-01T01:41:00Z",
+          "providerSportKey": "baseball_mlb",
+          "selection": "Seattle Mariners",
+          "selectedSide": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "homeSignal": {
+            "side": "home",
+            "probStart": 0.61485,
+            "probLatest": 0.61512,
+            "delta": 0.00026,
+            "velocityPpHr": 0.106,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.23024,
+            "bookCount": 11,
+            "bookDivergence": 0.00902,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 56.69,
+            "scoreGuardApplied": true
+          },
+          "awaySignal": {
+            "side": "away",
+            "probStart": 0.38515,
+            "probLatest": 0.38488,
+            "delta": -0.00026,
+            "velocityPpHr": -0.106,
+            "acceleration": 0,
+            "pullCount": 2,
+            "durationMinutes": 10.48,
+            "latestGap": 0.23024,
+            "bookCount": 11,
+            "bookDivergence": 0.00902,
+            "reversals": 0,
+            "tags": [
+              "LOW_PULL_DEPTH"
+            ],
+            "grade": "INSUFFICIENT_HISTORY",
+            "score": 20.0,
+            "rawScoreBeforeGuard": 37.9,
+            "scoreGuardApplied": true
+          },
+          "rankInSnapshot": 14
+        }
+      ],
+      "identifiedSignals": [
+        {
+          "gameId": "fc7f74688fa7a695570c6e2a546a1b4c",
+          "gameKey": "mlb|baseball_mlb|chicago white sox|baltimore orioles|2026-06-30T22:36:00Z",
+          "matchup": "Chicago White Sox at Baltimore Orioles",
+          "team": "Baltimore Orioles",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.57276,
+          "probLatest": 0.57276,
+          "delta": 0.0,
+          "bookDivergence": 0.01009,
+          "latestGap": 0.14552
+        },
+        {
+          "gameId": "fc7f74688fa7a695570c6e2a546a1b4c",
+          "gameKey": "mlb|baseball_mlb|chicago white sox|baltimore orioles|2026-06-30T22:36:00Z",
+          "matchup": "Chicago White Sox at Baltimore Orioles",
+          "team": "Chicago White Sox",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.42724,
+          "probLatest": 0.42724,
+          "delta": 0.0,
+          "bookDivergence": 0.01009,
+          "latestGap": 0.14552
+        },
+        {
+          "gameId": "0673c603ed95036d0dd89744802e018b",
+          "gameKey": "mlb|baseball_mlb|texas rangers|cleveland guardians|2026-06-30T22:41:00Z",
+          "matchup": "Texas Rangers at Cleveland Guardians",
+          "team": "Cleveland Guardians",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "COMPRESSED_MARKET",
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.4828,
+          "probLatest": 0.4828,
+          "delta": 0.0,
+          "bookDivergence": 0.01339,
+          "latestGap": 0.0344
+        },
+        {
+          "gameId": "0673c603ed95036d0dd89744802e018b",
+          "gameKey": "mlb|baseball_mlb|texas rangers|cleveland guardians|2026-06-30T22:41:00Z",
+          "matchup": "Texas Rangers at Cleveland Guardians",
+          "team": "Texas Rangers",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "COMPRESSED_MARKET",
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.5172,
+          "probLatest": 0.5172,
+          "delta": 0.0,
+          "bookDivergence": 0.01339,
+          "latestGap": 0.0344
+        },
+        {
+          "gameId": "f62667265f8ded9cddabcc82eecfb2a4",
+          "gameKey": "mlb|baseball_mlb|pittsburgh pirates|philadelphia phillies|2026-06-30T22:41:00Z",
+          "matchup": "Pittsburgh Pirates at Philadelphia Phillies",
+          "team": "Philadelphia Phillies",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH",
+            "MOMENTUM"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.66638,
+          "probLatest": 0.67134,
+          "delta": 0.00496,
+          "bookDivergence": 0.01954,
+          "latestGap": 0.34268
+        },
+        {
+          "gameId": "f62667265f8ded9cddabcc82eecfb2a4",
+          "gameKey": "mlb|baseball_mlb|pittsburgh pirates|philadelphia phillies|2026-06-30T22:41:00Z",
+          "matchup": "Pittsburgh Pirates at Philadelphia Phillies",
+          "team": "Pittsburgh Pirates",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.33362,
+          "probLatest": 0.32866,
+          "delta": -0.00496,
+          "bookDivergence": 0.01954,
+          "latestGap": 0.34268
+        },
+        {
+          "gameId": "5ee2ae64246b36c95376f981cb3551da",
+          "gameKey": "mlb|baseball_mlb|detroit tigers|new york yankees|2026-06-30T23:06:00Z",
+          "matchup": "Detroit Tigers at New York Yankees",
+          "team": "New York Yankees",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.55542,
+          "probLatest": 0.55542,
+          "delta": 0.0,
+          "bookDivergence": 0.01346,
+          "latestGap": 0.11084
+        },
+        {
+          "gameId": "5ee2ae64246b36c95376f981cb3551da",
+          "gameKey": "mlb|baseball_mlb|detroit tigers|new york yankees|2026-06-30T23:06:00Z",
+          "matchup": "Detroit Tigers at New York Yankees",
+          "team": "Detroit Tigers",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.44458,
+          "probLatest": 0.44458,
+          "delta": 0.0,
+          "bookDivergence": 0.01346,
+          "latestGap": 0.11084
+        },
+        {
+          "gameId": "d394e34530919df3f80263c0e0176924",
+          "gameKey": "mlb|baseball_mlb|new york mets|toronto blue jays|2026-06-30T23:08:00Z",
+          "matchup": "New York Mets at Toronto Blue Jays",
+          "team": "Toronto Blue Jays",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.53535,
+          "probLatest": 0.53535,
+          "delta": 0.0,
+          "bookDivergence": 0.01852,
+          "latestGap": 0.07069
+        },
+        {
+          "gameId": "d394e34530919df3f80263c0e0176924",
+          "gameKey": "mlb|baseball_mlb|new york mets|toronto blue jays|2026-06-30T23:08:00Z",
+          "matchup": "New York Mets at Toronto Blue Jays",
+          "team": "New York Mets",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.46465,
+          "probLatest": 0.46465,
+          "delta": 0.0,
+          "bookDivergence": 0.01852,
+          "latestGap": 0.07069
+        },
+        {
+          "gameId": "ff56e951fb2920b6a40e41ddccbe184b",
+          "gameKey": "mlb|baseball_mlb|washington nationals|boston red sox|2026-06-30T23:11:00Z",
+          "matchup": "Washington Nationals at Boston Red Sox",
+          "team": "Boston Red Sox",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.56088,
+          "probLatest": 0.56088,
+          "delta": 0.0,
+          "bookDivergence": 0.01344,
+          "latestGap": 0.12175
+        },
+        {
+          "gameId": "ff56e951fb2920b6a40e41ddccbe184b",
+          "gameKey": "mlb|baseball_mlb|washington nationals|boston red sox|2026-06-30T23:11:00Z",
+          "matchup": "Washington Nationals at Boston Red Sox",
+          "team": "Washington Nationals",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.43912,
+          "probLatest": 0.43912,
+          "delta": 0.0,
+          "bookDivergence": 0.01344,
+          "latestGap": 0.12175
+        },
+        {
+          "gameId": "6685cf659fbcccab05e1e35fcf4dcbb9",
+          "gameKey": "mlb|baseball_mlb|st. louis cardinals|atlanta braves|2026-06-30T23:16:00Z",
+          "matchup": "St. Louis Cardinals at Atlanta Braves",
+          "team": "Atlanta Braves",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.59227,
+          "probLatest": 0.59227,
+          "delta": 0.0,
+          "bookDivergence": 0.00925,
+          "latestGap": 0.18454
+        },
+        {
+          "gameId": "6685cf659fbcccab05e1e35fcf4dcbb9",
+          "gameKey": "mlb|baseball_mlb|st. louis cardinals|atlanta braves|2026-06-30T23:16:00Z",
+          "matchup": "St. Louis Cardinals at Atlanta Braves",
+          "team": "St. Louis Cardinals",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.40773,
+          "probLatest": 0.40773,
+          "delta": 0.0,
+          "bookDivergence": 0.00925,
+          "latestGap": 0.18454
+        },
+        {
+          "gameId": "1d26cb2e8c25cee366cca30f7ae6428a",
+          "gameKey": "mlb|baseball_mlb|cincinnati reds|milwaukee brewers|2026-06-30T23:41:00Z",
+          "matchup": "Cincinnati Reds at Milwaukee Brewers",
+          "team": "Milwaukee Brewers",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.61188,
+          "probLatest": 0.61188,
+          "delta": 0.0,
+          "bookDivergence": 0.00911,
+          "latestGap": 0.22377
+        },
+        {
+          "gameId": "1d26cb2e8c25cee366cca30f7ae6428a",
+          "gameKey": "mlb|baseball_mlb|cincinnati reds|milwaukee brewers|2026-06-30T23:41:00Z",
+          "matchup": "Cincinnati Reds at Milwaukee Brewers",
+          "team": "Cincinnati Reds",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.38812,
+          "probLatest": 0.38812,
+          "delta": 0.0,
+          "bookDivergence": 0.00911,
+          "latestGap": 0.22377
+        },
+        {
+          "gameId": "5a0c2a8da870604e8dffcb6d053cd738",
+          "gameKey": "mlb|baseball_mlb|tampa bay rays|kansas city royals|2026-06-30T23:41:00Z",
+          "matchup": "Tampa Bay Rays at Kansas City Royals",
+          "team": "Kansas City Royals",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.47255,
+          "probLatest": 0.47255,
+          "delta": 0.0,
+          "bookDivergence": 0.02136,
+          "latestGap": 0.0549
+        },
+        {
+          "gameId": "5a0c2a8da870604e8dffcb6d053cd738",
+          "gameKey": "mlb|baseball_mlb|tampa bay rays|kansas city royals|2026-06-30T23:41:00Z",
+          "matchup": "Tampa Bay Rays at Kansas City Royals",
+          "team": "Tampa Bay Rays",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.52745,
+          "probLatest": 0.52745,
+          "delta": 0.0,
+          "bookDivergence": 0.02136,
+          "latestGap": 0.0549
+        },
+        {
+          "gameId": "090b0370fb46541b0a17771a0d86e281",
+          "gameKey": "mlb|baseball_mlb|san diego padres|chicago cubs|2026-07-01T00:06:00Z",
+          "matchup": "San Diego Padres at Chicago Cubs",
+          "team": "Chicago Cubs",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.58402,
+          "probLatest": 0.58402,
+          "delta": 0.0,
+          "bookDivergence": 0.01233,
+          "latestGap": 0.16804
+        },
+        {
+          "gameId": "090b0370fb46541b0a17771a0d86e281",
+          "gameKey": "mlb|baseball_mlb|san diego padres|chicago cubs|2026-07-01T00:06:00Z",
+          "matchup": "San Diego Padres at Chicago Cubs",
+          "team": "San Diego Padres",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.41598,
+          "probLatest": 0.41598,
+          "delta": 0.0,
+          "bookDivergence": 0.01233,
+          "latestGap": 0.16804
+        },
+        {
+          "gameId": "878878a6f002b3712f580e398e40dc1a",
+          "gameKey": "mlb|baseball_mlb|minnesota twins|houston astros|2026-07-01T00:11:00Z",
+          "matchup": "Minnesota Twins at Houston Astros",
+          "team": "Houston Astros",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "COMPRESSED_MARKET",
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.48579,
+          "probLatest": 0.48479,
+          "delta": -0.00099,
+          "bookDivergence": 0.01431,
+          "latestGap": 0.03041
+        },
+        {
+          "gameId": "878878a6f002b3712f580e398e40dc1a",
+          "gameKey": "mlb|baseball_mlb|minnesota twins|houston astros|2026-07-01T00:11:00Z",
+          "matchup": "Minnesota Twins at Houston Astros",
+          "team": "Minnesota Twins",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "COMPRESSED_MARKET",
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.51421,
+          "probLatest": 0.51521,
+          "delta": 0.00099,
+          "bookDivergence": 0.01431,
+          "latestGap": 0.03041
+        },
+        {
+          "gameId": "c9a7f8f74b4ae9a65c80d47993dfeb86",
+          "gameKey": "mlb|baseball_mlb|miami marlins|colorado rockies|2026-07-01T00:41:00Z",
+          "matchup": "Miami Marlins at Colorado Rockies",
+          "team": "Colorado Rockies",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.4212,
+          "probLatest": 0.4212,
+          "delta": 0.0,
+          "bookDivergence": 0.00876,
+          "latestGap": 0.1576
+        },
+        {
+          "gameId": "c9a7f8f74b4ae9a65c80d47993dfeb86",
+          "gameKey": "mlb|baseball_mlb|miami marlins|colorado rockies|2026-07-01T00:41:00Z",
+          "matchup": "Miami Marlins at Colorado Rockies",
+          "team": "Miami Marlins",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.5788,
+          "probLatest": 0.5788,
+          "delta": 0.0,
+          "bookDivergence": 0.00876,
+          "latestGap": 0.1576
+        },
+        {
+          "gameId": "1c4be9313fc412b34cc158daa4b7fdac",
+          "gameKey": "mlb|baseball_mlb|los angeles dodgers|athletics|2026-07-01T01:40:00Z",
+          "matchup": "Los Angeles Dodgers at Athletics",
+          "team": "Athletics",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.42359,
+          "probLatest": 0.42359,
+          "delta": 0.0,
+          "bookDivergence": 0.01403,
+          "latestGap": 0.15282
+        },
+        {
+          "gameId": "1c4be9313fc412b34cc158daa4b7fdac",
+          "gameKey": "mlb|baseball_mlb|los angeles dodgers|athletics|2026-07-01T01:40:00Z",
+          "matchup": "Los Angeles Dodgers at Athletics",
+          "team": "Los Angeles Dodgers",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.57641,
+          "probLatest": 0.57641,
+          "delta": 0.0,
+          "bookDivergence": 0.01403,
+          "latestGap": 0.15282
+        },
+        {
+          "gameId": "835944b5efc736fb06b73068a981fde5",
+          "gameKey": "mlb|baseball_mlb|los angeles angels|seattle mariners|2026-07-01T01:41:00Z",
+          "matchup": "Los Angeles Angels at Seattle Mariners",
+          "team": "Seattle Mariners",
+          "side": "home",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.61485,
+          "probLatest": 0.61512,
+          "delta": 0.00026,
+          "bookDivergence": 0.00902,
+          "latestGap": 0.23024
+        },
+        {
+          "gameId": "835944b5efc736fb06b73068a981fde5",
+          "gameKey": "mlb|baseball_mlb|los angeles angels|seattle mariners|2026-07-01T01:41:00Z",
+          "matchup": "Los Angeles Angels at Seattle Mariners",
+          "team": "Los Angeles Angels",
+          "side": "away",
+          "grade": "INSUFFICIENT_HISTORY",
+          "score": 20.0,
+          "tags": [
+            "LOW_PULL_DEPTH"
+          ],
+          "pullCountForGame": 2,
+          "probStart": 0.38515,
+          "probLatest": 0.38488,
+          "delta": -0.00026,
+          "bookDivergence": 0.00902,
+          "latestGap": 0.23024
         }
       ]
     }

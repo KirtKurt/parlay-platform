@@ -1,12 +1,12 @@
 {
   "ok": true,
   "proofType": "MLB_ALL_GAMES_SIGNAL_PROOF",
-  "createdAtUtc": "2026-06-30T04:59:32.460153+00:00",
-  "createdAtEt": "2026-06-30T00:59:32.460156-04:00",
+  "createdAtUtc": "2026-06-30T05:00:58.852785+00:00",
+  "createdAtEt": "2026-06-30T01:00:58.852790-04:00",
   "sport": "mlb",
   "slate_date": "2026-06-30",
   "source": "15-minute pull history only plus current moneyline/run-line book data",
-  "pullCount": 1,
+  "pullCount": 2,
   "coverage": {
     "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
     "startHourEt": 1,
@@ -15,20 +15,30 @@
     "expectedStartAtEt": "2026-06-30T01:00:00-04:00",
     "firstPullAtUtc": "2026-06-30T04:50:27.249279+00:00",
     "firstPullAtEt": "2026-06-30T00:50:27.249279-04:00",
-    "latestPullAtUtc": "2026-06-30T04:50:27.249279+00:00",
-    "latestPullAtEt": "2026-06-30T00:50:27.249279-04:00",
-    "actualPullCount": 1,
-    "actualPullCountSinceStart": 0,
-    "expectedPullCountSinceStart": 0,
+    "latestPullAtUtc": "2026-06-30T05:00:56.131861+00:00",
+    "latestPullAtEt": "2026-06-30T01:00:56.131861-04:00",
+    "actualPullCount": 2,
+    "actualPullCountSinceStart": 1,
+    "expectedPullCountSinceStart": 1,
     "missingPullCountSinceStart": 0,
-    "coverageRatio": null,
-    "overnightCoverageComplete": false
+    "coverageRatio": 1.0,
+    "overnightCoverageComplete": true
   },
   "providerGameCount": 14,
   "b10GameCount": 14,
   "gameWinnerPredictionCount": 14,
   "allGamesPredicted": true,
   "storedGameWinnerCount": 14,
+  "rolling24hAccuracyTarget": {
+    "targetAccuracyPct": 75.0,
+    "windowHours": 24,
+    "actionablePickCount": 0,
+    "watchlistCount": 0,
+    "observeOnlyCount": 14,
+    "actionablePicks": [],
+    "policy": "Every game remains scored. The 75% target is measured only by the rolling 24-hour audit of completed actionable picks.",
+    "latestLearningApplied": false
+  },
   "accuracyTarget": {
     "targetAccuracyPct": 75.0,
     "windowHours": 24,
@@ -50,7 +60,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Philadelphia Phillies",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -70,7 +80,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -88,24 +98,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Philadelphia Phillies",
         "predictedSide": "home",
         "opponent": "Pittsburgh Pirates",
-        "winProbability": 0.3223,
-        "winProbabilityPct": 32.23,
-        "score": 41.08,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.7025,
+        "winProbabilityPct": 70.25,
+        "score": 60.31,
+        "rawScoreBeforeLearning": 66.31,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 66.31,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -117,58 +133,55 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Coin Flip",
+        "confidenceTier": "Solid",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Philadelphia Phillies",
           "grade": null,
-          "score": 55.08,
-          "winProbability": 0.6043,
-          "winProbabilityPct": 60.43,
-          "marketConsensusProbability": 0.66638,
+          "score": 66.31,
+          "winProbability": 0.7956,
+          "winProbabilityPct": 79.56,
+          "marketConsensusProbability": 0.67134,
           "probStart": 0.66638,
-          "probLatest": 0.66638,
-          "delta": 0.0,
+          "probLatest": 0.67134,
+          "delta": 0.00496,
           "bookCount": 11,
-          "bookDivergence": 0.01691,
-          "latestGap": 0.33276,
+          "bookDivergence": 0.01954,
+          "latestGap": 0.34268,
           "reversalCount": 0,
-          "runLineMovement": 0.0,
-          "averageAmericanOdds": -225.82,
+          "runLineMovement": -0.273,
+          "averageAmericanOdds": -231.73,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "Pittsburgh Pirates",
           "grade": null,
-          "score": 25.13,
-          "winProbability": 0.1118,
-          "winProbabilityPct": 11.18,
-          "marketConsensusProbability": 0.33362,
+          "score": 28.53,
+          "winProbability": 0.1432,
+          "winProbabilityPct": 14.32,
+          "marketConsensusProbability": 0.32866,
           "probStart": 0.33362,
-          "probLatest": 0.33362,
-          "delta": 0.0,
+          "probLatest": 0.32866,
+          "delta": -0.00496,
           "bookCount": 11,
-          "bookDivergence": 0.01691,
-          "latestGap": 0.33276,
+          "bookDivergence": 0.01954,
+          "latestGap": 0.34268,
           "reversalCount": 0,
-          "runLineMovement": 0.0,
-          "averageAmericanOdds": 188.36,
+          "runLineMovement": 0.364,
+          "averageAmericanOdds": 192.64,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -189,6 +202,18 @@
           "awayRunLinePrice": -115.18181818181819,
           "homeRunLinePoint": -1.5,
           "awayRunLinePoint": 1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
+          "home": 0.6713379540251684,
+          "away": 0.32866204597483173,
+          "bookCount": 11,
+          "bookDivergence": 0.01953542268319708,
+          "bookAgreement": 0.98046,
+          "homeRunLinePrice": -86.27272727272727,
+          "awayRunLinePrice": -114.81818181818181,
+          "homeRunLinePoint": -1.5,
+          "awayRunLinePoint": 1.5
         }
       ],
       "rank": 1
@@ -203,7 +228,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Seattle Mariners",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -223,7 +248,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -241,24 +266,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Seattle Mariners",
         "predictedSide": "home",
         "opponent": "Los Angeles Angels",
-        "winProbability": 0.277,
-        "winProbabilityPct": 27.7,
-        "score": 38.49,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.5967,
+        "winProbabilityPct": 59.67,
+        "score": 54.7,
+        "rawScoreBeforeLearning": 60.7,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 60.7,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -270,58 +301,55 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Coin Flip",
+        "confidenceTier": "Lean",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Seattle Mariners",
           "grade": null,
-          "score": 52.49,
-          "winProbability": 0.5517,
-          "winProbabilityPct": 55.17,
-          "marketConsensusProbability": 0.61485,
+          "score": 60.7,
+          "winProbability": 0.7092,
+          "winProbabilityPct": 70.92,
+          "marketConsensusProbability": 0.61512,
           "probStart": 0.61485,
-          "probLatest": 0.61485,
-          "delta": 0.0,
+          "probLatest": 0.61512,
+          "delta": 0.00026,
           "bookCount": 11,
           "bookDivergence": 0.00902,
-          "latestGap": 0.22971,
+          "latestGap": 0.23024,
           "reversalCount": 0,
-          "runLineMovement": 0.0,
-          "averageAmericanOdds": -177.36,
+          "runLineMovement": -0.182,
+          "averageAmericanOdds": -177.55,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "Los Angeles Angels",
           "grade": null,
-          "score": 31.82,
-          "winProbability": 0.1802,
-          "winProbabilityPct": 18.02,
-          "marketConsensusProbability": 0.38515,
+          "score": 39.61,
+          "winProbability": 0.2961,
+          "winProbabilityPct": 29.61,
+          "marketConsensusProbability": 0.38488,
           "probStart": 0.38515,
-          "probLatest": 0.38515,
-          "delta": 0.0,
+          "probLatest": 0.38488,
+          "delta": -0.00026,
           "bookCount": 11,
           "bookDivergence": 0.00902,
-          "latestGap": 0.22971,
+          "latestGap": 0.23024,
           "reversalCount": 0,
-          "runLineMovement": 0.0,
-          "averageAmericanOdds": 149.73,
+          "runLineMovement": 0.364,
+          "averageAmericanOdds": 149.91,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -342,6 +370,18 @@
           "awayRunLinePrice": -150.9090909090909,
           "homeRunLinePoint": -1.5,
           "awayRunLinePoint": 1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
+          "home": 0.6151177443319228,
+          "away": 0.38488225566807716,
+          "bookCount": 11,
+          "bookDivergence": 0.00902024849130545,
+          "bookAgreement": 0.99098,
+          "homeRunLinePrice": 127.36363636363636,
+          "awayRunLinePrice": -150.54545454545453,
+          "homeRunLinePoint": -1.5,
+          "awayRunLinePoint": 1.5
         }
       ],
       "rank": 2
@@ -356,7 +396,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Milwaukee Brewers",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -376,7 +416,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -394,24 +434,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Milwaukee Brewers",
         "predictedSide": "home",
         "opponent": "Cincinnati Reds",
-        "winProbability": 0.2722,
-        "winProbabilityPct": 27.22,
-        "score": 38.2,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.5866,
+        "winProbabilityPct": 58.66,
+        "score": 54.2,
+        "rawScoreBeforeLearning": 60.2,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 60.2,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -423,21 +469,20 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Coin Flip",
+        "confidenceTier": "Lean",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Milwaukee Brewers",
           "grade": null,
-          "score": 52.2,
-          "winProbability": 0.5457,
-          "winProbabilityPct": 54.57,
+          "score": 60.2,
+          "winProbability": 0.7006,
+          "winProbabilityPct": 70.06,
           "marketConsensusProbability": 0.61188,
           "probStart": 0.61188,
           "probLatest": 0.61188,
@@ -450,17 +495,16 @@
           "averageAmericanOdds": -174.82,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "Cincinnati Reds",
           "grade": null,
-          "score": 32.06,
-          "winProbability": 0.1832,
-          "winProbabilityPct": 18.32,
+          "score": 40.06,
+          "winProbability": 0.304,
+          "winProbabilityPct": 30.4,
           "marketConsensusProbability": 0.38812,
           "probStart": 0.38812,
           "probLatest": 0.38812,
@@ -473,8 +517,7 @@
           "averageAmericanOdds": 147.91,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -486,6 +529,18 @@
       "rawB10Points": [
         {
           "pulledAt": "2026-06-30T04:50:27.249279+00:00",
+          "home": 0.6118831943870396,
+          "away": 0.3881168056129604,
+          "bookCount": 11,
+          "bookDivergence": 0.00911170222061397,
+          "bookAgreement": 0.99089,
+          "homeRunLinePrice": 121.81818181818181,
+          "awayRunLinePrice": -144.72727272727272,
+          "homeRunLinePoint": -1.5,
+          "awayRunLinePoint": 1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
           "home": 0.6118831943870396,
           "away": 0.3881168056129604,
           "bookCount": 11,
@@ -509,7 +564,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Atlanta Braves",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -529,7 +584,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -547,24 +602,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Atlanta Braves",
         "predictedSide": "home",
         "opponent": "St. Louis Cardinals",
-        "winProbability": 0.2435,
-        "winProbabilityPct": 24.35,
-        "score": 36.4,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.5498,
+        "winProbabilityPct": 54.98,
+        "score": 52.4,
+        "rawScoreBeforeLearning": 58.4,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 58.4,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -576,21 +637,20 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Coin Flip",
+        "confidenceTier": "Lean",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Atlanta Braves",
           "grade": null,
-          "score": 50.4,
-          "winProbability": 0.5083,
-          "winProbabilityPct": 50.83,
+          "score": 58.4,
+          "winProbability": 0.6682,
+          "winProbabilityPct": 66.82,
           "marketConsensusProbability": 0.59227,
           "probStart": 0.59227,
           "probLatest": 0.59227,
@@ -603,17 +663,16 @@
           "averageAmericanOdds": -160.36,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "St. Louis Cardinals",
           "grade": null,
-          "score": 33.79,
-          "winProbability": 0.2057,
-          "winProbabilityPct": 20.57,
+          "score": 41.79,
+          "winProbability": 0.3353,
+          "winProbabilityPct": 33.53,
           "marketConsensusProbability": 0.40773,
           "probStart": 0.40773,
           "probLatest": 0.40773,
@@ -626,8 +685,7 @@
           "averageAmericanOdds": 135.91,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -639,6 +697,18 @@
       "rawB10Points": [
         {
           "pulledAt": "2026-06-30T04:50:27.249279+00:00",
+          "home": 0.592268396077301,
+          "away": 0.4077316039226991,
+          "bookCount": 11,
+          "bookDivergence": 0.009247756537731022,
+          "bookAgreement": 0.99075,
+          "homeRunLinePrice": 124.54545454545455,
+          "awayRunLinePrice": -148.0,
+          "homeRunLinePoint": -1.5,
+          "awayRunLinePoint": 1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
           "home": 0.592268396077301,
           "away": 0.4077316039226991,
           "bookCount": 11,
@@ -662,7 +732,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Chicago Cubs",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -682,7 +752,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -700,24 +770,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Chicago Cubs",
         "predictedSide": "home",
         "opponent": "San Diego Padres",
-        "winProbability": 0.2205,
-        "winProbabilityPct": 22.05,
-        "score": 34.85,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.5177,
+        "winProbabilityPct": 51.77,
+        "score": 50.85,
+        "rawScoreBeforeLearning": 56.85,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 56.85,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -729,21 +805,20 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Pass",
+        "confidenceTier": "Lean",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Chicago Cubs",
           "grade": null,
-          "score": 48.85,
-          "winProbability": 0.4761,
-          "winProbabilityPct": 47.61,
+          "score": 56.85,
+          "winProbability": 0.639,
+          "winProbabilityPct": 63.9,
           "marketConsensusProbability": 0.58402,
           "probStart": 0.58402,
           "probLatest": 0.58402,
@@ -752,21 +827,20 @@
           "bookDivergence": 0.01233,
           "latestGap": 0.16804,
           "reversalCount": 0,
-          "runLineMovement": 0.0,
+          "runLineMovement": 0.1,
           "averageAmericanOdds": -154.27,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "San Diego Padres",
           "grade": null,
-          "score": 33.73,
-          "winProbability": 0.2049,
-          "winProbabilityPct": 20.49,
+          "score": 41.73,
+          "winProbability": 0.3342,
+          "winProbabilityPct": 33.42,
           "marketConsensusProbability": 0.41598,
           "probStart": 0.41598,
           "probLatest": 0.41598,
@@ -775,12 +849,11 @@
           "bookDivergence": 0.01233,
           "latestGap": 0.16804,
           "reversalCount": 0,
-          "runLineMovement": 0.0,
+          "runLineMovement": -0.2,
           "averageAmericanOdds": 131.45,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -801,6 +874,18 @@
           "awayRunLinePrice": -144.2,
           "homeRunLinePoint": -1.5,
           "awayRunLinePoint": 1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
+          "home": 0.5840185617970477,
+          "away": 0.41598143820295236,
+          "bookCount": 11,
+          "bookDivergence": 0.012333846062676734,
+          "bookAgreement": 0.98767,
+          "homeRunLinePrice": 121.1,
+          "awayRunLinePrice": -144.4,
+          "homeRunLinePoint": -1.5,
+          "awayRunLinePoint": 1.5
         }
       ],
       "rank": 5
@@ -815,7 +900,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Baltimore Orioles",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -835,7 +920,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -853,24 +938,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Baltimore Orioles",
         "predictedSide": "home",
         "opponent": "Chicago White Sox",
-        "winProbability": 0.2144,
-        "winProbabilityPct": 21.44,
-        "score": 34.42,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.5087,
+        "winProbabilityPct": 50.87,
+        "score": 50.42,
+        "rawScoreBeforeLearning": 56.42,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 56.42,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -882,21 +973,20 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Pass",
+        "confidenceTier": "Lean",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Baltimore Orioles",
           "grade": null,
-          "score": 48.42,
-          "winProbability": 0.4671,
-          "winProbabilityPct": 46.71,
+          "score": 56.42,
+          "winProbability": 0.6306,
+          "winProbabilityPct": 63.06,
           "marketConsensusProbability": 0.57276,
           "probStart": 0.57276,
           "probLatest": 0.57276,
@@ -909,17 +999,16 @@
           "averageAmericanOdds": -147.27,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "Chicago White Sox",
           "grade": null,
-          "score": 35.33,
-          "winProbability": 0.2275,
-          "winProbabilityPct": 22.75,
+          "score": 43.33,
+          "winProbability": 0.3645,
+          "winProbabilityPct": 36.45,
           "marketConsensusProbability": 0.42724,
           "probStart": 0.42724,
           "probLatest": 0.42724,
@@ -932,8 +1021,7 @@
           "averageAmericanOdds": 125.18,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -945,6 +1033,18 @@
       "rawB10Points": [
         {
           "pulledAt": "2026-06-30T04:50:27.249279+00:00",
+          "home": 0.5727584171256055,
+          "away": 0.4272415828743945,
+          "bookCount": 11,
+          "bookDivergence": 0.01009271422560043,
+          "bookAgreement": 0.98991,
+          "homeRunLinePrice": 130.54545454545453,
+          "awayRunLinePrice": -154.8181818181818,
+          "homeRunLinePoint": -1.5,
+          "awayRunLinePoint": 1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
           "home": 0.5727584171256055,
           "away": 0.4272415828743945,
           "bookCount": 11,
@@ -968,7 +1068,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Colorado Rockies",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -988,7 +1088,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -1006,24 +1106,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Miami Marlins",
         "predictedSide": "away",
         "opponent": "Colorado Rockies",
-        "winProbability": 0.206,
-        "winProbabilityPct": 20.6,
-        "score": 33.81,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.496,
+        "winProbabilityPct": 49.6,
+        "score": 49.81,
+        "rawScoreBeforeLearning": 55.81,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 55.81,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -1035,21 +1141,20 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Pass",
+        "confidenceTier": "Coin Flip",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Colorado Rockies",
           "grade": null,
-          "score": 33.63,
-          "winProbability": 0.2036,
-          "winProbabilityPct": 20.36,
+          "score": 41.63,
+          "winProbability": 0.3324,
+          "winProbabilityPct": 33.24,
           "marketConsensusProbability": 0.4212,
           "probStart": 0.4212,
           "probLatest": 0.4212,
@@ -1062,17 +1167,16 @@
           "averageAmericanOdds": 127.12,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "Miami Marlins",
           "grade": null,
-          "score": 47.81,
-          "winProbability": 0.4545,
-          "winProbabilityPct": 45.45,
+          "score": 55.81,
+          "winProbability": 0.6187,
+          "winProbabilityPct": 61.87,
           "marketConsensusProbability": 0.5788,
           "probStart": 0.5788,
           "probLatest": 0.5788,
@@ -1085,8 +1189,7 @@
           "averageAmericanOdds": -153.25,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -1098,6 +1201,18 @@
       "rawB10Points": [
         {
           "pulledAt": "2026-06-30T04:50:27.249279+00:00",
+          "home": 0.4212014364875372,
+          "away": 0.5787985635124628,
+          "bookCount": 8,
+          "bookDivergence": 0.008758332572495975,
+          "bookAgreement": 0.99124,
+          "homeRunLinePrice": -119.0,
+          "awayRunLinePrice": 23.625,
+          "homeRunLinePoint": 1.5,
+          "awayRunLinePoint": -1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
           "home": 0.4212014364875372,
           "away": 0.5787985635124628,
           "bookCount": 8,
@@ -1121,7 +1236,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Athletics",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -1141,7 +1256,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -1159,24 +1274,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Los Angeles Dodgers",
         "predictedSide": "away",
         "opponent": "Athletics",
-        "winProbability": 0.2049,
-        "winProbabilityPct": 20.49,
-        "score": 33.73,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.4944,
+        "winProbabilityPct": 49.44,
+        "score": 49.73,
+        "rawScoreBeforeLearning": 55.73,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 55.73,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -1188,21 +1309,20 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Pass",
+        "confidenceTier": "Coin Flip",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Athletics",
           "grade": null,
-          "score": 33.98,
-          "winProbability": 0.2083,
-          "winProbabilityPct": 20.83,
+          "score": 41.98,
+          "winProbability": 0.3389,
+          "winProbabilityPct": 33.89,
           "marketConsensusProbability": 0.42359,
           "probStart": 0.42359,
           "probLatest": 0.42359,
@@ -1215,17 +1335,16 @@
           "averageAmericanOdds": 127.09,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "Los Angeles Dodgers",
           "grade": null,
-          "score": 47.73,
-          "winProbability": 0.4528,
-          "winProbabilityPct": 45.28,
+          "score": 55.73,
+          "winProbability": 0.6172,
+          "winProbabilityPct": 61.72,
           "marketConsensusProbability": 0.57641,
           "probStart": 0.57641,
           "probLatest": 0.57641,
@@ -1238,8 +1357,7 @@
           "averageAmericanOdds": -149.64,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -1251,6 +1369,18 @@
       "rawB10Points": [
         {
           "pulledAt": "2026-06-30T04:50:27.249279+00:00",
+          "home": 0.42359187009952154,
+          "away": 0.5764081299004785,
+          "bookCount": 11,
+          "bookDivergence": 0.014027123805227415,
+          "bookAgreement": 0.98597,
+          "homeRunLinePrice": -121.54545454545455,
+          "awayRunLinePrice": 83.54545454545455,
+          "homeRunLinePoint": 1.5,
+          "awayRunLinePoint": -1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
           "home": 0.42359187009952154,
           "away": 0.5764081299004785,
           "bookCount": 11,
@@ -1274,7 +1404,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Boston Red Sox",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -1294,7 +1424,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -1312,24 +1442,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Boston Red Sox",
         "predictedSide": "home",
         "opponent": "Washington Nationals",
-        "winProbability": 0.1886,
-        "winProbabilityPct": 18.86,
-        "score": 32.49,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.4686,
+        "winProbabilityPct": 46.86,
+        "score": 48.49,
+        "rawScoreBeforeLearning": 54.49,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 54.49,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -1341,21 +1477,20 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Pass",
+        "confidenceTier": "Coin Flip",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Boston Red Sox",
           "grade": null,
-          "score": 46.49,
-          "winProbability": 0.4274,
-          "winProbabilityPct": 42.74,
+          "score": 54.49,
+          "winProbability": 0.5925,
+          "winProbabilityPct": 59.25,
           "marketConsensusProbability": 0.56088,
           "probStart": 0.56088,
           "probLatest": 0.56088,
@@ -1368,17 +1503,16 @@
           "averageAmericanOdds": -139.64,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "Washington Nationals",
           "grade": null,
-          "score": 35.53,
-          "winProbability": 0.2304,
-          "winProbabilityPct": 23.04,
+          "score": 43.53,
+          "winProbability": 0.3684,
+          "winProbabilityPct": 36.84,
           "marketConsensusProbability": 0.43912,
           "probStart": 0.43912,
           "probLatest": 0.43912,
@@ -1391,8 +1525,7 @@
           "averageAmericanOdds": 119.27,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -1404,6 +1537,18 @@
       "rawB10Points": [
         {
           "pulledAt": "2026-06-30T04:50:27.249279+00:00",
+          "home": 0.560876231695516,
+          "away": 0.4391237683044839,
+          "bookCount": 11,
+          "bookDivergence": 0.013436744839258719,
+          "bookAgreement": 0.98656,
+          "homeRunLinePrice": 146.45454545454547,
+          "awayRunLinePrice": -173.36363636363637,
+          "homeRunLinePoint": -1.5,
+          "awayRunLinePoint": 1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
           "home": 0.560876231695516,
           "away": 0.4391237683044839,
           "bookCount": 11,
@@ -1427,7 +1572,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "New York Yankees",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -1447,7 +1592,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -1465,24 +1610,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "New York Yankees",
         "predictedSide": "home",
         "opponent": "Detroit Tigers",
-        "winProbability": 0.1823,
-        "winProbabilityPct": 18.23,
-        "score": 31.99,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.4582,
+        "winProbabilityPct": 45.82,
+        "score": 47.99,
+        "rawScoreBeforeLearning": 53.99,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 53.99,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -1494,21 +1645,20 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Pass",
+        "confidenceTier": "Coin Flip",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "New York Yankees",
           "grade": null,
-          "score": 45.99,
-          "winProbability": 0.4172,
-          "winProbabilityPct": 41.72,
+          "score": 53.99,
+          "winProbability": 0.5824,
+          "winProbabilityPct": 58.24,
           "marketConsensusProbability": 0.55542,
           "probStart": 0.55542,
           "probLatest": 0.55542,
@@ -1521,17 +1671,16 @@
           "averageAmericanOdds": -136.64,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "Detroit Tigers",
           "grade": null,
-          "score": 36.01,
-          "winProbability": 0.2376,
-          "winProbabilityPct": 23.76,
+          "score": 44.01,
+          "winProbability": 0.3777,
+          "winProbabilityPct": 37.77,
           "marketConsensusProbability": 0.44458,
           "probStart": 0.44458,
           "probLatest": 0.44458,
@@ -1544,8 +1693,7 @@
           "averageAmericanOdds": 116.45,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -1566,165 +1714,21 @@
           "awayRunLinePrice": -189.63636363636363,
           "homeRunLinePoint": -1.5,
           "awayRunLinePoint": 1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
+          "home": 0.5554207038911005,
+          "away": 0.4445792961088993,
+          "bookCount": 11,
+          "bookDivergence": 0.01345571271690782,
+          "bookAgreement": 0.98654,
+          "homeRunLinePrice": 159.1818181818182,
+          "awayRunLinePrice": -189.63636363636363,
+          "homeRunLinePoint": -1.5,
+          "awayRunLinePoint": 1.5
         }
       ],
       "rank": 10
-    },
-    {
-      "gameId": "878878a6f002b3712f580e398e40dc1a",
-      "gameKey": "mlb|baseball_mlb|minnesota twins|houston astros|2026-07-01T00:11:00Z",
-      "matchup": "Minnesota Twins at Houston Astros",
-      "homeTeam": "Houston Astros",
-      "awayTeam": "Minnesota Twins",
-      "commenceTime": "2026-07-01T00:11:00Z",
-      "providerSportKey": "baseball_mlb",
-      "b10Status": "WAITING_FOR_FREEZE",
-      "b10Frozen": false,
-      "b10PointCount": 1,
-      "b10SelectedTeam": "Houston Astros",
-      "b10SelectedSide": "home",
-      "b10SelectedGrade": "NO_PLAY",
-      "b10SelectedScore": 0.0,
-      "b10HomeSignal": {
-        "side": "home",
-        "grade": "NO_PLAY",
-        "score": 0.0,
-        "probStart": null,
-        "probLatest": null,
-        "delta": null,
-        "velocityPpHr": null,
-        "bookDivergenceAvg": null,
-        "bookAgreementAvg": null,
-        "reversalCount": null,
-        "lateInstability": null,
-        "totalMovement": null,
-        "runLineMovement": null,
-        "tags": [],
-        "pointCount": 1,
-        "reason": "incomplete_game_history"
-      },
-      "b10AwaySignal": {
-        "side": "away",
-        "grade": "NO_PLAY",
-        "score": 0.0,
-        "probStart": null,
-        "probLatest": null,
-        "delta": null,
-        "velocityPpHr": null,
-        "bookDivergenceAvg": null,
-        "bookAgreementAvg": null,
-        "reversalCount": null,
-        "lateInstability": null,
-        "totalMovement": null,
-        "runLineMovement": null,
-        "tags": [],
-        "pointCount": 1,
-        "reason": "incomplete_game_history"
-      },
-      "gameWinnerPrediction": {
-        "predictedWinner": "Minnesota Twins",
-        "predictedSide": "away",
-        "opponent": "Houston Astros",
-        "winProbability": 0.1502,
-        "winProbabilityPct": 15.02,
-        "score": 29.2,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
-        "officialPick": false,
-        "accuracyTargetEligible": false,
-        "actionability": "OBSERVE_ONLY",
-        "actionabilityReason": "below_actionable_signal_gate",
-        "accuracyGatePolicy": {
-          "actionableMinScore": 60.0,
-          "watchlistMinScore": 54.0,
-          "requiresRealSignalBeyondBookAgreement": true,
-          "disqualifyingTags": [
-            "BOOK_DIVERGENCE",
-            "LATE_INSTABILITY",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
-          ]
-        },
-        "confidenceTier": "Pass",
-        "pickQuality": "GAME_WINNER_BASELINE",
-        "tags": [
-          "BOOK_AGREEMENT",
-          "COMPRESSED_MARKET",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
-        ],
-        "pullCountForGame": 1,
-        "homeSignal": {
-          "side": "home",
-          "team": "Houston Astros",
-          "grade": null,
-          "score": 40.64,
-          "winProbability": 0.3143,
-          "winProbabilityPct": 31.43,
-          "marketConsensusProbability": 0.48579,
-          "probStart": 0.48579,
-          "probLatest": 0.48579,
-          "delta": 0.0,
-          "bookCount": 11,
-          "bookDivergence": 0.00994,
-          "latestGap": 0.02843,
-          "reversalCount": 0,
-          "runLineMovement": 0.0,
-          "averageAmericanOdds": -47.64,
-          "tags": [
-            "BOOK_AGREEMENT",
-            "COMPRESSED_MARKET",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
-          ]
-        },
-        "awaySignal": {
-          "side": "away",
-          "team": "Minnesota Twins",
-          "grade": null,
-          "score": 43.2,
-          "winProbability": 0.362,
-          "winProbabilityPct": 36.2,
-          "marketConsensusProbability": 0.51421,
-          "probStart": 0.51421,
-          "probLatest": 0.51421,
-          "delta": 0.0,
-          "bookCount": 11,
-          "bookDivergence": 0.00994,
-          "latestGap": 0.02843,
-          "reversalCount": 0,
-          "runLineMovement": 0.0,
-          "averageAmericanOdds": -115.0,
-          "tags": [
-            "BOOK_AGREEMENT",
-            "COMPRESSED_MARKET",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
-          ]
-        },
-        "stored": {
-          "ok": true,
-          "pk": "GAME_WINNERS#mlb#2026-06-30",
-          "sk": "GAME#2026-07-01T00:11:00Z#878878a6f002b3712f580e398e40dc1a"
-        }
-      },
-      "rawB10Points": [
-        {
-          "pulledAt": "2026-06-30T04:50:27.249279+00:00",
-          "home": 0.4857855683877364,
-          "away": 0.5142144316122637,
-          "bookCount": 11,
-          "bookDivergence": 0.009939433310669932,
-          "bookAgreement": 0.99006,
-          "homeRunLinePrice": -170.8181818181818,
-          "awayRunLinePrice": 143.9090909090909,
-          "homeRunLinePoint": 1.5,
-          "awayRunLinePoint": -1.5
-        }
-      ],
-      "rank": 11
     },
     {
       "gameId": "d394e34530919df3f80263c0e0176924",
@@ -1736,7 +1740,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Toronto Blue Jays",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -1756,7 +1760,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -1774,24 +1778,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Toronto Blue Jays",
         "predictedSide": "home",
         "opponent": "New York Mets",
-        "winProbability": 0.1467,
-        "winProbabilityPct": 14.67,
-        "score": 28.87,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.3947,
+        "winProbabilityPct": 39.47,
+        "score": 44.87,
+        "rawScoreBeforeLearning": 50.87,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 50.87,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -1803,21 +1813,20 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Pass",
+        "confidenceTier": "Coin Flip",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Toronto Blue Jays",
           "grade": null,
-          "score": 42.87,
-          "winProbability": 0.3557,
-          "winProbabilityPct": 35.57,
+          "score": 50.87,
+          "winProbability": 0.5181,
+          "winProbabilityPct": 51.81,
           "marketConsensusProbability": 0.53535,
           "probStart": 0.53535,
           "probLatest": 0.53535,
@@ -1830,17 +1839,16 @@
           "averageAmericanOdds": -125.27,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "New York Mets",
           "grade": null,
-          "score": 36.5,
-          "winProbability": 0.2451,
-          "winProbabilityPct": 24.51,
+          "score": 44.5,
+          "winProbability": 0.3874,
+          "winProbabilityPct": 38.74,
           "marketConsensusProbability": 0.46465,
           "probStart": 0.46465,
           "probLatest": 0.46465,
@@ -1853,8 +1861,7 @@
           "averageAmericanOdds": 107.27,
           "tags": [
             "BOOK_AGREEMENT",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -1875,6 +1882,189 @@
           "awayRunLinePrice": -167.63636363636363,
           "homeRunLinePoint": -1.2272727272727273,
           "awayRunLinePoint": 1.2272727272727273
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
+          "home": 0.5353458136530781,
+          "away": 0.464654186346922,
+          "bookCount": 11,
+          "bookDivergence": 0.018522085480198403,
+          "bookAgreement": 0.98148,
+          "homeRunLinePrice": 133.1818181818182,
+          "awayRunLinePrice": -167.63636363636363,
+          "homeRunLinePoint": -1.2272727272727273,
+          "awayRunLinePoint": 1.2272727272727273
+        }
+      ],
+      "rank": 11
+    },
+    {
+      "gameId": "878878a6f002b3712f580e398e40dc1a",
+      "gameKey": "mlb|baseball_mlb|minnesota twins|houston astros|2026-07-01T00:11:00Z",
+      "matchup": "Minnesota Twins at Houston Astros",
+      "homeTeam": "Houston Astros",
+      "awayTeam": "Minnesota Twins",
+      "commenceTime": "2026-07-01T00:11:00Z",
+      "providerSportKey": "baseball_mlb",
+      "b10Status": "WAITING_FOR_FREEZE",
+      "b10Frozen": false,
+      "b10PointCount": 2,
+      "b10SelectedTeam": "Houston Astros",
+      "b10SelectedSide": "home",
+      "b10SelectedGrade": "NO_PLAY",
+      "b10SelectedScore": 0.0,
+      "b10HomeSignal": {
+        "side": "home",
+        "grade": "NO_PLAY",
+        "score": 0.0,
+        "probStart": null,
+        "probLatest": null,
+        "delta": null,
+        "velocityPpHr": null,
+        "bookDivergenceAvg": null,
+        "bookAgreementAvg": null,
+        "reversalCount": null,
+        "lateInstability": null,
+        "totalMovement": null,
+        "runLineMovement": null,
+        "tags": [],
+        "pointCount": 2,
+        "reason": "incomplete_game_history"
+      },
+      "b10AwaySignal": {
+        "side": "away",
+        "grade": "NO_PLAY",
+        "score": 0.0,
+        "probStart": null,
+        "probLatest": null,
+        "delta": null,
+        "velocityPpHr": null,
+        "bookDivergenceAvg": null,
+        "bookAgreementAvg": null,
+        "reversalCount": null,
+        "lateInstability": null,
+        "totalMovement": null,
+        "runLineMovement": null,
+        "tags": [],
+        "pointCount": 2,
+        "reason": "incomplete_game_history"
+      },
+      "gameWinnerPrediction": {
+        "predictedWinner": "Minnesota Twins",
+        "predictedSide": "away",
+        "opponent": "Houston Astros",
+        "winProbability": 0.3941,
+        "winProbabilityPct": 39.41,
+        "score": 44.84,
+        "rawScoreBeforeLearning": 50.84,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 50.84,
+        "calibrationPenalty": 6.0,
+        "officialPick": false,
+        "accuracyTargetEligible": false,
+        "actionability": "OBSERVE_ONLY",
+        "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
+        "accuracyGatePolicy": {
+          "actionableMinScore": 60.0,
+          "watchlistMinScore": 54.0,
+          "requiresRealSignalBeyondBookAgreement": true,
+          "disqualifyingTags": [
+            "BOOK_DIVERGENCE",
+            "LATE_INSTABILITY",
+            "LOW_PULL_DEPTH",
+            "SINGLE_PULL_BASELINE"
+          ]
+        },
+        "confidenceTier": "Coin Flip",
+        "pickQuality": "GAME_WINNER_BASELINE",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "COMPRESSED_MARKET",
+          "LOW_PULL_DEPTH"
+        ],
+        "pullCountForGame": 2,
+        "homeSignal": {
+          "side": "home",
+          "team": "Houston Astros",
+          "grade": null,
+          "score": 46.72,
+          "winProbability": 0.4321,
+          "winProbabilityPct": 43.21,
+          "marketConsensusProbability": 0.48479,
+          "probStart": 0.48579,
+          "probLatest": 0.48479,
+          "delta": -0.00099,
+          "bookCount": 11,
+          "bookDivergence": 0.01431,
+          "latestGap": 0.03041,
+          "reversalCount": 0,
+          "runLineMovement": 0.091,
+          "averageAmericanOdds": -29.0,
+          "tags": [
+            "BOOK_AGREEMENT",
+            "COMPRESSED_MARKET",
+            "LOW_PULL_DEPTH"
+          ]
+        },
+        "awaySignal": {
+          "side": "away",
+          "team": "Minnesota Twins",
+          "grade": null,
+          "score": 50.84,
+          "winProbability": 0.5175,
+          "winProbabilityPct": 51.75,
+          "marketConsensusProbability": 0.51521,
+          "probStart": 0.51421,
+          "probLatest": 0.51521,
+          "delta": 0.00099,
+          "bookCount": 11,
+          "bookDivergence": 0.01431,
+          "latestGap": 0.03041,
+          "reversalCount": 0,
+          "runLineMovement": 0.0,
+          "averageAmericanOdds": -115.45,
+          "tags": [
+            "BOOK_AGREEMENT",
+            "COMPRESSED_MARKET",
+            "LOW_PULL_DEPTH"
+          ]
+        },
+        "stored": {
+          "ok": true,
+          "pk": "GAME_WINNERS#mlb#2026-06-30",
+          "sk": "GAME#2026-07-01T00:11:00Z#878878a6f002b3712f580e398e40dc1a"
+        }
+      },
+      "rawB10Points": [
+        {
+          "pulledAt": "2026-06-30T04:50:27.249279+00:00",
+          "home": 0.4857855683877364,
+          "away": 0.5142144316122637,
+          "bookCount": 11,
+          "bookDivergence": 0.009939433310669932,
+          "bookAgreement": 0.99006,
+          "homeRunLinePrice": -170.8181818181818,
+          "awayRunLinePrice": 143.9090909090909,
+          "homeRunLinePoint": 1.5,
+          "awayRunLinePoint": -1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
+          "home": 0.4847942143651514,
+          "away": 0.5152057856348485,
+          "bookCount": 11,
+          "bookDivergence": 0.014314438029182308,
+          "bookAgreement": 0.98569,
+          "homeRunLinePrice": -170.72727272727272,
+          "awayRunLinePrice": 143.9090909090909,
+          "homeRunLinePoint": 1.5,
+          "awayRunLinePoint": -1.5
         }
       ],
       "rank": 12
@@ -1889,7 +2079,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Cleveland Guardians",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -1909,7 +2099,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -1927,24 +2117,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Texas Rangers",
         "predictedSide": "away",
         "opponent": "Cleveland Guardians",
-        "winProbability": 0.1436,
-        "winProbabilityPct": 14.36,
-        "score": 28.57,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.3888,
+        "winProbabilityPct": 38.88,
+        "score": 44.57,
+        "rawScoreBeforeLearning": 50.57,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 50.57,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -1956,22 +2152,21 @@
             "SINGLE_PULL_BASELINE"
           ]
         },
-        "confidenceTier": "Pass",
+        "confidenceTier": "Coin Flip",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
           "BOOK_AGREEMENT",
           "COMPRESSED_MARKET",
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Cleveland Guardians",
           "grade": null,
-          "score": 39.47,
-          "winProbability": 0.2937,
-          "winProbabilityPct": 29.37,
+          "score": 47.47,
+          "winProbability": 0.4475,
+          "winProbabilityPct": 44.75,
           "marketConsensusProbability": 0.4828,
           "probStart": 0.4828,
           "probLatest": 0.4828,
@@ -1980,22 +2175,21 @@
           "bookDivergence": 0.01339,
           "latestGap": 0.0344,
           "reversalCount": 0,
-          "runLineMovement": 0.0,
+          "runLineMovement": 0.182,
           "averageAmericanOdds": -9.91,
           "tags": [
             "BOOK_AGREEMENT",
             "COMPRESSED_MARKET",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "Texas Rangers",
           "grade": null,
-          "score": 42.57,
-          "winProbability": 0.35,
-          "winProbabilityPct": 35.0,
+          "score": 50.57,
+          "winProbability": 0.5119,
+          "winProbabilityPct": 51.19,
           "marketConsensusProbability": 0.5172,
           "probStart": 0.5172,
           "probLatest": 0.5172,
@@ -2004,13 +2198,12 @@
           "bookDivergence": 0.01339,
           "latestGap": 0.0344,
           "reversalCount": 0,
-          "runLineMovement": 0.0,
+          "runLineMovement": -0.182,
           "averageAmericanOdds": -116.36,
           "tags": [
             "BOOK_AGREEMENT",
             "COMPRESSED_MARKET",
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -2031,6 +2224,18 @@
           "awayRunLinePrice": 147.27272727272728,
           "homeRunLinePoint": 1.5,
           "awayRunLinePoint": -1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
+          "home": 0.48279925001376944,
+          "away": 0.5172007499862307,
+          "bookCount": 11,
+          "bookDivergence": 0.013387217100848336,
+          "bookAgreement": 0.98661,
+          "homeRunLinePrice": -175.0,
+          "awayRunLinePrice": 147.0909090909091,
+          "homeRunLinePoint": 1.5,
+          "awayRunLinePoint": -1.5
         }
       ],
       "rank": 13
@@ -2045,7 +2250,7 @@
       "providerSportKey": "baseball_mlb",
       "b10Status": "WAITING_FOR_FREEZE",
       "b10Frozen": false,
-      "b10PointCount": 1,
+      "b10PointCount": 2,
       "b10SelectedTeam": "Kansas City Royals",
       "b10SelectedSide": "home",
       "b10SelectedGrade": "NO_PLAY",
@@ -2065,7 +2270,7 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "b10AwaySignal": {
@@ -2083,24 +2288,30 @@
         "totalMovement": null,
         "runLineMovement": null,
         "tags": [],
-        "pointCount": 1,
+        "pointCount": 2,
         "reason": "incomplete_game_history"
       },
       "gameWinnerPrediction": {
         "predictedWinner": "Tampa Bay Rays",
         "predictedSide": "away",
         "opponent": "Kansas City Royals",
-        "winProbability": 0.1322,
-        "winProbabilityPct": 13.22,
-        "score": 27.42,
-        "rawScoreBefore75TargetCalibration": null,
-        "rawWinProbabilityPctBefore75TargetCalibration": null,
-        "calibrationPenalty": 14.0,
-        "targetAccuracyPct": null,
+        "winProbability": 0.3663,
+        "winProbabilityPct": 36.63,
+        "score": 43.42,
+        "rawScoreBeforeLearning": 49.42,
+        "rolling24hLearningAdjustment": 0.0,
+        "scoreAfterLearningAdjustment": 49.42,
+        "calibrationPenalty": 6.0,
         "officialPick": false,
         "accuracyTargetEligible": false,
         "actionability": "OBSERVE_ONLY",
         "actionabilityReason": "below_actionable_signal_gate",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 75.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 75% target is evaluated on completed actionable picks over the following rolling 24 hours, not on each individual pick as a guarantee."
+        },
         "accuracyGatePolicy": {
           "actionableMinScore": 60.0,
           "watchlistMinScore": 54.0,
@@ -2115,17 +2326,16 @@
         "confidenceTier": "Pass",
         "pickQuality": "GAME_WINNER_BASELINE",
         "tags": [
-          "LOW_PULL_DEPTH",
-          "SINGLE_PULL_BASELINE"
+          "LOW_PULL_DEPTH"
         ],
-        "pullCountForGame": 1,
+        "pullCountForGame": 2,
         "homeSignal": {
           "side": "home",
           "team": "Kansas City Royals",
           "grade": null,
-          "score": 36.48,
-          "winProbability": 0.2448,
-          "winProbabilityPct": 24.48,
+          "score": 44.48,
+          "winProbability": 0.387,
+          "winProbabilityPct": 38.7,
           "marketConsensusProbability": 0.47255,
           "probStart": 0.47255,
           "probLatest": 0.47255,
@@ -2137,17 +2347,16 @@
           "runLineMovement": 0.0,
           "averageAmericanOdds": 85.36,
           "tags": [
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "awaySignal": {
           "side": "away",
           "team": "Tampa Bay Rays",
           "grade": null,
-          "score": 41.42,
-          "winProbability": 0.3285,
-          "winProbabilityPct": 32.85,
+          "score": 49.42,
+          "winProbability": 0.4879,
+          "winProbabilityPct": 48.79,
           "marketConsensusProbability": 0.52745,
           "probStart": 0.52745,
           "probLatest": 0.52745,
@@ -2159,8 +2368,7 @@
           "runLineMovement": 0.0,
           "averageAmericanOdds": -121.55,
           "tags": [
-            "LOW_PULL_DEPTH",
-            "SINGLE_PULL_BASELINE"
+            "LOW_PULL_DEPTH"
           ]
         },
         "stored": {
@@ -2181,6 +2389,18 @@
           "awayRunLinePrice": 126.54545454545455,
           "homeRunLinePoint": 1.5,
           "awayRunLinePoint": -1.5
+        },
+        {
+          "pulledAt": "2026-06-30T05:00:56.131861+00:00",
+          "home": 0.47255227388685,
+          "away": 0.52744772611315,
+          "bookCount": 11,
+          "bookDivergence": 0.021360503641627115,
+          "bookAgreement": 0.97864,
+          "homeRunLinePrice": -149.45454545454547,
+          "awayRunLinePrice": 126.54545454545455,
+          "homeRunLinePoint": 1.5,
+          "awayRunLinePoint": -1.5
         }
       ],
       "rank": 14
@@ -2190,9 +2410,9 @@
     "totalRows": 14,
     "gamesWithWinnerPrediction": 14,
     "gamesMissingWinnerPrediction": [],
-    "official75TargetPicks": 0,
-    "official75TargetTeams": [],
+    "actionablePickCount": 0,
+    "actionableTeams": [],
     "b10QualifiedCandidates": 0
   },
-  "policy": "Every MLB game with convertible 15-minute pull data must receive an individual game-winner score. Only officialPick=true rows count toward the 75% individual-pick accuracy target."
+  "policy": "Every MLB game with convertible 15-minute pull data receives an individual score. The 75% target is measured only by the rolling 24-hour audit of completed actionable picks."
 }
