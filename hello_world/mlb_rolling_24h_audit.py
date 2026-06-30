@@ -15,10 +15,20 @@ ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 REPORT_PATH = "runtime_reports/mlb_rolling_24h_audit_latest.json"
 WINDOW_HOURS = 24
 TARGET_ACCURACY_PCT = 90.0
-HISTORICAL_AUDIT_RUN_LIMIT = int(os.environ.get("INQSI_MLB_HISTORICAL_AUDIT_RUN_LIMIT", "168"))
-CURRENT_TREND_WEIGHT = float(os.environ.get("INQSI_MLB_CURRENT_TREND_WEIGHT", "0.65"))
-HISTORICAL_TREND_WEIGHT = round(1.0 - CURRENT_TREND_WEIGHT, 4)
-MIN_HISTORICAL_SAMPLE = int(os.environ.get("INQSI_MLB_MIN_HISTORICAL_SAMPLE", "6"))
+HISTORICAL_AUDIT_RUN_LIMIT = int(os.environ.get("INQSI_MLB_HISTORICAL_AUDIT_RUN_LIMIT", "720"))
+MIN_MULTI_WINDOW_SAMPLE = int(os.environ.get("INQSI_MLB_MIN_MULTI_WINDOW_SAMPLE", "6"))
+MULTI_WINDOW_WEIGHTS = {
+    "current24h": float(os.environ.get("INQSI_MLB_WEIGHT_CURRENT_24H", "0.50")),
+    "sevenDay": float(os.environ.get("INQSI_MLB_WEIGHT_7D", "0.25")),
+    "thirtyDay": float(os.environ.get("INQSI_MLB_WEIGHT_30D", "0.15")),
+    "season": float(os.environ.get("INQSI_MLB_WEIGHT_SEASON", "0.10")),
+}
+MULTI_WINDOW_DAYS = {
+    "current24h": 1,
+    "sevenDay": 7,
+    "thirtyDay": 30,
+    "season": None,
+}
 
 
 def now_utc() -> datetime:
@@ -172,6 +182,17 @@ def _historical_key(row: Dict[str, Any]) -> str:
     ])
 
 
+def _dedupe_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen: Dict[str, Dict[str, Any]] = {}
+    for row in rows or []:
+        if row.get("status") != "GRADED":
+            continue
+        key = _historical_key(row)
+        if key not in seen:
+            seen[key] = row
+    return list(seen.values())
+
+
 def historical_audit_rows(limit: int = HISTORICAL_AUDIT_RUN_LIMIT) -> List[Dict[str, Any]]:
     """Return deduped historical graded rows from prior stored audit runs.
 
@@ -181,26 +202,48 @@ def historical_audit_rows(limit: int = HISTORICAL_AUDIT_RUN_LIMIT) -> List[Dict[
     if history.PULLS is None:
         return []
     seen: Dict[str, Dict[str, Any]] = {}
-    try:
-        resp = history.PULLS.query(
-            KeyConditionExpression=history.Key("PK").eq("MLB_ROLLING_24H_AUDIT#RUNS"),
-            ScanIndexForward=False,
-            Limit=limit,
-        )
-    except Exception:
-        return []
-    for item in resp.get("Items") or []:
-        audit_created = item.get("created_at")
-        data = item.get("data") or {}
-        for row in data.get("rows") or []:
-            if row.get("status") != "GRADED":
-                continue
-            key = _historical_key(row)
-            if key not in seen:
-                copied = dict(row)
-                copied["sourceAuditCreatedAt"] = audit_created
-                seen[key] = copied
+    start_key = None
+    remaining = max(1, int(limit or HISTORICAL_AUDIT_RUN_LIMIT))
+    while remaining > 0:
+        try:
+            args = {
+                "KeyConditionExpression": history.Key("PK").eq("MLB_ROLLING_24H_AUDIT#RUNS"),
+                "ScanIndexForward": False,
+                "Limit": min(100, remaining),
+            }
+            if start_key:
+                args["ExclusiveStartKey"] = start_key
+            resp = history.PULLS.query(**args)
+        except Exception:
+            return list(seen.values())
+        for item in resp.get("Items") or []:
+            remaining -= 1
+            audit_created = item.get("created_at")
+            data = item.get("data") or {}
+            for row in data.get("rows") or []:
+                if row.get("status") != "GRADED":
+                    continue
+                key = _historical_key(row)
+                if key not in seen:
+                    copied = dict(row)
+                    copied["sourceAuditCreatedAt"] = audit_created
+                    seen[key] = copied
+        start_key = resp.get("LastEvaluatedKey")
+        if not start_key:
+            break
     return list(seen.values())
+
+
+def _rows_since(rows: List[Dict[str, Any]], days: Optional[int]) -> List[Dict[str, Any]]:
+    if days is None:
+        return _dedupe_rows(rows)
+    cutoff = now_utc() - timedelta(days=days)
+    out = []
+    for row in _dedupe_rows(rows):
+        dt = parse_dt(row.get("commenceTime"))
+        if dt and dt >= cutoff:
+            out.append(row)
+    return out
 
 
 def _accuracy(rows: List[Dict[str, Any]]) -> Optional[float]:
@@ -251,75 +294,103 @@ def _adjustments_from_stats(stats: Dict[str, Dict[str, Any]], scale: float, cap:
     }
 
 
-def _blend_adjustments(current: Dict[str, float], historical: Dict[str, float], historical_stats: Dict[str, Dict[str, Any]]) -> Dict[str, float]:
-    keys = sorted(set(current) | set(historical))
-    blended: Dict[str, float] = {}
-    for key in keys:
-        hist_count = int((historical_stats.get(key) or {}).get("count") or 0)
-        cur = float(current.get(key, 0.0))
-        hist = float(historical.get(key, 0.0))
-        if hist_count >= MIN_HISTORICAL_SAMPLE:
-            value = cur * CURRENT_TREND_WEIGHT + hist * HISTORICAL_TREND_WEIGHT
-        else:
-            value = cur
-        blended[key] = round(max(-8.0, min(8.0, value)), 2)
-    return blended
-
-
-def score_learning(rows: List[Dict[str, Any]], historical_rows: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-    historical_rows = historical_rows or []
-
-    tag_stats = _bucket(rows, lambda r: r.get("tags") or [])
-    combo_stats = _bucket(rows, lambda r: _tag_combo(r.get("tags") or []))
-    confidence_stats = _bucket(rows, lambda r: r.get("confidenceTier") or "UNKNOWN")
-    flip_stats = _bucket(rows, lambda r: "FLIPPED" if r.get("optimizerFlippedPick") else "NOT_FLIPPED")
-
-    hist_tag_stats = _bucket(historical_rows, lambda r: r.get("tags") or [])
-    hist_combo_stats = _bucket(historical_rows, lambda r: _tag_combo(r.get("tags") or []))
-    hist_confidence_stats = _bucket(historical_rows, lambda r: r.get("confidenceTier") or "UNKNOWN")
-
-    current_tag_adjustments = _adjustments_from_stats(tag_stats, scale=18.0, cap=3.0)
-    current_combo_adjustments = _adjustments_from_stats(combo_stats, scale=12.0, cap=5.0)
-    historical_tag_adjustments = _adjustments_from_stats(hist_tag_stats, scale=22.0, cap=3.0)
-    historical_combo_adjustments = _adjustments_from_stats(hist_combo_stats, scale=16.0, cap=5.0)
-
-    tag_adjustments = _blend_adjustments(current_tag_adjustments, historical_tag_adjustments, hist_tag_stats)
-    combo_adjustments = _blend_adjustments(current_combo_adjustments, historical_combo_adjustments, hist_combo_stats)
-
+def _window_stat_package(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    graded = [r for r in rows if r.get("status") == "GRADED"]
+    correct = [r for r in graded if r.get("correct")]
+    tag_stats = _bucket(graded, lambda r: r.get("tags") or [])
+    combo_stats = _bucket(graded, lambda r: _tag_combo(r.get("tags") or []))
+    confidence_stats = _bucket(graded, lambda r: r.get("confidenceTier") or "UNKNOWN")
+    flip_stats = _bucket(graded, lambda r: "FLIPPED" if r.get("optimizerFlippedPick") else "NOT_FLIPPED")
     return {
-        "currentWindowStats": {
-            "tagStats": tag_stats,
-            "tagComboStats": combo_stats,
-            "confidenceStats": confidence_stats,
-            "optimizerFlipStats": flip_stats,
-            "rowCount": len([r for r in rows if r.get("status") == "GRADED"]),
-        },
-        "historicalStats": {
-            "tagStats": hist_tag_stats,
-            "tagComboStats": hist_combo_stats,
-            "confidenceStats": hist_confidence_stats,
-            "historicalRowsUsed": len(historical_rows),
-            "historicalRunLimit": HISTORICAL_AUDIT_RUN_LIMIT,
-            "minHistoricalSampleForBlend": MIN_HISTORICAL_SAMPLE,
-        },
-        # Backward-compatible aliases for existing proof readers.
+        "rowCount": len(graded),
+        "correct": len(correct),
+        "wrong": len(graded) - len(correct),
+        "accuracyPct": round(len(correct) / len(graded) * 100.0, 2) if graded else None,
         "tagStats": tag_stats,
         "tagComboStats": combo_stats,
         "confidenceStats": confidence_stats,
         "optimizerFlipStats": flip_stats,
+        "tagScoreAdjustments": _adjustments_from_stats(tag_stats, scale=18.0, cap=3.0),
+        "tagComboScoreAdjustments": _adjustments_from_stats(combo_stats, scale=12.0, cap=5.0),
+    }
+
+
+def _build_learning_windows(current_rows: List[Dict[str, Any]], historical_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    all_rows = _dedupe_rows((current_rows or []) + (historical_rows or []))
+    return {
+        "current24h": _window_stat_package(_rows_since(current_rows, 1)),
+        "sevenDay": _window_stat_package(_rows_since(all_rows, 7)),
+        "thirtyDay": _window_stat_package(_rows_since(all_rows, 30)),
+        "season": _window_stat_package(_rows_since(all_rows, None)),
+    }
+
+
+def _blend_multi_window_adjustments(windows: Dict[str, Dict[str, Any]], adjustment_key: str, stats_key: str) -> Dict[str, float]:
+    keys = sorted(set().union(*[(windows.get(w) or {}).get(adjustment_key, {}).keys() for w in MULTI_WINDOW_WEIGHTS]))
+    out: Dict[str, float] = {}
+    for key in keys:
+        weighted_sum = 0.0
+        weight_sum = 0.0
+        for window_name, configured_weight in MULTI_WINDOW_WEIGHTS.items():
+            package = windows.get(window_name) or {}
+            adjustments = package.get(adjustment_key) or {}
+            stats = (package.get(stats_key) or {}).get(key) or {}
+            count = int(stats.get("count") or 0)
+            if key not in adjustments:
+                continue
+            if window_name != "current24h" and count < MIN_MULTI_WINDOW_SAMPLE:
+                continue
+            weighted_sum += float(adjustments.get(key) or 0.0) * float(configured_weight)
+            weight_sum += float(configured_weight)
+        out[key] = round(max(-8.0, min(8.0, weighted_sum / weight_sum)), 2) if weight_sum else 0.0
+    return out
+
+
+def score_learning(rows: List[Dict[str, Any]], historical_rows: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
+    historical_rows = historical_rows or []
+    windows = _build_learning_windows(rows, historical_rows)
+    tag_adjustments = _blend_multi_window_adjustments(windows, "tagScoreAdjustments", "tagStats")
+    combo_adjustments = _blend_multi_window_adjustments(windows, "tagComboScoreAdjustments", "tagComboStats")
+
+    return {
+        "multiWindowStats": {
+            name: {
+                "rowCount": package.get("rowCount"),
+                "correct": package.get("correct"),
+                "wrong": package.get("wrong"),
+                "accuracyPct": package.get("accuracyPct"),
+                "tagStats": package.get("tagStats"),
+                "tagComboStats": package.get("tagComboStats"),
+                "confidenceStats": package.get("confidenceStats"),
+                "optimizerFlipStats": package.get("optimizerFlipStats"),
+            }
+            for name, package in windows.items()
+        },
+        "windowAdjustments": {
+            name: {
+                "tagScoreAdjustments": package.get("tagScoreAdjustments"),
+                "tagComboScoreAdjustments": package.get("tagComboScoreAdjustments"),
+            }
+            for name, package in windows.items()
+        },
+        # Backward-compatible current-window aliases for existing proof readers.
+        "currentWindowStats": windows.get("current24h"),
+        "historicalStats": {
+            "historicalRowsUsed": len(_dedupe_rows(historical_rows)),
+            "historicalRunLimit": HISTORICAL_AUDIT_RUN_LIMIT,
+            "minHistoricalSampleForBlend": MIN_MULTI_WINDOW_SAMPLE,
+        },
+        "tagStats": (windows.get("current24h") or {}).get("tagStats") or {},
+        "tagComboStats": (windows.get("current24h") or {}).get("tagComboStats") or {},
+        "confidenceStats": (windows.get("current24h") or {}).get("confidenceStats") or {},
+        "optimizerFlipStats": (windows.get("current24h") or {}).get("optimizerFlipStats") or {},
         "adjustments": {
             "tagScoreAdjustments": tag_adjustments,
             "tagComboScoreAdjustments": combo_adjustments,
-            "currentOnlyTagScoreAdjustments": current_tag_adjustments,
-            "currentOnlyTagComboScoreAdjustments": current_combo_adjustments,
-            "historicalOnlyTagScoreAdjustments": historical_tag_adjustments,
-            "historicalOnlyTagComboScoreAdjustments": historical_combo_adjustments,
-            "blendWeights": {
-                "current24h": CURRENT_TREND_WEIGHT,
-                "historical": HISTORICAL_TREND_WEIGHT,
-            },
+            "multiWindowWeights": MULTI_WINDOW_WEIGHTS,
+            "minMultiWindowSampleForNonCurrentWindows": MIN_MULTI_WINDOW_SAMPLE,
         },
-        "policy": "Learning blends current rolling-24h signal trends with deduped historical audit trends. Current form is weighted more heavily, while historical data stabilizes signal scoring when sample size is sufficient.",
+        "policy": "Learning blends four windows: current 24h, 7-day, 30-day, and season. Current 24h keeps the model responsive; longer windows stabilize signal scoring when sample size is sufficient.",
     }
 
 
@@ -329,7 +400,10 @@ def summarize(rows: List[Dict[str, Any]], historical_rows: Optional[List[Dict[st
     correct = [r for r in graded if r.get("correct")]
     optimized = [r for r in graded if r.get("individualWinnerOptimized")]
     flipped = [r for r in graded if r.get("optimizerFlippedPick")]
-    historical_graded = [r for r in historical_rows if r.get("status") == "GRADED"]
+    all_rows = _dedupe_rows((rows or []) + (historical_rows or []))
+    seven_day_rows = _rows_since(all_rows, 7)
+    thirty_day_rows = _rows_since(all_rows, 30)
+    season_rows = _rows_since(all_rows, None)
     return {
         "windowHours": WINDOW_HOURS,
         "targetAccuracyPct": TARGET_ACCURACY_PCT,
@@ -344,12 +418,14 @@ def summarize(rows: List[Dict[str, Any]], historical_rows: Optional[List[Dict[st
         "winnerOptimizerAppliedCount": len(optimized),
         "winnerOptimizerFlipCount": len(flipped),
         "allScoredPickAccuracyPct": _accuracy(graded),
-        "historicalRowsUsedForLearning": len(historical_graded),
-        "historicalAccuracyPct": _accuracy(historical_graded),
-        "learningBlendWeights": {
-            "current24h": CURRENT_TREND_WEIGHT,
-            "historical": HISTORICAL_TREND_WEIGHT,
-        },
+        "historicalRowsUsedForLearning": len(_dedupe_rows(historical_rows)),
+        "sevenDayRowsUsedForLearning": len(seven_day_rows),
+        "sevenDayAccuracyPct": _accuracy(seven_day_rows),
+        "thirtyDayRowsUsedForLearning": len(thirty_day_rows),
+        "thirtyDayAccuracyPct": _accuracy(thirty_day_rows),
+        "seasonRowsUsedForLearning": len(season_rows),
+        "seasonAccuracyPct": _accuracy(season_rows),
+        "multiWindowWeights": MULTI_WINDOW_WEIGHTS,
         "actionablePickCount": len(graded),
         "actionableCorrect": len(correct),
         "actionableWrong": len(graded) - len(correct),
@@ -395,7 +471,7 @@ def build(days_from: int = 3, store: bool = True, write_file: bool = True) -> Di
         "summary": summarize(rows, historical_rows=historical_rows),
         "scoreLearning": learning,
         "rows": rows,
-        "policy": "Audit every completed MLB game in the trailing 24 hours. The optimizer target is correct team-winner selection for every individual game; 90% is measured as rolling 24h accuracy across all optimized picks. Signal scoring blends current 24h and deduped historical audit trends.",
+        "policy": "Audit every completed MLB game in the trailing 24 hours. The optimizer target is correct team-winner selection for every individual game; 90% is measured as rolling 24h accuracy across all optimized picks. Signal scoring blends current 24h, 7-day, 30-day, and season audit trends.",
     }
     if store:
         try:
