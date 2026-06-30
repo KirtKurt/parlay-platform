@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-06-30T13:53:04.133193+00:00",
+  "createdAt": "2026-06-30T13:53:51.384101+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -10,12 +10,18 @@
     "completedFinalGames": 13,
     "gradedPredictionCount": 13,
     "missingPredictionCount": 0,
+    "optimizedPickCount": 13,
+    "optimizedCorrect": 7,
+    "optimizedWrong": 6,
+    "rolling24hOptimizedAccuracyPct": 53.85,
+    "rolling24hTargetMet": false,
+    "winnerOptimizerAppliedCount": 0,
+    "winnerOptimizerFlipCount": 0,
     "allScoredPickAccuracyPct": 53.85,
-    "actionablePickCount": 0,
-    "actionableCorrect": 0,
-    "actionableWrong": 0,
-    "rolling24hActionableAccuracyPct": null,
-    "rolling24hTargetMet": null
+    "actionablePickCount": 13,
+    "actionableCorrect": 7,
+    "actionableWrong": 6,
+    "rolling24hActionableAccuracyPct": 53.85
   },
   "scoreLearning": {
     "tagStats": {
@@ -55,11 +61,46 @@
         "accuracyPct": 0.0
       }
     },
-    "actionabilityStats": {
-      "UNKNOWN": {
-        "count": 13,
-        "correct": 7,
-        "accuracyPct": 53.85
+    "tagComboStats": {
+      "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT": {
+        "count": 1,
+        "correct": 0,
+        "accuracyPct": 0.0
+      },
+      "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
+        "count": 2,
+        "correct": 2,
+        "accuracyPct": 100.0
+      },
+      "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
+        "count": 1,
+        "correct": 1,
+        "accuracyPct": 100.0
+      },
+      "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
+        "count": 2,
+        "correct": 1,
+        "accuracyPct": 50.0
+      },
+      "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
+        "count": 3,
+        "correct": 1,
+        "accuracyPct": 33.33
+      },
+      "REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
+        "count": 2,
+        "correct": 1,
+        "accuracyPct": 50.0
+      },
+      "BOOK_AGREEMENT+REVERSAL": {
+        "count": 1,
+        "correct": 1,
+        "accuracyPct": 100.0
+      },
+      "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL": {
+        "count": 1,
+        "correct": 0,
+        "accuracyPct": 0.0
       }
     },
     "confidenceStats": {
@@ -74,18 +115,35 @@
         "accuracyPct": 75.0
       }
     },
+    "optimizerFlipStats": {
+      "NOT_FLIPPED": {
+        "count": 13,
+        "correct": 7,
+        "accuracyPct": 53.85
+      }
+    },
     "adjustments": {
       "tagScoreAdjustments": {
         "BOOK_DIVERGENCE": 0.0,
-        "REVERSAL": 0.15,
-        "RUN_LINE_MOVEMENT": 0.18,
-        "RUN_LINE_CONFIRMATION": 1.0,
-        "STEAM": 0.4,
-        "BOOK_AGREEMENT": 0.4,
-        "COMPRESSED_MARKET": -0.5
+        "REVERSAL": 0.21,
+        "RUN_LINE_MOVEMENT": 0.25,
+        "RUN_LINE_CONFIRMATION": 1.39,
+        "STEAM": 0.56,
+        "BOOK_AGREEMENT": 0.56,
+        "COMPRESSED_MARKET": -0.75
+      },
+      "tagComboScoreAdjustments": {
+        "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT": -0.75,
+        "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 4.17,
+        "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.75,
+        "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
+        "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -1.39,
+        "REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.0,
+        "BOOK_AGREEMENT+REVERSAL": 0.75,
+        "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL": -0.75
       }
     },
-    "policy": "Rolling 24h learning nudges future signal scores from recently completed games. Adjustments are bounded to avoid overfitting one day."
+    "policy": "Learning is optimized for correct team-winner selection on every game. Tag and tag-combination adjustments are bounded to avoid overfitting one day."
   },
   "rows": [
     {
@@ -107,18 +165,60 @@
       "predictedSide": "home",
       "score": "0",
       "winProbabilityPct": "5",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Pass",
       "tags": [
         "BOOK_DIVERGENCE",
         "REVERSAL",
         "RUN_LINE_MOVEMENT"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.55061",
+        "probLatest": "0.55121",
+        "side": "home",
+        "averageAmericanOdds": "-142.5",
+        "bookCount": "8",
+        "delta": "0.00059",
+        "latestGap": "0.10242",
+        "runLineMovement": "14.114",
+        "team": "Baltimore Orioles",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "0",
+        "winProbability": "0.05",
+        "marketConsensusProbability": "0.55121",
+        "bookDivergence": "0.04898",
+        "reversalCount": "8",
+        "winProbabilityPct": "5"
+      },
+      "awaySignal": {
+        "probStart": "0.44939",
+        "probLatest": "0.44879",
+        "side": "away",
+        "averageAmericanOdds": "84.5",
+        "bookCount": "8",
+        "delta": "-0.00059",
+        "latestGap": "0.10242",
+        "runLineMovement": "-43.67",
+        "team": "Chicago White Sox",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "0",
+        "winProbability": "0.05",
+        "marketConsensusProbability": "0.44879",
+        "bookDivergence": "0.04898",
+        "reversalCount": "8",
+        "winProbabilityPct": "5"
+      },
       "correct": false
     },
     {
@@ -140,9 +240,6 @@
       "predictedSide": "away",
       "score": "100",
       "winProbabilityPct": "95",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Premium",
       "tags": [
         "BOOK_DIVERGENCE",
@@ -151,9 +248,57 @@
         "RUN_LINE_MOVEMENT",
         "STEAM"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.51019",
+        "probLatest": "0.09724",
+        "side": "home",
+        "averageAmericanOdds": "1941.67",
+        "bookCount": "3",
+        "delta": "-0.41295",
+        "latestGap": "0.80553",
+        "runLineMovement": "-94.364",
+        "team": "Philadelphia Phillies",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "0",
+        "winProbability": "0.05",
+        "marketConsensusProbability": "0.09724",
+        "bookDivergence": "0.19169",
+        "reversalCount": "9",
+        "winProbabilityPct": "5"
+      },
+      "awaySignal": {
+        "probStart": "0.48981",
+        "probLatest": "0.90276",
+        "side": "away",
+        "averageAmericanOdds": "-20151.67",
+        "bookCount": "3",
+        "delta": "0.41295",
+        "latestGap": "0.80553",
+        "runLineMovement": "-61.788",
+        "team": "Pittsburgh Pirates",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "REVERSAL",
+          "RUN_LINE_CONFIRMATION",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "score": "100",
+        "winProbability": "0.95",
+        "marketConsensusProbability": "0.90276",
+        "bookDivergence": "0.19169",
+        "reversalCount": "9",
+        "winProbabilityPct": "95"
+      },
       "correct": true
     },
     {
@@ -175,9 +320,6 @@
       "predictedSide": "home",
       "score": "100",
       "winProbabilityPct": "95",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Premium",
       "tags": [
         "BOOK_DIVERGENCE",
@@ -186,9 +328,57 @@
         "RUN_LINE_MOVEMENT",
         "STEAM"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.53856",
+        "probLatest": "0.88119",
+        "side": "home",
+        "averageAmericanOdds": "-1743.5",
+        "bookCount": "8",
+        "delta": "0.34263",
+        "latestGap": "0.76238",
+        "runLineMovement": "-6118.159",
+        "team": "Toronto Blue Jays",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "REVERSAL",
+          "RUN_LINE_CONFIRMATION",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "score": "100",
+        "winProbability": "0.95",
+        "marketConsensusProbability": "0.88119",
+        "bookDivergence": "0.07586",
+        "reversalCount": "1",
+        "winProbabilityPct": "95"
+      },
+      "awaySignal": {
+        "probStart": "0.46144",
+        "probLatest": "0.11881",
+        "side": "away",
+        "averageAmericanOdds": "738.12",
+        "bookCount": "8",
+        "delta": "-0.34263",
+        "latestGap": "0.76238",
+        "runLineMovement": "1477.523",
+        "team": "New York Mets",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "0",
+        "winProbability": "0.05",
+        "marketConsensusProbability": "0.11881",
+        "bookDivergence": "0.07586",
+        "reversalCount": "1",
+        "winProbabilityPct": "5"
+      },
       "correct": true
     },
     {
@@ -210,9 +400,6 @@
       "predictedSide": "away",
       "score": "100",
       "winProbabilityPct": "95",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Premium",
       "tags": [
         "BOOK_AGREEMENT",
@@ -220,9 +407,56 @@
         "RUN_LINE_MOVEMENT",
         "STEAM"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.56879",
+        "probLatest": "0.0315",
+        "side": "home",
+        "averageAmericanOdds": "3000",
+        "bookCount": "1",
+        "delta": "-0.53728",
+        "latestGap": "0.937",
+        "runLineMovement": "-25.364",
+        "team": "New York Yankees",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "0",
+        "winProbability": "0.05",
+        "marketConsensusProbability": "0.0315",
+        "bookDivergence": "0",
+        "reversalCount": "4",
+        "winProbabilityPct": "5"
+      },
+      "awaySignal": {
+        "probStart": "0.43121",
+        "probLatest": "0.9685",
+        "side": "away",
+        "averageAmericanOdds": "-12000",
+        "bookCount": "1",
+        "delta": "0.53728",
+        "latestGap": "0.937",
+        "runLineMovement": "14.273",
+        "team": "Detroit Tigers",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "score": "100",
+        "winProbability": "0.95",
+        "marketConsensusProbability": "0.9685",
+        "bookDivergence": "0",
+        "reversalCount": "4",
+        "winProbabilityPct": "95"
+      },
       "correct": true
     },
     {
@@ -244,9 +478,6 @@
       "predictedSide": "home",
       "score": "100",
       "winProbabilityPct": "95",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Premium",
       "tags": [
         "BOOK_AGREEMENT",
@@ -255,9 +486,57 @@
         "RUN_LINE_MOVEMENT",
         "STEAM"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.61859",
+        "probLatest": "0.9775",
+        "side": "home",
+        "averageAmericanOdds": "-30000",
+        "bookCount": "2",
+        "delta": "0.35891",
+        "latestGap": "0.95499",
+        "runLineMovement": "-1915.545",
+        "team": "Boston Red Sox",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL",
+          "RUN_LINE_CONFIRMATION",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "score": "100",
+        "winProbability": "0.95",
+        "marketConsensusProbability": "0.9775",
+        "bookDivergence": "0.01269",
+        "reversalCount": "4",
+        "winProbabilityPct": "95"
+      },
+      "awaySignal": {
+        "probStart": "0.38141",
+        "probLatest": "0.0225",
+        "side": "away",
+        "averageAmericanOdds": "4650",
+        "bookCount": "2",
+        "delta": "-0.35891",
+        "latestGap": "0.95499",
+        "runLineMovement": "999.864",
+        "team": "Washington Nationals",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "0",
+        "winProbability": "0.05",
+        "marketConsensusProbability": "0.0225",
+        "bookDivergence": "0.01269",
+        "reversalCount": "4",
+        "winProbabilityPct": "5"
+      },
       "correct": true
     },
     {
@@ -279,9 +558,6 @@
       "predictedSide": "away",
       "score": "100",
       "winProbabilityPct": "95",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Premium",
       "tags": [
         "BOOK_DIVERGENCE",
@@ -289,9 +565,56 @@
         "RUN_LINE_MOVEMENT",
         "STEAM"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.57192",
+        "probLatest": "0.16867",
+        "side": "home",
+        "averageAmericanOdds": "464.88",
+        "bookCount": "8",
+        "delta": "-0.40324",
+        "latestGap": "0.66265",
+        "runLineMovement": "-613.909",
+        "team": "Cleveland Guardians",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "0",
+        "winProbability": "0.05",
+        "marketConsensusProbability": "0.16867",
+        "bookDivergence": "0.05129",
+        "reversalCount": "2",
+        "winProbabilityPct": "5"
+      },
+      "awaySignal": {
+        "probStart": "0.42808",
+        "probLatest": "0.83133",
+        "side": "away",
+        "averageAmericanOdds": "-794.38",
+        "bookCount": "8",
+        "delta": "0.40324",
+        "latestGap": "0.66265",
+        "runLineMovement": "482.966",
+        "team": "Texas Rangers",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "score": "100",
+        "winProbability": "0.95",
+        "marketConsensusProbability": "0.83133",
+        "bookDivergence": "0.05129",
+        "reversalCount": "2",
+        "winProbabilityPct": "95"
+      },
       "correct": true
     },
     {
@@ -313,9 +636,6 @@
       "predictedSide": "away",
       "score": "100",
       "winProbabilityPct": "95",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Premium",
       "tags": [
         "BOOK_DIVERGENCE",
@@ -323,9 +643,56 @@
         "RUN_LINE_MOVEMENT",
         "STEAM"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.58204",
+        "probLatest": "0.30994",
+        "side": "home",
+        "averageAmericanOdds": "211.88",
+        "bookCount": "8",
+        "delta": "-0.2721",
+        "latestGap": "0.38012",
+        "runLineMovement": "-185.716",
+        "team": "Milwaukee Brewers",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "0",
+        "winProbability": "0.05",
+        "marketConsensusProbability": "0.30994",
+        "bookDivergence": "0.169",
+        "reversalCount": "4",
+        "winProbabilityPct": "5"
+      },
+      "awaySignal": {
+        "probStart": "0.41796",
+        "probLatest": "0.69006",
+        "side": "away",
+        "averageAmericanOdds": "-291.12",
+        "bookCount": "8",
+        "delta": "0.2721",
+        "latestGap": "0.38012",
+        "runLineMovement": "101.398",
+        "team": "Cincinnati Reds",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "score": "100",
+        "winProbability": "0.95",
+        "marketConsensusProbability": "0.69006",
+        "bookDivergence": "0.169",
+        "reversalCount": "4",
+        "winProbabilityPct": "95"
+      },
       "correct": false
     },
     {
@@ -347,9 +714,6 @@
       "predictedSide": "away",
       "score": "24.16",
       "winProbabilityPct": "10.4",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Pass",
       "tags": [
         "BOOK_DIVERGENCE",
@@ -357,9 +721,56 @@
         "RUN_LINE_MOVEMENT",
         "STEAM"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.58341",
+        "probLatest": "0.52572",
+        "side": "home",
+        "averageAmericanOdds": "-103.38",
+        "bookCount": "8",
+        "delta": "-0.05769",
+        "latestGap": "0.05144",
+        "runLineMovement": "-83.75",
+        "team": "Chicago Cubs",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "0",
+        "winProbability": "0.05",
+        "marketConsensusProbability": "0.52572",
+        "bookDivergence": "0.15347",
+        "reversalCount": "4",
+        "winProbabilityPct": "5"
+      },
+      "awaySignal": {
+        "probStart": "0.41659",
+        "probLatest": "0.47428",
+        "side": "away",
+        "averageAmericanOdds": "46.38",
+        "bookCount": "8",
+        "delta": "0.05769",
+        "latestGap": "0.05144",
+        "runLineMovement": "23.216",
+        "team": "San Diego Padres",
+        "tags": [
+          "BOOK_DIVERGENCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "score": "24.16",
+        "winProbability": "0.104",
+        "marketConsensusProbability": "0.47428",
+        "bookDivergence": "0.15347",
+        "reversalCount": "4",
+        "winProbabilityPct": "10.4"
+      },
       "correct": false
     },
     {
@@ -381,18 +792,60 @@
       "predictedSide": "away",
       "score": "100",
       "winProbabilityPct": "95",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Premium",
       "tags": [
         "REVERSAL",
         "RUN_LINE_MOVEMENT",
         "STEAM"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.55375",
+        "probLatest": "0.1843",
+        "side": "home",
+        "averageAmericanOdds": "412",
+        "bookCount": "8",
+        "delta": "-0.36945",
+        "latestGap": "0.6314",
+        "runLineMovement": "-179.2",
+        "team": "Houston Astros",
+        "tags": [
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "0",
+        "winProbability": "0.05",
+        "marketConsensusProbability": "0.1843",
+        "bookDivergence": "0.03434",
+        "reversalCount": "2",
+        "winProbabilityPct": "5"
+      },
+      "awaySignal": {
+        "probStart": "0.44625",
+        "probLatest": "0.8157",
+        "side": "away",
+        "averageAmericanOdds": "-659.38",
+        "bookCount": "8",
+        "delta": "0.36945",
+        "latestGap": "0.6314",
+        "runLineMovement": "50.825",
+        "team": "Minnesota Twins",
+        "tags": [
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "score": "100",
+        "winProbability": "0.95",
+        "marketConsensusProbability": "0.8157",
+        "bookDivergence": "0.03434",
+        "reversalCount": "2",
+        "winProbabilityPct": "95"
+      },
       "correct": true
     },
     {
@@ -414,18 +867,60 @@
       "predictedSide": "home",
       "score": "100",
       "winProbabilityPct": "95",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Premium",
       "tags": [
         "REVERSAL",
         "RUN_LINE_MOVEMENT",
         "STEAM"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.44588",
+        "probLatest": "0.62654",
+        "side": "home",
+        "averageAmericanOdds": "-198.38",
+        "bookCount": "8",
+        "delta": "0.18066",
+        "latestGap": "0.25309",
+        "runLineMovement": "210.455",
+        "team": "Colorado Rockies",
+        "tags": [
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "score": "100",
+        "winProbability": "0.95",
+        "marketConsensusProbability": "0.62654",
+        "bookDivergence": "0.03059",
+        "reversalCount": "1",
+        "winProbabilityPct": "95"
+      },
+      "awaySignal": {
+        "probStart": "0.55412",
+        "probLatest": "0.37346",
+        "side": "away",
+        "averageAmericanOdds": "152.75",
+        "bookCount": "8",
+        "delta": "-0.18066",
+        "latestGap": "0.25309",
+        "runLineMovement": "-247.273",
+        "team": "Miami Marlins",
+        "tags": [
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "0",
+        "winProbability": "0.05",
+        "marketConsensusProbability": "0.37346",
+        "bookDivergence": "0.03059",
+        "reversalCount": "1",
+        "winProbabilityPct": "5"
+      },
       "correct": false
     },
     {
@@ -447,17 +942,57 @@
       "predictedSide": "home",
       "score": "43.79",
       "winProbabilityPct": "37.34",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Pass",
       "tags": [
         "BOOK_AGREEMENT",
         "REVERSAL"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.55377",
+        "probLatest": "0.55109",
+        "side": "home",
+        "averageAmericanOdds": "-134",
+        "bookCount": "11",
+        "delta": "-0.00268",
+        "latestGap": "0.10218",
+        "runLineMovement": "2.636",
+        "team": "Arizona Diamondbacks",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL"
+        ],
+        "score": "43.79",
+        "winProbability": "0.3734",
+        "marketConsensusProbability": "0.55109",
+        "bookDivergence": "0.01705",
+        "reversalCount": "2",
+        "winProbabilityPct": "37.34"
+      },
+      "awaySignal": {
+        "probStart": "0.44623",
+        "probLatest": "0.44891",
+        "side": "away",
+        "averageAmericanOdds": "114.45",
+        "bookCount": "11",
+        "delta": "0.00268",
+        "latestGap": "0.10218",
+        "runLineMovement": "-3",
+        "team": "San Francisco Giants",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL"
+        ],
+        "score": "38.35",
+        "winProbability": "0.2747",
+        "marketConsensusProbability": "0.44891",
+        "bookDivergence": "0.01705",
+        "reversalCount": "2",
+        "winProbabilityPct": "27.47"
+      },
       "correct": true
     },
     {
@@ -479,18 +1014,60 @@
       "predictedSide": "home",
       "score": "43.67",
       "winProbabilityPct": "37.11",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Pass",
       "tags": [
         "BOOK_AGREEMENT",
         "COMPRESSED_MARKET",
         "REVERSAL"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.47426",
+        "probLatest": "0.47834",
+        "side": "home",
+        "averageAmericanOdds": "46.45",
+        "bookCount": "11",
+        "delta": "0.00407",
+        "latestGap": "0.04333",
+        "runLineMovement": "-2",
+        "team": "Athletics",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "COMPRESSED_MARKET",
+          "REVERSAL"
+        ],
+        "score": "43.67",
+        "winProbability": "0.3711",
+        "marketConsensusProbability": "0.47834",
+        "bookDivergence": "0.0105",
+        "reversalCount": "2",
+        "winProbabilityPct": "37.11"
+      },
+      "awaySignal": {
+        "probStart": "0.52574",
+        "probLatest": "0.52166",
+        "side": "away",
+        "averageAmericanOdds": "-118.64",
+        "bookCount": "11",
+        "delta": "-0.00407",
+        "latestGap": "0.04333",
+        "runLineMovement": "1.545",
+        "team": "Los Angeles Dodgers",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "COMPRESSED_MARKET",
+          "REVERSAL"
+        ],
+        "score": "41.87",
+        "winProbability": "0.3368",
+        "marketConsensusProbability": "0.52166",
+        "bookDivergence": "0.0105",
+        "reversalCount": "2",
+        "winProbabilityPct": "33.68"
+      },
       "correct": false
     },
     {
@@ -512,9 +1089,6 @@
       "predictedSide": "away",
       "score": "44.03",
       "winProbabilityPct": "37.81",
-      "rawScoreBeforeLearning": null,
-      "rolling24hLearningAdjustment": null,
-      "calibrationPenalty": null,
       "confidenceTier": "Pass",
       "tags": [
         "BOOK_AGREEMENT",
@@ -523,18 +1097,66 @@
         "RUN_LINE_MOVEMENT",
         "STEAM"
       ],
-      "officialPick": false,
-      "actionability": null,
-      "actionabilityReason": null,
+      "selectionBeforeWinnerOptimizer": null,
+      "individualWinnerOptimized": null,
+      "optimizerFlippedPick": null,
+      "winnerOptimizer": null,
+      "homeSignal": {
+        "probStart": "0.65938",
+        "probLatest": "0.64262",
+        "side": "home",
+        "averageAmericanOdds": "-201.55",
+        "bookCount": "11",
+        "delta": "-0.01677",
+        "latestGap": "0.28523",
+        "runLineMovement": "137.545",
+        "team": "Seattle Mariners",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "score": "43.22",
+        "winProbability": "0.3624",
+        "marketConsensusProbability": "0.64262",
+        "bookDivergence": "0.01297",
+        "reversalCount": "2",
+        "winProbabilityPct": "36.24"
+      },
+      "awaySignal": {
+        "probStart": "0.34062",
+        "probLatest": "0.35738",
+        "side": "away",
+        "averageAmericanOdds": "169.18",
+        "bookCount": "11",
+        "delta": "0.01677",
+        "latestGap": "0.28523",
+        "runLineMovement": "-11.455",
+        "team": "Los Angeles Angels",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL",
+          "RUN_LINE_CONFIRMATION",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "score": "44.03",
+        "winProbability": "0.3781",
+        "marketConsensusProbability": "0.35738",
+        "bookDivergence": "0.01297",
+        "reversalCount": "2",
+        "winProbabilityPct": "37.81"
+      },
       "correct": false
     }
   ],
-  "policy": "Audit every completed MLB game in the trailing 24 hours. The 75% target is measured only as the rolling 24h accuracy of actionable picks, not as a per-pick guarantee.",
+  "policy": "Audit every completed MLB game in the trailing 24 hours. The optimizer target is correct team-winner selection for every individual game; 75% is measured as rolling 24h accuracy across all optimized picks.",
   "stored": {
     "ok": true,
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-06-30T13:53:04.133193+00:00"
+    "runSk": "AUDIT#2026-06-30T13:53:51.384101+00:00"
   }
 }
