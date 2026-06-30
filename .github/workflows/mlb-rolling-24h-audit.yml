@@ -1,6 +1,13 @@
 name: MLB Rolling 24h Audit
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-rolling-24h-audit.yml'
+      - 'hello_world/mlb_rolling_24h_audit.py'
+      - 'hello_world/mlb_accuracy_target_patch.py'
+      - 'hello_world/all_sports_live_scheduler.py'
   schedule:
     - cron: '20 * * * *'
   workflow_dispatch:
