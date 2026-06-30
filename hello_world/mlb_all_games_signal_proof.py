@@ -11,6 +11,12 @@ import mlb_b10_engine
 import mlb_game_winner_engine
 
 try:
+    import mlb_accuracy_target_patch
+    mlb_accuracy_target_patch.apply(mlb_game_winner_engine)
+except Exception:
+    pass
+
+try:
     import slate_date_patch
     slate_date_patch.apply_to_history(history)
 except Exception:
@@ -155,6 +161,15 @@ def _combined_rows(winners: Dict[str, Any], b10: Dict[str, Any]) -> List[Dict[st
                 "winProbability": winner.get("winProbability"),
                 "winProbabilityPct": winner.get("winProbabilityPct"),
                 "score": winner.get("score"),
+                "rawScoreBefore75TargetCalibration": winner.get("rawScoreBefore75TargetCalibration"),
+                "rawWinProbabilityPctBefore75TargetCalibration": winner.get("rawWinProbabilityPctBefore75TargetCalibration"),
+                "calibrationPenalty": winner.get("calibrationPenalty"),
+                "targetAccuracyPct": winner.get("targetAccuracyPct"),
+                "officialPick": winner.get("officialPick"),
+                "accuracyTargetEligible": winner.get("accuracyTargetEligible"),
+                "actionability": winner.get("actionability"),
+                "actionabilityReason": winner.get("actionabilityReason"),
+                "accuracyGatePolicy": winner.get("accuracyGatePolicy"),
                 "confidenceTier": winner.get("confidenceTier"),
                 "pickQuality": winner.get("pickQuality"),
                 "tags": winner.get("tags") or [],
@@ -176,6 +191,7 @@ def build(slate_date: Optional[str] = None, store: bool = True, write_file: bool
     winners = mlb_game_winner_engine.predict_all(slate, store=store, limit=500)
     b10 = _b10_all_games(slate)
     rows = _combined_rows(winners, b10)
+    official_rows = [r for r in rows if (r.get("gameWinnerPrediction") or {}).get("officialPick")]
     proof = {
         "ok": True,
         "proofType": "MLB_ALL_GAMES_SIGNAL_PROOF",
@@ -191,14 +207,17 @@ def build(slate_date: Optional[str] = None, store: bool = True, write_file: bool
         "gameWinnerPredictionCount": winners.get("count"),
         "allGamesPredicted": winners.get("allGamesPredicted"),
         "storedGameWinnerCount": winners.get("storedCount"),
+        "accuracyTarget": winners.get("accuracyTarget"),
         "rows": rows,
         "summary": {
             "totalRows": len(rows),
             "gamesWithWinnerPrediction": sum(1 for r in rows if r.get("gameWinnerPrediction")),
             "gamesMissingWinnerPrediction": [r.get("matchup") for r in rows if not r.get("gameWinnerPrediction")],
+            "official75TargetPicks": len(official_rows),
+            "official75TargetTeams": [(r.get("gameWinnerPrediction") or {}).get("predictedWinner") for r in official_rows],
             "b10QualifiedCandidates": sum(1 for r in rows if r.get("b10SelectedGrade") in {"MLB_STRONG", "MLB_LEAN"}),
         },
-        "policy": "Every MLB game with convertible 15-minute pull data must receive an individual game-winner score. Parlays must be built from these scored rows, not from a separate hidden scoring path.",
+        "policy": "Every MLB game with convertible 15-minute pull data must receive an individual game-winner score. Only officialPick=true rows count toward the 75% individual-pick accuracy target.",
     }
     if write_file:
         os.makedirs("runtime_reports", exist_ok=True)
