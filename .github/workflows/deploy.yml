@@ -30,6 +30,16 @@ jobs:
       - name: Verify AWS connection
         run: aws sts get-caller-identity
 
+      - name: Verify SportsDataIO secret present
+        env:
+          SPORTSDATAIO_API_KEY: ${{ secrets.SPORTSDATAIO_API_KEY }}
+        run: |
+          if [ -z "${SPORTSDATAIO_API_KEY:-}" ]; then
+            echo "::error::Missing GitHub secret SPORTSDATAIO_API_KEY. Add the SportsDataIO MLB key before deploying."
+            exit 1
+          fi
+          echo "SportsDataIO secret is present."
+
       - name: Setup AWS SAM
         uses: aws-actions/setup-sam@v2
 
@@ -121,6 +131,9 @@ jobs:
             --output text)
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "API_URL=$API_URL"
+
+      - name: Verify SportsDataIO live runtime
+        run: python scripts/prove_sportsdataio_runtime.py --api-url "${{ steps.stack_outputs.outputs.api_url }}" --strict
 
       - name: Configure API WAF and throttling
         continue-on-error: true
