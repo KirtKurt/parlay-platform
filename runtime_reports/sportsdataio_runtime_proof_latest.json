@@ -1,0 +1,493 @@
+{
+  "ok": false,
+  "proofType": "SPORTSDATAIO_RUNTIME_PROOF",
+  "createdAt": "2026-06-30T19:11:48.396834+00:00",
+  "apiUrlRedacted": "https://7nz8g8unyd.execute-api.us-east-1.amazonaws.com/...",
+  "checks": {
+    "health": {
+      "ok": true,
+      "status": 200,
+      "json": {
+        "ok": true,
+        "service": "inqsi-backend-api",
+        "time": "2026-06-30T19:11:45.826865Z",
+        "storage": "dynamodb",
+        "maxSlipLegs": 3,
+        "paymentProviderMode": "NONE",
+        "scannerReadyWithoutOddsApi": true,
+        "oddsApiDependentItemsSkipped": [
+          "odds ingestion",
+          "multi-book normalization",
+          "scheduled T snapshots"
+        ],
+        "socialProviders": [
+          "facebook",
+          "instagram",
+          "reddit",
+          "x",
+          "tiktok",
+          "youtube",
+          "discord",
+          "linkedin",
+          "twitch",
+          "snapchat",
+          "other"
+        ],
+        "routes": [
+          {
+            "method": "GET",
+            "path": "/v1/members/me",
+            "auth_required": true,
+            "owner_only": false,
+            "description": "Return authenticated member profile",
+            "storage_required": [
+              "members",
+              "subscriptions",
+              "social_accounts"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "PATCH",
+            "path": "/v1/members/me",
+            "auth_required": true,
+            "owner_only": false,
+            "description": "Update member profile and privacy settings",
+            "storage_required": [
+              "members",
+              "admin_audit_logs"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "POST",
+            "path": "/v1/members/social/connect/start",
+            "auth_required": true,
+            "owner_only": false,
+            "description": "Begin provider OAuth connection",
+            "storage_required": [
+              "social_accounts",
+              "admin_audit_logs"
+            ],
+            "live_data_required": false
+          },
+          {
+            "method": "GET",
+            "path": "/v1/members/social/callback",
+            "auth_required": false,
+            "owner_only": false,
+            "description": "Complete provider OAuth callback",
+            "storage_required": [
+              "social_accounts",
+              "admin_audit_logs"
+            ],
+            "live_data_required": false
+          },
+          {
+            "method": "DELETE",
+            "path": "/v1/members/social/{connectionId}",
+            "auth_required": true,
+            "owner_only": false,
+            "description": "Revoke connected social account",
+            "storage_required": [
+              "social_accounts",
+              "admin_audit_logs"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "POST",
+            "path": "/v1/slips",
+            "auth_required": true,
+            "owner_only": false,
+            "description": "Save a member slip with max-three-leg enforcement",
+            "storage_required": [
+              "saved_slips",
+              "members",
+              "admin_audit_logs"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "GET",
+            "path": "/v1/slips",
+            "auth_required": true,
+            "owner_only": false,
+            "description": "List member saved slips",
+            "storage_required": [
+              "saved_slips"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "GET",
+            "path": "/v1/slips/{slipId}",
+            "auth_required": true,
+            "owner_only": false,
+            "description": "Read one saved slip",
+            "storage_required": [
+              "saved_slips",
+              "score_history"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "POST",
+            "path": "/v1/slips/{slipId}/grade",
+            "auth_required": true,
+            "owner_only": true,
+            "description": "Grade completed slip and write score history",
+            "storage_required": [
+              "saved_slips",
+              "score_history",
+              "admin_audit_logs"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "GET",
+            "path": "/v1/scores/me",
+            "auth_required": true,
+            "owner_only": false,
+            "description": "Return private member score windows",
+            "storage_required": [
+              "score_history"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "GET",
+            "path": "/v1/public/u/{handle}",
+            "auth_required": false,
+            "owner_only": false,
+            "description": "Return opt-in public member score card",
+            "storage_required": [
+              "members",
+              "score_history"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "POST",
+            "path": "/v1/attribution/visit",
+            "auth_required": false,
+            "owner_only": false,
+            "description": "Record anonymous creator/referral visit",
+            "storage_required": [
+              "creator_attribution"
+            ],
+            "live_data_required": false
+          },
+          {
+            "method": "POST",
+            "path": "/v1/attribution/convert",
+            "auth_required": true,
+            "owner_only": false,
+            "description": "Attach attribution to member signup",
+            "storage_required": [
+              "creator_attribution",
+              "members"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "POST",
+            "path": "/v1/subscriptions/checkout",
+            "auth_required": true,
+            "owner_only": false,
+            "description": "Create payment-provider checkout/session",
+            "storage_required": [
+              "subscriptions",
+              "members"
+            ],
+            "live_data_required": false
+          },
+          {
+            "method": "POST",
+            "path": "/v1/subscriptions/webhook",
+            "auth_required": false,
+            "owner_only": false,
+            "description": "Process payment-provider subscription webhook",
+            "storage_required": [
+              "subscriptions",
+              "members",
+              "admin_audit_logs"
+            ],
+            "live_data_required": false
+          },
+          {
+            "method": "GET",
+            "path": "/v1/admin/dashboard",
+            "auth_required": true,
+            "owner_only": true,
+            "description": "Owner/admin dashboard aggregate",
+            "storage_required": [
+              "members",
+              "saved_slips",
+              "score_history",
+              "creator_attribution",
+              "subscriptions",
+              "support_notes",
+              "feature_flags"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "GET",
+            "path": "/v1/admin/members",
+            "auth_required": true,
+            "owner_only": true,
+            "description": "Owner/admin member management list",
+            "storage_required": [
+              "members",
+              "subscriptions",
+              "creator_attribution",
+              "social_accounts"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "GET",
+            "path": "/v1/admin/social-accounts",
+            "auth_required": true,
+            "owner_only": true,
+            "description": "Owner/admin social connection overview without exposing raw tokens",
+            "storage_required": [
+              "social_accounts",
+              "members"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "GET",
+            "path": "/v1/admin/audit",
+            "auth_required": true,
+            "owner_only": true,
+            "description": "Owner/admin audit log search",
+            "storage_required": [
+              "admin_audit_logs"
+            ],
+            "live_data_required": true
+          },
+          {
+            "method": "PATCH",
+            "path": "/v1/admin/feature-flags/{flagKey}",
+            "auth_required": true,
+            "owner_only": true,
+            "description": "Owner/admin feature flag update",
+            "storage_required": [
+              "feature_flags",
+              "admin_audit_logs"
+            ],
+            "live_data_required": true
+          }
+        ],
+        "productRoutes": [
+          "/v1/scanner/scan",
+          "/v1/slips/{slipId}/scan",
+          "/v1/slips/{slipId}/scan-history",
+          "/v1/parlays/build",
+          "/v1/subscriptions/access",
+          "/v1/results/grade",
+          "/v1/monitoring/data-quality"
+        ]
+      }
+    },
+    "sportsdataioStatus": {
+      "ok": false,
+      "error": "HTTPError",
+      "message": "HTTP Error 404: Not Found"
+    },
+    "sportsdataioLiveCheck": {
+      "ok": false,
+      "error": "HTTPError",
+      "message": "HTTP Error 404: Not Found"
+    },
+    "teamPower": {
+      "ok": false,
+      "error": "HTTPError",
+      "message": "HTTP Error 404: Not Found"
+    },
+    "fundamentalsPreview": {
+      "ok": false,
+      "error": "HTTPError",
+      "message": "HTTP Error 404: Not Found"
+    },
+    "modelVersion": {
+      "ok": true,
+      "status": 200,
+      "json": {
+        "ok": true,
+        "sport": "mlb",
+        "model_version": "INQSI-MLB-v1.0-core",
+        "created_at": "2026-06-24",
+        "weights": {
+          "starting_pitcher": 0.2,
+          "bullpen_freshness": 0.15,
+          "lineup_strength": 0.15,
+          "offensive_splits": 0.1,
+          "park_weather": 0.1,
+          "injuries_news": 0.1,
+          "travel_rest": 0.07,
+          "defense": 0.05,
+          "market_movement": 0.05,
+          "model_edge": 0.03
+        },
+        "confidence_tiers": [
+          [
+            0.67,
+            "Premium"
+          ],
+          [
+            0.6,
+            "Solid"
+          ],
+          [
+            0.55,
+            "Lean"
+          ],
+          [
+            0.5,
+            "Coin Flip"
+          ],
+          [
+            0.0,
+            "Pass"
+          ]
+        ],
+        "probability_engine": "logistic(score_diff, k=0.075)",
+        "data_architecture": {
+          "lambda": true,
+          "api_gateway": true,
+          "dynamodb": true,
+          "s3_raw_archive": true,
+          "eventbridge_15_min": true
+        }
+      }
+    },
+    "today": {
+      "ok": true,
+      "status": 200,
+      "json": {
+        "ok": true,
+        "sport": "mlb",
+        "date": "2026-06-30",
+        "model_version": "INQSI-MLB-v1.0-core",
+        "source_status": {
+          "ok": true,
+          "sport": "mlb",
+          "algorithm_silo": "MLB-B1.0-rolling-15min-only-plus-advanced-context",
+          "pull_history_policy": {
+            "status": "CONNECTED_15_MIN_ONLY",
+            "allowed_snapshot_t": "HOT",
+            "legacy_t1_t2_t3_t4": "IGNORED_BY_SIGNAL_READER",
+            "rule": "MLB signals, individual game picks, and 3-leg parlay attempts are built from HOT 15-minute pull history only."
+          },
+          "advanced_context_policy": {
+            "ok": true,
+            "sport": "mlb",
+            "version": "MLB-B1.0-advanced-context-v1",
+            "required_for_full_algorithm": [
+              "fip_xfip",
+              "wrc_plus",
+              "starter_handedness_splits",
+              "confirmed_probable_pitchers",
+              "bullpen_fatigue",
+              "confirmed_lineups",
+              "weather_wind_roof",
+              "ballpark_factors",
+              "injuries_late_scratches_news",
+              "public_betting_handle",
+              "closing_line_value"
+            ],
+            "source_status": {
+              "odds_15_min_pull_history": "CONNECTED",
+              "scores_settlement": "CONNECTED",
+              "confirmed_probable_pitchers": "PARTIAL_MLB_STATS_API_NO_KEY",
+              "venue": "PARTIAL_MLB_STATS_API_NO_KEY",
+              "fip_xfip": "NOT_CONNECTED_SOURCE_REQUIRED",
+              "wrc_plus": "NOT_CONNECTED_SOURCE_REQUIRED",
+              "starter_handedness_splits": "NOT_CONNECTED_SOURCE_REQUIRED",
+              "bullpen_fatigue": "NOT_CONNECTED_SOURCE_REQUIRED",
+              "confirmed_lineups": "NOT_CONNECTED_SOURCE_REQUIRED",
+              "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",
+              "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
+              "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",
+              "public_betting_handle": "NOT_CONNECTED_SOURCE_REQUIRED",
+              "closing_line_value": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"
+            },
+            "odds_api_scope": {
+              "usable_for": [
+                "odds",
+                "15-minute movement",
+                "book agreement",
+                "market validation",
+                "scores/final settlement",
+                "CLV once closing snapshots are frozen"
+              ],
+              "not_a_source_for": [
+                "FIP",
+                "xFIP",
+                "wRC+",
+                "confirmed lineups",
+                "injuries/news",
+                "weather",
+                "public betting handle"
+              ]
+            },
+            "eligibility_policy": "Advanced MLB eligibility is blocked until every required context source is connected. This prevents the platform from pretending missing data exists."
+          },
+          "data_isolation": {
+            "status": "CONNECTED",
+            "rule": "MLB signals read SPORT#mlb#DATE#YYYY-MM-DD only with SK beginning HOT#GAME_DATE#YYYY-MM-DD. They do not compare T1/T2/T3/T4 or broad mixed-date snapshots.",
+            "game_key_pattern": "mlb|YYYY-MM-DD|away|home",
+            "prediction_pk_pattern": "PRED#mlb#YYYY-MM-DD",
+            "audit_pk_pattern": "AUDIT#mlb#YYYY-MM-DD"
+          },
+          "items_1_to_5_status": {
+            "1_audit_view_endpoints": "CONNECTED_DATE_ISOLATED",
+            "2_movement_delta_engine": "CONNECTED_15_MIN_ONLY",
+            "3_hot_side_prediction_endpoint": "CONNECTED_15_MIN_ONLY_PLUS_ADVANCED_CONTEXT",
+            "4_results_evaluation_visibility": "CONNECTED",
+            "5_source_status_visibility": "CONNECTED",
+            "6_game_winner_attempts_all_games": "CONNECTED_15_MIN_ONLY_PLUS_ADVANCED_CONTEXT",
+            "7_three_leg_parlay_attempt": "CONNECTED_15_MIN_ONLY_ADVANCED_ELIGIBILITY_SCORED"
+          },
+          "external_data_sources": {
+            "odds_15_min_pull_history": "CONNECTED",
+            "scores_settlement": "CONNECTED",
+            "confirmed_probable_pitchers": "PARTIAL_MLB_STATS_API_NO_KEY",
+            "venue": "PARTIAL_MLB_STATS_API_NO_KEY",
+            "fip_xfip": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "wrc_plus": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "starter_handedness_splits": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "bullpen_fatigue": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "confirmed_lineups": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "public_betting_handle": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "closing_line_value": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"
+          }
+        },
+        "message": "INQSI MLB v1.0 core is available. Premium eligibility depends on connected advanced data sources."
+      }
+    }
+  },
+  "summary": {
+    "apiHealthOk": true,
+    "sportsDataIoStatusEndpointOk": false,
+    "sportsDataIoConfigured": false,
+    "sportsDataIoKeyExposed": false,
+    "sportsDataIoLiveCheckOk": false,
+    "sportsDataIoTeamsCount": null,
+    "teamPowerOk": false,
+    "teamPowerCount": null,
+    "todayEndpointOk": true,
+    "modelVersion": null,
+    "fundamentalsEnabled": null,
+    "fundamentalsAppliedCount": 0,
+    "fundamentalsFlipCount": null
+  },
+  "policy": "This report proves runtime endpoint behavior without exposing SPORTSDATAIO_API_KEY. A configured=false result means code is deployed but AWS Lambda does not yet have the key in its environment."
+}
