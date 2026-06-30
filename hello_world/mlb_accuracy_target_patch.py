@@ -2,7 +2,7 @@
 
 Priority: choose the correct team for every individual game.
 
-The 75% target is measured as a rolling 24-hour average across all optimized
+The 90% target is measured as a rolling 24-hour average across all optimized
 individual game-winner picks after games are completed. It is not a per-pick
 claim and it is not an actionability filter.
 
@@ -18,7 +18,7 @@ try:
 except Exception:
     history = None
 
-ROLLING_TARGET_ACCURACY_PCT = 75.0
+ROLLING_TARGET_ACCURACY_PCT = 90.0
 ROLLING_WINDOW_HOURS = 24
 BAD_TAGS = {"LOW_PULL_DEPTH", "SINGLE_PULL_BASELINE", "BOOK_DIVERGENCE", "LATE_INSTABILITY"}
 REAL_SIGNAL_TAGS = {"STEAM", "RUN_LINE_CONFIRMATION", "RUN_LINE_MOVEMENT", "REVERSAL", "COMPRESSED_MARKET"}
@@ -182,7 +182,7 @@ def optimize_prediction(row):
         "targetAccuracyPct": ROLLING_TARGET_ACCURACY_PCT,
         "windowHours": ROLLING_WINDOW_HOURS,
         "measuredBy": "mlb_rolling_24h_audit",
-        "note": "The 75% target is measured across all optimized individual game-winner picks in the following rolling 24 hours.",
+        "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours.",
     }
     out["winnerOptimizer"] = {
         "applied": True,
@@ -203,13 +203,13 @@ def _summary(predictions):
         "optimizedGameWinnerPickCount": len(predictions),
         "optimizerFlipCount": len(flipped),
         "optimizerFlippedTeams": [row.get("predictedWinner") for row in flipped],
-        "policy": "Every game receives an optimized winner selection. The 75% target is measured by the rolling 24-hour audit over all optimized individual picks.",
+        "policy": "Every game receives an optimized winner selection. The 90% target is measured by the rolling 24-hour audit over all optimized individual picks.",
         "latestLearningApplied": bool(_latest_learning()),
     }
 
 
 def apply(module):
-    if getattr(module, "_INQSI_MLB_75_TARGET_APPLIED", False):
+    if getattr(module, "_INQSI_MLB_90_TARGET_APPLIED", False):
         return module
     original_predict_all = module.predict_all
 
@@ -226,9 +226,9 @@ def apply(module):
         result["allGamesOptimizedForWinner"] = True
         result["rolling24hAccuracyTarget"] = _summary(predictions)
         result["accuracyTarget"] = result["rolling24hAccuracyTarget"]
-        result["modelVersion"] = str(result.get("modelVersion") or "") + "+individual-winner-optimizer"
+        result["modelVersion"] = str(result.get("modelVersion") or "") + "+individual-winner-optimizer-90pct-target"
         return result
 
     module.predict_all = guarded_predict_all
-    module._INQSI_MLB_75_TARGET_APPLIED = True
+    module._INQSI_MLB_90_TARGET_APPLIED = True
     return module
