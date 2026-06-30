@@ -13,6 +13,12 @@ import mlb_game_winner_engine
 import mlb_b10_engine
 
 try:
+    import mlb_accuracy_target_patch
+    mlb_accuracy_target_patch.apply(mlb_game_winner_engine)
+except Exception:
+    pass
+
+try:
     import mlb_all_games_signal_proof
 except Exception:
     mlb_all_games_signal_proof = None
@@ -115,38 +121,43 @@ def audit_rows(slate_date: str, score_report: Dict[str, Any]) -> List[Dict[str, 
     for pred in predictions.get("predictions") or []:
         outcome = outcome_for(pred, score_report)
         b10_game = b10_by_game.get(pred.get("gameId")) or {}
-        if not outcome:
-            rows.append({
-                "gameId": pred.get("gameId"),
-                "matchup": f"{pred.get('awayTeam')} at {pred.get('homeTeam')}",
-                "status": "MISSING_FINAL_SCORE",
-                "predictedWinner": pred.get("predictedWinner"),
-                "gameWinnerScore": pred.get("score"),
-                "b10SelectedTeam": b10_game.get("selection"),
-            })
-            continue
-        actual = outcome.get("winner")
-        gw_correct = normalize_team(pred.get("predictedWinner")) == normalize_team(actual)
-        b10_correct = normalize_team(b10_game.get("selection")) == normalize_team(actual) if b10_game else None
-        rows.append({
+        base = {
             "gameId": pred.get("gameId"),
-            "matchup": outcome.get("matchup"),
-            "status": "FINAL",
-            "homeScore": outcome.get("homeScore"),
-            "awayScore": outcome.get("awayScore"),
-            "actualWinner": actual,
+            "matchup": f"{pred.get('awayTeam')} at {pred.get('homeTeam')}",
             "predictedWinner": pred.get("predictedWinner"),
             "predictedSide": pred.get("predictedSide"),
-            "gameWinnerCorrect": gw_correct,
             "gameWinnerScore": pred.get("score"),
+            "rawScoreBefore75TargetCalibration": pred.get("rawScoreBefore75TargetCalibration"),
+            "calibrationPenalty": pred.get("calibrationPenalty"),
+            "targetAccuracyPct": pred.get("targetAccuracyPct"),
+            "officialPick": pred.get("officialPick"),
+            "accuracyTargetEligible": pred.get("accuracyTargetEligible"),
+            "actionability": pred.get("actionability"),
+            "actionabilityReason": pred.get("actionabilityReason"),
             "gameWinnerConfidenceTier": pred.get("confidenceTier"),
             "gameWinnerTags": pred.get("tags") or [],
             "b10SelectedTeam": b10_game.get("selection"),
             "b10SelectedSide": b10_game.get("selectedSide"),
             "b10SelectedGrade": b10_game.get("grade"),
             "b10SelectedScore": b10_game.get("score"),
-            "b10Correct": b10_correct,
             "b10Tags": b10_game.get("tags") or [],
+        }
+        if not outcome:
+            rows.append({**base, "status": "MISSING_FINAL_SCORE"})
+            continue
+        actual = outcome.get("winner")
+        gw_correct = normalize_team(pred.get("predictedWinner")) == normalize_team(actual)
+        b10_correct = normalize_team(b10_game.get("selection")) == normalize_team(actual) if b10_game else None
+        rows.append({
+            **base,
+            "matchup": outcome.get("matchup"),
+            "status": "FINAL",
+            "homeScore": outcome.get("homeScore"),
+            "awayScore": outcome.get("awayScore"),
+            "actualWinner": actual,
+            "gameWinnerCorrect": gw_correct,
+            "officialPickCorrect": gw_correct if pred.get("officialPick") else None,
+            "b10Correct": b10_correct,
         })
     return rows
 
@@ -154,6 +165,8 @@ def audit_rows(slate_date: str, score_report: Dict[str, Any]) -> List[Dict[str, 
 def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     final_rows = [r for r in rows if r.get("status") == "FINAL"]
     gw_correct = [r for r in final_rows if r.get("gameWinnerCorrect") is True]
+    official = [r for r in final_rows if r.get("officialPick") is True]
+    official_correct = [r for r in official if r.get("officialPickCorrect") is True]
     b10_known = [r for r in final_rows if r.get("b10Correct") is not None]
     b10_correct = [r for r in b10_known if r.get("b10Correct") is True]
     return {
@@ -163,6 +176,11 @@ def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
         "gameWinnerCorrect": len(gw_correct),
         "gameWinnerWrong": len(final_rows) - len(gw_correct),
         "gameWinnerAccuracyPct": round(len(gw_correct) / len(final_rows) * 100, 2) if final_rows else None,
+        "official75TargetPickCount": len(official),
+        "official75TargetCorrect": len(official_correct),
+        "official75TargetWrong": len(official) - len(official_correct),
+        "official75TargetAccuracyPct": round(len(official_correct) / len(official) * 100, 2) if official else None,
+        "official75TargetMet": (len(official_correct) / len(official) * 100 >= 75.0) if official else None,
         "b10AuditedGameCount": len(b10_known),
         "b10Correct": len(b10_correct),
         "b10Wrong": len(b10_known) - len(b10_correct),
@@ -185,6 +203,7 @@ def learning_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     tag_stats: Dict[str, Dict[str, Any]] = {}
     grade_stats: Dict[str, Dict[str, Any]] = {}
     confidence_stats: Dict[str, Dict[str, Any]] = {}
+    actionability_stats: Dict[str, Dict[str, Any]] = {}
     for row in rows:
         if row.get("status") != "FINAL":
             continue
@@ -196,11 +215,14 @@ def learning_summary(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
             bucket_add(grade_stats, str(row.get("b10SelectedGrade")), bool(row.get("b10Correct")))
         if row.get("gameWinnerConfidenceTier"):
             bucket_add(confidence_stats, str(row.get("gameWinnerConfidenceTier")), bool(row.get("gameWinnerCorrect")))
+        if row.get("actionability"):
+            bucket_add(actionability_stats, str(row.get("actionability")), bool(row.get("gameWinnerCorrect")))
     return {
         "tagStats": finish(tag_stats),
         "gradeStats": finish(grade_stats),
         "confidenceStats": finish(confidence_stats),
-        "usage": "Use this to review which signals helped or hurt before changing thresholds. Automatic hard weight mutation remains blocked until sample size is sufficient.",
+        "actionabilityStats": finish(actionability_stats),
+        "usage": "Use official75TargetAccuracyPct to measure the 75% product target. Lower-confidence rows remain visible but do not count as official picks.",
     }
 
 
@@ -247,7 +269,7 @@ def build(slate_date: Optional[str] = None, days_from: int = 3, store: bool = Tr
         "learningSummary": learning_summary(rows),
         "rows": rows,
         "finalScores": score_report.get("finalScores") or [],
-        "policy": "Audit every completed MLB game from the previous ET slate. Grade the game-winner pick and the B10 selected pick against final winners.",
+        "policy": "Audit every completed MLB game from the previous ET slate. Every game is scored, but only officialPick=true rows count toward the 75% individual-pick accuracy target.",
     }
     if store:
         try:
