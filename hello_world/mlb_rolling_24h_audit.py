@@ -101,12 +101,20 @@ def final_scores_last_24h(days_from: int = 3) -> List[Dict[str, Any]]:
 def _query_predictions_for_slate(slate_date: str) -> List[Dict[str, Any]]:
     if history.PULLS is None:
         return []
-    resp = history.PULLS.query(KeyConditionExpression=history.Key("PK").eq(f"GAME_WINNERS#mlb#{slate_date}"))
-    out = []
-    for item in resp.get("Items") or []:
-        data = item.get("data") or item
-        if isinstance(data, dict):
-            out.append(data)
+    out: List[Dict[str, Any]] = []
+    start_key = None
+    while True:
+        args = {"KeyConditionExpression": history.Key("PK").eq(f"GAME_WINNERS#mlb#{slate_date}")}
+        if start_key:
+            args["ExclusiveStartKey"] = start_key
+        resp = history.PULLS.query(**args)
+        for item in resp.get("Items") or []:
+            data = item.get("data") or item
+            if isinstance(data, dict):
+                out.append(data)
+        start_key = resp.get("LastEvaluatedKey")
+        if not start_key:
+            break
     return out
 
 
@@ -138,14 +146,14 @@ def audit_rows(finals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "predictedSide": pred.get("predictedSide"),
             "score": pred.get("score"),
             "winProbabilityPct": pred.get("winProbabilityPct"),
-            "rawScoreBeforeLearning": pred.get("rawScoreBeforeLearning"),
-            "rolling24hLearningAdjustment": pred.get("rolling24hLearningAdjustment"),
-            "calibrationPenalty": pred.get("calibrationPenalty"),
             "confidenceTier": pred.get("confidenceTier"),
             "tags": pred.get("tags") or [],
-            "officialPick": bool(pred.get("officialPick")),
-            "actionability": pred.get("actionability"),
-            "actionabilityReason": pred.get("actionabilityReason"),
+            "selectionBeforeWinnerOptimizer": pred.get("selectionBeforeWinnerOptimizer"),
+            "individualWinnerOptimized": pred.get("individualWinnerOptimized"),
+            "optimizerFlippedPick": pred.get("optimizerFlippedPick"),
+            "winnerOptimizer": pred.get("winnerOptimizer"),
+            "homeSignal": pred.get("homeSignal"),
+            "awaySignal": pred.get("awaySignal"),
             "correct": correct,
         })
     return rows
@@ -156,6 +164,10 @@ def _accuracy(rows: List[Dict[str, Any]]) -> Optional[float]:
     if not graded:
         return None
     return round(sum(1 for r in graded if r.get("correct")) / len(graded) * 100.0, 2)
+
+
+def _tag_combo(tags: List[str]) -> str:
+    return "+".join(sorted(set(tags or []))) or "NO_TAGS"
 
 
 def _bucket(rows: List[Dict[str, Any]], key_fn) -> Dict[str, Dict[str, Any]]:
@@ -178,48 +190,66 @@ def _bucket(rows: List[Dict[str, Any]], key_fn) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+def _bounded_adjustment(acc: Optional[float], count: int, scale: float, cap: float) -> float:
+    if acc is None:
+        return 0.0
+    if count <= 0:
+        return 0.0
+    if count == 1:
+        return 0.75 if acc >= 100 else -0.75
+    return round(max(-cap, min(cap, (float(acc) - 50.0) / scale)), 2)
+
+
 def score_learning(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     tag_stats = _bucket(rows, lambda r: r.get("tags") or [])
-    action_stats = _bucket(rows, lambda r: r.get("actionability") or "UNKNOWN")
+    combo_stats = _bucket(rows, lambda r: _tag_combo(r.get("tags") or []))
     confidence_stats = _bucket(rows, lambda r: r.get("confidenceTier") or "UNKNOWN")
+    flip_stats = _bucket(rows, lambda r: "FLIPPED" if r.get("optimizerFlippedPick") else "NOT_FLIPPED")
+
     tag_adjustments: Dict[str, float] = {}
     for tag, stat in tag_stats.items():
-        count = int(stat.get("count") or 0)
-        acc = stat.get("accuracyPct")
-        if acc is None:
-            continue
-        # Small rolling nudge only. A 24h window should guide, not dominate.
-        if count >= 2:
-            tag_adjustments[tag] = round(max(-3.0, min(3.0, (acc - 50.0) / 25.0)), 2)
-        else:
-            tag_adjustments[tag] = 0.5 if acc >= 100 else -0.5
+        tag_adjustments[tag] = _bounded_adjustment(stat.get("accuracyPct"), int(stat.get("count") or 0), scale=18.0, cap=3.0)
+
+    combo_adjustments: Dict[str, float] = {}
+    for combo, stat in combo_stats.items():
+        combo_adjustments[combo] = _bounded_adjustment(stat.get("accuracyPct"), int(stat.get("count") or 0), scale=12.0, cap=5.0)
+
     return {
         "tagStats": tag_stats,
-        "actionabilityStats": action_stats,
+        "tagComboStats": combo_stats,
         "confidenceStats": confidence_stats,
+        "optimizerFlipStats": flip_stats,
         "adjustments": {
             "tagScoreAdjustments": tag_adjustments,
+            "tagComboScoreAdjustments": combo_adjustments,
         },
-        "policy": "Rolling 24h learning nudges future signal scores from recently completed games. Adjustments are bounded to avoid overfitting one day.",
+        "policy": "Learning is optimized for correct team-winner selection on every game. Tag and tag-combination adjustments are bounded to avoid overfitting one day.",
     }
 
 
 def summarize(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     graded = [r for r in rows if r.get("status") == "GRADED"]
-    actionable = [r for r in graded if r.get("officialPick")]
-    actionable_correct = [r for r in actionable if r.get("correct")]
+    correct = [r for r in graded if r.get("correct")]
+    optimized = [r for r in graded if r.get("individualWinnerOptimized")]
+    flipped = [r for r in graded if r.get("optimizerFlippedPick")]
     return {
         "windowHours": WINDOW_HOURS,
         "targetAccuracyPct": TARGET_ACCURACY_PCT,
         "completedFinalGames": len(rows),
         "gradedPredictionCount": len(graded),
         "missingPredictionCount": len(rows) - len(graded),
+        "optimizedPickCount": len(graded),
+        "optimizedCorrect": len(correct),
+        "optimizedWrong": len(graded) - len(correct),
+        "rolling24hOptimizedAccuracyPct": round(len(correct) / len(graded) * 100.0, 2) if graded else None,
+        "rolling24hTargetMet": (len(correct) / len(graded) * 100.0 >= TARGET_ACCURACY_PCT) if graded else None,
+        "winnerOptimizerAppliedCount": len(optimized),
+        "winnerOptimizerFlipCount": len(flipped),
         "allScoredPickAccuracyPct": _accuracy(graded),
-        "actionablePickCount": len(actionable),
-        "actionableCorrect": len(actionable_correct),
-        "actionableWrong": len(actionable) - len(actionable_correct),
-        "rolling24hActionableAccuracyPct": round(len(actionable_correct) / len(actionable) * 100.0, 2) if actionable else None,
-        "rolling24hTargetMet": (len(actionable_correct) / len(actionable) * 100.0 >= TARGET_ACCURACY_PCT) if actionable else None,
+        "actionablePickCount": len(graded),
+        "actionableCorrect": len(correct),
+        "actionableWrong": len(graded) - len(correct),
+        "rolling24hActionableAccuracyPct": round(len(correct) / len(graded) * 100.0, 2) if graded else None,
     }
 
 
@@ -260,7 +290,7 @@ def build(days_from: int = 3, store: bool = True, write_file: bool = True) -> Di
         "summary": summarize(rows),
         "scoreLearning": learning,
         "rows": rows,
-        "policy": "Audit every completed MLB game in the trailing 24 hours. The 75% target is measured only as the rolling 24h accuracy of actionable picks, not as a per-pick guarantee.",
+        "policy": "Audit every completed MLB game in the trailing 24 hours. The optimizer target is correct team-winner selection for every individual game; 75% is measured as rolling 24h accuracy across all optimized picks.",
     }
     if store:
         try:
