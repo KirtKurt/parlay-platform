@@ -4,7 +4,7 @@ import json
 import os
 import urllib.parse
 import urllib.request
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 SPORTSDATAIO_API_KEY = os.environ.get("SPORTSDATAIO_API_KEY", "")
 BASE_URL = os.environ.get("SPORTSDATAIO_BASE_URL", "https://api.sportsdata.io/v3/mlb").rstrip("/")
@@ -48,6 +48,22 @@ def get_json(area: str, path: str, query: Optional[Dict[str, Any]] = None) -> An
         return _safe_error(exc)
 
 
+def get_first_success(candidates: Iterable[Tuple[str, str]]) -> Dict[str, Any]:
+    """Try endpoint candidates and return the first list/dict payload that is not an error.
+
+    SportsDataIO access differs by subscription, so this lets the fundamentals
+    engine probe equivalent feeds safely without exposing the API key or crashing.
+    """
+    attempts: List[Dict[str, Any]] = []
+    for area, path in candidates:
+        result = get_json(area, path)
+        if isinstance(result, dict) and result.get("ok") is False:
+            attempts.append({"area": area, "path": path, "error": result.get("error"), "message": result.get("message")})
+            continue
+        return {"ok": True, "area": area, "path": path, "data": result, "attempts": attempts}
+    return {"ok": False, "error": "no_candidate_endpoint_succeeded", "attempts": attempts}
+
+
 def status(fetch: bool = False) -> Dict[str, Any]:
     out: Dict[str, Any] = {
         "ok": True,
@@ -60,16 +76,19 @@ def status(fetch: bool = False) -> Dict[str, Any]:
             "games_by_date",
             "standings",
             "team_season_stats",
+            "player_season_stats",
             "player_game_stats_by_date",
+            "box_scores_by_date",
+            "starting_lineups_by_date",
         ],
     }
     if fetch and configured():
-        teams = get_json("scores", "Teams")
+        teams_payload = get_json("scores", "Teams")
         out["liveCheck"] = {
-            "ok": isinstance(teams, list),
-            "teamsCount": len(teams) if isinstance(teams, list) else None,
-            "error": teams.get("error") if isinstance(teams, dict) else None,
-            "message": teams.get("message") if isinstance(teams, dict) else None,
+            "ok": isinstance(teams_payload, list),
+            "teamsCount": len(teams_payload) if isinstance(teams_payload, list) else None,
+            "error": teams_payload.get("error") if isinstance(teams_payload, dict) else None,
+            "message": teams_payload.get("message") if isinstance(teams_payload, dict) else None,
         }
     return out
 
@@ -79,16 +98,50 @@ def teams() -> Any:
 
 
 def games_by_date(date_yyyy_mm_dd: str) -> Any:
-    return get_json("scores", f"GamesByDate/{date_yyyy_mm_dd}")
+    return get_first_success([
+        ("scores", f"GamesByDate/{date_yyyy_mm_dd}"),
+        ("scores", f"Games/{date_yyyy_mm_dd}"),
+    ])
 
 
 def standings(season: int) -> Any:
-    return get_json("scores", f"Standings/{season}")
+    return get_first_success([
+        ("scores", f"Standings/{season}"),
+        ("scores", f"StandingsBasic/{season}"),
+    ])
 
 
 def team_season_stats(season: int) -> Any:
-    return get_json("stats", f"TeamSeasonStats/{season}")
+    return get_first_success([
+        ("stats", f"TeamSeasonStats/{season}"),
+        ("stats", f"TeamSeasonStatsBasic/{season}"),
+    ])
+
+
+def player_season_stats(season: int) -> Any:
+    return get_first_success([
+        ("stats", f"PlayerSeasonStats/{season}"),
+        ("stats", f"PlayerSeasonStatsBasic/{season}"),
+    ])
 
 
 def player_game_stats_by_date(date_yyyy_mm_dd: str) -> Any:
-    return get_json("stats", f"PlayerGameStatsByDate/{date_yyyy_mm_dd}")
+    return get_first_success([
+        ("stats", f"PlayerGameStatsByDate/{date_yyyy_mm_dd}"),
+        ("stats", f"PlayerGameStatsByDateFinal/{date_yyyy_mm_dd}"),
+    ])
+
+
+def box_scores_by_date(date_yyyy_mm_dd: str) -> Any:
+    return get_first_success([
+        ("stats", f"BoxScores/{date_yyyy_mm_dd}"),
+        ("scores", f"BoxScores/{date_yyyy_mm_dd}"),
+    ])
+
+
+def starting_lineups_by_date(date_yyyy_mm_dd: str) -> Any:
+    return get_first_success([
+        ("stats", f"StartingLineupsByDate/{date_yyyy_mm_dd}"),
+        ("scores", f"StartingLineupsByDate/{date_yyyy_mm_dd}"),
+        ("stats", f"LineupsByDate/{date_yyyy_mm_dd}"),
+    ])
