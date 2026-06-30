@@ -13,6 +13,13 @@ except Exception:
     pass
 
 try:
+    import mlb_game_winner_engine as _mlb_game_winner_engine_for_fundamentals
+    import mlb_fundamentals_optimizer_patch
+    mlb_fundamentals_optimizer_patch.apply(_mlb_game_winner_engine_for_fundamentals)
+except Exception:
+    pass
+
+try:
     import api as _api_for_sportsdataio
     import sportsdataio_api_patch
     sportsdataio_api_patch.apply(_api_for_sportsdataio)
