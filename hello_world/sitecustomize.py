@@ -1,4 +1,11 @@
 try:
+    import mlb_manual_pull as _inqsi_mlb_manual_pull
+    import mlb_canonical_pull_patch as _inqsi_mlb_canonical_pull_patch
+    _inqsi_mlb_canonical_pull_patch.apply(_inqsi_mlb_manual_pull)
+except Exception:
+    pass
+
+try:
     import mlb_b10_engine
     import mlb_strength_gate_patch
     mlb_strength_gate_patch.apply(mlb_b10_engine)
