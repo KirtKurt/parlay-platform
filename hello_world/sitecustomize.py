@@ -6,6 +6,13 @@ except Exception:
     pass
 
 try:
+    import mlb_game_winner_engine
+    import mlb_accuracy_target_patch
+    mlb_accuracy_target_patch.apply(mlb_game_winner_engine)
+except Exception:
+    pass
+
+try:
     import inqsi_api
 
     def _all_member_image_uploads():
