@@ -21,6 +21,11 @@ except Exception:
     mlb_game_winner_engine = None
 
 try:
+    import mlb_rolling_24h_audit
+except Exception:
+    mlb_rolling_24h_audit = None
+
+try:
     import mlb_snapshot_replay_audit
 except Exception:
     mlb_snapshot_replay_audit = None
@@ -124,6 +129,15 @@ def _mlb_game_winners() -> Dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
+def _mlb_rolling_24h() -> Dict[str, Any]:
+    if mlb_rolling_24h_audit is None:
+        return {"ok": False, "error": "mlb_rolling_24h_audit_unavailable"}
+    try:
+        return mlb_rolling_24h_audit.build(store=True, write_file=False)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 def _mlb_snapshot_replay() -> Dict[str, Any]:
     if mlb_snapshot_replay_audit is None:
         return {"ok": False, "error": "mlb_snapshot_replay_audit_unavailable"}
@@ -143,12 +157,15 @@ def _mlb_all_games_proof() -> Dict[str, Any]:
 
 
 def _mlb_score_package(include_full_snapshots: bool = True) -> Dict[str, Any]:
+    rolling = _mlb_rolling_24h()
     winners = _mlb_game_winners()
     replay = _mlb_snapshot_replay()
     all_games = _mlb_all_games_proof()
     package = {
-        "ok": bool(winners.get("ok", True) and replay.get("ok", True) and all_games.get("ok", True)),
+        "ok": bool(winners.get("ok", True) and replay.get("ok", True) and all_games.get("ok", True) and rolling.get("ok", True)),
         "slateDateEt": _today(),
+        "rolling24hAuditSummary": rolling.get("summary"),
+        "rolling24hScoreLearning": rolling.get("scoreLearning"),
         "gameWinnerPredictions": winners,
         "snapshotReplaySummary": {
             "pullCount": replay.get("pullCount"),
