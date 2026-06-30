@@ -2,22 +2,16 @@ name: SportsDataIO Runtime Proof
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
-    paths:
-      - "hello_world/sportsdataio_client.py"
-      - "hello_world/mlb_fundamentals_engine.py"
-      - "hello_world/sportsdataio_api_patch.py"
-      - "hello_world/mlb_fundamentals_optimizer_patch.py"
-      - "hello_world/sitecustomize.py"
-      - "scripts/prove_sportsdataio_runtime.py"
-      - ".github/workflows/sportsdataio-runtime-proof.yml"
+  workflow_run:
+    workflows: ["Deploy SAM to AWS"]
+    types: [completed]
 
 permissions:
   contents: write
 
 jobs:
   prove:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
