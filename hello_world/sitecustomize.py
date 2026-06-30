@@ -13,6 +13,13 @@ except Exception:
     pass
 
 try:
+    import api as _api_for_sportsdataio
+    import sportsdataio_api_patch
+    sportsdataio_api_patch.apply(_api_for_sportsdataio)
+except Exception:
+    pass
+
+try:
     import inqsi_api
 
     def _all_member_image_uploads():
