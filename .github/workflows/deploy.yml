@@ -32,10 +32,14 @@ jobs:
 
       - name: Verify SportsDataIO secret present
         env:
-          SPORTSDATAIO_API_KEY: ${{ secrets.SPORTSDATAIO_API_KEY }}
+          SPORTSDATAIO_API_KEY_PRIMARY: ${{ secrets.SPORTSDATAIO_API_KEY }}
+          SPORTSDATAIO_API_KEY_ALT_1: ${{ secrets.SPORTS_DATA_IO_API_KEY }}
+          SPORTSDATAIO_API_KEY_ALT_2: ${{ secrets.SPORTSDATAIO_MLB_API_KEY }}
+          SPORTSDATAIO_API_KEY_ALT_3: ${{ secrets.SPORTS_DATA_IO_MLB_API_KEY }}
         run: |
-          if [ -z "${SPORTSDATAIO_API_KEY:-}" ]; then
-            echo "::error::Missing GitHub secret SPORTSDATAIO_API_KEY. Add the SportsDataIO MLB key before deploying."
+          SPORTSDATAIO_DEPLOY_KEY="${SPORTSDATAIO_API_KEY_PRIMARY:-${SPORTSDATAIO_API_KEY_ALT_1:-${SPORTSDATAIO_API_KEY_ALT_2:-${SPORTSDATAIO_API_KEY_ALT_3:-}}}}"
+          if [ -z "${SPORTSDATAIO_DEPLOY_KEY:-}" ]; then
+            echo "::error::Missing SportsDataIO GitHub secret. Add one of: SPORTSDATAIO_API_KEY, SPORTS_DATA_IO_API_KEY, SPORTSDATAIO_MLB_API_KEY, SPORTS_DATA_IO_MLB_API_KEY."
             exit 1
           fi
           echo "SportsDataIO secret is present."
@@ -61,7 +65,14 @@ jobs:
           sam build --no-cached
 
       - name: Deploy
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          SPORTSDATAIO_API_KEY_PRIMARY: ${{ secrets.SPORTSDATAIO_API_KEY }}
+          SPORTSDATAIO_API_KEY_ALT_1: ${{ secrets.SPORTS_DATA_IO_API_KEY }}
+          SPORTSDATAIO_API_KEY_ALT_2: ${{ secrets.SPORTSDATAIO_MLB_API_KEY }}
+          SPORTSDATAIO_API_KEY_ALT_3: ${{ secrets.SPORTS_DATA_IO_MLB_API_KEY }}
         run: |
+          SPORTSDATAIO_DEPLOY_KEY="${SPORTSDATAIO_API_KEY_PRIMARY:-${SPORTSDATAIO_API_KEY_ALT_1:-${SPORTSDATAIO_API_KEY_ALT_2:-${SPORTSDATAIO_API_KEY_ALT_3:-}}}}"
           sam deploy \
             --template-file template.yaml \
             --stack-name parlay-platform-dev \
@@ -72,8 +83,8 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
-              OddsApiKey=${{ secrets.ODDS_API_KEY }} \
-              SportsDataIoApiKey=${{ secrets.SPORTSDATAIO_API_KEY }}
+              OddsApiKey="${ODDS_API_KEY_VALUE}" \
+              SportsDataIoApiKey="${SPORTSDATAIO_DEPLOY_KEY}"
 
       - name: Grant image moderation Rekognition access
         run: |
