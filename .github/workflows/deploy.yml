@@ -39,6 +39,9 @@ jobs:
       - name: Patch SAM template for MLB settlement routes
         run: python scripts/patch_template_mlb_results_routes.py
 
+      - name: Patch SAM template for SportsDataIO
+        run: python scripts/patch_template_sportsdataio.py
+
       - name: Validate
         run: sam validate
 
