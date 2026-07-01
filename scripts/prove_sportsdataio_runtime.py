@@ -54,6 +54,8 @@ def build_report(api_url: str) -> Dict[str, Any]:
     fundamentals_rows = [row for row in predictions if (row.get("winnerOptimizer") or {}).get("fundamentalsApplied")]
     final_gate_rows = [row for row in predictions if (row.get("lastPossiblePredictionGate") or {}).get("finalLocked")]
     final_gate_sportsdata_rows = [row for row in final_gate_rows if (row.get("lastPossiblePredictionGate") or {}).get("sportsDataIoFundamentalsApplied")]
+    blocked_rows = [row for row in predictions if (row.get("lastPossiblePredictionGate") or {}).get("finalGateBlocked")]
+    full_data_rows = [row for row in predictions if row.get("fullDataFinalPick")]
 
     proof = {
         "ok": True,
@@ -76,12 +78,16 @@ def build_report(api_url: str) -> Dict[str, Any]:
             "fundamentalsAppliedCount": today_target.get("fundamentalsAppliedCount", len(fundamentals_rows)),
             "fundamentalsFlipCount": today_target.get("fundamentalsFlipCount"),
             "lastPossibleGateApplied": bool(last_gate.get("applied")),
+            "lastPossibleGatePolicyVersion": last_gate.get("policyVersion"),
+            "lastPossibleGateRequiresSportsDataIo": last_gate.get("requiresSportsDataIoForFullDataFinalPick"),
             "lastPossibleGatePhaseCounts": last_gate.get("phaseCounts"),
             "lastPossibleGateFinalLockedCount": last_gate.get("finalLockedCount", len(final_gate_rows)),
             "lastPossibleGateSportsDataIoAppliedCount": last_gate.get("sportsDataIoFundamentalsAppliedCount", len(final_gate_sportsdata_rows)),
             "lastPossibleGateSportsDataIoMissingCount": last_gate.get("sportsDataIoMissingFinalGateCount"),
+            "lastPossibleGateBlockedMissingSportsDataIoCount": last_gate.get("blockedMissingSportsDataIoCount", len(blocked_rows)),
+            "fullDataFinalPickCount": last_gate.get("fullDataFinalPickCount", len(full_data_rows)),
         },
-        "policy": "This report proves runtime endpoint behavior without exposing SPORTSDATAIO_API_KEY. A configured=false result means code is deployed but AWS Lambda does not yet have the key in its environment.",
+        "policy": "This report proves runtime endpoint behavior without exposing SPORTSDATAIO_API_KEY. With the final-gate v2 policy, SportsDataIO is required before a row can count as a full-data final pick.",
     }
     proof["ok"] = bool(proof["summary"]["apiHealthOk"] and proof["summary"]["todayEndpointOk"])
     return proof
