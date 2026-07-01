@@ -34,6 +34,13 @@ except Exception:
     pass
 
 try:
+    import mlb_rolling_24h_audit as _mlb_rolling_24h_audit_for_signal_filter
+    import mlb_learning_signal_filter_patch
+    mlb_learning_signal_filter_patch.apply(_mlb_rolling_24h_audit_for_signal_filter)
+except Exception:
+    pass
+
+try:
     import api as _api_for_sportsdataio
     import sportsdataio_api_patch
     sportsdataio_api_patch.apply(_api_for_sportsdataio)
