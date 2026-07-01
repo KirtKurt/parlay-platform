@@ -9,7 +9,9 @@ try:
 except Exception:
     mlb_fundamentals_engine = None
 
-USE_FUNDAMENTALS = os.environ.get("INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS", "true").lower() not in {"0", "false", "no"}
+# Odds API is the default operating mode. SportsDataIO can be re-enabled later by
+# setting INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS=true after runtime proof passes.
+USE_FUNDAMENTALS = os.environ.get("INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS", "false").lower() in {"1", "true", "yes"}
 _FUNDAMENTALS_CACHE = None
 
 TEAM_ALIASES = {
@@ -90,6 +92,8 @@ def _row_team(row: Dict[str, Any], side: str) -> Any:
 
 
 def _match(row: Dict[str, Any]) -> Dict[str, Any] | None:
+    if not USE_FUNDAMENTALS:
+        return None
     index = _fundamentals_index()
     for away in _candidates(_row_team(row, "away")):
         for home in _candidates(_row_team(row, "home")):
@@ -117,7 +121,13 @@ def _apply_to_signal(sig: Dict[str, Any], adjustment: float) -> Dict[str, Any]:
 def optimize_with_fundamentals(row: Dict[str, Any]) -> Dict[str, Any]:
     fundamentals = _match(row)
     if not fundamentals:
-        return row
+        out = dict(row)
+        prior = dict(out.get("winnerOptimizer") or {})
+        prior["fundamentalsApplied"] = False
+        prior["fundamentalsMode"] = "DISABLED_ODDS_API_ONLY"
+        prior["basis"] = prior.get("basis") or "market_signal_plus_multi_window_learning_odds_api_only"
+        out["winnerOptimizer"] = prior
+        return out
     home_adj = _num(((fundamentals.get("homeFundamentals") or {}).get("sideFundamentalsScore")), 0.0)
     away_adj = _num(((fundamentals.get("awayFundamentals") or {}).get("sideFundamentalsScore")), 0.0)
     home = _apply_to_signal(row.get("homeSignal") or {}, home_adj)
@@ -141,6 +151,7 @@ def optimize_with_fundamentals(row: Dict[str, Any]) -> Dict[str, Any]:
     out["optimizerFlippedByFundamentals"] = row.get("predictedWinner") != out.get("predictedWinner")
     prior = dict(out.get("winnerOptimizer") or {})
     prior["fundamentalsApplied"] = True
+    prior["fundamentalsMode"] = "SPORTSDATAIO_ENABLED"
     prior["fundamentals"] = {
         "matchup": fundamentals.get("matchup"),
         "fundamentalsLean": fundamentals.get("fundamentalsLean"),
@@ -173,11 +184,13 @@ def apply(module):
         result["count"] = len(predictions)
         summary = dict(result.get("rolling24hAccuracyTarget") or result.get("accuracyTarget") or {})
         summary["fundamentalsEnabled"] = USE_FUNDAMENTALS
+        summary["fundamentalsMode"] = "SPORTSDATAIO_ENABLED" if USE_FUNDAMENTALS else "ODDS_API_ONLY"
         summary["fundamentalsAppliedCount"] = len([r for r in predictions if (r.get("winnerOptimizer") or {}).get("fundamentalsApplied")])
         summary["fundamentalsFlipCount"] = len([r for r in predictions if r.get("optimizerFlippedByFundamentals")])
         result["rolling24hAccuracyTarget"] = summary
         result["accuracyTarget"] = summary
-        result["modelVersion"] = str(result.get("modelVersion") or "") + "+sportsdataio-fundamentals"
+        suffix = "+sportsdataio-fundamentals" if USE_FUNDAMENTALS else "+odds-api-only"
+        result["modelVersion"] = str(result.get("modelVersion") or "") + suffix
         return result
 
     module.predict_all = patched_predict_all
