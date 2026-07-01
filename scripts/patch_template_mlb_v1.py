@@ -238,8 +238,10 @@ if "AllSportsLiveSchedulerFunction:" not in text:
 
 TEMPLATE.write_text(text)
 exec(Path("scripts/patch_template_mlb_hot_start_v2.py").read_text())
+exec(Path("scripts/patch_template_mlb_hot_pull_recovery_permanent.py").read_text())
 print(
     "Patched template.yaml for INQSI MLB v1 routes, MLB game-winner route, "
     "result-signal learning, raw S3 archive, AWS EventBridge primary all-sports "
-    "15-minute polling, 1 AM ET kickoffs, HOT-only MLB pulls, and legacy MLB T-schedule removal."
+    "15-minute polling, 1 AM ET kickoffs, HOT-only MLB pulls, permanent dedicated "
+    "MLB recovery polling, and legacy MLB T-schedule removal."
 )
