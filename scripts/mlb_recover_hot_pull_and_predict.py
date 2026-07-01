@@ -7,6 +7,11 @@ from typing import Any, Dict
 
 REPORT_PATH = "runtime_reports/mlb_hot_pull_recovery_latest.json"
 
+# Current operating mode: Odds API only. SportsDataIO is disabled until runtime
+# proof shows the deployed SportsDataIO endpoints are reachable and configured.
+os.environ["INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS"] = "false"
+os.environ["INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE"] = "false"
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -74,8 +79,6 @@ def build_report(write_file: bool = True) -> Dict[str, Any]:
     except Exception:
         pass
 
-    slate = datetime.now().astimezone().date().isoformat()
-    # The platform's slate patch rewrites this to America/New_York where available.
     pull_result = odds_live_ingestion.pull_sport("mlb")
     pulls_after = []
     try:
@@ -92,11 +95,13 @@ def build_report(write_file: bool = True) -> Dict[str, Any]:
     report = {
         "ok": bool(pull_result.get("ok")) and bool(isinstance(predictions, dict) and predictions.get("ok")),
         "proofType": "MLB_HOT_PULL_RECOVERY_AND_PREDICTION",
+        "operatingMode": "ODDS_API_ONLY",
         "createdAtUtc": _now(),
         "environment": {
             "oddsApiKeyPresent": bool(os.environ.get("ODDS_API_KEY")),
             "snapshotsTablePresent": bool(os.environ.get("SNAPSHOTS_TABLE")),
-            "sportsDataIoKeyPresent": bool(os.environ.get("SPORTSDATAIO_API_KEY")),
+            "sportsDataIoScoringEnabled": os.environ.get("INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS") == "true",
+            "sportsDataIoRequiredAtFinalGate": os.environ.get("INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE") == "true",
             "secretExposed": False,
         },
         "pullResult": pull_result,
@@ -111,11 +116,12 @@ def build_report(write_file: bool = True) -> Dict[str, Any]:
             "allGamesPredicted": predictions.get("allGamesPredicted") if isinstance(predictions, dict) else None,
             "modelVersion": predictions.get("modelVersion") if isinstance(predictions, dict) else None,
             "fundamentalsEnabled": target.get("fundamentalsEnabled"),
+            "fundamentalsMode": target.get("fundamentalsMode"),
             "fundamentalsAppliedCount": target.get("fundamentalsAppliedCount"),
             "lastPossiblePredictionGate": target.get("lastPossiblePredictionGate"),
         },
         "predictions": pred_rows,
-        "failureModeAddressed": "Recovered missing AWS EventBridge/DynamoDB HOT pull history by writing an emergency MLB pull and immediately storing winner predictions.",
+        "failureModeAddressed": "Recovered missing HOT pull history by writing an Odds API MLB pull and immediately storing winner predictions.",
     }
     report = _safe(report)
     if write_file:
@@ -130,6 +136,7 @@ if __name__ == "__main__":
     out = build_report(write_file=True)
     print(json.dumps({
         "ok": out.get("ok"),
+        "operatingMode": out.get("operatingMode"),
         "pullResult": out.get("pullResult"),
         "predictionsSummary": out.get("predictionsSummary"),
     }, indent=2, default=str))
