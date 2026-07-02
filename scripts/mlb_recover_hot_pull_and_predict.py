@@ -7,10 +7,11 @@ from typing import Any, Dict
 
 REPORT_PATH = "runtime_reports/mlb_hot_pull_recovery_latest.json"
 
-# Current operating mode: Odds API only. SportsDataIO is disabled until runtime
-# proof shows the deployed SportsDataIO endpoints are reachable and configured.
-os.environ["INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS"] = "false"
-os.environ["INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE"] = "false"
+# SportsDataIO is enabled when the secret is present. Keep final-gate blocking
+# disabled so a temporary provider outage does not erase the market-derived pick.
+os.environ.setdefault("INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS", "true")
+os.environ.setdefault("INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE", "false")
+os.environ.setdefault("SPORTSDATAIO_TIMEOUT_SECONDS", "25")
 
 
 def _now() -> str:
@@ -74,6 +75,18 @@ def build_report(write_file: bool = True) -> Dict[str, Any]:
         pass
 
     try:
+        import mlb_winner_stack_v2
+        mlb_winner_stack_v2.apply(mlb_game_winner_engine)
+    except Exception:
+        pass
+
+    try:
+        import mlb_slate_prediction_lock
+        mlb_slate_prediction_lock.apply(mlb_game_winner_engine)
+    except Exception:
+        pass
+
+    try:
         import mlb_last_possible_prediction_gate
         mlb_last_possible_prediction_gate.apply(mlb_game_winner_engine)
     except Exception:
@@ -95,11 +108,12 @@ def build_report(write_file: bool = True) -> Dict[str, Any]:
     report = {
         "ok": bool(pull_result.get("ok")) and bool(isinstance(predictions, dict) and predictions.get("ok")),
         "proofType": "MLB_HOT_PULL_RECOVERY_AND_PREDICTION",
-        "operatingMode": "ODDS_API_ONLY",
+        "operatingMode": "SPORTSDATAIO_ENABLED_WITH_MARKET_FALLBACK" if os.environ.get("SPORTSDATAIO_API_KEY") else "ODDS_API_ONLY_NO_SPORTSDATAIO_SECRET",
         "createdAtUtc": _now(),
         "environment": {
             "oddsApiKeyPresent": bool(os.environ.get("ODDS_API_KEY")),
             "snapshotsTablePresent": bool(os.environ.get("SNAPSHOTS_TABLE")),
+            "sportsDataIoKeyPresent": bool(os.environ.get("SPORTSDATAIO_API_KEY")),
             "sportsDataIoScoringEnabled": os.environ.get("INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS") == "true",
             "sportsDataIoRequiredAtFinalGate": os.environ.get("INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE") == "true",
             "secretExposed": False,
@@ -115,13 +129,17 @@ def build_report(write_file: bool = True) -> Dict[str, Any]:
             "storedCount": predictions.get("storedCount") if isinstance(predictions, dict) else None,
             "allGamesPredicted": predictions.get("allGamesPredicted") if isinstance(predictions, dict) else None,
             "modelVersion": predictions.get("modelVersion") if isinstance(predictions, dict) else None,
+            "actionablePickCount": predictions.get("actionablePickCount") or (predictions.get("winnerStackV2") or {}).get("actionablePickCount"),
+            "noPickCount": predictions.get("noPickCount") or (predictions.get("winnerStackV2") or {}).get("passNoPickCount"),
+            "slatePredictionLock": predictions.get("slatePredictionLock"),
+            "winnerStackV2": predictions.get("winnerStackV2"),
             "fundamentalsEnabled": target.get("fundamentalsEnabled"),
             "fundamentalsMode": target.get("fundamentalsMode"),
             "fundamentalsAppliedCount": target.get("fundamentalsAppliedCount"),
             "lastPossiblePredictionGate": target.get("lastPossiblePredictionGate"),
         },
         "predictions": pred_rows,
-        "failureModeAddressed": "Recovered missing HOT pull history by writing an Odds API MLB pull and immediately storing winner predictions.",
+        "failureModeAddressed": "Recovered missing HOT pull history by writing an Odds API MLB pull and immediately storing SportsDataIO-aware calibrated winner predictions when the secret is present.",
     }
     report = _safe(report)
     if write_file:
