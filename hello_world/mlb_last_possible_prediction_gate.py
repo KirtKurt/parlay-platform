@@ -11,9 +11,13 @@ except Exception:
     history = None
 
 SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
-FINAL_GATE_START_MINUTES = int(os.environ.get("INQSI_MLB_FINAL_GATE_START_MINUTES", "75"))
+FINAL_GATE_START_MINUTES = int(os.environ.get("INQSI_MLB_FINAL_GATE_START_MINUTES", "720"))
 FINAL_GATE_END_MINUTES = int(os.environ.get("INQSI_MLB_FINAL_GATE_END_MINUTES", "10"))
 REQUIRE_SPORTSDATAIO_AT_FINAL_GATE = os.environ.get("INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE", "false").lower() in {"1", "true", "yes"}
+
+
+POLICY_VERSION_REQUIRE_SPORTSDATAIO = "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-REQUIRE-SPORTSDATAIO"
+POLICY_VERSION_ODDS_API_ONLY = "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY"
 
 
 def _now_utc() -> datetime:
@@ -96,15 +100,15 @@ def annotate_prediction(row: Dict[str, Any], persist: bool = False) -> Dict[str,
     if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE and fundamentals_applied:
         source = "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_FINAL_GATE"
         final_data_status = "FULL_DATA_READY"
-        policy_version = "MLB-LAST-POSSIBLE-PREDICTION-GATE-v2-REQUIRE-SPORTSDATAIO"
+        policy_version = POLICY_VERSION_REQUIRE_SPORTSDATAIO
     elif blocked_missing_sportsdataio:
         source = "BLOCKED_FULL_DATA_PICK_MISSING_SPORTSDATAIO_FINAL_GATE"
         final_data_status = "BLOCKED_MISSING_SPORTSDATAIO"
-        policy_version = "MLB-LAST-POSSIBLE-PREDICTION-GATE-v2-REQUIRE-SPORTSDATAIO"
+        policy_version = POLICY_VERSION_REQUIRE_SPORTSDATAIO
     else:
         source = "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE"
         final_data_status = "ODDS_API_ONLY_READY"
-        policy_version = "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY"
+        policy_version = POLICY_VERSION_ODDS_API_ONLY
 
     out["lastPossiblePredictionGate"] = {
         "policyVersion": policy_version,
@@ -125,6 +129,8 @@ def annotate_prediction(row: Dict[str, Any], persist: bool = False) -> Dict[str,
         "finalDataStatus": final_data_status,
         "predictionSource": source,
         "rules": [
+            f"Open the final gate {FINAL_GATE_START_MINUTES} minutes before each individual game.",
+            "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
             "Use the latest Odds API pull available at gate time.",
             "Use multi-window signal learning from audited Odds API pull history.",
             "SportsDataIO is optional and disabled by default until live runtime proof passes.",
@@ -173,7 +179,7 @@ def annotate_result(result: Dict[str, Any], persist: bool = False) -> Dict[str, 
     blocked_rows = [row for row in predictions if (row.get("lastPossiblePredictionGate") or {}).get("finalGateBlocked")]
     full_data_rows = [row for row in predictions if row.get("fullDataFinalPick")]
     summary = dict(result.get("rolling24hAccuracyTarget") or result.get("accuracyTarget") or {})
-    policy_version = "MLB-LAST-POSSIBLE-PREDICTION-GATE-v2-REQUIRE-SPORTSDATAIO" if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE else "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY"
+    policy_version = POLICY_VERSION_REQUIRE_SPORTSDATAIO if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE else POLICY_VERSION_ODDS_API_ONLY
     summary["lastPossiblePredictionGate"] = {
         "applied": True,
         "policyVersion": policy_version,
@@ -194,7 +200,7 @@ def annotate_result(result: Dict[str, Any], persist: bool = False) -> Dict[str, 
     out["lastPossiblePredictionGate"] = summary["lastPossiblePredictionGate"]
     out["rolling24hAccuracyTarget"] = summary
     out["accuracyTarget"] = summary
-    suffix = "+last-possible-gate-v2-require-sportsdataio" if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE else "+last-possible-gate-v3-odds-api-only"
+    suffix = "+last-possible-gate-v4-12h-individual-game-require-sportsdataio" if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE else "+last-possible-gate-v4-12h-individual-game-odds-api-only"
     out["modelVersion"] = str(result.get("modelVersion") or "") + suffix
     return out
 
