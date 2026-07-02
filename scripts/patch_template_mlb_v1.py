@@ -13,12 +13,7 @@ def insert_once(current: str, marker: str, block: str, contains: str) -> str:
 
 
 def remove_indented_event_block(current: str, event_name: str) -> str:
-    """Remove a SAM Events child block indented under a Function Events map.
-
-    The previous remover searched for the next occurrence of eight spaces, which
-    could match nested properties and leave invalid YAML. This line-based remover
-    skips the whole child event until the next sibling event or resource block.
-    """
+    """Remove a SAM Events child block indented under a Function Events map."""
     lines = current.splitlines(keepends=True)
     output = []
     i = 0
@@ -220,21 +215,31 @@ if "AllSportsLiveSchedulerFunction:" not in text:
           Type: Schedule
           Properties:
             Schedule: rate(15 minutes)
-            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_every_15_min","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
+            Input: '{"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_every_15_min","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
         AllSportsHotKickoff1amEtDst:
           Type: Schedule
           Properties:
             Schedule: cron(0 5 * * ? *)
-            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_dst","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
+            Input: '{"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_dst","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
         AllSportsHotKickoff1amEtStandard:
           Type: Schedule
           Properties:
             Schedule: cron(0 6 * * ? *)
-            Input: '{"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_standard","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
+            Input: '{"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_standard","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
 
 """,
         "AllSportsLiveSchedulerFunction:",
     )
+
+# If the all-sports scheduler already exists from a previous deploy patch, remove
+# MLB from its inputs. MLB has one production primary: MLBAuditedPullFunction.
+for old in [
+    '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"',
+    '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"',
+    '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"',
+]:
+    text = text.replace(old, '"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"')
+text = text.replace('"includeFullMlbSnapshots":true', '"includeFullMlbSnapshots":false')
 
 TEMPLATE.write_text(text)
 exec(Path("scripts/patch_template_mlb_hot_start_v2.py").read_text())
@@ -242,6 +247,6 @@ exec(Path("scripts/patch_template_mlb_hot_pull_recovery_permanent.py").read_text
 print(
     "Patched template.yaml for INQSI MLB v1 routes, MLB game-winner route, "
     "result-signal learning, raw S3 archive, AWS EventBridge primary all-sports "
-    "15-minute polling, 1 AM ET kickoffs, HOT-only MLB pulls, permanent dedicated "
-    "MLB recovery polling, and legacy MLB T-schedule removal."
+    "15-minute polling without MLB duplication, 1 AM ET kickoffs, HOT-only MLB pulls, "
+    "permanent dedicated MLB recovery polling removal, and legacy MLB T-schedule removal."
 )
