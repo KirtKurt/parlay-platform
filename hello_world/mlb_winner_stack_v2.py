@@ -42,7 +42,7 @@ def _tier(prob: float, score: float, tags: List[str]) -> str:
 
 
 def _sig(row: Dict[str, Any], side: str) -> Dict[str, Any]:
-    return dict(row.get("homeSignal") if side == "home" else row.get("awaySignal") or {})
+    return dict((row.get("homeSignal") if side == "home" else row.get("awaySignal")) or {})
 
 
 def _selected_and_opponent(row: Dict[str, Any]):
@@ -176,6 +176,7 @@ def enhance_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
     score = round(ensemble_score, 2)
     tier = _tier(prob, score, tags)
     action = _actionability(prob, score, tier, tags)
+    actionable = bool(action["actionablePick"])
 
     out["scoreBeforeWinnerStackV2"] = out.get("score")
     out["winProbabilityBeforeWinnerStackV2"] = out.get("winProbability")
@@ -184,8 +185,9 @@ def enhance_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
     out["winProbabilityPct"] = round(prob * 100.0, 2)
     out["confidenceTier"] = tier
     out["officialPrediction"] = True
-    out["officialPick"] = True
-    out["actionablePick"] = action["actionablePick"]
+    out["officialPick"] = actionable
+    out["accuracyTargetEligible"] = actionable
+    out["actionablePick"] = actionable
     out["actionability"] = action["actionability"]
     out["actionabilityReason"] = action["reason"]
     out["winnerStackV2"] = {
@@ -198,7 +200,7 @@ def enhance_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
         "discipline": action,
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks.",
     }
-    out["tags"] = sorted(set(tags + ["WINNER_STACK_V2", "CALIBRATED_PROBABILITY"] + (["ACTIONABLE_PICK"] if action["actionablePick"] else ["NO_PICK_DISCIPLINE"])))
+    out["tags"] = sorted(set(tags + ["WINNER_STACK_V2", "CALIBRATED_PROBABILITY"] + (["ACTIONABLE_PICK"] if actionable else ["NO_PICK_DISCIPLINE", "NO_PICK"])))
     return out
 
 
@@ -206,13 +208,15 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(result, dict):
         return result
     predictions = [enhance_prediction(row) for row in (result.get("predictions") or [])]
-    predictions.sort(key=lambda r: (float(r.get("score") or 0), float(r.get("winProbability") or 0)), reverse=True)
+    predictions.sort(key=lambda r: (float(r.get("actionablePick") is True), float(r.get("score") or 0), float(r.get("winProbability") or 0)), reverse=True)
     for idx, row in enumerate(predictions, 1):
         row["rank"] = idx
     out = dict(result)
     out["predictions"] = predictions
     out["count"] = len(predictions)
     actionable = [r for r in predictions if r.get("actionablePick")]
+    out["actionablePickCount"] = len(actionable)
+    out["noPickCount"] = len([r for r in predictions if not r.get("actionablePick")])
     out["winnerStackV2"] = {
         "applied": True,
         "version": VERSION,
@@ -232,6 +236,8 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
     summary = dict(out.get("rolling24hAccuracyTarget") or out.get("accuracyTarget") or {})
     summary["winnerStackV2"] = out["winnerStackV2"]
     summary["calibrationPolicy"] = "Brier/log-loss ready probabilities, market anchored and shrunk for instability."
+    summary["actionablePickCount"] = out["actionablePickCount"]
+    summary["noPickCount"] = out["noPickCount"]
     out["rolling24hAccuracyTarget"] = summary
     out["accuracyTarget"] = summary
     if VERSION not in str(out.get("modelVersion") or ""):
