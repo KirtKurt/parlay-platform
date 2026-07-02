@@ -9,10 +9,16 @@ on:
   schedule:
     - cron: "0/15 * * * *"
 
+permissions:
+  contents: write
+
 jobs:
   invoke-mlb-pull:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -36,7 +42,10 @@ jobs:
             /tmp/mlb-pull-response.json
           cat /tmp/mlb-pull-response.json
           python - <<'PY'
-          import json
+          import json, os
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+
           with open('/tmp/mlb-pull-response.json', 'r', encoding='utf-8') as f:
               payload = json.load(f)
           body = payload
@@ -51,23 +60,55 @@ jobs:
               raise SystemExit(f"MLB pull guard skipped instead of pulling: {body}")
           if int(body.get('count') or 0) <= 0:
               raise SystemExit(f"MLB pull guard pulled zero games: {body}")
+
+          winner_rows = [row for row in (body.get('game_winner_predictions') or []) if isinstance(row, dict)]
+          primary_winners = next((row for row in winner_rows if row.get('ok')), winner_rows[0] if winner_rows else {})
+          now_utc = datetime.now(timezone.utc)
+          now_et = now_utc.astimezone(ZoneInfo('America/New_York'))
+          report = {
+              'ok': True,
+              'createdAtUtc': now_utc.isoformat(),
+              'createdAtEt': now_et.isoformat(),
+              'sportsRequested': ['mlb'],
+              'pullMode': {
+                  'ok': True,
+                  'source': 'github_actions_mlb_v1_pull_guard',
+                  'storageMode': 'live_lambda_pull_created',
+                  'message': 'This report was refreshed by the MLB V1 Pull Guard after invoking MLBAuditedPullFunction.'
+              },
+              'mlbPullResponseSummary': {
+                  'ok': body.get('ok'),
+                  'platformVersion': body.get('platformVersion'),
+                  'pullDateEt': body.get('pull_date_et'),
+                  'asof': body.get('asof'),
+                  'gameDatesEt': body.get('game_dates_et'),
+                  'count': body.get('count'),
+                  'canonicalPullHistory': body.get('canonical_pull_history'),
+              },
+              'mlbGameWinnerPredictions': primary_winners,
+          }
+          os.makedirs('runtime_reports', exist_ok=True)
+          with open('runtime_reports/live_odds_latest.json', 'w', encoding='utf-8') as f:
+              json.dump(report, f, indent=2, default=str)
+              f.write('\n')
           print(json.dumps({
-              'ok': body.get('ok'),
-              'sport': body.get('sport'),
-              'platformVersion': body.get('platformVersion'),
-              'pull_date_et': body.get('pull_date_et'),
-              'asof': body.get('asof'),
-              'count': body.get('count'),
-              'canonical_pull_history': body.get('canonical_pull_history'),
-              'game_winner_predictions': [
-                  {
-                      'game_date_et': row.get('game_date_et'),
-                      'ok': row.get('ok'),
-                      'pullCount': row.get('pullCount'),
-                      'count': row.get('count'),
-                      'storedCount': row.get('storedCount'),
-                  }
-                  for row in (body.get('game_winner_predictions') or [])
-              ],
+              'ok': report['ok'],
+              'createdAtUtc': report['createdAtUtc'],
+              'pullCount': primary_winners.get('pullCount'),
+              'latestPullAt': primary_winners.get('latestPullAt'),
+              'gameCount': primary_winners.get('gameCount'),
+              'predictionCount': primary_winners.get('count'),
           }, indent=2, default=str))
           PY
+
+      - name: Commit refreshed MLB runtime report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/live_odds_latest.json
+          if git diff --cached --quiet; then
+            echo "No MLB runtime report changes to commit."
+          else
+            git commit -m "Update MLB V1 live odds runtime report"
+            git push
+          fi
