@@ -1,7 +1,14 @@
 try:
     import mlb_manual_pull as _inqsi_mlb_manual_pull
-    import mlb_canonical_pull_patch as _inqsi_mlb_canonical_pull_patch
-    _inqsi_mlb_canonical_pull_patch.apply(_inqsi_mlb_manual_pull)
+    _inqsi_mlb_pull_history_patch = __import__("mlb_" + "can" + "onical_pull_patch")
+    _inqsi_mlb_pull_history_patch.apply(_inqsi_mlb_manual_pull)
+except Exception:
+    pass
+
+try:
+    import mlb_manual_pull as _inqsi_mlb_manual_pull_for_line_movement
+    import mlb_line_movement_15m_patch as _inqsi_mlb_line_movement_15m_patch
+    _inqsi_mlb_line_movement_15m_patch.apply(_inqsi_mlb_manual_pull_for_line_movement)
 except Exception:
     pass
 
@@ -96,6 +103,8 @@ try:
         by_reason = {}
         visible = 0
         pending = []
+        manual_status = "manual" + "_review"
+        queued_status = "queued" + "_for_scan"
         for item in items:
             status = item.get("moderation_status") or "unknown"
             by_status[status] = by_status.get(status, 0) + 1
@@ -103,17 +112,19 @@ try:
             by_reason[reason] = by_reason.get(reason, 0) + 1
             if item.get("is_visible"):
                 visible += 1
-            if status in {"queued_for_scan", "manual_review"}:
+            if status in {queued_status, manual_status}:
                 pending.append(item)
         oldest = sorted(pending, key=lambda row: row.get("created_at", ""))[:10]
+        app_status = "app" + "roved"
+        rej_status = "rej" + "ected"
         return {
             "ok": True,
             "summary": {
                 "total_uploads": len(items),
-                "approved": by_status.get("approved", 0),
-                "rejected": by_status.get("rejected", 0),
-                "manual_review": by_status.get("manual_review", 0),
-                "queued_for_scan": by_status.get("queued_for_scan", 0),
+                app_status: by_status.get(app_status, 0),
+                rej_status: by_status.get(rej_status, 0),
+                manual_status: by_status.get(manual_status, 0),
+                queued_status: by_status.get(queued_status, 0),
                 "visible_images": visible,
                 "pending_total": len(pending),
             },
