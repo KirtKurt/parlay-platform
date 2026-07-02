@@ -6,6 +6,13 @@ except Exception:
     pass
 
 try:
+    import mlb_manual_pull as _inqsi_mlb_manual_pull_for_line_movement
+    import mlb_line_movement_15m_patch as _inqsi_mlb_line_movement_15m_patch
+    _inqsi_mlb_line_movement_15m_patch.apply(_inqsi_mlb_manual_pull_for_line_movement)
+except Exception:
+    pass
+
+try:
     import mlb_b10_engine
     import mlb_strength_gate_patch
     mlb_strength_gate_patch.apply(mlb_b10_engine)
