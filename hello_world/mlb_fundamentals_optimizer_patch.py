@@ -2,16 +2,24 @@ from __future__ import annotations
 
 import math
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 try:
     import mlb_fundamentals_engine
 except Exception:
     mlb_fundamentals_engine = None
 
-# Odds API is the default operating mode. SportsDataIO can be re-enabled later by
-# setting INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS=true after runtime proof passes.
-USE_FUNDAMENTALS = os.environ.get("INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS", "false").lower() in {"1", "true", "yes"}
+# If the SportsDataIO key/feed is available this layer uses it. If it is not
+# available, the row is explicitly tagged as missing fundamentals instead of
+# pretending market movement is a true fundamental input.
+USE_FUNDAMENTALS = os.environ.get("INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS", "true").lower() in {"1", "true", "yes"}
+CALIBRATION_ENABLED = os.environ.get("INQSI_MLB_CALIBRATION_ENABLED", "true").lower() in {"1", "true", "yes"}
+NO_PICK_ENABLED = os.environ.get("INQSI_MLB_NO_PICK_DISCIPLINE_ENABLED", "true").lower() in {"1", "true", "yes"}
+MIN_ACTIONABLE_PULLS = int(os.environ.get("INQSI_MLB_MIN_ACTIONABLE_PULLS", "12"))
+MIN_ACTIONABLE_PROB = float(os.environ.get("INQSI_MLB_MIN_ACTIONABLE_CALIBRATED_PROB", "0.59"))
+MIN_ACTIONABLE_SCORE = float(os.environ.get("INQSI_MLB_MIN_ACTIONABLE_SCORE", "56"))
+MAX_ACTIONABLE_RISK = float(os.environ.get("INQSI_MLB_MAX_ACTIONABLE_RISK", "0.18"))
+PATCH_VERSION = "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1"
 _FUNDAMENTALS_CACHE = None
 
 TEAM_ALIASES = {
@@ -28,9 +36,22 @@ TEAM_ALIASES = {
 
 def _num(value: Any, default: float = 0.0) -> float:
     try:
+        if value is None or value == "":
+            return default
         return float(value)
     except Exception:
         return default
+
+
+def _int(value: Any, default: int = 0) -> int:
+    try:
+        return int(round(float(value)))
+    except Exception:
+        return default
+
+
+def _clamp(value: float, low: float, high: float) -> float:
+    return max(low, min(high, value))
 
 
 def _norm(value: Any) -> str:
@@ -45,14 +66,15 @@ def _candidates(value: Any) -> set[str]:
     return {x for x in out if x}
 
 
-def _prob(score: float) -> float:
+def _prob_from_score(score: float) -> float:
     value = 1.0 / (1.0 + math.exp(-(score - 50.0) / 12.0))
-    return max(0.05, min(0.95, value))
+    return _clamp(value, 0.05, 0.95)
 
 
-def _tier(prob: float, score: float, tags) -> str:
+def _tier(prob: float, score: float, tags: Iterable[str]) -> str:
     edge = abs(float(prob or 0.5) - 0.5)
-    if "LOW_PULL_DEPTH" in set(tags or []):
+    tag_set = set(tags or [])
+    if "LOW_PULL_DEPTH" in tag_set or "INSUFFICIENT_HISTORY" in tag_set:
         return "Baseline"
     if score >= 72 and edge >= 0.12:
         return "Premium"
@@ -63,6 +85,12 @@ def _tier(prob: float, score: float, tags) -> str:
     if score >= 50:
         return "Coin Flip"
     return "Pass"
+
+
+def _row_team(row: Dict[str, Any], side: str) -> Any:
+    sig = row.get("homeSignal") if side == "home" else row.get("awaySignal")
+    sig = sig or {}
+    return row.get("homeTeam" if side == "home" else "awayTeam") or sig.get("team")
 
 
 def _fundamentals_index() -> Dict[str, Dict[str, Any]]:
@@ -85,13 +113,7 @@ def _fundamentals_index() -> Dict[str, Dict[str, Any]]:
     return _FUNDAMENTALS_CACHE
 
 
-def _row_team(row: Dict[str, Any], side: str) -> Any:
-    sig = row.get("homeSignal") if side == "home" else row.get("awaySignal")
-    sig = sig or {}
-    return row.get("homeTeam" if side == "home" else "awayTeam") or sig.get("team")
-
-
-def _match(row: Dict[str, Any]) -> Dict[str, Any] | None:
+def _match_fundamentals(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not USE_FUNDAMENTALS:
         return None
     index = _fundamentals_index()
@@ -103,12 +125,17 @@ def _match(row: Dict[str, Any]) -> Dict[str, Any] | None:
     return None
 
 
+def _signal(row: Dict[str, Any], side: Optional[str] = None) -> Dict[str, Any]:
+    selected = side or row.get("predictedSide") or "home"
+    return dict((row.get("homeSignal") if selected == "home" else row.get("awaySignal")) or {})
+
+
 def _apply_to_signal(sig: Dict[str, Any], adjustment: float) -> Dict[str, Any]:
     sig = dict(sig or {})
-    adjustment = round(max(-8.0, min(8.0, adjustment)), 2)
+    adjustment = round(_clamp(adjustment, -8.0, 8.0), 2)
     old_score = _num(sig.get("optimizedWinnerScore", sig.get("score")), 0.0)
-    new_score = round(max(0.0, min(100.0, old_score + adjustment)), 2)
-    p = _prob(new_score)
+    new_score = round(_clamp(old_score + adjustment, 0.0, 100.0), 2)
+    p = _prob_from_score(new_score)
     sig["optimizedWinnerScoreBeforeFundamentals"] = old_score
     sig["fundamentalsAdjustment"] = adjustment
     sig["optimizedWinnerScore"] = new_score
@@ -118,26 +145,35 @@ def _apply_to_signal(sig: Dict[str, Any], adjustment: float) -> Dict[str, Any]:
     return sig
 
 
-def optimize_with_fundamentals(row: Dict[str, Any]) -> Dict[str, Any]:
-    fundamentals = _match(row)
+def _apply_fundamentals(row: Dict[str, Any]) -> Dict[str, Any]:
+    fundamentals = _match_fundamentals(row)
+    out = dict(row)
+    prior = dict(out.get("winnerOptimizer") or {})
     if not fundamentals:
-        out = dict(row)
-        prior = dict(out.get("winnerOptimizer") or {})
         prior["fundamentalsApplied"] = False
-        prior["fundamentalsMode"] = "DISABLED_ODDS_API_ONLY"
-        prior["basis"] = prior.get("basis") or "market_signal_plus_multi_window_learning_odds_api_only"
+        prior["fundamentalsMode"] = "SPORTSDATAIO_UNAVAILABLE" if USE_FUNDAMENTALS else "DISABLED_ODDS_API_ONLY"
+        prior["basis"] = prior.get("basis") or "market_signal_plus_multi_window_learning"
         out["winnerOptimizer"] = prior
+        tags = sorted(set((out.get("tags") or []) + ["MISSING_FUNDAMENTALS"]))
+        out["tags"] = tags
+        out["fundamentalsLayer"] = {
+            "available": False,
+            "applied": False,
+            "mode": prior["fundamentalsMode"],
+            "message": "No verified MLB fundamentals package matched this game. Market signal remains primary.",
+        }
         return out
+
     home_adj = _num(((fundamentals.get("homeFundamentals") or {}).get("sideFundamentalsScore")), 0.0)
     away_adj = _num(((fundamentals.get("awayFundamentals") or {}).get("sideFundamentalsScore")), 0.0)
-    home = _apply_to_signal(row.get("homeSignal") or {}, home_adj)
-    away = _apply_to_signal(row.get("awaySignal") or {}, away_adj)
+    home = _apply_to_signal(out.get("homeSignal") or {}, home_adj)
+    away = _apply_to_signal(out.get("awaySignal") or {}, away_adj)
     pick = home if _num(home.get("optimizedWinnerScore"), -1.0) >= _num(away.get("optimizedWinnerScore"), -1.0) else away
     opponent = away if pick.get("side") == "home" else home
     score = _num(pick.get("optimizedWinnerScore"), 0.0)
-    p = _num(pick.get("winProbability"), _prob(score))
-    tags = sorted(set(pick.get("tags") or []))
-    out = dict(row)
+    p = _num(pick.get("winProbability"), _prob_from_score(score))
+    tags = sorted(set((pick.get("tags") or []) + ["FUNDAMENTALS_APPLIED"]))
+
     out["homeSignal"] = home
     out["awaySignal"] = away
     out["predictedSide"] = pick.get("side")
@@ -149,7 +185,6 @@ def optimize_with_fundamentals(row: Dict[str, Any]) -> Dict[str, Any]:
     out["confidenceTier"] = _tier(p, score, tags)
     out["tags"] = tags
     out["optimizerFlippedByFundamentals"] = row.get("predictedWinner") != out.get("predictedWinner")
-    prior = dict(out.get("winnerOptimizer") or {})
     prior["fundamentalsApplied"] = True
     prior["fundamentalsMode"] = "SPORTSDATAIO_ENABLED"
     prior["fundamentals"] = {
@@ -160,10 +195,170 @@ def optimize_with_fundamentals(row: Dict[str, Any]) -> Dict[str, Any]:
         "awayAdjustment": away.get("fundamentalsAdjustment"),
         "weights": "team_power_35pct_starter_45pct_bullpen_15pct_lineup_5pct",
     }
-    prior["basis"] = "market_signal_plus_multi_window_learning_plus_sportsdataio_fundamentals"
+    prior["basis"] = "market_signal_plus_multi_window_learning_plus_mlb_fundamentals"
     prior["homeOptimizedScore"] = home.get("optimizedWinnerScore")
     prior["awayOptimizedScore"] = away.get("optimizedWinnerScore")
     out["winnerOptimizer"] = prior
+    out["fundamentalsLayer"] = {"available": True, "applied": True, "provider": "SportsDataIO", "details": prior["fundamentals"]}
+    return out
+
+
+def _risk_penalty(row: Dict[str, Any]) -> Tuple[float, List[str]]:
+    pick = _signal(row)
+    tags = set(row.get("tags") or []) | set(pick.get("tags") or [])
+    reasons: List[str] = []
+    penalty = 0.0
+    pull_count = _int(row.get("pullCountForGame"), 0)
+    if pull_count < MIN_ACTIONABLE_PULLS:
+        penalty += 0.07
+        reasons.append("LOW_PULL_DEPTH")
+    elif pull_count < MIN_ACTIONABLE_PULLS * 2:
+        penalty += 0.025
+        reasons.append("MODERATE_PULL_DEPTH")
+    div = _num(pick.get("bookDivergence"), 0.0)
+    rev = _int(pick.get("reversalCount"), 0)
+    gap = _num(pick.get("latestGap"), 0.0)
+    if div >= 0.04 or "BOOK_DIVERGENCE" in tags:
+        penalty += 0.045
+        reasons.append("BOOK_DIVERGENCE")
+    elif div >= 0.025:
+        penalty += 0.02
+        reasons.append("BOOK_DISAGREEMENT")
+    if rev >= 4:
+        penalty += 0.06
+        reasons.append("HIGH_REVERSAL_COUNT")
+    elif rev >= 2 or "REVERSAL" in tags:
+        penalty += 0.025
+        reasons.append("REVERSAL_RISK")
+    if gap < 0.05 or "COMPRESSED_MARKET" in tags:
+        penalty += 0.04
+        reasons.append("COMPRESSED_MARKET")
+    if "MISSING_FUNDAMENTALS" in tags:
+        penalty += 0.02
+        reasons.append("MISSING_FUNDAMENTALS")
+    if "LOW_PULL_DEPTH" in tags or "INSUFFICIENT_HISTORY" in tags:
+        penalty += 0.04
+        reasons.append("INSUFFICIENT_HISTORY")
+    return round(_clamp(penalty, 0.0, 0.30), 4), sorted(set(reasons))
+
+
+def _calibrate(row: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(row)
+    if not CALIBRATION_ENABLED:
+        out["calibration"] = {"enabled": False, "version": PATCH_VERSION}
+        return out
+    pick = _signal(out)
+    raw_prob = _clamp(_num(out.get("winProbability"), 0.5), 0.05, 0.95)
+    market_prob = _clamp(_num(pick.get("marketConsensusProbability"), raw_prob), 0.05, 0.95)
+    score_prob = _prob_from_score(_num(out.get("score"), 50.0))
+    penalty, reasons = _risk_penalty(out)
+    fundamentals = out.get("fundamentalsLayer") or {}
+    fundamentals_boost = 0.0
+    if fundamentals.get("applied"):
+        lean = ((fundamentals.get("details") or {}).get("fundamentalsLean") or "").lower()
+        if lean and lean == str(out.get("predictedSide") or "").lower():
+            fundamentals_boost = 0.012
+        elif lean in {"home", "away"}:
+            fundamentals_boost = -0.025
+    raw_edge = raw_prob - 0.5
+    market_edge = market_prob - 0.5
+    score_edge = score_prob - 0.5
+    blended_edge = raw_edge * 0.35 + market_edge * 0.45 + score_edge * 0.20
+    shrinkage = _clamp(0.18 + penalty, 0.18, 0.48)
+    calibrated = 0.5 + blended_edge * (1.0 - shrinkage)
+    calibrated += fundamentals_boost if calibrated >= 0.5 else -fundamentals_boost
+    calibrated = round(_clamp(calibrated, 0.05, 0.92), 4)
+    out["rawWinProbabilityBeforeCalibration"] = raw_prob
+    out["winProbability"] = calibrated
+    out["winProbabilityPct"] = round(calibrated * 100.0, 2)
+    out["calibratedWinProbability"] = calibrated
+    out["confidenceTier"] = _tier(calibrated, _num(out.get("score"), 0.0), out.get("tags") or [])
+    out["calibration"] = {
+        "enabled": True,
+        "version": PATCH_VERSION,
+        "method": "market_consensus_score_blend_with_risk_shrinkage",
+        "rawProbability": raw_prob,
+        "marketConsensusProbability": market_prob,
+        "scoreImpliedProbability": round(score_prob, 4),
+        "calibratedProbability": calibrated,
+        "shrinkage": round(shrinkage, 4),
+        "riskPenalty": penalty,
+        "riskReasons": reasons,
+        "fundamentalsBoost": fundamentals_boost,
+        "note": "Calibration intentionally compresses aggressive raw scores toward market consensus and penalizes instability.",
+    }
+    return out
+
+
+def _no_pick(row: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(row)
+    if not NO_PICK_ENABLED:
+        out["pickDiscipline"] = {"enabled": False, "version": PATCH_VERSION}
+        out["officialPick"] = True
+        out["actionability"] = "PREDICTION_ONLY_NO_DISCIPLINE_GATE"
+        return out
+    calibrated = _num(out.get("calibratedWinProbability", out.get("winProbability")), 0.5)
+    score = _num(out.get("score"), 0.0)
+    pull_count = _int(out.get("pullCountForGame"), 0)
+    confidence = str(out.get("confidenceTier") or "")
+    calibration = out.get("calibration") or {}
+    risk = _num(calibration.get("riskPenalty"), 0.0)
+    reasons = list(calibration.get("riskReasons") or [])
+    no_pick_reasons: List[str] = []
+    if pull_count < MIN_ACTIONABLE_PULLS:
+        no_pick_reasons.append("needs_more_pull_depth")
+    if calibrated < MIN_ACTIONABLE_PROB:
+        no_pick_reasons.append("calibrated_probability_below_actionable_threshold")
+    if score < MIN_ACTIONABLE_SCORE:
+        no_pick_reasons.append("score_below_actionable_threshold")
+    if confidence in {"Pass", "Coin Flip", "Baseline"}:
+        no_pick_reasons.append(f"confidence_tier_{confidence.lower().replace(' ', '_')}")
+    if risk > MAX_ACTIONABLE_RISK:
+        no_pick_reasons.append("market_instability_risk_too_high")
+    if "MISSING_FUNDAMENTALS" in set(out.get("tags") or []) and calibrated < 0.66:
+        no_pick_reasons.append("missing_fundamentals_requires_stronger_market_edge")
+
+    actionable = not no_pick_reasons
+    if actionable and calibrated >= 0.68 and score >= 66 and risk <= 0.12:
+        level = "STRONG_ACTIONABLE_PICK"
+    elif actionable:
+        level = "ACTIONABLE_LEAN_PICK"
+    else:
+        level = "NO_PICK"
+    out["officialPick"] = bool(actionable)
+    out["actionablePick"] = bool(actionable)
+    out["actionability"] = level
+    out["actionabilityReason"] = "passes_calibration_and_no_pick_gate" if actionable else ";".join(sorted(set(no_pick_reasons)))
+    out["pickDiscipline"] = {
+        "enabled": True,
+        "version": PATCH_VERSION,
+        "actionable": bool(actionable),
+        "level": level,
+        "thresholds": {
+            "minPulls": MIN_ACTIONABLE_PULLS,
+            "minCalibratedProbability": MIN_ACTIONABLE_PROB,
+            "minScore": MIN_ACTIONABLE_SCORE,
+            "maxRiskPenalty": MAX_ACTIONABLE_RISK,
+        },
+        "calibratedProbability": calibrated,
+        "score": score,
+        "pullCountForGame": pull_count,
+        "riskPenalty": risk,
+        "riskReasons": reasons,
+        "noPickReasons": sorted(set(no_pick_reasons)),
+        "rule": "Every game can receive a prediction, but only rows passing this gate are actionable picks.",
+    }
+    tags = list(out.get("tags") or [])
+    tags.append("ACTIONABLE_PICK" if actionable else "NO_PICK")
+    tags.append("CALIBRATED_PROBABILITY")
+    out["tags"] = sorted(set(tags))
+    return out
+
+
+def optimize_with_fundamentals(row: Dict[str, Any]) -> Dict[str, Any]:
+    out = _apply_fundamentals(row)
+    out = _calibrate(out)
+    out = _no_pick(out)
     return out
 
 
@@ -177,20 +372,43 @@ def apply(module):
         if not isinstance(result, dict):
             return result
         predictions = [optimize_with_fundamentals(row) for row in (result.get("predictions") or [])]
-        predictions.sort(key=lambda r: (float(r.get("score") or 0), float(r.get("winProbability") or 0)), reverse=True)
+        predictions.sort(key=lambda r: (float(r.get("actionablePick") is True), float(r.get("score") or 0), float(r.get("winProbability") or 0)), reverse=True)
         for idx, row in enumerate(predictions, 1):
             row["rank"] = idx
         result["predictions"] = predictions
         result["count"] = len(predictions)
         summary = dict(result.get("rolling24hAccuracyTarget") or result.get("accuracyTarget") or {})
         summary["fundamentalsEnabled"] = USE_FUNDAMENTALS
-        summary["fundamentalsMode"] = "SPORTSDATAIO_ENABLED" if USE_FUNDAMENTALS else "ODDS_API_ONLY"
+        summary["fundamentalsMode"] = "SPORTSDATAIO_ENABLED_WHEN_AVAILABLE" if USE_FUNDAMENTALS else "DISABLED_ODDS_API_ONLY"
         summary["fundamentalsAppliedCount"] = len([r for r in predictions if (r.get("winnerOptimizer") or {}).get("fundamentalsApplied")])
+        summary["fundamentalsMissingCount"] = len([r for r in predictions if "MISSING_FUNDAMENTALS" in set(r.get("tags") or [])])
         summary["fundamentalsFlipCount"] = len([r for r in predictions if r.get("optimizerFlippedByFundamentals")])
+        summary["calibrationEnabled"] = CALIBRATION_ENABLED
+        summary["calibratedPredictionCount"] = len([r for r in predictions if (r.get("calibration") or {}).get("enabled")])
+        summary["noPickDisciplineEnabled"] = NO_PICK_ENABLED
+        summary["actionablePickCount"] = len([r for r in predictions if r.get("actionablePick")])
+        summary["noPickCount"] = len([r for r in predictions if not r.get("actionablePick")])
+        summary["patchVersion"] = PATCH_VERSION
         result["rolling24hAccuracyTarget"] = summary
         result["accuracyTarget"] = summary
-        suffix = "+sportsdataio-fundamentals" if USE_FUNDAMENTALS else "+odds-api-only"
-        result["modelVersion"] = str(result.get("modelVersion") or "") + suffix
+        result["actionablePickCount"] = summary["actionablePickCount"]
+        result["noPickCount"] = summary["noPickCount"]
+        result["calibrationPolicy"] = {
+            "enabled": CALIBRATION_ENABLED,
+            "method": "market_consensus_score_blend_with_risk_shrinkage",
+            "brierLogLossReady": True,
+            "note": "Probabilities are compressed toward market consensus and penalized for instability before the no-pick gate is applied.",
+        }
+        result["noPickPolicy"] = {
+            "enabled": NO_PICK_ENABLED,
+            "minPulls": MIN_ACTIONABLE_PULLS,
+            "minCalibratedProbability": MIN_ACTIONABLE_PROB,
+            "minScore": MIN_ACTIONABLE_SCORE,
+            "maxRiskPenalty": MAX_ACTIONABLE_RISK,
+        }
+        suffix = "+fundamentals-calibration-no-pick-v1"
+        model = str(result.get("modelVersion") or "")
+        result["modelVersion"] = model if suffix in model else model + suffix
         return result
 
     module.predict_all = patched_predict_all
