@@ -2,12 +2,6 @@ name: MLB V1 Pull Guard
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
-    paths:
-      - ".github/workflows/mlb-v1-pull-guard.yml"
-  schedule:
-    - cron: "0/15 * * * *"
 
 permissions:
   contents: write
@@ -38,7 +32,7 @@ jobs:
           aws lambda invoke \
             --cli-binary-format raw-in-base64-out \
             --function-name "$FUNCTION_NAME" \
-            --payload '{"sport":"mlb","t":"HOT","run":"github_actions_mlb_v1_pull_guard","days_ahead":1,"force":true}' \
+            --payload '{"sport":"mlb","t":"HOT","run":"github_actions_mlb_v1_pull_guard_manual","days_ahead":1,"force":true}' \
             /tmp/mlb-pull-response.json
           cat /tmp/mlb-pull-response.json
           python - <<'PY'
@@ -72,9 +66,9 @@ jobs:
               'sportsRequested': ['mlb'],
               'pullMode': {
                   'ok': True,
-                  'source': 'github_actions_mlb_v1_pull_guard',
-                  'storageMode': 'live_lambda_pull_created',
-                  'message': 'This report was refreshed by the MLB V1 Pull Guard after invoking MLBAuditedPullFunction.'
+                  'source': 'github_actions_mlb_v1_pull_guard_manual',
+                  'storageMode': 'manual_live_lambda_pull_created',
+                  'message': 'This report was refreshed manually by MLB V1 Pull Guard after invoking MLBAuditedPullFunction.'
               },
               'mlbPullResponseSummary': {
                   'ok': body.get('ok'),
