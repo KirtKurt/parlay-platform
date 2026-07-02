@@ -2,13 +2,6 @@ name: MLB Hot Pull Recovery
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
-    paths:
-      - "scripts/mlb_recover_hot_pull_and_predict.py"
-      - ".github/workflows/mlb-hot-pull-recovery.yml"
-  schedule:
-    - cron: "*/15 * * * *"
 
 permissions:
   contents: write
