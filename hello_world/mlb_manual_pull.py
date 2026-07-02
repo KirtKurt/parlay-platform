@@ -11,29 +11,54 @@ from zoneinfo import ZoneInfo
 import boto3
 from boto3.dynamodb.conditions import Key
 
-from audit_ledger import record_no_edge_prediction_rows, record_snapshot_audit
-from mlb_signal_api import _delta_for_game, _game_index
+try:
+    from audit_ledger import record_no_edge_prediction_rows, record_snapshot_audit
+except Exception:  # keep diagnostics alive if optional audit layer is unavailable
+    record_no_edge_prediction_rows = None
+    record_snapshot_audit = None
+
+try:
+    from mlb_signal_api import _delta_for_game, _game_index
+except Exception:
+    _delta_for_game = None
+    _game_index = None
+
+try:
+    import inqsi_pull_history as pull_history
+except Exception:
+    pull_history = None
+
+try:
+    import mlb_game_winner_engine
+except Exception:
+    mlb_game_winner_engine = None
 
 
 dynamodb = boto3.resource("dynamodb")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
 SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
+MLB_PULL_START_AT_ET = os.environ.get("MLB_PULL_START_AT_ET", "2026-07-03T01:00:00-04:00")
+MLB_SCHED_INTERVAL_MINUTES = int(os.environ.get("MLB_SCHED_INTERVAL_MINUTES", "15"))
+
 snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
 signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE else None
 
 SPORT_KEY = "baseball_mlb"
 ODDS_MARKETS = "h2h,spreads,totals"
 DEFAULT_DAYS_AHEAD = 1
+PLATFORM_VERSION = "MLB_PREDICTIVE_PLATFORM_V1"
 ML_FEATURE_VERSION = "mlb_hot_pull_movement_features_v1"
 HOT_ONLY_POLICY = "MLB_B1_15_MIN_HOT_ONLY"
+PULL_POLICY = "rolling_open_today_plus_tomorrow_every_15_min_date_isolated_hot_only"
+EASTERN = ZoneInfo("America/New_York")
 
 
 def _ddb_safe(value: Any) -> Any:
     if isinstance(value, float):
         return Decimal(str(value))
     if isinstance(value, dict):
-        return {k: _ddb_safe(v) for k, v in value.items()}
+        return {k: _ddb_safe(v) for k, v in value.items() if v is not None}
     if isinstance(value, list):
         return [_ddb_safe(v) for v in value]
     return value
@@ -41,7 +66,7 @@ def _ddb_safe(value: Any) -> Any:
 
 def _json_default(value: Any) -> Any:
     if isinstance(value, Decimal):
-        return float(value)
+        return int(value) if value % 1 == 0 else float(value)
     return str(value)
 
 
@@ -69,10 +94,16 @@ def _parse_json(body: Optional[str]) -> Dict[str, Any]:
 
 
 def _event_payload(event: Dict[str, Any]) -> Dict[str, Any]:
-    body = _parse_json(event.get("body"))
+    body = _parse_json(event.get("body")) if isinstance(event, dict) else {}
+    query = event.get("queryStringParameters") or {} if isinstance(event, dict) else {}
+    payload: Dict[str, Any] = {}
+    if isinstance(event, dict) and not event.get("httpMethod") and not event.get("requestContext"):
+        payload.update(event)
+    if isinstance(query, dict):
+        payload.update(query)
     if body:
-        return body
-    return event if isinstance(event, dict) else {}
+        payload.update(body)
+    return payload
 
 
 def _now_iso() -> str:
@@ -80,17 +111,24 @@ def _now_iso() -> str:
 
 
 def _slate_date_et() -> str:
-    return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    return datetime.now(EASTERN).strftime("%Y-%m-%d")
+
+
+def _parse_dt(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed
+    except Exception:
+        return None
 
 
 def _game_date_et(commence_time: Optional[str]) -> Optional[str]:
-    if not commence_time:
-        return None
-    try:
-        dt = datetime.fromisoformat(commence_time.replace("Z", "+00:00"))
-    except Exception:
-        return None
-    return dt.astimezone(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
+    parsed = _parse_dt(commence_time)
+    return parsed.astimezone(EASTERN).strftime("%Y-%m-%d") if parsed else None
 
 
 def _http_get_json(url: str, timeout: int = 20) -> Any:
@@ -104,9 +142,9 @@ def _odds_url() -> str:
         raise RuntimeError("ODDS_API_KEY missing")
     params = {
         "apiKey": ODDS_API_KEY,
-        "regions": "us",
-        "markets": ODDS_MARKETS,
-        "oddsFormat": "american",
+        "regions": os.environ.get("ODDS_REGIONS", "us"),
+        "markets": os.environ.get("ODDS_MARKETS", ODDS_MARKETS),
+        "oddsFormat": os.environ.get("ODDS_FORMAT", "american"),
         "dateFormat": "iso",
     }
     return f"https://api.the-odds-api.com/v4/sports/{SPORT_KEY}/odds/?" + urllib.parse.urlencode(params)
@@ -156,6 +194,7 @@ def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_er
             **cached,
             "ok": True,
             "sport": "mlb",
+            "platformVersion": PLATFORM_VERSION,
             "live_pull_ok": False,
             "fallback_used": True,
             "fallback_type": "latest_stored_date_isolated_snapshots_after_live_pull_auth_failure",
@@ -171,6 +210,7 @@ def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_er
         return {
             "ok": False,
             "sport": "mlb",
+            "platformVersion": PLATFORM_VERSION,
             "live_pull_ok": False,
             "fallback_used": False,
             "source_status": {"live_odds_feed": "AUTH_FAILED", "cached_snapshot_analysis": "FAILED"},
@@ -180,9 +220,50 @@ def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_er
         }
 
 
+def _parse_start_at_et() -> Optional[datetime]:
+    raw = (MLB_PULL_START_AT_ET or "").strip()
+    if not raw:
+        return None
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=EASTERN)
+        return parsed.astimezone(EASTERN)
+    except Exception:
+        return None
+
+
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "y", "force"}
+
+
+def _scheduled_start_gate(event: Dict[str, Any], payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if _truthy(payload.get("force")):
+        return None
+    is_http = bool(event.get("httpMethod") or event.get("requestContext", {}).get("http"))
+    if is_http:
+        return None
+    start_at = _parse_start_at_et()
+    if start_at is None:
+        return None
+    now_et = datetime.now(EASTERN)
+    if now_et >= start_at:
+        return None
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "platformVersion": PLATFORM_VERSION,
+        "skipped": True,
+        "reason": "WAITING_FOR_CONFIGURED_1AM_ET_START_GATE",
+        "startAtEt": start_at.isoformat(),
+        "nowEt": now_et.isoformat(),
+        "intervalMinutes": MLB_SCHED_INTERVAL_MINUTES,
+        "message": "Scheduled MLB pulls are gated until the configured 1:00am ET start. Manual HTTP pulls or force=true still work for validation.",
+    }
+
+
 def _filter_upcoming_et(games: List[Dict[str, Any]], *, start_date: str, days_ahead: int) -> List[Dict[str, Any]]:
-    eastern = ZoneInfo("America/New_York")
-    start = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=eastern)
+    start = datetime.strptime(start_date, "%Y-%m-%d").replace(tzinfo=EASTERN)
     allowed = {(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(max(0, days_ahead) + 1)}
     out = []
     for game in games or []:
@@ -273,19 +354,29 @@ def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
             if payload:
                 books[book_key] = payload
                 books_seen.add(book_key)
+        if not books:
+            continue
         game_key = f"mlb|{game_date}|{away.lower()}|{home.lower()}"
         games_out.append({
             "id": raw_game.get("id") or game_key,
+            "game_id": raw_game.get("id") or game_key,
             "game_key": game_key,
             "internal_key": game_key,
             "game_date_et": game_date,
             "commence_time": raw_game.get("commence_time"),
             "home_team": home,
             "away_team": away,
+            "provider_sport_key": SPORT_KEY,
             "books": books,
             "markets_stored": ["ml", "spread", "total"],
         })
-    return {"games": games_out, "count": len(games_out), "game_dates_et": sorted(game_dates_seen), "available_book_keys": sorted(books_seen), "markets": ["ml", "spread", "total"]}
+    return {
+        "games": games_out,
+        "count": len(games_out),
+        "game_dates_et": sorted(game_dates_seen),
+        "available_book_keys": sorted(books_seen),
+        "markets": ["ml", "spread", "total"],
+    }
 
 
 def _compact_for_game_date(compact: Dict[str, Any], game_date: str) -> Dict[str, Any]:
@@ -295,11 +386,14 @@ def _compact_for_game_date(compact: Dict[str, Any], game_date: str) -> Dict[str,
 
 
 def _store_snapshot_item(*, t: str, slate_date: str, game_date: str, asof: str, run: str, compact: Dict[str, Any], date_isolated: bool, pk: str) -> Dict[str, str]:
+    if snapshots_tbl is None:
+        raise RuntimeError("SNAPSHOTS_TABLE not configured")
     slate_id = f"MLB_DATE_{game_date}_{run}" if date_isolated else f"MLB_ROLLING_{'_'.join(compact.get('game_dates_et') or [slate_date])}_{run}"
     item = {
         "PK": pk,
         "SK": f"{t}#GAME_DATE#{game_date}#PULL_DATE#{slate_date}#ASOF#{asof}#SLATE#{slate_id}",
         "sport": "mlb",
+        "platform_version": PLATFORM_VERSION,
         "t": t,
         "slate_id": slate_id,
         "slate_date_et": game_date,
@@ -313,16 +407,82 @@ def _store_snapshot_item(*, t: str, slate_date: str, game_date: str, asof: str, 
         "data": compact,
         "meta": {
             "source": "theOddsAPI",
+            "provider_sport_key": SPORT_KEY,
             "run_type": run,
             "pulled_at": asof,
             "markets": ["h2h", "spreads", "totals"],
-            "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min_date_isolated_hot_only",
+            "interval_minutes": MLB_SCHED_INTERVAL_MINUTES,
+            "pull_policy": PULL_POLICY,
             "hot_only_policy": HOT_ONLY_POLICY,
+            "line_movement_prediction": True,
         },
     }
     item = _ddb_safe(item)
     snapshots_tbl.put_item(Item=item)
     return {"pk": item["PK"], "sk": item["SK"]}
+
+
+def _canonical_games(compact: Dict[str, Any]) -> List[Dict[str, Any]]:
+    games = []
+    for game in compact.get("games") or []:
+        if not (game.get("home_team") and game.get("away_team") and game.get("books")):
+            continue
+        games.append({
+            "game_id": str(game.get("game_id") or game.get("id") or game.get("game_key")),
+            "id": str(game.get("id") or game.get("game_id") or game.get("game_key")),
+            "game_key": game.get("game_key"),
+            "home_team": game.get("home_team"),
+            "away_team": game.get("away_team"),
+            "commence_time": game.get("commence_time"),
+            "league": "MLB",
+            "level": "pro",
+            "gender": "men",
+            "provider_sport_key": SPORT_KEY,
+            "books": game.get("books") or {},
+        })
+    return games
+
+
+def _safe_pull_id(game_date: str, asof: str) -> str:
+    safe = "".join(ch if ch.isalnum() else "_" for ch in asof)[:48]
+    return f"mlb_v1_{game_date}_{safe}"
+
+
+def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compact: Dict[str, Any]) -> Dict[str, Any]:
+    if pull_history is None:
+        return {"ok": False, "error": "inqsi_pull_history_unavailable", "games": 0}
+    games = _canonical_games(compact)
+    if not games:
+        return {"ok": True, "stored": None, "games": 0, "reason": "no_supported_moneyline_games_for_date"}
+    body = {
+        "pull_id": _safe_pull_id(game_date, asof),
+        "sport": "mlb",
+        "sport_key": "mlb",
+        "slate_date": game_date,
+        "pulled_at": asof,
+        "source": "the_odds_api",
+        "interval_minutes": MLB_SCHED_INTERVAL_MINUTES,
+        "games": games,
+        "meta": {
+            "platform_version": PLATFORM_VERSION,
+            "run": run,
+            "provider_sport_key": SPORT_KEY,
+            "date_isolated": True,
+            "line_movement_prediction": True,
+        },
+    }
+    try:
+        stored = pull_history.store_pull(body)
+        return {
+            "ok": bool(stored.get("ok")),
+            "games": len(games),
+            "stored": stored.get("stored"),
+            "error": stored.get("error"),
+            "pull_id": body["pull_id"],
+            "pk": (stored.get("stored") or {}).get("pk"),
+        }
+    except Exception as exc:
+        return {"ok": False, "games": len(games), "error": str(exc), "pull_id": body["pull_id"]}
 
 
 def _latest_two_hot_snapshots_for_game_date(game_date: str, limit: int = 12) -> List[Dict[str, Any]]:
@@ -348,6 +508,8 @@ def _movement_strength(delta: float, agreeing_books: int, disagreeing_books: int
 def _store_hot_movement_features(*, game_date: str, asof: str, run: str) -> Dict[str, Any]:
     if signal_ledger_tbl is None:
         return {"ok": False, "stored": 0, "error": "SIGNAL_LEDGER_TABLE not configured"}
+    if _game_index is None or _delta_for_game is None:
+        return {"ok": False, "stored": 0, "error": "mlb_signal_api_helpers_unavailable"}
     snaps = _latest_two_hot_snapshots_for_game_date(game_date)
     if len(snaps) < 2:
         return {"ok": True, "stored": 0, "reason": "Need at least two HOT snapshots for this game date."}
@@ -376,6 +538,7 @@ def _store_hot_movement_features(*, game_date: str, asof: str, run: str) -> Dict
             "SK": f"HOT_DELTA#{latest_snap.get('asof')}#GAME#{game_key}",
             "entity_type": "HOT_PULL_MOVEMENT_FEATURE",
             "sport": "mlb",
+            "platform_version": PLATFORM_VERSION,
             "game_date_et": game_date,
             "game_key": game_key,
             "feature_version": ML_FEATURE_VERSION,
@@ -408,28 +571,70 @@ def _store_hot_movement_features(*, game_date: str, asof: str, run: str) -> Dict
     return {"ok": len(errors) == 0, "stored": stored, "previous_asof": prev_snap.get("asof"), "latest_asof": latest_snap.get("asof"), "feature_version": ML_FEATURE_VERSION, "errors": errors, "sample": feature_rows[:10]}
 
 
+def _record_snapshot_audit_safe(*, game_date: str, asof: str, t: str, run: str, date_compact: Dict[str, Any], raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if record_snapshot_audit is None:
+        return {"ok": False, "error": "record_snapshot_audit_unavailable"}
+    try:
+        return record_snapshot_audit(sport="mlb", slate_date_et=game_date, asof=asof, t=t, run_type=run, compact_snapshot=date_compact, raw_games=raw_games)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _record_no_edge_predictions_safe(*, game_date: str, asof: str, date_compact: Dict[str, Any]) -> Dict[str, Any]:
+    if record_no_edge_prediction_rows is None:
+        return {"ok": False, "error": "record_no_edge_prediction_rows_unavailable"}
+    try:
+        return record_no_edge_prediction_rows(sport="mlb", slate_date_et=game_date, asof=asof, compact_snapshot=date_compact)
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+def _build_and_store_hot_sides(*, game_date: str, limit: int = 80) -> Dict[str, Any]:
+    try:
+        from mlb_date_signal_api import hot_sides
+        return hot_sides(game_date=game_date, limit=limit, store=True, include_no_edge=True)
+    except Exception as exc:
+        return {"ok": False, "sport": "mlb", "game_date_et": game_date, "error": str(exc)}
+
+
+def _build_and_store_game_winners(*, game_date: str) -> Dict[str, Any]:
+    if mlb_game_winner_engine is None:
+        return {"ok": False, "sport": "mlb", "game_date_et": game_date, "error": "mlb_game_winner_engine_unavailable"}
+    try:
+        return mlb_game_winner_engine.predict_all(game_date, store=True, limit=500)
+    except Exception as exc:
+        return {"ok": False, "sport": "mlb", "game_date_et": game_date, "error": str(exc)}
+
+
 def lambda_handler(event, context):
     event = event or {}
     if (event.get("httpMethod") or "").upper() == "OPTIONS":
         return _resp(200, {"ok": True})
     try:
         payload = _event_payload(event)
+        gate = _scheduled_start_gate(event, payload)
+        if gate is not None:
+            return _resp(200, gate)
+
         t = str(payload.get("t") or "HOT").upper()
         run = payload.get("run") or "rolling_open_hot_pull"
         if t != "HOT":
             return _resp(200, {
                 "ok": True,
                 "sport": "mlb",
+                "platformVersion": PLATFORM_VERSION,
                 "skipped": True,
                 "t": t,
                 "run": run,
                 "hot_only_policy": HOT_ONLY_POLICY,
-                "message": "Legacy MLB T1/T2/T3/T4 pull ignored. MLB now stores HOT 15-minute snapshots only.",
+                "message": "Legacy MLB T1/T2/T3/T4 pull ignored. MLB V1 stores HOT 15-minute snapshots only.",
             })
+
         days_ahead = int(payload.get("days_ahead", DEFAULT_DAYS_AHEAD))
-        slate_date = _slate_date_et()
+        slate_date = payload.get("slate_date_et") or _slate_date_et()
         asof = _now_iso()
-        raw = _filter_upcoming_et(_http_get_json(_odds_url()), start_date=slate_date, days_ahead=days_ahead)
+        raw_all = _http_get_json(_odds_url())
+        raw = _filter_upcoming_et(raw_all, start_date=slate_date, days_ahead=days_ahead)
         compact = _compact(raw)
         if snapshots_tbl is None:
             raise RuntimeError("SNAPSHOTS_TABLE not configured")
@@ -437,29 +642,50 @@ def lambda_handler(event, context):
         combined_stored = _store_snapshot_item(t=t, slate_date=slate_date, game_date=slate_date, asof=asof, run=run, compact=compact, date_isolated=False, pk="SPORT#mlb")
 
         isolated_stored = []
+        canonical_pull_history = []
         audit_results = []
         prediction_audit_results = []
         hot_movement_feature_results = []
+        hot_side_prediction_results = []
+        game_winner_prediction_results = []
+
         for game_date in compact.get("game_dates_et") or []:
             date_compact = _compact_for_game_date(compact, game_date)
             if not date_compact.get("games"):
                 continue
             stored_item = _store_snapshot_item(t=t, slate_date=slate_date, game_date=game_date, asof=asof, run=run, compact=date_compact, date_isolated=True, pk=f"SPORT#mlb#DATE#{game_date}")
             isolated_stored.append({"game_date_et": game_date, **stored_item, "count": date_compact.get("count")})
-            audit_results.append({"game_date_et": game_date, **record_snapshot_audit(sport="mlb", slate_date_et=game_date, asof=asof, t=t, run_type=run, compact_snapshot=date_compact, raw_games=raw)})
-            prediction_audit_results.append({"game_date_et": game_date, **record_no_edge_prediction_rows(sport="mlb", slate_date_et=game_date, asof=asof, compact_snapshot=date_compact)})
-            hot_movement_feature_results.append({"game_date_et": game_date, **_store_hot_movement_features(game_date=game_date, asof=asof, run=run)})
 
+            canonical = _store_canonical_pull_history(game_date=game_date, asof=asof, run=run, compact=date_compact)
+            canonical_pull_history.append({"game_date_et": game_date, **canonical})
+
+            audit_results.append({"game_date_et": game_date, **_record_snapshot_audit_safe(game_date=game_date, asof=asof, t=t, run=run, date_compact=date_compact, raw_games=raw)})
+            prediction_audit_results.append({"game_date_et": game_date, **_record_no_edge_predictions_safe(game_date=game_date, asof=asof, date_compact=date_compact)})
+            hot_movement_feature_results.append({"game_date_et": game_date, **_store_hot_movement_features(game_date=game_date, asof=asof, run=run)})
+            hot_side_prediction_results.append({"game_date_et": game_date, **_build_and_store_hot_sides(game_date=game_date)})
+            game_winner_prediction_results.append({"game_date_et": game_date, **_build_and_store_game_winners(game_date=game_date)})
+
+        start_at = _parse_start_at_et()
         return _resp(200, {
             "ok": True,
             "sport": "mlb",
+            "platformVersion": PLATFORM_VERSION,
             "live_pull_ok": True,
             "fallback_used": False,
             "t": t,
             "run": run,
+            "startAtEt": start_at.isoformat() if start_at else None,
+            "intervalMinutes": MLB_SCHED_INTERVAL_MINUTES,
             "hot_only_policy": HOT_ONLY_POLICY,
-            "pull_policy": "rolling_open_today_plus_tomorrow_every_15_min_date_isolated_hot_only",
+            "pull_policy": PULL_POLICY,
             "ml_research_policy": {"enabled": True, "scope": "HOT pulls only", "feature_partition_pk_pattern": "ML_FEATURE#mlb#YYYY-MM-DD"},
+            "prediction_policy": {
+                "source": "The Odds API moneyline, spread, and total line movement",
+                "canonical_pull_history": "PULLS#mlb#YYYY-MM-DD",
+                "snapshots": "SPORT#mlb#DATE#YYYY-MM-DD",
+                "winner_engine": "mlb_game_winner_engine.predict_all(store=True)",
+                "runs_after_every_hot_pull": True,
+            },
             "data_isolation": {"enabled": True, "date_partition_pk_pattern": "SPORT#mlb#DATE#YYYY-MM-DD", "game_key_pattern": "mlb|YYYY-MM-DD|away|home"},
             "pull_date_et": slate_date,
             "game_dates_et": compact.get("game_dates_et") or [],
@@ -468,15 +694,18 @@ def lambda_handler(event, context):
             "count": compact["count"],
             "stored": combined_stored,
             "date_isolated_stored": isolated_stored,
+            "canonical_pull_history": canonical_pull_history,
             "available_book_keys": compact["available_book_keys"],
             "markets": compact["markets"],
             "audit": audit_results,
             "prediction_audit": prediction_audit_results,
             "hot_movement_features": hot_movement_feature_results,
+            "hot_side_predictions": hot_side_prediction_results,
+            "game_winner_predictions": game_winner_prediction_results,
         })
     except Exception as exc:
         payload = _event_payload(event)
         fallback = _transparent_cached_pre_start_response(payload, exc)
         if fallback is not None:
             return _resp(200 if fallback.get("ok") else 500, fallback)
-        return _resp(500, {"ok": False, "sport": "mlb", "live_pull_ok": False, "fallback_used": False, "upstream_error": _oddsapi_auth_diagnostic(exc), "error": str(exc)})
+        return _resp(500, {"ok": False, "sport": "mlb", "platformVersion": PLATFORM_VERSION, "live_pull_ok": False, "fallback_used": False, "upstream_error": _oddsapi_auth_diagnostic(exc), "error": str(exc)})
