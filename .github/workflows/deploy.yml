@@ -30,7 +30,17 @@ jobs:
       - name: Verify AWS connection
         run: aws sts get-caller-identity
 
-      - name: Verify SportsDataIO secret present
+      - name: Verify Odds API secret present
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          if [ -z "${ODDS_API_KEY_VALUE:-}" ]; then
+            echo "::error::Missing ODDS_API_KEY GitHub secret. MLB line-movement pulls and winner predictions require Odds API data."
+            exit 1
+          fi
+          echo "Odds API secret is present."
+
+      - name: Check optional SportsDataIO secret
         env:
           SPORTSDATAIO_API_KEY_PRIMARY: ${{ secrets.SPORTSDATAIO_API_KEY }}
           SPORTSDATAIO_API_KEY_ALT_1: ${{ secrets.SPORTS_DATA_IO_API_KEY }}
@@ -39,10 +49,10 @@ jobs:
         run: |
           SPORTSDATAIO_DEPLOY_KEY="${SPORTSDATAIO_API_KEY_PRIMARY:-${SPORTSDATAIO_API_KEY_ALT_1:-${SPORTSDATAIO_API_KEY_ALT_2:-${SPORTSDATAIO_API_KEY_ALT_3:-}}}}"
           if [ -z "${SPORTSDATAIO_DEPLOY_KEY:-}" ]; then
-            echo "::error::Missing SportsDataIO GitHub secret. Add one of: SPORTSDATAIO_API_KEY, SPORTS_DATA_IO_API_KEY, SPORTSDATAIO_MLB_API_KEY, SPORTS_DATA_IO_MLB_API_KEY."
-            exit 1
+            echo "SportsDataIO secret is not set. Continuing because MLB V1 winner prediction is Odds API line-movement first; fundamentals remain optional."
+          else
+            echo "Optional SportsDataIO secret is present."
           fi
-          echo "SportsDataIO secret is present."
 
       - name: Setup AWS SAM
         uses: aws-actions/setup-sam@v2
@@ -84,7 +94,7 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               OddsApiKey="${ODDS_API_KEY_VALUE}" \
-              SportsDataIoApiKey="${SPORTSDATAIO_DEPLOY_KEY}"
+              SportsDataIoApiKey="${SPORTSDATAIO_DEPLOY_KEY:-}"
 
       - name: Grant image moderation Rekognition access
         run: |
@@ -143,8 +153,9 @@ jobs:
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "API_URL=$API_URL"
 
-      - name: Verify SportsDataIO live runtime
-        run: python scripts/prove_sportsdataio_runtime.py --api-url "${{ steps.stack_outputs.outputs.api_url }}" --strict
+      - name: Verify optional SportsDataIO live runtime
+        continue-on-error: true
+        run: python scripts/prove_sportsdataio_runtime.py --api-url "${{ steps.stack_outputs.outputs.api_url }}"
 
       - name: Configure API WAF and throttling
         continue-on-error: true
@@ -169,6 +180,16 @@ jobs:
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           curl --fail --silent --show-error "${API_URL}v1/mlb/today"
+
+      - name: Smoke test MLB line-movement source status
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          curl --fail --silent --show-error "${API_URL}v1/sources/mlb/status"
+
+      - name: Smoke test MLB game-winner endpoint
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          curl --fail --silent --show-error "${API_URL}v1/mlb/game-winners?store=false"
 
       - name: Smoke test MLB signal learning endpoint
         run: |
