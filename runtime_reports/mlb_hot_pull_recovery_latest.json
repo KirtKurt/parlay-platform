@@ -2,7 +2,7 @@
   "ok": true,
   "proofType": "MLB_HOT_PULL_RECOVERY_AND_PREDICTION",
   "operatingMode": "ODDS_API_ONLY",
-  "createdAtUtc": "2026-07-02T11:54:38.783119+00:00",
+  "createdAtUtc": "2026-07-02T14:00:35.492371+00:00",
   "environment": {
     "oddsApiKeyPresent": true,
     "snapshotsTablePresent": true,
@@ -26,13 +26,13 @@
         "gamesStored": 9,
         "stored": {
           "pk": "PULLS#mlb#2026-07-02",
-          "sk": "PULL#2026-07-02T11:54:38.359648+00:00#pull_8b4d57deb1234e1c",
-          "pull_id": "pull_8b4d57deb1234e1c",
+          "sk": "PULL#2026-07-02T14:00:32.643927+00:00#pull_9d5f1b72c3a04f5c",
+          "pull_id": "pull_9d5f1b72c3a04f5c",
           "game_count": 9
         },
         "error": null,
-        "activeWindowStart": "2026-07-02T05:54:38.359311+00:00",
-        "activeWindowEnd": "2026-07-04T11:54:38.359311+00:00",
+        "activeWindowStart": "2026-07-02T08:00:32.643574+00:00",
+        "activeWindowEnd": "2026-07-04T14:00:32.643574+00:00",
         "slateWindowDays": 2,
         "activeWindowBackBufferHours": 6
       }
@@ -40,11 +40,11 @@
     "gamesSeen": 9,
     "deduped": false
   },
-  "pullsAfterCount": 3,
+  "pullsAfterCount": 14,
   "predictionsSummary": {
     "ok": true,
     "slateDate": "2026-07-02",
-    "pullCount": 3,
+    "pullCount": 14,
     "gameCount": 9,
     "count": 9,
     "storedCount": 9,
@@ -80,148 +80,6 @@
       "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
       "engine": "MLB-GAME-WINNER-v1.0",
       "slate_date": "2026-07-02",
-      "gameId": "283444f773ee82cae9a5977e9266baac",
-      "gameKey": "mlb|baseball_mlb|los angeles angels|seattle mariners|2026-07-03T01:41:00Z",
-      "homeTeam": "Seattle Mariners",
-      "awayTeam": "Los Angeles Angels",
-      "commenceTime": "2026-07-03T01:41:00Z",
-      "providerSportKey": "baseball_mlb",
-      "predictedWinner": "Seattle Mariners",
-      "predictedSide": "home",
-      "opponent": "Los Angeles Angels",
-      "winProbability": 0.7188,
-      "winProbabilityPct": 71.88,
-      "score": 61.26,
-      "confidenceTier": "Baseline",
-      "pickQuality": "GAME_WINNER_BASELINE",
-      "tags": [
-        "LOW_PULL_DEPTH"
-      ],
-      "pullCountForGame": 3,
-      "homeSignal": {
-        "side": "home",
-        "team": "Seattle Mariners",
-        "score": 61.26,
-        "winProbability": 0.7188,
-        "winProbabilityPct": 71.88,
-        "marketConsensusProbability": 0.65669,
-        "probStart": 0.64851,
-        "probLatest": 0.65669,
-        "delta": 0.00817,
-        "bookCount": 11,
-        "bookDivergence": 0.02799,
-        "latestGap": 0.31337,
-        "reversalCount": 0,
-        "runLineMovement": -4.909,
-        "averageAmericanOdds": -215.73,
-        "tags": [
-          "LOW_PULL_DEPTH"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 65.05,
-        "rolling24hLearningAdjustment": 1.21,
-        "winnerRuleAdjustment": -5.0,
-        "optimizedWinnerScore": 61.26
-      },
-      "awaySignal": {
-        "side": "away",
-        "team": "Los Angeles Angels",
-        "score": 21.61,
-        "winProbability": 0.0858,
-        "winProbabilityPct": 8.58,
-        "marketConsensusProbability": 0.34331,
-        "probStart": 0.35149,
-        "probLatest": 0.34331,
-        "delta": -0.00817,
-        "bookCount": 11,
-        "bookDivergence": 0.02799,
-        "latestGap": 0.31337,
-        "reversalCount": 0,
-        "runLineMovement": 5.273,
-        "averageAmericanOdds": 180.18,
-        "tags": [
-          "LOW_PULL_DEPTH"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 25.4,
-        "rolling24hLearningAdjustment": 1.21,
-        "winnerRuleAdjustment": -5.0,
-        "optimizedWinnerScore": 21.61
-      },
-      "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T11:54:38.651202+00:00",
-      "stored": {
-        "ok": true,
-        "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-03T01:41:00Z#283444f773ee82cae9a5977e9266baac"
-      },
-      "rank": 1,
-      "selectionBeforeWinnerOptimizer": {
-        "predictedWinner": "Seattle Mariners",
-        "predictedSide": "home",
-        "score": 65.05,
-        "tags": [
-          "LOW_PULL_DEPTH"
-        ]
-      },
-      "individualWinnerOptimized": true,
-      "optimizerFlippedPick": false,
-      "officialPick": true,
-      "accuracyTargetEligible": true,
-      "actionability": "OPTIMIZED_GAME_WINNER_PICK",
-      "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
-      "rolling24hAccuracyTarget": {
-        "targetAccuracyPct": 90.0,
-        "windowHours": 24,
-        "measuredBy": "mlb_rolling_24h_audit",
-        "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
-      },
-      "winnerOptimizer": {
-        "applied": true,
-        "basis": "compare_home_and_away_optimized_signal_scores",
-        "latestLearningApplied": true,
-        "homeOptimizedScore": 61.26,
-        "awayOptimizedScore": 21.61,
-        "flippedPick": false,
-        "fundamentalsApplied": false,
-        "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
-      },
-      "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
-        "phase": "PRE_FINAL_GATE",
-        "minutesToStart": 826.35,
-        "gateWindowMinutesBeforeStart": {
-          "opensAt": 75,
-          "closesAt": 10
-        },
-        "finalWindowActive": false,
-        "finalLocked": false,
-        "oddsApiOnly": false,
-        "requiresSportsDataIoAttempt": true,
-        "requiresSportsDataIoForFullDataFinalPick": true,
-        "sportsDataIoFundamentalsApplied": false,
-        "finalGateBlocked": false,
-        "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
-        "rules": [
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
-        ]
-      },
-      "finalGateStored": {
-        "ok": true,
-        "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-03T01:41:00Z#283444f773ee82cae9a5977e9266baac",
-        "finalGateStored": true
-      }
-    },
-    {
-      "ok": true,
-      "sport": "mlb",
-      "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
-      "engine": "MLB-GAME-WINNER-v1.0",
-      "slate_date": "2026-07-02",
       "gameId": "ae95cd98700fec55791774682d6b0b06",
       "gameKey": "mlb|baseball_mlb|san diego padres|los angeles dodgers|2026-07-03T02:11:00Z",
       "homeTeam": "Los Angeles Dodgers",
@@ -231,77 +89,77 @@
       "predictedWinner": "Los Angeles Dodgers",
       "predictedSide": "home",
       "opponent": "San Diego Padres",
-      "winProbability": 0.6079,
-      "winProbabilityPct": 60.79,
-      "score": 55.26,
-      "confidenceTier": "Baseline",
-      "pickQuality": "GAME_WINNER_BASELINE",
+      "winProbability": 0.8592,
+      "winProbabilityPct": 85.92,
+      "score": 71.7,
+      "confidenceTier": "Solid",
+      "pickQuality": "GAME_WINNER_SIGNAL",
       "tags": [
-        "LOW_PULL_DEPTH"
+        "BOOK_AGREEMENT"
       ],
-      "pullCountForGame": 3,
+      "pullCountForGame": 14,
       "homeSignal": {
         "side": "home",
         "team": "Los Angeles Dodgers",
-        "score": 55.26,
-        "winProbability": 0.6079,
-        "winProbabilityPct": 60.79,
-        "marketConsensusProbability": 0.63399,
+        "score": 71.7,
+        "winProbability": 0.8592,
+        "winProbabilityPct": 85.92,
+        "marketConsensusProbability": 0.63506,
         "probStart": 0.63345,
-        "probLatest": 0.63399,
-        "delta": 0.00055,
+        "probLatest": 0.63506,
+        "delta": 0.00162,
         "bookCount": 11,
-        "bookDivergence": 0.02268,
-        "latestGap": 0.26799,
+        "bookDivergence": 0.00652,
+        "latestGap": 0.27013,
         "reversalCount": 0,
         "runLineMovement": -0.818,
-        "averageAmericanOdds": -193.73,
+        "averageAmericanOdds": -194.36,
         "tags": [
-          "LOW_PULL_DEPTH"
+          "BOOK_AGREEMENT"
         ],
-        "rawScoreBeforeWinnerOptimizer": 59.05,
-        "rolling24hLearningAdjustment": 1.21,
-        "winnerRuleAdjustment": -5.0,
-        "optimizedWinnerScore": 55.26
+        "rawScoreBeforeWinnerOptimizer": 69.09,
+        "rolling24hLearningAdjustment": 2.11,
+        "winnerRuleAdjustment": 0.5,
+        "optimizedWinnerScore": 71.7
       },
       "awaySignal": {
         "side": "away",
         "team": "San Diego Padres",
-        "score": 30.37,
-        "winProbability": 0.163,
-        "winProbabilityPct": 16.3,
-        "marketConsensusProbability": 0.36601,
+        "score": 45.13,
+        "winProbability": 0.3999,
+        "winProbabilityPct": 39.99,
+        "marketConsensusProbability": 0.36494,
         "probStart": 0.36655,
-        "probLatest": 0.36601,
-        "delta": -0.00055,
+        "probLatest": 0.36494,
+        "delta": -0.00162,
         "bookCount": 11,
-        "bookDivergence": 0.02268,
-        "latestGap": 0.26799,
+        "bookDivergence": 0.00652,
+        "latestGap": 0.27013,
         "reversalCount": 0,
-        "runLineMovement": 1.0,
-        "averageAmericanOdds": 162.82,
+        "runLineMovement": 1.364,
+        "averageAmericanOdds": 163.64,
         "tags": [
-          "LOW_PULL_DEPTH"
+          "BOOK_AGREEMENT"
         ],
-        "rawScoreBeforeWinnerOptimizer": 34.16,
-        "rolling24hLearningAdjustment": 1.21,
-        "winnerRuleAdjustment": -5.0,
-        "optimizedWinnerScore": 30.37
+        "rawScoreBeforeWinnerOptimizer": 42.52,
+        "rolling24hLearningAdjustment": 2.11,
+        "winnerRuleAdjustment": 0.5,
+        "optimizedWinnerScore": 45.13
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T11:54:38.658815+00:00",
+      "createdAt": "2026-07-02T14:00:34.628382+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-02",
         "sk": "GAME#2026-07-03T02:11:00Z#ae95cd98700fec55791774682d6b0b06"
       },
-      "rank": 2,
+      "rank": 1,
       "selectionBeforeWinnerOptimizer": {
         "predictedWinner": "Los Angeles Dodgers",
         "predictedSide": "home",
-        "score": 59.05,
+        "score": 69.09,
         "tags": [
-          "LOW_PULL_DEPTH"
+          "BOOK_AGREEMENT"
         ]
       },
       "individualWinnerOptimized": true,
@@ -320,8 +178,8 @@
         "applied": true,
         "basis": "compare_home_and_away_optimized_signal_scores",
         "latestLearningApplied": true,
-        "homeOptimizedScore": 55.26,
-        "awayOptimizedScore": 30.37,
+        "homeOptimizedScore": 71.7,
+        "awayOptimizedScore": 45.13,
         "flippedPick": false,
         "fundamentalsApplied": false,
         "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
@@ -329,7 +187,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
         "phase": "PRE_FINAL_GATE",
-        "minutesToStart": 856.35,
+        "minutesToStart": 730.42,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 75,
           "closesAt": 10
@@ -364,95 +222,79 @@
       "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
       "engine": "MLB-GAME-WINNER-v1.0",
       "slate_date": "2026-07-02",
-      "gameId": "2bbaa286b732c0af8947d273e164f15e",
-      "gameKey": "mlb|baseball_mlb|cincinnati reds|milwaukee brewers|2026-07-02T18:11:00Z",
-      "homeTeam": "Milwaukee Brewers",
-      "awayTeam": "Cincinnati Reds",
-      "commenceTime": "2026-07-02T18:11:00Z",
+      "gameId": "283444f773ee82cae9a5977e9266baac",
+      "gameKey": "mlb|baseball_mlb|los angeles angels|seattle mariners|2026-07-03T01:41:00Z",
+      "homeTeam": "Seattle Mariners",
+      "awayTeam": "Los Angeles Angels",
+      "commenceTime": "2026-07-03T01:41:00Z",
       "providerSportKey": "baseball_mlb",
-      "predictedWinner": "Milwaukee Brewers",
+      "predictedWinner": "Seattle Mariners",
       "predictedSide": "home",
-      "opponent": "Cincinnati Reds",
-      "winProbability": 0.5667,
-      "winProbabilityPct": 56.67,
-      "score": 53.22,
-      "confidenceTier": "Baseline",
-      "pickQuality": "GAME_WINNER_BASELINE",
-      "tags": [
-        "BOOK_AGREEMENT",
-        "LOW_PULL_DEPTH",
-        "REVERSAL"
-      ],
-      "pullCountForGame": 3,
+      "opponent": "Los Angeles Angels",
+      "winProbability": 0.8173,
+      "winProbabilityPct": 81.73,
+      "score": 67.98,
+      "confidenceTier": "Solid",
+      "pickQuality": "GAME_WINNER_SIGNAL",
+      "tags": [],
+      "pullCountForGame": 14,
       "homeSignal": {
         "side": "home",
-        "team": "Milwaukee Brewers",
-        "score": 53.22,
-        "winProbability": 0.5667,
-        "winProbabilityPct": 56.67,
-        "marketConsensusProbability": 0.63779,
-        "probStart": 0.63493,
-        "probLatest": 0.63779,
-        "delta": 0.00286,
+        "team": "Seattle Mariners",
+        "score": 67.98,
+        "winProbability": 0.8173,
+        "winProbabilityPct": 81.73,
+        "marketConsensusProbability": 0.65608,
+        "probStart": 0.64851,
+        "probLatest": 0.65608,
+        "delta": 0.00756,
         "bookCount": 11,
-        "bookDivergence": 0.01386,
-        "latestGap": 0.27558,
-        "reversalCount": 1,
-        "runLineMovement": 0.273,
-        "averageAmericanOdds": -196.82,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "REVERSAL"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 57.3,
-        "rolling24hLearningAdjustment": 3.42,
-        "winnerRuleAdjustment": -7.5,
-        "optimizedWinnerScore": 53.22
+        "bookDivergence": 0.03407,
+        "latestGap": 0.31216,
+        "reversalCount": 0,
+        "runLineMovement": -3.364,
+        "averageAmericanOdds": -215.0,
+        "tags": [],
+        "rawScoreBeforeWinnerOptimizer": 67.98,
+        "rolling24hLearningAdjustment": 0.0,
+        "winnerRuleAdjustment": 0.0,
+        "optimizedWinnerScore": 67.98
       },
       "awaySignal": {
         "side": "away",
-        "team": "Cincinnati Reds",
-        "score": 24.41,
-        "winProbability": 0.106,
-        "winProbabilityPct": 10.6,
-        "marketConsensusProbability": 0.36221,
-        "probStart": 0.36507,
-        "probLatest": 0.36221,
-        "delta": -0.00286,
+        "team": "Los Angeles Angels",
+        "score": 29.3,
+        "winProbability": 0.1512,
+        "winProbabilityPct": 15.12,
+        "marketConsensusProbability": 0.34392,
+        "probStart": 0.35149,
+        "probLatest": 0.34392,
+        "delta": -0.00756,
         "bookCount": 11,
-        "bookDivergence": 0.01386,
-        "latestGap": 0.27558,
-        "reversalCount": 1,
-        "runLineMovement": -0.182,
-        "averageAmericanOdds": 165.64,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "REVERSAL"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 28.49,
-        "rolling24hLearningAdjustment": 3.42,
-        "winnerRuleAdjustment": -7.5,
-        "optimizedWinnerScore": 24.41
+        "bookDivergence": 0.03407,
+        "latestGap": 0.31216,
+        "reversalCount": 0,
+        "runLineMovement": 4.364,
+        "averageAmericanOdds": 179.82,
+        "tags": [],
+        "rawScoreBeforeWinnerOptimizer": 29.3,
+        "rolling24hLearningAdjustment": 0.0,
+        "winnerRuleAdjustment": 0.0,
+        "optimizedWinnerScore": 29.3
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T11:54:38.603500+00:00",
+      "createdAt": "2026-07-02T14:00:34.551585+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-02T18:11:00Z#2bbaa286b732c0af8947d273e164f15e"
+        "sk": "GAME#2026-07-03T01:41:00Z#283444f773ee82cae9a5977e9266baac"
       },
-      "rank": 3,
+      "rank": 2,
       "selectionBeforeWinnerOptimizer": {
-        "predictedWinner": "Milwaukee Brewers",
+        "predictedWinner": "Seattle Mariners",
         "predictedSide": "home",
-        "score": 57.3,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "REVERSAL"
-        ]
+        "score": 67.98,
+        "tags": []
       },
       "individualWinnerOptimized": true,
       "optimizerFlippedPick": false,
@@ -470,8 +312,8 @@
         "applied": true,
         "basis": "compare_home_and_away_optimized_signal_scores",
         "latestLearningApplied": true,
-        "homeOptimizedScore": 53.22,
-        "awayOptimizedScore": 24.41,
+        "homeOptimizedScore": 67.98,
+        "awayOptimizedScore": 29.3,
         "flippedPick": false,
         "fundamentalsApplied": false,
         "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
@@ -479,7 +321,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
         "phase": "PRE_FINAL_GATE",
-        "minutesToStart": 376.35,
+        "minutesToStart": 700.42,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 75,
           "closesAt": 10
@@ -504,603 +346,7 @@
       "finalGateStored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-02T18:11:00Z#2bbaa286b732c0af8947d273e164f15e",
-        "finalGateStored": true
-      }
-    },
-    {
-      "ok": true,
-      "sport": "mlb",
-      "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
-      "engine": "MLB-GAME-WINNER-v1.0",
-      "slate_date": "2026-07-02",
-      "gameId": "e01b5de283d3047c0c1bc73082a2d67a",
-      "gameKey": "mlb|baseball_mlb|tampa bay rays|kansas city royals|2026-07-02T23:41:00Z",
-      "homeTeam": "Kansas City Royals",
-      "awayTeam": "Tampa Bay Rays",
-      "commenceTime": "2026-07-02T23:41:00Z",
-      "providerSportKey": "baseball_mlb",
-      "predictedWinner": "Tampa Bay Rays",
-      "predictedSide": "away",
-      "opponent": "Kansas City Royals",
-      "winProbability": 0.5455,
-      "winProbabilityPct": 54.55,
-      "score": 52.19,
-      "confidenceTier": "Baseline",
-      "pickQuality": "GAME_WINNER_BASELINE",
-      "tags": [
-        "LOW_PULL_DEPTH"
-      ],
-      "pullCountForGame": 3,
-      "homeSignal": {
-        "side": "home",
-        "team": "Kansas City Royals",
-        "score": 33.1,
-        "winProbability": 0.1965,
-        "winProbabilityPct": 19.65,
-        "marketConsensusProbability": 0.4669,
-        "probStart": 0.47629,
-        "probLatest": 0.4669,
-        "delta": -0.00938,
-        "bookCount": 11,
-        "bookDivergence": 0.02332,
-        "latestGap": 0.06619,
-        "reversalCount": 0,
-        "runLineMovement": 1.618,
-        "averageAmericanOdds": 106.09,
-        "tags": [
-          "LOW_PULL_DEPTH"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 36.89,
-        "rolling24hLearningAdjustment": 1.21,
-        "winnerRuleAdjustment": -5.0,
-        "optimizedWinnerScore": 33.1
-      },
-      "awaySignal": {
-        "side": "away",
-        "team": "Tampa Bay Rays",
-        "score": 52.19,
-        "winProbability": 0.5455,
-        "winProbabilityPct": 54.55,
-        "marketConsensusProbability": 0.5331,
-        "probStart": 0.52371,
-        "probLatest": 0.5331,
-        "delta": 0.00938,
-        "bookCount": 11,
-        "bookDivergence": 0.02332,
-        "latestGap": 0.06619,
-        "reversalCount": 0,
-        "runLineMovement": -1.073,
-        "averageAmericanOdds": -124.36,
-        "tags": [
-          "LOW_PULL_DEPTH"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 55.98,
-        "rolling24hLearningAdjustment": 1.21,
-        "winnerRuleAdjustment": -5.0,
-        "optimizedWinnerScore": 52.19
-      },
-      "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T11:54:38.634394+00:00",
-      "stored": {
-        "ok": true,
-        "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-02T23:41:00Z#e01b5de283d3047c0c1bc73082a2d67a"
-      },
-      "rank": 4,
-      "selectionBeforeWinnerOptimizer": {
-        "predictedWinner": "Tampa Bay Rays",
-        "predictedSide": "away",
-        "score": 55.98,
-        "tags": [
-          "LOW_PULL_DEPTH"
-        ]
-      },
-      "individualWinnerOptimized": true,
-      "optimizerFlippedPick": false,
-      "officialPick": true,
-      "accuracyTargetEligible": true,
-      "actionability": "OPTIMIZED_GAME_WINNER_PICK",
-      "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
-      "rolling24hAccuracyTarget": {
-        "targetAccuracyPct": 90.0,
-        "windowHours": 24,
-        "measuredBy": "mlb_rolling_24h_audit",
-        "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
-      },
-      "winnerOptimizer": {
-        "applied": true,
-        "basis": "compare_home_and_away_optimized_signal_scores",
-        "latestLearningApplied": true,
-        "homeOptimizedScore": 33.1,
-        "awayOptimizedScore": 52.19,
-        "flippedPick": false,
-        "fundamentalsApplied": false,
-        "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
-      },
-      "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
-        "phase": "PRE_FINAL_GATE",
-        "minutesToStart": 706.35,
-        "gateWindowMinutesBeforeStart": {
-          "opensAt": 75,
-          "closesAt": 10
-        },
-        "finalWindowActive": false,
-        "finalLocked": false,
-        "oddsApiOnly": false,
-        "requiresSportsDataIoAttempt": true,
-        "requiresSportsDataIoForFullDataFinalPick": true,
-        "sportsDataIoFundamentalsApplied": false,
-        "finalGateBlocked": false,
-        "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
-        "rules": [
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
-        ]
-      },
-      "finalGateStored": {
-        "ok": true,
-        "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-02T23:41:00Z#e01b5de283d3047c0c1bc73082a2d67a",
-        "finalGateStored": true
-      }
-    },
-    {
-      "ok": true,
-      "sport": "mlb",
-      "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
-      "engine": "MLB-GAME-WINNER-v1.0",
-      "slate_date": "2026-07-02",
-      "gameId": "63d068d292e5a379ba2a1d669c979313",
-      "gameKey": "mlb|baseball_mlb|detroit tigers|texas rangers|2026-07-03T00:06:00Z",
-      "homeTeam": "Texas Rangers",
-      "awayTeam": "Detroit Tigers",
-      "commenceTime": "2026-07-03T00:06:00Z",
-      "providerSportKey": "baseball_mlb",
-      "predictedWinner": "Detroit Tigers",
-      "predictedSide": "away",
-      "opponent": "Texas Rangers",
-      "winProbability": 0.4906,
-      "winProbabilityPct": 49.06,
-      "score": 49.55,
-      "confidenceTier": "Baseline",
-      "pickQuality": "GAME_WINNER_BASELINE",
-      "tags": [
-        "BOOK_AGREEMENT",
-        "LOW_PULL_DEPTH",
-        "RUN_LINE_MOVEMENT"
-      ],
-      "pullCountForGame": 3,
-      "homeSignal": {
-        "side": "home",
-        "team": "Texas Rangers",
-        "score": 45.96,
-        "winProbability": 0.4166,
-        "winProbabilityPct": 41.66,
-        "marketConsensusProbability": 0.53794,
-        "probStart": 0.54538,
-        "probLatest": 0.53794,
-        "delta": -0.00744,
-        "bookCount": 11,
-        "bookDivergence": 0.01271,
-        "latestGap": 0.07588,
-        "reversalCount": 0,
-        "runLineMovement": -29.273,
-        "averageAmericanOdds": -127.0,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "RUN_LINE_MOVEMENT"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 47.4,
-        "rolling24hLearningAdjustment": 4.31,
-        "winnerRuleAdjustment": -5.75,
-        "optimizedWinnerScore": 45.96
-      },
-      "awaySignal": {
-        "side": "away",
-        "team": "Detroit Tigers",
-        "score": 49.55,
-        "winProbability": 0.4906,
-        "winProbabilityPct": 49.06,
-        "marketConsensusProbability": 0.46206,
-        "probStart": 0.45462,
-        "probLatest": 0.46206,
-        "delta": 0.00744,
-        "bookCount": 11,
-        "bookDivergence": 0.01271,
-        "latestGap": 0.07588,
-        "reversalCount": 0,
-        "runLineMovement": 28.818,
-        "averageAmericanOdds": 108.18,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "RUN_LINE_MOVEMENT"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 50.99,
-        "rolling24hLearningAdjustment": 4.31,
-        "winnerRuleAdjustment": -5.75,
-        "optimizedWinnerScore": 49.55
-      },
-      "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T11:54:38.643189+00:00",
-      "stored": {
-        "ok": true,
-        "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-03T00:06:00Z#63d068d292e5a379ba2a1d669c979313"
-      },
-      "rank": 5,
-      "selectionBeforeWinnerOptimizer": {
-        "predictedWinner": "Detroit Tigers",
-        "predictedSide": "away",
-        "score": 50.99,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "RUN_LINE_MOVEMENT"
-        ]
-      },
-      "individualWinnerOptimized": true,
-      "optimizerFlippedPick": false,
-      "officialPick": true,
-      "accuracyTargetEligible": true,
-      "actionability": "OPTIMIZED_GAME_WINNER_PICK",
-      "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
-      "rolling24hAccuracyTarget": {
-        "targetAccuracyPct": 90.0,
-        "windowHours": 24,
-        "measuredBy": "mlb_rolling_24h_audit",
-        "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
-      },
-      "winnerOptimizer": {
-        "applied": true,
-        "basis": "compare_home_and_away_optimized_signal_scores",
-        "latestLearningApplied": true,
-        "homeOptimizedScore": 45.96,
-        "awayOptimizedScore": 49.55,
-        "flippedPick": false,
-        "fundamentalsApplied": false,
-        "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
-      },
-      "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
-        "phase": "PRE_FINAL_GATE",
-        "minutesToStart": 731.35,
-        "gateWindowMinutesBeforeStart": {
-          "opensAt": 75,
-          "closesAt": 10
-        },
-        "finalWindowActive": false,
-        "finalLocked": false,
-        "oddsApiOnly": false,
-        "requiresSportsDataIoAttempt": true,
-        "requiresSportsDataIoForFullDataFinalPick": true,
-        "sportsDataIoFundamentalsApplied": false,
-        "finalGateBlocked": false,
-        "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
-        "rules": [
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
-        ]
-      },
-      "finalGateStored": {
-        "ok": true,
-        "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-03T00:06:00Z#63d068d292e5a379ba2a1d669c979313",
-        "finalGateStored": true
-      }
-    },
-    {
-      "ok": true,
-      "sport": "mlb",
-      "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
-      "engine": "MLB-GAME-WINNER-v1.0",
-      "slate_date": "2026-07-02",
-      "gameId": "6f7b9d64e494097e8646d88ca4c33577",
-      "gameKey": "mlb|baseball_mlb|chicago white sox|cleveland guardians|2026-07-02T22:41:00Z",
-      "homeTeam": "Cleveland Guardians",
-      "awayTeam": "Chicago White Sox",
-      "commenceTime": "2026-07-02T22:41:00Z",
-      "providerSportKey": "baseball_mlb",
-      "predictedWinner": "Chicago White Sox",
-      "predictedSide": "away",
-      "opponent": "Cleveland Guardians",
-      "winProbability": 0.4794,
-      "winProbabilityPct": 47.94,
-      "score": 49.01,
-      "confidenceTier": "Baseline",
-      "pickQuality": "GAME_WINNER_BASELINE",
-      "tags": [
-        "BOOK_AGREEMENT",
-        "COMPRESSED_MARKET",
-        "LOW_PULL_DEPTH"
-      ],
-      "pullCountForGame": 3,
-      "homeSignal": {
-        "side": "home",
-        "team": "Cleveland Guardians",
-        "score": 46.11,
-        "winProbability": 0.4197,
-        "winProbabilityPct": 41.97,
-        "marketConsensusProbability": 0.47818,
-        "probStart": 0.47744,
-        "probLatest": 0.47818,
-        "delta": 0.00074,
-        "bookCount": 11,
-        "bookDivergence": 0.00677,
-        "latestGap": 0.04365,
-        "reversalCount": 0,
-        "runLineMovement": -4.182,
-        "averageAmericanOdds": 64.73,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "COMPRESSED_MARKET",
-          "LOW_PULL_DEPTH"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 49.29,
-        "rolling24hLearningAdjustment": 3.32,
-        "winnerRuleAdjustment": -6.5,
-        "optimizedWinnerScore": 46.11
-      },
-      "awaySignal": {
-        "side": "away",
-        "team": "Chicago White Sox",
-        "score": 49.01,
-        "winProbability": 0.4794,
-        "winProbabilityPct": 47.94,
-        "marketConsensusProbability": 0.52182,
-        "probStart": 0.52256,
-        "probLatest": 0.52182,
-        "delta": -0.00074,
-        "bookCount": 11,
-        "bookDivergence": 0.00677,
-        "latestGap": 0.04365,
-        "reversalCount": 0,
-        "runLineMovement": 4.091,
-        "averageAmericanOdds": -118.73,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "COMPRESSED_MARKET",
-          "LOW_PULL_DEPTH"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 52.19,
-        "rolling24hLearningAdjustment": 3.32,
-        "winnerRuleAdjustment": -6.5,
-        "optimizedWinnerScore": 49.01
-      },
-      "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T11:54:38.618614+00:00",
-      "stored": {
-        "ok": true,
-        "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-02T22:41:00Z#6f7b9d64e494097e8646d88ca4c33577"
-      },
-      "rank": 6,
-      "selectionBeforeWinnerOptimizer": {
-        "predictedWinner": "Chicago White Sox",
-        "predictedSide": "away",
-        "score": 52.19,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "COMPRESSED_MARKET",
-          "LOW_PULL_DEPTH"
-        ]
-      },
-      "individualWinnerOptimized": true,
-      "optimizerFlippedPick": false,
-      "officialPick": true,
-      "accuracyTargetEligible": true,
-      "actionability": "OPTIMIZED_GAME_WINNER_PICK",
-      "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
-      "rolling24hAccuracyTarget": {
-        "targetAccuracyPct": 90.0,
-        "windowHours": 24,
-        "measuredBy": "mlb_rolling_24h_audit",
-        "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
-      },
-      "winnerOptimizer": {
-        "applied": true,
-        "basis": "compare_home_and_away_optimized_signal_scores",
-        "latestLearningApplied": true,
-        "homeOptimizedScore": 46.11,
-        "awayOptimizedScore": 49.01,
-        "flippedPick": false,
-        "fundamentalsApplied": false,
-        "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
-      },
-      "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
-        "phase": "PRE_FINAL_GATE",
-        "minutesToStart": 646.35,
-        "gateWindowMinutesBeforeStart": {
-          "opensAt": 75,
-          "closesAt": 10
-        },
-        "finalWindowActive": false,
-        "finalLocked": false,
-        "oddsApiOnly": false,
-        "requiresSportsDataIoAttempt": true,
-        "requiresSportsDataIoForFullDataFinalPick": true,
-        "sportsDataIoFundamentalsApplied": false,
-        "finalGateBlocked": false,
-        "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
-        "rules": [
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
-        ]
-      },
-      "finalGateStored": {
-        "ok": true,
-        "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-02T22:41:00Z#6f7b9d64e494097e8646d88ca4c33577",
-        "finalGateStored": true
-      }
-    },
-    {
-      "ok": true,
-      "sport": "mlb",
-      "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
-      "engine": "MLB-GAME-WINNER-v1.0",
-      "slate_date": "2026-07-02",
-      "gameId": "0d018935d27849176c88ca1dae8a8da8",
-      "gameKey": "mlb|baseball_mlb|pittsburgh pirates|philadelphia phillies|2026-07-02T16:36:00Z",
-      "homeTeam": "Philadelphia Phillies",
-      "awayTeam": "Pittsburgh Pirates",
-      "commenceTime": "2026-07-02T16:36:00Z",
-      "providerSportKey": "baseball_mlb",
-      "predictedWinner": "Philadelphia Phillies",
-      "predictedSide": "home",
-      "opponent": "Pittsburgh Pirates",
-      "winProbability": 0.3943,
-      "winProbabilityPct": 39.43,
-      "score": 44.85,
-      "confidenceTier": "Baseline",
-      "pickQuality": "GAME_WINNER_BASELINE",
-      "tags": [
-        "BOOK_AGREEMENT",
-        "LOW_PULL_DEPTH",
-        "REVERSAL",
-        "RUN_LINE_MOVEMENT"
-      ],
-      "pullCountForGame": 3,
-      "homeSignal": {
-        "side": "home",
-        "team": "Philadelphia Phillies",
-        "score": 44.85,
-        "winProbability": 0.3943,
-        "winProbabilityPct": 39.43,
-        "marketConsensusProbability": 0.54056,
-        "probStart": 0.54019,
-        "probLatest": 0.54056,
-        "delta": 0.00037,
-        "bookCount": 11,
-        "bookDivergence": 0.01622,
-        "latestGap": 0.08112,
-        "reversalCount": 1,
-        "runLineMovement": 32.727,
-        "averageAmericanOdds": -128.27,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "REVERSAL",
-          "RUN_LINE_MOVEMENT"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 46.19,
-        "rolling24hLearningAdjustment": 4.41,
-        "winnerRuleAdjustment": -5.75,
-        "optimizedWinnerScore": 44.85
-      },
-      "awaySignal": {
-        "side": "away",
-        "team": "Pittsburgh Pirates",
-        "score": 37.03,
-        "winProbability": 0.2533,
-        "winProbabilityPct": 25.33,
-        "marketConsensusProbability": 0.45944,
-        "probStart": 0.45981,
-        "probLatest": 0.45944,
-        "delta": -0.00037,
-        "bookCount": 11,
-        "bookDivergence": 0.01622,
-        "latestGap": 0.08112,
-        "reversalCount": 1,
-        "runLineMovement": -32.636,
-        "averageAmericanOdds": 109.45,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "REVERSAL",
-          "RUN_LINE_MOVEMENT"
-        ],
-        "rawScoreBeforeWinnerOptimizer": 38.37,
-        "rolling24hLearningAdjustment": 4.41,
-        "winnerRuleAdjustment": -5.75,
-        "optimizedWinnerScore": 37.03
-      },
-      "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T11:54:38.594984+00:00",
-      "stored": {
-        "ok": true,
-        "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-02T16:36:00Z#0d018935d27849176c88ca1dae8a8da8"
-      },
-      "rank": 7,
-      "selectionBeforeWinnerOptimizer": {
-        "predictedWinner": "Philadelphia Phillies",
-        "predictedSide": "home",
-        "score": 46.19,
-        "tags": [
-          "BOOK_AGREEMENT",
-          "LOW_PULL_DEPTH",
-          "REVERSAL",
-          "RUN_LINE_MOVEMENT"
-        ]
-      },
-      "individualWinnerOptimized": true,
-      "optimizerFlippedPick": false,
-      "officialPick": true,
-      "accuracyTargetEligible": true,
-      "actionability": "OPTIMIZED_GAME_WINNER_PICK",
-      "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
-      "rolling24hAccuracyTarget": {
-        "targetAccuracyPct": 90.0,
-        "windowHours": 24,
-        "measuredBy": "mlb_rolling_24h_audit",
-        "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
-      },
-      "winnerOptimizer": {
-        "applied": true,
-        "basis": "compare_home_and_away_optimized_signal_scores",
-        "latestLearningApplied": true,
-        "homeOptimizedScore": 44.85,
-        "awayOptimizedScore": 37.03,
-        "flippedPick": false,
-        "fundamentalsApplied": false,
-        "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
-      },
-      "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
-        "phase": "PRE_FINAL_GATE",
-        "minutesToStart": 281.35,
-        "gateWindowMinutesBeforeStart": {
-          "opensAt": 75,
-          "closesAt": 10
-        },
-        "finalWindowActive": false,
-        "finalLocked": false,
-        "oddsApiOnly": false,
-        "requiresSportsDataIoAttempt": true,
-        "requiresSportsDataIoForFullDataFinalPick": true,
-        "sportsDataIoFundamentalsApplied": false,
-        "finalGateBlocked": false,
-        "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
-        "rules": [
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
-        ]
-      },
-      "finalGateStored": {
-        "ok": true,
-        "pk": "GAME_WINNERS#mlb#2026-07-02",
-        "sk": "GAME#2026-07-02T16:36:00Z#0d018935d27849176c88ca1dae8a8da8",
+        "sk": "GAME#2026-07-03T01:41:00Z#283444f773ee82cae9a5977e9266baac",
         "finalGateStored": true
       }
     },
@@ -1119,81 +365,92 @@
       "predictedWinner": "St. Louis Cardinals",
       "predictedSide": "away",
       "opponent": "Atlanta Braves",
-      "winProbability": 0.3902,
-      "winProbabilityPct": 39.02,
-      "score": 44.64,
-      "confidenceTier": "Baseline",
-      "pickQuality": "GAME_WINNER_BASELINE",
+      "winProbability": 0.7403,
+      "winProbabilityPct": 74.03,
+      "score": 62.57,
+      "confidenceTier": "Lean",
+      "pickQuality": "GAME_WINNER_SIGNAL",
       "tags": [
+        "BOOK_AGREEMENT",
         "COMPRESSED_MARKET",
-        "LOW_PULL_DEPTH"
+        "REVERSAL",
+        "RUN_LINE_CONFIRMATION",
+        "RUN_LINE_MOVEMENT"
       ],
-      "pullCountForGame": 3,
+      "pullCountForGame": 14,
       "homeSignal": {
         "side": "home",
         "team": "Atlanta Braves",
-        "score": 37.51,
-        "winProbability": 0.261,
-        "winProbabilityPct": 26.1,
-        "marketConsensusProbability": 0.508,
+        "score": 47.75,
+        "winProbability": 0.4533,
+        "winProbabilityPct": 45.33,
+        "marketConsensusProbability": 0.50931,
         "probStart": 0.51412,
-        "probLatest": 0.508,
-        "delta": -0.00612,
+        "probLatest": 0.50931,
+        "delta": -0.00481,
         "bookCount": 11,
-        "bookDivergence": 0.02361,
-        "latestGap": 0.016,
-        "reversalCount": 0,
-        "runLineMovement": 1.778,
-        "averageAmericanOdds": -112.09,
+        "bookDivergence": 0.00836,
+        "latestGap": 0.01862,
+        "reversalCount": 1,
+        "runLineMovement": 21.678,
+        "averageAmericanOdds": -112.64,
         "tags": [
+          "BOOK_AGREEMENT",
           "COMPRESSED_MARKET",
-          "LOW_PULL_DEPTH"
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
         ],
-        "rawScoreBeforeWinnerOptimizer": 42.8,
-        "rolling24hLearningAdjustment": 1.21,
-        "winnerRuleAdjustment": -6.5,
-        "optimizedWinnerScore": 37.51
+        "rawScoreBeforeWinnerOptimizer": 46.8,
+        "rolling24hLearningAdjustment": 3.2,
+        "winnerRuleAdjustment": -2.25,
+        "optimizedWinnerScore": 47.75
       },
       "awaySignal": {
         "side": "away",
         "team": "St. Louis Cardinals",
-        "score": 44.64,
-        "winProbability": 0.3902,
-        "winProbabilityPct": 39.02,
-        "marketConsensusProbability": 0.492,
+        "score": 62.57,
+        "winProbability": 0.7403,
+        "winProbabilityPct": 74.03,
+        "marketConsensusProbability": 0.49069,
         "probStart": 0.48588,
-        "probLatest": 0.492,
-        "delta": 0.00612,
+        "probLatest": 0.49069,
+        "delta": 0.00481,
         "bookCount": 11,
-        "bookDivergence": 0.02361,
-        "latestGap": 0.016,
-        "reversalCount": 0,
-        "runLineMovement": -2.667,
-        "averageAmericanOdds": -86.55,
+        "bookDivergence": 0.00836,
+        "latestGap": 0.01862,
+        "reversalCount": 1,
+        "runLineMovement": -23.244,
+        "averageAmericanOdds": -104.18,
         "tags": [
+          "BOOK_AGREEMENT",
           "COMPRESSED_MARKET",
-          "LOW_PULL_DEPTH"
+          "REVERSAL",
+          "RUN_LINE_CONFIRMATION",
+          "RUN_LINE_MOVEMENT"
         ],
-        "rawScoreBeforeWinnerOptimizer": 49.93,
-        "rolling24hLearningAdjustment": 1.21,
-        "winnerRuleAdjustment": -6.5,
-        "optimizedWinnerScore": 44.64
+        "rawScoreBeforeWinnerOptimizer": 54.85,
+        "rolling24hLearningAdjustment": 5.22,
+        "winnerRuleAdjustment": 2.5,
+        "optimizedWinnerScore": 62.57
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T11:54:38.626917+00:00",
+      "createdAt": "2026-07-02T14:00:34.319795+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-02",
         "sk": "GAME#2026-07-02T23:16:00Z#a0e93fcad5a057f362a048be909d86c8"
       },
-      "rank": 8,
+      "rank": 3,
       "selectionBeforeWinnerOptimizer": {
         "predictedWinner": "St. Louis Cardinals",
         "predictedSide": "away",
-        "score": 49.93,
+        "score": 54.85,
         "tags": [
+          "BOOK_AGREEMENT",
           "COMPRESSED_MARKET",
-          "LOW_PULL_DEPTH"
+          "REVERSAL",
+          "RUN_LINE_CONFIRMATION",
+          "RUN_LINE_MOVEMENT"
         ]
       },
       "individualWinnerOptimized": true,
@@ -1212,8 +469,8 @@
         "applied": true,
         "basis": "compare_home_and_away_optimized_signal_scores",
         "latestLearningApplied": true,
-        "homeOptimizedScore": 37.51,
-        "awayOptimizedScore": 44.64,
+        "homeOptimizedScore": 47.75,
+        "awayOptimizedScore": 62.57,
         "flippedPick": false,
         "fundamentalsApplied": false,
         "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
@@ -1221,7 +478,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
         "phase": "PRE_FINAL_GATE",
-        "minutesToStart": 681.35,
+        "minutesToStart": 555.42,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 75,
           "closesAt": 10
@@ -1265,77 +522,81 @@
       "predictedWinner": "Miami Marlins",
       "predictedSide": "away",
       "opponent": "Colorado Rockies",
-      "winProbability": 0.3655,
-      "winProbabilityPct": 36.55,
-      "score": 43.38,
-      "confidenceTier": "Baseline",
-      "pickQuality": "GAME_WINNER_BASELINE",
+      "winProbability": 0.6388,
+      "winProbabilityPct": 63.88,
+      "score": 56.84,
+      "confidenceTier": "Lean",
+      "pickQuality": "GAME_WINNER_SIGNAL",
       "tags": [
-        "LOW_PULL_DEPTH"
+        "BOOK_AGREEMENT",
+        "REVERSAL"
       ],
-      "pullCountForGame": 3,
+      "pullCountForGame": 14,
       "homeSignal": {
         "side": "home",
         "team": "Colorado Rockies",
-        "score": 39.63,
-        "winProbability": 0.2965,
-        "winProbabilityPct": 29.65,
-        "marketConsensusProbability": 0.46738,
+        "score": 39.14,
+        "winProbability": 0.288,
+        "winProbabilityPct": 28.8,
+        "marketConsensusProbability": 0.45856,
         "probStart": 0.46587,
-        "probLatest": 0.46738,
-        "delta": 0.00151,
+        "probLatest": 0.45856,
+        "delta": -0.00731,
         "bookCount": 11,
-        "bookDivergence": 0.02771,
-        "latestGap": 0.06524,
-        "reversalCount": 0,
-        "runLineMovement": -1.636,
-        "averageAmericanOdds": 87.64,
+        "bookDivergence": 0.01239,
+        "latestGap": 0.08288,
+        "reversalCount": 1,
+        "runLineMovement": 2.091,
+        "averageAmericanOdds": 110.0,
         "tags": [
-          "LOW_PULL_DEPTH"
+          "BOOK_AGREEMENT",
+          "REVERSAL"
         ],
-        "rawScoreBeforeWinnerOptimizer": 43.42,
-        "rolling24hLearningAdjustment": 1.21,
-        "winnerRuleAdjustment": -5.0,
-        "optimizedWinnerScore": 39.63
+        "rawScoreBeforeWinnerOptimizer": 39.43,
+        "rolling24hLearningAdjustment": 2.21,
+        "winnerRuleAdjustment": -2.5,
+        "optimizedWinnerScore": 39.14
       },
       "awaySignal": {
         "side": "away",
         "team": "Miami Marlins",
-        "score": 43.38,
-        "winProbability": 0.3655,
-        "winProbabilityPct": 36.55,
-        "marketConsensusProbability": 0.53262,
+        "score": 56.84,
+        "winProbability": 0.6388,
+        "winProbabilityPct": 63.88,
+        "marketConsensusProbability": 0.54144,
         "probStart": 0.53413,
-        "probLatest": 0.53262,
-        "delta": -0.00151,
+        "probLatest": 0.54144,
+        "delta": 0.00731,
         "bookCount": 11,
-        "bookDivergence": 0.02771,
-        "latestGap": 0.06524,
-        "reversalCount": 0,
-        "runLineMovement": 1.364,
-        "averageAmericanOdds": -124.18,
+        "bookDivergence": 0.01239,
+        "latestGap": 0.08288,
+        "reversalCount": 1,
+        "runLineMovement": -1.727,
+        "averageAmericanOdds": -128.55,
         "tags": [
-          "LOW_PULL_DEPTH"
+          "BOOK_AGREEMENT",
+          "REVERSAL"
         ],
-        "rawScoreBeforeWinnerOptimizer": 47.17,
-        "rolling24hLearningAdjustment": 1.21,
-        "winnerRuleAdjustment": -5.0,
-        "optimizedWinnerScore": 43.38
+        "rawScoreBeforeWinnerOptimizer": 57.13,
+        "rolling24hLearningAdjustment": 2.21,
+        "winnerRuleAdjustment": -2.5,
+        "optimizedWinnerScore": 56.84
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T11:54:38.611059+00:00",
+      "createdAt": "2026-07-02T14:00:34.166014+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-02",
         "sk": "GAME#2026-07-02T19:11:00Z#bf902b3b8ba731d8cf4b422470319439"
       },
-      "rank": 9,
+      "rank": 4,
       "selectionBeforeWinnerOptimizer": {
         "predictedWinner": "Miami Marlins",
         "predictedSide": "away",
-        "score": 47.17,
+        "score": 57.13,
         "tags": [
-          "LOW_PULL_DEPTH"
+          "BOOK_AGREEMENT",
+          "REVERSAL"
         ]
       },
       "individualWinnerOptimized": true,
@@ -1354,8 +615,8 @@
         "applied": true,
         "basis": "compare_home_and_away_optimized_signal_scores",
         "latestLearningApplied": true,
-        "homeOptimizedScore": 39.63,
-        "awayOptimizedScore": 43.38,
+        "homeOptimizedScore": 39.14,
+        "awayOptimizedScore": 56.84,
         "flippedPick": false,
         "fundamentalsApplied": false,
         "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
@@ -1363,7 +624,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
         "phase": "PRE_FINAL_GATE",
-        "minutesToStart": 436.35,
+        "minutesToStart": 310.42,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 75,
           "closesAt": 10
@@ -1389,6 +650,754 @@
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-02",
         "sk": "GAME#2026-07-02T19:11:00Z#bf902b3b8ba731d8cf4b422470319439",
+        "finalGateStored": true
+      }
+    },
+    {
+      "ok": true,
+      "sport": "mlb",
+      "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
+      "engine": "MLB-GAME-WINNER-v1.0",
+      "slate_date": "2026-07-02",
+      "gameId": "6f7b9d64e494097e8646d88ca4c33577",
+      "gameKey": "mlb|baseball_mlb|chicago white sox|cleveland guardians|2026-07-02T22:41:00Z",
+      "homeTeam": "Cleveland Guardians",
+      "awayTeam": "Chicago White Sox",
+      "commenceTime": "2026-07-02T22:41:00Z",
+      "providerSportKey": "baseball_mlb",
+      "predictedWinner": "Cleveland Guardians",
+      "predictedSide": "home",
+      "opponent": "Chicago White Sox",
+      "winProbability": 0.6376,
+      "winProbabilityPct": 63.76,
+      "score": 56.78,
+      "confidenceTier": "Lean",
+      "pickQuality": "GAME_WINNER_SIGNAL",
+      "tags": [
+        "COMPRESSED_MARKET",
+        "REVERSAL",
+        "RUN_LINE_MOVEMENT",
+        "STEAM"
+      ],
+      "pullCountForGame": 14,
+      "homeSignal": {
+        "side": "home",
+        "team": "Cleveland Guardians",
+        "score": 56.78,
+        "winProbability": 0.6376,
+        "winProbabilityPct": 63.76,
+        "marketConsensusProbability": 0.50298,
+        "probStart": 0.47744,
+        "probLatest": 0.50298,
+        "delta": 0.02554,
+        "bookCount": 11,
+        "bookDivergence": 0.02007,
+        "latestGap": 0.00596,
+        "reversalCount": 2,
+        "runLineMovement": 13.909,
+        "averageAmericanOdds": -109.73,
+        "tags": [
+          "COMPRESSED_MARKET",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "rawScoreBeforeWinnerOptimizer": 58.43,
+        "rolling24hLearningAdjustment": 2.35,
+        "winnerRuleAdjustment": -4.0,
+        "optimizedWinnerScore": 56.78
+      },
+      "awaySignal": {
+        "side": "away",
+        "team": "Chicago White Sox",
+        "score": 18.98,
+        "winProbability": 0.0701,
+        "winProbabilityPct": 7.01,
+        "marketConsensusProbability": 0.49702,
+        "probStart": 0.52256,
+        "probLatest": 0.49702,
+        "delta": -0.02554,
+        "bookCount": 11,
+        "bookDivergence": 0.02007,
+        "latestGap": 0.00596,
+        "reversalCount": 2,
+        "runLineMovement": -17.455,
+        "averageAmericanOdds": -107.09,
+        "tags": [
+          "COMPRESSED_MARKET",
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "rawScoreBeforeWinnerOptimizer": 22.14,
+        "rolling24hLearningAdjustment": 1.09,
+        "winnerRuleAdjustment": -4.25,
+        "optimizedWinnerScore": 18.98
+      },
+      "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
+      "createdAt": "2026-07-02T14:00:34.242629+00:00",
+      "stored": {
+        "ok": true,
+        "pk": "GAME_WINNERS#mlb#2026-07-02",
+        "sk": "GAME#2026-07-02T22:41:00Z#6f7b9d64e494097e8646d88ca4c33577"
+      },
+      "rank": 5,
+      "selectionBeforeWinnerOptimizer": {
+        "predictedWinner": "Cleveland Guardians",
+        "predictedSide": "home",
+        "score": 58.43,
+        "tags": [
+          "COMPRESSED_MARKET",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ]
+      },
+      "individualWinnerOptimized": true,
+      "optimizerFlippedPick": false,
+      "officialPick": true,
+      "accuracyTargetEligible": true,
+      "actionability": "OPTIMIZED_GAME_WINNER_PICK",
+      "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
+      "rolling24hAccuracyTarget": {
+        "targetAccuracyPct": 90.0,
+        "windowHours": 24,
+        "measuredBy": "mlb_rolling_24h_audit",
+        "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
+      },
+      "winnerOptimizer": {
+        "applied": true,
+        "basis": "compare_home_and_away_optimized_signal_scores",
+        "latestLearningApplied": true,
+        "homeOptimizedScore": 56.78,
+        "awayOptimizedScore": 18.98,
+        "flippedPick": false,
+        "fundamentalsApplied": false,
+        "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
+      },
+      "lastPossiblePredictionGate": {
+        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
+        "phase": "PRE_FINAL_GATE",
+        "minutesToStart": 520.41,
+        "gateWindowMinutesBeforeStart": {
+          "opensAt": 75,
+          "closesAt": 10
+        },
+        "finalWindowActive": false,
+        "finalLocked": false,
+        "oddsApiOnly": false,
+        "requiresSportsDataIoAttempt": true,
+        "requiresSportsDataIoForFullDataFinalPick": true,
+        "sportsDataIoFundamentalsApplied": false,
+        "finalGateBlocked": false,
+        "finalGateBlockReason": null,
+        "finalDataStatus": "ODDS_API_ONLY_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "rules": [
+          "Use the latest Odds API pull available at gate time.",
+          "Use multi-window signal learning from audited Odds API pull history.",
+          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
+          "Re-store the final row so the database reflects the last-gate decision."
+        ]
+      },
+      "finalGateStored": {
+        "ok": true,
+        "pk": "GAME_WINNERS#mlb#2026-07-02",
+        "sk": "GAME#2026-07-02T22:41:00Z#6f7b9d64e494097e8646d88ca4c33577",
+        "finalGateStored": true
+      }
+    },
+    {
+      "ok": true,
+      "sport": "mlb",
+      "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
+      "engine": "MLB-GAME-WINNER-v1.0",
+      "slate_date": "2026-07-02",
+      "gameId": "0d018935d27849176c88ca1dae8a8da8",
+      "gameKey": "mlb|baseball_mlb|pittsburgh pirates|philadelphia phillies|2026-07-02T16:36:00Z",
+      "homeTeam": "Philadelphia Phillies",
+      "awayTeam": "Pittsburgh Pirates",
+      "commenceTime": "2026-07-02T16:36:00Z",
+      "providerSportKey": "baseball_mlb",
+      "predictedWinner": "Pittsburgh Pirates",
+      "predictedSide": "away",
+      "opponent": "Philadelphia Phillies",
+      "winProbability": 0.6003,
+      "winProbabilityPct": 60.03,
+      "score": 54.88,
+      "confidenceTier": "Coin Flip",
+      "pickQuality": "GAME_WINNER_SIGNAL",
+      "tags": [
+        "BOOK_AGREEMENT",
+        "REVERSAL",
+        "RUN_LINE_CONFIRMATION",
+        "RUN_LINE_MOVEMENT"
+      ],
+      "pullCountForGame": 14,
+      "homeSignal": {
+        "side": "home",
+        "team": "Philadelphia Phillies",
+        "score": 53.19,
+        "winProbability": 0.5661,
+        "winProbabilityPct": 56.61,
+        "marketConsensusProbability": 0.53977,
+        "probStart": 0.54019,
+        "probLatest": 0.53977,
+        "delta": -0.00041,
+        "bookCount": 11,
+        "bookDivergence": 0.01559,
+        "latestGap": 0.07955,
+        "reversalCount": 1,
+        "runLineMovement": 31.636,
+        "averageAmericanOdds": -127.73,
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "rawScoreBeforeWinnerOptimizer": 50.74,
+        "rolling24hLearningAdjustment": 3.2,
+        "winnerRuleAdjustment": -0.75,
+        "optimizedWinnerScore": 53.19
+      },
+      "awaySignal": {
+        "side": "away",
+        "team": "Pittsburgh Pirates",
+        "score": 54.88,
+        "winProbability": 0.6003,
+        "winProbabilityPct": 60.03,
+        "marketConsensusProbability": 0.46023,
+        "probStart": 0.45981,
+        "probLatest": 0.46023,
+        "delta": 0.00041,
+        "bookCount": 11,
+        "bookDivergence": 0.01559,
+        "latestGap": 0.07955,
+        "reversalCount": 1,
+        "runLineMovement": -31.273,
+        "averageAmericanOdds": 109.18,
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL",
+          "RUN_LINE_CONFIRMATION",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "rawScoreBeforeWinnerOptimizer": 47.16,
+        "rolling24hLearningAdjustment": 5.22,
+        "winnerRuleAdjustment": 2.5,
+        "optimizedWinnerScore": 54.88
+      },
+      "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
+      "createdAt": "2026-07-02T14:00:34.010084+00:00",
+      "stored": {
+        "ok": true,
+        "pk": "GAME_WINNERS#mlb#2026-07-02",
+        "sk": "GAME#2026-07-02T16:36:00Z#0d018935d27849176c88ca1dae8a8da8"
+      },
+      "rank": 6,
+      "selectionBeforeWinnerOptimizer": {
+        "predictedWinner": "Philadelphia Phillies",
+        "predictedSide": "home",
+        "score": 50.74,
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ]
+      },
+      "individualWinnerOptimized": true,
+      "optimizerFlippedPick": true,
+      "officialPick": true,
+      "accuracyTargetEligible": true,
+      "actionability": "OPTIMIZED_GAME_WINNER_PICK",
+      "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
+      "rolling24hAccuracyTarget": {
+        "targetAccuracyPct": 90.0,
+        "windowHours": 24,
+        "measuredBy": "mlb_rolling_24h_audit",
+        "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
+      },
+      "winnerOptimizer": {
+        "applied": true,
+        "basis": "compare_home_and_away_optimized_signal_scores",
+        "latestLearningApplied": true,
+        "homeOptimizedScore": 53.19,
+        "awayOptimizedScore": 54.88,
+        "flippedPick": true,
+        "fundamentalsApplied": false,
+        "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
+      },
+      "lastPossiblePredictionGate": {
+        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
+        "phase": "PRE_FINAL_GATE",
+        "minutesToStart": 155.41,
+        "gateWindowMinutesBeforeStart": {
+          "opensAt": 75,
+          "closesAt": 10
+        },
+        "finalWindowActive": false,
+        "finalLocked": false,
+        "oddsApiOnly": false,
+        "requiresSportsDataIoAttempt": true,
+        "requiresSportsDataIoForFullDataFinalPick": true,
+        "sportsDataIoFundamentalsApplied": false,
+        "finalGateBlocked": false,
+        "finalGateBlockReason": null,
+        "finalDataStatus": "ODDS_API_ONLY_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "rules": [
+          "Use the latest Odds API pull available at gate time.",
+          "Use multi-window signal learning from audited Odds API pull history.",
+          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
+          "Re-store the final row so the database reflects the last-gate decision."
+        ]
+      },
+      "finalGateStored": {
+        "ok": true,
+        "pk": "GAME_WINNERS#mlb#2026-07-02",
+        "sk": "GAME#2026-07-02T16:36:00Z#0d018935d27849176c88ca1dae8a8da8",
+        "finalGateStored": true
+      }
+    },
+    {
+      "ok": true,
+      "sport": "mlb",
+      "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
+      "engine": "MLB-GAME-WINNER-v1.0",
+      "slate_date": "2026-07-02",
+      "gameId": "e01b5de283d3047c0c1bc73082a2d67a",
+      "gameKey": "mlb|baseball_mlb|tampa bay rays|kansas city royals|2026-07-02T23:41:00Z",
+      "homeTeam": "Kansas City Royals",
+      "awayTeam": "Tampa Bay Rays",
+      "commenceTime": "2026-07-02T23:41:00Z",
+      "providerSportKey": "baseball_mlb",
+      "predictedWinner": "Tampa Bay Rays",
+      "predictedSide": "away",
+      "opponent": "Kansas City Royals",
+      "winProbability": 0.5403,
+      "winProbabilityPct": 54.03,
+      "score": 51.94,
+      "confidenceTier": "Coin Flip",
+      "pickQuality": "GAME_WINNER_SIGNAL",
+      "tags": [
+        "REVERSAL"
+      ],
+      "pullCountForGame": 14,
+      "homeSignal": {
+        "side": "home",
+        "team": "Kansas City Royals",
+        "score": 35.35,
+        "winProbability": 0.2278,
+        "winProbabilityPct": 22.78,
+        "marketConsensusProbability": 0.46849,
+        "probStart": 0.47629,
+        "probLatest": 0.46849,
+        "delta": -0.0078,
+        "bookCount": 11,
+        "bookDivergence": 0.02099,
+        "latestGap": 0.06302,
+        "reversalCount": 1,
+        "runLineMovement": 3.436,
+        "averageAmericanOdds": 105.45,
+        "tags": [
+          "REVERSAL"
+        ],
+        "rawScoreBeforeWinnerOptimizer": 37.75,
+        "rolling24hLearningAdjustment": 0.1,
+        "winnerRuleAdjustment": -2.5,
+        "optimizedWinnerScore": 35.35
+      },
+      "awaySignal": {
+        "side": "away",
+        "team": "Tampa Bay Rays",
+        "score": 51.94,
+        "winProbability": 0.5403,
+        "winProbabilityPct": 54.03,
+        "marketConsensusProbability": 0.53151,
+        "probStart": 0.52371,
+        "probLatest": 0.53151,
+        "delta": 0.0078,
+        "bookCount": 11,
+        "bookDivergence": 0.02099,
+        "latestGap": 0.06302,
+        "reversalCount": 1,
+        "runLineMovement": -2.073,
+        "averageAmericanOdds": -123.45,
+        "tags": [
+          "REVERSAL"
+        ],
+        "rawScoreBeforeWinnerOptimizer": 54.34,
+        "rolling24hLearningAdjustment": 0.1,
+        "winnerRuleAdjustment": -2.5,
+        "optimizedWinnerScore": 51.94
+      },
+      "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
+      "createdAt": "2026-07-02T14:00:34.397392+00:00",
+      "stored": {
+        "ok": true,
+        "pk": "GAME_WINNERS#mlb#2026-07-02",
+        "sk": "GAME#2026-07-02T23:41:00Z#e01b5de283d3047c0c1bc73082a2d67a"
+      },
+      "rank": 7,
+      "selectionBeforeWinnerOptimizer": {
+        "predictedWinner": "Tampa Bay Rays",
+        "predictedSide": "away",
+        "score": 54.34,
+        "tags": [
+          "REVERSAL"
+        ]
+      },
+      "individualWinnerOptimized": true,
+      "optimizerFlippedPick": false,
+      "officialPick": true,
+      "accuracyTargetEligible": true,
+      "actionability": "OPTIMIZED_GAME_WINNER_PICK",
+      "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
+      "rolling24hAccuracyTarget": {
+        "targetAccuracyPct": 90.0,
+        "windowHours": 24,
+        "measuredBy": "mlb_rolling_24h_audit",
+        "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
+      },
+      "winnerOptimizer": {
+        "applied": true,
+        "basis": "compare_home_and_away_optimized_signal_scores",
+        "latestLearningApplied": true,
+        "homeOptimizedScore": 35.35,
+        "awayOptimizedScore": 51.94,
+        "flippedPick": false,
+        "fundamentalsApplied": false,
+        "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
+      },
+      "lastPossiblePredictionGate": {
+        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
+        "phase": "PRE_FINAL_GATE",
+        "minutesToStart": 580.41,
+        "gateWindowMinutesBeforeStart": {
+          "opensAt": 75,
+          "closesAt": 10
+        },
+        "finalWindowActive": false,
+        "finalLocked": false,
+        "oddsApiOnly": false,
+        "requiresSportsDataIoAttempt": true,
+        "requiresSportsDataIoForFullDataFinalPick": true,
+        "sportsDataIoFundamentalsApplied": false,
+        "finalGateBlocked": false,
+        "finalGateBlockReason": null,
+        "finalDataStatus": "ODDS_API_ONLY_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "rules": [
+          "Use the latest Odds API pull available at gate time.",
+          "Use multi-window signal learning from audited Odds API pull history.",
+          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
+          "Re-store the final row so the database reflects the last-gate decision."
+        ]
+      },
+      "finalGateStored": {
+        "ok": true,
+        "pk": "GAME_WINNERS#mlb#2026-07-02",
+        "sk": "GAME#2026-07-02T23:41:00Z#e01b5de283d3047c0c1bc73082a2d67a",
+        "finalGateStored": true
+      }
+    },
+    {
+      "ok": true,
+      "sport": "mlb",
+      "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
+      "engine": "MLB-GAME-WINNER-v1.0",
+      "slate_date": "2026-07-02",
+      "gameId": "2bbaa286b732c0af8947d273e164f15e",
+      "gameKey": "mlb|baseball_mlb|cincinnati reds|milwaukee brewers|2026-07-02T18:11:00Z",
+      "homeTeam": "Milwaukee Brewers",
+      "awayTeam": "Cincinnati Reds",
+      "commenceTime": "2026-07-02T18:11:00Z",
+      "providerSportKey": "baseball_mlb",
+      "predictedWinner": "Milwaukee Brewers",
+      "predictedSide": "home",
+      "opponent": "Cincinnati Reds",
+      "winProbability": 0.2863,
+      "winProbabilityPct": 28.63,
+      "score": 39.04,
+      "confidenceTier": "Pass",
+      "pickQuality": "GAME_WINNER_SIGNAL",
+      "tags": [
+        "BOOK_AGREEMENT",
+        "REVERSAL"
+      ],
+      "pullCountForGame": 14,
+      "homeSignal": {
+        "side": "home",
+        "team": "Milwaukee Brewers",
+        "score": 39.04,
+        "winProbability": 0.2863,
+        "winProbabilityPct": 28.63,
+        "marketConsensusProbability": 0.63596,
+        "probStart": 0.63493,
+        "probLatest": 0.63596,
+        "delta": 0.00104,
+        "bookCount": 11,
+        "bookDivergence": 0.01206,
+        "latestGap": 0.27193,
+        "reversalCount": 4,
+        "runLineMovement": -0.636,
+        "averageAmericanOdds": -195.0,
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL"
+        ],
+        "rawScoreBeforeWinnerOptimizer": 43.33,
+        "rolling24hLearningAdjustment": 2.21,
+        "winnerRuleAdjustment": -6.5,
+        "optimizedWinnerScore": 39.04
+      },
+      "awaySignal": {
+        "side": "away",
+        "team": "Cincinnati Reds",
+        "score": 13.11,
+        "winProbability": 0.05,
+        "winProbabilityPct": 5.0,
+        "marketConsensusProbability": 0.36404,
+        "probStart": 0.36507,
+        "probLatest": 0.36404,
+        "delta": -0.00104,
+        "bookCount": 11,
+        "bookDivergence": 0.01206,
+        "latestGap": 0.27193,
+        "reversalCount": 4,
+        "runLineMovement": 1.091,
+        "averageAmericanOdds": 164.36,
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL"
+        ],
+        "rawScoreBeforeWinnerOptimizer": 17.4,
+        "rolling24hLearningAdjustment": 2.21,
+        "winnerRuleAdjustment": -6.5,
+        "optimizedWinnerScore": 13.11
+      },
+      "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
+      "createdAt": "2026-07-02T14:00:34.088375+00:00",
+      "stored": {
+        "ok": true,
+        "pk": "GAME_WINNERS#mlb#2026-07-02",
+        "sk": "GAME#2026-07-02T18:11:00Z#2bbaa286b732c0af8947d273e164f15e"
+      },
+      "rank": 8,
+      "selectionBeforeWinnerOptimizer": {
+        "predictedWinner": "Milwaukee Brewers",
+        "predictedSide": "home",
+        "score": 43.33,
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL"
+        ]
+      },
+      "individualWinnerOptimized": true,
+      "optimizerFlippedPick": false,
+      "officialPick": true,
+      "accuracyTargetEligible": true,
+      "actionability": "OPTIMIZED_GAME_WINNER_PICK",
+      "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
+      "rolling24hAccuracyTarget": {
+        "targetAccuracyPct": 90.0,
+        "windowHours": 24,
+        "measuredBy": "mlb_rolling_24h_audit",
+        "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
+      },
+      "winnerOptimizer": {
+        "applied": true,
+        "basis": "compare_home_and_away_optimized_signal_scores",
+        "latestLearningApplied": true,
+        "homeOptimizedScore": 39.04,
+        "awayOptimizedScore": 13.11,
+        "flippedPick": false,
+        "fundamentalsApplied": false,
+        "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
+      },
+      "lastPossiblePredictionGate": {
+        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
+        "phase": "PRE_FINAL_GATE",
+        "minutesToStart": 250.41,
+        "gateWindowMinutesBeforeStart": {
+          "opensAt": 75,
+          "closesAt": 10
+        },
+        "finalWindowActive": false,
+        "finalLocked": false,
+        "oddsApiOnly": false,
+        "requiresSportsDataIoAttempt": true,
+        "requiresSportsDataIoForFullDataFinalPick": true,
+        "sportsDataIoFundamentalsApplied": false,
+        "finalGateBlocked": false,
+        "finalGateBlockReason": null,
+        "finalDataStatus": "ODDS_API_ONLY_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "rules": [
+          "Use the latest Odds API pull available at gate time.",
+          "Use multi-window signal learning from audited Odds API pull history.",
+          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
+          "Re-store the final row so the database reflects the last-gate decision."
+        ]
+      },
+      "finalGateStored": {
+        "ok": true,
+        "pk": "GAME_WINNERS#mlb#2026-07-02",
+        "sk": "GAME#2026-07-02T18:11:00Z#2bbaa286b732c0af8947d273e164f15e",
+        "finalGateStored": true
+      }
+    },
+    {
+      "ok": true,
+      "sport": "mlb",
+      "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
+      "engine": "MLB-GAME-WINNER-v1.0",
+      "slate_date": "2026-07-02",
+      "gameId": "63d068d292e5a379ba2a1d669c979313",
+      "gameKey": "mlb|baseball_mlb|detroit tigers|texas rangers|2026-07-03T00:06:00Z",
+      "homeTeam": "Texas Rangers",
+      "awayTeam": "Detroit Tigers",
+      "commenceTime": "2026-07-03T00:06:00Z",
+      "providerSportKey": "baseball_mlb",
+      "predictedWinner": "Detroit Tigers",
+      "predictedSide": "away",
+      "opponent": "Texas Rangers",
+      "winProbability": 0.2143,
+      "winProbabilityPct": 21.43,
+      "score": 34.41,
+      "confidenceTier": "Pass",
+      "pickQuality": "GAME_WINNER_SIGNAL",
+      "tags": [
+        "BOOK_AGREEMENT",
+        "REVERSAL",
+        "RUN_LINE_MOVEMENT",
+        "STEAM"
+      ],
+      "pullCountForGame": 14,
+      "homeSignal": {
+        "side": "home",
+        "team": "Texas Rangers",
+        "score": 22.01,
+        "winProbability": 0.0885,
+        "winProbabilityPct": 8.85,
+        "marketConsensusProbability": 0.53332,
+        "probStart": 0.54538,
+        "probLatest": 0.53332,
+        "delta": -0.01207,
+        "bookCount": 11,
+        "bookDivergence": 0.01729,
+        "latestGap": 0.06663,
+        "reversalCount": 4,
+        "runLineMovement": -28.727,
+        "averageAmericanOdds": -124.18,
+        "tags": [
+          "BOOK_AGREEMENT",
+          "RESISTANCE",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT"
+        ],
+        "rawScoreBeforeWinnerOptimizer": 23.56,
+        "rolling24hLearningAdjustment": 3.2,
+        "winnerRuleAdjustment": -4.75,
+        "optimizedWinnerScore": 22.01
+      },
+      "awaySignal": {
+        "side": "away",
+        "team": "Detroit Tigers",
+        "score": 34.41,
+        "winProbability": 0.2143,
+        "winProbabilityPct": 21.43,
+        "marketConsensusProbability": 0.46668,
+        "probStart": 0.45462,
+        "probLatest": 0.46668,
+        "delta": 0.01207,
+        "bookCount": 11,
+        "bookDivergence": 0.01729,
+        "latestGap": 0.06663,
+        "reversalCount": 4,
+        "runLineMovement": 25.727,
+        "averageAmericanOdds": 106.36,
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ],
+        "rawScoreBeforeWinnerOptimizer": 34.45,
+        "rolling24hLearningAdjustment": 4.46,
+        "winnerRuleAdjustment": -4.5,
+        "optimizedWinnerScore": 34.41
+      },
+      "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
+      "createdAt": "2026-07-02T14:00:34.474594+00:00",
+      "stored": {
+        "ok": true,
+        "pk": "GAME_WINNERS#mlb#2026-07-02",
+        "sk": "GAME#2026-07-03T00:06:00Z#63d068d292e5a379ba2a1d669c979313"
+      },
+      "rank": 9,
+      "selectionBeforeWinnerOptimizer": {
+        "predictedWinner": "Detroit Tigers",
+        "predictedSide": "away",
+        "score": 34.45,
+        "tags": [
+          "BOOK_AGREEMENT",
+          "REVERSAL",
+          "RUN_LINE_MOVEMENT",
+          "STEAM"
+        ]
+      },
+      "individualWinnerOptimized": true,
+      "optimizerFlippedPick": false,
+      "officialPick": true,
+      "accuracyTargetEligible": true,
+      "actionability": "OPTIMIZED_GAME_WINNER_PICK",
+      "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
+      "rolling24hAccuracyTarget": {
+        "targetAccuracyPct": 90.0,
+        "windowHours": 24,
+        "measuredBy": "mlb_rolling_24h_audit",
+        "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
+      },
+      "winnerOptimizer": {
+        "applied": true,
+        "basis": "compare_home_and_away_optimized_signal_scores",
+        "latestLearningApplied": true,
+        "homeOptimizedScore": 22.01,
+        "awayOptimizedScore": 34.41,
+        "flippedPick": false,
+        "fundamentalsApplied": false,
+        "fundamentalsMode": "DISABLED_ODDS_API_ONLY"
+      },
+      "lastPossiblePredictionGate": {
+        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v3-ODDS-API-ONLY",
+        "phase": "PRE_FINAL_GATE",
+        "minutesToStart": 605.41,
+        "gateWindowMinutesBeforeStart": {
+          "opensAt": 75,
+          "closesAt": 10
+        },
+        "finalWindowActive": false,
+        "finalLocked": false,
+        "oddsApiOnly": false,
+        "requiresSportsDataIoAttempt": true,
+        "requiresSportsDataIoForFullDataFinalPick": true,
+        "sportsDataIoFundamentalsApplied": false,
+        "finalGateBlocked": false,
+        "finalGateBlockReason": null,
+        "finalDataStatus": "ODDS_API_ONLY_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "rules": [
+          "Use the latest Odds API pull available at gate time.",
+          "Use multi-window signal learning from audited Odds API pull history.",
+          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
+          "Re-store the final row so the database reflects the last-gate decision."
+        ]
+      },
+      "finalGateStored": {
+        "ok": true,
+        "pk": "GAME_WINNERS#mlb#2026-07-02",
+        "sk": "GAME#2026-07-03T00:06:00Z#63d068d292e5a379ba2a1d669c979313",
         "finalGateStored": true
       }
     }
