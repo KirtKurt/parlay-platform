@@ -63,6 +63,25 @@ is:
 
 Therefore the first eligible scheduled pull is the `05:00 UTC` quarter-hour invocation, equal to `1:00 AM ET`. Manual HTTP pulls and scheduled payloads with `force=true` bypass the gate for validation.
 
+## Data-source policy
+
+MLB V1 does not use SportsDataIO.
+
+Required production data source:
+
+```text
+ODDS_API_KEY
+```
+
+Removed from the MLB V1 deploy path:
+
+```text
+SportsDataIO secret checks
+SportsDataIO SAM template patching
+SportsDataIO deploy parameter overrides
+SportsDataIO smoke tests
+```
+
 ## Storage contract
 
 The V1 handler writes to the following DynamoDB key families:
