@@ -1,0 +1,75 @@
+name: MLB V1 Emergency Deploy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/mlb-v1-emergency-deploy.yml"
+
+jobs:
+  deploy-and-pull:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Patch SAM template
+        run: |
+          python scripts/patch_template_mlb_v1.py
+          python scripts/patch_template_mlb_results_routes.py
+
+      - name: Validate and build
+        run: |
+          sam validate
+          rm -rf .aws-sam
+          sam build --no-cached
+
+      - name: Deploy MLB V1 stack update
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          if [ -z "${ODDS_API_KEY_VALUE:-}" ]; then
+            echo "::error::Missing ODDS_API_KEY"
+            exit 1
+          fi
+          sam deploy \
+            --template-file template.yaml \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides OddsApiKey="${ODDS_API_KEY_VALUE}"
+
+      - name: Invoke MLB audited pull Lambda after deploy
+        run: |
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --logical-resource-id MLBAuditedPullFunction \
+            --query "StackResourceDetail.PhysicalResourceId" \
+            --output text)
+          test -n "$FUNCTION_NAME"
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --payload '{"sport":"mlb","t":"HOT","run":"emergency_deploy_post_pull","days_ahead":1}' \
+            /tmp/mlb-pull-response.json
+          cat /tmp/mlb-pull-response.json
