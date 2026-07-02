@@ -32,7 +32,7 @@ jobs:
           aws lambda invoke \
             --cli-binary-format raw-in-base64-out \
             --function-name "$FUNCTION_NAME" \
-            --payload '{"sport":"mlb","t":"HOT","run":"github_actions_mlb_v1_pull_guard","days_ahead":1}' \
+            --payload '{"sport":"mlb","t":"HOT","run":"github_actions_mlb_v1_pull_guard","days_ahead":1,"force":true}' \
             /tmp/mlb-pull-response.json
           cat /tmp/mlb-pull-response.json
           python - <<'PY'
@@ -47,6 +47,10 @@ jobs:
                   body = payload
           if not isinstance(body, dict) or not body.get('ok'):
               raise SystemExit(f"MLB pull guard failed: {body}")
+          if body.get('skipped'):
+              raise SystemExit(f"MLB pull guard skipped instead of pulling: {body}")
+          if int(body.get('count') or 0) <= 0:
+              raise SystemExit(f"MLB pull guard pulled zero games: {body}")
           print(json.dumps({
               'ok': body.get('ok'),
               'sport': body.get('sport'),
