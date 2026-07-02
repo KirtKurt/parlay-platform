@@ -30,19 +30,15 @@ jobs:
       - name: Verify AWS connection
         run: aws sts get-caller-identity
 
-      - name: Verify SportsDataIO secret present
+      - name: Verify Odds API secret present
         env:
-          SPORTSDATAIO_API_KEY_PRIMARY: ${{ secrets.SPORTSDATAIO_API_KEY }}
-          SPORTSDATAIO_API_KEY_ALT_1: ${{ secrets.SPORTS_DATA_IO_API_KEY }}
-          SPORTSDATAIO_API_KEY_ALT_2: ${{ secrets.SPORTSDATAIO_MLB_API_KEY }}
-          SPORTSDATAIO_API_KEY_ALT_3: ${{ secrets.SPORTS_DATA_IO_MLB_API_KEY }}
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
-          SPORTSDATAIO_DEPLOY_KEY="${SPORTSDATAIO_API_KEY_PRIMARY:-${SPORTSDATAIO_API_KEY_ALT_1:-${SPORTSDATAIO_API_KEY_ALT_2:-${SPORTSDATAIO_API_KEY_ALT_3:-}}}}"
-          if [ -z "${SPORTSDATAIO_DEPLOY_KEY:-}" ]; then
-            echo "::error::Missing SportsDataIO GitHub secret. Add one of: SPORTSDATAIO_API_KEY, SPORTS_DATA_IO_API_KEY, SPORTSDATAIO_MLB_API_KEY, SPORTS_DATA_IO_MLB_API_KEY."
+          if [ -z "${ODDS_API_KEY_VALUE:-}" ]; then
+            echo "::error::Missing ODDS_API_KEY GitHub secret. MLB V1 uses The Odds API line movement only."
             exit 1
           fi
-          echo "SportsDataIO secret is present."
+          echo "ODDS_API_KEY secret is present."
 
       - name: Setup AWS SAM
         uses: aws-actions/setup-sam@v2
@@ -52,9 +48,6 @@ jobs:
 
       - name: Patch SAM template for MLB settlement routes
         run: python scripts/patch_template_mlb_results_routes.py
-
-      - name: Patch SAM template for SportsDataIO
-        run: python scripts/patch_template_sportsdataio.py
 
       - name: Validate
         run: sam validate
@@ -67,12 +60,7 @@ jobs:
       - name: Deploy
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          SPORTSDATAIO_API_KEY_PRIMARY: ${{ secrets.SPORTSDATAIO_API_KEY }}
-          SPORTSDATAIO_API_KEY_ALT_1: ${{ secrets.SPORTS_DATA_IO_API_KEY }}
-          SPORTSDATAIO_API_KEY_ALT_2: ${{ secrets.SPORTSDATAIO_MLB_API_KEY }}
-          SPORTSDATAIO_API_KEY_ALT_3: ${{ secrets.SPORTS_DATA_IO_MLB_API_KEY }}
         run: |
-          SPORTSDATAIO_DEPLOY_KEY="${SPORTSDATAIO_API_KEY_PRIMARY:-${SPORTSDATAIO_API_KEY_ALT_1:-${SPORTSDATAIO_API_KEY_ALT_2:-${SPORTSDATAIO_API_KEY_ALT_3:-}}}}"
           sam deploy \
             --template-file template.yaml \
             --stack-name parlay-platform-dev \
@@ -83,8 +71,7 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
-              OddsApiKey="${ODDS_API_KEY_VALUE}" \
-              SportsDataIoApiKey="${SPORTSDATAIO_DEPLOY_KEY}"
+              OddsApiKey="${ODDS_API_KEY_VALUE}"
 
       - name: Grant image moderation Rekognition access
         run: |
@@ -143,9 +130,6 @@ jobs:
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "API_URL=$API_URL"
 
-      - name: Verify SportsDataIO live runtime
-        run: python scripts/prove_sportsdataio_runtime.py --api-url "${{ steps.stack_outputs.outputs.api_url }}" --strict
-
       - name: Configure API WAF and throttling
         continue-on-error: true
         run: bash scripts/configure_api_protection.sh "${{ steps.stack_outputs.outputs.api_url }}" "${{ secrets.AWS_REGION }}"
@@ -170,15 +154,15 @@ jobs:
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           curl --fail --silent --show-error "${API_URL}v1/mlb/today"
 
+      - name: Smoke test MLB game-winner endpoint
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          curl --fail --silent --show-error "${API_URL}v1/mlb/game-winners?store=false"
+
       - name: Smoke test MLB signal learning endpoint
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           curl --fail --silent --show-error "${API_URL}v1/results/mlb/signal-learning?fetch_scores=false"
-
-      - name: Smoke test SportsDataIO route wiring
-        run: |
-          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          curl --fail --silent --show-error "${API_URL}v1/mlb/fundamentals/status?fetch=false"
 
       - name: Smoke test image moderation policy endpoint
         run: |
