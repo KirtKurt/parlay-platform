@@ -1,0 +1,105 @@
+name: MLB V1 Direct Lambda Hotfix
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/mlb-v1-direct-lambda-hotfix.yml"
+      - "hello_world/mlb_manual_pull.py"
+
+jobs:
+  update-and-pull:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Resolve MLB audited pull Lambda
+        id: resolve
+        run: |
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --logical-resource-id MLBAuditedPullFunction \
+            --query "StackResourceDetail.PhysicalResourceId" \
+            --output text)
+          test -n "$FUNCTION_NAME"
+          echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
+          echo "FUNCTION_NAME=$FUNCTION_NAME"
+
+      - name: Update Lambda code directly
+        run: |
+          cd hello_world
+          zip -qr /tmp/mlb-audited-pull.zip .
+          aws lambda update-function-code \
+            --function-name "${{ steps.resolve.outputs.function_name }}" \
+            --zip-file fileb:///tmp/mlb-audited-pull.zip >/tmp/update-code.json
+          cat /tmp/update-code.json
+          aws lambda wait function-updated --function-name "${{ steps.resolve.outputs.function_name }}"
+
+      - name: Set non-blocking MLB environment
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          if [ -z "${ODDS_API_KEY_VALUE:-}" ]; then
+            echo "::error::Missing ODDS_API_KEY"
+            exit 1
+          fi
+          aws lambda get-function-configuration \
+            --function-name "${{ steps.resolve.outputs.function_name }}" \
+            --query "Environment.Variables" \
+            --output json > /tmp/current-env.json
+          python - <<'PY'
+          import json, os
+          with open('/tmp/current-env.json', 'r', encoding='utf-8') as f:
+              variables = json.load(f) or {}
+          variables['ODDS_API_KEY'] = os.environ['ODDS_API_KEY_VALUE']
+          variables['MLB_PULL_START_AT_ET'] = '2026-07-02T01:00:00-04:00'
+          variables['MLB_SCHED_INTERVAL_MINUTES'] = '15'
+          with open('/tmp/new-env.json', 'w', encoding='utf-8') as f:
+              json.dump({'Variables': variables}, f)
+          PY
+          aws lambda update-function-configuration \
+            --function-name "${{ steps.resolve.outputs.function_name }}" \
+            --environment file:///tmp/new-env.json >/tmp/update-env.json
+          cat /tmp/update-env.json
+          aws lambda wait function-updated --function-name "${{ steps.resolve.outputs.function_name }}"
+
+      - name: Invoke forced MLB pull
+        run: |
+          aws lambda invoke \
+            --cli-binary-format raw-in-base64-out \
+            --function-name "${{ steps.resolve.outputs.function_name }}" \
+            --payload '{"sport":"mlb","t":"HOT","run":"direct_lambda_hotfix_pull","days_ahead":1,"force":true}' \
+            /tmp/mlb-pull-response.json
+          cat /tmp/mlb-pull-response.json
+          python - <<'PY'
+          import json
+          with open('/tmp/mlb-pull-response.json', 'r', encoding='utf-8') as f:
+              payload = json.load(f)
+          body = payload
+          if isinstance(payload, dict) and 'body' in payload:
+              body = json.loads(payload['body'])
+          if not isinstance(body, dict) or not body.get('ok'):
+              raise SystemExit(f"Direct hotfix pull failed: {body}")
+          if body.get('skipped'):
+              raise SystemExit(f"Direct hotfix pull skipped: {body}")
+          if int(body.get('count') or 0) <= 0:
+              raise SystemExit(f"Direct hotfix pull returned zero games: {body}")
+          print(json.dumps({
+              'ok': body.get('ok'),
+              'sport': body.get('sport'),
+              'platformVersion': body.get('platformVersion'),
+              'count': body.get('count'),
+              'asof': body.get('asof'),
+              'canonical_pull_history': body.get('canonical_pull_history'),
+          }, indent=2, default=str))
+          PY
