@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 import os
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 try:
@@ -20,7 +21,7 @@ MIN_ACTIONABLE_PROB = float(os.environ.get("INQSI_MLB_MIN_ACTIONABLE_CALIBRATED_
 MIN_ACTIONABLE_SCORE = float(os.environ.get("INQSI_MLB_MIN_ACTIONABLE_SCORE", "56"))
 MAX_ACTIONABLE_RISK = float(os.environ.get("INQSI_MLB_MAX_ACTIONABLE_RISK", "0.18"))
 PATCH_VERSION = "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1"
-_FUNDAMENTALS_CACHE = None
+_FUNDAMENTALS_CACHE: Dict[str, Dict[str, Dict[str, Any]]] = {}
 
 TEAM_ALIASES = {
     "arizona diamondbacks": ["ari"], "atlanta braves": ["atl"], "baltimore orioles": ["bal"], "boston red sox": ["bos"],
@@ -93,30 +94,53 @@ def _row_team(row: Dict[str, Any], side: str) -> Any:
     return row.get("homeTeam" if side == "home" else "awayTeam") or sig.get("team")
 
 
-def _fundamentals_index() -> Dict[str, Dict[str, Any]]:
+def _row_slate_date(row: Dict[str, Any]) -> Optional[str]:
+    for key in ("slate_date", "game_date_et", "gameDateEt"):
+        value = row.get(key)
+        if value:
+            return str(value)[:10]
+    dt_raw = row.get("commenceTime") or row.get("commence_time")
+    if dt_raw:
+        try:
+            dt = datetime.fromisoformat(str(dt_raw).replace("Z", "+00:00"))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            # SportsDataIO game dates are slate-local; ET conversion is handled by the fundamentals engine default.
+            return dt.astimezone(timezone.utc).date().isoformat()
+        except Exception:
+            return None
+    return None
+
+
+def _fundamentals_index(slate_date: Optional[str] = None) -> Dict[str, Dict[str, Any]]:
     global _FUNDAMENTALS_CACHE
-    if _FUNDAMENTALS_CACHE is not None:
-        return _FUNDAMENTALS_CACHE
-    _FUNDAMENTALS_CACHE = {}
+    cache_key = slate_date or "__default_today__"
+    if cache_key in _FUNDAMENTALS_CACHE:
+        return _FUNDAMENTALS_CACHE[cache_key]
+    _FUNDAMENTALS_CACHE[cache_key] = {}
     if not USE_FUNDAMENTALS or mlb_fundamentals_engine is None:
-        return _FUNDAMENTALS_CACHE
+        return _FUNDAMENTALS_CACHE[cache_key]
     try:
-        preview = mlb_fundamentals_engine.slate_fundamentals_preview()
+        if slate_date:
+            preview = mlb_fundamentals_engine.slate_fundamentals_preview(date_yyyy_mm_dd=slate_date)
+        else:
+            preview = mlb_fundamentals_engine.slate_fundamentals_preview()
         if not isinstance(preview, dict) or not preview.get("ok"):
-            return _FUNDAMENTALS_CACHE
+            return _FUNDAMENTALS_CACHE[cache_key]
         for game in preview.get("games") or []:
             for away in _candidates(game.get("awayTeam")):
                 for home in _candidates(game.get("homeTeam")):
-                    _FUNDAMENTALS_CACHE[f"{away}|{home}"] = game
+                    _FUNDAMENTALS_CACHE[cache_key][f"{away}|{home}"] = game
     except Exception:
-        _FUNDAMENTALS_CACHE = {}
-    return _FUNDAMENTALS_CACHE
+        _FUNDAMENTALS_CACHE[cache_key] = {}
+    return _FUNDAMENTALS_CACHE[cache_key]
 
 
 def _match_fundamentals(row: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not USE_FUNDAMENTALS:
         return None
-    index = _fundamentals_index()
+    slate_date = _row_slate_date(row)
+    index = _fundamentals_index(slate_date)
     for away in _candidates(_row_team(row, "away")):
         for home in _candidates(_row_team(row, "home")):
             found = index.get(f"{away}|{home}")
@@ -160,6 +184,7 @@ def _apply_fundamentals(row: Dict[str, Any]) -> Dict[str, Any]:
             "available": False,
             "applied": False,
             "mode": prior["fundamentalsMode"],
+            "slateDate": _row_slate_date(row),
             "message": "No verified MLB fundamentals package matched this game. Market signal remains primary.",
         }
         return out
@@ -193,6 +218,7 @@ def _apply_fundamentals(row: Dict[str, Any]) -> Dict[str, Any]:
         "fundamentalsEdgeHomeMinusAway": fundamentals.get("fundamentalsEdgeHomeMinusAway"),
         "homeAdjustment": home.get("fundamentalsAdjustment"),
         "awayAdjustment": away.get("fundamentalsAdjustment"),
+        "slateDate": _row_slate_date(row),
         "weights": "team_power_35pct_starter_45pct_bullpen_15pct_lineup_5pct",
     }
     prior["basis"] = "market_signal_plus_multi_window_learning_plus_mlb_fundamentals"
@@ -327,6 +353,7 @@ def _no_pick(row: Dict[str, Any]) -> Dict[str, Any]:
         level = "NO_PICK"
     out["officialPick"] = bool(actionable)
     out["actionablePick"] = bool(actionable)
+    out["accuracyTargetEligible"] = bool(actionable)
     out["actionability"] = level
     out["actionabilityReason"] = "passes_calibration_and_no_pick_gate" if actionable else ";".join(sorted(set(no_pick_reasons)))
     out["pickDiscipline"] = {
@@ -389,6 +416,7 @@ def apply(module):
         summary["actionablePickCount"] = len([r for r in predictions if r.get("actionablePick")])
         summary["noPickCount"] = len([r for r in predictions if not r.get("actionablePick")])
         summary["patchVersion"] = PATCH_VERSION
+        summary["fundamentalsCachePolicy"] = "slate_date_keyed_cache"
         result["rolling24hAccuracyTarget"] = summary
         result["accuracyTarget"] = summary
         result["actionablePickCount"] = summary["actionablePickCount"]
