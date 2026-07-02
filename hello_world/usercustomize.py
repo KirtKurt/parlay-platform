@@ -23,6 +23,18 @@ try:
 except Exception:
     pass
 
+
+try:
+    import mlb_game_winner_engine as _inqsi_mlb_game_winner_for_slate_lock
+    import mlb_slate_prediction_lock as _inqsi_mlb_slate_prediction_lock
+    import mlb_last_possible_prediction_gate as _inqsi_mlb_last_possible_prediction_gate
+    _inqsi_mlb_slate_prediction_lock.apply(_inqsi_mlb_game_winner_for_slate_lock)
+    if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED"):
+        delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED")
+    _inqsi_mlb_last_possible_prediction_gate.apply(_inqsi_mlb_game_winner_for_slate_lock)
+except Exception:
+    pass
+
 try:
     import frontend_app
     import inqsi_api
