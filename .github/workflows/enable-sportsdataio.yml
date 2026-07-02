@@ -1,0 +1,109 @@
+name: Enable SportsDataIO Runtime
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/enable-sportsdataio.yml"
+      - "scripts/patch_template_sportsdataio.py"
+      - "hello_world/mlb_fundamentals_optimizer_patch.py"
+      - "hello_world/mlb_fundamentals_engine.py"
+      - "hello_world/sportsdataio_client.py"
+
+concurrency:
+  group: enable-sportsdataio-runtime
+  cancel-in-progress: false
+
+jobs:
+  enable:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify SportsDataIO secret present
+        env:
+          SPORTSDATAIO_API_KEY_VALUE: ${{ secrets.SPORTSDATAIO_API_KEY }}
+        run: |
+          if [ -z "${SPORTSDATAIO_API_KEY_VALUE:-}" ]; then
+            echo "::error::Missing SPORTSDATAIO_API_KEY GitHub secret. Add it before enabling MLB fundamentals."
+            exit 1
+          fi
+          echo "SPORTSDATAIO_API_KEY secret is present."
+
+      - name: Wait for CloudFormation stack to be stable
+        run: |
+          for i in $(seq 1 80); do
+            STATUS=$(aws cloudformation describe-stacks \
+              --stack-name parlay-platform-dev \
+              --region ${{ secrets.AWS_REGION }} \
+              --query "Stacks[0].StackStatus" \
+              --output text 2>/dev/null || echo "STACK_MISSING")
+            echo "CloudFormation status: ${STATUS}"
+            case "${STATUS}" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE)
+                exit 0
+                ;;
+              STACK_MISSING)
+                echo "::error::parlay-platform-dev stack not found. Deploy SAM before enabling SportsDataIO runtime."
+                exit 1
+                ;;
+              *IN_PROGRESS)
+                sleep 30
+                ;;
+              *)
+                echo "::error::Stack status is not safe for runtime update: ${STATUS}"
+                exit 1
+                ;;
+            esac
+          done
+          echo "::error::Timed out waiting for CloudFormation stack to stabilize."
+          exit 1
+
+      - name: Enable SportsDataIO on Lambda functions
+        env:
+          SPORTSDATAIO_API_KEY_VALUE: ${{ secrets.SPORTSDATAIO_API_KEY }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          LOGICAL_IDS="ApiFunction MLBAuditedPullFunction MLBSignalApiFunction InqsiMLBV1CoreFunction AllSportsLiveSchedulerFunction"
+          for LOGICAL_ID in $LOGICAL_IDS; do
+            FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+              --stack-name parlay-platform-dev \
+              --region "$AWS_REGION_VALUE" \
+              --logical-resource-id "$LOGICAL_ID" \
+              --query "StackResourceDetail.PhysicalResourceId" \
+              --output text 2>/dev/null || true)
+            if [ -z "${FUNCTION_NAME:-}" ] || [ "$FUNCTION_NAME" = "None" ]; then
+              echo "Skipping missing logical resource: $LOGICAL_ID"
+              continue
+            fi
+            echo "Updating $LOGICAL_ID -> $FUNCTION_NAME"
+            aws lambda get-function-configuration \
+              --function-name "$FUNCTION_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --query "Environment.Variables" \
+              --output json > current-env.json
+            python - <<'PY'
+          import json, os
+          with open('current-env.json') as f:
+              variables = json.load(f) or {}
+          variables['SPORTSDATAIO_API_KEY'] = os.environ['SPORTSDATAIO_API_KEY_VALUE']
+          variables['INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS'] = 'true'
+          variables['INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE'] = 'true'
+          variables['SPORTSDATAIO_TIMEOUT_SECONDS'] = variables.get('SPORTSDATAIO_TIMEOUT_SECONDS', '25')
+          with open('lambda-env.json', 'w') as f:
+              json.dump({'Variables': variables}, f)
+          PY
+            aws lambda update-function-configuration \
+              --function-name "$FUNCTION_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --environment file://lambda-env.json >/tmp/lambda-update.json
+            aws lambda wait function-updated --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE"
+          done
+          echo "SportsDataIO runtime enablement complete. Secret was not printed."
