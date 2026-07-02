@@ -15,9 +15,9 @@ FINAL_GATE_START_MINUTES = int(os.environ.get("INQSI_MLB_FINAL_GATE_START_MINUTE
 FINAL_GATE_END_MINUTES = int(os.environ.get("INQSI_MLB_FINAL_GATE_END_MINUTES", "10"))
 REQUIRE_SPORTSDATAIO_AT_FINAL_GATE = os.environ.get("INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE", "false").lower() in {"1", "true", "yes"}
 
-
 POLICY_VERSION_REQUIRE_SPORTSDATAIO = "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-REQUIRE-SPORTSDATAIO"
 POLICY_VERSION_ODDS_API_ONLY = "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY"
+SLATE_LOCK_POLICY_VERSION = "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN"
 
 
 def _now_utc() -> datetime:
@@ -78,6 +78,8 @@ def _store_final(row: Dict[str, Any]) -> Dict[str, Any]:
             "final_gate_blocked": gate.get("finalGateBlocked"),
             "fundamentals_applied": gate.get("sportsDataIoFundamentalsApplied"),
             "odds_api_only": gate.get("oddsApiOnly"),
+            "slate_wide_lock": gate.get("slateWideLock"),
+            "slate_lock_at_utc": gate.get("lockAtUtc"),
             "data": row,
         })
         history.PULLS.put_item(Item=item)
@@ -86,8 +88,78 @@ def _store_final(row: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": str(exc)}
 
 
+def _annotate_from_slate_lock(out: Dict[str, Any], persist: bool = False) -> Dict[str, Any]:
+    lock = dict(out.get("slatePredictionLock") or {})
+    optimizer = out.get("winnerOptimizer") or {}
+    fundamentals_applied = bool(optimizer.get("fundamentalsApplied"))
+    final_locked = bool(lock.get("locked"))
+    phase = "SLATE_LOCKED" if final_locked else "PRE_SLATE_LOCK"
+    blocked_missing_sportsdataio = bool(REQUIRE_SPORTSDATAIO_AT_FINAL_GATE and final_locked and not fundamentals_applied)
+    policy_version = lock.get("policyVersion") or SLATE_LOCK_POLICY_VERSION
+    source = "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK" if fundamentals_applied else "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_SLATE_LOCK"
+    final_data_status = "FULL_DATA_READY" if fundamentals_applied else "ODDS_API_ONLY_READY"
+    if blocked_missing_sportsdataio:
+        source = "BLOCKED_FULL_DATA_PICK_MISSING_SPORTSDATAIO_SLATE_LOCK"
+        final_data_status = "BLOCKED_MISSING_SPORTSDATAIO"
+
+    out["lastPossiblePredictionGate"] = {
+        "policyVersion": policy_version,
+        "phase": phase,
+        "minutesToStart": lock.get("minutesUntilFirstGameStart"),
+        "gateWindowMinutesBeforeStart": {
+            "opensAt": lock.get("lockMinutesBeforeFirstGame", 45),
+            "closesAt": lock.get("lockMinutesBeforeFirstGame", 45),
+            "meaning": "single_slate_wide_lock_cutoff",
+        },
+        "slateWideLock": True,
+        "lockMinutesBeforeFirstGame": lock.get("lockMinutesBeforeFirstGame", 45),
+        "firstGameStartUtc": lock.get("firstGameStartUtc"),
+        "lockAtUtc": lock.get("lockAtUtc"),
+        "latestAvailablePullAt": lock.get("latestAvailablePullAt"),
+        "latestScoringPullAt": lock.get("latestScoringPullAt"),
+        "totalPullCountAvailable": lock.get("totalPullCountAvailable"),
+        "scoringPullCount": lock.get("scoringPullCount"),
+        "finalWindowActive": final_locked,
+        "finalLocked": final_locked,
+        "oddsApiOnly": not REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
+        "requiresSportsDataIoAttempt": REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
+        "requiresSportsDataIoForFullDataFinalPick": REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
+        "sportsDataIoFundamentalsApplied": fundamentals_applied,
+        "finalGateBlocked": blocked_missing_sportsdataio,
+        "finalGateBlockReason": "SPORTSDATAIO_FINAL_GATE_MISSING" if blocked_missing_sportsdataio else None,
+        "finalDataStatus": final_data_status,
+        "predictionSource": source,
+        "rules": [
+            "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+            "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+            "Locked predictions are scored from pull history captured at or before the slate lock timestamp.",
+        ],
+    }
+    tags = sorted(set(out.get("tags") or []))
+    tags.append("SLATE_WIDE_45_MIN_LOCK_POLICY")
+    if final_locked:
+        tags.extend(["SLATE_LOCKED", "FINAL_LOCKED"])
+        out["fullDataFinalPick"] = True
+    else:
+        tags.append("PRE_SLATE_LOCK")
+    if blocked_missing_sportsdataio:
+        tags.append("FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO")
+        out["fullDataFinalPick"] = False
+        out["officialPick"] = False
+        out["accuracyTargetEligible"] = False
+        out["actionability"] = "BLOCKED_MISSING_SPORTSDATAIO_SLATE_LOCK"
+        out["actionabilityReason"] = "sportsdataio_required_for_full_data_slate_lock_but_not_applied"
+    out["tags"] = sorted(set(tags))
+    if persist:
+        out["finalGateStored"] = _store_final(out)
+    return out
+
+
 def annotate_prediction(row: Dict[str, Any], persist: bool = False) -> Dict[str, Any]:
     out = dict(row or {})
+    if (out.get("slatePredictionLock") or {}).get("slateWideLock"):
+        return _annotate_from_slate_lock(out, persist=persist)
+
     minutes = _minutes_to_start(out)
     phase = _phase(minutes)
     optimizer = out.get("winnerOptimizer") or {}
@@ -114,10 +186,7 @@ def annotate_prediction(row: Dict[str, Any], persist: bool = False) -> Dict[str,
         "policyVersion": policy_version,
         "phase": phase,
         "minutesToStart": minutes,
-        "gateWindowMinutesBeforeStart": {
-            "opensAt": FINAL_GATE_START_MINUTES,
-            "closesAt": FINAL_GATE_END_MINUTES,
-        },
+        "gateWindowMinutesBeforeStart": {"opensAt": FINAL_GATE_START_MINUTES, "closesAt": FINAL_GATE_END_MINUTES},
         "finalWindowActive": final_window,
         "finalLocked": final_locked,
         "oddsApiOnly": not REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
@@ -130,11 +199,7 @@ def annotate_prediction(row: Dict[str, Any], persist: bool = False) -> Dict[str,
         "predictionSource": source,
         "rules": [
             f"Open the final gate {FINAL_GATE_START_MINUTES} minutes before each individual game.",
-            "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-            "Use the latest Odds API pull available at gate time.",
-            "Use multi-window signal learning from audited Odds API pull history.",
-            "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-            "Re-store the final row so the database reflects the last-gate decision.",
+            "This fallback is only used when the slate-wide lock wrapper is absent.",
         ],
     }
     tags = sorted(set(out.get("tags") or []))
@@ -142,10 +207,6 @@ def annotate_prediction(row: Dict[str, Any], persist: bool = False) -> Dict[str,
         tags.append("FINAL_GATE_OPEN")
     if final_locked:
         tags.append("FINAL_LOCKED")
-    if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE and fundamentals_applied:
-        tags.append("SPORTSDATAIO_FINAL_GATE_APPLIED")
-    elif REQUIRE_SPORTSDATAIO_AT_FINAL_GATE and (final_window or final_locked):
-        tags.append("SPORTSDATAIO_FINAL_GATE_MISSING")
     if not REQUIRE_SPORTSDATAIO_AT_FINAL_GATE:
         tags.append("ODDS_API_ONLY")
     if blocked_missing_sportsdataio:
@@ -167,7 +228,7 @@ def annotate_result(result: Dict[str, Any], persist: bool = False) -> Dict[str, 
     if not isinstance(result, dict):
         return result
     predictions = [annotate_prediction(row, persist=persist) for row in (result.get("predictions") or [])]
-    predictions.sort(key=lambda r: (float(r.get("score") or 0), float(r.get("winProbability") or 0)), reverse=True)
+    predictions.sort(key=lambda r: (float(r.get("actionablePick") is True), float(r.get("score") or 0), float(r.get("winProbability") or 0)), reverse=True)
     for idx, row in enumerate(predictions, 1):
         row["rank"] = idx
     phases: Dict[str, int] = {}
@@ -179,11 +240,21 @@ def annotate_result(result: Dict[str, Any], persist: bool = False) -> Dict[str, 
     blocked_rows = [row for row in predictions if (row.get("lastPossiblePredictionGate") or {}).get("finalGateBlocked")]
     full_data_rows = [row for row in predictions if row.get("fullDataFinalPick")]
     summary = dict(result.get("rolling24hAccuracyTarget") or result.get("accuracyTarget") or {})
-    policy_version = POLICY_VERSION_REQUIRE_SPORTSDATAIO if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE else POLICY_VERSION_ODDS_API_ONLY
+    lock = result.get("slatePredictionLock") or ((predictions[0].get("slatePredictionLock") if predictions else {}) or {})
+    if lock.get("slateWideLock"):
+        policy_version = lock.get("policyVersion") or SLATE_LOCK_POLICY_VERSION
+        gate_window = {"opensAt": lock.get("lockMinutesBeforeFirstGame", 45), "closesAt": lock.get("lockMinutesBeforeFirstGame", 45), "meaning": "single_slate_wide_lock_cutoff"}
+    else:
+        policy_version = POLICY_VERSION_REQUIRE_SPORTSDATAIO if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE else POLICY_VERSION_ODDS_API_ONLY
+        gate_window = {"opensAt": FINAL_GATE_START_MINUTES, "closesAt": FINAL_GATE_END_MINUTES}
     summary["lastPossiblePredictionGate"] = {
         "applied": True,
         "policyVersion": policy_version,
-        "gateWindowMinutesBeforeStart": {"opensAt": FINAL_GATE_START_MINUTES, "closesAt": FINAL_GATE_END_MINUTES},
+        "slateWideLock": bool(lock.get("slateWideLock")),
+        "lockAtUtc": lock.get("lockAtUtc"),
+        "firstGameStartUtc": lock.get("firstGameStartUtc"),
+        "latestScoringPullAt": lock.get("latestScoringPullAt"),
+        "gateWindowMinutesBeforeStart": gate_window,
         "phaseCounts": phases,
         "finalLockedCount": len(final_rows),
         "oddsApiOnly": not REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
@@ -200,8 +271,9 @@ def annotate_result(result: Dict[str, Any], persist: bool = False) -> Dict[str, 
     out["lastPossiblePredictionGate"] = summary["lastPossiblePredictionGate"]
     out["rolling24hAccuracyTarget"] = summary
     out["accuracyTarget"] = summary
-    suffix = "+last-possible-gate-v4-12h-individual-game-require-sportsdataio" if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE else "+last-possible-gate-v4-12h-individual-game-odds-api-only"
-    out["modelVersion"] = str(result.get("modelVersion") or "") + suffix
+    suffix = "+slate-wide-45min-final-gate" if lock.get("slateWideLock") else ("+last-possible-gate-v4-12h-individual-game-require-sportsdataio" if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE else "+last-possible-gate-v4-12h-individual-game-odds-api-only")
+    if suffix not in str(result.get("modelVersion") or ""):
+        out["modelVersion"] = str(result.get("modelVersion") or "") + suffix
     return out
 
 
