@@ -90,6 +90,16 @@ def _lock_state(pulls: List[Dict[str, Any]], slate: str) -> Dict[str, Any]:
     return state
 
 
+def _enhance(result: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        import mlb_winner_stack_v2
+        return mlb_winner_stack_v2.enhance_result(result)
+    except Exception as exc:
+        if isinstance(result, dict):
+            result["winnerStackV2"] = {"applied": False, "error": str(exc)}
+        return result
+
+
 def _slate_from_call(args: Tuple[Any, ...], kwargs: Dict[str, Any], module: Any) -> str:
     if args and args[0]:
         return str(args[0])
@@ -175,12 +185,25 @@ def _locked_result(module: Any, result: Dict[str, Any], args: Tuple[Any, ...], k
         "slatePredictionLock": public,
         "predictions": predictions,
     })
+    out = _enhance(out)
+    out["slatePredictionLock"] = public
+    for row in out.get("predictions") or []:
+        if isinstance(row, dict):
+            row["slatePredictionLock"] = public
+            row["lockedPrediction"] = True
+            row["lockedAtUtc"] = public.get("lockAtUtc")
+            row["predictionSourcePullAt"] = public.get("latestScoringPullAt")
     return out
 
 
 def apply(module: Any):
     if getattr(module, "_INQSI_MLB_SLATE_PREDICTION_LOCK_APPLIED", False):
         return module
+    try:
+        import mlb_winner_stack_v2
+        mlb_winner_stack_v2.apply(module)
+    except Exception:
+        pass
     original = module.predict_all
 
     def patched_predict_all(*args, **kwargs):
