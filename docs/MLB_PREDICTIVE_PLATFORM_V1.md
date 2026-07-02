@@ -32,7 +32,7 @@ The live scheduled handler is:
 7. Build and store date-isolated hot-side/game prediction rows through `mlb_date_signal_api.hot_sides(..., store=True)`.
 8. Build and store all-game winner predictions through `mlb_game_winner_engine.predict_all(..., store=True)`.
 
-## Start gate
+## Time-zone and cadence contract
 
 Scheduled, non-HTTP events are gated by:
 
@@ -41,7 +41,27 @@ MLB_PULL_START_AT_ET=2026-07-03T01:00:00-04:00
 MLB_SCHED_INTERVAL_MINUTES=15
 ```
 
-Before that time, scheduled EventBridge invocations return a successful skipped response with `reason=WAITING_FOR_CONFIGURED_1AM_ET_START_GATE`. Manual HTTP pulls and scheduled payloads with `force=true` bypass the gate for validation.
+The SAM patch script now changes `MLBHotEvery15Min` from `rate(15 minutes)` to quarter-hour cron:
+
+```text
+cron(0/15 * * * ? *)
+```
+
+That matters because a `rate(15 minutes)` EventBridge rule starts on the minute it is created, which can produce offsets such as `1:07`, `1:22`, `1:37`, and `1:52`. Quarter-hour cron always fires at `:00`, `:15`, `:30`, and `:45` UTC. Those minute boundaries are identical in America/New_York, and the Lambda start gate is evaluated in `ZoneInfo("America/New_York")`.
+
+For July 3, 2026, New York is on daylight time, so the configured start gate:
+
+```text
+2026-07-03T01:00:00-04:00 America/New_York
+```
+
+is:
+
+```text
+2026-07-03T05:00:00Z UTC
+```
+
+Therefore the first eligible scheduled pull is the `05:00 UTC` quarter-hour invocation, equal to `1:00 AM ET`. Manual HTTP pulls and scheduled payloads with `force=true` bypass the gate for validation.
 
 ## Storage contract
 
