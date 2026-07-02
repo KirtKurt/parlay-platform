@@ -45,7 +45,8 @@ jobs:
           SPORTSDATAIO_API_KEY: ${{ secrets.SPORTSDATAIO_API_KEY }}
           SNAPSHOTS_TABLE: parlay_platform_snapshots
           AWS_REGION: ${{ secrets.AWS_REGION }}
-          INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE: "true"
+          INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS: "true"
+          INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE: "false"
         run: |
           set -euo pipefail
           export PYTHONPATH="$GITHUB_WORKSPACE/hello_world:${PYTHONPATH:-}"
