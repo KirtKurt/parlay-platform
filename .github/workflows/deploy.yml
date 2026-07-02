@@ -39,10 +39,20 @@ jobs:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
           if [ -z "${ODDS_API_KEY_VALUE:-}" ]; then
-            echo "::error::Missing ODDS_API_KEY GitHub secret. MLB V1 uses The Odds API line movement only."
+            echo "::error::Missing ODDS_API_KEY GitHub secret. MLB V1 uses The Odds API line movement."
             exit 1
           fi
           echo "ODDS_API_KEY secret is present."
+
+      - name: Verify SportsDataIO secret present
+        env:
+          SPORTSDATAIO_API_KEY_VALUE: ${{ secrets.SPORTSDATAIO_API_KEY }}
+        run: |
+          if [ -z "${SPORTSDATAIO_API_KEY_VALUE:-}" ]; then
+            echo "::error::Missing SPORTSDATAIO_API_KEY GitHub secret. MLB fundamentals require this secret."
+            exit 1
+          fi
+          echo "SPORTSDATAIO_API_KEY secret is present."
 
       - name: Setup AWS SAM
         uses: aws-actions/setup-sam@v2
@@ -52,6 +62,9 @@ jobs:
 
       - name: Patch SAM template for MLB settlement routes
         run: python scripts/patch_template_mlb_results_routes.py
+
+      - name: Patch SAM template for SportsDataIO fundamentals
+        run: python scripts/patch_template_sportsdataio.py
 
       - name: Validate
         run: sam validate
@@ -89,6 +102,7 @@ jobs:
       - name: Deploy
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          SPORTSDATAIO_API_KEY_VALUE: ${{ secrets.SPORTSDATAIO_API_KEY }}
         run: |
           sam deploy \
             --template-file template.yaml \
@@ -100,7 +114,8 @@ jobs:
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
             --parameter-overrides \
-              OddsApiKey="${ODDS_API_KEY_VALUE}"
+              OddsApiKey="${ODDS_API_KEY_VALUE}" \
+              SportsDataIoApiKey="${SPORTSDATAIO_API_KEY_VALUE}"
 
       - name: Grant image moderation Rekognition access
         run: |
