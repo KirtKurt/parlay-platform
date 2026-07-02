@@ -100,6 +100,16 @@ def _enhance(result: Dict[str, Any]) -> Dict[str, Any]:
         return result
 
 
+def _optimize_locked_row(row: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        import mlb_fundamentals_optimizer_patch
+        return mlb_fundamentals_optimizer_patch.optimize_with_fundamentals(row)
+    except Exception as exc:
+        out = dict(row or {})
+        out["fundamentalsCalibrationNoPick"] = {"applied": False, "error": str(exc)}
+        return out
+
+
 def _slate_from_call(args: Tuple[Any, ...], kwargs: Dict[str, Any], module: Any) -> str:
     if args and args[0]:
         return str(args[0])
@@ -153,6 +163,7 @@ def _locked_result(module: Any, result: Dict[str, Any], args: Tuple[Any, ...], k
         row = module._prediction_for_game(scoring, game, slate)
         if not row:
             continue
+        row = _optimize_locked_row(row)
         row["slatePredictionLock"] = public
         row["lockedPrediction"] = True
         row["lockedAtUtc"] = public.get("lockAtUtc")
@@ -162,7 +173,7 @@ def _locked_result(module: Any, result: Dict[str, Any], args: Tuple[Any, ...], k
             row["stored"] = module._store_prediction(row)
             stored.append(row.get("stored"))
         predictions.append(row)
-    predictions.sort(key=lambda r: (float(r.get("score") or 0), float(r.get("winProbability") or 0)), reverse=True)
+    predictions.sort(key=lambda r: (float(r.get("actionablePick") is True), float(r.get("score") or 0), float(r.get("winProbability") or 0)), reverse=True)
     for i, row in enumerate(predictions, 1):
         row["rank"] = i
     latest = pulls[-1]
@@ -182,6 +193,8 @@ def _locked_result(module: Any, result: Dict[str, Any], args: Tuple[Any, ...], k
         "allGamesPredicted": len(predictions) == len(games),
         "stored": store,
         "storedCount": len([s for s in stored if s and s.get("ok")]),
+        "actionablePickCount": len([r for r in predictions if r.get("actionablePick")]),
+        "noPickCount": len([r for r in predictions if not r.get("actionablePick")]),
         "slatePredictionLock": public,
         "predictions": predictions,
     })
