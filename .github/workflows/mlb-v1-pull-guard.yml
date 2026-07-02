@@ -30,6 +30,7 @@ jobs:
             --output text)
           test -n "$FUNCTION_NAME"
           aws lambda invoke \
+            --cli-binary-format raw-in-base64-out \
             --function-name "$FUNCTION_NAME" \
             --payload '{"sport":"mlb","t":"HOT","run":"github_actions_mlb_v1_pull_guard","days_ahead":1}' \
             /tmp/mlb-pull-response.json
