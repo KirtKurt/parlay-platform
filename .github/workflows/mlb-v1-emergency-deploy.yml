@@ -8,6 +8,10 @@ on:
       - ".github/workflows/mlb-v1-emergency-deploy.yml"
       - "scripts/patch_template_mlb_results_routes.py"
 
+concurrency:
+  group: parlay-platform-deploy
+  cancel-in-progress: false
+
 jobs:
   deploy-and-pull:
     runs-on: ubuntu-latest
@@ -40,6 +44,31 @@ jobs:
           sam validate
           rm -rf .aws-sam
           sam build --no-cached
+
+      - name: Wait for existing CloudFormation update to finish
+        run: |
+          for i in $(seq 1 60); do
+            STATUS=$(aws cloudformation describe-stacks \
+              --stack-name parlay-platform-dev \
+              --region ${{ secrets.AWS_REGION }} \
+              --query "Stacks[0].StackStatus" \
+              --output text 2>/dev/null || echo "STACK_MISSING")
+            echo "CloudFormation status: ${STATUS}"
+            case "${STATUS}" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE|STACK_MISSING)
+                exit 0
+                ;;
+              *IN_PROGRESS)
+                sleep 30
+                ;;
+              *)
+                echo "Stack status is not safe for update: ${STATUS}"
+                exit 1
+                ;;
+            esac
+          done
+          echo "Timed out waiting for CloudFormation stack to be updateable."
+          exit 1
 
       - name: Deploy MLB V1 stack update
         env:
