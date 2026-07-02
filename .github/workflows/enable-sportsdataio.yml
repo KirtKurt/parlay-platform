@@ -95,7 +95,7 @@ jobs:
               variables = json.load(f) or {}
           variables['SPORTSDATAIO_API_KEY'] = os.environ['SPORTSDATAIO_API_KEY_VALUE']
           variables['INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS'] = 'true'
-          variables['INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE'] = 'true'
+          variables['INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE'] = 'false'
           variables['SPORTSDATAIO_TIMEOUT_SECONDS'] = variables.get('SPORTSDATAIO_TIMEOUT_SECONDS', '25')
           with open('lambda-env.json', 'w') as f:
               json.dump({'Variables': variables}, f)
