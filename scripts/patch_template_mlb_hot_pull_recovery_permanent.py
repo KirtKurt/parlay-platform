@@ -3,40 +3,35 @@ from pathlib import Path
 TEMPLATE = Path("template.yaml")
 text = TEMPLATE.read_text()
 
-if "MLBHotPullRecoveryFunction:" not in text:
-    marker = "  InqsiAutopsySchedulerFunction:\n"
-    if marker not in text:
-        marker = "Outputs:\n"
-    block = """
-  MLBHotPullRecoveryFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: hello_world/
-      Handler: mlb_hot_pull_recovery_lambda.lambda_handler
-      Timeout: 300
-      MemorySize: 1024
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-      Events:
-        MLBHotPullRecoveryEvery15Min:
-          Type: Schedule
-          Properties:
-            Schedule: rate(15 minutes)
-            Input: '{"sport":"mlb","run":"aws_dedicated_mlb_hot_pull_recovery_every_15_min","policy":"permanent_mlb_hot_pull_recovery"}'
-        MLBHotPullRecoveryKickoff1amEtDst:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 5 * * ? *)
-            Input: '{"sport":"mlb","run":"aws_dedicated_mlb_hot_pull_recovery_1am_et_dst","policy":"permanent_mlb_hot_pull_recovery"}'
-        MLBHotPullRecoveryKickoff1amEtStandard:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 6 * * ? *)
-            Input: '{"sport":"mlb","run":"aws_dedicated_mlb_hot_pull_recovery_1am_et_standard","policy":"permanent_mlb_hot_pull_recovery"}'
 
-"""
-    text = text.replace(marker, block + marker, 1)
+def remove_resource_block(current: str, resource_name: str) -> str:
+    """Remove a top-level CloudFormation resource block by logical id."""
+    lines = current.splitlines(keepends=True)
+    out = []
+    i = 0
+    needle = f"  {resource_name}:"
+    while i < len(lines):
+        if lines[i].startswith(needle):
+            i += 1
+            while i < len(lines):
+                nxt = lines[i]
+                is_next_resource = nxt.startswith("  ") and not nxt.startswith("    ")
+                is_outputs = nxt.startswith("Outputs:")
+                if is_next_resource or is_outputs:
+                    break
+                i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "".join(out)
+
+
+# MLB Predictive Platform V1 makes MLBAuditedPullFunction the single production
+# 15-minute path. The previous recovery Lambda created duplicate schedules and
+# one of them used rate(15 minutes), which could drift off quarter-hour ET
+# boundaries. Remove it from the patched template so deploys converge on one
+# Odds API pull-store-predict pipeline.
+text = remove_resource_block(text, "MLBHotPullRecoveryFunction")
 
 TEMPLATE.write_text(text)
-print("Patched template.yaml with permanent dedicated MLB HOT pull recovery Lambda and EventBridge schedules.")
+print("Removed obsolete MLBHotPullRecoveryFunction; MLB V1 uses MLBAuditedPullFunction only.")
