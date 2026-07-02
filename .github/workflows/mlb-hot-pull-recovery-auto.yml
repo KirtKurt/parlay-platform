@@ -1,0 +1,29 @@
+name: MLB Hot Pull Recovery Auto Scheduler
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "7,22,37,52 * * * *"
+
+permissions:
+  actions: write
+
+concurrency:
+  group: mlb-hot-pull-recovery-auto-scheduler
+  cancel-in-progress: false
+
+jobs:
+  dispatch-recovery:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch MLB hot pull recovery workflow
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'mlb-hot-pull-recovery.yml',
+              ref: 'main'
+            });
+            core.info('Dispatched mlb-hot-pull-recovery.yml automatically.');
