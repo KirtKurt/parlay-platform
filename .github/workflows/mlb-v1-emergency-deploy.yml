@@ -6,6 +6,7 @@ on:
     branches: ["main"]
     paths:
       - ".github/workflows/mlb-v1-emergency-deploy.yml"
+      - "scripts/patch_template_mlb_results_routes.py"
 
 jobs:
   deploy-and-pull:
@@ -69,6 +70,7 @@ jobs:
             --output text)
           test -n "$FUNCTION_NAME"
           aws lambda invoke \
+            --cli-binary-format raw-in-base64-out \
             --function-name "$FUNCTION_NAME" \
             --payload '{"sport":"mlb","t":"HOT","run":"emergency_deploy_post_pull","days_ahead":1}' \
             /tmp/mlb-pull-response.json
