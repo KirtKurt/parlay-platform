@@ -1,0 +1,80 @@
+name: Deploy Odds API Only SAM to AWS
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - "hello_world/mlb_hot_pull_recovery_lambda.py"
+      - "scripts/patch_template_mlb_hot_pull_recovery_permanent.py"
+      - "scripts/patch_template_mlb_v1.py"
+      - ".github/workflows/deploy-odds-only.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify AWS connection
+        run: aws sts get-caller-identity
+
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Patch SAM template for MLB v1 and permanent HOT recovery
+        run: python scripts/patch_template_mlb_v1.py
+
+      - name: Patch SAM template for MLB settlement routes
+        run: python scripts/patch_template_mlb_results_routes.py
+
+      - name: Validate
+        run: sam validate
+
+      - name: Build clean
+        run: |
+          rm -rf .aws-sam
+          sam build --no-cached
+
+      - name: Deploy odds-only stack update
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          sam deploy \
+            --template-file template.yaml \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides OddsApiKey="${ODDS_API_KEY_VALUE}"
+
+      - name: Confirm dedicated MLB recovery function exists
+        run: |
+          aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --logical-resource-id MLBHotPullRecoveryFunction
+
+      - name: Confirm deployed stack outputs
+        run: |
+          aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --query "Stacks[0].StackStatus" \
+            --output text
