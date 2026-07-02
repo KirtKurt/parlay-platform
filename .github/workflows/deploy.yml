@@ -165,7 +165,7 @@ jobs:
           test -n "$API_URL"
           curl --fail --silent --show-error -X POST "${API_URL}v1/pull/mlb" \
             -H 'content-type: application/json' \
-            -d '{"t":"HOT","run":"post_deploy_pull","days_ahead":1}'
+            -d '{"t":"HOT","run":"post_deploy_pull","days_ahead":1,"force":true}'
 
       - name: Configure API WAF and throttling
         continue-on-error: true
