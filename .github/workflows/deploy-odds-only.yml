@@ -5,9 +5,12 @@ on:
   push:
     branches: ["main"]
     paths:
-      - "hello_world/mlb_hot_pull_recovery_lambda.py"
+      - "hello_world/mlb_manual_pull.py"
+      - "scripts/patch_template_mlb_hot_start_v2.py"
       - "scripts/patch_template_mlb_hot_pull_recovery_permanent.py"
       - "scripts/patch_template_mlb_v1.py"
+      - "scripts/patch_template_mlb_results_routes.py"
+      - "docs/MLB_PREDICTIVE_PLATFORM_V1.md"
       - ".github/workflows/deploy-odds-only.yml"
 
 jobs:
@@ -32,10 +35,20 @@ jobs:
       - name: Verify AWS connection
         run: aws sts get-caller-identity
 
+      - name: Verify Odds API secret present
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          if [ -z "${ODDS_API_KEY_VALUE:-}" ]; then
+            echo "::error::Missing ODDS_API_KEY GitHub secret. MLB V1 uses The Odds API line movement only."
+            exit 1
+          fi
+          echo "ODDS_API_KEY secret is present."
+
       - name: Setup AWS SAM
         uses: aws-actions/setup-sam@v2
 
-      - name: Patch SAM template for MLB v1 and permanent HOT recovery
+      - name: Patch SAM template for MLB v1
         run: python scripts/patch_template_mlb_v1.py
 
       - name: Patch SAM template for MLB settlement routes
@@ -64,12 +77,12 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides OddsApiKey="${ODDS_API_KEY_VALUE}"
 
-      - name: Confirm dedicated MLB recovery function exists
+      - name: Confirm MLB audited pull function exists
         run: |
           aws cloudformation describe-stack-resource \
             --stack-name parlay-platform-dev \
             --region ${{ secrets.AWS_REGION }} \
-            --logical-resource-id MLBHotPullRecoveryFunction
+            --logical-resource-id MLBAuditedPullFunction
 
       - name: Confirm deployed stack outputs
         run: |
