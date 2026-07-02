@@ -101,6 +101,6 @@ jobs:
           aws lambda invoke \
             --cli-binary-format raw-in-base64-out \
             --function-name "$FUNCTION_NAME" \
-            --payload '{"sport":"mlb","t":"HOT","run":"emergency_deploy_post_pull","days_ahead":1}' \
+            --payload '{"sport":"mlb","t":"HOT","run":"emergency_deploy_post_pull","days_ahead":1,"force":true}' \
             /tmp/mlb-pull-response.json
           cat /tmp/mlb-pull-response.json
