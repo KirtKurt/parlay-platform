@@ -2,7 +2,7 @@
   "ok": true,
   "proofType": "MLB_HOT_PULL_RECOVERY_AND_PREDICTION",
   "operatingMode": "SPORTSDATAIO_ENABLED_WITH_MARKET_FALLBACK",
-  "createdAtUtc": "2026-07-02T19:13:11.803133+00:00",
+  "createdAtUtc": "2026-07-02T19:54:33.338249+00:00",
   "environment": {
     "oddsApiKeyPresent": true,
     "snapshotsTablePresent": true,
@@ -14,31 +14,31 @@
   "pullResult": {
     "ok": true,
     "appSport": "mlb",
-    "rawGamesReturned": 18,
-    "rawGamesInWindow": 18,
-    "gamesStored": 18,
+    "rawGamesReturned": 17,
+    "rawGamesInWindow": 17,
+    "gamesStored": 17,
     "providerPulls": [
       {
         "ok": true,
         "appSport": "mlb",
         "providerSportKey": "baseball_mlb",
-        "rawGamesReturned": 18,
-        "rawGamesInWindow": 18,
-        "gamesStored": 18,
+        "rawGamesReturned": 17,
+        "rawGamesInWindow": 17,
+        "gamesStored": 17,
         "stored": {
           "pk": "PULLS#mlb#2026-07-02",
-          "sk": "PULL#2026-07-02T19:13:08.010186+00:00#pull_91abd239713e4c16",
-          "pull_id": "pull_91abd239713e4c16",
-          "game_count": 18
+          "sk": "PULL#2026-07-02T19:54:18.044122+00:00#pull_1cf90da914434599",
+          "pull_id": "pull_1cf90da914434599",
+          "game_count": 17
         },
         "error": null,
-        "activeWindowStart": "2026-07-02T13:13:08.009463+00:00",
-        "activeWindowEnd": "2026-07-04T19:13:08.009463+00:00",
+        "activeWindowStart": "2026-07-02T13:54:18.043425+00:00",
+        "activeWindowEnd": "2026-07-04T19:54:18.043425+00:00",
         "slateWindowDays": 2,
         "activeWindowBackBufferHours": 6
       }
     ],
-    "gamesSeen": 18,
+    "gamesSeen": 17,
     "deduped": false
   },
   "pullsAfterCount": 53,
@@ -50,7 +50,7 @@
     "count": 18,
     "storedCount": 18,
     "allGamesPredicted": true,
-    "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06+individual-winner-optimizer-90pct-target+fundamentals-calibration-no-pick-v1+last-possible-gate-v4-12h-individual-game-odds-api-only+MLB-WINNER-STACK-v2-market-movement-fundamental-calibrated+last-possible-gate-v4-12h-individual-game-odds-api-only",
+    "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06+individual-winner-optimizer-90pct-target+fundamentals-calibration-no-pick-v1+last-possible-gate-v4-12h-individual-game-odds-api-only+MLB-WINNER-STACK-v2-market-movement-fundamental-calibrated+slate-wide-45min-final-gate",
     "actionablePickCount": 8,
     "noPickCount": 10,
     "slatePredictionLock": {
@@ -63,8 +63,8 @@
       "locked": true,
       "lockStatus": "LOCKED",
       "source": "latest_pre_lock_pull_history",
-      "minutesUntilFirstGameStart": -157.19,
-      "minutesUntilSlateLock": -202.19,
+      "minutesUntilFirstGameStart": -198.52,
+      "minutesUntilSlateLock": -243.52,
       "totalPullCountAvailable": 53,
       "scoringPullCount": 34,
       "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -96,14 +96,18 @@
     "fundamentalsAppliedCount": 9,
     "lastPossiblePredictionGate": {
       "applied": true,
-      "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
+      "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+      "slateWideLock": true,
+      "lockAtUtc": "2026-07-02T15:51:00+00:00",
+      "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+      "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
       "gateWindowMinutesBeforeStart": {
-        "opensAt": 720,
-        "closesAt": 10
+        "opensAt": 45,
+        "closesAt": 45,
+        "meaning": "single_slate_wide_lock_cutoff"
       },
       "phaseCounts": {
-        "FINAL_GATE_OPEN": 12,
-        "GAME_STARTED_OR_CLOSED": 6
+        "SLATE_LOCKED": 18
       },
       "finalLockedCount": 18,
       "oddsApiOnly": true,
@@ -139,10 +143,8 @@
       "tags": [
         "ACTIONABLE_PICK",
         "CALIBRATED_PROBABILITY",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
-        "ODDS_API_ONLY",
         "SLATE_LOCKED",
         "SLATE_WIDE_45_MIN_LOCK_POLICY",
         "WINNER_STACK_V2"
@@ -191,7 +193,7 @@
         "optimizedWinnerScore": 30.56
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.496763+00:00",
+      "createdAt": "2026-07-02T19:54:31.990021+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -270,8 +272,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -349,13 +351,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 387.81,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -364,15 +375,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -406,10 +414,8 @@
       "tags": [
         "ACTIONABLE_PICK",
         "CALIBRATED_PROBABILITY",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
-        "ODDS_API_ONLY",
         "SLATE_LOCKED",
         "SLATE_WIDE_45_MIN_LOCK_POLICY",
         "WINNER_STACK_V2"
@@ -458,7 +464,7 @@
         "optimizedWinnerScore": 30.56
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.510177+00:00",
+      "createdAt": "2026-07-02T19:54:32.050855+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -537,8 +543,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -616,13 +622,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 387.81,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -631,15 +646,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -674,10 +686,8 @@
         "ACTIONABLE_PICK",
         "BOOK_AGREEMENT",
         "CALIBRATED_PROBABILITY",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
-        "ODDS_API_ONLY",
         "SLATE_LOCKED",
         "SLATE_WIDE_45_MIN_LOCK_POLICY",
         "WINNER_STACK_V2"
@@ -730,7 +740,7 @@
         "optimizedWinnerScore": 42.33
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.523689+00:00",
+      "createdAt": "2026-07-02T19:54:32.111763+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -809,8 +819,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -890,13 +900,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 417.81,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -905,15 +924,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -948,10 +964,8 @@
         "ACTIONABLE_PICK",
         "BOOK_AGREEMENT",
         "CALIBRATED_PROBABILITY",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
-        "ODDS_API_ONLY",
         "SLATE_LOCKED",
         "SLATE_WIDE_45_MIN_LOCK_POLICY",
         "WINNER_STACK_V2"
@@ -1004,7 +1018,7 @@
         "optimizedWinnerScore": 42.33
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.537065+00:00",
+      "createdAt": "2026-07-02T19:54:32.173445+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -1083,8 +1097,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -1164,13 +1178,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 417.81,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -1179,15 +1202,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -1225,7 +1245,6 @@
         "FUNDAMENTALS_APPLIED",
         "NO_PICK",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "SLATE_LOCKED",
         "SLATE_WIDE_45_MIN_LOCK_POLICY",
@@ -1281,7 +1300,7 @@
         "optimizedWinnerScore": 14.49
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.331104+00:00",
+      "createdAt": "2026-07-02T19:54:31.251239+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -1368,8 +1387,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -1450,14 +1469,23 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "GAME_STARTED_OR_CLOSED",
-        "minutesToStart": -62.19,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
-        "finalWindowActive": false,
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
+        "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
         "requiresSportsDataIoAttempt": false,
@@ -1465,15 +1493,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -1511,7 +1536,6 @@
         "FUNDAMENTALS_APPLIED",
         "NO_PICK",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "SLATE_LOCKED",
         "SLATE_WIDE_45_MIN_LOCK_POLICY",
@@ -1567,7 +1591,7 @@
         "optimizedWinnerScore": 14.49
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.345109+00:00",
+      "createdAt": "2026-07-02T19:54:31.313811+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -1654,8 +1678,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -1736,14 +1760,23 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "GAME_STARTED_OR_CLOSED",
-        "minutesToStart": -62.19,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
-        "finalWindowActive": false,
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
+        "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
         "requiresSportsDataIoAttempt": false,
@@ -1751,15 +1784,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -1794,11 +1824,9 @@
         "ACTIONABLE_PICK",
         "BOOK_AGREEMENT",
         "CALIBRATED_PROBABILITY",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "SLATE_LOCKED",
         "SLATE_WIDE_45_MIN_LOCK_POLICY",
@@ -1854,7 +1882,7 @@
         "optimizedWinnerScore": 61.7
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.443104+00:00",
+      "createdAt": "2026-07-02T19:54:31.743677+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -1937,8 +1965,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -2019,13 +2047,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 267.81,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -2034,15 +2071,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -2077,11 +2111,9 @@
         "ACTIONABLE_PICK",
         "BOOK_AGREEMENT",
         "CALIBRATED_PROBABILITY",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "SLATE_LOCKED",
         "SLATE_WIDE_45_MIN_LOCK_POLICY",
@@ -2137,7 +2169,7 @@
         "optimizedWinnerScore": 61.7
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.456704+00:00",
+      "createdAt": "2026-07-02T19:54:31.805462+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -2220,8 +2252,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -2302,13 +2334,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 267.81,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -2317,15 +2358,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -2363,7 +2401,6 @@
         "FUNDAMENTALS_APPLIED",
         "NO_PICK",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "RUN_LINE_MOVEMENT",
         "SLATE_LOCKED",
@@ -2422,7 +2459,7 @@
         "optimizedWinnerScore": 42.18
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.302725+00:00",
+      "createdAt": "2026-07-02T19:54:31.130659+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -2509,8 +2546,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -2592,14 +2629,23 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "GAME_STARTED_OR_CLOSED",
-        "minutesToStart": -157.19,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
-        "finalWindowActive": false,
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
+        "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
         "requiresSportsDataIoAttempt": false,
@@ -2607,15 +2653,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -2653,7 +2696,6 @@
         "FUNDAMENTALS_APPLIED",
         "NO_PICK",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "RUN_LINE_MOVEMENT",
         "SLATE_LOCKED",
@@ -2712,7 +2754,7 @@
         "optimizedWinnerScore": 42.18
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.317123+00:00",
+      "createdAt": "2026-07-02T19:54:31.190806+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -2799,8 +2841,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -2882,14 +2924,23 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "GAME_STARTED_OR_CLOSED",
-        "minutesToStart": -157.19,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
-        "finalWindowActive": false,
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
+        "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
         "requiresSportsDataIoAttempt": false,
@@ -2897,15 +2948,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -2940,11 +2988,9 @@
         "ACTIONABLE_PICK",
         "CALIBRATED_PROBABILITY",
         "COMPRESSED_MARKET",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "RUN_LINE_MOVEMENT",
         "SLATE_LOCKED",
@@ -3006,7 +3052,7 @@
         "optimizedWinnerScore": 20.63
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.386324+00:00",
+      "createdAt": "2026-07-02T19:54:31.497436+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -3091,8 +3137,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -3175,13 +3221,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 207.81,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -3190,15 +3245,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -3233,11 +3285,9 @@
         "ACTIONABLE_PICK",
         "CALIBRATED_PROBABILITY",
         "COMPRESSED_MARKET",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "RUN_LINE_MOVEMENT",
         "SLATE_LOCKED",
@@ -3299,7 +3349,7 @@
         "optimizedWinnerScore": 20.63
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.399979+00:00",
+      "createdAt": "2026-07-02T19:54:31.558361+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -3384,8 +3434,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -3468,13 +3518,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 207.8,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -3483,15 +3542,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -3529,7 +3585,6 @@
         "FUNDAMENTALS_APPLIED",
         "NO_PICK",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "SLATE_LOCKED",
         "SLATE_WIDE_45_MIN_LOCK_POLICY",
@@ -3585,7 +3640,7 @@
         "optimizedWinnerScore": 48.89
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.359038+00:00",
+      "createdAt": "2026-07-02T19:54:31.374832+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -3672,8 +3727,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -3754,14 +3809,23 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "GAME_STARTED_OR_CLOSED",
-        "minutesToStart": -2.2,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
-        "finalWindowActive": false,
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
+        "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
         "requiresSportsDataIoAttempt": false,
@@ -3769,15 +3833,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -3815,7 +3876,6 @@
         "FUNDAMENTALS_APPLIED",
         "NO_PICK",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "SLATE_LOCKED",
         "SLATE_WIDE_45_MIN_LOCK_POLICY",
@@ -3871,7 +3931,7 @@
         "optimizedWinnerScore": 48.89
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.372584+00:00",
+      "createdAt": "2026-07-02T19:54:31.436163+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -3958,8 +4018,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -4040,14 +4100,23 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "GAME_STARTED_OR_CLOSED",
-        "minutesToStart": -2.2,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
-        "finalWindowActive": false,
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
+        "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
         "requiresSportsDataIoAttempt": false,
@@ -4055,15 +4124,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -4098,12 +4164,10 @@
         "BOOK_AGREEMENT",
         "CALIBRATED_PROBABILITY",
         "COMPRESSED_MARKET",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
         "NO_PICK",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "RUN_LINE_CONFIRMATION",
         "RUN_LINE_MOVEMENT",
@@ -4166,7 +4230,7 @@
         "optimizedWinnerScore": 55.06
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.413430+00:00",
+      "createdAt": "2026-07-02T19:54:31.619119+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -4255,8 +4319,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -4340,13 +4404,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 242.8,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -4355,15 +4428,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -4398,12 +4468,10 @@
         "BOOK_AGREEMENT",
         "CALIBRATED_PROBABILITY",
         "COMPRESSED_MARKET",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
         "NO_PICK",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "RUN_LINE_CONFIRMATION",
         "RUN_LINE_MOVEMENT",
@@ -4466,7 +4534,7 @@
         "optimizedWinnerScore": 55.06
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.426850+00:00",
+      "createdAt": "2026-07-02T19:54:31.680491+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -4555,8 +4623,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -4640,13 +4708,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 242.8,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -4655,15 +4732,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -4697,12 +4771,10 @@
       "tags": [
         "CALIBRATED_PROBABILITY",
         "COMPRESSED_MARKET",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
         "NO_PICK",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "RUN_LINE_MOVEMENT",
         "SLATE_LOCKED",
@@ -4764,7 +4836,7 @@
         "optimizedWinnerScore": 42.81
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.469849+00:00",
+      "createdAt": "2026-07-02T19:54:31.866941+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -4853,8 +4925,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -4937,13 +5009,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 292.8,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -4952,15 +5033,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
@@ -4994,12 +5072,10 @@
       "tags": [
         "CALIBRATED_PROBABILITY",
         "COMPRESSED_MARKET",
-        "FINAL_GATE_OPEN",
         "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
         "NO_PICK",
         "NO_PICK_DISCIPLINE",
-        "ODDS_API_ONLY",
         "REVERSAL",
         "RUN_LINE_MOVEMENT",
         "SLATE_LOCKED",
@@ -5061,7 +5137,7 @@
         "optimizedWinnerScore": 42.81
       },
       "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-      "createdAt": "2026-07-02T19:13:11.483199+00:00",
+      "createdAt": "2026-07-02T19:54:31.928834+00:00",
       "optimizerFlippedByFundamentals": false,
       "winnerOptimizer": {
         "fundamentalsApplied": true,
@@ -5150,8 +5226,8 @@
         "locked": true,
         "lockStatus": "LOCKED",
         "source": "latest_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": -157.19,
-        "minutesUntilSlateLock": -202.19,
+        "minutesUntilFirstGameStart": -198.52,
+        "minutesUntilSlateLock": -243.52,
         "totalPullCountAvailable": 53,
         "scoringPullCount": 34,
         "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
@@ -5234,13 +5310,22 @@
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
       "lastPossiblePredictionGate": {
-        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
-        "phase": "FINAL_GATE_OPEN",
-        "minutesToStart": 292.8,
+        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+        "phase": "SLATE_LOCKED",
+        "minutesToStart": -198.52,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 720,
-          "closesAt": 10
+          "opensAt": 45,
+          "closesAt": 45,
+          "meaning": "single_slate_wide_lock_cutoff"
         },
+        "slateWideLock": true,
+        "lockMinutesBeforeFirstGame": 45,
+        "firstGameStartUtc": "2026-07-02T16:36:00+00:00",
+        "lockAtUtc": "2026-07-02T15:51:00+00:00",
+        "latestAvailablePullAt": "2026-07-02T17:52:15.202969+00:00",
+        "latestScoringPullAt": "2026-07-02T15:45:25.970992+00:00",
+        "totalPullCountAvailable": 53,
+        "scoringPullCount": 34,
         "finalWindowActive": true,
         "finalLocked": true,
         "oddsApiOnly": true,
@@ -5249,15 +5334,12 @@
         "sportsDataIoFundamentalsApplied": true,
         "finalGateBlocked": false,
         "finalGateBlockReason": null,
-        "finalDataStatus": "ODDS_API_ONLY_READY",
-        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE",
+        "finalDataStatus": "FULL_DATA_READY",
+        "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK",
         "rules": [
-          "Open the final gate 720 minutes before each individual game.",
-          "Default production policy is 720 minutes / 12 hours before each individual game unless explicitly overridden.",
-          "Use the latest Odds API pull available at gate time.",
-          "Use multi-window signal learning from audited Odds API pull history.",
-          "SportsDataIO is optional and disabled by default until live runtime proof passes.",
-          "Re-store the final row so the database reflects the last-gate decision."
+          "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+          "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+          "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
       "fullDataFinalPick": true,
