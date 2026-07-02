@@ -28,10 +28,12 @@ if old_schedule in text:
 # able to skip because of a stale future gate.
 if "MLB_PULL_START_AT_ET:" not in text:
     marker = "        ODDS_API_KEY: !Ref OddsApiKey\n"
+    if marker not in text:
+        raise RuntimeError("ODDS_API_KEY environment marker not found in template.yaml")
     replacement = (
         marker
-        "        MLB_PULL_START_AT_ET: \"2026-07-02T01:00:00-04:00\"\n"
-        "        MLB_SCHED_INTERVAL_MINUTES: \"15\"\n"
+        + "        MLB_PULL_START_AT_ET: '2026-07-02T01:00:00-04:00'\n"
+        + "        MLB_SCHED_INTERVAL_MINUTES: '15'\n"
     )
     text = text.replace(marker, replacement, 1)
 
