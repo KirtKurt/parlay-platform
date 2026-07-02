@@ -1,0 +1,68 @@
+name: MLB V1 Pull Guard
+
+on:
+  workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/mlb-v1-pull-guard.yml"
+  schedule:
+    - cron: "0/15 * * * *"
+
+jobs:
+  invoke-mlb-pull:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke MLB audited pull Lambda
+        run: |
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --logical-resource-id MLBAuditedPullFunction \
+            --query "StackResourceDetail.PhysicalResourceId" \
+            --output text)
+          test -n "$FUNCTION_NAME"
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --payload '{"sport":"mlb","t":"HOT","run":"github_actions_mlb_v1_pull_guard","days_ahead":1}' \
+            /tmp/mlb-pull-response.json
+          cat /tmp/mlb-pull-response.json
+          python - <<'PY'
+          import json
+          with open('/tmp/mlb-pull-response.json', 'r', encoding='utf-8') as f:
+              payload = json.load(f)
+          body = payload
+          if isinstance(payload, dict) and 'body' in payload:
+              try:
+                  body = json.loads(payload['body'])
+              except Exception:
+                  body = payload
+          if not isinstance(body, dict) or not body.get('ok'):
+              raise SystemExit(f"MLB pull guard failed: {body}")
+          print(json.dumps({
+              'ok': body.get('ok'),
+              'sport': body.get('sport'),
+              'platformVersion': body.get('platformVersion'),
+              'pull_date_et': body.get('pull_date_et'),
+              'asof': body.get('asof'),
+              'count': body.get('count'),
+              'canonical_pull_history': body.get('canonical_pull_history'),
+              'game_winner_predictions': [
+                  {
+                      'game_date_et': row.get('game_date_et'),
+                      'ok': row.get('ok'),
+                      'pullCount': row.get('pullCount'),
+                      'count': row.get('count'),
+                      'storedCount': row.get('storedCount'),
+                  }
+                  for row in (body.get('game_winner_predictions') or [])
+              ],
+          }, indent=2, default=str))
+          PY
