@@ -1,0 +1,2 @@
+# odds api
+print('ok')
