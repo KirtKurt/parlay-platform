@@ -1,7 +1,7 @@
 {
   "ok": true,
-  "createdAtUtc": "2026-07-03T17:02:09.271983+00:00",
-  "createdAtEt": "2026-07-03T13:02:09.272000-04:00",
+  "createdAtUtc": "2026-07-03T18:23:10.412013+00:00",
+  "createdAtEt": "2026-07-03T14:23:10.412031-04:00",
   "sportsRequested": [
     "mlb"
   ],
@@ -40,9 +40,9 @@
         "predictedWinner": "Los Angeles Dodgers",
         "predictedSide": "home",
         "opponent": "San Diego Padres",
-        "winProbability": 0.7988,
-        "winProbabilityPct": 79.88,
-        "score": 75.89,
+        "winProbability": 0.7996,
+        "winProbabilityPct": 79.96,
+        "score": 76.07,
         "confidenceTier": "Premium",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -63,9 +63,9 @@
         "homeSignal": {
           "side": "home",
           "team": "Los Angeles Dodgers",
-          "score": 62.4,
-          "winProbability": 0.7376,
-          "winProbabilityPct": 73.76,
+          "score": 62.88,
+          "winProbability": 0.7452,
+          "winProbabilityPct": 74.52,
           "marketConsensusProbability": 0.67955,
           "probStart": 0.68115,
           "probLatest": 0.67955,
@@ -82,16 +82,16 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 61.83,
-          "rolling24hLearningAdjustment": 1.32,
+          "rolling24hLearningAdjustment": 1.8,
           "winnerRuleAdjustment": -0.75,
-          "optimizedWinnerScore": 62.4
+          "optimizedWinnerScore": 62.88
         },
         "awaySignal": {
           "side": "away",
           "team": "San Diego Padres",
-          "score": 31.35,
-          "winProbability": 0.1745,
-          "winProbabilityPct": 17.45,
+          "score": 31.54,
+          "winProbability": 0.1768,
+          "winProbabilityPct": 17.68,
           "marketConsensusProbability": 0.32045,
           "probStart": 0.31885,
           "probLatest": 0.32045,
@@ -107,12 +107,12 @@
             "REVERSAL"
           ],
           "rawScoreBeforeWinnerOptimizer": 31.76,
-          "rolling24hLearningAdjustment": 2.09,
+          "rolling24hLearningAdjustment": 2.28,
           "winnerRuleAdjustment": -2.5,
-          "optimizedWinnerScore": 31.35
+          "optimizedWinnerScore": 31.54
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:10.113377+00:00",
+        "createdAt": "2026-07-03T18:23:11.280135+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
@@ -145,8 +145,8 @@
           "applied": true,
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 62.4,
-          "awayOptimizedScore": 31.35,
+          "homeOptimizedScore": 62.88,
+          "awayOptimizedScore": 31.54,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -158,16 +158,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.7376,
-        "calibratedWinProbability": 0.6639,
+        "rawWinProbabilityBeforeCalibration": 0.7452,
+        "calibratedWinProbability": 0.6671,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.7376,
+          "rawProbability": 0.7452,
           "marketConsensusProbability": 0.67955,
-          "scoreImpliedProbability": 0.7376,
-          "calibratedProbability": 0.6639,
+          "scoreImpliedProbability": 0.7452,
+          "calibratedProbability": 0.6671,
           "shrinkage": 0.225,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -189,8 +189,8 @@
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.6639,
-          "score": 62.4,
+          "calibratedProbability": 0.6671,
+          "score": 62.88,
           "pullCountForGame": 69,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -203,7 +203,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -240,8 +240,8 @@
           "sk": "GAME#2026-07-04T02:11:00Z#0341580e2426c65b63d7fb929214eb65",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 62.4,
-        "winProbabilityBeforeWinnerStackV2": 0.6639,
+        "scoreBeforeWinnerStackV2": 62.88,
+        "winProbabilityBeforeWinnerStackV2": 0.6671,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -255,7 +255,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 65.4,
+              "score": 65.88,
               "tags": [
                 "BOOK_AGREEMENT",
                 "REVERSAL",
@@ -277,11 +277,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 75.89,
+          "ensembleScore": 76.07,
           "calibration": {
-            "rawProbability": 0.8964,
+            "rawProbability": 0.8978,
             "marketAnchorProbability": 0.6795,
-            "calibratedProbability": 0.7988,
+            "calibratedProbability": 0.7996,
             "shrinkageToward50": 0.0,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -302,8 +302,8 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -330,9 +330,9 @@
         "predictedWinner": "New York Yankees",
         "predictedSide": "home",
         "opponent": "Minnesota Twins",
-        "winProbability": 0.7209,
-        "winProbabilityPct": 72.09,
-        "score": 66.91,
+        "winProbability": 0.7214,
+        "winProbabilityPct": 72.14,
+        "score": 66.98,
         "confidenceTier": "Solid",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -353,9 +353,9 @@
         "homeSignal": {
           "side": "home",
           "team": "New York Yankees",
-          "score": 57.82,
-          "winProbability": 0.6574,
-          "winProbabilityPct": 65.74,
+          "score": 58.01,
+          "winProbability": 0.6609,
+          "winProbabilityPct": 66.09,
           "marketConsensusProbability": 0.61977,
           "probStart": 0.62042,
           "probLatest": 0.61977,
@@ -371,16 +371,16 @@
             "REVERSAL"
           ],
           "rawScoreBeforeWinnerOptimizer": 58.23,
-          "rolling24hLearningAdjustment": 2.09,
+          "rolling24hLearningAdjustment": 2.28,
           "winnerRuleAdjustment": -2.5,
-          "optimizedWinnerScore": 57.82
+          "optimizedWinnerScore": 58.01
         },
         "awaySignal": {
           "side": "away",
           "team": "Minnesota Twins",
-          "score": 37.18,
-          "winProbability": 0.2557,
-          "winProbabilityPct": 25.57,
+          "score": 37.37,
+          "winProbability": 0.2587,
+          "winProbabilityPct": 25.87,
           "marketConsensusProbability": 0.38023,
           "probStart": 0.37958,
           "probLatest": 0.38023,
@@ -396,12 +396,12 @@
             "REVERSAL"
           ],
           "rawScoreBeforeWinnerOptimizer": 37.59,
-          "rolling24hLearningAdjustment": 2.09,
+          "rolling24hLearningAdjustment": 2.28,
           "winnerRuleAdjustment": -2.5,
-          "optimizedWinnerScore": 37.18
+          "optimizedWinnerScore": 37.37
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:09.988119+00:00",
+        "createdAt": "2026-07-03T18:23:11.160358+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
@@ -433,8 +433,8 @@
           "applied": true,
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 57.82,
-          "awayOptimizedScore": 37.18,
+          "homeOptimizedScore": 58.01,
+          "awayOptimizedScore": 37.37,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -446,16 +446,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.6574,
-        "calibratedWinProbability": 0.6089,
+        "rawWinProbabilityBeforeCalibration": 0.6609,
+        "calibratedWinProbability": 0.6104,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.6574,
+          "rawProbability": 0.6609,
           "marketConsensusProbability": 0.61977,
-          "scoreImpliedProbability": 0.6574,
-          "calibratedProbability": 0.6089,
+          "scoreImpliedProbability": 0.6609,
+          "calibratedProbability": 0.6104,
           "shrinkage": 0.225,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -477,8 +477,8 @@
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.6089,
-          "score": 57.82,
+          "calibratedProbability": 0.6104,
+          "score": 58.01,
           "pullCountForGame": 71,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -493,7 +493,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -530,8 +530,8 @@
           "sk": "GAME#2026-07-03T23:06:00Z#0a7769461d3b3126c2e4bb98b8cee225",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 57.82,
-        "winProbabilityBeforeWinnerStackV2": 0.6089,
+        "scoreBeforeWinnerStackV2": 58.01,
+        "winProbabilityBeforeWinnerStackV2": 0.6104,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -545,7 +545,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 59.32,
+              "score": 59.51,
               "tags": [
                 "BOOK_AGREEMENT",
                 "REVERSAL"
@@ -566,11 +566,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 66.91,
+          "ensembleScore": 66.98,
           "calibration": {
-            "rawProbability": 0.8036,
+            "rawProbability": 0.8046,
             "marketAnchorProbability": 0.6198,
-            "calibratedProbability": 0.7209,
+            "calibratedProbability": 0.7214,
             "shrinkageToward50": 0.0,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -591,8 +591,8 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -619,9 +619,9 @@
         "predictedWinner": "Chicago Cubs",
         "predictedSide": "home",
         "opponent": "St. Louis Cardinals",
-        "winProbability": 0.6775,
-        "winProbabilityPct": 67.75,
-        "score": 65.74,
+        "winProbability": 0.6788,
+        "winProbabilityPct": 67.88,
+        "score": 65.9,
         "confidenceTier": "Solid",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -642,9 +642,9 @@
         "homeSignal": {
           "side": "home",
           "team": "Chicago Cubs",
-          "score": 72.85,
-          "winProbability": 0.8704,
-          "winProbabilityPct": 87.04,
+          "score": 73.28,
+          "winProbability": 0.8744,
+          "winProbabilityPct": 87.44,
           "marketConsensusProbability": 0.54276,
           "probStart": 0.52328,
           "probLatest": 0.54276,
@@ -661,16 +661,16 @@
             "STEAM"
           ],
           "rawScoreBeforeWinnerOptimizer": 72.39,
-          "rolling24hLearningAdjustment": 0.96,
+          "rolling24hLearningAdjustment": 1.39,
           "winnerRuleAdjustment": -0.5,
-          "optimizedWinnerScore": 72.85
+          "optimizedWinnerScore": 73.28
         },
         "awaySignal": {
           "side": "away",
           "team": "St. Louis Cardinals",
-          "score": 38.11,
-          "winProbability": 0.2707,
-          "winProbabilityPct": 27.07,
+          "score": 38.4,
+          "winProbability": 0.2755,
+          "winProbabilityPct": 27.55,
           "marketConsensusProbability": 0.45724,
           "probStart": 0.47672,
           "probLatest": 0.45724,
@@ -687,12 +687,12 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 37.42,
-          "rolling24hLearningAdjustment": 1.44,
+          "rolling24hLearningAdjustment": 1.73,
           "winnerRuleAdjustment": -0.75,
-          "optimizedWinnerScore": 38.11
+          "optimizedWinnerScore": 38.4
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:09.941119+00:00",
+        "createdAt": "2026-07-03T18:23:11.114922+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
@@ -725,8 +725,8 @@
           "applied": true,
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 72.85,
-          "awayOptimizedScore": 38.11,
+          "homeOptimizedScore": 73.28,
+          "awayOptimizedScore": 38.4,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -738,16 +738,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.8704,
-        "calibratedWinProbability": 0.6784,
+        "rawWinProbabilityBeforeCalibration": 0.8744,
+        "calibratedWinProbability": 0.6801,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.8704,
+          "rawProbability": 0.8744,
           "marketConsensusProbability": 0.54276,
-          "scoreImpliedProbability": 0.8704,
-          "calibratedProbability": 0.6784,
+          "scoreImpliedProbability": 0.8744,
+          "calibratedProbability": 0.6801,
           "shrinkage": 0.2,
           "riskPenalty": 0.02,
           "riskReasons": [
@@ -761,15 +761,15 @@
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "actionable": true,
-          "level": "ACTIONABLE_LEAN_PICK",
+          "level": "STRONG_ACTIONABLE_PICK",
           "thresholds": {
             "minPulls": 12,
             "minCalibratedProbability": 0.59,
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.6784,
-          "score": 72.85,
+          "calibratedProbability": 0.6801,
+          "score": 73.28,
           "pullCountForGame": 71,
           "riskPenalty": 0.02,
           "riskReasons": [
@@ -781,7 +781,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -818,8 +818,8 @@
           "sk": "GAME#2026-07-03T20:06:00Z#471b2b7bb19f52be5e618aec359cd8e5",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 72.85,
-        "winProbabilityBeforeWinnerStackV2": 0.6784,
+        "scoreBeforeWinnerStackV2": 73.28,
+        "winProbabilityBeforeWinnerStackV2": 0.6801,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -833,7 +833,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 78.85,
+              "score": 79.28,
               "tags": [
                 "BOOK_AGREEMENT",
                 "RUN_LINE_MOVEMENT",
@@ -855,11 +855,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 65.74,
+          "ensembleScore": 65.9,
           "calibration": {
-            "rawProbability": 0.7878,
+            "rawProbability": 0.79,
             "marketAnchorProbability": 0.5428,
-            "calibratedProbability": 0.6775,
+            "calibratedProbability": 0.6788,
             "shrinkageToward50": 0.0,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -880,8 +880,8 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -908,9 +908,9 @@
         "predictedWinner": "Toronto Blue Jays",
         "predictedSide": "away",
         "opponent": "Seattle Mariners",
-        "winProbability": 0.6725,
-        "winProbabilityPct": 67.25,
-        "score": 65.07,
+        "winProbability": 0.6729,
+        "winProbabilityPct": 67.29,
+        "score": 65.13,
         "confidenceTier": "Solid",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -955,9 +955,9 @@
         "awaySignal": {
           "side": "away",
           "team": "Toronto Blue Jays",
-          "score": 72.49,
-          "winProbability": 0.8669,
-          "winProbabilityPct": 86.69,
+          "score": 72.63,
+          "winProbability": 0.8683,
+          "winProbabilityPct": 86.83,
           "marketConsensusProbability": 0.54318,
           "probStart": 0.52298,
           "probLatest": 0.54318,
@@ -973,12 +973,12 @@
             "STEAM"
           ],
           "rawScoreBeforeWinnerOptimizer": 71.26,
-          "rolling24hLearningAdjustment": 0.98,
+          "rolling24hLearningAdjustment": 1.12,
           "winnerRuleAdjustment": 0.25,
-          "optimizedWinnerScore": 72.49
+          "optimizedWinnerScore": 72.63
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:10.126440+00:00",
+        "createdAt": "2026-07-03T18:23:11.292452+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
@@ -1011,7 +1011,7 @@
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
           "homeOptimizedScore": 36.67,
-          "awayOptimizedScore": 72.49,
+          "awayOptimizedScore": 72.63,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -1023,16 +1023,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.8669,
-        "calibratedWinProbability": 0.677,
+        "rawWinProbabilityBeforeCalibration": 0.8683,
+        "calibratedWinProbability": 0.6776,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.8669,
+          "rawProbability": 0.8683,
           "marketConsensusProbability": 0.54318,
-          "scoreImpliedProbability": 0.8669,
-          "calibratedProbability": 0.677,
+          "scoreImpliedProbability": 0.8683,
+          "calibratedProbability": 0.6776,
           "shrinkage": 0.2,
           "riskPenalty": 0.02,
           "riskReasons": [
@@ -1053,8 +1053,8 @@
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.677,
-          "score": 72.49,
+          "calibratedProbability": 0.6776,
+          "score": 72.63,
           "pullCountForGame": 41,
           "riskPenalty": 0.02,
           "riskReasons": [
@@ -1066,7 +1066,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -1103,8 +1103,8 @@
           "sk": "GAME#2026-07-04T02:11:00Z#90671747520f496e2e8e3b667c7c4286",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 72.49,
-        "winProbabilityBeforeWinnerStackV2": 0.677,
+        "scoreBeforeWinnerStackV2": 72.63,
+        "winProbabilityBeforeWinnerStackV2": 0.6776,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -1118,7 +1118,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 76.99,
+              "score": 77.13,
               "tags": [
                 "BOOK_AGREEMENT",
                 "STEAM"
@@ -1139,11 +1139,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 65.07,
+          "ensembleScore": 65.13,
           "calibration": {
-            "rawProbability": 0.7784,
+            "rawProbability": 0.7791,
             "marketAnchorProbability": 0.5432,
-            "calibratedProbability": 0.6725,
+            "calibratedProbability": 0.6729,
             "shrinkageToward50": 0.0,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -1164,303 +1164,8 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
-          "totalPullCountAvailable": 71,
-          "scoringPullCount": 71,
-          "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
-          "latestScoringPullAt": "2026-07-03T06:45:25.950455+00:00",
-          "rules": [
-            "All predictions for the slate lock together 45 minutes before the first game begins.",
-            "After lock, later pulls may continue for audit but cannot change picks.",
-            "Locked scoring uses only pulls captured at or before the lock timestamp."
-          ]
-        }
-      },
-      {
-        "ok": true,
-        "sport": "mlb",
-        "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
-        "engine": "MLB-GAME-WINNER-v1.0",
-        "slate_date": "2026-07-03",
-        "gameId": "14423828314cc83167d6c7ce88323746",
-        "gameKey": "mlb|2026-07-03|pittsburgh pirates|washington nationals",
-        "homeTeam": "Washington Nationals",
-        "awayTeam": "Pittsburgh Pirates",
-        "commenceTime": "2026-07-03T22:46:00Z",
-        "providerSportKey": "baseball_mlb",
-        "predictedWinner": "Washington Nationals",
-        "predictedSide": "home",
-        "opponent": "Pittsburgh Pirates",
-        "winProbability": 0.6669,
-        "winProbabilityPct": 66.69,
-        "score": 63.47,
-        "confidenceTier": "Lean",
-        "pickQuality": "GAME_WINNER_SIGNAL",
-        "tags": [
-          "BOOK_AGREEMENT",
-          "CALIBRATED_PROBABILITY",
-          "FINAL_GATE_OPEN",
-          "FINAL_LOCKED",
-          "MISSING_FUNDAMENTALS",
-          "NO_PICK",
-          "NO_PICK_DISCIPLINE",
-          "ODDS_API_ONLY",
-          "PRE_SLATE_LOCK",
-          "REVERSAL",
-          "SLATE_WIDE_45_MIN_LOCK_POLICY",
-          "STEAM",
-          "WINNER_STACK_V2"
-        ],
-        "pullCountForGame": 71,
-        "homeSignal": {
-          "side": "home",
-          "team": "Washington Nationals",
-          "score": 63.39,
-          "winProbability": 0.7532,
-          "winProbabilityPct": 75.32,
-          "marketConsensusProbability": 0.5598,
-          "probStart": 0.54737,
-          "probLatest": 0.5598,
-          "delta": 0.01242,
-          "bookCount": 11,
-          "bookDivergence": 0.0127,
-          "latestGap": 0.1196,
-          "reversalCount": 1,
-          "runLineMovement": -6.182,
-          "averageAmericanOdds": -139.27,
-          "tags": [
-            "BOOK_AGREEMENT",
-            "REVERSAL",
-            "STEAM"
-          ],
-          "rawScoreBeforeWinnerOptimizer": 62.28,
-          "rolling24hLearningAdjustment": 0.86,
-          "winnerRuleAdjustment": 0.25,
-          "optimizedWinnerScore": 63.39
-        },
-        "awaySignal": {
-          "side": "away",
-          "team": "Pittsburgh Pirates",
-          "score": 34.69,
-          "winProbability": 0.2183,
-          "winProbabilityPct": 21.83,
-          "marketConsensusProbability": 0.4402,
-          "probStart": 0.45263,
-          "probLatest": 0.4402,
-          "delta": -0.01242,
-          "bookCount": 11,
-          "bookDivergence": 0.0127,
-          "latestGap": 0.1196,
-          "reversalCount": 1,
-          "runLineMovement": 10.364,
-          "averageAmericanOdds": 118.55,
-          "tags": [
-            "BOOK_AGREEMENT",
-            "RESISTANCE",
-            "REVERSAL",
-            "RUN_LINE_MOVEMENT"
-          ],
-          "rawScoreBeforeWinnerOptimizer": 34.12,
-          "rolling24hLearningAdjustment": 1.32,
-          "winnerRuleAdjustment": -0.75,
-          "optimizedWinnerScore": 34.69
-        },
-        "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:09.974396+00:00",
-        "stored": {
-          "ok": true,
-          "pk": "GAME_WINNERS#mlb#2026-07-03",
-          "sk": "GAME#2026-07-03T22:46:00Z#14423828314cc83167d6c7ce88323746"
-        },
-        "rank": 5,
-        "selectionBeforeWinnerOptimizer": {
-          "predictedWinner": "Washington Nationals",
-          "predictedSide": "home",
-          "score": 62.28,
-          "tags": [
-            "BOOK_AGREEMENT",
-            "REVERSAL",
-            "STEAM"
-          ]
-        },
-        "individualWinnerOptimized": true,
-        "optimizerFlippedPick": false,
-        "officialPick": false,
-        "accuracyTargetEligible": false,
-        "actionability": "WATCHLIST_LEAN",
-        "actionabilityReason": "edge_exists_but_not_strong_enough_for_primary_actionable_bucket",
-        "rolling24hAccuracyTarget": {
-          "targetAccuracyPct": 90.0,
-          "windowHours": 24,
-          "measuredBy": "mlb_rolling_24h_audit",
-          "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
-        },
-        "winnerOptimizer": {
-          "applied": true,
-          "basis": "compare_home_and_away_optimized_signal_scores",
-          "latestLearningApplied": true,
-          "homeOptimizedScore": 63.39,
-          "awayOptimizedScore": 34.69,
-          "flippedPick": false,
-          "fundamentalsApplied": false,
-          "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
-        },
-        "fundamentalsLayer": {
-          "available": false,
-          "applied": false,
-          "mode": "SPORTSDATAIO_UNAVAILABLE",
-          "slateDate": "2026-07-03",
-          "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
-        },
-        "rawWinProbabilityBeforeCalibration": 0.7532,
-        "calibratedWinProbability": 0.6288,
-        "calibration": {
-          "enabled": true,
-          "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
-          "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.7532,
-          "marketConsensusProbability": 0.5598,
-          "scoreImpliedProbability": 0.7532,
-          "calibratedProbability": 0.6288,
-          "shrinkage": 0.225,
-          "riskPenalty": 0.045,
-          "riskReasons": [
-            "MISSING_FUNDAMENTALS",
-            "REVERSAL_RISK"
-          ],
-          "fundamentalsBoost": 0.0,
-          "note": "Calibration intentionally compresses aggressive raw scores toward market consensus and penalizes instability."
-        },
-        "actionablePick": false,
-        "pickDiscipline": {
-          "enabled": true,
-          "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
-          "actionable": false,
-          "level": "NO_PICK",
-          "thresholds": {
-            "minPulls": 12,
-            "minCalibratedProbability": 0.59,
-            "minScore": 56.0,
-            "maxRiskPenalty": 0.18
-          },
-          "calibratedProbability": 0.6288,
-          "score": 63.39,
-          "pullCountForGame": 71,
-          "riskPenalty": 0.045,
-          "riskReasons": [
-            "MISSING_FUNDAMENTALS",
-            "REVERSAL_RISK"
-          ],
-          "noPickReasons": [
-            "missing_fundamentals_requires_stronger_market_edge"
-          ],
-          "rule": "Every game can receive a prediction, but only rows passing this gate are actionable picks."
-        },
-        "lastPossiblePredictionGate": {
-          "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
-          "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
-          "gateWindowMinutesBeforeStart": {
-            "opensAt": 45,
-            "closesAt": 45,
-            "meaning": "single_slate_wide_lock_cutoff"
-          },
-          "slateWideLock": true,
-          "lockMinutesBeforeFirstGame": 45,
-          "firstGameStartUtc": "2026-07-03T20:06:00+00:00",
-          "lockAtUtc": "2026-07-03T19:21:00+00:00",
-          "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
-          "latestScoringPullAt": "2026-07-03T06:45:25.950455+00:00",
-          "totalPullCountAvailable": 71,
-          "scoringPullCount": 71,
-          "finalWindowActive": false,
-          "finalLocked": false,
-          "oddsApiOnly": true,
-          "requiresSportsDataIoAttempt": false,
-          "requiresSportsDataIoForFullDataFinalPick": false,
-          "sportsDataIoFundamentalsApplied": false,
-          "finalGateBlocked": false,
-          "finalGateBlockReason": null,
-          "finalDataStatus": "ODDS_API_ONLY_READY",
-          "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_SLATE_LOCK",
-          "rules": [
-            "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
-            "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
-            "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
-          ]
-        },
-        "fullDataFinalPick": true,
-        "finalGateStored": {
-          "ok": true,
-          "pk": "GAME_WINNERS#mlb#2026-07-03",
-          "sk": "GAME#2026-07-03T22:46:00Z#14423828314cc83167d6c7ce88323746",
-          "finalGateStored": true
-        },
-        "scoreBeforeWinnerStackV2": 63.39,
-        "winProbabilityBeforeWinnerStackV2": 0.6288,
-        "officialPrediction": true,
-        "winnerStackV2": {
-          "applied": true,
-          "version": "MLB-WINNER-STACK-v2-market-movement-fundamental-calibrated",
-          "components": {
-            "market": {
-              "score": 60.76,
-              "consensusProbability": 0.5598,
-              "opponentConsensusProbability": 0.4402,
-              "consensusEdge": 0.1196,
-              "source": "de_vigged_moneyline_consensus"
-            },
-            "movement": {
-              "score": 67.89,
-              "tags": [
-                "BOOK_AGREEMENT",
-                "REVERSAL",
-                "STEAM"
-              ],
-              "reversalCount": 1,
-              "runLineMovement": -6.182,
-              "source": "line_movement_steam_resistance_reversal_runline_confirmation"
-            },
-            "fundamentals": {
-              "score": 50.0,
-              "applied": false,
-              "mode": "SPORTSDATAIO_UNAVAILABLE",
-              "source": "neutral_fundamentals_until_live_provider_enabled"
-            }
-          },
-          "weights": {
-            "market": 0.62,
-            "movement": 0.38,
-            "fundamentals": 0.0
-          },
-          "ensembleScore": 63.47,
-          "calibration": {
-            "rawProbability": 0.7544,
-            "marketAnchorProbability": 0.5598,
-            "calibratedProbability": 0.6669,
-            "shrinkageToward50": 0.0,
-            "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
-          },
-          "discipline": {
-            "actionablePick": false,
-            "actionability": "WATCHLIST_LEAN",
-            "reason": "edge_exists_but_not_strong_enough_for_primary_actionable_bucket"
-          },
-          "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
-        },
-        "slatePredictionLock": {
-          "applied": true,
-          "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
-          "slateWideLock": true,
-          "lockMinutesBeforeFirstGame": 45,
-          "firstGameStartUtc": "2026-07-03T20:06:00+00:00",
-          "lockAtUtc": "2026-07-03T19:21:00+00:00",
-          "locked": false,
-          "lockStatus": "OPEN_PRE_LOCK",
-          "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -1487,9 +1192,9 @@
         "predictedWinner": "San Francisco Giants",
         "predictedSide": "away",
         "opponent": "Colorado Rockies",
-        "winProbability": 0.6765,
-        "winProbabilityPct": 67.65,
-        "score": 63.24,
+        "winProbability": 0.6796,
+        "winProbabilityPct": 67.96,
+        "score": 63.6,
         "confidenceTier": "Lean",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -1512,9 +1217,9 @@
         "homeSignal": {
           "side": "home",
           "team": "Colorado Rockies",
-          "score": 29.96,
-          "winProbability": 0.1584,
-          "winProbabilityPct": 15.84,
+          "score": 30.15,
+          "winProbability": 0.1605,
+          "winProbabilityPct": 16.05,
           "marketConsensusProbability": 0.41439,
           "probStart": 0.41565,
           "probLatest": 0.41439,
@@ -1530,16 +1235,16 @@
             "REVERSAL"
           ],
           "rawScoreBeforeWinnerOptimizer": 32.37,
-          "rolling24hLearningAdjustment": 2.09,
+          "rolling24hLearningAdjustment": 2.28,
           "winnerRuleAdjustment": -4.5,
-          "optimizedWinnerScore": 29.96
+          "optimizedWinnerScore": 30.15
         },
         "awaySignal": {
           "side": "away",
           "team": "San Francisco Giants",
-          "score": 54.21,
-          "winProbability": 0.5868,
-          "winProbabilityPct": 58.68,
+          "score": 55.16,
+          "winProbability": 0.6059,
+          "winProbabilityPct": 60.59,
           "marketConsensusProbability": 0.58561,
           "probStart": 0.58435,
           "probLatest": 0.58561,
@@ -1557,18 +1262,18 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 52.54,
-          "rolling24hLearningAdjustment": 1.17,
+          "rolling24hLearningAdjustment": 2.12,
           "winnerRuleAdjustment": 0.5,
-          "optimizedWinnerScore": 54.21
+          "optimizedWinnerScore": 55.16
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:10.045084+00:00",
+        "createdAt": "2026-07-03T18:23:11.212463+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
           "sk": "GAME#2026-07-04T00:11:00Z#3bf177f10d546535921fa6be841880f7"
         },
-        "rank": 6,
+        "rank": 5,
         "selectionBeforeWinnerOptimizer": {
           "predictedWinner": "San Francisco Giants",
           "predictedSide": "away",
@@ -1596,8 +1301,8 @@
           "applied": true,
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 29.96,
-          "awayOptimizedScore": 54.21,
+          "homeOptimizedScore": 30.15,
+          "awayOptimizedScore": 55.16,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -1609,16 +1314,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.5868,
-        "calibratedWinProbability": 0.5669,
+        "rawWinProbabilityBeforeCalibration": 0.6059,
+        "calibratedWinProbability": 0.575,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.5868,
+          "rawProbability": 0.6059,
           "marketConsensusProbability": 0.58561,
-          "scoreImpliedProbability": 0.5868,
-          "calibratedProbability": 0.5669,
+          "scoreImpliedProbability": 0.6059,
+          "calibratedProbability": 0.575,
           "shrinkage": 0.225,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -1640,8 +1345,8 @@
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.5669,
-          "score": 54.21,
+          "calibratedProbability": 0.575,
+          "score": 55.16,
           "pullCountForGame": 33,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -1659,7 +1364,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -1696,8 +1401,8 @@
           "sk": "GAME#2026-07-04T00:11:00Z#3bf177f10d546535921fa6be841880f7",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 54.21,
-        "winProbabilityBeforeWinnerStackV2": 0.5669,
+        "scoreBeforeWinnerStackV2": 55.16,
+        "winProbabilityBeforeWinnerStackV2": 0.575,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -1711,7 +1416,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 59.71,
+              "score": 60.66,
               "tags": [
                 "BOOK_AGREEMENT",
                 "REVERSAL",
@@ -1734,11 +1439,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 63.24,
+          "ensembleScore": 63.6,
           "calibration": {
-            "rawProbability": 0.7509,
+            "rawProbability": 0.7565,
             "marketAnchorProbability": 0.5856,
-            "calibratedProbability": 0.6765,
+            "calibratedProbability": 0.6796,
             "shrinkageToward50": 0.0,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -1759,8 +1464,303 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
+          "totalPullCountAvailable": 71,
+          "scoringPullCount": 71,
+          "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
+          "latestScoringPullAt": "2026-07-03T06:45:25.950455+00:00",
+          "rules": [
+            "All predictions for the slate lock together 45 minutes before the first game begins.",
+            "After lock, later pulls may continue for audit but cannot change picks.",
+            "Locked scoring uses only pulls captured at or before the lock timestamp."
+          ]
+        }
+      },
+      {
+        "ok": true,
+        "sport": "mlb",
+        "modelVersion": "INQSI-MLB-GAME-WINNER-v1.0-2026-06",
+        "engine": "MLB-GAME-WINNER-v1.0",
+        "slate_date": "2026-07-03",
+        "gameId": "14423828314cc83167d6c7ce88323746",
+        "gameKey": "mlb|2026-07-03|pittsburgh pirates|washington nationals",
+        "homeTeam": "Washington Nationals",
+        "awayTeam": "Pittsburgh Pirates",
+        "commenceTime": "2026-07-03T22:46:00Z",
+        "providerSportKey": "baseball_mlb",
+        "predictedWinner": "Washington Nationals",
+        "predictedSide": "home",
+        "opponent": "Pittsburgh Pirates",
+        "winProbability": 0.6679,
+        "winProbabilityPct": 66.79,
+        "score": 63.59,
+        "confidenceTier": "Lean",
+        "pickQuality": "GAME_WINNER_SIGNAL",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "CALIBRATED_PROBABILITY",
+          "FINAL_GATE_OPEN",
+          "FINAL_LOCKED",
+          "MISSING_FUNDAMENTALS",
+          "NO_PICK",
+          "NO_PICK_DISCIPLINE",
+          "ODDS_API_ONLY",
+          "PRE_SLATE_LOCK",
+          "REVERSAL",
+          "SLATE_WIDE_45_MIN_LOCK_POLICY",
+          "STEAM",
+          "WINNER_STACK_V2"
+        ],
+        "pullCountForGame": 71,
+        "homeSignal": {
+          "side": "home",
+          "team": "Washington Nationals",
+          "score": 63.72,
+          "winProbability": 0.7583,
+          "winProbabilityPct": 75.83,
+          "marketConsensusProbability": 0.5598,
+          "probStart": 0.54737,
+          "probLatest": 0.5598,
+          "delta": 0.01242,
+          "bookCount": 11,
+          "bookDivergence": 0.0127,
+          "latestGap": 0.1196,
+          "reversalCount": 1,
+          "runLineMovement": -6.182,
+          "averageAmericanOdds": -139.27,
+          "tags": [
+            "BOOK_AGREEMENT",
+            "REVERSAL",
+            "STEAM"
+          ],
+          "rawScoreBeforeWinnerOptimizer": 62.28,
+          "rolling24hLearningAdjustment": 1.19,
+          "winnerRuleAdjustment": 0.25,
+          "optimizedWinnerScore": 63.72
+        },
+        "awaySignal": {
+          "side": "away",
+          "team": "Pittsburgh Pirates",
+          "score": 35.17,
+          "winProbability": 0.2252,
+          "winProbabilityPct": 22.52,
+          "marketConsensusProbability": 0.4402,
+          "probStart": 0.45263,
+          "probLatest": 0.4402,
+          "delta": -0.01242,
+          "bookCount": 11,
+          "bookDivergence": 0.0127,
+          "latestGap": 0.1196,
+          "reversalCount": 1,
+          "runLineMovement": 10.364,
+          "averageAmericanOdds": 118.55,
+          "tags": [
+            "BOOK_AGREEMENT",
+            "RESISTANCE",
+            "REVERSAL",
+            "RUN_LINE_MOVEMENT"
+          ],
+          "rawScoreBeforeWinnerOptimizer": 34.12,
+          "rolling24hLearningAdjustment": 1.8,
+          "winnerRuleAdjustment": -0.75,
+          "optimizedWinnerScore": 35.17
+        },
+        "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
+        "createdAt": "2026-07-03T18:23:11.146418+00:00",
+        "stored": {
+          "ok": true,
+          "pk": "GAME_WINNERS#mlb#2026-07-03",
+          "sk": "GAME#2026-07-03T22:46:00Z#14423828314cc83167d6c7ce88323746"
+        },
+        "rank": 6,
+        "selectionBeforeWinnerOptimizer": {
+          "predictedWinner": "Washington Nationals",
+          "predictedSide": "home",
+          "score": 62.28,
+          "tags": [
+            "BOOK_AGREEMENT",
+            "REVERSAL",
+            "STEAM"
+          ]
+        },
+        "individualWinnerOptimized": true,
+        "optimizerFlippedPick": false,
+        "officialPick": false,
+        "accuracyTargetEligible": false,
+        "actionability": "WATCHLIST_LEAN",
+        "actionabilityReason": "edge_exists_but_not_strong_enough_for_primary_actionable_bucket",
+        "rolling24hAccuracyTarget": {
+          "targetAccuracyPct": 90.0,
+          "windowHours": 24,
+          "measuredBy": "mlb_rolling_24h_audit",
+          "note": "The 90% target is measured across all optimized individual game-winner picks in the following rolling 24 hours."
+        },
+        "winnerOptimizer": {
+          "applied": true,
+          "basis": "compare_home_and_away_optimized_signal_scores",
+          "latestLearningApplied": true,
+          "homeOptimizedScore": 63.72,
+          "awayOptimizedScore": 35.17,
+          "flippedPick": false,
+          "fundamentalsApplied": false,
+          "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
+        },
+        "fundamentalsLayer": {
+          "available": false,
+          "applied": false,
+          "mode": "SPORTSDATAIO_UNAVAILABLE",
+          "slateDate": "2026-07-03",
+          "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
+        },
+        "rawWinProbabilityBeforeCalibration": 0.7583,
+        "calibratedWinProbability": 0.631,
+        "calibration": {
+          "enabled": true,
+          "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
+          "method": "market_consensus_score_blend_with_risk_shrinkage",
+          "rawProbability": 0.7583,
+          "marketConsensusProbability": 0.5598,
+          "scoreImpliedProbability": 0.7583,
+          "calibratedProbability": 0.631,
+          "shrinkage": 0.225,
+          "riskPenalty": 0.045,
+          "riskReasons": [
+            "MISSING_FUNDAMENTALS",
+            "REVERSAL_RISK"
+          ],
+          "fundamentalsBoost": 0.0,
+          "note": "Calibration intentionally compresses aggressive raw scores toward market consensus and penalizes instability."
+        },
+        "actionablePick": false,
+        "pickDiscipline": {
+          "enabled": true,
+          "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
+          "actionable": false,
+          "level": "NO_PICK",
+          "thresholds": {
+            "minPulls": 12,
+            "minCalibratedProbability": 0.59,
+            "minScore": 56.0,
+            "maxRiskPenalty": 0.18
+          },
+          "calibratedProbability": 0.631,
+          "score": 63.72,
+          "pullCountForGame": 71,
+          "riskPenalty": 0.045,
+          "riskReasons": [
+            "MISSING_FUNDAMENTALS",
+            "REVERSAL_RISK"
+          ],
+          "noPickReasons": [
+            "missing_fundamentals_requires_stronger_market_edge"
+          ],
+          "rule": "Every game can receive a prediction, but only rows passing this gate are actionable picks."
+        },
+        "lastPossiblePredictionGate": {
+          "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+          "phase": "PRE_SLATE_LOCK",
+          "minutesToStart": 102.8,
+          "gateWindowMinutesBeforeStart": {
+            "opensAt": 45,
+            "closesAt": 45,
+            "meaning": "single_slate_wide_lock_cutoff"
+          },
+          "slateWideLock": true,
+          "lockMinutesBeforeFirstGame": 45,
+          "firstGameStartUtc": "2026-07-03T20:06:00+00:00",
+          "lockAtUtc": "2026-07-03T19:21:00+00:00",
+          "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
+          "latestScoringPullAt": "2026-07-03T06:45:25.950455+00:00",
+          "totalPullCountAvailable": 71,
+          "scoringPullCount": 71,
+          "finalWindowActive": false,
+          "finalLocked": false,
+          "oddsApiOnly": true,
+          "requiresSportsDataIoAttempt": false,
+          "requiresSportsDataIoForFullDataFinalPick": false,
+          "sportsDataIoFundamentalsApplied": false,
+          "finalGateBlocked": false,
+          "finalGateBlockReason": null,
+          "finalDataStatus": "ODDS_API_ONLY_READY",
+          "predictionSource": "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_SLATE_LOCK",
+          "rules": [
+            "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
+            "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
+            "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
+          ]
+        },
+        "fullDataFinalPick": true,
+        "finalGateStored": {
+          "ok": true,
+          "pk": "GAME_WINNERS#mlb#2026-07-03",
+          "sk": "GAME#2026-07-03T22:46:00Z#14423828314cc83167d6c7ce88323746",
+          "finalGateStored": true
+        },
+        "scoreBeforeWinnerStackV2": 63.72,
+        "winProbabilityBeforeWinnerStackV2": 0.631,
+        "officialPrediction": true,
+        "winnerStackV2": {
+          "applied": true,
+          "version": "MLB-WINNER-STACK-v2-market-movement-fundamental-calibrated",
+          "components": {
+            "market": {
+              "score": 60.76,
+              "consensusProbability": 0.5598,
+              "opponentConsensusProbability": 0.4402,
+              "consensusEdge": 0.1196,
+              "source": "de_vigged_moneyline_consensus"
+            },
+            "movement": {
+              "score": 68.22,
+              "tags": [
+                "BOOK_AGREEMENT",
+                "REVERSAL",
+                "STEAM"
+              ],
+              "reversalCount": 1,
+              "runLineMovement": -6.182,
+              "source": "line_movement_steam_resistance_reversal_runline_confirmation"
+            },
+            "fundamentals": {
+              "score": 50.0,
+              "applied": false,
+              "mode": "SPORTSDATAIO_UNAVAILABLE",
+              "source": "neutral_fundamentals_until_live_provider_enabled"
+            }
+          },
+          "weights": {
+            "market": 0.62,
+            "movement": 0.38,
+            "fundamentals": 0.0
+          },
+          "ensembleScore": 63.59,
+          "calibration": {
+            "rawProbability": 0.7564,
+            "marketAnchorProbability": 0.5598,
+            "calibratedProbability": 0.6679,
+            "shrinkageToward50": 0.0,
+            "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
+          },
+          "discipline": {
+            "actionablePick": false,
+            "actionability": "WATCHLIST_LEAN",
+            "reason": "edge_exists_but_not_strong_enough_for_primary_actionable_bucket"
+          },
+          "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
+        },
+        "slatePredictionLock": {
+          "applied": true,
+          "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
+          "slateWideLock": true,
+          "lockMinutesBeforeFirstGame": 45,
+          "firstGameStartUtc": "2026-07-03T20:06:00+00:00",
+          "lockAtUtc": "2026-07-03T19:21:00+00:00",
+          "locked": false,
+          "lockStatus": "OPEN_PRE_LOCK",
+          "source": "live_pre_lock_pull_history",
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -1787,9 +1787,9 @@
         "predictedWinner": "Milwaukee Brewers",
         "predictedSide": "away",
         "opponent": "Arizona Diamondbacks",
-        "winProbability": 0.6409,
-        "winProbabilityPct": 64.09,
-        "score": 58.93,
+        "winProbability": 0.6428,
+        "winProbabilityPct": 64.28,
+        "score": 59.11,
         "confidenceTier": "Lean",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -1811,9 +1811,9 @@
         "homeSignal": {
           "side": "home",
           "team": "Arizona Diamondbacks",
-          "score": 39.67,
-          "winProbability": 0.2972,
-          "winProbabilityPct": 29.72,
+          "score": 40.15,
+          "winProbability": 0.3056,
+          "winProbabilityPct": 30.56,
           "marketConsensusProbability": 0.40431,
           "probStart": 0.39397,
           "probLatest": 0.40431,
@@ -1830,16 +1830,16 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 41.1,
-          "rolling24hLearningAdjustment": 1.32,
+          "rolling24hLearningAdjustment": 1.8,
           "winnerRuleAdjustment": -2.75,
-          "optimizedWinnerScore": 39.67
+          "optimizedWinnerScore": 40.15
         },
         "awaySignal": {
           "side": "away",
           "team": "Milwaukee Brewers",
-          "score": 42.41,
-          "winProbability": 0.3469,
-          "winProbabilityPct": 34.69,
+          "score": 42.89,
+          "winProbability": 0.3561,
+          "winProbabilityPct": 35.61,
           "marketConsensusProbability": 0.59569,
           "probStart": 0.60603,
           "probLatest": 0.59569,
@@ -1856,12 +1856,12 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 43.84,
-          "rolling24hLearningAdjustment": 1.32,
+          "rolling24hLearningAdjustment": 1.8,
           "winnerRuleAdjustment": -2.75,
-          "optimizedWinnerScore": 42.41
+          "optimizedWinnerScore": 42.89
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:10.099583+00:00",
+        "createdAt": "2026-07-03T18:23:11.266987+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
@@ -1894,8 +1894,8 @@
           "applied": true,
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 39.67,
-          "awayOptimizedScore": 42.41,
+          "homeOptimizedScore": 40.15,
+          "awayOptimizedScore": 42.89,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -1907,16 +1907,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.3469,
-        "calibratedWinProbability": 0.4681,
+        "rawWinProbabilityBeforeCalibration": 0.3561,
+        "calibratedWinProbability": 0.472,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.3469,
+          "rawProbability": 0.3561,
           "marketConsensusProbability": 0.59569,
-          "scoreImpliedProbability": 0.3469,
-          "calibratedProbability": 0.4681,
+          "scoreImpliedProbability": 0.3561,
+          "calibratedProbability": 0.472,
           "shrinkage": 0.225,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -1938,8 +1938,8 @@
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.4681,
-          "score": 42.41,
+          "calibratedProbability": 0.472,
+          "score": 42.89,
           "pullCountForGame": 70,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -1957,7 +1957,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -1994,8 +1994,8 @@
           "sk": "GAME#2026-07-04T01:46:00Z#bb4dc431a7347100e9781696b2bcf256",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 42.41,
-        "winProbabilityBeforeWinnerStackV2": 0.4681,
+        "scoreBeforeWinnerStackV2": 42.89,
+        "winProbabilityBeforeWinnerStackV2": 0.472,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -2009,7 +2009,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 45.41,
+              "score": 45.89,
               "tags": [
                 "BOOK_AGREEMENT",
                 "REVERSAL",
@@ -2031,11 +2031,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 58.93,
+          "ensembleScore": 59.11,
           "calibration": {
-            "rawProbability": 0.6779,
+            "rawProbability": 0.6813,
             "marketAnchorProbability": 0.5957,
-            "calibratedProbability": 0.6409,
+            "calibratedProbability": 0.6428,
             "shrinkageToward50": 0.0,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -2056,8 +2056,8 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -2084,9 +2084,9 @@
         "predictedWinner": "Baltimore Orioles",
         "predictedSide": "away",
         "opponent": "Cincinnati Reds",
-        "winProbability": 0.5848,
-        "winProbabilityPct": 58.48,
-        "score": 56.44,
+        "winProbability": 0.5861,
+        "winProbabilityPct": 58.61,
+        "score": 56.57,
         "confidenceTier": "Lean",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -2108,9 +2108,9 @@
         "homeSignal": {
           "side": "home",
           "team": "Cincinnati Reds",
-          "score": 27.23,
-          "winProbability": 0.1304,
-          "winProbabilityPct": 13.04,
+          "score": 27.42,
+          "winProbability": 0.1322,
+          "winProbabilityPct": 13.22,
           "marketConsensusProbability": 0.47175,
           "probStart": 0.48573,
           "probLatest": 0.47175,
@@ -2127,16 +2127,16 @@
             "REVERSAL"
           ],
           "rawScoreBeforeWinnerOptimizer": 30.39,
-          "rolling24hLearningAdjustment": 1.34,
+          "rolling24hLearningAdjustment": 1.53,
           "winnerRuleAdjustment": -4.5,
-          "optimizedWinnerScore": 27.23
+          "optimizedWinnerScore": 27.42
         },
         "awaySignal": {
           "side": "away",
           "team": "Baltimore Orioles",
-          "score": 54.15,
-          "winProbability": 0.5856,
-          "winProbabilityPct": 58.56,
+          "score": 54.48,
+          "winProbability": 0.5923,
+          "winProbabilityPct": 59.23,
           "marketConsensusProbability": 0.52825,
           "probStart": 0.51427,
           "probLatest": 0.52825,
@@ -2153,12 +2153,12 @@
             "STEAM"
           ],
           "rawScoreBeforeWinnerOptimizer": 55.04,
-          "rolling24hLearningAdjustment": 0.86,
+          "rolling24hLearningAdjustment": 1.19,
           "winnerRuleAdjustment": -1.75,
-          "optimizedWinnerScore": 54.15
+          "optimizedWinnerScore": 54.48
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:10.002364+00:00",
+        "createdAt": "2026-07-03T18:23:11.173730+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
@@ -2191,8 +2191,8 @@
           "applied": true,
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 27.23,
-          "awayOptimizedScore": 54.15,
+          "homeOptimizedScore": 27.42,
+          "awayOptimizedScore": 54.48,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -2204,16 +2204,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.5856,
-        "calibratedWinProbability": 0.5463,
+        "rawWinProbabilityBeforeCalibration": 0.5923,
+        "calibratedWinProbability": 0.5492,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.5856,
+          "rawProbability": 0.5923,
           "marketConsensusProbability": 0.52825,
-          "scoreImpliedProbability": 0.5856,
-          "calibratedProbability": 0.5463,
+          "scoreImpliedProbability": 0.5923,
+          "calibratedProbability": 0.5492,
           "shrinkage": 0.225,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -2235,8 +2235,8 @@
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.5463,
-          "score": 54.15,
+          "calibratedProbability": 0.5492,
+          "score": 54.48,
           "pullCountForGame": 71,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -2254,7 +2254,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -2291,8 +2291,8 @@
           "sk": "GAME#2026-07-03T23:11:00Z#6a7d6767bd4da0f044ab6d250c233769",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 54.15,
-        "winProbabilityBeforeWinnerStackV2": 0.5463,
+        "scoreBeforeWinnerStackV2": 54.48,
+        "winProbabilityBeforeWinnerStackV2": 0.5492,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -2306,7 +2306,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 58.65,
+              "score": 58.98,
               "tags": [
                 "BOOK_AGREEMENT",
                 "REVERSAL",
@@ -2328,11 +2328,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 56.44,
+          "ensembleScore": 56.57,
           "calibration": {
-            "rawProbability": 0.6311,
+            "rawProbability": 0.6335,
             "marketAnchorProbability": 0.5282,
-            "calibratedProbability": 0.5848,
+            "calibratedProbability": 0.5861,
             "shrinkageToward50": 0.0,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -2353,8 +2353,8 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -2381,9 +2381,9 @@
         "predictedWinner": "Tampa Bay Rays",
         "predictedSide": "away",
         "opponent": "Houston Astros",
-        "winProbability": 0.5537,
-        "winProbabilityPct": 55.37,
-        "score": 54.89,
+        "winProbability": 0.5563,
+        "winProbabilityPct": 55.63,
+        "score": 55.13,
         "confidenceTier": "Coin Flip",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -2407,9 +2407,9 @@
         "homeSignal": {
           "side": "home",
           "team": "Houston Astros",
-          "score": 38.64,
-          "winProbability": 0.2796,
-          "winProbabilityPct": 27.96,
+          "score": 39.12,
+          "winProbability": 0.2877,
+          "winProbabilityPct": 28.77,
           "marketConsensusProbability": 0.50108,
           "probStart": 0.51623,
           "probLatest": 0.50108,
@@ -2428,16 +2428,16 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 38.95,
-          "rolling24hLearningAdjustment": 1.94,
+          "rolling24hLearningAdjustment": 2.42,
           "winnerRuleAdjustment": -2.25,
-          "optimizedWinnerScore": 38.64
+          "optimizedWinnerScore": 39.12
         },
         "awaySignal": {
           "side": "away",
           "team": "Tampa Bay Rays",
-          "score": 60.19,
-          "winProbability": 0.7004,
-          "winProbabilityPct": 70.04,
+          "score": 60.81,
+          "winProbability": 0.7111,
+          "winProbabilityPct": 71.11,
           "marketConsensusProbability": 0.49892,
           "probStart": 0.48377,
           "probLatest": 0.49892,
@@ -2456,12 +2456,12 @@
             "STEAM"
           ],
           "rawScoreBeforeWinnerOptimizer": 59.98,
-          "rolling24hLearningAdjustment": 2.21,
+          "rolling24hLearningAdjustment": 2.83,
           "winnerRuleAdjustment": -2.0,
-          "optimizedWinnerScore": 60.19
+          "optimizedWinnerScore": 60.81
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:10.058198+00:00",
+        "createdAt": "2026-07-03T18:23:11.225803+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
@@ -2496,8 +2496,8 @@
           "applied": true,
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 38.64,
-          "awayOptimizedScore": 60.19,
+          "homeOptimizedScore": 39.12,
+          "awayOptimizedScore": 60.81,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -2509,16 +2509,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.7004,
-        "calibratedWinProbability": 0.5807,
+        "rawWinProbabilityBeforeCalibration": 0.7111,
+        "calibratedWinProbability": 0.585,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.7004,
+          "rawProbability": 0.7111,
           "marketConsensusProbability": 0.49892,
-          "scoreImpliedProbability": 0.7004,
-          "calibratedProbability": 0.5807,
+          "scoreImpliedProbability": 0.7111,
+          "calibratedProbability": 0.585,
           "shrinkage": 0.265,
           "riskPenalty": 0.085,
           "riskReasons": [
@@ -2541,8 +2541,8 @@
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.5807,
-          "score": 60.19,
+          "calibratedProbability": 0.585,
+          "score": 60.81,
           "pullCountForGame": 33,
           "riskPenalty": 0.085,
           "riskReasons": [
@@ -2559,7 +2559,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -2596,8 +2596,8 @@
           "sk": "GAME#2026-07-04T00:16:00Z#f0e24a50674443856bff31b645ff5572",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 60.19,
-        "winProbabilityBeforeWinnerStackV2": 0.5807,
+        "scoreBeforeWinnerStackV2": 60.81,
+        "winProbabilityBeforeWinnerStackV2": 0.585,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -2611,7 +2611,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 63.19,
+              "score": 63.81,
               "tags": [
                 "BOOK_AGREEMENT",
                 "COMPRESSED_MARKET",
@@ -2635,11 +2635,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 54.89,
+          "ensembleScore": 55.13,
           "calibration": {
-            "rawProbability": 0.6006,
+            "rawProbability": 0.6053,
             "marketAnchorProbability": 0.4989,
-            "calibratedProbability": 0.5537,
+            "calibratedProbability": 0.5563,
             "shrinkageToward50": 0.02,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -2660,8 +2660,8 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -2688,9 +2688,9 @@
         "predictedWinner": "Boston Red Sox",
         "predictedSide": "away",
         "opponent": "Los Angeles Angels",
-        "winProbability": 0.5429,
-        "winProbabilityPct": 54.29,
-        "score": 54.3,
+        "winProbability": 0.546,
+        "winProbabilityPct": 54.6,
+        "score": 54.59,
         "confidenceTier": "Coin Flip",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -2712,9 +2712,9 @@
         "homeSignal": {
           "side": "home",
           "team": "Los Angeles Angels",
-          "score": 38.72,
-          "winProbability": 0.2809,
-          "winProbabilityPct": 28.09,
+          "score": 39.01,
+          "winProbability": 0.2858,
+          "winProbabilityPct": 28.58,
           "marketConsensusProbability": 0.51202,
           "probStart": 0.52393,
           "probLatest": 0.51202,
@@ -2730,16 +2730,16 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 40.37,
-          "rolling24hLearningAdjustment": 0.6,
+          "rolling24hLearningAdjustment": 0.89,
           "winnerRuleAdjustment": -2.25,
-          "optimizedWinnerScore": 38.72
+          "optimizedWinnerScore": 39.01
         },
         "awaySignal": {
           "side": "away",
           "team": "Boston Red Sox",
-          "score": 60.83,
-          "winProbability": 0.7115,
-          "winProbabilityPct": 71.15,
+          "score": 61.59,
+          "winProbability": 0.7243,
+          "winProbabilityPct": 72.43,
           "marketConsensusProbability": 0.48798,
           "probStart": 0.47607,
           "probLatest": 0.48798,
@@ -2756,12 +2756,12 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 57.88,
-          "rolling24hLearningAdjustment": 0.45,
+          "rolling24hLearningAdjustment": 1.21,
           "winnerRuleAdjustment": 2.5,
-          "optimizedWinnerScore": 60.83
+          "optimizedWinnerScore": 61.59
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:10.071342+00:00",
+        "createdAt": "2026-07-03T18:23:11.239015+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
@@ -2794,8 +2794,8 @@
           "applied": true,
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 38.72,
-          "awayOptimizedScore": 60.83,
+          "homeOptimizedScore": 39.01,
+          "awayOptimizedScore": 61.59,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -2807,16 +2807,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.7115,
-        "calibratedWinProbability": 0.5821,
+        "rawWinProbabilityBeforeCalibration": 0.7243,
+        "calibratedWinProbability": 0.5873,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.7115,
+          "rawProbability": 0.7243,
           "marketConsensusProbability": 0.48798,
-          "scoreImpliedProbability": 0.7115,
-          "calibratedProbability": 0.5821,
+          "scoreImpliedProbability": 0.7243,
+          "calibratedProbability": 0.5873,
           "shrinkage": 0.26,
           "riskPenalty": 0.08,
           "riskReasons": [
@@ -2839,8 +2839,8 @@
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.5821,
-          "score": 60.83,
+          "calibratedProbability": 0.5873,
+          "score": 61.59,
           "pullCountForGame": 29,
           "riskPenalty": 0.08,
           "riskReasons": [
@@ -2857,7 +2857,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -2894,8 +2894,8 @@
           "sk": "GAME#2026-07-04T01:39:00Z#10e96b5a6a3e81aac49e9771082a5bea",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 60.83,
-        "winProbabilityBeforeWinnerStackV2": 0.5821,
+        "scoreBeforeWinnerStackV2": 61.59,
+        "winProbabilityBeforeWinnerStackV2": 0.5873,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -2909,7 +2909,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 64.83,
+              "score": 65.59,
               "tags": [
                 "COMPRESSED_MARKET",
                 "RUN_LINE_CONFIRMATION",
@@ -2931,11 +2931,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 54.3,
+          "ensembleScore": 54.59,
           "calibration": {
-            "rawProbability": 0.5886,
+            "rawProbability": 0.5944,
             "marketAnchorProbability": 0.488,
-            "calibratedProbability": 0.5429,
+            "calibratedProbability": 0.546,
             "shrinkageToward50": 0.01,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -2956,8 +2956,8 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -2984,9 +2984,9 @@
         "predictedWinner": "Athletics",
         "predictedSide": "home",
         "opponent": "Miami Marlins",
-        "winProbability": 0.5563,
-        "winProbabilityPct": 55.63,
-        "score": 53.5,
+        "winProbability": 0.5603,
+        "winProbabilityPct": 56.03,
+        "score": 53.86,
         "confidenceTier": "Coin Flip",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -3008,9 +3008,9 @@
         "homeSignal": {
           "side": "home",
           "team": "Athletics",
-          "score": 44.48,
-          "winProbability": 0.387,
-          "winProbabilityPct": 38.7,
+          "score": 45.43,
+          "winProbability": 0.4059,
+          "winProbabilityPct": 40.59,
           "marketConsensusProbability": 0.53654,
           "probStart": 0.5266,
           "probLatest": 0.53654,
@@ -3027,16 +3027,16 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 46.27,
-          "rolling24hLearningAdjustment": -0.29,
+          "rolling24hLearningAdjustment": 0.66,
           "winnerRuleAdjustment": -1.5,
-          "optimizedWinnerScore": 44.48
+          "optimizedWinnerScore": 45.43
         },
         "awaySignal": {
           "side": "away",
           "team": "Miami Marlins",
-          "score": 17.89,
-          "winProbability": 0.0644,
-          "winProbabilityPct": 6.44,
+          "score": 18.37,
+          "winProbability": 0.0669,
+          "winProbabilityPct": 6.69,
           "marketConsensusProbability": 0.46346,
           "probStart": 0.4734,
           "probLatest": 0.46346,
@@ -3052,12 +3052,12 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 22.78,
-          "rolling24hLearningAdjustment": -0.14,
+          "rolling24hLearningAdjustment": 0.34,
           "winnerRuleAdjustment": -4.75,
-          "optimizedWinnerScore": 17.89
+          "optimizedWinnerScore": 18.37
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:10.085376+00:00",
+        "createdAt": "2026-07-03T18:23:11.253206+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
@@ -3090,8 +3090,8 @@
           "applied": true,
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 44.48,
-          "awayOptimizedScore": 17.89,
+          "homeOptimizedScore": 45.43,
+          "awayOptimizedScore": 18.37,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -3103,16 +3103,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.387,
-        "calibratedWinProbability": 0.4646,
+        "rawWinProbabilityBeforeCalibration": 0.4059,
+        "calibratedWinProbability": 0.4726,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.387,
+          "rawProbability": 0.4059,
           "marketConsensusProbability": 0.53654,
-          "scoreImpliedProbability": 0.387,
-          "calibratedProbability": 0.4646,
+          "scoreImpliedProbability": 0.4059,
+          "calibratedProbability": 0.4726,
           "shrinkage": 0.225,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -3134,8 +3134,8 @@
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.4646,
-          "score": 44.48,
+          "calibratedProbability": 0.4726,
+          "score": 45.43,
           "pullCountForGame": 70,
           "riskPenalty": 0.045,
           "riskReasons": [
@@ -3153,7 +3153,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -3190,8 +3190,8 @@
           "sk": "GAME#2026-07-04T01:41:00Z#5434f34b7e8232a7091f0e3efdd4a175",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 44.48,
-        "winProbabilityBeforeWinnerStackV2": 0.4646,
+        "scoreBeforeWinnerStackV2": 45.43,
+        "winProbabilityBeforeWinnerStackV2": 0.4726,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -3205,7 +3205,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 48.48,
+              "score": 49.43,
               "tags": [
                 "REVERSAL",
                 "RUN_LINE_CONFIRMATION",
@@ -3227,11 +3227,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 53.5,
+          "ensembleScore": 53.86,
           "calibration": {
-            "rawProbability": 0.5724,
+            "rawProbability": 0.5798,
             "marketAnchorProbability": 0.5365,
-            "calibratedProbability": 0.5563,
+            "calibratedProbability": 0.5603,
             "shrinkageToward50": 0.0,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -3252,8 +3252,8 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -3280,9 +3280,9 @@
         "predictedWinner": "New York Mets",
         "predictedSide": "away",
         "opponent": "Atlanta Braves",
-        "winProbability": 0.5149,
-        "winProbabilityPct": 51.49,
-        "score": 52.08,
+        "winProbability": 0.5189,
+        "winProbabilityPct": 51.89,
+        "score": 52.44,
         "confidenceTier": "Coin Flip",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -3305,9 +3305,9 @@
         "homeSignal": {
           "side": "home",
           "team": "Atlanta Braves",
-          "score": 39.06,
-          "winProbability": 0.2867,
-          "winProbabilityPct": 28.67,
+          "score": 39.54,
+          "winProbability": 0.2949,
+          "winProbabilityPct": 29.49,
           "marketConsensusProbability": 0.51896,
           "probStart": 0.52881,
           "probLatest": 0.51896,
@@ -3324,16 +3324,16 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 40.83,
-          "rolling24hLearningAdjustment": 0.48,
+          "rolling24hLearningAdjustment": 0.96,
           "winnerRuleAdjustment": -2.25,
-          "optimizedWinnerScore": 39.06
+          "optimizedWinnerScore": 39.54
         },
         "awaySignal": {
           "side": "away",
           "team": "New York Mets",
-          "score": 57.03,
-          "winProbability": 0.6424,
-          "winProbabilityPct": 64.24,
+          "score": 57.98,
+          "winProbability": 0.6604,
+          "winProbabilityPct": 66.04,
           "marketConsensusProbability": 0.48104,
           "probStart": 0.47119,
           "probLatest": 0.48104,
@@ -3351,12 +3351,12 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 54.2,
-          "rolling24hLearningAdjustment": 0.33,
+          "rolling24hLearningAdjustment": 1.28,
           "winnerRuleAdjustment": 2.5,
-          "optimizedWinnerScore": 57.03
+          "optimizedWinnerScore": 57.98
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:10.030965+00:00",
+        "createdAt": "2026-07-03T18:23:11.200148+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
@@ -3390,8 +3390,8 @@
           "applied": true,
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 39.06,
-          "awayOptimizedScore": 57.03,
+          "homeOptimizedScore": 39.54,
+          "awayOptimizedScore": 57.98,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -3403,16 +3403,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.6424,
-        "calibratedWinProbability": 0.5513,
+        "rawWinProbabilityBeforeCalibration": 0.6604,
+        "calibratedWinProbability": 0.5586,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.6424,
+          "rawProbability": 0.6604,
           "marketConsensusProbability": 0.48104,
-          "scoreImpliedProbability": 0.6424,
-          "calibratedProbability": 0.5513,
+          "scoreImpliedProbability": 0.6604,
+          "calibratedProbability": 0.5586,
           "shrinkage": 0.265,
           "riskPenalty": 0.085,
           "riskReasons": [
@@ -3435,8 +3435,8 @@
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.5513,
-          "score": 57.03,
+          "calibratedProbability": 0.5586,
+          "score": 57.98,
           "pullCountForGame": 70,
           "riskPenalty": 0.085,
           "riskReasons": [
@@ -3453,7 +3453,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -3490,8 +3490,8 @@
           "sk": "GAME#2026-07-03T23:16:00Z#02a01af3575ee92bb974caaf28f76911",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 57.03,
-        "winProbabilityBeforeWinnerStackV2": 0.5513,
+        "scoreBeforeWinnerStackV2": 57.98,
+        "winProbabilityBeforeWinnerStackV2": 0.5586,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -3505,7 +3505,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 61.03,
+              "score": 61.98,
               "tags": [
                 "COMPRESSED_MARKET",
                 "REVERSAL",
@@ -3528,11 +3528,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 52.08,
+          "ensembleScore": 52.44,
           "calibration": {
-            "rawProbability": 0.5432,
+            "rawProbability": 0.5506,
             "marketAnchorProbability": 0.481,
-            "calibratedProbability": 0.5149,
+            "calibratedProbability": 0.5189,
             "shrinkageToward50": 0.02,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -3553,8 +3553,8 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -3581,9 +3581,9 @@
         "predictedWinner": "Cleveland Guardians",
         "predictedSide": "home",
         "opponent": "Chicago White Sox",
-        "winProbability": 0.491,
-        "winProbabilityPct": 49.1,
-        "score": 46.94,
+        "winProbability": 0.4924,
+        "winProbabilityPct": 49.24,
+        "score": 47.06,
         "confidenceTier": "Pass",
         "pickQuality": "GAME_WINNER_SIGNAL",
         "tags": [
@@ -3604,9 +3604,9 @@
         "homeSignal": {
           "side": "home",
           "team": "Cleveland Guardians",
-          "score": 29.64,
-          "winProbability": 0.1549,
-          "winProbabilityPct": 15.49,
+          "score": 29.97,
+          "winProbability": 0.1585,
+          "winProbabilityPct": 15.85,
           "marketConsensusProbability": 0.55722,
           "probStart": 0.54357,
           "probLatest": 0.55722,
@@ -3622,14 +3622,14 @@
             "STEAM"
           ],
           "rawScoreBeforeWinnerOptimizer": 34.74,
-          "rolling24hLearningAdjustment": -1.35,
+          "rolling24hLearningAdjustment": -1.02,
           "winnerRuleAdjustment": -3.75,
-          "optimizedWinnerScore": 29.64
+          "optimizedWinnerScore": 29.97
         },
         "awaySignal": {
           "side": "away",
           "team": "Chicago White Sox",
-          "score": 0.43,
+          "score": 0.91,
           "winProbability": 0.05,
           "winProbabilityPct": 5.0,
           "marketConsensusProbability": 0.44278,
@@ -3648,12 +3648,12 @@
             "RUN_LINE_MOVEMENT"
           ],
           "rawScoreBeforeWinnerOptimizer": 5.32,
-          "rolling24hLearningAdjustment": -0.14,
+          "rolling24hLearningAdjustment": 0.34,
           "winnerRuleAdjustment": -4.75,
-          "optimizedWinnerScore": 0.43
+          "optimizedWinnerScore": 0.91
         },
         "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
-        "createdAt": "2026-07-03T17:02:10.016732+00:00",
+        "createdAt": "2026-07-03T18:23:11.186899+00:00",
         "stored": {
           "ok": true,
           "pk": "GAME_WINNERS#mlb#2026-07-03",
@@ -3685,8 +3685,8 @@
           "applied": true,
           "basis": "compare_home_and_away_optimized_signal_scores",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 29.64,
-          "awayOptimizedScore": 0.43,
+          "homeOptimizedScore": 29.97,
+          "awayOptimizedScore": 0.91,
           "flippedPick": false,
           "fundamentalsApplied": false,
           "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
@@ -3698,16 +3698,16 @@
           "slateDate": "2026-07-03",
           "message": "No verified MLB fundamentals package matched this game. Market signal remains primary."
         },
-        "rawWinProbabilityBeforeCalibration": 0.1549,
-        "calibratedWinProbability": 0.3819,
+        "rawWinProbabilityBeforeCalibration": 0.1585,
+        "calibratedWinProbability": 0.3833,
         "calibration": {
           "enabled": true,
           "version": "MLB-FUNDAMENTALS-CALIBRATION-NO-PICK-v1",
           "method": "market_consensus_score_blend_with_risk_shrinkage",
-          "rawProbability": 0.1549,
+          "rawProbability": 0.1585,
           "marketConsensusProbability": 0.55722,
-          "scoreImpliedProbability": 0.1549,
-          "calibratedProbability": 0.3819,
+          "scoreImpliedProbability": 0.1585,
+          "calibratedProbability": 0.3833,
           "shrinkage": 0.28,
           "riskPenalty": 0.1,
           "riskReasons": [
@@ -3730,8 +3730,8 @@
             "minScore": 56.0,
             "maxRiskPenalty": 0.18
           },
-          "calibratedProbability": 0.3819,
-          "score": 29.64,
+          "calibratedProbability": 0.3833,
+          "score": 29.97,
           "pullCountForGame": 71,
           "riskPenalty": 0.1,
           "riskReasons": [
@@ -3750,7 +3750,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "PRE_SLATE_LOCK",
-          "minutesToStart": 183.82,
+          "minutesToStart": 102.8,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -3787,8 +3787,8 @@
           "sk": "GAME#2026-07-03T23:11:00Z#b854e09aa9677136666533dc8d2459ff",
           "finalGateStored": true
         },
-        "scoreBeforeWinnerStackV2": 29.64,
-        "winProbabilityBeforeWinnerStackV2": 0.3819,
+        "scoreBeforeWinnerStackV2": 29.97,
+        "winProbabilityBeforeWinnerStackV2": 0.3833,
         "officialPrediction": true,
         "winnerStackV2": {
           "applied": true,
@@ -3802,7 +3802,7 @@
               "source": "de_vigged_moneyline_consensus"
             },
             "movement": {
-              "score": 25.14,
+              "score": 25.47,
               "tags": [
                 "REVERSAL",
                 "STEAM"
@@ -3823,11 +3823,11 @@
             "movement": 0.38,
             "fundamentals": 0.0
           },
-          "ensembleScore": 46.94,
+          "ensembleScore": 47.06,
           "calibration": {
-            "rawProbability": 0.4366,
+            "rawProbability": 0.4391,
             "marketAnchorProbability": 0.5572,
-            "calibratedProbability": 0.491,
+            "calibratedProbability": 0.4924,
             "shrinkageToward50": 0.01,
             "method": "ensemble_probability_anchored_to_de_vigged_market_consensus"
           },
@@ -3848,8 +3848,8 @@
           "locked": false,
           "lockStatus": "OPEN_PRE_LOCK",
           "source": "live_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": 183.82,
-          "minutesUntilSlateLock": 138.82,
+          "minutesUntilFirstGameStart": 102.8,
+          "minutesUntilSlateLock": 57.8,
           "totalPullCountAvailable": 71,
           "scoringPullCount": 71,
           "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -4052,8 +4052,8 @@
       "locked": false,
       "lockStatus": "OPEN_PRE_LOCK",
       "source": "live_pre_lock_pull_history",
-      "minutesUntilFirstGameStart": 183.82,
-      "minutesUntilSlateLock": 138.82,
+      "minutesUntilFirstGameStart": 102.8,
+      "minutesUntilSlateLock": 57.8,
       "totalPullCountAvailable": 71,
       "scoringPullCount": 71,
       "latestAvailablePullAt": "2026-07-03T06:45:25.950455+00:00",
@@ -4514,7 +4514,7 @@
         "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
         "buildStatus": "BUILT",
         "slate_date": "2026-07-03",
-        "previousNoBuildReason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
+        "previousNoBuildReason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
         "buildQuality": "QUALIFIED",
         "officialStrength": "STRONG",
         "legs": [
@@ -4705,7 +4705,7 @@
       },
       "stored": {
         "pk": "PARLAY_BUILDS#mlb#2026-07-03",
-        "sk": "BUILD#2026-07-03T17:02:17.116732+00:00#parlay_005b468ad9fe4ac5"
+        "sk": "BUILD#2026-07-03T18:23:17.952486+00:00#parlay_82ecc6e6e8b24d85"
       }
     },
     "result": {
@@ -5302,12 +5302,12 @@
               "top3": false
             }
           ],
-          "previousNoBuildReason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
+          "previousNoBuildReason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
           "fallbackApplied": true,
           "stored": {
             "pk": "PARLAY_BUILDS#mlb#2026-07-03",
-            "sk": "BUILD#2026-07-03T17:02:17.116732+00:00#parlay_005b468ad9fe4ac5",
-            "build_id": "parlay_005b468ad9fe4ac5",
+            "sk": "BUILD#2026-07-03T18:23:17.952486+00:00#parlay_82ecc6e6e8b24d85",
+            "build_id": "parlay_82ecc6e6e8b24d85",
             "build_status": "BUILT"
           }
         },
@@ -5315,7 +5315,7 @@
           "ok": true,
           "sport": "wnba",
           "slate_date": "2026-07-03",
-          "pullCount": 54,
+          "pullCount": 60,
           "minimumParlayPulls": 12,
           "buildStatus": "BUILT",
           "buildQuality": "BASELINE_12_SNAPSHOT",
@@ -5345,36 +5345,36 @@
               "homeSignal": {
                 "side": "home",
                 "probStart": 0.48667,
-                "probLatest": 0.54419,
-                "delta": 0.05752,
-                "velocityPpHr": 0.5,
-                "acceleration": 0.00232,
-                "pullCount": 48,
-                "durationMinutes": 690.0,
-                "latestGap": 0.08837,
+                "probLatest": 0.55534,
+                "delta": 0.06867,
+                "velocityPpHr": 0.528,
+                "acceleration": 0.00248,
+                "pullCount": 54,
+                "durationMinutes": 780.0,
+                "latestGap": 0.11067,
                 "bookCount": 3,
-                "bookDivergence": 0.0221,
+                "bookDivergence": 0.00831,
                 "reversals": 0,
                 "tags": [
                   "STEAM"
                 ],
                 "grade": "SOLID",
                 "score": 84.0,
-                "rawScoreBeforeGuard": 87.17,
+                "rawScoreBeforeGuard": 100,
                 "scoreGuardApplied": true
               },
               "awaySignal": {
                 "side": "away",
                 "probStart": 0.51333,
-                "probLatest": 0.45581,
-                "delta": -0.05752,
-                "velocityPpHr": -0.5,
-                "acceleration": -0.00232,
-                "pullCount": 48,
-                "durationMinutes": 690.0,
-                "latestGap": 0.08837,
+                "probLatest": 0.44466,
+                "delta": -0.06867,
+                "velocityPpHr": -0.528,
+                "acceleration": -0.00248,
+                "pullCount": 54,
+                "durationMinutes": 780.0,
+                "latestGap": 0.11067,
                 "bookCount": 3,
-                "bookDivergence": 0.0221,
+                "bookDivergence": 0.00831,
                 "reversals": 0,
                 "tags": [
                   "RESISTANCE"
@@ -5398,48 +5398,52 @@
               "selection": "New York Liberty",
               "selectedSide": "home",
               "grade": "FRAGILE",
-              "score": 44.0,
+              "score": 33.38,
               "tags": [
-                "PUBLIC_FADE_CANDIDATE"
+                "PUBLIC_FADE_CANDIDATE",
+                "REVERSAL"
               ],
               "homeSignal": {
                 "side": "home",
                 "probStart": 0.44213,
-                "probLatest": 0.45842,
-                "delta": 0.01629,
-                "velocityPpHr": 0.128,
-                "acceleration": 0.00031,
-                "pullCount": 54,
-                "durationMinutes": 765.0,
-                "latestGap": 0.08317,
+                "probLatest": 0.45737,
+                "delta": 0.01525,
+                "velocityPpHr": 0.107,
+                "acceleration": 0.00025,
+                "pullCount": 60,
+                "durationMinutes": 855.0,
+                "latestGap": 0.08525,
                 "bookCount": 11,
-                "bookDivergence": 0.02899,
-                "reversals": 0,
+                "bookDivergence": 0.02628,
+                "reversals": 1,
                 "tags": [
-                  "PUBLIC_FADE_CANDIDATE"
+                  "PUBLIC_FADE_CANDIDATE",
+                  "REVERSAL"
                 ],
                 "grade": "FRAGILE",
-                "score": 44.0,
-                "rawScoreBeforeGuard": 49.38,
+                "score": 33.38,
+                "rawScoreBeforeGuard": 41.38,
                 "scoreGuardApplied": true
               },
               "awaySignal": {
                 "side": "away",
                 "probStart": 0.55787,
-                "probLatest": 0.54158,
-                "delta": -0.01629,
-                "velocityPpHr": -0.128,
-                "acceleration": -0.00031,
-                "pullCount": 54,
-                "durationMinutes": 765.0,
-                "latestGap": 0.08317,
+                "probLatest": 0.54263,
+                "delta": -0.01525,
+                "velocityPpHr": -0.107,
+                "acceleration": -0.00025,
+                "pullCount": 60,
+                "durationMinutes": 855.0,
+                "latestGap": 0.08525,
                 "bookCount": 11,
-                "bookDivergence": 0.02899,
-                "reversals": 0,
-                "tags": [],
+                "bookDivergence": 0.02628,
+                "reversals": 1,
+                "tags": [
+                  "REVERSAL"
+                ],
                 "grade": "FRAGILE",
-                "score": 33.23,
-                "rawScoreBeforeGuard": 33.23,
+                "score": 18.85,
+                "rawScoreBeforeGuard": 26.85,
                 "scoreGuardApplied": true
               }
             },
@@ -5453,54 +5457,55 @@
               "level": "pro",
               "gender": "women",
               "providerSportKey": "basketball_wnba",
-              "selection": "Atlanta Dream",
-              "selectedSide": "home",
+              "selection": "Golden State Valkyries",
+              "selectedSide": "away",
               "grade": "FRAGILE",
-              "score": 35.28,
+              "score": 32.13,
               "tags": [
+                "PUBLIC_FADE_CANDIDATE",
                 "REVERSAL"
               ],
               "homeSignal": {
                 "side": "home",
                 "probStart": 0.59913,
-                "probLatest": 0.59623,
-                "delta": -0.0029,
-                "velocityPpHr": -0.025,
-                "acceleration": -0.00025,
-                "pullCount": 49,
-                "durationMinutes": 705.0,
-                "latestGap": 0.19245,
+                "probLatest": 0.58353,
+                "delta": -0.0156,
+                "velocityPpHr": -0.118,
+                "acceleration": -0.00068,
+                "pullCount": 55,
+                "durationMinutes": 795.0,
+                "latestGap": 0.16705,
                 "bookCount": 5,
-                "bookDivergence": 0.01463,
+                "bookDivergence": 0.02038,
                 "reversals": 1,
                 "tags": [
                   "REVERSAL"
                 ],
                 "grade": "FRAGILE",
-                "score": 35.28,
-                "rawScoreBeforeGuard": 43.28,
+                "score": 23.64,
+                "rawScoreBeforeGuard": 31.64,
                 "scoreGuardApplied": true
               },
               "awaySignal": {
                 "side": "away",
                 "probStart": 0.40087,
-                "probLatest": 0.40377,
-                "delta": 0.0029,
-                "velocityPpHr": 0.025,
-                "acceleration": 0.00025,
-                "pullCount": 49,
-                "durationMinutes": 705.0,
-                "latestGap": 0.19245,
+                "probLatest": 0.41647,
+                "delta": 0.0156,
+                "velocityPpHr": 0.118,
+                "acceleration": 0.00068,
+                "pullCount": 55,
+                "durationMinutes": 795.0,
+                "latestGap": 0.16705,
                 "bookCount": 5,
-                "bookDivergence": 0.01463,
+                "bookDivergence": 0.02038,
                 "reversals": 1,
                 "tags": [
                   "PUBLIC_FADE_CANDIDATE",
                   "REVERSAL"
                 ],
                 "grade": "FRAGILE",
-                "score": 23.94,
-                "rawScoreBeforeGuard": 31.94,
+                "score": 32.13,
+                "rawScoreBeforeGuard": 40.13,
                 "scoreGuardApplied": true
               }
             }
@@ -5508,7 +5513,7 @@
           "rankedCombos": [
             {
               "rank": 1,
-              "score": 54.43,
+              "score": 49.84,
               "legs": [
                 {
                   "gameId": "a94e67bca9ed03e512eee9e32821184d",
@@ -5530,9 +5535,10 @@
                   "selection": "New York Liberty",
                   "side": "home",
                   "grade": "FRAGILE",
-                  "score": 44.0,
+                  "score": 33.38,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE"
+                    "PUBLIC_FADE_CANDIDATE",
+                    "REVERSAL"
                   ],
                   "commenceTime": "2026-07-03T23:40:00Z",
                   "homeTeam": "New York Liberty",
@@ -5541,11 +5547,12 @@
                 {
                   "gameId": "c7e2d1320d0907e35977d472bd02d7d6",
                   "gameKey": "wnba|basketball_wnba|golden state valkyries|atlanta dream|2026-07-04T17:00:00Z",
-                  "selection": "Atlanta Dream",
-                  "side": "home",
+                  "selection": "Golden State Valkyries",
+                  "side": "away",
                   "grade": "FRAGILE",
-                  "score": 35.28,
+                  "score": 32.13,
                   "tags": [
+                    "PUBLIC_FADE_CANDIDATE",
                     "REVERSAL"
                   ],
                   "commenceTime": "2026-07-04T17:00:00Z",
@@ -5557,7 +5564,7 @@
             },
             {
               "rank": 2,
-              "score": 54.43,
+              "score": 49.84,
               "legs": [
                 {
                   "gameId": "a94e67bca9ed03e512eee9e32821184d",
@@ -5579,9 +5586,10 @@
                   "selection": "New York Liberty",
                   "side": "home",
                   "grade": "FRAGILE",
-                  "score": 44.0,
+                  "score": 33.38,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE"
+                    "PUBLIC_FADE_CANDIDATE",
+                    "REVERSAL"
                   ],
                   "commenceTime": "2026-07-03T23:40:00Z",
                   "homeTeam": "New York Liberty",
@@ -5590,11 +5598,12 @@
                 {
                   "gameId": "c7e2d1320d0907e35977d472bd02d7d6",
                   "gameKey": "wnba|basketball_wnba|golden state valkyries|atlanta dream|2026-07-04T17:00:00Z",
-                  "selection": "Atlanta Dream",
-                  "side": "home",
+                  "selection": "Golden State Valkyries",
+                  "side": "away",
                   "grade": "FRAGILE",
-                  "score": 35.28,
+                  "score": 32.13,
                   "tags": [
+                    "PUBLIC_FADE_CANDIDATE",
                     "REVERSAL"
                   ],
                   "commenceTime": "2026-07-04T17:00:00Z",
@@ -5606,7 +5615,7 @@
             },
             {
               "rank": 3,
-              "score": 50.84,
+              "score": 47.01,
               "legs": [
                 {
                   "gameId": "a94e67bca9ed03e512eee9e32821184d",
@@ -5625,12 +5634,13 @@
                 {
                   "gameId": "eb6f53f248f70b4841769705a8ef055d",
                   "gameKey": "wnba|basketball_wnba|minnesota lynx|new york liberty|2026-07-03T23:40:00Z",
-                  "selection": "Minnesota Lynx",
-                  "side": "away",
+                  "selection": "New York Liberty",
+                  "side": "home",
                   "grade": "FRAGILE",
-                  "score": 33.23,
+                  "score": 33.38,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE"
+                    "PUBLIC_FADE_CANDIDATE",
+                    "REVERSAL"
                   ],
                   "commenceTime": "2026-07-03T23:40:00Z",
                   "homeTeam": "New York Liberty",
@@ -5642,7 +5652,7 @@
                   "selection": "Atlanta Dream",
                   "side": "home",
                   "grade": "FRAGILE",
-                  "score": 35.28,
+                  "score": 23.64,
                   "tags": [
                     "REVERSAL"
                   ],
@@ -5655,7 +5665,7 @@
             },
             {
               "rank": 4,
-              "score": 50.84,
+              "score": 47.01,
               "legs": [
                 {
                   "gameId": "a94e67bca9ed03e512eee9e32821184d",
@@ -5674,12 +5684,13 @@
                 {
                   "gameId": "eb6f53f248f70b4841769705a8ef055d",
                   "gameKey": "wnba|basketball_wnba|minnesota lynx|new york liberty|2026-07-03T23:40:00Z",
-                  "selection": "Minnesota Lynx",
-                  "side": "away",
+                  "selection": "New York Liberty",
+                  "side": "home",
                   "grade": "FRAGILE",
-                  "score": 33.23,
+                  "score": 33.38,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE"
+                    "PUBLIC_FADE_CANDIDATE",
+                    "REVERSAL"
                   ],
                   "commenceTime": "2026-07-03T23:40:00Z",
                   "homeTeam": "New York Liberty",
@@ -5691,7 +5702,7 @@
                   "selection": "Atlanta Dream",
                   "side": "home",
                   "grade": "FRAGILE",
-                  "score": 35.28,
+                  "score": 23.64,
                   "tags": [
                     "REVERSAL"
                   ],
@@ -5704,7 +5715,7 @@
             },
             {
               "rank": 5,
-              "score": 50.65,
+              "score": 44.99,
               "legs": [
                 {
                   "gameId": "a94e67bca9ed03e512eee9e32821184d",
@@ -5723,12 +5734,12 @@
                 {
                   "gameId": "eb6f53f248f70b4841769705a8ef055d",
                   "gameKey": "wnba|basketball_wnba|minnesota lynx|new york liberty|2026-07-03T23:40:00Z",
-                  "selection": "New York Liberty",
-                  "side": "home",
+                  "selection": "Minnesota Lynx",
+                  "side": "away",
                   "grade": "FRAGILE",
-                  "score": 44.0,
+                  "score": 18.85,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE"
+                    "REVERSAL"
                   ],
                   "commenceTime": "2026-07-03T23:40:00Z",
                   "homeTeam": "New York Liberty",
@@ -5740,7 +5751,7 @@
                   "selection": "Golden State Valkyries",
                   "side": "away",
                   "grade": "FRAGILE",
-                  "score": 23.94,
+                  "score": 32.13,
                   "tags": [
                     "PUBLIC_FADE_CANDIDATE",
                     "REVERSAL"
@@ -5754,7 +5765,7 @@
             },
             {
               "rank": 6,
-              "score": 50.65,
+              "score": 44.99,
               "legs": [
                 {
                   "gameId": "a94e67bca9ed03e512eee9e32821184d",
@@ -5773,12 +5784,12 @@
                 {
                   "gameId": "eb6f53f248f70b4841769705a8ef055d",
                   "gameKey": "wnba|basketball_wnba|minnesota lynx|new york liberty|2026-07-03T23:40:00Z",
-                  "selection": "New York Liberty",
-                  "side": "home",
+                  "selection": "Minnesota Lynx",
+                  "side": "away",
                   "grade": "FRAGILE",
-                  "score": 44.0,
+                  "score": 18.85,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE"
+                    "REVERSAL"
                   ],
                   "commenceTime": "2026-07-03T23:40:00Z",
                   "homeTeam": "New York Liberty",
@@ -5790,7 +5801,7 @@
                   "selection": "Golden State Valkyries",
                   "side": "away",
                   "grade": "FRAGILE",
-                  "score": 23.94,
+                  "score": 32.13,
                   "tags": [
                     "PUBLIC_FADE_CANDIDATE",
                     "REVERSAL"
@@ -5804,7 +5815,7 @@
             },
             {
               "rank": 7,
-              "score": 47.06,
+              "score": 42.16,
               "legs": [
                 {
                   "gameId": "a94e67bca9ed03e512eee9e32821184d",
@@ -5826,9 +5837,9 @@
                   "selection": "Minnesota Lynx",
                   "side": "away",
                   "grade": "FRAGILE",
-                  "score": 33.23,
+                  "score": 18.85,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE"
+                    "REVERSAL"
                   ],
                   "commenceTime": "2026-07-03T23:40:00Z",
                   "homeTeam": "New York Liberty",
@@ -5837,12 +5848,11 @@
                 {
                   "gameId": "c7e2d1320d0907e35977d472bd02d7d6",
                   "gameKey": "wnba|basketball_wnba|golden state valkyries|atlanta dream|2026-07-04T17:00:00Z",
-                  "selection": "Golden State Valkyries",
-                  "side": "away",
+                  "selection": "Atlanta Dream",
+                  "side": "home",
                   "grade": "FRAGILE",
-                  "score": 23.94,
+                  "score": 23.64,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE",
                     "REVERSAL"
                   ],
                   "commenceTime": "2026-07-04T17:00:00Z",
@@ -5854,7 +5864,7 @@
             },
             {
               "rank": 8,
-              "score": 47.06,
+              "score": 42.16,
               "legs": [
                 {
                   "gameId": "a94e67bca9ed03e512eee9e32821184d",
@@ -5876,9 +5886,9 @@
                   "selection": "Minnesota Lynx",
                   "side": "away",
                   "grade": "FRAGILE",
-                  "score": 33.23,
+                  "score": 18.85,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE"
+                    "REVERSAL"
                   ],
                   "commenceTime": "2026-07-03T23:40:00Z",
                   "homeTeam": "New York Liberty",
@@ -5887,12 +5897,11 @@
                 {
                   "gameId": "c7e2d1320d0907e35977d472bd02d7d6",
                   "gameKey": "wnba|basketball_wnba|golden state valkyries|atlanta dream|2026-07-04T17:00:00Z",
-                  "selection": "Golden State Valkyries",
-                  "side": "away",
+                  "selection": "Atlanta Dream",
+                  "side": "home",
                   "grade": "FRAGILE",
-                  "score": 23.94,
+                  "score": 23.64,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE",
                     "REVERSAL"
                   ],
                   "commenceTime": "2026-07-04T17:00:00Z",
@@ -5907,8 +5916,8 @@
           "fallbackApplied": true,
           "stored": {
             "pk": "PARLAY_BUILDS#wnba#2026-07-03",
-            "sk": "BUILD#2026-07-03T17:02:17.638122+00:00#parlay_effde19f02154fb7",
-            "build_id": "parlay_effde19f02154fb7",
+            "sk": "BUILD#2026-07-03T18:23:18.547380+00:00#parlay_ef4f8925f2a947c2",
+            "build_id": "parlay_ef4f8925f2a947c2",
             "build_status": "BUILT"
           }
         },
@@ -5931,8 +5940,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 49,
-            "missingPullCountSinceStart": 49,
+            "expectedPullCountSinceStart": 54,
+            "missingPullCountSinceStart": 54,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -5953,8 +5962,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nfl#2026-07-03",
-            "sk": "BUILD#2026-07-03T17:02:17.683792+00:00#parlay_af76a1ee38024a3a",
-            "build_id": "parlay_af76a1ee38024a3a",
+            "sk": "BUILD#2026-07-03T18:23:18.599547+00:00#parlay_9537678196d44b7b",
+            "build_id": "parlay_9537678196d44b7b",
             "build_status": "NO_BUILD"
           }
         },
@@ -5977,8 +5986,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 49,
-            "missingPullCountSinceStart": 49,
+            "expectedPullCountSinceStart": 54,
+            "missingPullCountSinceStart": 54,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -5999,8 +6008,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#cfb#2026-07-03",
-            "sk": "BUILD#2026-07-03T17:02:17.726804+00:00#parlay_af8ee62ac9d240ef",
-            "build_id": "parlay_af8ee62ac9d240ef",
+            "sk": "BUILD#2026-07-03T18:23:18.641241+00:00#parlay_93282393e8f64481",
+            "build_id": "parlay_93282393e8f64481",
             "build_status": "NO_BUILD"
           }
         },
@@ -6023,8 +6032,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 49,
-            "missingPullCountSinceStart": 49,
+            "expectedPullCountSinceStart": 54,
+            "missingPullCountSinceStart": 54,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -6045,8 +6054,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nba#2026-07-03",
-            "sk": "BUILD#2026-07-03T17:02:17.766782+00:00#parlay_5c11e84fe36548af",
-            "build_id": "parlay_5c11e84fe36548af",
+            "sk": "BUILD#2026-07-03T18:23:18.678395+00:00#parlay_b84bc97576fd46a3",
+            "build_id": "parlay_b84bc97576fd46a3",
             "build_status": "NO_BUILD"
           }
         },
@@ -6069,8 +6078,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 49,
-            "missingPullCountSinceStart": 49,
+            "expectedPullCountSinceStart": 54,
+            "missingPullCountSinceStart": 54,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -6091,8 +6100,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#ncaam#2026-07-03",
-            "sk": "BUILD#2026-07-03T17:02:17.805496+00:00#parlay_3925f873312e4eef",
-            "build_id": "parlay_3925f873312e4eef",
+            "sk": "BUILD#2026-07-03T18:23:18.714869+00:00#parlay_2215d5f553134553",
+            "build_id": "parlay_2215d5f553134553",
             "build_status": "NO_BUILD"
           }
         },
@@ -6115,8 +6124,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 49,
-            "missingPullCountSinceStart": 49,
+            "expectedPullCountSinceStart": 54,
+            "missingPullCountSinceStart": 54,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -6137,8 +6146,8 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "pk": "PARLAY_BUILDS#nhl#2026-07-03",
-            "sk": "BUILD#2026-07-03T17:02:17.844682+00:00#parlay_859c4ee5c67b4092",
-            "build_id": "parlay_859c4ee5c67b4092",
+            "sk": "BUILD#2026-07-03T18:23:18.751695+00:00#parlay_1cdd595b1d2549b5",
+            "build_id": "parlay_1cdd595b1d2549b5",
             "build_status": "NO_BUILD"
           }
         },
@@ -6146,7 +6155,7 @@
           "ok": true,
           "sport": "soccer",
           "slate_date": "2026-07-03",
-          "pullCount": 54,
+          "pullCount": 60,
           "minimumParlayPulls": 12,
           "buildStatus": "BUILT",
           "buildQuality": "BASELINE_12_SNAPSHOT",
@@ -6178,8 +6187,8 @@
                 "delta": 0.0,
                 "velocityPpHr": 0.0,
                 "acceleration": 0.0,
-                "pullCount": 54,
-                "durationMinutes": 765.0,
+                "pullCount": 60,
+                "durationMinutes": 855.0,
                 "latestGap": 0.07071,
                 "bookCount": 1,
                 "bookDivergence": 0.0,
@@ -6197,8 +6206,8 @@
                 "delta": 0.0,
                 "velocityPpHr": 0.0,
                 "acceleration": 0.0,
-                "pullCount": 54,
-                "durationMinutes": 765.0,
+                "pullCount": 60,
+                "durationMinutes": 855.0,
                 "latestGap": 0.07071,
                 "bookCount": 1,
                 "bookDivergence": 0.0,
@@ -6232,8 +6241,8 @@
                 "delta": 0.0,
                 "velocityPpHr": 0.0,
                 "acceleration": 0.0,
-                "pullCount": 54,
-                "durationMinutes": 765.0,
+                "pullCount": 60,
+                "durationMinutes": 855.0,
                 "latestGap": 0.36464,
                 "bookCount": 1,
                 "bookDivergence": 0.0,
@@ -6251,8 +6260,8 @@
                 "delta": 0.0,
                 "velocityPpHr": 0.0,
                 "acceleration": 0.0,
-                "pullCount": 54,
-                "durationMinutes": 765.0,
+                "pullCount": 60,
+                "durationMinutes": 855.0,
                 "latestGap": 0.36464,
                 "bookCount": 1,
                 "bookDivergence": 0.0,
@@ -6286,8 +6295,8 @@
                 "delta": 0.0,
                 "velocityPpHr": 0.0,
                 "acceleration": 0.0,
-                "pullCount": 54,
-                "durationMinutes": 765.0,
+                "pullCount": 60,
+                "durationMinutes": 855.0,
                 "latestGap": 0.68217,
                 "bookCount": 1,
                 "bookDivergence": 0.0,
@@ -6305,8 +6314,8 @@
                 "delta": 0.0,
                 "velocityPpHr": 0.0,
                 "acceleration": 0.0,
-                "pullCount": 54,
-                "durationMinutes": 765.0,
+                "pullCount": 60,
+                "durationMinutes": 855.0,
                 "latestGap": 0.68217,
                 "bookCount": 1,
                 "bookDivergence": 0.0,
@@ -6669,8 +6678,8 @@
           "fallbackApplied": true,
           "stored": {
             "pk": "PARLAY_BUILDS#soccer#2026-07-03",
-            "sk": "BUILD#2026-07-03T17:02:17.994671+00:00#parlay_a84b078c7c614bd3",
-            "build_id": "parlay_a84b078c7c614bd3",
+            "sk": "BUILD#2026-07-03T18:23:18.855023+00:00#parlay_5f17bb637e3845b8",
+            "build_id": "parlay_5f17bb637e3845b8",
             "build_status": "BUILT"
           }
         },
@@ -6706,8 +6715,8 @@
             "buildDeadlineEt": "2026-07-03T04:05:00-04:00",
             "deadlineHoursBeforeFirstEvent": 2,
             "deadlinePassed": true,
-            "currentUtc": "2026-07-03T17:02:19.245786+00:00",
-            "currentEt": "2026-07-03T13:02:19.245786-04:00"
+            "currentUtc": "2026-07-03T18:23:20.003139+00:00",
+            "currentEt": "2026-07-03T14:23:20.003139-04:00"
           },
           "rawSignalCount": 16,
           "sameSlateSignalCount": 16,
@@ -6721,8 +6730,8 @@
           "message": "Refused because the 3-leg build must be created no later than 2 hours before the first game or match.",
           "stored": {
             "pk": "PARLAY_BUILDS#tennis#2026-07-03",
-            "sk": "BUILD#2026-07-03T17:02:19.245854+00:00#parlay_91ea61b2e6124387",
-            "build_id": "parlay_91ea61b2e6124387",
+            "sk": "BUILD#2026-07-03T18:23:20.003200+00:00#parlay_16cf77e175ac4946",
+            "build_id": "parlay_16cf77e175ac4946",
             "build_status": "NO_BUILD"
           }
         }
@@ -6731,7 +6740,7 @@
     "pullDiagnostics": {
       "ok": true,
       "source": "diagnostic_provider_probe_no_snapshot_storage",
-      "createdAt": "2026-07-03T17:02:21.345005+00:00",
+      "createdAt": "2026-07-03T18:23:22.084659+00:00",
       "sportsRequested": [
         "mlb",
         "wnba",
@@ -6820,9 +6829,9 @@
         {
           "ok": true,
           "appSport": "mlb",
-          "rawGamesReturned": 13,
-          "rawGamesInWindow": 13,
-          "gamesConvertible": 13,
+          "rawGamesReturned": 27,
+          "rawGamesInWindow": 27,
+          "gamesConvertible": 27,
           "gamesStored": null,
           "diagnosticOnlyNoSnapshotStored": true,
           "activeStorageFailure": false,
@@ -6831,14 +6840,14 @@
               "ok": true,
               "appSport": "mlb",
               "providerSportKey": "baseball_mlb",
-              "rawGamesReturned": 13,
-              "rawGamesInWindow": 13,
-              "gamesConvertible": 13,
+              "rawGamesReturned": 27,
+              "rawGamesInWindow": 27,
+              "gamesConvertible": 27,
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:19.449736+00:00",
-              "activeWindowEnd": "2026-07-05T17:02:19.449736+00:00",
+              "activeWindowStart": "2026-07-03T12:23:20.177269+00:00",
+              "activeWindowEnd": "2026-07-05T18:23:20.177269+00:00",
               "slateWindowDays": 2,
               "error": null
             }
@@ -6864,8 +6873,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:19.557239+00:00",
-              "activeWindowEnd": "2026-07-05T17:02:19.557239+00:00",
+              "activeWindowStart": "2026-07-03T12:23:20.280701+00:00",
+              "activeWindowEnd": "2026-07-05T18:23:20.280701+00:00",
               "slateWindowDays": 2,
               "error": null
             }
@@ -6891,8 +6900,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:19.842590+00:00",
-              "activeWindowEnd": "2026-07-10T17:02:19.842590+00:00",
+              "activeWindowStart": "2026-07-03T12:23:20.517418+00:00",
+              "activeWindowEnd": "2026-07-10T18:23:20.517418+00:00",
               "slateWindowDays": 7,
               "error": "active_slate_window_empty"
             }
@@ -6918,8 +6927,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:20.104909+00:00",
-              "activeWindowEnd": "2026-07-10T17:02:20.104909+00:00",
+              "activeWindowStart": "2026-07-03T12:23:20.741665+00:00",
+              "activeWindowEnd": "2026-07-10T18:23:20.741665+00:00",
               "slateWindowDays": 7,
               "error": "active_slate_window_empty"
             }
@@ -6945,8 +6954,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:20.256287+00:00",
-              "activeWindowEnd": "2026-07-05T17:02:20.256287+00:00",
+              "activeWindowStart": "2026-07-03T12:23:20.873101+00:00",
+              "activeWindowEnd": "2026-07-05T18:23:20.873101+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -6972,8 +6981,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:20.330933+00:00",
-              "activeWindowEnd": "2026-07-05T17:02:20.330933+00:00",
+              "activeWindowStart": "2026-07-03T12:23:20.961291+00:00",
+              "activeWindowEnd": "2026-07-05T18:23:20.961291+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -6999,8 +7008,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:20.479634+00:00",
-              "activeWindowEnd": "2026-07-05T17:02:20.479634+00:00",
+              "activeWindowStart": "2026-07-03T12:23:21.188156+00:00",
+              "activeWindowEnd": "2026-07-05T18:23:21.188156+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -7026,8 +7035,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:20.591974+00:00",
-              "activeWindowEnd": "2026-07-17T17:02:20.591974+00:00",
+              "activeWindowStart": "2026-07-03T12:23:21.295762+00:00",
+              "activeWindowEnd": "2026-07-17T18:23:21.295762+00:00",
               "slateWindowDays": 14,
               "error": null
             },
@@ -7041,8 +7050,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:20.781726+00:00",
-              "activeWindowEnd": "2026-07-17T17:02:20.781726+00:00",
+              "activeWindowStart": "2026-07-03T12:23:21.493241+00:00",
+              "activeWindowEnd": "2026-07-17T18:23:21.493241+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             },
@@ -7056,8 +7065,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:20.945937+00:00",
-              "activeWindowEnd": "2026-07-17T17:02:20.945937+00:00",
+              "activeWindowStart": "2026-07-03T12:23:21.596117+00:00",
+              "activeWindowEnd": "2026-07-17T18:23:21.596117+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             }
@@ -7066,9 +7075,9 @@
         {
           "ok": true,
           "appSport": "tennis",
-          "rawGamesReturned": 26,
-          "rawGamesInWindow": 26,
-          "gamesConvertible": 26,
+          "rawGamesReturned": 22,
+          "rawGamesInWindow": 22,
+          "gamesConvertible": 22,
           "gamesStored": null,
           "diagnosticOnlyNoSnapshotStored": true,
           "activeStorageFailure": false,
@@ -7077,14 +7086,14 @@
               "ok": true,
               "appSport": "tennis",
               "providerSportKey": "tennis_atp_wimbledon",
-              "rawGamesReturned": 13,
-              "rawGamesInWindow": 13,
-              "gamesConvertible": 13,
+              "rawGamesReturned": 12,
+              "rawGamesInWindow": 12,
+              "gamesConvertible": 12,
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:21.234745+00:00",
-              "activeWindowEnd": "2026-07-10T17:02:21.234745+00:00",
+              "activeWindowStart": "2026-07-03T12:23:21.893518+00:00",
+              "activeWindowEnd": "2026-07-10T18:23:21.893518+00:00",
               "slateWindowDays": 7,
               "error": null
             },
@@ -7092,14 +7101,14 @@
               "ok": true,
               "appSport": "tennis",
               "providerSportKey": "tennis_wta_wimbledon",
-              "rawGamesReturned": 13,
-              "rawGamesInWindow": 13,
-              "gamesConvertible": 13,
+              "rawGamesReturned": 10,
+              "rawGamesInWindow": 10,
+              "gamesConvertible": 10,
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-03T11:02:21.344892+00:00",
-              "activeWindowEnd": "2026-07-10T17:02:21.344892+00:00",
+              "activeWindowStart": "2026-07-03T12:23:22.084553+00:00",
+              "activeWindowEnd": "2026-07-10T18:23:22.084553+00:00",
               "slateWindowDays": 7,
               "error": null
             }
