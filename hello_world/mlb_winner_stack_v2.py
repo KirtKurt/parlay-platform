@@ -3,11 +3,11 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-VERSION = "MLB-WINNER-STACK-v2-market-movement-fundamental-calibrated"
+VERSION = "MLB-WINNER-STACK-v2.1-risk-calibrated-market-confirmed"
 
 BAD_TAGS = {"LOW_PULL_DEPTH", "SINGLE_PULL_BASELINE", "BOOK_DIVERGENCE", "LATE_INSTABILITY"}
 STRONG_TAGS = {"STEAM", "RUN_LINE_CONFIRMATION", "RUN_LINE_MOVEMENT", "BOOK_AGREEMENT"}
-CHAOS_TAGS = {"BOOK_DIVERGENCE", "COMPRESSED_MARKET"}
+CHAOS_TAGS = {"BOOK_DIVERGENCE", "COMPRESSED_MARKET", "UNCONFIRMED_RUN_LINE_MOVE"}
 
 
 def _f(value: Any, default: float = 0.0) -> float:
@@ -66,30 +66,69 @@ def _market_component(selected: Dict[str, Any], other: Dict[str, Any]) -> Dict[s
     }
 
 
-def _movement_component(selected: Dict[str, Any]) -> Dict[str, Any]:
+def _movement_component(selected: Dict[str, Any], market: Dict[str, Any]) -> Dict[str, Any]:
     tags = set(selected.get("tags") or [])
     score = _f(selected.get("optimizedWinnerScore", selected.get("score")), 50.0)
-    if "STEAM" in tags:
-        score += 3.0
-    if "RUN_LINE_CONFIRMATION" in tags:
-        score += 4.0
-    elif "RUN_LINE_MOVEMENT" in tags:
-        score += 1.5
-    if "BOOK_AGREEMENT" in tags:
-        score += 1.5
-    if "BOOK_DIVERGENCE" in tags:
-        score -= 5.0
-    if "COMPRESSED_MARKET" in tags and "RUN_LINE_CONFIRMATION" not in tags:
-        score -= 3.0
     rev = int(_f(selected.get("reversalCount"), 0.0))
-    if rev >= 3 and "RUN_LINE_CONFIRMATION" not in tags:
-        score -= min(8.0, rev * 1.5)
+    market_edge = _f(market.get("consensusEdge"), 0.0)
+    market_prob = _f(market.get("consensusProbability"), _f(selected.get("marketConsensusProbability"), 0.5))
+
+    clean_books = "BOOK_AGREEMENT" in tags and "BOOK_DIVERGENCE" not in tags
+    clean_steam = "STEAM" in tags and clean_books and rev <= 1 and market_edge >= 0.04
+    clean_runline_confirmation = (
+        "RUN_LINE_CONFIRMATION" in tags
+        and clean_books
+        and rev <= 1
+        and market_edge >= 0.05
+        and "COMPRESSED_MARKET" not in tags
+        and "UNCONFIRMED_RUN_LINE_MOVE" not in tags
+    )
+
+    if clean_steam:
+        score += 2.0
+    elif "STEAM" in tags and ("BOOK_DIVERGENCE" in tags or rev >= 3 or market_edge < 0.02):
+        score -= 1.5
+
+    if clean_runline_confirmation:
+        score += 2.0
+    elif "RUN_LINE_CONFIRMATION" in tags:
+        score -= 2.5
+    elif "RUN_LINE_MOVEMENT" in tags:
+        score -= 1.0
+        if rev >= 2 or "COMPRESSED_MARKET" in tags:
+            score -= 1.75
+
+    if clean_books:
+        score += 1.5 if market_prob >= 0.52 else 0.5
+
+    if "BOOK_DIVERGENCE" in tags:
+        score -= 6.0
+    if "COMPRESSED_MARKET" in tags:
+        score -= 2.5
+    if "UNCONFIRMED_RUN_LINE_MOVE" in tags:
+        score -= 2.0
+
+    # High reversal counts have repeatedly created false winners. Penalize them
+    # even if another movement tag is present.
+    if rev >= 5:
+        score -= 7.0
+    elif rev >= 3:
+        score -= 5.0
+    elif rev == 2:
+        score -= 2.5
+
+    if market_prob < 0.50:
+        score -= 5.0
+
     return {
         "score": round(_clamp(score, 0.0, 100.0), 2),
         "tags": sorted(tags),
         "reversalCount": rev,
         "runLineMovement": selected.get("runLineMovement"),
-        "source": "line_movement_steam_resistance_reversal_runline_confirmation",
+        "marketEdge": round(market_edge, 5),
+        "cleanSteam": clean_steam,
+        "cleanRunLineConfirmation": clean_runline_confirmation,
+        "source": "line_movement_steam_resistance_reversal_runline_confirmation_risk_calibrated",
     }
 
 
@@ -120,48 +159,102 @@ def _fundamental_component(row: Dict[str, Any], selected: Dict[str, Any], other:
 
 def _weights(fundamentals_applied: bool) -> Dict[str, float]:
     if fundamentals_applied:
-        return {"market": 0.50, "movement": 0.30, "fundamentals": 0.20}
-    return {"market": 0.62, "movement": 0.38, "fundamentals": 0.0}
+        return {"market": 0.55, "movement": 0.27, "fundamentals": 0.18}
+    return {"market": 0.68, "movement": 0.32, "fundamentals": 0.0}
 
 
-def _calibrated_probability(raw_prob: float, market_prob: float, tags: List[str], fundamentals_applied: bool) -> Dict[str, Any]:
-    anchor_weight = 0.35 if fundamentals_applied else 0.45
+def _calibrated_probability(raw_prob: float, market_prob: float, tags: List[str], fundamentals_applied: bool, selected: Dict[str, Any]) -> Dict[str, Any]:
+    anchor_weight = 0.42 if fundamentals_applied else 0.52
     p = raw_prob * (1.0 - anchor_weight) + market_prob * anchor_weight
     tagset = set(tags or [])
+    rev = int(_f(selected.get("reversalCount"), 0.0))
+    market_edge = market_prob - 0.5
     shrink = 0.0
+    risk_reasons: List[str] = []
+
     if tagset & BAD_TAGS:
         shrink += 0.07
+        risk_reasons.append("hard_weakness_tag")
     if tagset & CHAOS_TAGS:
-        shrink += 0.04
-    rev_penalty = 0.01 * min(5, len([t for t in tags if t == "REVERSAL"]))
-    shrink += rev_penalty
-    if tagset & {"RUN_LINE_CONFIRMATION", "BOOK_AGREEMENT"}:
-        shrink = max(0.0, shrink - 0.03)
-    p = 0.5 + (p - 0.5) * (1.0 - _clamp(shrink, 0.0, 0.18))
+        shrink += 0.05
+        risk_reasons.append("chaos_or_unconfirmed_movement")
+    if rev >= 5:
+        shrink += 0.08
+        risk_reasons.append("very_high_reversal_count")
+    elif rev >= 3:
+        shrink += 0.05
+        risk_reasons.append("high_reversal_count")
+    elif rev == 2:
+        shrink += 0.025
+        risk_reasons.append("moderate_reversal_count")
+    if "RUN_LINE_CONFIRMATION" in tagset and "BOOK_AGREEMENT" not in tagset:
+        shrink += 0.05
+        risk_reasons.append("run_line_confirmation_without_book_agreement")
+    if "RUN_LINE_MOVEMENT" in tagset and "RUN_LINE_CONFIRMATION" not in tagset:
+        shrink += 0.025
+        risk_reasons.append("unconfirmed_run_line_movement")
+    if market_edge < 0.02:
+        shrink += 0.035
+        risk_reasons.append("weak_market_edge")
+
+    if "BOOK_AGREEMENT" in tagset and rev <= 1 and market_edge >= 0.04:
+        shrink = max(0.0, shrink - 0.025)
+
+    p = 0.5 + (p - 0.5) * (1.0 - _clamp(shrink, 0.0, 0.24))
     return {
         "rawProbability": round(raw_prob, 4),
         "marketAnchorProbability": round(market_prob, 4),
         "calibratedProbability": round(_clamp(p, 0.05, 0.95), 4),
         "shrinkageToward50": round(shrink, 4),
-        "method": "ensemble_probability_anchored_to_de_vigged_market_consensus",
+        "riskReasons": risk_reasons,
+        "method": "ensemble_probability_anchored_to_de_vigged_market_consensus_with_false_confirmation_shrinkage",
     }
 
 
-def _actionability(prob: float, score: float, tier: str, tags: List[str]) -> Dict[str, Any]:
+def _actionability(prob: float, score: float, tier: str, tags: List[str], selected: Dict[str, Any], market: Dict[str, Any], calibration: Dict[str, Any]) -> Dict[str, Any]:
     tagset = set(tags or [])
-    weak = bool(tagset & {"LOW_PULL_DEPTH", "SINGLE_PULL_BASELINE", "BOOK_DIVERGENCE"})
-    if tier in {"Premium", "Solid"} and prob >= 0.64 and score >= 64 and not weak:
-        return {"actionablePick": True, "actionability": "ACTIONABLE_WINNER_PICK", "reason": "premium_or_solid_calibrated_edge_without_hard_weakness"}
-    if tier == "Lean" and prob >= 0.58 and not weak:
-        return {"actionablePick": False, "actionability": "WATCHLIST_LEAN", "reason": "edge_exists_but_not_strong_enough_for_primary_actionable_bucket"}
-    return {"actionablePick": False, "actionability": "PASS_NO_PICK", "reason": "coin_flip_pass_or_hard_weakness_present"}
+    rev = int(_f(selected.get("reversalCount"), 0.0))
+    market_edge = _f(market.get("consensusEdge"), 0.0)
+    risk_reasons = list(calibration.get("riskReasons") or [])
+    weak = bool(tagset & {"LOW_PULL_DEPTH", "SINGLE_PULL_BASELINE", "BOOK_DIVERGENCE", "UNCONFIRMED_RUN_LINE_MOVE"})
+
+    if rev >= 3:
+        weak = True
+        risk_reasons.append("reversal_count_actionability_block")
+    if "COMPRESSED_MARKET" in tagset and market_edge < 0.05:
+        weak = True
+        risk_reasons.append("compressed_market_low_edge_block")
+    if "RUN_LINE_CONFIRMATION" in tagset and "BOOK_AGREEMENT" not in tagset:
+        weak = True
+        risk_reasons.append("false_confirmation_block")
+
+    if tier in {"Premium", "Solid"} and prob >= 0.64 and score >= 64 and market_edge >= 0.08 and not weak:
+        return {
+            "actionablePick": True,
+            "actionability": "ACTIONABLE_WINNER_PICK",
+            "reason": "premium_or_solid_edge_with_market_confirmation_and_no_hard_weakness",
+            "riskReasons": risk_reasons,
+        }
+    if tier == "Lean" and prob >= 0.60 and score >= 58 and market_edge >= 0.05 and not weak:
+        return {
+            "actionablePick": False,
+            "actionability": "WATCHLIST_LEAN",
+            "reason": "edge_exists_but_not_strong_enough_for_primary_actionable_bucket",
+            "riskReasons": risk_reasons,
+        }
+    return {
+        "actionablePick": False,
+        "actionability": "PASS_NO_PICK",
+        "reason": "coin_flip_pass_or_hard_weakness_present",
+        "riskReasons": risk_reasons,
+    }
 
 
 def enhance_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(row or {})
     selected, other = _selected_and_opponent(out)
     market = _market_component(selected, other)
-    movement = _movement_component(selected)
+    movement = _movement_component(selected, market)
     fundamentals = _fundamental_component(out, selected, other)
     weights = _weights(bool(fundamentals.get("applied")))
     ensemble_score = (
@@ -171,11 +264,11 @@ def enhance_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
     )
     raw_prob = _prob_from_score(ensemble_score)
     tags = sorted(set(out.get("tags") or selected.get("tags") or []))
-    calibration = _calibrated_probability(raw_prob, _f(market.get("consensusProbability"), 0.5), tags, bool(fundamentals.get("applied")))
+    calibration = _calibrated_probability(raw_prob, _f(market.get("consensusProbability"), 0.5), tags, bool(fundamentals.get("applied")), selected)
     prob = _f(calibration.get("calibratedProbability"), raw_prob)
     score = round(ensemble_score, 2)
     tier = _tier(prob, score, tags)
-    action = _actionability(prob, score, tier, tags)
+    action = _actionability(prob, score, tier, tags, selected, market, calibration)
     actionable = bool(action["actionablePick"])
 
     out["scoreBeforeWinnerStackV2"] = out.get("score")
@@ -190,6 +283,7 @@ def enhance_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
     out["actionablePick"] = actionable
     out["actionability"] = action["actionability"]
     out["actionabilityReason"] = action["reason"]
+    out["actionabilityRiskReasons"] = action.get("riskReasons") or []
     out["winnerStackV2"] = {
         "applied": True,
         "version": VERSION,
@@ -222,10 +316,10 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "version": VERSION,
         "layers": [
             "de_vigged_market_baseline",
-            "line_movement_engine",
+            "line_movement_engine_risk_calibrated",
             "fundamentals_layer_live_or_neutral",
-            "ensemble_weighting",
-            "probability_calibration",
+            "ensemble_weighting_market_first",
+            "probability_calibration_false_confirmation_shrinkage",
             "actionability_no_pick_discipline",
         ],
         "predictionCount": len(predictions),
@@ -235,7 +329,7 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
     }
     summary = dict(out.get("rolling24hAccuracyTarget") or out.get("accuracyTarget") or {})
     summary["winnerStackV2"] = out["winnerStackV2"]
-    summary["calibrationPolicy"] = "Brier/log-loss ready probabilities, market anchored and shrunk for instability."
+    summary["calibrationPolicy"] = "Market-first probabilities, false-confirmation shrinkage, and hard no-pick discipline for unstable signals."
     summary["actionablePickCount"] = out["actionablePickCount"]
     summary["noPickCount"] = out["noPickCount"]
     out["rolling24hAccuracyTarget"] = summary
