@@ -13,6 +13,7 @@
   ],
   "builtSports": [
     "mlb",
+    "wnba",
     "soccer"
   ],
   "mlbBuilt": true,
@@ -614,13 +615,13 @@
     },
     "stored": {
       "pk": "PARLAY_BUILDS#mlb#2026-07-04",
-      "sk": "BUILD#2026-07-04T18:46:51.039801+00:00#parlay_c8c64b22687e4b6b"
+      "sk": "BUILD#2026-07-04T20:01:55.119993+00:00#parlay_a689b9e39a614325"
     }
   },
   "result": {
     "ok": true,
     "autoBuild": true,
-    "builtCount": 2,
+    "builtCount": 3,
     "results": [
       {
         "ok": true,
@@ -1215,8 +1216,8 @@
         "fallbackApplied": true,
         "stored": {
           "pk": "PARLAY_BUILDS#mlb#2026-07-04",
-          "sk": "BUILD#2026-07-04T18:46:51.039801+00:00#parlay_c8c64b22687e4b6b",
-          "build_id": "parlay_c8c64b22687e4b6b",
+          "sk": "BUILD#2026-07-04T20:01:55.119993+00:00#parlay_a689b9e39a614325",
+          "build_id": "parlay_a689b9e39a614325",
           "build_status": "BUILT"
         }
       },
@@ -1224,52 +1225,602 @@
         "ok": true,
         "sport": "wnba",
         "slate_date": "2026-07-04",
-        "pullCount": 61,
-        "pullCoverage": {
-          "ok": true,
-          "sport": "wnba",
-          "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
-          "startHourEt": 1,
-          "intervalMinutes": 15,
-          "expectedStartAtUtc": "2026-07-04T05:00:00+00:00",
-          "expectedStartAtEt": "2026-07-04T01:00:00-04:00",
-          "firstPullAtUtc": "2026-07-04T04:07:15.144392+00:00",
-          "firstPullAtEt": "2026-07-04T00:07:15.144392-04:00",
-          "latestPullAtUtc": "2026-07-04T18:37:15.191339+00:00",
-          "latestPullAtEt": "2026-07-04T14:37:15.191339-04:00",
-          "actualPullCount": 61,
-          "actualPullCountSinceStart": 57,
-          "expectedPullCountSinceStart": 55,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": 1.0364,
-          "coverageComplete": true
-        },
-        "buildDeadline": {
-          "ok": true,
-          "firstEventAtUtc": "2026-07-04T17:03:52+00:00",
-          "firstEventAtEt": "2026-07-04T13:03:52-04:00",
-          "buildDeadlineUtc": "2026-07-04T15:03:52+00:00",
-          "buildDeadlineEt": "2026-07-04T11:03:52-04:00",
-          "deadlineHoursBeforeFirstEvent": 2,
-          "deadlinePassed": true,
-          "currentUtc": "2026-07-04T18:46:51.940857+00:00",
-          "currentEt": "2026-07-04T14:46:51.940857-04:00"
-        },
-        "rawSignalCount": 4,
-        "sameSlateSignalCount": 2,
+        "pullCount": 66,
         "minimumParlayPulls": 12,
-        "minimumStrongLegs": 2,
-        "maximumCoinFlipLegs": 1,
-        "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP_WITH_BASELINE_AFTER_12",
-        "strictDailySlate": true,
-        "buildStatus": "NO_BUILD",
-        "reason": "MISSED_2_HOUR_BUILD_DEADLINE",
-        "message": "Refused because the 3-leg build must be created no later than 2 hours before the first game or match.",
+        "buildStatus": "BUILT",
+        "buildQuality": "BASELINE_12_SNAPSHOT",
+        "reason": "BUILT_FROM_TOP_AVAILABLE_SIGNALS_AFTER_12_SNAPSHOTS",
+        "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
+        "officialStrength": "BASELINE_NOT_STRONG",
+        "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
+        "selectedStrongCount": 0,
+        "legs": [
+          {
+            "gameId": "54f91bf5767bbff2f9bb1f444a6fc510",
+            "gameKey": "wnba|basketball_wnba|dallas wings|toronto tempo|2026-07-05T19:00:00Z",
+            "sport": "wnba",
+            "homeTeam": "Toronto Tempo",
+            "awayTeam": "Dallas Wings",
+            "commenceTime": "2026-07-05T19:00:00Z",
+            "level": "pro",
+            "gender": "women",
+            "providerSportKey": "basketball_wnba",
+            "selection": "Dallas Wings",
+            "selectedSide": "away",
+            "grade": "FRAGILE",
+            "score": 44.0,
+            "tags": [],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.336,
+              "probLatest": 0.34912,
+              "delta": 0.01313,
+              "velocityPpHr": 0.091,
+              "acceleration": 0.00047,
+              "pullCount": 60,
+              "durationMinutes": 870.0,
+              "latestGap": 0.30176,
+              "bookCount": 5,
+              "bookDivergence": 0.02556,
+              "reversals": 0,
+              "tags": [
+                "PUBLIC_FADE_CANDIDATE"
+              ],
+              "grade": "FRAGILE",
+              "score": 39.45,
+              "rawScoreBeforeGuard": 39.45,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.664,
+              "probLatest": 0.65088,
+              "delta": -0.01313,
+              "velocityPpHr": -0.091,
+              "acceleration": -0.00047,
+              "pullCount": 60,
+              "durationMinutes": 870.0,
+              "latestGap": 0.30176,
+              "bookCount": 5,
+              "bookDivergence": 0.02556,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 44.0,
+              "rawScoreBeforeGuard": 45.22,
+              "scoreGuardApplied": true
+            }
+          },
+          {
+            "gameId": "f784500c59f1f83757bec7c0ef787879",
+            "gameKey": "wnba|basketball_wnba|indiana fever|las vegas aces|2026-07-05T23:00:00Z",
+            "sport": "wnba",
+            "homeTeam": "Las Vegas Aces",
+            "awayTeam": "Indiana Fever",
+            "commenceTime": "2026-07-05T23:00:00Z",
+            "level": "pro",
+            "gender": "women",
+            "providerSportKey": "basketball_wnba",
+            "selection": "Las Vegas Aces",
+            "selectedSide": "home",
+            "grade": "FRAGILE",
+            "score": 44.0,
+            "tags": [],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.69382,
+              "probLatest": 0.68334,
+              "delta": -0.01047,
+              "velocityPpHr": -0.066,
+              "acceleration": -1e-05,
+              "pullCount": 66,
+              "durationMinutes": 945.0,
+              "latestGap": 0.36669,
+              "bookCount": 5,
+              "bookDivergence": 0.01947,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 44.0,
+              "rawScoreBeforeGuard": 51.5,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.30618,
+              "probLatest": 0.31666,
+              "delta": 0.01047,
+              "velocityPpHr": 0.066,
+              "acceleration": 1e-05,
+              "pullCount": 66,
+              "durationMinutes": 945.0,
+              "latestGap": 0.36669,
+              "bookCount": 5,
+              "bookDivergence": 0.01947,
+              "reversals": 0,
+              "tags": [
+                "PUBLIC_FADE_CANDIDATE"
+              ],
+              "grade": "FRAGILE",
+              "score": 36.82,
+              "rawScoreBeforeGuard": 36.82,
+              "scoreGuardApplied": true
+            }
+          },
+          {
+            "gameId": "a94e67bca9ed03e512eee9e32821184d",
+            "gameKey": "wnba|basketball_wnba|portland fire|seattle storm|2026-07-05T01:00:00Z",
+            "sport": "wnba",
+            "homeTeam": "Seattle Storm",
+            "awayTeam": "Portland Fire",
+            "commenceTime": "2026-07-05T01:00:00Z",
+            "level": "pro",
+            "gender": "women",
+            "providerSportKey": "basketball_wnba",
+            "selection": "Seattle Storm",
+            "selectedSide": "home",
+            "grade": "FRAGILE",
+            "score": 0.0,
+            "tags": [
+              "CERTAINTY_ANCHOR",
+              "CHAOS",
+              "REVERSAL",
+              "STEAM"
+            ],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.59124,
+              "probLatest": 0.62125,
+              "delta": 0.03001,
+              "velocityPpHr": 0.191,
+              "acceleration": 0.0006,
+              "pullCount": 66,
+              "durationMinutes": 945.0,
+              "latestGap": 0.2425,
+              "bookCount": 11,
+              "bookDivergence": 0.02599,
+              "reversals": 4,
+              "tags": [
+                "CERTAINTY_ANCHOR",
+                "CHAOS",
+                "REVERSAL",
+                "STEAM"
+              ],
+              "grade": "FRAGILE",
+              "score": 0.0,
+              "rawScoreBeforeGuard": 40.91,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.40876,
+              "probLatest": 0.37875,
+              "delta": -0.03001,
+              "velocityPpHr": -0.191,
+              "acceleration": -0.0006,
+              "pullCount": 66,
+              "durationMinutes": 945.0,
+              "latestGap": 0.2425,
+              "bookCount": 11,
+              "bookDivergence": 0.02599,
+              "reversals": 4,
+              "tags": [
+                "CHAOS",
+                "RESISTANCE",
+                "REVERSAL"
+              ],
+              "grade": "FRAGILE",
+              "score": 0.0,
+              "rawScoreBeforeGuard": 0,
+              "scoreGuardApplied": true
+            }
+          }
+        ],
+        "rankedCombos": [
+          {
+            "rank": 1,
+            "score": 29.33,
+            "legs": [
+              {
+                "gameId": "54f91bf5767bbff2f9bb1f444a6fc510",
+                "gameKey": "wnba|basketball_wnba|dallas wings|toronto tempo|2026-07-05T19:00:00Z",
+                "selection": "Dallas Wings",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-05T19:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Dallas Wings"
+              },
+              {
+                "gameId": "f784500c59f1f83757bec7c0ef787879",
+                "gameKey": "wnba|basketball_wnba|indiana fever|las vegas aces|2026-07-05T23:00:00Z",
+                "selection": "Las Vegas Aces",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-05T23:00:00Z",
+                "homeTeam": "Las Vegas Aces",
+                "awayTeam": "Indiana Fever"
+              },
+              {
+                "gameId": "a94e67bca9ed03e512eee9e32821184d",
+                "gameKey": "wnba|basketball_wnba|portland fire|seattle storm|2026-07-05T01:00:00Z",
+                "selection": "Portland Fire",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 0,
+                "tags": [
+                  "CHAOS",
+                  "RESISTANCE",
+                  "REVERSAL"
+                ],
+                "commenceTime": "2026-07-05T01:00:00Z",
+                "homeTeam": "Seattle Storm",
+                "awayTeam": "Portland Fire"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 2,
+            "score": 29.33,
+            "legs": [
+              {
+                "gameId": "54f91bf5767bbff2f9bb1f444a6fc510",
+                "gameKey": "wnba|basketball_wnba|dallas wings|toronto tempo|2026-07-05T19:00:00Z",
+                "selection": "Dallas Wings",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-05T19:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Dallas Wings"
+              },
+              {
+                "gameId": "f784500c59f1f83757bec7c0ef787879",
+                "gameKey": "wnba|basketball_wnba|indiana fever|las vegas aces|2026-07-05T23:00:00Z",
+                "selection": "Las Vegas Aces",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-05T23:00:00Z",
+                "homeTeam": "Las Vegas Aces",
+                "awayTeam": "Indiana Fever"
+              },
+              {
+                "gameId": "a94e67bca9ed03e512eee9e32821184d",
+                "gameKey": "wnba|basketball_wnba|portland fire|seattle storm|2026-07-05T01:00:00Z",
+                "selection": "Seattle Storm",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 0,
+                "tags": [
+                  "CERTAINTY_ANCHOR",
+                  "CHAOS",
+                  "REVERSAL",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-05T01:00:00Z",
+                "homeTeam": "Seattle Storm",
+                "awayTeam": "Portland Fire"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 3,
+            "score": 27.82,
+            "legs": [
+              {
+                "gameId": "54f91bf5767bbff2f9bb1f444a6fc510",
+                "gameKey": "wnba|basketball_wnba|dallas wings|toronto tempo|2026-07-05T19:00:00Z",
+                "selection": "Toronto Tempo",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 39.45,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-05T19:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Dallas Wings"
+              },
+              {
+                "gameId": "f784500c59f1f83757bec7c0ef787879",
+                "gameKey": "wnba|basketball_wnba|indiana fever|las vegas aces|2026-07-05T23:00:00Z",
+                "selection": "Las Vegas Aces",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-05T23:00:00Z",
+                "homeTeam": "Las Vegas Aces",
+                "awayTeam": "Indiana Fever"
+              },
+              {
+                "gameId": "a94e67bca9ed03e512eee9e32821184d",
+                "gameKey": "wnba|basketball_wnba|portland fire|seattle storm|2026-07-05T01:00:00Z",
+                "selection": "Portland Fire",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 0,
+                "tags": [
+                  "CHAOS",
+                  "RESISTANCE",
+                  "REVERSAL"
+                ],
+                "commenceTime": "2026-07-05T01:00:00Z",
+                "homeTeam": "Seattle Storm",
+                "awayTeam": "Portland Fire"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 4,
+            "score": 27.82,
+            "legs": [
+              {
+                "gameId": "54f91bf5767bbff2f9bb1f444a6fc510",
+                "gameKey": "wnba|basketball_wnba|dallas wings|toronto tempo|2026-07-05T19:00:00Z",
+                "selection": "Toronto Tempo",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 39.45,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-05T19:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Dallas Wings"
+              },
+              {
+                "gameId": "f784500c59f1f83757bec7c0ef787879",
+                "gameKey": "wnba|basketball_wnba|indiana fever|las vegas aces|2026-07-05T23:00:00Z",
+                "selection": "Las Vegas Aces",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-05T23:00:00Z",
+                "homeTeam": "Las Vegas Aces",
+                "awayTeam": "Indiana Fever"
+              },
+              {
+                "gameId": "a94e67bca9ed03e512eee9e32821184d",
+                "gameKey": "wnba|basketball_wnba|portland fire|seattle storm|2026-07-05T01:00:00Z",
+                "selection": "Seattle Storm",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 0,
+                "tags": [
+                  "CERTAINTY_ANCHOR",
+                  "CHAOS",
+                  "REVERSAL",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-05T01:00:00Z",
+                "homeTeam": "Seattle Storm",
+                "awayTeam": "Portland Fire"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 5,
+            "score": 26.94,
+            "legs": [
+              {
+                "gameId": "54f91bf5767bbff2f9bb1f444a6fc510",
+                "gameKey": "wnba|basketball_wnba|dallas wings|toronto tempo|2026-07-05T19:00:00Z",
+                "selection": "Dallas Wings",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-05T19:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Dallas Wings"
+              },
+              {
+                "gameId": "f784500c59f1f83757bec7c0ef787879",
+                "gameKey": "wnba|basketball_wnba|indiana fever|las vegas aces|2026-07-05T23:00:00Z",
+                "selection": "Indiana Fever",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 36.82,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-05T23:00:00Z",
+                "homeTeam": "Las Vegas Aces",
+                "awayTeam": "Indiana Fever"
+              },
+              {
+                "gameId": "a94e67bca9ed03e512eee9e32821184d",
+                "gameKey": "wnba|basketball_wnba|portland fire|seattle storm|2026-07-05T01:00:00Z",
+                "selection": "Portland Fire",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 0,
+                "tags": [
+                  "CHAOS",
+                  "RESISTANCE",
+                  "REVERSAL"
+                ],
+                "commenceTime": "2026-07-05T01:00:00Z",
+                "homeTeam": "Seattle Storm",
+                "awayTeam": "Portland Fire"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 6,
+            "score": 26.94,
+            "legs": [
+              {
+                "gameId": "54f91bf5767bbff2f9bb1f444a6fc510",
+                "gameKey": "wnba|basketball_wnba|dallas wings|toronto tempo|2026-07-05T19:00:00Z",
+                "selection": "Dallas Wings",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-05T19:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Dallas Wings"
+              },
+              {
+                "gameId": "f784500c59f1f83757bec7c0ef787879",
+                "gameKey": "wnba|basketball_wnba|indiana fever|las vegas aces|2026-07-05T23:00:00Z",
+                "selection": "Indiana Fever",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 36.82,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-05T23:00:00Z",
+                "homeTeam": "Las Vegas Aces",
+                "awayTeam": "Indiana Fever"
+              },
+              {
+                "gameId": "a94e67bca9ed03e512eee9e32821184d",
+                "gameKey": "wnba|basketball_wnba|portland fire|seattle storm|2026-07-05T01:00:00Z",
+                "selection": "Seattle Storm",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 0,
+                "tags": [
+                  "CERTAINTY_ANCHOR",
+                  "CHAOS",
+                  "REVERSAL",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-05T01:00:00Z",
+                "homeTeam": "Seattle Storm",
+                "awayTeam": "Portland Fire"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 7,
+            "score": 25.42,
+            "legs": [
+              {
+                "gameId": "54f91bf5767bbff2f9bb1f444a6fc510",
+                "gameKey": "wnba|basketball_wnba|dallas wings|toronto tempo|2026-07-05T19:00:00Z",
+                "selection": "Toronto Tempo",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 39.45,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-05T19:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Dallas Wings"
+              },
+              {
+                "gameId": "f784500c59f1f83757bec7c0ef787879",
+                "gameKey": "wnba|basketball_wnba|indiana fever|las vegas aces|2026-07-05T23:00:00Z",
+                "selection": "Indiana Fever",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 36.82,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-05T23:00:00Z",
+                "homeTeam": "Las Vegas Aces",
+                "awayTeam": "Indiana Fever"
+              },
+              {
+                "gameId": "a94e67bca9ed03e512eee9e32821184d",
+                "gameKey": "wnba|basketball_wnba|portland fire|seattle storm|2026-07-05T01:00:00Z",
+                "selection": "Portland Fire",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 0,
+                "tags": [
+                  "CHAOS",
+                  "RESISTANCE",
+                  "REVERSAL"
+                ],
+                "commenceTime": "2026-07-05T01:00:00Z",
+                "homeTeam": "Seattle Storm",
+                "awayTeam": "Portland Fire"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 8,
+            "score": 25.42,
+            "legs": [
+              {
+                "gameId": "54f91bf5767bbff2f9bb1f444a6fc510",
+                "gameKey": "wnba|basketball_wnba|dallas wings|toronto tempo|2026-07-05T19:00:00Z",
+                "selection": "Toronto Tempo",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 39.45,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-05T19:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Dallas Wings"
+              },
+              {
+                "gameId": "f784500c59f1f83757bec7c0ef787879",
+                "gameKey": "wnba|basketball_wnba|indiana fever|las vegas aces|2026-07-05T23:00:00Z",
+                "selection": "Indiana Fever",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 36.82,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-05T23:00:00Z",
+                "homeTeam": "Las Vegas Aces",
+                "awayTeam": "Indiana Fever"
+              },
+              {
+                "gameId": "a94e67bca9ed03e512eee9e32821184d",
+                "gameKey": "wnba|basketball_wnba|portland fire|seattle storm|2026-07-05T01:00:00Z",
+                "selection": "Seattle Storm",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 0,
+                "tags": [
+                  "CERTAINTY_ANCHOR",
+                  "CHAOS",
+                  "REVERSAL",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-05T01:00:00Z",
+                "homeTeam": "Seattle Storm",
+                "awayTeam": "Portland Fire"
+              }
+            ],
+            "top3": false
+          }
+        ],
+        "previousNoBuildReason": "MISSING_TWO_STRONG_LEGS",
+        "fallbackApplied": true,
         "stored": {
           "pk": "PARLAY_BUILDS#wnba#2026-07-04",
-          "sk": "BUILD#2026-07-04T18:46:51.940890+00:00#parlay_491926152c44472e",
-          "build_id": "parlay_491926152c44472e",
-          "build_status": "NO_BUILD"
+          "sk": "BUILD#2026-07-04T20:01:56.044296+00:00#parlay_dcbfde04803b46a2",
+          "build_id": "parlay_dcbfde04803b46a2",
+          "build_status": "BUILT"
         }
       },
       {
@@ -1291,8 +1842,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 56,
-          "missingPullCountSinceStart": 56,
+          "expectedPullCountSinceStart": 61,
+          "missingPullCountSinceStart": 61,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -1313,8 +1864,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#nfl#2026-07-04",
-          "sk": "BUILD#2026-07-04T18:46:52.219777+00:00#parlay_94f52dea363f4211",
-          "build_id": "parlay_94f52dea363f4211",
+          "sk": "BUILD#2026-07-04T20:01:56.288747+00:00#parlay_a621c6047fe74e9f",
+          "build_id": "parlay_a621c6047fe74e9f",
           "build_status": "NO_BUILD"
         }
       },
@@ -1337,8 +1888,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 56,
-          "missingPullCountSinceStart": 56,
+          "expectedPullCountSinceStart": 61,
+          "missingPullCountSinceStart": 61,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -1359,8 +1910,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#cfb#2026-07-04",
-          "sk": "BUILD#2026-07-04T18:46:52.497272+00:00#parlay_0943ea66ce8043c8",
-          "build_id": "parlay_0943ea66ce8043c8",
+          "sk": "BUILD#2026-07-04T20:01:56.482762+00:00#parlay_455b4fd02c8f4d4c",
+          "build_id": "parlay_455b4fd02c8f4d4c",
           "build_status": "NO_BUILD"
         }
       },
@@ -1383,8 +1934,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 56,
-          "missingPullCountSinceStart": 56,
+          "expectedPullCountSinceStart": 61,
+          "missingPullCountSinceStart": 61,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -1405,8 +1956,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#nba#2026-07-04",
-          "sk": "BUILD#2026-07-04T18:46:52.773393+00:00#parlay_be11ec917b974e17",
-          "build_id": "parlay_be11ec917b974e17",
+          "sk": "BUILD#2026-07-04T20:01:56.675466+00:00#parlay_531cdd9c653d4be4",
+          "build_id": "parlay_531cdd9c653d4be4",
           "build_status": "NO_BUILD"
         }
       },
@@ -1429,8 +1980,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 56,
-          "missingPullCountSinceStart": 56,
+          "expectedPullCountSinceStart": 61,
+          "missingPullCountSinceStart": 61,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -1451,8 +2002,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#ncaam#2026-07-04",
-          "sk": "BUILD#2026-07-04T18:46:53.060299+00:00#parlay_7e2b97d10d4e403b",
-          "build_id": "parlay_7e2b97d10d4e403b",
+          "sk": "BUILD#2026-07-04T20:01:56.872009+00:00#parlay_830fafaf6e254764",
+          "build_id": "parlay_830fafaf6e254764",
           "build_status": "NO_BUILD"
         }
       },
@@ -1475,8 +2026,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 56,
-          "missingPullCountSinceStart": 56,
+          "expectedPullCountSinceStart": 61,
+          "missingPullCountSinceStart": 61,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -1497,8 +2048,8 @@
         "message": "Refused before minimum pull depth.",
         "stored": {
           "pk": "PARLAY_BUILDS#nhl#2026-07-04",
-          "sk": "BUILD#2026-07-04T18:46:53.337926+00:00#parlay_b804aaf38edd43a4",
-          "build_id": "parlay_b804aaf38edd43a4",
+          "sk": "BUILD#2026-07-04T20:01:57.065926+00:00#parlay_f84ca2244f9d45f3",
+          "build_id": "parlay_f84ca2244f9d45f3",
           "build_status": "NO_BUILD"
         }
       },
@@ -1506,7 +2057,7 @@
         "ok": true,
         "sport": "soccer",
         "slate_date": "2026-07-04",
-        "pullCount": 61,
+        "pullCount": 66,
         "minimumParlayPulls": 12,
         "buildStatus": "BUILT",
         "buildQuality": "BASELINE_12_SNAPSHOT",
@@ -1538,8 +2089,8 @@
               "delta": 0.0,
               "velocityPpHr": 0.0,
               "acceleration": 0.0,
-              "pullCount": 61,
-              "durationMinutes": 870.0,
+              "pullCount": 66,
+              "durationMinutes": 945.0,
               "latestGap": 0.07071,
               "bookCount": 1,
               "bookDivergence": 0.0,
@@ -1557,8 +2108,8 @@
               "delta": 0.0,
               "velocityPpHr": 0.0,
               "acceleration": 0.0,
-              "pullCount": 61,
-              "durationMinutes": 870.0,
+              "pullCount": 66,
+              "durationMinutes": 945.0,
               "latestGap": 0.07071,
               "bookCount": 1,
               "bookDivergence": 0.0,
@@ -1592,8 +2143,8 @@
               "delta": 0.0,
               "velocityPpHr": 0.0,
               "acceleration": 0.0,
-              "pullCount": 61,
-              "durationMinutes": 870.0,
+              "pullCount": 66,
+              "durationMinutes": 945.0,
               "latestGap": 0.36464,
               "bookCount": 1,
               "bookDivergence": 0.0,
@@ -1611,8 +2162,8 @@
               "delta": 0.0,
               "velocityPpHr": 0.0,
               "acceleration": 0.0,
-              "pullCount": 61,
-              "durationMinutes": 870.0,
+              "pullCount": 66,
+              "durationMinutes": 945.0,
               "latestGap": 0.36464,
               "bookCount": 1,
               "bookDivergence": 0.0,
@@ -1646,8 +2197,8 @@
               "delta": 0.0,
               "velocityPpHr": 0.0,
               "acceleration": 0.0,
-              "pullCount": 61,
-              "durationMinutes": 870.0,
+              "pullCount": 66,
+              "durationMinutes": 945.0,
               "latestGap": 0.68217,
               "bookCount": 1,
               "bookDivergence": 0.0,
@@ -1665,8 +2216,8 @@
               "delta": 0.0,
               "velocityPpHr": 0.0,
               "acceleration": 0.0,
-              "pullCount": 61,
-              "durationMinutes": 870.0,
+              "pullCount": 66,
+              "durationMinutes": 945.0,
               "latestGap": 0.68217,
               "bookCount": 1,
               "bookDivergence": 0.0,
@@ -2029,8 +2580,8 @@
         "fallbackApplied": true,
         "stored": {
           "pk": "PARLAY_BUILDS#soccer#2026-07-04",
-          "sk": "BUILD#2026-07-04T18:46:53.723714+00:00#parlay_0728d25cb45047e8",
-          "build_id": "parlay_0728d25cb45047e8",
+          "sk": "BUILD#2026-07-04T20:01:57.372774+00:00#parlay_abd3b4823ed64db9",
+          "build_id": "parlay_abd3b4823ed64db9",
           "build_status": "BUILT"
         }
       },
@@ -2066,8 +2617,8 @@
           "buildDeadlineEt": "2026-07-04T04:05:00-04:00",
           "deadlineHoursBeforeFirstEvent": 2,
           "deadlinePassed": true,
-          "currentUtc": "2026-07-04T18:46:55.728204+00:00",
-          "currentEt": "2026-07-04T14:46:55.728204-04:00"
+          "currentUtc": "2026-07-04T20:01:58.689058+00:00",
+          "currentEt": "2026-07-04T16:01:58.689058-04:00"
         },
         "rawSignalCount": 11,
         "sameSlateSignalCount": 11,
@@ -2081,8 +2632,8 @@
         "message": "Refused because the 3-leg build must be created no later than 2 hours before the first game or match.",
         "stored": {
           "pk": "PARLAY_BUILDS#tennis#2026-07-04",
-          "sk": "BUILD#2026-07-04T18:46:55.728255+00:00#parlay_1bde8137c665499e",
-          "build_id": "parlay_1bde8137c665499e",
+          "sk": "BUILD#2026-07-04T20:01:58.689105+00:00#parlay_fea722204b6143da",
+          "build_id": "parlay_fea722204b6143da",
           "build_status": "NO_BUILD"
         }
       }
@@ -2091,7 +2642,7 @@
   "pullDiagnostics": {
     "ok": true,
     "source": "diagnostic_provider_probe_no_snapshot_storage",
-    "createdAt": "2026-07-04T18:46:58.032991+00:00",
+    "createdAt": "2026-07-04T20:02:01.927690+00:00",
     "sportsRequested": [
       "mlb",
       "wnba",
@@ -2197,8 +2748,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:56.081438+00:00",
-            "activeWindowEnd": "2026-07-06T18:46:56.081438+00:00",
+            "activeWindowStart": "2026-07-04T14:01:59.081290+00:00",
+            "activeWindowEnd": "2026-07-06T20:01:59.081290+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -2208,8 +2759,8 @@
         "ok": true,
         "appSport": "wnba",
         "rawGamesReturned": 4,
-        "rawGamesInWindow": 4,
-        "gamesConvertible": 4,
+        "rawGamesInWindow": 3,
+        "gamesConvertible": 3,
         "gamesStored": null,
         "diagnosticOnlyNoSnapshotStored": true,
         "activeStorageFailure": false,
@@ -2219,13 +2770,13 @@
             "appSport": "wnba",
             "providerSportKey": "basketball_wnba",
             "rawGamesReturned": 4,
-            "rawGamesInWindow": 4,
-            "gamesConvertible": 4,
+            "rawGamesInWindow": 3,
+            "gamesConvertible": 3,
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:56.203907+00:00",
-            "activeWindowEnd": "2026-07-06T18:46:56.203907+00:00",
+            "activeWindowStart": "2026-07-04T14:01:59.346536+00:00",
+            "activeWindowEnd": "2026-07-06T20:01:59.346536+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -2251,8 +2802,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:56.542172+00:00",
-            "activeWindowEnd": "2026-07-11T18:46:56.542172+00:00",
+            "activeWindowStart": "2026-07-04T14:01:59.766375+00:00",
+            "activeWindowEnd": "2026-07-11T20:01:59.766375+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -2278,8 +2829,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:56.764717+00:00",
-            "activeWindowEnd": "2026-07-11T18:46:56.764717+00:00",
+            "activeWindowStart": "2026-07-04T14:02:00.118105+00:00",
+            "activeWindowEnd": "2026-07-11T20:02:00.118105+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -2305,8 +2856,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:56.897051+00:00",
-            "activeWindowEnd": "2026-07-06T18:46:56.897051+00:00",
+            "activeWindowStart": "2026-07-04T14:02:00.349714+00:00",
+            "activeWindowEnd": "2026-07-06T20:02:00.349714+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -2332,8 +2883,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:57.007582+00:00",
-            "activeWindowEnd": "2026-07-06T18:46:57.007582+00:00",
+            "activeWindowStart": "2026-07-04T14:02:00.566197+00:00",
+            "activeWindowEnd": "2026-07-06T20:02:00.566197+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -2359,8 +2910,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:57.127460+00:00",
-            "activeWindowEnd": "2026-07-06T18:46:57.127460+00:00",
+            "activeWindowStart": "2026-07-04T14:02:00.714844+00:00",
+            "activeWindowEnd": "2026-07-06T20:02:00.714844+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -2386,8 +2937,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:57.251048+00:00",
-            "activeWindowEnd": "2026-07-18T18:46:57.251048+00:00",
+            "activeWindowStart": "2026-07-04T14:02:00.880924+00:00",
+            "activeWindowEnd": "2026-07-18T20:02:00.880924+00:00",
             "slateWindowDays": 14,
             "error": null
           },
@@ -2401,8 +2952,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:57.431558+00:00",
-            "activeWindowEnd": "2026-07-18T18:46:57.431558+00:00",
+            "activeWindowStart": "2026-07-04T14:02:01.182087+00:00",
+            "activeWindowEnd": "2026-07-18T20:02:01.182087+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           },
@@ -2416,8 +2967,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:57.564305+00:00",
-            "activeWindowEnd": "2026-07-18T18:46:57.564305+00:00",
+            "activeWindowStart": "2026-07-04T14:02:01.318784+00:00",
+            "activeWindowEnd": "2026-07-18T20:02:01.318784+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           }
@@ -2426,9 +2977,9 @@
       {
         "ok": true,
         "appSport": "tennis",
-        "rawGamesReturned": 17,
-        "rawGamesInWindow": 17,
-        "gamesConvertible": 17,
+        "rawGamesReturned": 16,
+        "rawGamesInWindow": 16,
+        "gamesConvertible": 16,
         "gamesStored": null,
         "diagnosticOnlyNoSnapshotStored": true,
         "activeStorageFailure": false,
@@ -2437,14 +2988,14 @@
             "ok": true,
             "appSport": "tennis",
             "providerSportKey": "tennis_atp_wimbledon",
-            "rawGamesReturned": 9,
-            "rawGamesInWindow": 9,
-            "gamesConvertible": 9,
+            "rawGamesReturned": 8,
+            "rawGamesInWindow": 8,
+            "gamesConvertible": 8,
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:57.892333+00:00",
-            "activeWindowEnd": "2026-07-11T18:46:57.892333+00:00",
+            "activeWindowStart": "2026-07-04T14:02:01.748472+00:00",
+            "activeWindowEnd": "2026-07-11T20:02:01.748472+00:00",
             "slateWindowDays": 7,
             "error": null
           },
@@ -2458,8 +3009,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-04T12:46:58.032910+00:00",
-            "activeWindowEnd": "2026-07-11T18:46:58.032910+00:00",
+            "activeWindowStart": "2026-07-04T14:02:01.927611+00:00",
+            "activeWindowEnd": "2026-07-11T20:02:01.927611+00:00",
             "slateWindowDays": 7,
             "error": null
           }
