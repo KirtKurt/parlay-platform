@@ -3,13 +3,26 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 NON_PREDICTIVE_TAGS = {
+    # Workflow / gate status
     "FINAL_LOCKED",
     "FINAL_GATE_OPEN",
     "LOCK_CLOSED",
     "GAME_STARTED_OR_CLOSED",
     "PRE_FINAL_GATE",
+    "PRE_SLATE_LOCK",
+    "SLATE_LOCKED",
+    "SLATE_WIDE_45_MIN_LOCK_POLICY",
+    # Provider/source status
     "SPORTSDATAIO_FINAL_GATE_MISSING",
     "SPORTSDATAIO_FINAL_GATE_APPLIED",
+    "FUNDAMENTALS_APPLIED",
+    "ODDS_API_ONLY",
+    # Ranking / discipline labels that are outcomes of the model, not inputs
+    "ACTIONABLE_PICK",
+    "NO_PICK",
+    "NO_PICK_DISCIPLINE",
+    "CALIBRATED_PROBABILITY",
+    "WINNER_STACK_V2",
 }
 
 
@@ -37,7 +50,7 @@ def apply(module):
         if isinstance(result, dict):
             result["excludedOperationalTags"] = sorted(NON_PREDICTIVE_TAGS)
             result["operationalTagFilterPolicy"] = (
-                "Final-gate and provider-status tags are kept on audit rows for proof, "
+                "Final-gate, provider, model-discipline, and status tags are kept on audit rows for proof, "
                 "but removed from signal-learning inputs so the model only learns from predictive market/fundamentals signals."
             )
         return result
