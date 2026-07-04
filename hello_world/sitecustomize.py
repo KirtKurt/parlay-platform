@@ -41,6 +41,13 @@ except Exception:
     pass
 
 try:
+    import mlb_rolling_24h_audit as _mlb_rolling_24h_audit_for_actionability
+    import mlb_audit_actionability_patch
+    mlb_audit_actionability_patch.apply(_mlb_rolling_24h_audit_for_actionability)
+except Exception:
+    pass
+
+try:
     import api as _api_for_sportsdataio
     import sportsdataio_api_patch
     sportsdataio_api_patch.apply(_api_for_sportsdataio)
