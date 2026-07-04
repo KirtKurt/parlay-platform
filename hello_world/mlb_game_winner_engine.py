@@ -3,14 +3,23 @@ from __future__ import annotations
 import math
 from datetime import datetime, timezone
 from statistics import mean
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 import inqsi_pull_history as history
 
 SLATE_TZ = ZoneInfo("America/New_York")
-ENGINE = "MLB-GAME-WINNER-v1.0"
-MODEL_VERSION = "INQSI-MLB-GAME-WINNER-v1.0-2026-06"
+ENGINE = "MLB-GAME-WINNER-v1.1"
+MODEL_VERSION = "INQSI-MLB-GAME-WINNER-v1.1-2026-07-risk-calibrated"
+
+# Learned from July 2026 audits:
+# - stable book agreement is useful
+# - raw run-line confirmation/movement can be a false positive when paired with
+#   reversals, compressed markets, or weak moneyline consensus
+# - market consensus must stay the anchor for winner selection
+MIN_CONFIRMED_MARKET_PROB = 0.52
+STRONG_MARKET_PROB = 0.54
+MAX_CONFIRMATION_DIVERGENCE = 0.025
 
 
 def _today_et() -> str:
@@ -108,6 +117,20 @@ def _clamp_probability(prob: float, min_prob: float = 0.05, max_prob: float = 0.
     return max(min_prob, min(max_prob, prob))
 
 
+def _confirmed_run_line(tags: List[str], latest_prob: float, delta: float, spread_move: Optional[float], div: float, rev: int) -> bool:
+    if spread_move is None:
+        return False
+    if not (delta >= 0.012 and spread_move < -8):
+        return False
+    if latest_prob < MIN_CONFIRMED_MARKET_PROB:
+        return False
+    if div > MAX_CONFIRMATION_DIVERGENCE:
+        return False
+    if rev > 1:
+        return False
+    return True
+
+
 def _side_score(series: List[Dict[str, Any]], side: str) -> Dict[str, Any]:
     latest = series[-1]
     game = latest["game"]
@@ -123,6 +146,7 @@ def _side_score(series: List[Dict[str, Any]], side: str) -> Dict[str, Any]:
     spread_latest = _spread_price(game, side)
     spread_move = None if spread_start is None or spread_latest is None else spread_latest - spread_start
     market_price = _book_price(game, side)
+
     tags: List[str] = []
     if len(series) < 4:
         tags.append("LOW_PULL_DEPTH")
@@ -140,20 +164,53 @@ def _side_score(series: List[Dict[str, Any]], side: str) -> Dict[str, Any]:
         tags.append("REVERSAL")
     if spread_move is not None and abs(spread_move) >= 8:
         tags.append("RUN_LINE_MOVEMENT")
-    if spread_move is not None and delta > 0 and spread_move < -8:
+    if _confirmed_run_line(tags, latest_prob, delta, spread_move, div, rev):
         tags.append("RUN_LINE_CONFIRMATION")
+    elif spread_move is not None and delta > 0 and spread_move < -8:
+        tags.append("UNCONFIRMED_RUN_LINE_MOVE")
     if latest_gap < 0.05:
         tags.append("COMPRESSED_MARKET")
-    raw_score = 50 + (latest_prob - 0.5) * 90 + delta * 700 - div * 260 - rev * 6
-    raw_score += min(book_count, 10) * 0.75
-    if "RUN_LINE_CONFIRMATION" in tags:
-        raw_score += 3
-    if "BOOK_DIVERGENCE" in tags:
-        raw_score -= 6
-    if "LOW_PULL_DEPTH" in tags:
-        raw_score -= 5
-    if "SINGLE_PULL_BASELINE" in tags:
-        raw_score -= 8
+
+    raw_score = 50 + (latest_prob - 0.5) * 95 + delta * 575 - div * 300 - rev * 6.5
+    raw_score += min(book_count, 10) * 0.65
+
+    tagset = set(tags)
+    market_edge = latest_prob - 0.5
+
+    # Market sanity: do not let movement dominate if the market consensus itself
+    # is still not on this side.
+    if latest_prob < 0.50:
+        raw_score -= 7.0
+    elif latest_prob >= STRONG_MARKET_PROB and "BOOK_AGREEMENT" in tagset:
+        raw_score += 1.5
+
+    # Confirmation is only valuable when market + books + movement agree.
+    if "RUN_LINE_CONFIRMATION" in tagset:
+        raw_score += 2.0
+    elif "RUN_LINE_MOVEMENT" in tagset:
+        raw_score -= 1.25
+        if rev >= 2:
+            raw_score -= 2.0
+
+    if "STEAM" in tagset:
+        if "BOOK_AGREEMENT" in tagset and rev <= 1 and market_edge >= 0.02:
+            raw_score += 1.0
+        elif rev >= 3 or "BOOK_DIVERGENCE" in tagset:
+            raw_score -= 2.0
+
+    if "BOOK_DIVERGENCE" in tagset:
+        raw_score -= 7.0
+    if "COMPRESSED_MARKET" in tagset:
+        raw_score -= 3.0
+        if "RUN_LINE_MOVEMENT" in tagset:
+            raw_score -= 1.5
+    if "UNCONFIRMED_RUN_LINE_MOVE" in tagset:
+        raw_score -= 2.0
+    if "LOW_PULL_DEPTH" in tagset:
+        raw_score -= 5.0
+    if "SINGLE_PULL_BASELINE" in tagset:
+        raw_score -= 8.0
+
     score = round(max(0.0, min(100.0, raw_score)), 2)
     adjusted_prob = _clamp_probability(1.0 / (1.0 + math.exp(-(score - 50.0) / 12.0)))
     return {
@@ -210,7 +267,7 @@ def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any
         "pullCountForGame": len(series),
         "homeSignal": home,
         "awaySignal": away,
-        "reason": "Market consensus plus movement, book agreement, divergence, reversals, run-line movement, and pull depth.",
+        "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
         "createdAt": _now(),
     }
 
