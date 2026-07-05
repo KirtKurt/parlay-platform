@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from typing import Any, Dict, List
 
-VERSION = "MLB-WINNER-STACK-v2.1-risk-calibrated-market-confirmed"
+VERSION = "MLB-WINNER-STACK-v2.2-market-confirmed-actionable-lean"
 
 BAD_TAGS = {"LOW_PULL_DEPTH", "SINGLE_PULL_BASELINE", "BOOK_DIVERGENCE", "LATE_INSTABILITY"}
 STRONG_TAGS = {"STEAM", "RUN_LINE_CONFIRMATION", "RUN_LINE_MOVEMENT", "BOOK_AGREEMENT"}
@@ -108,8 +108,6 @@ def _movement_component(selected: Dict[str, Any], market: Dict[str, Any]) -> Dic
     if "UNCONFIRMED_RUN_LINE_MOVE" in tags:
         score -= 2.0
 
-    # High reversal counts have repeatedly created false winners. Penalize them
-    # even if another movement tag is present.
     if rev >= 5:
         score -= 7.0
     elif rev >= 3:
@@ -159,12 +157,12 @@ def _fundamental_component(row: Dict[str, Any], selected: Dict[str, Any], other:
 
 def _weights(fundamentals_applied: bool) -> Dict[str, float]:
     if fundamentals_applied:
-        return {"market": 0.55, "movement": 0.27, "fundamentals": 0.18}
-    return {"market": 0.68, "movement": 0.32, "fundamentals": 0.0}
+        return {"market": 0.56, "movement": 0.25, "fundamentals": 0.19}
+    return {"market": 0.70, "movement": 0.30, "fundamentals": 0.0}
 
 
 def _calibrated_probability(raw_prob: float, market_prob: float, tags: List[str], fundamentals_applied: bool, selected: Dict[str, Any]) -> Dict[str, Any]:
-    anchor_weight = 0.42 if fundamentals_applied else 0.52
+    anchor_weight = 0.43 if fundamentals_applied else 0.54
     p = raw_prob * (1.0 - anchor_weight) + market_prob * anchor_weight
     tagset = set(tags or [])
     rev = int(_f(selected.get("reversalCount"), 0.0))
@@ -211,10 +209,13 @@ def _calibrated_probability(raw_prob: float, market_prob: float, tags: List[str]
     }
 
 
-def _actionability(prob: float, score: float, tier: str, tags: List[str], selected: Dict[str, Any], market: Dict[str, Any], calibration: Dict[str, Any]) -> Dict[str, Any]:
+def _actionability(prob: float, score: float, tier: str, tags: List[str], selected: Dict[str, Any], market: Dict[str, Any], fundamentals: Dict[str, Any], calibration: Dict[str, Any]) -> Dict[str, Any]:
     tagset = set(tags or [])
     rev = int(_f(selected.get("reversalCount"), 0.0))
     market_edge = _f(market.get("consensusEdge"), 0.0)
+    market_prob = _f(market.get("consensusProbability"), 0.5)
+    fundamentals_score = _f(fundamentals.get("score"), 50.0)
+    fundamentals_edge = _f(fundamentals.get("edge"), 0.0)
     risk_reasons = list(calibration.get("riskReasons") or [])
     weak = bool(tagset & {"LOW_PULL_DEPTH", "SINGLE_PULL_BASELINE", "BOOK_DIVERGENCE", "UNCONFIRMED_RUN_LINE_MOVE"})
 
@@ -228,11 +229,40 @@ def _actionability(prob: float, score: float, tier: str, tags: List[str], select
         weak = True
         risk_reasons.append("false_confirmation_block")
 
+    fundamentals_support = fundamentals_score >= 55.0 or fundamentals_edge >= 1.5
+    low_risk_market_lean = (
+        prob >= 0.60
+        and score >= 57.0
+        and market_edge >= 0.08
+        and market_prob >= 0.54
+        and "BOOK_AGREEMENT" in tagset
+        and rev <= 1
+        and not weak
+        and not risk_reasons
+    )
+    fundamentals_confirmed_lean = (
+        prob >= 0.66
+        and score >= 60.0
+        and market_edge >= 0.12
+        and market_prob >= 0.58
+        and "BOOK_AGREEMENT" in tagset
+        and rev <= 2
+        and fundamentals_support
+        and not (tagset & {"BOOK_DIVERGENCE", "UNCONFIRMED_RUN_LINE_MOVE", "COMPRESSED_MARKET"})
+    )
+
     if tier in {"Premium", "Solid"} and prob >= 0.64 and score >= 64 and market_edge >= 0.08 and not weak:
         return {
             "actionablePick": True,
             "actionability": "ACTIONABLE_WINNER_PICK",
             "reason": "premium_or_solid_edge_with_market_confirmation_and_no_hard_weakness",
+            "riskReasons": risk_reasons,
+        }
+    if low_risk_market_lean or fundamentals_confirmed_lean:
+        return {
+            "actionablePick": True,
+            "actionability": "ACTIONABLE_MARKET_CONFIRMED_LEAN",
+            "reason": "lean_promoted_by_market_confirmation_with_low_risk_or_fundamental_support",
             "riskReasons": risk_reasons,
         }
     if tier == "Lean" and prob >= 0.60 and score >= 58 and market_edge >= 0.05 and not weak:
@@ -268,7 +298,7 @@ def enhance_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
     prob = _f(calibration.get("calibratedProbability"), raw_prob)
     score = round(ensemble_score, 2)
     tier = _tier(prob, score, tags)
-    action = _actionability(prob, score, tier, tags, selected, market, calibration)
+    action = _actionability(prob, score, tier, tags, selected, market, fundamentals, calibration)
     actionable = bool(action["actionablePick"])
 
     out["scoreBeforeWinnerStackV2"] = out.get("score")
@@ -320,6 +350,7 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "fundamentals_layer_live_or_neutral",
             "ensemble_weighting_market_first",
             "probability_calibration_false_confirmation_shrinkage",
+            "market_confirmed_lean_promotion",
             "actionability_no_pick_discipline",
         ],
         "predictionCount": len(predictions),
@@ -329,7 +360,7 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
     }
     summary = dict(out.get("rolling24hAccuracyTarget") or out.get("accuracyTarget") or {})
     summary["winnerStackV2"] = out["winnerStackV2"]
-    summary["calibrationPolicy"] = "Market-first probabilities, false-confirmation shrinkage, and hard no-pick discipline for unstable signals."
+    summary["calibrationPolicy"] = "Market-first probabilities, false-confirmation shrinkage, and limited actionable promotion only for clean market-confirmed leans."
     summary["actionablePickCount"] = out["actionablePickCount"]
     summary["noPickCount"] = out["noPickCount"]
     out["rolling24hAccuracyTarget"] = summary
