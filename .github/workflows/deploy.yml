@@ -60,6 +60,9 @@ jobs:
       - name: Patch SAM template for MLB v1
         run: python scripts/patch_template_mlb_v1.py
 
+      - name: Patch SAM template for MLB quarter-hour schedule
+        run: python scripts/patch_template_mlb_hot_start_v2.py
+
       - name: Patch SAM template for MLB settlement routes
         run: python scripts/patch_template_mlb_results_routes.py
 
@@ -219,7 +222,4 @@ jobs:
       - name: Smoke test image moderation policy endpoint
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          curl --fail --silent --show-error "${API_URL}v1/inqsi/images/moderation-policy"
-
-      - name: Admin auth smoke deferred
-        run: echo "Admin auth smoke is deferred until the admin secret is set and verified manually."
+          curl --fail --silent --show-error "${API_URL}v1/moderation/policy"
