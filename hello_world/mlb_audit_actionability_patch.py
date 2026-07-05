@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 
 def _is_optimized(row: Dict[str, Any]) -> bool:
@@ -10,11 +10,7 @@ def _is_optimized(row: Dict[str, Any]) -> bool:
 
 
 def _is_actionable(row: Dict[str, Any]) -> bool:
-    return bool(
-        row.get("actionablePick") is True
-        or row.get("officialPick") is True
-        or row.get("accuracyTargetEligible") is True
-    )
+    return bool(row.get("actionablePick") is True or row.get("officialPick") is True or row.get("accuracyTargetEligible") is True)
 
 
 def _accuracy(rows: List[Dict[str, Any]]) -> Optional[float]:
@@ -23,9 +19,41 @@ def _accuracy(rows: List[Dict[str, Any]]) -> Optional[float]:
     return round(sum(1 for row in rows if row.get("correct")) / len(rows) * 100.0, 2)
 
 
+def _prediction_quality(pred: Dict[str, Any]) -> Tuple[int, str]:
+    winner_stack = pred.get("winnerStackV2") or {}
+    winner_optimizer = pred.get("winnerOptimizer") or {}
+    quality = 0
+    if winner_stack.get("applied"):
+        quality += 1000
+    if pred.get("finalGateStored") or pred.get("fullDataFinalPick"):
+        quality += 500
+    if pred.get("officialPrediction"):
+        quality += 250
+    if pred.get("actionability"):
+        quality += 150
+    if pred.get("pickDiscipline"):
+        quality += 100
+    if winner_optimizer.get("applied") or pred.get("individualWinnerOptimized"):
+        quality += 75
+    return quality, str(pred.get("createdAt") or pred.get("created_at") or "")
+
+
 def apply(module):
     if getattr(module, "_INQSI_MLB_AUDIT_ACTIONABILITY_APPLIED", False):
         return module
+
+    def patched_predictions_index(finals: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+        dates = sorted(set([f.get("slateDateEt") for f in finals if f.get("slateDateEt")]))
+        index: Dict[str, Dict[str, Any]] = {}
+        for slate in dates:
+            for pred in module._query_predictions_for_slate(slate):
+                key = f"{module.normalize_team(pred.get('awayTeam'))}|{module.normalize_team(pred.get('homeTeam'))}"
+                if not key.strip("|"):
+                    continue
+                current = index.get(key)
+                if current is None or _prediction_quality(pred) > _prediction_quality(current):
+                    index[key] = pred
+        return index
 
     def patched_audit_rows(finals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         index = module.predictions_index(finals)
@@ -66,7 +94,6 @@ def apply(module):
     def patched_summarize(rows: List[Dict[str, Any]], historical_rows: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         historical_rows = historical_rows or []
         graded = [r for r in rows if r.get("status") == "GRADED"]
-        correct = [r for r in graded if r.get("correct")]
         optimized = [r for r in graded if _is_optimized(r)]
         optimized_base = optimized if optimized else graded
         optimized_correct = [r for r in optimized_base if r.get("correct")]
@@ -105,9 +132,10 @@ def apply(module):
             "actionableCorrect": len(actionable_correct),
             "actionableWrong": len(actionable) - len(actionable_correct),
             "rolling24hActionableAccuracyPct": _accuracy(actionable),
-            "actionabilityPolicy": "Actionable metrics now count only explicit actionablePick/officialPick/accuracyTargetEligible rows; all stored predictions remain graded separately.",
+            "actionabilityPolicy": "Actionable metrics count explicit actionablePick/officialPick/accuracyTargetEligible rows; audits prefer enriched Winner Stack rows when more than one stored prediction exists for a game.",
         }
 
+    module.predictions_index = patched_predictions_index
     module.audit_rows = patched_audit_rows
     module.summarize = patched_summarize
     module._INQSI_MLB_AUDIT_ACTIONABILITY_APPLIED = True
