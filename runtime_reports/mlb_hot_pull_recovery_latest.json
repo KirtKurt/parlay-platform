@@ -2,7 +2,7 @@
   "ok": true,
   "proofType": "MLB_HOT_PULL_RECOVERY_AND_PREDICTION",
   "operatingMode": "SPORTSDATAIO_ENABLED_WITH_MARKET_FALLBACK",
-  "createdAtUtc": "2026-07-05T10:49:29.452263+00:00",
+  "createdAtUtc": "2026-07-05T12:07:28.081863+00:00",
   "environment": {
     "oddsApiKeyPresent": true,
     "snapshotsTablePresent": true,
@@ -27,13 +27,13 @@
         "gamesStored": 15,
         "stored": {
           "pk": "PULLS#mlb#2026-07-05",
-          "sk": "PULL#2026-07-05T10:49:22.338926+00:00#pull_e5992cd102bb4392",
-          "pull_id": "pull_e5992cd102bb4392",
+          "sk": "PULL#2026-07-05T12:07:20.525159+00:00#pull_1fc7bab5828d4fe5",
+          "pull_id": "pull_1fc7bab5828d4fe5",
           "game_count": 15
         },
         "error": null,
-        "activeWindowStart": "2026-07-05T04:49:22.337939+00:00",
-        "activeWindowEnd": "2026-07-07T10:49:22.337939+00:00",
+        "activeWindowStart": "2026-07-05T06:07:20.524576+00:00",
+        "activeWindowEnd": "2026-07-07T12:07:20.524576+00:00",
         "slateWindowDays": 2,
         "activeWindowBackBufferHours": 6
       }
@@ -63,8 +63,8 @@
       "locked": false,
       "lockStatus": "OPEN_PRE_LOCK",
       "source": "live_pre_lock_pull_history",
-      "minutesUntilFirstGameStart": 340.52,
-      "minutesUntilSlateLock": 295.52,
+      "minutesUntilFirstGameStart": 262.54,
+      "minutesUntilSlateLock": 217.54,
       "totalPullCountAvailable": 43,
       "scoringPullCount": 43,
       "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -115,7 +115,7 @@
       "sportsDataIoFundamentalsAppliedCount": 14,
       "sportsDataIoMissingFinalGateCount": 0,
       "blockedMissingSportsDataIoCount": 0,
-      "fullDataFinalPickCount": 12,
+      "fullDataFinalPickCount": 13,
       "persistedFinalRows": true
     }
   },
@@ -144,6 +144,8 @@
         "ACTIONABLE_PICK",
         "BOOK_AGREEMENT",
         "CALIBRATED_PROBABILITY",
+        "FINAL_GATE_OPEN",
+        "FINAL_LOCKED",
         "FUNDAMENTALS_APPLIED",
         "ODDS_API_ONLY",
         "PRE_SLATE_LOCK",
@@ -204,7 +206,7 @@
         "fundamentalsAdjustment": -1.43
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.273594+00:00",
+      "createdAt": "2026-07-05T12:07:22.186173+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -305,7 +307,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -335,6 +337,7 @@
           "Locked predictions are scored from pull history captured at or before the slate lock timestamp."
         ]
       },
+      "fullDataFinalPick": true,
       "finalGateStored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -417,8 +420,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -511,7 +514,7 @@
         "fundamentalsAdjustment": -0.15
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.297667+00:00",
+      "createdAt": "2026-07-05T12:07:22.200422+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -610,7 +613,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -720,8 +723,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -824,7 +827,7 @@
         "fundamentalsAdjustment": -0.59
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.102171+00:00",
+      "createdAt": "2026-07-05T12:07:22.091548+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -930,7 +933,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -1044,8 +1047,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -1145,7 +1148,7 @@
         "fundamentalsAdjustment": 0.83
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.127448+00:00",
+      "createdAt": "2026-07-05T12:07:22.105821+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -1246,7 +1249,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -1359,8 +1362,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -1460,7 +1463,7 @@
         "fundamentalsAdjustment": 0.41
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.177181+00:00",
+      "createdAt": "2026-07-05T12:07:22.134210+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -1561,7 +1564,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -1674,8 +1677,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -1781,7 +1784,7 @@
         "fundamentalsAdjustment": -0.78
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.152727+00:00",
+      "createdAt": "2026-07-05T12:07:22.120937+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -1888,7 +1891,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -2014,8 +2017,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -2117,7 +2120,7 @@
         "fundamentalsAdjustment": -0.95
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.077936+00:00",
+      "createdAt": "2026-07-05T12:07:22.078487+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -2229,7 +2232,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -2349,8 +2352,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -2453,7 +2456,7 @@
         "fundamentalsAdjustment": -0.52
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.053628+00:00",
+      "createdAt": "2026-07-05T12:07:22.065150+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -2565,7 +2568,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -2685,8 +2688,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -2786,7 +2789,7 @@
         "fundamentalsAdjustment": -0.56
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.004746+00:00",
+      "createdAt": "2026-07-05T12:07:22.038058+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -2895,7 +2898,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -3014,8 +3017,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -3117,7 +3120,7 @@
         "fundamentalsAdjustment": -1.58
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.201234+00:00",
+      "createdAt": "2026-07-05T12:07:22.146844+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -3227,7 +3230,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -3349,8 +3352,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -3455,7 +3458,7 @@
         "fundamentalsAdjustment": -0.4
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.225290+00:00",
+      "createdAt": "2026-07-05T12:07:22.159809+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -3566,7 +3569,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -3690,8 +3693,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -3793,7 +3796,7 @@
         "fundamentalsAdjustment": -0.57
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.029425+00:00",
+      "createdAt": "2026-07-05T12:07:22.051936+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -3905,7 +3908,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -4030,8 +4033,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -4140,7 +4143,7 @@
         "fundamentalsAdjustment": -1.58
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:23.974741+00:00",
+      "createdAt": "2026-07-05T12:07:22.020056+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -4254,7 +4257,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -4387,8 +4390,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
@@ -4490,7 +4493,7 @@
         "fundamentalsAdjustment": -0.14
       },
       "reason": "Market consensus plus risk-calibrated movement, book agreement, divergence, reversals, run-line confirmation quality, and pull depth.",
-      "createdAt": "2026-07-05T10:49:24.249215+00:00",
+      "createdAt": "2026-07-05T12:07:22.172781+00:00",
       "stored": {
         "ok": true,
         "pk": "GAME_WINNERS#mlb#2026-07-05",
@@ -4600,7 +4603,7 @@
       "lastPossiblePredictionGate": {
         "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
         "phase": "PRE_SLATE_LOCK",
-        "minutesToStart": 340.52,
+        "minutesToStart": 262.54,
         "gateWindowMinutesBeforeStart": {
           "opensAt": 45,
           "closesAt": 45,
@@ -4720,8 +4723,8 @@
         "locked": false,
         "lockStatus": "OPEN_PRE_LOCK",
         "source": "live_pre_lock_pull_history",
-        "minutesUntilFirstGameStart": 340.52,
-        "minutesUntilSlateLock": 295.52,
+        "minutesUntilFirstGameStart": 262.54,
+        "minutesUntilSlateLock": 217.54,
         "totalPullCountAvailable": 43,
         "scoringPullCount": 43,
         "latestAvailablePullAt": "2026-07-05T07:30:26.076518+00:00",
