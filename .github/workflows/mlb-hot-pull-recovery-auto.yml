@@ -2,8 +2,6 @@ name: MLB Hot Pull Recovery Auto Scheduler
 
 on:
   workflow_dispatch:
-  schedule:
-    - cron: "7,22,37,52 * * * *"
 
 permissions:
   actions: write
@@ -26,4 +24,4 @@ jobs:
               workflow_id: 'mlb-hot-pull-recovery.yml',
               ref: 'main'
             });
-            core.info('Dispatched mlb-hot-pull-recovery.yml automatically.');
+            core.info('Dispatched mlb-hot-pull-recovery.yml manually. Automatic schedule disabled so AWS EventBridge remains the only primary 15-minute pull path.');
