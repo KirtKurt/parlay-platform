@@ -77,6 +77,7 @@ def _tag_combo(tags):
 def _learning_adjustment(tags):
     learning = _latest_learning()
     tags = sorted(set(tags or []))
+    tagset = set(tags)
     adjustments = (learning.get("adjustments") or {})
     tag_adjustments = adjustments.get("tagScoreAdjustments") or {}
     combo_adjustments = adjustments.get("tagComboScoreAdjustments") or {}
@@ -84,6 +85,20 @@ def _learning_adjustment(tags):
     for tag in tags:
         total += _as_float(tag_adjustments.get(str(tag)), 0.0)
     total += _as_float(combo_adjustments.get(_tag_combo(tags)), 0.0)
+
+    # Audit guardrail: historical learning may reward broad tags, but unstable
+    # combinations should not receive large positive boosts. Yesterday's audit
+    # showed UNCONFIRMED_RUN_LINE_MOVE at 25%, so it is capped even if another
+    # tag in the combo had a positive history.
+    if "UNCONFIRMED_RUN_LINE_MOVE" in tagset:
+        total = min(total, -1.0)
+    elif "RUN_LINE_MOVEMENT" in tagset and "RUN_LINE_CONFIRMATION" not in tagset:
+        total = min(total, 1.0)
+    if "BOOK_DIVERGENCE" in tagset:
+        total = min(total, 0.0)
+    if "COMPRESSED_MARKET" in tagset and "BOOK_AGREEMENT" not in tagset:
+        total = min(total, 0.5)
+
     return round(max(-8.0, min(8.0, total)), 2)
 
 
@@ -96,7 +111,6 @@ def _rule_adjustment(signal):
     run_line_move = abs(_as_float(sig.get("runLineMovement"), 0.0))
     adj = 0.0
 
-    # Hard weakness penalties. These hurt team selection, not just confidence.
     if "SINGLE_PULL_BASELINE" in tags:
         adj -= 8.0
     if "LOW_PULL_DEPTH" in tags:
@@ -106,15 +120,11 @@ def _rule_adjustment(signal):
     if "LATE_INSTABILITY" in tags:
         adj -= 6.0
 
-    # Market sanity: a side below 50% market consensus needs unusually clean
-    # supporting evidence before it can be selected.
     if market_prob < 0.50:
         adj -= 3.0
     elif market_prob >= 0.54 and "BOOK_AGREEMENT" in tags:
         adj += 1.0
 
-    # Reversals were only useful when paired with stable book agreement. Multiple
-    # reversals remain a winner-selection risk even when other tags look strong.
     if reversal_count >= 5:
         adj -= 6.0
     elif reversal_count >= 3:
@@ -124,8 +134,6 @@ def _rule_adjustment(signal):
     elif reversal_count == 1 and "BOOK_AGREEMENT" not in tags:
         adj -= 0.75
 
-    # Confirmation must mean moneyline, books, and run-line agree. Otherwise it is
-    # treated as a false-confirmation risk rather than a blind boost.
     if "RUN_LINE_CONFIRMATION" in tags:
         clean_confirmation = (
             "BOOK_AGREEMENT" in tags
@@ -138,7 +146,6 @@ def _rule_adjustment(signal):
         else:
             adj -= 2.25
 
-    # Raw run-line movement without clean confirmation underperformed in the audit.
     if "RUN_LINE_MOVEMENT" in tags and "RUN_LINE_CONFIRMATION" not in tags:
         if "BOOK_AGREEMENT" in tags and "STEAM" in tags and reversal_count <= 1 and market_edge >= 0.02:
             adj += 0.25
@@ -147,7 +154,6 @@ def _rule_adjustment(signal):
         if run_line_move >= 50 and market_edge < 0.05:
             adj -= 1.0
 
-    # Steam is useful only when books are aligned and reversals are controlled.
     if "STEAM" in tags:
         if "BOOK_AGREEMENT" in tags and reversal_count <= 1 and market_edge >= 0.02:
             adj += 1.0
@@ -159,7 +165,6 @@ def _rule_adjustment(signal):
         if market_edge < 0.03:
             adj -= 1.0
 
-    # Book agreement is a real stabilizer, but it should not dominate alone.
     if "BOOK_AGREEMENT" in tags:
         adj += 0.75 if market_edge >= 0.02 else 0.25
 
@@ -230,7 +235,7 @@ def optimize_prediction(row):
         "homeOptimizedScore": home.get("optimizedWinnerScore"),
         "awayOptimizedScore": away.get("optimizedWinnerScore"),
         "flippedPick": out["optimizerFlippedPick"],
-        "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v2",
+        "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3",
     }
     return out
 
@@ -245,7 +250,7 @@ def _summary(predictions):
         "optimizerFlippedTeams": [row.get("predictedWinner") for row in flipped],
         "policy": "Every game receives an optimized winner selection. The 90% target is measured by the rolling 24-hour audit over all optimized individual picks.",
         "latestLearningApplied": bool(_latest_learning()),
-        "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v2",
+        "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3",
     }
 
 
@@ -267,7 +272,7 @@ def apply(module):
         result["allGamesOptimizedForWinner"] = True
         result["rolling24hAccuracyTarget"] = _summary(predictions)
         result["accuracyTarget"] = result["rolling24hAccuracyTarget"]
-        result["modelVersion"] = str(result.get("modelVersion") or "") + "+individual-winner-optimizer-90pct-target-risk-v2"
+        result["modelVersion"] = str(result.get("modelVersion") or "") + "+individual-winner-optimizer-90pct-target-risk-v3"
         return result
 
     module.predict_all = guarded_predict_all
