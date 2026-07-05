@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-05T10:30:51.453096+00:00",
+  "createdAt": "2026-07-05T12:17:29.844870+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -35,7 +35,7 @@
     "actionableCorrect": 0,
     "actionableWrong": 0,
     "rolling24hActionableAccuracyPct": null,
-    "actionabilityPolicy": "Actionable metrics now count only explicit actionablePick/officialPick/accuracyTargetEligible rows; all stored predictions remain graded separately."
+    "actionabilityPolicy": "Actionable metrics count explicit actionablePick/officialPick/accuracyTargetEligible rows; audits prefer enriched Winner Stack rows when more than one stored prediction exists for a game."
   },
   "scoreLearning": {
     "multiWindowStats": {
@@ -179,11 +179,6 @@
             "correct": 7,
             "accuracyPct": 41.18
           },
-          "FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO": {
-            "count": 13,
-            "correct": 7,
-            "accuracyPct": 53.85
-          },
           "LOW_PULL_DEPTH": {
             "count": 11,
             "correct": 7,
@@ -197,9 +192,9 @@
             "accuracyPct": 66.67
           },
           "BOOK_AGREEMENT+REVERSAL": {
-            "count": 16,
+            "count": 17,
             "correct": 11,
-            "accuracyPct": 68.75
+            "accuracyPct": 64.71
           },
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL": {
             "count": 2,
@@ -277,9 +272,9 @@
             "accuracyPct": 42.86
           },
           "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 4,
-            "correct": 3,
-            "accuracyPct": 75.0
+            "count": 5,
+            "correct": 4,
+            "accuracyPct": 80.0
           },
           "REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
             "count": 3,
@@ -296,37 +291,32 @@
             "correct": 1,
             "accuracyPct": 100.0
           },
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
           "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
             "count": 4,
             "correct": 1,
             "accuracyPct": 25.0
           },
           "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 3,
+            "count": 4,
             "correct": 3,
-            "accuracyPct": 100.0
+            "accuracyPct": 75.0
           },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
             "count": 2,
             "correct": 2,
             "accuracyPct": 100.0
           },
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
             "count": 2,
             "correct": 0,
             "accuracyPct": 0.0
           },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": {
             "count": 2,
             "correct": 2,
             "accuracyPct": 100.0
           },
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
             "count": 4,
             "correct": 2,
             "accuracyPct": 50.0
@@ -340,16 +330,6 @@
             "count": 1,
             "correct": 1,
             "accuracyPct": 100.0
-          },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
           },
           "REVERSAL+RUN_LINE_MOVEMENT": {
             "count": 1,
@@ -458,11 +438,6 @@
             "correct": 7,
             "accuracyPct": 41.18
           },
-          "FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO": {
-            "count": 13,
-            "correct": 7,
-            "accuracyPct": 53.85
-          },
           "LOW_PULL_DEPTH": {
             "count": 11,
             "correct": 7,
@@ -476,9 +451,9 @@
             "accuracyPct": 66.67
           },
           "BOOK_AGREEMENT+REVERSAL": {
-            "count": 16,
+            "count": 17,
             "correct": 11,
-            "accuracyPct": 68.75
+            "accuracyPct": 64.71
           },
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL": {
             "count": 2,
@@ -556,9 +531,9 @@
             "accuracyPct": 42.86
           },
           "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 4,
-            "correct": 3,
-            "accuracyPct": 75.0
+            "count": 5,
+            "correct": 4,
+            "accuracyPct": 80.0
           },
           "REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
             "count": 3,
@@ -575,37 +550,32 @@
             "correct": 1,
             "accuracyPct": 100.0
           },
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
           "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
             "count": 4,
             "correct": 1,
             "accuracyPct": 25.0
           },
           "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 3,
+            "count": 4,
             "correct": 3,
-            "accuracyPct": 100.0
+            "accuracyPct": 75.0
           },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
             "count": 2,
             "correct": 2,
             "accuracyPct": 100.0
           },
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
             "count": 2,
             "correct": 0,
             "accuracyPct": 0.0
           },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": {
             "count": 2,
             "correct": 2,
             "accuracyPct": 100.0
           },
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
             "count": 4,
             "correct": 2,
             "accuracyPct": 50.0
@@ -619,16 +589,6 @@
             "count": 1,
             "correct": 1,
             "accuracyPct": 100.0
-          },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
           },
           "REVERSAL+RUN_LINE_MOVEMENT": {
             "count": 1,
@@ -737,11 +697,6 @@
             "correct": 7,
             "accuracyPct": 41.18
           },
-          "FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO": {
-            "count": 13,
-            "correct": 7,
-            "accuracyPct": 53.85
-          },
           "LOW_PULL_DEPTH": {
             "count": 11,
             "correct": 7,
@@ -755,9 +710,9 @@
             "accuracyPct": 66.67
           },
           "BOOK_AGREEMENT+REVERSAL": {
-            "count": 16,
+            "count": 17,
             "correct": 11,
-            "accuracyPct": 68.75
+            "accuracyPct": 64.71
           },
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL": {
             "count": 2,
@@ -835,9 +790,9 @@
             "accuracyPct": 42.86
           },
           "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 4,
-            "correct": 3,
-            "accuracyPct": 75.0
+            "count": 5,
+            "correct": 4,
+            "accuracyPct": 80.0
           },
           "REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
             "count": 3,
@@ -854,37 +809,32 @@
             "correct": 1,
             "accuracyPct": 100.0
           },
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
           "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
             "count": 4,
             "correct": 1,
             "accuracyPct": 25.0
           },
           "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 3,
+            "count": 4,
             "correct": 3,
-            "accuracyPct": 100.0
+            "accuracyPct": 75.0
           },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
             "count": 2,
             "correct": 2,
             "accuracyPct": 100.0
           },
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
             "count": 2,
             "correct": 0,
             "accuracyPct": 0.0
           },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": {
             "count": 2,
             "correct": 2,
             "accuracyPct": 100.0
           },
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
             "count": 4,
             "correct": 2,
             "accuracyPct": 50.0
@@ -898,16 +848,6 @@
             "count": 1,
             "correct": 1,
             "accuracyPct": 100.0
-          },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
           },
           "REVERSAL+RUN_LINE_MOVEMENT": {
             "count": 1,
@@ -1000,12 +940,11 @@
           "STEAM": 0.89,
           "RUN_LINE_CONFIRMATION": 0.4,
           "BOOK_DIVERGENCE": -0.49,
-          "FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO": 0.21,
           "LOW_PULL_DEPTH": 0.76
         },
         "tagComboScoreAdjustments": {
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT": 1.39,
-          "BOOK_AGREEMENT+REVERSAL": 1.56,
+          "BOOK_AGREEMENT+REVERSAL": 1.23,
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL": 0.0,
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT+UNCONFIRMED_RUN_LINE_MOVE": 0.0,
           "REVERSAL+RUN_LINE_MOVEMENT+UNCONFIRMED_RUN_LINE_MOVE": 0.0,
@@ -1021,21 +960,18 @@
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT": -1.39,
           "REVERSAL+STEAM": 0.0,
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.6,
-          "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 2.08,
+          "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 2.5,
           "REVERSAL+RUN_LINE_MOVEMENT+STEAM": 1.39,
           "BOOK_DIVERGENCE+RUN_LINE_MOVEMENT": -0.75,
           "RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75,
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75,
           "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -2.08,
-          "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 4.17,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 4.17,
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -4.17,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": 4.17,
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
+          "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 2.08,
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 4.17,
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -4.17,
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": 4.17,
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
           "BOOK_AGREEMENT": 4.17,
           "BOOK_AGREEMENT+RUN_LINE_MOVEMENT": 0.75,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.75,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL": -0.75,
           "REVERSAL+RUN_LINE_MOVEMENT": 0.75,
           "BOOK_AGREEMENT+LOW_PULL_DEPTH": 0.75,
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.75,
@@ -1052,12 +988,11 @@
           "STEAM": 0.89,
           "RUN_LINE_CONFIRMATION": 0.4,
           "BOOK_DIVERGENCE": -0.49,
-          "FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO": 0.21,
           "LOW_PULL_DEPTH": 0.76
         },
         "tagComboScoreAdjustments": {
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT": 1.39,
-          "BOOK_AGREEMENT+REVERSAL": 1.56,
+          "BOOK_AGREEMENT+REVERSAL": 1.23,
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL": 0.0,
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT+UNCONFIRMED_RUN_LINE_MOVE": 0.0,
           "REVERSAL+RUN_LINE_MOVEMENT+UNCONFIRMED_RUN_LINE_MOVE": 0.0,
@@ -1073,21 +1008,18 @@
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT": -1.39,
           "REVERSAL+STEAM": 0.0,
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.6,
-          "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 2.08,
+          "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 2.5,
           "REVERSAL+RUN_LINE_MOVEMENT+STEAM": 1.39,
           "BOOK_DIVERGENCE+RUN_LINE_MOVEMENT": -0.75,
           "RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75,
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75,
           "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -2.08,
-          "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 4.17,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 4.17,
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -4.17,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": 4.17,
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
+          "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 2.08,
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 4.17,
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -4.17,
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": 4.17,
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
           "BOOK_AGREEMENT": 4.17,
           "BOOK_AGREEMENT+RUN_LINE_MOVEMENT": 0.75,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.75,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL": -0.75,
           "REVERSAL+RUN_LINE_MOVEMENT": 0.75,
           "BOOK_AGREEMENT+LOW_PULL_DEPTH": 0.75,
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.75,
@@ -1104,12 +1036,11 @@
           "STEAM": 0.89,
           "RUN_LINE_CONFIRMATION": 0.4,
           "BOOK_DIVERGENCE": -0.49,
-          "FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO": 0.21,
           "LOW_PULL_DEPTH": 0.76
         },
         "tagComboScoreAdjustments": {
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT": 1.39,
-          "BOOK_AGREEMENT+REVERSAL": 1.56,
+          "BOOK_AGREEMENT+REVERSAL": 1.23,
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL": 0.0,
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT+UNCONFIRMED_RUN_LINE_MOVE": 0.0,
           "REVERSAL+RUN_LINE_MOVEMENT+UNCONFIRMED_RUN_LINE_MOVE": 0.0,
@@ -1125,21 +1056,18 @@
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT": -1.39,
           "REVERSAL+STEAM": 0.0,
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.6,
-          "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 2.08,
+          "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 2.5,
           "REVERSAL+RUN_LINE_MOVEMENT+STEAM": 1.39,
           "BOOK_DIVERGENCE+RUN_LINE_MOVEMENT": -0.75,
           "RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75,
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75,
           "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -2.08,
-          "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 4.17,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 4.17,
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -4.17,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": 4.17,
-          "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
+          "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 2.08,
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 4.17,
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -4.17,
+          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": 4.17,
+          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
           "BOOK_AGREEMENT": 4.17,
           "BOOK_AGREEMENT+RUN_LINE_MOVEMENT": 0.75,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.75,
-          "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL": -0.75,
           "REVERSAL+RUN_LINE_MOVEMENT": 0.75,
           "BOOK_AGREEMENT+LOW_PULL_DEPTH": 0.75,
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.75,
@@ -1355,7 +1283,6 @@
         "BOOK_AGREEMENT": 1.24,
         "BOOK_DIVERGENCE": -0.49,
         "COMPRESSED_MARKET": 1.59,
-        "FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO": 0.21,
         "LOW_PULL_DEPTH": 0.76,
         "REVERSAL": 0.59,
         "RUN_LINE_CONFIRMATION": 0.4,
@@ -1369,12 +1296,10 @@
         "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT": 0.0,
         "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.0,
         "BOOK_AGREEMENT+COMPRESSED_MARKET+RUN_LINE_MOVEMENT": 0.75,
-        "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
-        "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": 0.0,
-        "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL": 0.0,
-        "BOOK_AGREEMENT+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
         "BOOK_AGREEMENT+LOW_PULL_DEPTH": 0.0,
-        "BOOK_AGREEMENT+REVERSAL": 1.68,
+        "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
+        "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": 0.0,
+        "BOOK_AGREEMENT+REVERSAL": 1.51,
         "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.6,
         "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT": 0.75,
         "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.0,
@@ -1383,9 +1308,8 @@
         "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
         "BOOK_AGREEMENT+RUN_LINE_MOVEMENT": 0.0,
         "BOOK_AGREEMENT+STEAM": 0.0,
-        "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.0,
-        "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
-        "BOOK_DIVERGENCE+FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
+        "BOOK_DIVERGENCE+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.0,
+        "BOOK_DIVERGENCE+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
         "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.0,
         "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT": 0.0,
         "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.0,
@@ -1413,6 +1337,7 @@
     "excludedOperationalTags": [
       "ACTIONABLE_PICK",
       "CALIBRATED_PROBABILITY",
+      "FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO",
       "FINAL_GATE_OPEN",
       "FINAL_LOCKED",
       "FUNDAMENTALS_APPLIED",
@@ -2663,6 +2588,6 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-05T10:30:51.453096+00:00"
+    "runSk": "AUDIT#2026-07-05T12:17:29.844870+00:00"
   }
 }
