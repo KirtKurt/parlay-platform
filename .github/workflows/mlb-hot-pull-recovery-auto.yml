@@ -37,56 +37,119 @@ jobs:
           mkdir -p runtime_reports
           SLATE_DATE=$(TZ=America/New_York date +%F)
           PK="PULLS#mlb#${SLATE_DATE}"
-          AWS_OK=true
-          LATEST_SK=$(aws dynamodb query --region "$AWS_REGION" --table-name "$SNAPSHOTS_TABLE" --key-condition-expression "PK = :pk" --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" --consistent-read --scan-index-forward false --limit 1 --query 'Items[0].SK.S' --output text 2>/tmp/mlb_visibility_aws_error.txt || echo None)
-          if [ "$LATEST_SK" = "None" ] || [ -z "$LATEST_SK" ]; then
-            AWS_OK=false
-            LATEST_AT=""
-            AGE=9999
-          else
-            LATEST_AT=$(echo "$LATEST_SK" | cut -d'#' -f2)
-            LATEST_EPOCH=$(date -u -d "$LATEST_AT" +%s 2>/dev/null || echo 0)
-            NOW_EPOCH=$(date -u +%s)
-            if [ "$LATEST_EPOCH" = "0" ]; then AGE=9999; else AGE=$(( (NOW_EPOCH - LATEST_EPOCH) / 60 )); fi
-          fi
-          INVOKED=false
-          REASON=latest_pull_fresh
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$AGE" -gt 20 ]; then
-            REASON=latest_pull_stale_or_manual
-            FUNCTION_NAME=$(aws cloudformation describe-stack-resource --region "$AWS_REGION" --stack-name parlay-platform-dev --logical-resource-id MLBAuditedPullFunction --query "StackResourceDetail.PhysicalResourceId" --output text 2>/tmp/mlb_visibility_lambda_lookup_error.txt || echo "")
-            if [ -n "$FUNCTION_NAME" ] && [ "$FUNCTION_NAME" != "None" ]; then
-              aws lambda invoke --region "$AWS_REGION" --cli-binary-format raw-in-base64-out --function-name "$FUNCTION_NAME" --payload '{"sport":"mlb","t":"HOT","run":"github_actions_visibility_stale_recovery","days_ahead":1,"force":true}' /tmp/mlb-invoke.json || true
-              INVOKED=true
-            fi
-          fi
-          COUNT=$(aws dynamodb query --region "$AWS_REGION" --table-name "$SNAPSHOTS_TABLE" --key-condition-expression "PK = :pk" --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" --consistent-read --select COUNT --query Count --output text 2>/dev/null || echo 0)
-          NEW_SK=$(aws dynamodb query --region "$AWS_REGION" --table-name "$SNAPSHOTS_TABLE" --key-condition-expression "PK = :pk" --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" --consistent-read --scan-index-forward false --limit 1 --query 'Items[0].SK.S' --output text 2>/dev/null || echo None)
-          NEW_AT=$(echo "$NEW_SK" | cut -d'#' -f2)
-          if [ "$NEW_SK" = "None" ]; then NEW_AT=""; fi
-          if [ "$AGE" -le 20 ]; then FRESH=true; else FRESH=false; fi
-          ERROR_SUMMARY=""
-          if [ -s /tmp/mlb_visibility_aws_error.txt ]; then ERROR_SUMMARY=$(head -c 300 /tmp/mlb_visibility_aws_error.txt | tr '"' "'"); fi
-          cat > runtime_reports/mlb_hot_pull_visibility_latest.json <<EOF
-          {
-            "ok": true,
-            "proofType": "MLB_HOT_PULL_VISIBILITY_PROOF",
-            "createdAtUtc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "slateDateEt": "$SLATE_DATE",
-            "schedule": "0,15,30,45 * * * *",
-            "awsReachable": $AWS_OK,
-            "rawPullCount": $COUNT,
-            "latestRawPullAt": "$NEW_AT",
-            "latestRawPullSk": "$NEW_SK",
-            "previousLatestRawPullAt": "$LATEST_AT",
-            "previousLatestPullAgeMinutes": $AGE,
-            "fresh": $FRESH,
-            "staleThresholdMinutes": 20,
-            "watchdogReason": "$REASON",
-            "invokedBackupPull": $INVOKED,
-            "errorSummary": "$ERROR_SUMMARY",
-            "secretExposed": false
+          QUERY_ARGS=(--region "$AWS_REGION" --table-name "$SNAPSHOTS_TABLE" --key-condition-expression "PK = :pk" --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" --consistent-read)
+          aws dynamodb query "${QUERY_ARGS[@]}" --output json > /tmp/mlb_all_pulls.json 2>/tmp/mlb_visibility_aws_error.txt || echo '{"Items":[]}' > /tmp/mlb_all_pulls.json
+          python - <<'PY'
+          import json, os, subprocess
+          from datetime import datetime, timezone
+          from zoneinfo import ZoneInfo
+
+          path = '/tmp/mlb_all_pulls.json'
+          try:
+              payload = json.load(open(path))
+          except Exception:
+              payload = {'Items': []}
+          items = payload.get('Items') or []
+
+          def s(attr):
+              return attr.get('S') if isinstance(attr, dict) else None
+
+          rows = []
+          for item in items:
+              sk = s(item.get('SK')) or ''
+              data = item.get('data', {}).get('M', {}) if isinstance(item.get('data'), dict) else {}
+              pulled = s(item.get('pulled_at')) or s(data.get('pulled_at'))
+              pid = s(item.get('pull_id')) or s(data.get('pull_id'))
+              if not pulled and sk.startswith('PULL#'):
+                  parts = sk.split('#')
+                  if len(parts) > 1:
+                      pulled = parts[1]
+              rows.append({'sk': sk, 'pulledAt': pulled or '', 'pullId': pid or ''})
+          rows.sort(key=lambda r: r.get('pulledAt') or r.get('sk') or '')
+          latest = rows[-1] if rows else {}
+          latest_at = latest.get('pulledAt') or ''
+          age = None
+          if latest_at:
+              try:
+                  dt = datetime.fromisoformat(latest_at.replace('Z', '+00:00'))
+                  if dt.tzinfo is None:
+                      dt = dt.replace(tzinfo=timezone.utc)
+                  age = (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds() / 60.0
+              except Exception:
+                  age = None
+
+          reason = 'latest_pull_fresh'
+          invoked = False
+          if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' or age is None or age > 20.0:
+              reason = 'latest_pull_stale_or_manual'
+              try:
+                  fn = subprocess.check_output([
+                      'aws', 'cloudformation', 'describe-stack-resource',
+                      '--region', os.environ.get('AWS_REGION', 'us-east-1'),
+                      '--stack-name', 'parlay-platform-dev',
+                      '--logical-resource-id', 'MLBAuditedPullFunction',
+                      '--query', 'StackResourceDetail.PhysicalResourceId',
+                      '--output', 'text'
+                  ], text=True, stderr=subprocess.DEVNULL).strip()
+                  if fn and fn != 'None':
+                      subprocess.run([
+                          'aws', 'lambda', 'invoke',
+                          '--region', os.environ.get('AWS_REGION', 'us-east-1'),
+                          '--cli-binary-format', 'raw-in-base64-out',
+                          '--function-name', fn,
+                          '--payload', '{"sport":"mlb","t":"HOT","run":"github_actions_visibility_stale_recovery","days_ahead":1,"force":true}',
+                          '/tmp/mlb-invoke.json'
+                      ], check=False)
+                      invoked = True
+              except Exception:
+                  pass
+
+          if invoked:
+              try:
+                  payload = json.loads(subprocess.check_output([
+                      'aws', 'dynamodb', 'query',
+                      '--region', os.environ.get('AWS_REGION', 'us-east-1'),
+                      '--table-name', os.environ.get('SNAPSHOTS_TABLE', 'parlay_platform_snapshots'),
+                      '--key-condition-expression', 'PK = :pk',
+                      '--expression-attribute-values', '{":pk":{"S":"PULLS#mlb#' + os.environ.get('SLATE_DATE', '') + '"}}',
+                      '--consistent-read', '--output', 'json'
+                  ], text=True, stderr=subprocess.DEVNULL))
+              except Exception:
+                  pass
+
+          error_summary = ''
+          try:
+              if os.path.getsize('/tmp/mlb_visibility_aws_error.txt'):
+                  error_summary = open('/tmp/mlb_visibility_aws_error.txt').read()[:300]
+          except Exception:
+              pass
+          now = datetime.now(timezone.utc)
+          report = {
+              'ok': True,
+              'proofType': 'MLB_HOT_PULL_VISIBILITY_PROOF',
+              'createdAtUtc': now.isoformat(),
+              'createdAtEt': now.astimezone(ZoneInfo('America/New_York')).isoformat(),
+              'slateDateEt': os.environ.get('SLATE_DATE') or now.astimezone(ZoneInfo('America/New_York')).date().isoformat(),
+              'schedule': '0,15,30,45 * * * *',
+              'awsReachable': bool(rows),
+              'rawPullCount': len(rows),
+              'latestRawPullAt': latest_at,
+              'latestRawPullSk': latest.get('sk') or '',
+              'latestRawPullAgeMinutes': round(age, 2) if age is not None else None,
+              'fresh': bool(age is not None and age <= 20.0),
+              'staleThresholdMinutes': 20,
+              'watchdogReason': reason,
+              'invokedBackupPull': invoked,
+              'errorSummary': error_summary,
+              'lastTenPulls': rows[-10:],
+              'secretExposed': False,
           }
-          EOF
+          os.makedirs('runtime_reports', exist_ok=True)
+          with open('runtime_reports/mlb_hot_pull_visibility_latest.json', 'w') as f:
+              json.dump(report, f, indent=2)
+              f.write('\n')
+          print(json.dumps({'rawPullCount': report['rawPullCount'], 'latestRawPullAt': latest_at, 'fresh': report['fresh'], 'invokedBackupPull': invoked}, indent=2))
+          PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add runtime_reports/mlb_hot_pull_visibility_latest.json || true
