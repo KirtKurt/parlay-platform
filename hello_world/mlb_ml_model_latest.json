@@ -1,0 +1,13 @@
+{
+  "ok": true,
+  "version": "MLB-ML-PROVISIONAL-SAFETY-GATE-v1",
+  "mode": "provisional_safety_rejector_until_full_training",
+  "validatedAgainstTarget": false,
+  "features": ["score", "winProbabilityPct", "marketEdge", "reversalCount", "bookAgreement", "bookDivergenceFlag", "unconfirmedRunLine", "compressedMarket", "passTier"],
+  "bias": -0.25,
+  "weights": {"score": 0.15, "winProbabilityPct": 0.12, "marketEdge": 1.1, "reversalCount": -0.65, "bookAgreement": 0.35, "bookDivergenceFlag": -0.8, "unconfirmedRunLine": -0.85, "compressedMarket": -0.65, "passTier": -1.25},
+  "means": {"score": 50, "winProbabilityPct": 50, "marketEdge": 0, "reversalCount": 1, "bookAgreement": 0.5, "bookDivergenceFlag": 0, "unconfirmedRunLine": 0, "compressedMarket": 0, "passTier": 0},
+  "scales": {"score": 20, "winProbabilityPct": 20, "marketEdge": 0.15, "reversalCount": 2, "bookAgreement": 1, "bookDivergenceFlag": 1, "unconfirmedRunLine": 1, "compressedMarket": 1, "passTier": 1},
+  "selectedThreshold": {"threshold": 0.9, "selectedCount": 0, "correct": 0, "accuracyPct": null, "validated": false},
+  "policy": "Safety rejector only. No promotion until validated holdout accuracy meets target."
+}
