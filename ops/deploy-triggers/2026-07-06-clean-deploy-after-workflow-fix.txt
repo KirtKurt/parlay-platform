@@ -1,0 +1,9 @@
+Purpose: trigger one clean Deploy SAM to AWS run after fixing deploy concurrency and removing forced MLB pull smoke.
+
+Expected behavior:
+- Uses corrected .github/workflows/deploy.yml
+- Cancels older in-progress deploys
+- Does not POST /v1/pull/mlb
+- Performs read-only smoke checks only
+
+Timestamp UTC: 2026-07-06T05:25:00Z
