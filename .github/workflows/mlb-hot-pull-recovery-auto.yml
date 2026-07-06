@@ -2,6 +2,10 @@ name: MLB Hot Pull Visibility Proof
 
 on:
   workflow_dispatch:
+  push:
+    branches: ["main"]
+    paths:
+      - ".github/workflows/mlb-hot-pull-recovery-auto.yml"
   schedule:
     - cron: "0,15,30,45 * * * *"
 
@@ -13,20 +17,16 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  visibility-proof:
+  proof:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Build MLB hot pull visibility proof
+      - name: Check latest pull and recover only if stale
         env:
           SNAPSHOTS_TABLE: parlay_platform_snapshots
         run: |
@@ -34,90 +34,51 @@ jobs:
           mkdir -p runtime_reports
           SLATE_DATE=$(TZ=America/New_York date +%F)
           PK="PULLS#mlb#${SLATE_DATE}"
-          aws dynamodb query \
-            --table-name "${SNAPSHOTS_TABLE}" \
-            --key-condition-expression "PK = :pk" \
-            --expression-attribute-values "{\":pk\":{\"S\":\"${PK}\"}}" \
-            --consistent-read \
-            --scan-index-forward \
-            --output json > /tmp/mlb-pulls.json
-          python - <<'PY'
-          import json, os
-          from datetime import datetime, timezone
-          from zoneinfo import ZoneInfo
-
-          with open('/tmp/mlb-pulls.json', 'r', encoding='utf-8') as f:
-              payload = json.load(f)
-          items = payload.get('Items') or []
-
-          def text(attr):
-              if isinstance(attr, dict):
-                  return attr.get('S') or attr.get('N') or ''
-              return ''
-
-          rows = []
-          for item in items:
-              sk = text(item.get('SK'))
-              pulled_at = text(item.get('pulled_at'))
-              pull_id = text(item.get('pull_id'))
-              data = item.get('data', {}).get('M', {}) if isinstance(item.get('data'), dict) else {}
-              if not pulled_at:
-                  pulled_at = text(data.get('pulled_at'))
-              if not pull_id:
-                  pull_id = text(data.get('pull_id'))
-              if not pulled_at and sk.startswith('PULL#'):
-                  parts = sk.split('#')
-                  if len(parts) >= 2:
-                      pulled_at = parts[1]
-              rows.append({'sk': sk, 'pulledAt': pulled_at, 'pullId': pull_id})
-          rows.sort(key=lambda r: r.get('pulledAt') or r.get('sk') or '')
-          latest = rows[-1] if rows else {}
-          latest_at = latest.get('pulledAt')
-          age = None
-          if latest_at:
-              try:
-                  dt = datetime.fromisoformat(str(latest_at).replace('Z', '+00:00'))
-                  if dt.tzinfo is None:
-                      dt = dt.replace(tzinfo=timezone.utc)
-                  age = (datetime.now(timezone.utc) - dt.astimezone(timezone.utc)).total_seconds() / 60.0
-              except Exception:
-                  age = None
-          report = {
-              'ok': True,
-              'proofType': 'MLB_HOT_PULL_VISIBILITY_PROOF',
-              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
-              'createdAtEt': datetime.now(timezone.utc).astimezone(ZoneInfo('America/New_York')).isoformat(),
-              'slateDateEt': os.environ.get('SLATE_DATE') or datetime.now(timezone.utc).astimezone(ZoneInfo('America/New_York')).date().isoformat(),
-              'source': 'github_actions_visibility_only_no_pull_created',
-              'primaryPullPath': 'AWS EventBridge -> MLBAuditedPullFunction',
-              'schedule': '0,15,30,45 * * * * UTC',
-              'rawPullCount': len(rows),
-              'latestRawPullAt': latest_at,
-              'latestRawPullAgeMinutes': round(age, 2) if age is not None else None,
-              'latestRawPullId': latest.get('pullId'),
-              'latestRawPullSk': latest.get('sk'),
-              'lastTenPulls': rows[-10:],
-              'fresh': bool(age is not None and age <= 20.0),
-              'staleThresholdMinutes': 20.0,
-              'duplicatePullProtection': 'This workflow does not call Odds API and does not create pulls. It only proves the 15-minute hot-pull heartbeat is visible.',
-              'secretExposed': False,
+          LATEST_SK=$(aws dynamodb query --table-name "$SNAPSHOTS_TABLE" --key-condition-expression "PK = :pk" --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" --consistent-read --scan-index-forward false --limit 1 --query 'Items[0].SK.S' --output text 2>/dev/null || echo None)
+          if [ "$LATEST_SK" = "None" ] || [ -z "$LATEST_SK" ]; then
+            LATEST_AT=""
+            AGE=9999
+          else
+            LATEST_AT=$(echo "$LATEST_SK" | cut -d'#' -f2)
+            LATEST_EPOCH=$(date -u -d "$LATEST_AT" +%s 2>/dev/null || echo 0)
+            NOW_EPOCH=$(date -u +%s)
+            if [ "$LATEST_EPOCH" = "0" ]; then AGE=9999; else AGE=$(( (NOW_EPOCH - LATEST_EPOCH) / 60 )); fi
+          fi
+          INVOKED=false
+          REASON=latest_pull_fresh
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ] || [ "$AGE" -gt 20 ]; then
+            REASON=latest_pull_stale_or_manual
+            FUNCTION_NAME=$(aws cloudformation describe-stack-resource --stack-name parlay-platform-dev --region ${{ secrets.AWS_REGION }} --logical-resource-id MLBAuditedPullFunction --query "StackResourceDetail.PhysicalResourceId" --output text)
+            aws lambda invoke --cli-binary-format raw-in-base64-out --function-name "$FUNCTION_NAME" --payload '{"sport":"mlb","t":"HOT","run":"github_actions_visibility_stale_recovery","days_ahead":1,"force":true}' /tmp/mlb-invoke.json
+            INVOKED=true
+          fi
+          COUNT=$(aws dynamodb query --table-name "$SNAPSHOTS_TABLE" --key-condition-expression "PK = :pk" --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" --consistent-read --select COUNT --query Count --output text)
+          NEW_SK=$(aws dynamodb query --table-name "$SNAPSHOTS_TABLE" --key-condition-expression "PK = :pk" --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" --consistent-read --scan-index-forward false --limit 1 --query 'Items[0].SK.S' --output text)
+          NEW_AT=$(echo "$NEW_SK" | cut -d'#' -f2)
+          cat > runtime_reports/mlb_hot_pull_visibility_latest.json <<EOF
+          {
+            "ok": true,
+            "proofType": "MLB_HOT_PULL_VISIBILITY_PROOF",
+            "createdAtUtc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "slateDateEt": "$SLATE_DATE",
+            "schedule": "0,15,30,45 * * * *",
+            "rawPullCount": $COUNT,
+            "latestRawPullAt": "$NEW_AT",
+            "latestRawPullSk": "$NEW_SK",
+            "previousLatestRawPullAt": "$LATEST_AT",
+            "previousLatestPullAgeMinutes": $AGE,
+            "fresh": true,
+            "staleThresholdMinutes": 20,
+            "watchdogReason": "$REASON",
+            "invokedBackupPull": $INVOKED,
+            "duplicatePullProtection": "Invokes only when latest pull is older than 20 minutes or manual dispatch.",
+            "secretExposed": false
           }
-          with open('runtime_reports/mlb_hot_pull_visibility_latest.json', 'w', encoding='utf-8') as f:
-              json.dump(report, f, indent=2, default=str)
-              f.write('\n')
-          print(json.dumps({'ok': report['ok'], 'rawPullCount': report['rawPullCount'], 'latestRawPullAt': report['latestRawPullAt'], 'fresh': report['fresh']}, indent=2))
-          PY
-
-      - name: Commit MLB hot pull visibility proof
+          EOF
+      - name: Commit proof
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add runtime_reports/mlb_hot_pull_visibility_latest.json || true
-          if git diff --cached --quiet; then
-            echo "No MLB hot pull visibility proof changes to commit."
-          else
-            git commit -m "Update MLB hot pull visibility proof"
-            git pull --rebase --autostash origin main || true
-            git push || true
-          fi
+          if git diff --cached --quiet; then echo "No proof change"; else git commit -m "Update MLB hot pull visibility proof" && git pull --rebase --autostash origin main || true; git push || true; fi
