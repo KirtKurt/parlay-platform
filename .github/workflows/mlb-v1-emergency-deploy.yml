@@ -2,11 +2,6 @@ name: MLB V1 Emergency Deploy
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
-    paths:
-      - ".github/workflows/mlb-v1-emergency-deploy.yml"
-      - "scripts/patch_template_mlb_results_routes.py"
 
 concurrency:
   group: parlay-platform-deploy
@@ -89,7 +84,7 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides OddsApiKey="${ODDS_API_KEY_VALUE}"
 
-      - name: Invoke MLB audited pull Lambda after deploy
+      - name: Invoke MLB audited pull Lambda after manual emergency deploy
         run: |
           FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
             --stack-name parlay-platform-dev \
@@ -101,6 +96,6 @@ jobs:
           aws lambda invoke \
             --cli-binary-format raw-in-base64-out \
             --function-name "$FUNCTION_NAME" \
-            --payload '{"sport":"mlb","t":"HOT","run":"emergency_deploy_post_pull","days_ahead":1,"force":true}' \
+            --payload '{"sport":"mlb","t":"HOT","run":"emergency_deploy_post_pull_manual_only","days_ahead":1,"force":true}' \
             /tmp/mlb-pull-response.json
           cat /tmp/mlb-pull-response.json
