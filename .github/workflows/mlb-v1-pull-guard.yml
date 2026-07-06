@@ -1,16 +1,29 @@
-name: MLB V1 Pull Guard Legacy Manual
+name: MLB V1 Pull Guard
 
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0/15 * * * *"
 
 permissions:
-  contents: read
+  actions: write
+
+concurrency:
+  group: mlb-v1-pull-guard-dispatcher
+  cancel-in-progress: false
 
 jobs:
-  legacy-note:
+  dispatch-visibility-proof:
     runs-on: ubuntu-latest
     steps:
-      - name: Legacy guard disabled
-        run: |
-          echo "Legacy scheduled Pull Guard is disabled."
-          echo "The active 15-minute stale-safe heartbeat is MLB Hot Pull Visibility Proof."
+      - name: Dispatch MLB hot pull visibility proof
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.actions.createWorkflowDispatch({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'mlb-hot-pull-recovery-auto.yml',
+              ref: 'main'
+            });
+            core.info('Dispatched MLB hot pull visibility proof.');
