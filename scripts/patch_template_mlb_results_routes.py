@@ -44,12 +44,37 @@ def ensure_results_event(logical_name: str, path: str, method: str = "GET") -> N
     text = text.replace(marker, block + marker, 1)
 
 
+def ensure_moderation_policy_function() -> None:
+    global text
+    if "  ModerationPolicyFunction:" in text:
+        return
+    marker = "  MLBResultsSchedulerFunction:\n"
+    block = """
+  ModerationPolicyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: moderation_policy_api.lambda_handler
+      Events:
+        ModerationPolicyGet:
+          Type: Api
+          Properties:
+            Path: /v1/moderation/policy
+            Method: GET
+
+"""
+    if marker not in text:
+        raise RuntimeError("MLBResultsSchedulerFunction marker not found in template.yaml")
+    text = text.replace(marker, block + marker, 1)
+
+
 # These alias routes are owned by MLBResultSignalsFunction, inserted from
 # patch_template_mlb_v1.py. Keeping another GET/POST pair here makes SAM reject
 # the template with duplicate API method errors for /v1/mlb/result-signals.
 for alias_event in ["MLBResultSignalsAliasGet", "MLBResultSignalsAliasPost"]:
     text = remove_indented_event_block(text, alias_event)
 
+ensure_moderation_policy_function()
 ensure_results_event("MLBFinalScoresGet", "/v1/results/mlb/final-scores")
 ensure_results_event("MLBSettlementGet", "/v1/results/mlb/settlement")
 ensure_results_event("MLBSettlementProofGet", "/v1/results/mlb/proof")
@@ -58,4 +83,4 @@ ensure_results_event("MLBResultSignalsGet", "/v1/results/mlb/result-signals")
 ensure_results_event("MLBResultSignalsPost", "/v1/results/mlb/result-signals", "POST")
 
 TEMPLATE.write_text(text)
-print("Patched template.yaml with MLB final score, settlement, proof, signal-learning, and canonical result-signal routes. Alias routes are de-duplicated.")
+print("Patched template.yaml with MLB results routes and moderation policy smoke route.")
