@@ -7,6 +7,12 @@ import inqsi_pull_history as history
 import mlb_b10_engine
 
 try:
+    import inqsi_parlay_history_patch
+    inqsi_parlay_history_patch.apply(history)
+except Exception:
+    pass
+
+try:
     import mlb_strength_gate_patch
     mlb_strength_gate_patch.apply(mlb_b10_engine)
 except Exception:
@@ -224,6 +230,11 @@ def latest_pull_diagnostics():
 def main():
     sports = os.environ.get("INQSI_AUTO_BUILD_SPORTS", "mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis")
     sports_list = [s.strip() for s in sports.split(",") if s.strip()]
+    try:
+        import inqsi_parlay_history_patch
+        inqsi_parlay_history_patch.apply(history)
+    except Exception:
+        pass
     store_fn = getattr(history, "store_" + "parlay_build")
     latest_fn = getattr(history, "latest_" + "parlay_build")
     results = []
