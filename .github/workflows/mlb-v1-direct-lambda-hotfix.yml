@@ -2,11 +2,6 @@ name: MLB V1 Direct Lambda Hotfix
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
-    paths:
-      - ".github/workflows/mlb-v1-direct-lambda-hotfix.yml"
-      - "hello_world/mlb_manual_pull.py"
 
 jobs:
   update-and-pull:
@@ -78,28 +73,6 @@ jobs:
           aws lambda invoke \
             --cli-binary-format raw-in-base64-out \
             --function-name "${{ steps.resolve.outputs.function_name }}" \
-            --payload '{"sport":"mlb","t":"HOT","run":"direct_lambda_hotfix_pull","days_ahead":1,"force":true}' \
+            --payload '{"sport":"mlb","t":"HOT","run":"direct_lambda_hotfix_pull_manual_only","days_ahead":1,"force":true}' \
             /tmp/mlb-pull-response.json
           cat /tmp/mlb-pull-response.json
-          python - <<'PY'
-          import json
-          with open('/tmp/mlb-pull-response.json', 'r', encoding='utf-8') as f:
-              payload = json.load(f)
-          body = payload
-          if isinstance(payload, dict) and 'body' in payload:
-              body = json.loads(payload['body'])
-          if not isinstance(body, dict) or not body.get('ok'):
-              raise SystemExit(f"Direct hotfix pull failed: {body}")
-          if body.get('skipped'):
-              raise SystemExit(f"Direct hotfix pull skipped: {body}")
-          if int(body.get('count') or 0) <= 0:
-              raise SystemExit(f"Direct hotfix pull returned zero games: {body}")
-          print(json.dumps({
-              'ok': body.get('ok'),
-              'sport': body.get('sport'),
-              'platformVersion': body.get('platformVersion'),
-              'count': body.get('count'),
-              'asof': body.get('asof'),
-              'canonical_pull_history': body.get('canonical_pull_history'),
-          }, indent=2, default=str))
-          PY
