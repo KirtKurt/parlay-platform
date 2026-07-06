@@ -10,7 +10,7 @@ on:
 
 concurrency:
   group: parlay-platform-deploy
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -178,13 +178,9 @@ jobs:
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "API_URL=$API_URL"
 
-      - name: Run MLB V1 pull smoke test
+      - name: Confirm no forced pull during deploy
         run: |
-          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          test -n "$API_URL"
-          curl --fail --silent --show-error -X POST "${API_URL}v1/pull/mlb" \
-            -H 'content-type: application/json' \
-            -d '{"t":"HOT","run":"post_deploy_pull","days_ahead":1,"force":true}'
+          echo "Deploy smoke is read-only. No POST /v1/pull/mlb and no force pull."
 
       - name: Configure API WAF and throttling
         continue-on-error: true
