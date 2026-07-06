@@ -244,9 +244,11 @@ text = text.replace('"includeFullMlbSnapshots":true', '"includeFullMlbSnapshots"
 TEMPLATE.write_text(text)
 exec(Path("scripts/patch_template_mlb_hot_start_v2.py").read_text())
 exec(Path("scripts/patch_template_mlb_hot_pull_recovery_permanent.py").read_text())
+exec(Path("scripts/verify_mlb_schedule_invariants.py").read_text())
 print(
     "Patched template.yaml for INQSI MLB v1 routes, MLB game-winner route, "
     "result-signal learning, raw S3 archive, AWS EventBridge primary all-sports "
     "15-minute polling without MLB duplication, 1 AM ET kickoffs, HOT-only MLB pulls, "
-    "permanent dedicated MLB recovery polling removal, and legacy MLB T-schedule removal."
+    "permanent dedicated MLB recovery polling removal, legacy MLB T-schedule removal, "
+    "and verified same-day-only MLB schedule invariants."
 )
