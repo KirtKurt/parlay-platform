@@ -36,52 +36,154 @@ jobs:
           AWS_OK=true
           aws dynamodb query --region "$AWS_REGION" --table-name "$SNAPSHOTS_TABLE" --key-condition-expression "PK = :pk" --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" --consistent-read --output json > /tmp/mlb_pulls.json 2>/tmp/mlb_pull_guard_error.txt || AWS_OK=false
           if [ "$AWS_OK" = "false" ]; then echo '{"Items":[]}' > /tmp/mlb_pulls.json; fi
-          COUNT=$(python -c 'import json;print(len(json.load(open("/tmp/mlb_pulls.json")).get("Items",[])))' 2>/dev/null || echo 0)
-          LATEST_SK=$(python - <<'PY'
+          export AWS_OK
+          python - <<'PY'
           import json
+          import os
+          from datetime import datetime, timedelta, timezone
+          from zoneinfo import ZoneInfo
+
+          eastern = ZoneInfo("America/New_York")
+          slate_date = os.environ.get("SLATE_DATE") or datetime.now(eastern).date().isoformat()
+          aws_ok = os.environ.get("AWS_OK", "false").lower() == "true"
+
           try:
-              items=json.load(open('/tmp/mlb_pulls.json')).get('Items',[])
-              vals=[i.get('SK',{}).get('S','') for i in items]
-              vals=[v for v in vals if v]
-              print(sorted(vals)[-1] if vals else '')
+              raw = json.load(open("/tmp/mlb_pulls.json"))
+              items = raw.get("Items", []) or []
           except Exception:
-              print('')
-          PY
-          )
-          LATEST_AT=""
-          if [ -n "$LATEST_SK" ]; then LATEST_AT=$(echo "$LATEST_SK" | cut -d'#' -f2); fi
-          AGE=9999
-          if [ -n "$LATEST_AT" ]; then
-            LATEST_EPOCH=$(date -u -d "$LATEST_AT" +%s 2>/dev/null || echo 0)
-            NOW_EPOCH=$(date -u +%s)
-            if [ "$LATEST_EPOCH" != "0" ]; then AGE=$(( (NOW_EPOCH - LATEST_EPOCH) / 60 )); fi
-          fi
-          if [ "$AGE" -le 20 ]; then FRESH=true; REASON="latest_pull_fresh"; else FRESH=false; REASON="latest_pull_stale_report_only"; fi
-          ERR=$(head -c 300 /tmp/mlb_pull_guard_error.txt 2>/dev/null | tr '\n"\\' '   ')
-          cat > runtime_reports/mlb_hot_pull_visibility_latest.json <<EOF
-          {
-            "ok": true,
-            "proofType": "MLB_PULL_GUARD_READ_ONLY_PROOF",
-            "createdAtUtc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-            "slateDateEt": "$SLATE_DATE",
-            "schedule": "0/15 * * * *",
-            "sourceOfTruth": "AWS_EventBridge_primary_pull_only",
-            "githubCreatesPulls": false,
-            "awsReachable": $AWS_OK,
-            "rawPullCount": $COUNT,
-            "latestRawPullAt": "$LATEST_AT",
-            "latestRawPullSk": "$LATEST_SK",
-            "latestRawPullAgeMinutes": $AGE,
-            "fresh": $FRESH,
-            "staleThresholdMinutes": 20,
-            "watchdogReason": "$REASON",
-            "invokedBackupPull": false,
-            "recoveryAction": "none_read_only_no_github_lambda_invoke",
-            "errorSummary": "$ERR",
-            "secretExposed": false
+              items = []
+
+          def s_value(item, key):
+              value = item.get(key, {})
+              if isinstance(value, dict):
+                  return value.get("S") or ""
+              return str(value or "")
+
+          def parse_dt(value):
+              if not value:
+                  return None
+              try:
+                  parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                  if parsed.tzinfo is None:
+                      parsed = parsed.replace(tzinfo=timezone.utc)
+                  return parsed.astimezone(timezone.utc)
+              except Exception:
+                  return None
+
+          pulls = []
+          for item in items:
+              sk = s_value(item, "SK")
+              parts = sk.split("#")
+              pulled_at = parts[1] if len(parts) > 1 and parts[0] == "PULL" else s_value(item, "pulled_at")
+              dt = parse_dt(pulled_at)
+              if dt:
+                  pulls.append({"sk": sk, "dt": dt, "pulledAt": dt.isoformat()})
+
+          pulls.sort(key=lambda row: row["dt"])
+          raw_count = len(items)
+          latest = pulls[-1] if pulls else {"sk": "", "dt": None, "pulledAt": ""}
+          latest_dt = latest.get("dt")
+
+          now_utc = datetime.now(timezone.utc)
+          now_et = now_utc.astimezone(eastern)
+          start_et = datetime(now_et.year, now_et.month, now_et.day, 1, 0, tzinfo=eastern)
+
+          expected_count = 0
+          expected_end_et = None
+          expected_slots = []
+          if now_et >= start_et:
+              ref_et = latest_dt.astimezone(eastern) if latest_dt else now_et
+              if ref_et > now_et:
+                  ref_et = now_et
+              minutes = int((ref_et - start_et).total_seconds() // 60)
+              if minutes >= 0:
+                  slot_count = minutes // 15 + 1
+                  expected_count = slot_count
+                  expected_end_et = start_et + timedelta(minutes=(slot_count - 1) * 15)
+                  expected_slots = [start_et + timedelta(minutes=i * 15) for i in range(slot_count)]
+
+          def floor_slot_et(dt_utc):
+              local = dt_utc.astimezone(eastern)
+              minute = (local.minute // 15) * 15
+              return local.replace(minute=minute, second=0, microsecond=0)
+
+          pre_start = [row for row in pulls if row["dt"].astimezone(eastern) < start_et]
+          clean_window = []
+          if expected_end_et is not None:
+              for row in pulls:
+                  local = row["dt"].astimezone(eastern)
+                  if start_et <= local <= expected_end_et + timedelta(minutes=14, seconds=59):
+                      clean_window.append(row)
+
+          actual_slots = sorted({floor_slot_et(row["dt"]).isoformat() for row in clean_window})
+          expected_slot_values = [slot.isoformat() for slot in expected_slots]
+          missing_slots = [slot for slot in expected_slot_values if slot not in actual_slots]
+          extra_or_duplicate_since_start = max(len(clean_window) - len(actual_slots), 0)
+          excess_vs_expected = max(raw_count - expected_count, 0) if expected_count else raw_count
+
+          if expected_count == 0:
+              clean_status = "PRE_START"
+          elif len(actual_slots) < expected_count:
+              clean_status = "FAIL_MISSING_PULLS"
+          elif len(clean_window) > expected_count:
+              clean_status = "FAIL_EXTRA_OR_DUPLICATE_PULLS"
+          elif len(actual_slots) == expected_count:
+              clean_status = "PASS_CLEAN_EXPECTED_COUNT"
+          else:
+              clean_status = "UNKNOWN"
+
+          age = 9999
+          if latest_dt:
+              age = int((now_utc - latest_dt).total_seconds() // 60)
+          fresh = age <= 20
+          err = ""
+          try:
+              err = open("/tmp/mlb_pull_guard_error.txt").read(300).replace("\n", " ").replace('"', "'").replace("\\", " ")
+          except Exception:
+              pass
+
+          proof = {
+              "ok": True,
+              "proofType": "MLB_PULL_GUARD_READ_ONLY_PROOF",
+              "createdAtUtc": now_utc.replace(microsecond=0).isoformat().replace("+00:00", "Z"),
+              "createdAtEt": now_et.isoformat(),
+              "slateDateEt": slate_date,
+              "schedule": "0/15 * * * *",
+              "sourceOfTruth": "AWS_EventBridge_primary_pull_only",
+              "githubCreatesPulls": False,
+              "awsReachable": aws_ok,
+              "judgedAgainstCleanExpected": True,
+              "cleanExpectedStartEt": start_et.isoformat(),
+              "cleanExpectedThroughEt": expected_end_et.isoformat() if expected_end_et else None,
+              "cleanExpectedPullCount": expected_count,
+              "cleanActualScheduledSlotCount": len(actual_slots),
+              "cleanRawPullCountSinceStart": len(clean_window),
+              "cleanCountStatus": clean_status,
+              "missingCleanScheduledSlots": missing_slots[:20],
+              "duplicateOrExtraPullsSinceStart": extra_or_duplicate_since_start,
+              "rawPullCount": raw_count,
+              "preStartPollutedPullCount": len(pre_start),
+              "excessRawVsCleanExpected": excess_vs_expected,
+              "latestRawPullAt": latest.get("pulledAt", ""),
+              "latestRawPullSk": latest.get("sk", ""),
+              "latestRawPullAgeMinutes": age,
+              "fresh": fresh,
+              "staleThresholdMinutes": 20,
+              "watchdogReason": "latest_pull_fresh" if fresh else "latest_pull_stale_report_only",
+              "invokedBackupPull": False,
+              "recoveryAction": "none_read_only_no_github_lambda_invoke",
+              "errorSummary": err,
+              "secretExposed": False,
           }
-          EOF
-          cp runtime_reports/mlb_hot_pull_visibility_latest.json runtime_reports/mlb_pull_guard_status_latest.json
+
+          with open("runtime_reports/mlb_hot_pull_visibility_latest.json", "w") as f:
+              json.dump(proof, f, indent=2)
+              f.write("\n")
+          with open("runtime_reports/mlb_pull_guard_status_latest.json", "w") as f:
+              json.dump(proof, f, indent=2)
+              f.write("\n")
+          print(json.dumps(proof, indent=2))
+          PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add runtime_reports/mlb_hot_pull_visibility_latest.json runtime_reports/mlb_pull_guard_status_latest.json || true
