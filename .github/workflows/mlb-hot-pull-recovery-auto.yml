@@ -6,8 +6,6 @@ on:
     branches: ["main"]
     paths:
       - ".github/workflows/mlb-hot-pull-recovery-auto.yml"
-  schedule:
-    - cron: "0,15,30,45 * * * *"
 
 permissions:
   contents: write
@@ -36,6 +34,7 @@ jobs:
         run: |
           mkdir -p runtime_reports
           SLATE_DATE=$(TZ=America/New_York date +%F)
+          export SLATE_DATE
           PK="PULLS#mlb#${SLATE_DATE}"
           QUERY_ARGS=(--region "$AWS_REGION" --table-name "$SNAPSHOTS_TABLE" --key-condition-expression "PK = :pk" --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" --consistent-read)
           aws dynamodb query "${QUERY_ARGS[@]}" --output json > /tmp/mlb_all_pulls.json 2>/tmp/mlb_visibility_aws_error.txt || echo '{"Items":[]}' > /tmp/mlb_all_pulls.json
@@ -54,18 +53,22 @@ jobs:
           def s(attr):
               return attr.get('S') if isinstance(attr, dict) else None
 
-          rows = []
-          for item in items:
-              sk = s(item.get('SK')) or ''
-              data = item.get('data', {}).get('M', {}) if isinstance(item.get('data'), dict) else {}
-              pulled = s(item.get('pulled_at')) or s(data.get('pulled_at'))
-              pid = s(item.get('pull_id')) or s(data.get('pull_id'))
-              if not pulled and sk.startswith('PULL#'):
-                  parts = sk.split('#')
-                  if len(parts) > 1:
-                      pulled = parts[1]
-              rows.append({'sk': sk, 'pulledAt': pulled or '', 'pullId': pid or ''})
-          rows.sort(key=lambda r: r.get('pulledAt') or r.get('sk') or '')
+          def parse_rows(payload):
+              rows = []
+              for item in payload.get('Items') or []:
+                  sk = s(item.get('SK')) or ''
+                  data = item.get('data', {}).get('M', {}) if isinstance(item.get('data'), dict) else {}
+                  pulled = s(item.get('pulled_at')) or s(data.get('pulled_at'))
+                  pid = s(item.get('pull_id')) or s(data.get('pull_id'))
+                  if not pulled and sk.startswith('PULL#'):
+                      parts = sk.split('#')
+                      if len(parts) > 1:
+                          pulled = parts[1]
+                  rows.append({'sk': sk, 'pulledAt': pulled or '', 'pullId': pid or ''})
+              rows.sort(key=lambda r: r.get('pulledAt') or r.get('sk') or '')
+              return rows
+
+          rows = parse_rows(payload)
           latest = rows[-1] if rows else {}
           latest_at = latest.get('pulledAt') or ''
           age = None
@@ -80,8 +83,8 @@ jobs:
 
           reason = 'latest_pull_fresh'
           invoked = False
-          if os.environ.get('GITHUB_EVENT_NAME') == 'workflow_dispatch' or age is None or age > 20.0:
-              reason = 'latest_pull_stale_or_manual'
+          if age is None or age > 20.0:
+              reason = 'latest_pull_stale'
               try:
                   fn = subprocess.check_output([
                       'aws', 'cloudformation', 'describe-stack-resource',
@@ -106,7 +109,7 @@ jobs:
 
           if invoked:
               try:
-                  payload = json.loads(subprocess.check_output([
+                  refreshed = json.loads(subprocess.check_output([
                       'aws', 'dynamodb', 'query',
                       '--region', os.environ.get('AWS_REGION', 'us-east-1'),
                       '--table-name', os.environ.get('SNAPSHOTS_TABLE', 'parlay_platform_snapshots'),
@@ -114,6 +117,9 @@ jobs:
                       '--expression-attribute-values', '{":pk":{"S":"PULLS#mlb#' + os.environ.get('SLATE_DATE', '') + '"}}',
                       '--consistent-read', '--output', 'json'
                   ], text=True, stderr=subprocess.DEVNULL))
+                  rows = parse_rows(refreshed)
+                  latest = rows[-1] if rows else {}
+                  latest_at = latest.get('pulledAt') or ''
               except Exception:
                   pass
 
@@ -130,7 +136,7 @@ jobs:
               'createdAtUtc': now.isoformat(),
               'createdAtEt': now.astimezone(ZoneInfo('America/New_York')).isoformat(),
               'slateDateEt': os.environ.get('SLATE_DATE') or now.astimezone(ZoneInfo('America/New_York')).date().isoformat(),
-              'schedule': '0,15,30,45 * * * *',
+              'schedule': 'dispatched_by_mlb_v1_pull_guard_every_15_minutes',
               'awsReachable': bool(rows),
               'rawPullCount': len(rows),
               'latestRawPullAt': latest_at,
