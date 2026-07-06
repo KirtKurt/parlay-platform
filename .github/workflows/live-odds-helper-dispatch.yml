@@ -30,6 +30,9 @@ jobs:
   dispatch-live-proof:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
       - name: Dispatch live odds proof workflow
         env:
           GH_TOKEN: ${{ github.token }}
