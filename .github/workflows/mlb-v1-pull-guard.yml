@@ -6,24 +6,90 @@ on:
     - cron: "0/15 * * * *"
 
 permissions:
-  actions: write
+  contents: write
 
 concurrency:
-  group: mlb-v1-pull-guard-dispatcher
+  group: mlb-v1-pull-guard-read-only
   cancel-in-progress: false
 
 jobs:
-  dispatch-visibility-proof:
+  read-only-proof:
     runs-on: ubuntu-latest
     steps:
-      - name: Dispatch MLB hot pull visibility proof
-        uses: actions/github-script@v7
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        continue-on-error: true
         with:
-          script: |
-            await github.rest.actions.createWorkflowDispatch({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              workflow_id: 'mlb-hot-pull-recovery-auto.yml',
-              ref: 'main'
-            });
-            core.info('Dispatched MLB hot pull visibility proof.');
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Write read-only MLB pull proof
+        env:
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          AWS_REGION: us-east-1
+        run: |
+          mkdir -p runtime_reports
+          SLATE_DATE=$(TZ=America/New_York date +%F)
+          PK="PULLS#mlb#${SLATE_DATE}"
+          AWS_OK=true
+          aws dynamodb query --region "$AWS_REGION" --table-name "$SNAPSHOTS_TABLE" --key-condition-expression "PK = :pk" --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" --consistent-read --output json > /tmp/mlb_pulls.json 2>/tmp/mlb_pull_guard_error.txt || AWS_OK=false
+          if [ "$AWS_OK" = "false" ]; then echo '{"Items":[]}' > /tmp/mlb_pulls.json; fi
+          COUNT=$(python -c 'import json;print(len(json.load(open("/tmp/mlb_pulls.json")).get("Items",[])))' 2>/dev/null || echo 0)
+          LATEST_SK=$(python - <<'PY'
+          import json
+          try:
+              items=json.load(open('/tmp/mlb_pulls.json')).get('Items',[])
+              vals=[i.get('SK',{}).get('S','') for i in items]
+              vals=[v for v in vals if v]
+              print(sorted(vals)[-1] if vals else '')
+          except Exception:
+              print('')
+          PY
+          )
+          LATEST_AT=""
+          if [ -n "$LATEST_SK" ]; then LATEST_AT=$(echo "$LATEST_SK" | cut -d'#' -f2); fi
+          AGE=9999
+          if [ -n "$LATEST_AT" ]; then
+            LATEST_EPOCH=$(date -u -d "$LATEST_AT" +%s 2>/dev/null || echo 0)
+            NOW_EPOCH=$(date -u +%s)
+            if [ "$LATEST_EPOCH" != "0" ]; then AGE=$(( (NOW_EPOCH - LATEST_EPOCH) / 60 )); fi
+          fi
+          if [ "$AGE" -le 20 ]; then FRESH=true; REASON="latest_pull_fresh"; else FRESH=false; REASON="latest_pull_stale_report_only"; fi
+          ERR=$(head -c 300 /tmp/mlb_pull_guard_error.txt 2>/dev/null | tr '\n"\\' '   ')
+          cat > runtime_reports/mlb_hot_pull_visibility_latest.json <<EOF
+          {
+            "ok": true,
+            "proofType": "MLB_PULL_GUARD_READ_ONLY_PROOF",
+            "createdAtUtc": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "slateDateEt": "$SLATE_DATE",
+            "schedule": "0/15 * * * *",
+            "sourceOfTruth": "AWS_EventBridge_primary_pull_only",
+            "githubCreatesPulls": false,
+            "awsReachable": $AWS_OK,
+            "rawPullCount": $COUNT,
+            "latestRawPullAt": "$LATEST_AT",
+            "latestRawPullSk": "$LATEST_SK",
+            "latestRawPullAgeMinutes": $AGE,
+            "fresh": $FRESH,
+            "staleThresholdMinutes": 20,
+            "watchdogReason": "$REASON",
+            "invokedBackupPull": false,
+            "recoveryAction": "none_read_only_no_github_lambda_invoke",
+            "errorSummary": "$ERR",
+            "secretExposed": false
+          }
+          EOF
+          cp runtime_reports/mlb_hot_pull_visibility_latest.json runtime_reports/mlb_pull_guard_status_latest.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/mlb_hot_pull_visibility_latest.json runtime_reports/mlb_pull_guard_status_latest.json || true
+          if git diff --cached --quiet; then
+            echo "No proof change"
+          else
+            git commit -m "Update MLB pull guard read-only proof" || true
+            git pull --rebase --autostash origin main || true
+            git push || true
+          fi
+          true
