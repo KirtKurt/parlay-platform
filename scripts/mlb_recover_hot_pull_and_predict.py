@@ -116,6 +116,7 @@ def _apply_ml_overlay(predictions: Dict[str, Any]) -> Dict[str, Any]:
     threshold = _num(threshold_info.get("threshold"), _num(os.environ.get("INQSI_MLB_ML_MIN_PROBABILITY"), 0.90))
     promoted = 0
     evaluated = 0
+    rejected = 0
     for row in rows:
         overlay = {"enabled": enabled, "modelAvailable": bool(model), "applied": False, "validatedAgainstTarget": validated}
         if model:
@@ -125,6 +126,17 @@ def _apply_ml_overlay(predictions: Dict[str, Any]) -> Dict[str, Any]:
             overlay.update({"applied": True, "probabilityPickCorrect": round(p, 4) if p is not None else None, "confirmed": confirmed, "selectedThreshold": threshold_info})
             tags = set(row.get("tags") or [])
             tags.add("ML_OVERLAY_EVALUATED")
+            if p is not None and p < float(os.environ.get("INQSI_MLB_ML_REJECT_BELOW", "0.52")):
+                row["officialPick"] = False
+                row["accuracyTargetEligible"] = False
+                row["actionablePick"] = False
+                row["actionability"] = "NO_PICK_ML_REJECTED"
+                row["actionabilityReason"] = "ml_overlay_rejected_low_correct_probability"
+                risks = list(row.get("actionabilityRiskReasons") or [])
+                risks.append("ml_overlay_rejected_low_correct_probability")
+                row["actionabilityRiskReasons"] = sorted(set(risks))
+                tags.add("ML_REJECTED")
+                rejected += 1
             if confirmed:
                 tags.add("ML_CONFIRMED")
                 row["officialPick"] = True
@@ -139,7 +151,7 @@ def _apply_ml_overlay(predictions: Dict[str, Any]) -> Dict[str, Any]:
     predictions["noPickCount"] = len([r for r in rows if not r.get("actionablePick")])
     stack = predictions.get("winnerStackV2") or {}
     if isinstance(stack, dict):
-        stack["mlOverlay"] = {"enabled": enabled, "modelAvailable": bool(model), "validatedAgainstTarget": validated, "evaluatedCount": evaluated, "promotedCount": promoted, "threshold": threshold_info}
+        stack["mlOverlay"] = {"enabled": enabled, "modelAvailable": bool(model), "validatedAgainstTarget": validated, "evaluatedCount": evaluated, "promotedCount": promoted, "rejectedCount": rejected, "threshold": threshold_info}
         stack["actionablePickCount"] = predictions["actionablePickCount"]
         stack["passNoPickCount"] = predictions["noPickCount"]
         predictions["winnerStackV2"] = stack
@@ -213,6 +225,12 @@ def build_report(write_file: bool = True) -> Dict[str, Any]:
     except Exception:
         pass
 
+    try:
+        import mlb_prediction_integrity_patch
+        mlb_prediction_integrity_patch.apply(mlb_game_winner_engine)
+    except Exception:
+        pass
+
     pull_result = odds_live_ingestion.pull_sport("mlb")
     pulls_after = []
     try:
@@ -222,6 +240,11 @@ def build_report(write_file: bool = True) -> Dict[str, Any]:
     try:
         predictions = mlb_game_winner_engine.predict_all(store=True, limit=500)
         predictions = _apply_ml_overlay(predictions)
+        try:
+            import mlb_prediction_integrity_patch
+            predictions = mlb_prediction_integrity_patch.enforce_result(predictions, module=mlb_game_winner_engine, store=True)
+        except Exception:
+            pass
     except Exception as exc:
         predictions = {"ok": False, "error": type(exc).__name__, "message": str(exc)}
 
@@ -263,7 +286,7 @@ def build_report(write_file: bool = True) -> Dict[str, Any]:
             "mlOverlay": target.get("mlOverlay"),
         },
         "predictions": pred_rows,
-        "failureModeAddressed": "Recovered missing HOT pull history by writing an Odds API MLB pull and immediately storing SportsDataIO-aware calibrated winner predictions when the secret is present.",
+        "failureModeAddressed": "Recovered missing HOT pull history by writing an Odds API MLB pull and storing SportsDataIO-aware integrity-guarded winner predictions when the secret is present.",
     }
     report = _safe(report)
     if write_file:
