@@ -28,10 +28,14 @@ try:
     import mlb_game_winner_engine as _inqsi_mlb_game_winner_for_slate_lock
     import mlb_slate_prediction_lock as _inqsi_mlb_slate_prediction_lock
     import mlb_last_possible_prediction_gate as _inqsi_mlb_last_possible_prediction_gate
+    import mlb_balanced_signal_gate as _inqsi_mlb_balanced_signal_gate
     _inqsi_mlb_slate_prediction_lock.apply(_inqsi_mlb_game_winner_for_slate_lock)
     if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED"):
         delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED")
     _inqsi_mlb_last_possible_prediction_gate.apply(_inqsi_mlb_game_winner_for_slate_lock)
+    if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_BALANCED_SIGNAL_GATE_APPLIED"):
+        delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_BALANCED_SIGNAL_GATE_APPLIED")
+    _inqsi_mlb_balanced_signal_gate.apply(_inqsi_mlb_game_winner_for_slate_lock)
 except Exception:
     pass
 
