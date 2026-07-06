@@ -1,0 +1,11 @@
+Purpose: trigger one clean Deploy SAM to AWS run after MLB pull schedule fixes.
+
+Includes fixes:
+- Enforce same-day-only MLB scheduled pulls
+- Remove legacy MLB T schedules during patch
+- Verify no days_ahead=1 survives before deploy
+- Fail deployment if unsafe MLB schedule remains
+
+The prior f5305f9 deploy failed because its CloudFormation changeset became OBSOLETE after newer commits superseded it. This marker triggers a single latest-head deploy.
+
+Timestamp UTC: 2026-07-06T15:05:00Z
