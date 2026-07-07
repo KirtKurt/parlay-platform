@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
-VERSION = "MLB-ML-SIGNAL-LAYERS-v1-reversal-movement-book-runline-instability"
+VERSION = "MLB-ML-SIGNAL-LAYERS-v1.1-hard-blocked-reversal-movement-book-runline-instability"
 MAX_SIGNAL_LAYER_PROMOTIONS = 2
 HARD_BLOCK_TAGS = {"LOW_PULL_DEPTH", "SINGLE_PULL_BASELINE", "BOOK_DIVERGENCE", "LATE_INSTABILITY"}
+ROW_HARD_BLOCK_TAGS = HARD_BLOCK_TAGS | {"MISSING_FUNDAMENTALS"}
 
 
 def _f(value: Any, default: float = 0.0) -> float:
@@ -39,6 +40,18 @@ def _opponent_signal(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def _tags(row: Dict[str, Any], selected: Dict[str, Any], opponent: Dict[str, Any]) -> set[str]:
     return set(row.get("tags") or []) | set(selected.get("tags") or []) | set(opponent.get("tags") or [])
+
+
+def _selected_tags(row: Dict[str, Any], selected: Dict[str, Any]) -> set[str]:
+    return set(row.get("tags") or []) | set(selected.get("tags") or [])
+
+
+def _hard_blocks(row: Dict[str, Any], selected: Dict[str, Any]) -> List[str]:
+    tags = _selected_tags(row, selected)
+    blocks = sorted(tags & ROW_HARD_BLOCK_TAGS)
+    if _i(row.get("pullCountForGame"), 0) < 12 and "LOW_PULL_DEPTH" not in blocks:
+        blocks.append("LOW_PULL_DEPTH")
+    return sorted(set(blocks))
 
 
 def _reversal_layer(selected: Dict[str, Any], opponent: Dict[str, Any], pull_count: int) -> Dict[str, Any]:
@@ -278,7 +291,12 @@ def build_signal_layers(row: Dict[str, Any]) -> Dict[str, Any]:
         "lateInstability": _late_instability_layer(row, selected, tags),
     }
     score, risk, reasons = _score_layers(layers)
-    if score >= 68 and risk <= 0.22:
+    hard_blocks = _hard_blocks(row, selected)
+    if hard_blocks:
+        risk = round(max(risk, 0.35), 4)
+        reasons = sorted(set(reasons + [f"hard_block:{tag.lower()}" for tag in hard_blocks]))
+        decision = "NO_PRIMARY_SIGNAL"
+    elif score >= 68 and risk <= 0.22:
         decision = "PRIMARY_SIGNAL_CANDIDATE"
     elif score >= 58 and risk <= 0.32:
         decision = "WATCHLIST_SIGNAL"
@@ -289,6 +307,7 @@ def build_signal_layers(row: Dict[str, Any]) -> Dict[str, Any]:
         "version": VERSION,
         "selectedTeam": selected.get("team") or row.get("predictedWinner"),
         "opponentTeam": opponent.get("team") or row.get("opponent"),
+        "hardBlocks": hard_blocks,
         "layers": layers,
         "featureVector": {
             "marketProbability": layers["winningTeamMovement"]["selectedMarketProbability"],
@@ -300,6 +319,7 @@ def build_signal_layers(row: Dict[str, Any]) -> Dict[str, Any]:
             "latestGap": layers["compressedMarket"]["latestGap"],
             "runLineMovementAbs": layers["runLineMovement"]["runLineMovementAbs"],
             "lateInstability": layers["lateInstability"]["lateInstability"],
+            "pullCountForGame": pull_count,
         },
         "signalLayerScore": score,
         "signalLayerRisk": risk,
@@ -317,6 +337,8 @@ def build_signal_layers(row: Dict[str, Any]) -> Dict[str, Any]:
             "latestGap",
             "runLineMovementAbs",
             "lateInstability",
+            "pullCountForGame",
+            "hardBlocks",
         ],
     }
 
@@ -334,6 +356,8 @@ def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
     out["mlSignalLayerDecision"] = payload["decision"]
     tags = set(out.get("tags") or [])
     tags.add("ML_SIGNAL_LAYERS")
+    if payload.get("hardBlocks"):
+        tags.add("ML_SIGNAL_HARD_BLOCKED")
     if payload["decision"] == "PRIMARY_SIGNAL_CANDIDATE":
         tags.add("ML_PRIMARY_SIGNAL_CANDIDATE")
     elif payload["decision"] == "WATCHLIST_SIGNAL":
@@ -384,7 +408,7 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
             if len(promoted) >= MAX_SIGNAL_LAYER_PROMOTIONS:
                 break
             layer = row.get("mlSignalLayers") or {}
-            if layer.get("decision") == "PRIMARY_SIGNAL_CANDIDATE":
+            if layer.get("decision") == "PRIMARY_SIGNAL_CANDIDATE" and not layer.get("hardBlocks"):
                 _promote_from_signal_layers(row)
                 promoted.append(row)
     rows.sort(key=lambda r: (float(bool(r.get(key))), _f(r.get("mlSignalLayerScore"), 0.0), _f(r.get("winProbability"), 0.5)), reverse=True)
@@ -406,10 +430,12 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "run_line_movement",
             "steam_resistance",
             "late_instability",
+            "hard_block_gate",
         ],
         "rowCount": len(rows),
         "primarySignalCandidateCount": len([r for r in rows if (r.get("mlSignalLayers") or {}).get("decision") == "PRIMARY_SIGNAL_CANDIDATE"]),
         "watchlistSignalCount": len([r for r in rows if (r.get("mlSignalLayers") or {}).get("decision") == "WATCHLIST_SIGNAL"]),
+        "hardBlockedCount": len([r for r in rows if (r.get("mlSignalLayers") or {}).get("hardBlocks")]),
         "controlledPromotedCount": len(promoted),
         "maxControlledPromotions": MAX_SIGNAL_LAYER_PROMOTIONS,
         "outcomeLearningReady": True,
