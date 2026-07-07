@@ -1,5 +1,5 @@
 {
-  "ok": false,
+  "ok": true,
   "sports": [
     "mlb",
     "wnba",
@@ -11,1563 +11,1075 @@
     "soccer",
     "tennis"
   ],
-  "builtSports": [],
-  "mlbBuilt": false,
+  "builtSports": [
+    "mlb",
+    "wnba",
+    "soccer",
+    "tennis"
+  ],
+  "mlbBuilt": true,
   "mlbLatestBuild": {
-    "freezeMinutesBeforeGame": "120",
-    "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
-    "leanCount": "0",
-    "gameHistoryStored": "15",
-    "strongCount": "0",
-    "buildStatus": "NO_BUILD",
-    "slate_date": "2026-07-07",
-    "engine": "MLB-B1.0",
-    "audit": {
-      "tracks": [
-        "top1",
-        "top3",
-        "top5"
-      ],
-      "status": "PENDING_RESULTS"
-    },
-    "candidateFilterPolicy": "Candidates are the post-score subset where frozen=true and selected grade is MLB_STRONG or MLB_LEAN. This full board shows the pre-filter scoring pass for every MLB game.",
-    "buildDeadline": {
-      "deadlineHoursBeforeFirstEvent": "2",
-      "firstEventAtUtc": "2026-07-07T18:16:00+00:00",
-      "deadlinePassed": false,
-      "buildDeadlineUtc": "2026-07-07T16:16:00+00:00",
-      "firstEventAtEt": "2026-07-07T14:16:00-04:00",
-      "currentEt": "2026-07-07T00:13:59.825002-04:00",
-      "ok": true,
-      "currentUtc": "2026-07-07T04:13:59.825002+00:00",
-      "buildDeadlineEt": "2026-07-07T12:16:00-04:00"
-    },
-    "ok": true,
-    "candidateCount": "0",
-    "pullCount": "1",
-    "minimumGameHistoryPoints": "4",
-    "gameCount": "15",
-    "slateTimezone": "America/New_York",
-    "structureGate": {
-      "reason": "STRICT_OR_NO_BUILD_UNCHANGED",
-      "applied": true,
-      "rejected": false,
-      "structure": "ANCHOR_LEAN_CONTROLLED_VARIABLE"
-    },
-    "thresholdVersion": "MLB-B1.0-2026-06",
-    "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG. Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy.",
-    "storedAt": "2026-07-07T04:14:00.623593+00:00",
-    "candidates": [],
-    "storeMode": "mlb_b10_or_strict_auto_after_live_pull_with_12_snapshot_baseline",
-    "pullCoverage": {
-      "expectedStartAtUtc": "2026-07-07T05:00:00+00:00",
-      "firstPullAtUtc": "2026-07-07T04:00:26.194489+00:00",
-      "actualPullCount": "1",
-      "intervalMinutes": "15",
-      "firstPullAtEt": "2026-07-07T00:00:26.194489-04:00",
-      "latestPullAtEt": "2026-07-07T00:00:26.194489-04:00",
-      "startHourEt": "1",
-      "latestPullAtUtc": "2026-07-07T04:00:26.194489+00:00",
-      "actualPullCountSinceStart": "0",
-      "expectedPullCountSinceStart": "0",
-      "missingPullCountSinceStart": "0",
-      "overnightCoverageComplete": false,
-      "expectedStartAtEt": "2026-07-07T01:00:00-04:00",
-      "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes."
-    },
-    "scoredGameCount": "0",
-    "sport": "mlb",
-    "allScoredGamesCount": "15",
-    "allScoredGames": [
+    "pullCount": "16",
+    "reason": "BUILT_FROM_TOP_AVAILABLE_SIGNALS_AFTER_12_SNAPSHOTS",
+    "selectedStrongCount": "0",
+    "rankedCombos": [
       {
-        "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Milwaukee Brewers",
-        "cutoffTime": "2026-07-07T16:16:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-07T18:16:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.6292042790919355",
-            "bookCount": "9",
-            "bookDivergence": "0.016778634543468895",
-            "bookAgreement": "0.98322",
-            "homeRunLinePrice": "-111.85714285714286",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "-79.57142857142857",
-            "home": "0.3707957209080644",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "St. Louis Cardinals",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "St. Louis Cardinals",
+        "top3": true,
         "rank": "1",
-        "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "score": "46.3",
+        "legs": [
+          {
+            "gameId": "a11dc5b41df437e869c4abe72abced1f",
+            "score": "48.59",
+            "side": "home",
+            "selection": "Washington Nationals",
+            "awayTeam": "Houston Astros",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Washington Nationals",
+            "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+            "commenceTime": "2026-07-07T22:46:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+            "score": "46.3",
+            "side": "away",
+            "selection": "Boston Red Sox",
+            "awayTeam": "Boston Red Sox",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Chicago White Sox",
+            "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+            "commenceTime": "2026-07-07T23:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+            "score": "44",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "FRAGILE",
+            "homeTeam": "St. Louis Cardinals",
+            "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+            "commenceTime": "2026-07-07T18:16:00Z",
+            "tags": []
+          }
+        ]
       },
       {
-        "gameId": "a250fe250560caa8b56cd4e061c8e7b0",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Chicago Cubs",
-        "cutoffTime": "2026-07-07T20:36:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-07T22:36:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.5193995241752469",
-            "bookCount": "11",
-            "bookDivergence": "0.012887673338524697",
-            "bookAgreement": "0.98711",
-            "homeRunLinePrice": "-159.8181818181818",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "135",
-            "home": "0.48060047582475307",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "Baltimore Orioles",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Baltimore Orioles",
+        "top3": true,
         "rank": "2",
-        "gameKey": "mlb|2026-07-07|chicago cubs|baltimore orioles",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "score": "44.71",
+        "legs": [
+          {
+            "gameId": "a11dc5b41df437e869c4abe72abced1f",
+            "score": "43.83",
+            "side": "away",
+            "selection": "Houston Astros",
+            "awayTeam": "Houston Astros",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Washington Nationals",
+            "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+            "commenceTime": "2026-07-07T22:46:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+            "score": "46.3",
+            "side": "away",
+            "selection": "Boston Red Sox",
+            "awayTeam": "Boston Red Sox",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Chicago White Sox",
+            "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+            "commenceTime": "2026-07-07T23:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+            "score": "44",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "FRAGILE",
+            "homeTeam": "St. Louis Cardinals",
+            "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+            "commenceTime": "2026-07-07T18:16:00Z",
+            "tags": []
+          }
+        ]
       },
       {
-        "gameId": "c892fb37a2662fa901742b27c6b7f205",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Athletics",
-        "cutoffTime": "2026-07-07T20:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-07T22:41:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.36938250646714416",
-            "bookCount": "11",
-            "bookDivergence": "0.013719461213487993",
-            "bookAgreement": "0.98628",
-            "homeRunLinePrice": "114.45454545454545",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "-136",
-            "home": "0.630617493532856",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "Detroit Tigers",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Detroit Tigers",
+        "top3": true,
         "rank": "3",
-        "gameKey": "mlb|2026-07-07|athletics|detroit tigers",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "score": "44.1",
+        "legs": [
+          {
+            "gameId": "a11dc5b41df437e869c4abe72abced1f",
+            "score": "48.59",
+            "side": "home",
+            "selection": "Washington Nationals",
+            "awayTeam": "Houston Astros",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Washington Nationals",
+            "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+            "commenceTime": "2026-07-07T22:46:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+            "score": "39.7",
+            "side": "home",
+            "selection": "Chicago White Sox",
+            "awayTeam": "Boston Red Sox",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Chicago White Sox",
+            "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+            "commenceTime": "2026-07-07T23:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+            "score": "44",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "FRAGILE",
+            "homeTeam": "St. Louis Cardinals",
+            "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+            "commenceTime": "2026-07-07T18:16:00Z",
+            "tags": []
+          }
+        ]
       },
       {
-        "gameId": "e38e52ed47e9148a67603013c94f7295",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Atlanta Braves",
-        "cutoffTime": "2026-07-07T20:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-07T22:41:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.38688343794451874",
-            "bookCount": "11",
-            "bookDivergence": "0.02263459158044745",
-            "bookAgreement": "0.97737",
-            "homeRunLinePrice": "119.1",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "-140.8",
-            "home": "0.6131165620554813",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "Pittsburgh Pirates",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Pittsburgh Pirates",
+        "top3": false,
         "rank": "4",
-        "gameKey": "mlb|2026-07-07|atlanta braves|pittsburgh pirates",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "score": "43.79",
+        "legs": [
+          {
+            "gameId": "a11dc5b41df437e869c4abe72abced1f",
+            "score": "48.59",
+            "side": "home",
+            "selection": "Washington Nationals",
+            "awayTeam": "Houston Astros",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Washington Nationals",
+            "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+            "commenceTime": "2026-07-07T22:46:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+            "score": "46.3",
+            "side": "away",
+            "selection": "Boston Red Sox",
+            "awayTeam": "Boston Red Sox",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Chicago White Sox",
+            "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+            "commenceTime": "2026-07-07T23:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+            "score": "36.49",
+            "side": "home",
+            "selection": "St. Louis Cardinals",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "FRAGILE",
+            "homeTeam": "St. Louis Cardinals",
+            "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+            "commenceTime": "2026-07-07T18:16:00Z",
+            "tags": []
+          }
+        ]
       },
       {
-        "gameId": "157306fb8124249fa8e55016561ce711",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Seattle Mariners",
-        "cutoffTime": "2026-07-07T20:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-07T22:41:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.4916979253374892",
-            "bookCount": "9",
-            "bookDivergence": "0.0300180821866598",
-            "bookAgreement": "0.96998",
-            "homeRunLinePrice": "-108.77777777777777",
-            "awayRunLinePoint": "-0.8333333333333334",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "76.11111111111111",
-            "home": "0.5083020746625109",
-            "homeRunLinePoint": "0.8333333333333334"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "Miami Marlins",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Miami Marlins",
+        "top3": false,
         "rank": "5",
-        "gameKey": "mlb|2026-07-07|seattle mariners|miami marlins",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "score": "42.51",
+        "legs": [
+          {
+            "gameId": "a11dc5b41df437e869c4abe72abced1f",
+            "score": "43.83",
+            "side": "away",
+            "selection": "Houston Astros",
+            "awayTeam": "Houston Astros",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Washington Nationals",
+            "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+            "commenceTime": "2026-07-07T22:46:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+            "score": "39.7",
+            "side": "home",
+            "selection": "Chicago White Sox",
+            "awayTeam": "Boston Red Sox",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Chicago White Sox",
+            "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+            "commenceTime": "2026-07-07T23:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+            "score": "44",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "FRAGILE",
+            "homeTeam": "St. Louis Cardinals",
+            "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+            "commenceTime": "2026-07-07T18:16:00Z",
+            "tags": []
+          }
+        ]
       },
       {
-        "gameId": "e3cd1f3a8c40c74e867b7713af7e6365",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "New York Yankees",
-        "cutoffTime": "2026-07-07T20:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-07T22:41:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.4789501895562882",
-            "bookCount": "11",
-            "bookDivergence": "0.005185524522055784",
-            "bookAgreement": "0.99481",
-            "homeRunLinePrice": "-65.27272727272727",
-            "awayRunLinePoint": "-0.4090909090909091",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "31.363636363636363",
-            "home": "0.5210498104437118",
-            "homeRunLinePoint": "0.4090909090909091"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "Tampa Bay Rays",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Tampa Bay Rays",
+        "top3": false,
         "rank": "6",
-        "gameKey": "mlb|2026-07-07|new york yankees|tampa bay rays",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "score": "42.21",
+        "legs": [
+          {
+            "gameId": "a11dc5b41df437e869c4abe72abced1f",
+            "score": "43.83",
+            "side": "away",
+            "selection": "Houston Astros",
+            "awayTeam": "Houston Astros",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Washington Nationals",
+            "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+            "commenceTime": "2026-07-07T22:46:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+            "score": "46.3",
+            "side": "away",
+            "selection": "Boston Red Sox",
+            "awayTeam": "Boston Red Sox",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Chicago White Sox",
+            "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+            "commenceTime": "2026-07-07T23:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+            "score": "36.49",
+            "side": "home",
+            "selection": "St. Louis Cardinals",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "FRAGILE",
+            "homeTeam": "St. Louis Cardinals",
+            "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+            "commenceTime": "2026-07-07T18:16:00Z",
+            "tags": []
+          }
+        ]
       },
+      {
+        "top3": false,
+        "rank": "7",
+        "score": "41.59",
+        "legs": [
+          {
+            "gameId": "a11dc5b41df437e869c4abe72abced1f",
+            "score": "48.59",
+            "side": "home",
+            "selection": "Washington Nationals",
+            "awayTeam": "Houston Astros",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Washington Nationals",
+            "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+            "commenceTime": "2026-07-07T22:46:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+            "score": "39.7",
+            "side": "home",
+            "selection": "Chicago White Sox",
+            "awayTeam": "Boston Red Sox",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Chicago White Sox",
+            "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+            "commenceTime": "2026-07-07T23:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+            "score": "36.49",
+            "side": "home",
+            "selection": "St. Louis Cardinals",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "FRAGILE",
+            "homeTeam": "St. Louis Cardinals",
+            "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+            "commenceTime": "2026-07-07T18:16:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": false,
+        "rank": "8",
+        "score": "40.01",
+        "legs": [
+          {
+            "gameId": "a11dc5b41df437e869c4abe72abced1f",
+            "score": "43.83",
+            "side": "away",
+            "selection": "Houston Astros",
+            "awayTeam": "Houston Astros",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Washington Nationals",
+            "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+            "commenceTime": "2026-07-07T22:46:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+            "score": "39.7",
+            "side": "home",
+            "selection": "Chicago White Sox",
+            "awayTeam": "Boston Red Sox",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Chicago White Sox",
+            "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+            "commenceTime": "2026-07-07T23:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+            "score": "36.49",
+            "side": "home",
+            "selection": "St. Louis Cardinals",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "FRAGILE",
+            "homeTeam": "St. Louis Cardinals",
+            "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+            "commenceTime": "2026-07-07T18:16:00Z",
+            "tags": []
+          }
+        ]
+      }
+    ],
+    "fallbackApplied": true,
+    "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
+    "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
+    "buildStatus": "BUILT",
+    "storedAt": "2026-07-07T07:56:35.881012+00:00",
+    "slate_date": "2026-07-07",
+    "previousNoBuildReason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
+    "storeMode": "mlb_b10_or_strict_auto_after_live_pull_with_12_snapshot_baseline",
+    "buildQuality": "BASELINE_12_SNAPSHOT",
+    "officialStrength": "BASELINE_NOT_STRONG",
+    "legs": [
       {
         "gameId": "a11dc5b41df437e869c4abe72abced1f",
         "providerSportKey": "baseball_mlb",
+        "gender": "men",
         "awayTeam": "Houston Astros",
-        "cutoffTime": "2026-07-07T20:46:00+00:00",
-        "frozen": false,
+        "level": "pro",
         "commenceTime": "2026-07-07T22:46:00Z",
         "tags": [],
-        "points": [
-          {
-            "away": "0.4742966128814005",
-            "bookCount": "11",
-            "bookDivergence": "0.013450501659942549",
-            "bookAgreement": "0.98655",
-            "homeRunLinePrice": "61.36363636363637",
-            "awayRunLinePoint": "0.6818181818181818",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "-93.18181818181819",
-            "home": "0.5257033871185995",
-            "homeRunLinePoint": "-0.6818181818181818"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
+        "score": "48.59",
         "selection": "Washington Nationals",
         "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
+          "pullCount": "16",
+          "reversals": "0",
+          "probStart": "0.5257",
+          "probLatest": "0.52612",
           "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
+          "scoreGuardApplied": true,
+          "bookCount": "11",
+          "delta": "0.00042",
+          "latestGap": "0.05224",
+          "rawScoreBeforeGuard": "48.59",
+          "velocityPpHr": "0.011",
+          "tags": [],
+          "acceleration": "0.00011",
+          "durationMinutes": "225",
+          "score": "48.59",
+          "bookDivergence": "0.01264",
+          "grade": "COIN_FLIP"
         },
-        "grade": "NO_PLAY",
+        "grade": "COIN_FLIP",
         "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
+          "pullCount": "16",
+          "reversals": "0",
+          "probStart": "0.4743",
+          "probLatest": "0.47388",
           "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
+          "scoreGuardApplied": true,
+          "bookCount": "11",
+          "delta": "-0.00042",
+          "latestGap": "0.05224",
+          "rawScoreBeforeGuard": "43.83",
+          "velocityPpHr": "-0.011",
+          "tags": [],
+          "acceleration": "-0.00011",
+          "durationMinutes": "225",
+          "score": "43.83",
+          "bookDivergence": "0.01264",
+          "grade": "COIN_FLIP"
         },
         "homeTeam": "Washington Nationals",
-        "rank": "7",
         "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "7b7ae2c411b9b8122144d502c0bd1757",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Philadelphia Phillies",
-        "cutoffTime": "2026-07-07T21:10:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-07T23:10:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.6028169036024065",
-            "bookCount": "8",
-            "bookDivergence": "0.008808877082783773",
-            "bookAgreement": "0.99119",
-            "homeRunLinePrice": "-119.375",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "100.5",
-            "home": "0.3971830963975935",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "Cincinnati Reds",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Cincinnati Reds",
-        "rank": "8",
-        "gameKey": "mlb|2026-07-07|philadelphia phillies|cincinnati reds",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "288b4514ed237def0df905ead634d530",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Kansas City Royals",
-        "cutoffTime": "2026-07-07T21:11:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-07T23:11:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.42197508359488123",
-            "bookCount": "9",
-            "bookDivergence": "0.01738980416717406",
-            "bookAgreement": "0.98261",
-            "homeRunLinePrice": "141.28571428571428",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "-170.85714285714286",
-            "home": "0.5780249164051188",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "New York Mets",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "New York Mets",
-        "rank": "9",
-        "gameKey": "mlb|2026-07-07|kansas city royals|new york mets",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "sport": "mlb",
+        "selectedSide": "home"
       },
       {
         "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
         "providerSportKey": "baseball_mlb",
+        "gender": "men",
         "awayTeam": "Boston Red Sox",
-        "cutoffTime": "2026-07-07T21:41:00+00:00",
-        "frozen": false,
+        "level": "pro",
         "commenceTime": "2026-07-07T23:41:00Z",
         "tags": [],
-        "points": [
-          {
-            "away": "0.5379424484890497",
-            "bookCount": "11",
-            "bookDivergence": "0.022548074195927192",
-            "bookAgreement": "0.97745",
-            "homeRunLinePrice": "-160.72727272727272",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "135",
-            "home": "0.46205755151095024",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "Chicago White Sox",
+        "score": "46.3",
+        "selection": "Boston Red Sox",
         "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
+          "pullCount": "16",
+          "reversals": "0",
+          "probStart": "0.46206",
+          "probLatest": "0.46172",
           "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
+          "scoreGuardApplied": true,
+          "bookCount": "11",
+          "delta": "-0.00034",
+          "latestGap": "0.07656",
+          "rawScoreBeforeGuard": "39.7",
+          "velocityPpHr": "-0.009",
+          "tags": [],
+          "acceleration": "-0.00116",
+          "durationMinutes": "225",
+          "score": "39.7",
+          "bookDivergence": "0.02332",
+          "grade": "COIN_FLIP"
         },
-        "grade": "NO_PLAY",
+        "grade": "COIN_FLIP",
         "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
+          "pullCount": "16",
+          "reversals": "0",
+          "probStart": "0.53794",
+          "probLatest": "0.53828",
           "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
+          "scoreGuardApplied": true,
+          "bookCount": "11",
+          "delta": "0.00034",
+          "latestGap": "0.07656",
+          "rawScoreBeforeGuard": "46.3",
+          "velocityPpHr": "0.009",
+          "tags": [],
+          "acceleration": "0.00116",
+          "durationMinutes": "225",
+          "score": "46.3",
+          "bookDivergence": "0.02332",
+          "grade": "COIN_FLIP"
         },
         "homeTeam": "Chicago White Sox",
-        "rank": "10",
         "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "sport": "mlb",
+        "selectedSide": "away"
       },
       {
-        "gameId": "a21ff3f3e886298451df6978c4be743c",
+        "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
         "providerSportKey": "baseball_mlb",
-        "awayTeam": "Cleveland Guardians",
-        "cutoffTime": "2026-07-07T21:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-07T23:41:00Z",
+        "gender": "men",
+        "awayTeam": "Milwaukee Brewers",
+        "level": "pro",
+        "commenceTime": "2026-07-07T18:16:00Z",
         "tags": [],
-        "points": [
-          {
-            "away": "0.47822232854814534",
-            "bookCount": "11",
-            "bookDivergence": "0.023869925062025676",
-            "bookAgreement": "0.97613",
-            "homeRunLinePrice": "35.36363636363637",
-            "awayRunLinePoint": "0.4090909090909091",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "-68.27272727272727",
-            "home": "0.5217776714518546",
-            "homeRunLinePoint": "-0.4090909090909091"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "Minnesota Twins",
+        "score": "44",
+        "selection": "Milwaukee Brewers",
         "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
+          "pullCount": "16",
+          "reversals": "0",
+          "probStart": "0.3708",
+          "probLatest": "0.37038",
           "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
+          "scoreGuardApplied": true,
+          "bookCount": "10",
+          "delta": "-0.00042",
+          "latestGap": "0.25924",
+          "rawScoreBeforeGuard": "36.49",
+          "velocityPpHr": "-0.011",
+          "tags": [],
+          "acceleration": "0.0012",
+          "durationMinutes": "225",
+          "score": "36.49",
+          "bookDivergence": "0.0095",
+          "grade": "FRAGILE"
         },
-        "grade": "NO_PLAY",
+        "grade": "FRAGILE",
         "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
+          "pullCount": "16",
+          "reversals": "0",
+          "probStart": "0.6292",
+          "probLatest": "0.62962",
           "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
+          "scoreGuardApplied": true,
+          "bookCount": "10",
+          "delta": "0.00042",
+          "latestGap": "0.25924",
+          "rawScoreBeforeGuard": "57.81",
+          "velocityPpHr": "0.011",
+          "tags": [],
+          "acceleration": "-0.0012",
+          "durationMinutes": "225",
+          "score": "44",
+          "bookDivergence": "0.0095",
+          "grade": "FRAGILE"
         },
-        "homeTeam": "Minnesota Twins",
-        "rank": "11",
-        "gameKey": "mlb|2026-07-07|cleveland guardians|minnesota twins",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "c6ef398cb6827a8a660c67c3f3e6dbd5",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Los Angeles Angels",
-        "cutoffTime": "2026-07-07T22:06:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-08T00:06:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.4042661424745306",
-            "bookCount": "11",
-            "bookDivergence": "0.008358117873248694",
-            "bookAgreement": "0.99164",
-            "homeRunLinePrice": "135.0909090909091",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "-160.27272727272728",
-            "home": "0.5957338575254695",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "Texas Rangers",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Texas Rangers",
-        "rank": "12",
-        "gameKey": "mlb|2026-07-07|los angeles angels|texas rangers",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "622a46f12d0dc3b057125b0b59f00507",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Arizona Diamondbacks",
-        "cutoffTime": "2026-07-07T23:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-08T01:41:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.45755076011945417",
-            "bookCount": "9",
-            "bookDivergence": "0.006892226869627538",
-            "bookAgreement": "0.99311",
-            "homeRunLinePrice": "163.14285714285714",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "-200.71428571428572",
-            "home": "0.5424492398805458",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "San Diego Padres",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "San Diego Padres",
-        "rank": "13",
-        "gameKey": "mlb|2026-07-07|arizona diamondbacks|san diego padres",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "0ae1e836fd92f0f98b83e2d7451f6f97",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Toronto Blue Jays",
-        "cutoffTime": "2026-07-07T23:46:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-08T01:46:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.5137899477499316",
-            "bookCount": "9",
-            "bookDivergence": "0.014314438029182308",
-            "bookAgreement": "0.98569",
-            "homeRunLinePrice": "-173.88888888888889",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "144.88888888888889",
-            "home": "0.48621005225006836",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "San Francisco Giants",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "San Francisco Giants",
-        "rank": "14",
-        "gameKey": "mlb|2026-07-07|toronto blue jays|san francisco giants",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "8df69c8e501590af54db5363e5fdc3af",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Colorado Rockies",
-        "cutoffTime": "2026-07-08T00:11:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-08T02:11:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.3051313094442108",
-            "bookCount": "11",
-            "bookDivergence": "0.02323118207057051",
-            "bookAgreement": "0.97677",
-            "homeRunLinePrice": "-123.63636363636364",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-            "awayRunLinePrice": "85.54545454545455",
-            "home": "0.6948686905557889",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "1",
-        "selection": "Los Angeles Dodgers",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "1",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Los Angeles Dodgers",
-        "rank": "15",
-        "gameKey": "mlb|2026-07-07|colorado rockies|los angeles dodgers",
-        "slateDate": "2026-07-07",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "homeTeam": "St. Louis Cardinals",
+        "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+        "sport": "mlb",
+        "selectedSide": "away"
       }
     ],
-    "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default"
+    "ok": true,
+    "sport": "mlb",
+    "minimumParlayPulls": "12"
   },
   "result": {
     "ok": true,
     "autoBuild": true,
-    "builtCount": 0,
+    "builtCount": 4,
     "results": [
       {
         "ok": true,
         "sport": "mlb",
         "slate_date": "2026-07-07",
-        "slateTimezone": "America/New_York",
-        "engine": "MLB-B1.0",
-        "thresholdVersion": "MLB-B1.0-2026-06",
-        "pullCount": 1,
-        "pullCoverage": {
-          "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
-          "startHourEt": 1,
-          "intervalMinutes": 15,
-          "expectedStartAtUtc": "2026-07-07T05:00:00+00:00",
-          "expectedStartAtEt": "2026-07-07T01:00:00-04:00",
-          "firstPullAtUtc": "2026-07-07T04:00:26.194489+00:00",
-          "firstPullAtEt": "2026-07-07T00:00:26.194489-04:00",
-          "latestPullAtUtc": "2026-07-07T04:00:26.194489+00:00",
-          "latestPullAtEt": "2026-07-07T00:00:26.194489-04:00",
-          "actualPullCount": 1,
-          "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
-          "overnightCoverageComplete": false
-        },
-        "buildDeadline": {
-          "ok": true,
-          "firstEventAtUtc": "2026-07-07T18:16:00+00:00",
-          "firstEventAtEt": "2026-07-07T14:16:00-04:00",
-          "buildDeadlineUtc": "2026-07-07T16:16:00+00:00",
-          "buildDeadlineEt": "2026-07-07T12:16:00-04:00",
-          "deadlineHoursBeforeFirstEvent": 2.0,
-          "deadlinePassed": false,
-          "currentUtc": "2026-07-07T04:13:59.825002+00:00",
-          "currentEt": "2026-07-07T00:13:59.825002-04:00"
-        },
-        "gameCount": 15,
-        "gameHistoryStored": 15,
-        "candidateCount": 0,
-        "strongCount": 0,
-        "leanCount": 0,
-        "scoredGameCount": 0,
-        "freezeMinutesBeforeGame": 120,
-        "minimumGameHistoryPoints": 4,
-        "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default",
-        "audit": {
-          "status": "PENDING_RESULTS",
-          "tracks": [
-            "top1",
-            "top3",
-            "top5"
-          ]
-        },
-        "buildStatus": "NO_BUILD",
-        "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
-        "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG. Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy.",
-        "candidates": [],
-        "structureGate": {
-          "applied": true,
-          "structure": "ANCHOR_LEAN_CONTROLLED_VARIABLE",
-          "rejected": false,
-          "reason": "STRICT_OR_NO_BUILD_UNCHANGED"
-        },
-        "allScoredGamesCount": 15,
-        "allScoredGames": [
-          {
-            "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
-            "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
-            "homeTeam": "St. Louis Cardinals",
-            "awayTeam": "Milwaukee Brewers",
-            "commenceTime": "2026-07-07T18:16:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T16:16:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "St. Louis Cardinals",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.3707957209080644,
-                "away": 0.6292042790919355,
-                "bookCount": 9,
-                "bookDivergence": 0.016778634543468895,
-                "bookAgreement": 0.98322,
-                "homeRunLinePrice": -111.85714285714286,
-                "awayRunLinePrice": -79.57142857142857,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 1
-          },
-          {
-            "gameId": "a250fe250560caa8b56cd4e061c8e7b0",
-            "gameKey": "mlb|2026-07-07|chicago cubs|baltimore orioles",
-            "homeTeam": "Baltimore Orioles",
-            "awayTeam": "Chicago Cubs",
-            "commenceTime": "2026-07-07T22:36:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T20:36:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "Baltimore Orioles",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.48060047582475307,
-                "away": 0.5193995241752469,
-                "bookCount": 11,
-                "bookDivergence": 0.012887673338524697,
-                "bookAgreement": 0.98711,
-                "homeRunLinePrice": -159.8181818181818,
-                "awayRunLinePrice": 135.0,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 2
-          },
-          {
-            "gameId": "c892fb37a2662fa901742b27c6b7f205",
-            "gameKey": "mlb|2026-07-07|athletics|detroit tigers",
-            "homeTeam": "Detroit Tigers",
-            "awayTeam": "Athletics",
-            "commenceTime": "2026-07-07T22:41:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T20:41:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "Detroit Tigers",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.630617493532856,
-                "away": 0.36938250646714416,
-                "bookCount": 11,
-                "bookDivergence": 0.013719461213487993,
-                "bookAgreement": 0.98628,
-                "homeRunLinePrice": 114.45454545454545,
-                "awayRunLinePrice": -136.0,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 3
-          },
-          {
-            "gameId": "e38e52ed47e9148a67603013c94f7295",
-            "gameKey": "mlb|2026-07-07|atlanta braves|pittsburgh pirates",
-            "homeTeam": "Pittsburgh Pirates",
-            "awayTeam": "Atlanta Braves",
-            "commenceTime": "2026-07-07T22:41:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T20:41:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "Pittsburgh Pirates",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.6131165620554813,
-                "away": 0.38688343794451874,
-                "bookCount": 11,
-                "bookDivergence": 0.02263459158044745,
-                "bookAgreement": 0.97737,
-                "homeRunLinePrice": 119.1,
-                "awayRunLinePrice": -140.8,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 4
-          },
-          {
-            "gameId": "157306fb8124249fa8e55016561ce711",
-            "gameKey": "mlb|2026-07-07|seattle mariners|miami marlins",
-            "homeTeam": "Miami Marlins",
-            "awayTeam": "Seattle Mariners",
-            "commenceTime": "2026-07-07T22:41:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T20:41:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "Miami Marlins",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.5083020746625109,
-                "away": 0.4916979253374892,
-                "bookCount": 9,
-                "bookDivergence": 0.0300180821866598,
-                "bookAgreement": 0.96998,
-                "homeRunLinePrice": -108.77777777777777,
-                "awayRunLinePrice": 76.11111111111111,
-                "homeRunLinePoint": 0.8333333333333334,
-                "awayRunLinePoint": -0.8333333333333334
-              }
-            ],
-            "rank": 5
-          },
-          {
-            "gameId": "e3cd1f3a8c40c74e867b7713af7e6365",
-            "gameKey": "mlb|2026-07-07|new york yankees|tampa bay rays",
-            "homeTeam": "Tampa Bay Rays",
-            "awayTeam": "New York Yankees",
-            "commenceTime": "2026-07-07T22:41:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T20:41:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "Tampa Bay Rays",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.5210498104437118,
-                "away": 0.4789501895562882,
-                "bookCount": 11,
-                "bookDivergence": 0.005185524522055784,
-                "bookAgreement": 0.99481,
-                "homeRunLinePrice": -65.27272727272727,
-                "awayRunLinePrice": 31.363636363636363,
-                "homeRunLinePoint": 0.4090909090909091,
-                "awayRunLinePoint": -0.4090909090909091
-              }
-            ],
-            "rank": 6
-          },
+        "pullCount": 16,
+        "minimumParlayPulls": 12,
+        "buildStatus": "BUILT",
+        "buildQuality": "BASELINE_12_SNAPSHOT",
+        "reason": "BUILT_FROM_TOP_AVAILABLE_SIGNALS_AFTER_12_SNAPSHOTS",
+        "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
+        "officialStrength": "BASELINE_NOT_STRONG",
+        "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
+        "selectedStrongCount": 0,
+        "legs": [
           {
             "gameId": "a11dc5b41df437e869c4abe72abced1f",
             "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+            "sport": "mlb",
             "homeTeam": "Washington Nationals",
             "awayTeam": "Houston Astros",
             "commenceTime": "2026-07-07T22:46:00Z",
-            "slateDate": "2026-07-07",
+            "level": "pro",
+            "gender": "men",
             "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T20:46:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
             "selection": "Washington Nationals",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.5257033871185995,
-                "away": 0.4742966128814005,
-                "bookCount": 11,
-                "bookDivergence": 0.013450501659942549,
-                "bookAgreement": 0.98655,
-                "homeRunLinePrice": 61.36363636363637,
-                "awayRunLinePrice": -93.18181818181819,
-                "homeRunLinePoint": -0.6818181818181818,
-                "awayRunLinePoint": 0.6818181818181818
-              }
-            ],
-            "rank": 7
-          },
-          {
-            "gameId": "7b7ae2c411b9b8122144d502c0bd1757",
-            "gameKey": "mlb|2026-07-07|philadelphia phillies|cincinnati reds",
-            "homeTeam": "Cincinnati Reds",
-            "awayTeam": "Philadelphia Phillies",
-            "commenceTime": "2026-07-07T23:10:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T21:10:00+00:00",
-            "pointCount": 1,
             "selectedSide": "home",
-            "selection": "Cincinnati Reds",
-            "grade": "NO_PLAY",
-            "score": 0,
+            "grade": "COIN_FLIP",
+            "score": 48.59,
             "tags": [],
             "homeSignal": {
               "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
+              "probStart": 0.5257,
+              "probLatest": 0.52612,
+              "delta": 0.00042,
+              "velocityPpHr": 0.011,
+              "acceleration": 0.00011,
+              "pullCount": 16,
+              "durationMinutes": 225.0,
+              "latestGap": 0.05224,
+              "bookCount": 11,
+              "bookDivergence": 0.01264,
+              "reversals": 0,
+              "tags": [],
+              "grade": "COIN_FLIP",
+              "score": 48.59,
+              "rawScoreBeforeGuard": 48.59,
+              "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.3971830963975935,
-                "away": 0.6028169036024065,
-                "bookCount": 8,
-                "bookDivergence": 0.008808877082783773,
-                "bookAgreement": 0.99119,
-                "homeRunLinePrice": -119.375,
-                "awayRunLinePrice": 100.5,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 8
-          },
-          {
-            "gameId": "288b4514ed237def0df905ead634d530",
-            "gameKey": "mlb|2026-07-07|kansas city royals|new york mets",
-            "homeTeam": "New York Mets",
-            "awayTeam": "Kansas City Royals",
-            "commenceTime": "2026-07-07T23:11:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T21:11:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "New York Mets",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.5780249164051188,
-                "away": 0.42197508359488123,
-                "bookCount": 9,
-                "bookDivergence": 0.01738980416717406,
-                "bookAgreement": 0.98261,
-                "homeRunLinePrice": 141.28571428571428,
-                "awayRunLinePrice": -170.85714285714286,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 9
+              "probStart": 0.4743,
+              "probLatest": 0.47388,
+              "delta": -0.00042,
+              "velocityPpHr": -0.011,
+              "acceleration": -0.00011,
+              "pullCount": 16,
+              "durationMinutes": 225.0,
+              "latestGap": 0.05224,
+              "bookCount": 11,
+              "bookDivergence": 0.01264,
+              "reversals": 0,
+              "tags": [],
+              "grade": "COIN_FLIP",
+              "score": 43.83,
+              "rawScoreBeforeGuard": 43.83,
+              "scoreGuardApplied": true
+            }
           },
           {
             "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
             "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+            "sport": "mlb",
             "homeTeam": "Chicago White Sox",
             "awayTeam": "Boston Red Sox",
             "commenceTime": "2026-07-07T23:41:00Z",
-            "slateDate": "2026-07-07",
+            "level": "pro",
+            "gender": "men",
             "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T21:41:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "Chicago White Sox",
-            "grade": "NO_PLAY",
-            "score": 0,
+            "selection": "Boston Red Sox",
+            "selectedSide": "away",
+            "grade": "COIN_FLIP",
+            "score": 46.3,
             "tags": [],
             "homeSignal": {
               "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
+              "probStart": 0.46206,
+              "probLatest": 0.46172,
+              "delta": -0.00034,
+              "velocityPpHr": -0.009,
+              "acceleration": -0.00116,
+              "pullCount": 16,
+              "durationMinutes": 225.0,
+              "latestGap": 0.07656,
+              "bookCount": 11,
+              "bookDivergence": 0.02332,
+              "reversals": 0,
+              "tags": [],
+              "grade": "COIN_FLIP",
+              "score": 39.7,
+              "rawScoreBeforeGuard": 39.7,
+              "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.46205755151095024,
-                "away": 0.5379424484890497,
-                "bookCount": 11,
-                "bookDivergence": 0.022548074195927192,
-                "bookAgreement": 0.97745,
-                "homeRunLinePrice": -160.72727272727272,
-                "awayRunLinePrice": 135.0,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 10
+              "probStart": 0.53794,
+              "probLatest": 0.53828,
+              "delta": 0.00034,
+              "velocityPpHr": 0.009,
+              "acceleration": 0.00116,
+              "pullCount": 16,
+              "durationMinutes": 225.0,
+              "latestGap": 0.07656,
+              "bookCount": 11,
+              "bookDivergence": 0.02332,
+              "reversals": 0,
+              "tags": [],
+              "grade": "COIN_FLIP",
+              "score": 46.3,
+              "rawScoreBeforeGuard": 46.3,
+              "scoreGuardApplied": true
+            }
           },
           {
-            "gameId": "a21ff3f3e886298451df6978c4be743c",
-            "gameKey": "mlb|2026-07-07|cleveland guardians|minnesota twins",
-            "homeTeam": "Minnesota Twins",
-            "awayTeam": "Cleveland Guardians",
-            "commenceTime": "2026-07-07T23:41:00Z",
-            "slateDate": "2026-07-07",
+            "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+            "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+            "sport": "mlb",
+            "homeTeam": "St. Louis Cardinals",
+            "awayTeam": "Milwaukee Brewers",
+            "commenceTime": "2026-07-07T18:16:00Z",
+            "level": "pro",
+            "gender": "men",
             "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T21:41:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "Minnesota Twins",
-            "grade": "NO_PLAY",
-            "score": 0,
+            "selection": "Milwaukee Brewers",
+            "selectedSide": "away",
+            "grade": "FRAGILE",
+            "score": 44.0,
             "tags": [],
             "homeSignal": {
               "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
+              "probStart": 0.3708,
+              "probLatest": 0.37038,
+              "delta": -0.00042,
+              "velocityPpHr": -0.011,
+              "acceleration": 0.0012,
+              "pullCount": 16,
+              "durationMinutes": 225.0,
+              "latestGap": 0.25924,
+              "bookCount": 10,
+              "bookDivergence": 0.0095,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 36.49,
+              "rawScoreBeforeGuard": 36.49,
+              "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.5217776714518546,
-                "away": 0.47822232854814534,
-                "bookCount": 11,
-                "bookDivergence": 0.023869925062025676,
-                "bookAgreement": 0.97613,
-                "homeRunLinePrice": 35.36363636363637,
-                "awayRunLinePrice": -68.27272727272727,
-                "homeRunLinePoint": -0.4090909090909091,
-                "awayRunLinePoint": 0.4090909090909091
-              }
-            ],
-            "rank": 11
-          },
-          {
-            "gameId": "c6ef398cb6827a8a660c67c3f3e6dbd5",
-            "gameKey": "mlb|2026-07-07|los angeles angels|texas rangers",
-            "homeTeam": "Texas Rangers",
-            "awayTeam": "Los Angeles Angels",
-            "commenceTime": "2026-07-08T00:06:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T22:06:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "Texas Rangers",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.5957338575254695,
-                "away": 0.4042661424745306,
-                "bookCount": 11,
-                "bookDivergence": 0.008358117873248694,
-                "bookAgreement": 0.99164,
-                "homeRunLinePrice": 135.0909090909091,
-                "awayRunLinePrice": -160.27272727272728,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 12
-          },
-          {
-            "gameId": "622a46f12d0dc3b057125b0b59f00507",
-            "gameKey": "mlb|2026-07-07|arizona diamondbacks|san diego padres",
-            "homeTeam": "San Diego Padres",
-            "awayTeam": "Arizona Diamondbacks",
-            "commenceTime": "2026-07-08T01:41:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T23:41:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "San Diego Padres",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.5424492398805458,
-                "away": 0.45755076011945417,
-                "bookCount": 9,
-                "bookDivergence": 0.006892226869627538,
-                "bookAgreement": 0.99311,
-                "homeRunLinePrice": 163.14285714285714,
-                "awayRunLinePrice": -200.71428571428572,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 13
-          },
-          {
-            "gameId": "0ae1e836fd92f0f98b83e2d7451f6f97",
-            "gameKey": "mlb|2026-07-07|toronto blue jays|san francisco giants",
-            "homeTeam": "San Francisco Giants",
-            "awayTeam": "Toronto Blue Jays",
-            "commenceTime": "2026-07-08T01:46:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-07T23:46:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "San Francisco Giants",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.48621005225006836,
-                "away": 0.5137899477499316,
-                "bookCount": 9,
-                "bookDivergence": 0.014314438029182308,
-                "bookAgreement": 0.98569,
-                "homeRunLinePrice": -173.88888888888889,
-                "awayRunLinePrice": 144.88888888888889,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 14
-          },
-          {
-            "gameId": "8df69c8e501590af54db5363e5fdc3af",
-            "gameKey": "mlb|2026-07-07|colorado rockies|los angeles dodgers",
-            "homeTeam": "Los Angeles Dodgers",
-            "awayTeam": "Colorado Rockies",
-            "commenceTime": "2026-07-08T02:11:00Z",
-            "slateDate": "2026-07-07",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-08T00:11:00+00:00",
-            "pointCount": 1,
-            "selectedSide": "home",
-            "selection": "Los Angeles Dodgers",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 1
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-07T04:00:26.194489+00:00",
-                "home": 0.6948686905557889,
-                "away": 0.3051313094442108,
-                "bookCount": 11,
-                "bookDivergence": 0.02323118207057051,
-                "bookAgreement": 0.97677,
-                "homeRunLinePrice": -123.63636363636364,
-                "awayRunLinePrice": 85.54545454545455,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 15
+              "probStart": 0.6292,
+              "probLatest": 0.62962,
+              "delta": 0.00042,
+              "velocityPpHr": 0.011,
+              "acceleration": -0.0012,
+              "pullCount": 16,
+              "durationMinutes": 225.0,
+              "latestGap": 0.25924,
+              "bookCount": 10,
+              "bookDivergence": 0.0095,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 44.0,
+              "rawScoreBeforeGuard": 57.81,
+              "scoreGuardApplied": true
+            }
           }
         ],
-        "candidateFilterPolicy": "Candidates are the post-score subset where frozen=true and selected grade is MLB_STRONG or MLB_LEAN. This full board shows the pre-filter scoring pass for every MLB game.",
+        "rankedCombos": [
+          {
+            "rank": 1,
+            "score": 46.3,
+            "legs": [
+              {
+                "gameId": "a11dc5b41df437e869c4abe72abced1f",
+                "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+                "selection": "Washington Nationals",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 48.59,
+                "tags": [],
+                "commenceTime": "2026-07-07T22:46:00Z",
+                "homeTeam": "Washington Nationals",
+                "awayTeam": "Houston Astros"
+              },
+              {
+                "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+                "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+                "selection": "Boston Red Sox",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 46.3,
+                "tags": [],
+                "commenceTime": "2026-07-07T23:41:00Z",
+                "homeTeam": "Chicago White Sox",
+                "awayTeam": "Boston Red Sox"
+              },
+              {
+                "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+                "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-07T18:16:00Z",
+                "homeTeam": "St. Louis Cardinals",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 2,
+            "score": 44.71,
+            "legs": [
+              {
+                "gameId": "a11dc5b41df437e869c4abe72abced1f",
+                "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+                "selection": "Houston Astros",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 43.83,
+                "tags": [],
+                "commenceTime": "2026-07-07T22:46:00Z",
+                "homeTeam": "Washington Nationals",
+                "awayTeam": "Houston Astros"
+              },
+              {
+                "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+                "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+                "selection": "Boston Red Sox",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 46.3,
+                "tags": [],
+                "commenceTime": "2026-07-07T23:41:00Z",
+                "homeTeam": "Chicago White Sox",
+                "awayTeam": "Boston Red Sox"
+              },
+              {
+                "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+                "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-07T18:16:00Z",
+                "homeTeam": "St. Louis Cardinals",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 3,
+            "score": 44.1,
+            "legs": [
+              {
+                "gameId": "a11dc5b41df437e869c4abe72abced1f",
+                "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+                "selection": "Washington Nationals",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 48.59,
+                "tags": [],
+                "commenceTime": "2026-07-07T22:46:00Z",
+                "homeTeam": "Washington Nationals",
+                "awayTeam": "Houston Astros"
+              },
+              {
+                "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+                "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+                "selection": "Chicago White Sox",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 39.7,
+                "tags": [],
+                "commenceTime": "2026-07-07T23:41:00Z",
+                "homeTeam": "Chicago White Sox",
+                "awayTeam": "Boston Red Sox"
+              },
+              {
+                "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+                "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-07T18:16:00Z",
+                "homeTeam": "St. Louis Cardinals",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 4,
+            "score": 43.79,
+            "legs": [
+              {
+                "gameId": "a11dc5b41df437e869c4abe72abced1f",
+                "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+                "selection": "Washington Nationals",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 48.59,
+                "tags": [],
+                "commenceTime": "2026-07-07T22:46:00Z",
+                "homeTeam": "Washington Nationals",
+                "awayTeam": "Houston Astros"
+              },
+              {
+                "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+                "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+                "selection": "Boston Red Sox",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 46.3,
+                "tags": [],
+                "commenceTime": "2026-07-07T23:41:00Z",
+                "homeTeam": "Chicago White Sox",
+                "awayTeam": "Boston Red Sox"
+              },
+              {
+                "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+                "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+                "selection": "St. Louis Cardinals",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 36.49,
+                "tags": [],
+                "commenceTime": "2026-07-07T18:16:00Z",
+                "homeTeam": "St. Louis Cardinals",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 5,
+            "score": 42.51,
+            "legs": [
+              {
+                "gameId": "a11dc5b41df437e869c4abe72abced1f",
+                "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+                "selection": "Houston Astros",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 43.83,
+                "tags": [],
+                "commenceTime": "2026-07-07T22:46:00Z",
+                "homeTeam": "Washington Nationals",
+                "awayTeam": "Houston Astros"
+              },
+              {
+                "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+                "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+                "selection": "Chicago White Sox",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 39.7,
+                "tags": [],
+                "commenceTime": "2026-07-07T23:41:00Z",
+                "homeTeam": "Chicago White Sox",
+                "awayTeam": "Boston Red Sox"
+              },
+              {
+                "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+                "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-07T18:16:00Z",
+                "homeTeam": "St. Louis Cardinals",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 6,
+            "score": 42.21,
+            "legs": [
+              {
+                "gameId": "a11dc5b41df437e869c4abe72abced1f",
+                "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+                "selection": "Houston Astros",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 43.83,
+                "tags": [],
+                "commenceTime": "2026-07-07T22:46:00Z",
+                "homeTeam": "Washington Nationals",
+                "awayTeam": "Houston Astros"
+              },
+              {
+                "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+                "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+                "selection": "Boston Red Sox",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 46.3,
+                "tags": [],
+                "commenceTime": "2026-07-07T23:41:00Z",
+                "homeTeam": "Chicago White Sox",
+                "awayTeam": "Boston Red Sox"
+              },
+              {
+                "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+                "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+                "selection": "St. Louis Cardinals",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 36.49,
+                "tags": [],
+                "commenceTime": "2026-07-07T18:16:00Z",
+                "homeTeam": "St. Louis Cardinals",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 7,
+            "score": 41.59,
+            "legs": [
+              {
+                "gameId": "a11dc5b41df437e869c4abe72abced1f",
+                "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+                "selection": "Washington Nationals",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 48.59,
+                "tags": [],
+                "commenceTime": "2026-07-07T22:46:00Z",
+                "homeTeam": "Washington Nationals",
+                "awayTeam": "Houston Astros"
+              },
+              {
+                "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+                "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+                "selection": "Chicago White Sox",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 39.7,
+                "tags": [],
+                "commenceTime": "2026-07-07T23:41:00Z",
+                "homeTeam": "Chicago White Sox",
+                "awayTeam": "Boston Red Sox"
+              },
+              {
+                "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+                "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+                "selection": "St. Louis Cardinals",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 36.49,
+                "tags": [],
+                "commenceTime": "2026-07-07T18:16:00Z",
+                "homeTeam": "St. Louis Cardinals",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 8,
+            "score": 40.01,
+            "legs": [
+              {
+                "gameId": "a11dc5b41df437e869c4abe72abced1f",
+                "gameKey": "mlb|2026-07-07|houston astros|washington nationals",
+                "selection": "Houston Astros",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 43.83,
+                "tags": [],
+                "commenceTime": "2026-07-07T22:46:00Z",
+                "homeTeam": "Washington Nationals",
+                "awayTeam": "Houston Astros"
+              },
+              {
+                "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+                "gameKey": "mlb|2026-07-07|boston red sox|chicago white sox",
+                "selection": "Chicago White Sox",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 39.7,
+                "tags": [],
+                "commenceTime": "2026-07-07T23:41:00Z",
+                "homeTeam": "Chicago White Sox",
+                "awayTeam": "Boston Red Sox"
+              },
+              {
+                "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+                "gameKey": "mlb|2026-07-07|milwaukee brewers|st. louis cardinals",
+                "selection": "St. Louis Cardinals",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 36.49,
+                "tags": [],
+                "commenceTime": "2026-07-07T18:16:00Z",
+                "homeTeam": "St. Louis Cardinals",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": false
+          }
+        ],
+        "previousNoBuildReason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
+        "fallbackApplied": true,
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#mlb#2026-07-07",
-          "sk": "BUILD#2026-07-07T04:14:00.623593+00:00",
+          "sk": "BUILD#2026-07-07T07:56:35.881012+00:00",
           "latestPk": "PARLAY_BUILDS#mlb#2026-07-07#LATEST",
           "latestSk": "LATEST"
         }
@@ -1576,45 +1088,541 @@
         "ok": true,
         "sport": "wnba",
         "slate_date": "2026-07-07",
-        "pullCount": 1,
-        "pullCoverage": {
-          "ok": true,
-          "sport": "wnba",
-          "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
-          "startHourEt": 1,
-          "intervalMinutes": 15,
-          "expectedStartAtUtc": "2026-07-07T05:00:00+00:00",
-          "expectedStartAtEt": "2026-07-07T01:00:00-04:00",
-          "firstPullAtUtc": "2026-07-07T04:07:15.156126+00:00",
-          "firstPullAtEt": "2026-07-07T00:07:15.156126-04:00",
-          "latestPullAtUtc": "2026-07-07T04:07:15.156126+00:00",
-          "latestPullAtEt": "2026-07-07T00:07:15.156126-04:00",
-          "actualPullCount": 1,
-          "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
-          "coverageComplete": false
-        },
-        "buildDeadline": {
-          "ok": false,
-          "reason": "NO_EVENT_TIME_AVAILABLE",
-          "deadlineHoursBeforeFirstEvent": 2
-        },
-        "rawSignalCount": 0,
-        "sameSlateSignalCount": 0,
+        "pullCount": 18,
         "minimumParlayPulls": 12,
-        "minimumStrongLegs": 2,
-        "maximumCoinFlipLegs": 1,
-        "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP_WITH_BASELINE_AFTER_12",
-        "strictDailySlate": true,
-        "buildStatus": "NO_BUILD",
-        "reason": "WAITING_FOR_12TH_PULL",
-        "message": "Refused before minimum pull depth.",
+        "buildStatus": "BUILT",
+        "buildQuality": "BASELINE_12_SNAPSHOT",
+        "reason": "BUILT_FROM_TOP_AVAILABLE_SIGNALS_AFTER_12_SNAPSHOTS",
+        "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
+        "officialStrength": "BASELINE_NOT_STRONG",
+        "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
+        "selectedStrongCount": 0,
+        "legs": [
+          {
+            "gameId": "82635798d7e0a24dc54a2138a1d94653",
+            "gameKey": "wnba|basketball_wnba|golden state valkyries|toronto tempo|2026-07-08T23:00:00Z",
+            "sport": "wnba",
+            "homeTeam": "Toronto Tempo",
+            "awayTeam": "Golden State Valkyries",
+            "commenceTime": "2026-07-08T23:00:00Z",
+            "level": "pro",
+            "gender": "women",
+            "providerSportKey": "basketball_wnba",
+            "selection": "Golden State Valkyries",
+            "selectedSide": "away",
+            "grade": "FRAGILE",
+            "score": 44.0,
+            "tags": [],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.27494,
+              "probLatest": 0.27834,
+              "delta": 0.0034,
+              "velocityPpHr": 0.091,
+              "acceleration": 0.00038,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.44332,
+              "bookCount": 4,
+              "bookDivergence": 0.01197,
+              "reversals": 0,
+              "tags": [
+                "PUBLIC_FADE_CANDIDATE"
+              ],
+              "grade": "FRAGILE",
+              "score": 31.06,
+              "rawScoreBeforeGuard": 31.06,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.72506,
+              "probLatest": 0.72166,
+              "delta": -0.0034,
+              "velocityPpHr": -0.091,
+              "acceleration": -0.00038,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.44332,
+              "bookCount": 4,
+              "bookDivergence": 0.01197,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 44.0,
+              "rawScoreBeforeGuard": 61.76,
+              "scoreGuardApplied": true
+            }
+          },
+          {
+            "gameId": "0fc4abb4edf30887b57b4f686db8179a",
+            "gameKey": "wnba|basketball_wnba|minnesota lynx|connecticut sun|2026-07-08T23:30:00Z",
+            "sport": "wnba",
+            "homeTeam": "Connecticut Sun",
+            "awayTeam": "Minnesota Lynx",
+            "commenceTime": "2026-07-08T23:30:00Z",
+            "level": "pro",
+            "gender": "women",
+            "providerSportKey": "basketball_wnba",
+            "selection": "Minnesota Lynx",
+            "selectedSide": "away",
+            "grade": "FRAGILE",
+            "score": 44.0,
+            "tags": [],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.18751,
+              "probLatest": 0.18751,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0.0,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.62499,
+              "bookCount": 4,
+              "bookDivergence": 0.007,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 22.9,
+              "rawScoreBeforeGuard": 22.9,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.81249,
+              "probLatest": 0.81249,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0.0,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.62499,
+              "bookCount": 4,
+              "bookDivergence": 0.007,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 44.0,
+              "rawScoreBeforeGuard": 72.9,
+              "scoreGuardApplied": true
+            }
+          },
+          {
+            "gameId": "b0cfbd10dffa5258c1e9dd6aca005a5a",
+            "gameKey": "wnba|basketball_wnba|indiana fever|los angeles sparks|2026-07-09T02:00:00Z",
+            "sport": "wnba",
+            "homeTeam": "Los Angeles Sparks",
+            "awayTeam": "Indiana Fever",
+            "commenceTime": "2026-07-09T02:00:00Z",
+            "level": "pro",
+            "gender": "women",
+            "providerSportKey": "basketball_wnba",
+            "selection": "Indiana Fever",
+            "selectedSide": "away",
+            "grade": "FRAGILE",
+            "score": 44.0,
+            "tags": [],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.33833,
+              "probLatest": 0.33759,
+              "delta": -0.00074,
+              "velocityPpHr": -0.02,
+              "acceleration": 9e-05,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.32481,
+              "bookCount": 5,
+              "bookDivergence": 0.00396,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 35.3,
+              "rawScoreBeforeGuard": 35.3,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.66167,
+              "probLatest": 0.66241,
+              "delta": 0.00074,
+              "velocityPpHr": 0.02,
+              "acceleration": -9e-05,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.32481,
+              "bookCount": 5,
+              "bookDivergence": 0.00396,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 44.0,
+              "rawScoreBeforeGuard": 62.32,
+              "scoreGuardApplied": true
+            }
+          }
+        ],
+        "rankedCombos": [
+          {
+            "rank": 1,
+            "score": 44.0,
+            "legs": [
+              {
+                "gameId": "82635798d7e0a24dc54a2138a1d94653",
+                "gameKey": "wnba|basketball_wnba|golden state valkyries|toronto tempo|2026-07-08T23:00:00Z",
+                "selection": "Golden State Valkyries",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Golden State Valkyries"
+              },
+              {
+                "gameId": "0fc4abb4edf30887b57b4f686db8179a",
+                "gameKey": "wnba|basketball_wnba|minnesota lynx|connecticut sun|2026-07-08T23:30:00Z",
+                "selection": "Minnesota Lynx",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:30:00Z",
+                "homeTeam": "Connecticut Sun",
+                "awayTeam": "Minnesota Lynx"
+              },
+              {
+                "gameId": "b0cfbd10dffa5258c1e9dd6aca005a5a",
+                "gameKey": "wnba|basketball_wnba|indiana fever|los angeles sparks|2026-07-09T02:00:00Z",
+                "selection": "Indiana Fever",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-09T02:00:00Z",
+                "homeTeam": "Los Angeles Sparks",
+                "awayTeam": "Indiana Fever"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 2,
+            "score": 41.1,
+            "legs": [
+              {
+                "gameId": "82635798d7e0a24dc54a2138a1d94653",
+                "gameKey": "wnba|basketball_wnba|golden state valkyries|toronto tempo|2026-07-08T23:00:00Z",
+                "selection": "Golden State Valkyries",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Golden State Valkyries"
+              },
+              {
+                "gameId": "0fc4abb4edf30887b57b4f686db8179a",
+                "gameKey": "wnba|basketball_wnba|minnesota lynx|connecticut sun|2026-07-08T23:30:00Z",
+                "selection": "Minnesota Lynx",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:30:00Z",
+                "homeTeam": "Connecticut Sun",
+                "awayTeam": "Minnesota Lynx"
+              },
+              {
+                "gameId": "b0cfbd10dffa5258c1e9dd6aca005a5a",
+                "gameKey": "wnba|basketball_wnba|indiana fever|los angeles sparks|2026-07-09T02:00:00Z",
+                "selection": "Los Angeles Sparks",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 35.3,
+                "tags": [],
+                "commenceTime": "2026-07-09T02:00:00Z",
+                "homeTeam": "Los Angeles Sparks",
+                "awayTeam": "Indiana Fever"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 3,
+            "score": 39.69,
+            "legs": [
+              {
+                "gameId": "82635798d7e0a24dc54a2138a1d94653",
+                "gameKey": "wnba|basketball_wnba|golden state valkyries|toronto tempo|2026-07-08T23:00:00Z",
+                "selection": "Toronto Tempo",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 31.06,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-08T23:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Golden State Valkyries"
+              },
+              {
+                "gameId": "0fc4abb4edf30887b57b4f686db8179a",
+                "gameKey": "wnba|basketball_wnba|minnesota lynx|connecticut sun|2026-07-08T23:30:00Z",
+                "selection": "Minnesota Lynx",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:30:00Z",
+                "homeTeam": "Connecticut Sun",
+                "awayTeam": "Minnesota Lynx"
+              },
+              {
+                "gameId": "b0cfbd10dffa5258c1e9dd6aca005a5a",
+                "gameKey": "wnba|basketball_wnba|indiana fever|los angeles sparks|2026-07-09T02:00:00Z",
+                "selection": "Indiana Fever",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-09T02:00:00Z",
+                "homeTeam": "Los Angeles Sparks",
+                "awayTeam": "Indiana Fever"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 4,
+            "score": 36.97,
+            "legs": [
+              {
+                "gameId": "82635798d7e0a24dc54a2138a1d94653",
+                "gameKey": "wnba|basketball_wnba|golden state valkyries|toronto tempo|2026-07-08T23:00:00Z",
+                "selection": "Golden State Valkyries",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Golden State Valkyries"
+              },
+              {
+                "gameId": "0fc4abb4edf30887b57b4f686db8179a",
+                "gameKey": "wnba|basketball_wnba|minnesota lynx|connecticut sun|2026-07-08T23:30:00Z",
+                "selection": "Connecticut Sun",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 22.9,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:30:00Z",
+                "homeTeam": "Connecticut Sun",
+                "awayTeam": "Minnesota Lynx"
+              },
+              {
+                "gameId": "b0cfbd10dffa5258c1e9dd6aca005a5a",
+                "gameKey": "wnba|basketball_wnba|indiana fever|los angeles sparks|2026-07-09T02:00:00Z",
+                "selection": "Indiana Fever",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-09T02:00:00Z",
+                "homeTeam": "Los Angeles Sparks",
+                "awayTeam": "Indiana Fever"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 5,
+            "score": 36.79,
+            "legs": [
+              {
+                "gameId": "82635798d7e0a24dc54a2138a1d94653",
+                "gameKey": "wnba|basketball_wnba|golden state valkyries|toronto tempo|2026-07-08T23:00:00Z",
+                "selection": "Toronto Tempo",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 31.06,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-08T23:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Golden State Valkyries"
+              },
+              {
+                "gameId": "0fc4abb4edf30887b57b4f686db8179a",
+                "gameKey": "wnba|basketball_wnba|minnesota lynx|connecticut sun|2026-07-08T23:30:00Z",
+                "selection": "Minnesota Lynx",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:30:00Z",
+                "homeTeam": "Connecticut Sun",
+                "awayTeam": "Minnesota Lynx"
+              },
+              {
+                "gameId": "b0cfbd10dffa5258c1e9dd6aca005a5a",
+                "gameKey": "wnba|basketball_wnba|indiana fever|los angeles sparks|2026-07-09T02:00:00Z",
+                "selection": "Los Angeles Sparks",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 35.3,
+                "tags": [],
+                "commenceTime": "2026-07-09T02:00:00Z",
+                "homeTeam": "Los Angeles Sparks",
+                "awayTeam": "Indiana Fever"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 6,
+            "score": 34.07,
+            "legs": [
+              {
+                "gameId": "82635798d7e0a24dc54a2138a1d94653",
+                "gameKey": "wnba|basketball_wnba|golden state valkyries|toronto tempo|2026-07-08T23:00:00Z",
+                "selection": "Golden State Valkyries",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Golden State Valkyries"
+              },
+              {
+                "gameId": "0fc4abb4edf30887b57b4f686db8179a",
+                "gameKey": "wnba|basketball_wnba|minnesota lynx|connecticut sun|2026-07-08T23:30:00Z",
+                "selection": "Connecticut Sun",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 22.9,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:30:00Z",
+                "homeTeam": "Connecticut Sun",
+                "awayTeam": "Minnesota Lynx"
+              },
+              {
+                "gameId": "b0cfbd10dffa5258c1e9dd6aca005a5a",
+                "gameKey": "wnba|basketball_wnba|indiana fever|los angeles sparks|2026-07-09T02:00:00Z",
+                "selection": "Los Angeles Sparks",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 35.3,
+                "tags": [],
+                "commenceTime": "2026-07-09T02:00:00Z",
+                "homeTeam": "Los Angeles Sparks",
+                "awayTeam": "Indiana Fever"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 7,
+            "score": 32.65,
+            "legs": [
+              {
+                "gameId": "82635798d7e0a24dc54a2138a1d94653",
+                "gameKey": "wnba|basketball_wnba|golden state valkyries|toronto tempo|2026-07-08T23:00:00Z",
+                "selection": "Toronto Tempo",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 31.06,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-08T23:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Golden State Valkyries"
+              },
+              {
+                "gameId": "0fc4abb4edf30887b57b4f686db8179a",
+                "gameKey": "wnba|basketball_wnba|minnesota lynx|connecticut sun|2026-07-08T23:30:00Z",
+                "selection": "Connecticut Sun",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 22.9,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:30:00Z",
+                "homeTeam": "Connecticut Sun",
+                "awayTeam": "Minnesota Lynx"
+              },
+              {
+                "gameId": "b0cfbd10dffa5258c1e9dd6aca005a5a",
+                "gameKey": "wnba|basketball_wnba|indiana fever|los angeles sparks|2026-07-09T02:00:00Z",
+                "selection": "Indiana Fever",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-09T02:00:00Z",
+                "homeTeam": "Los Angeles Sparks",
+                "awayTeam": "Indiana Fever"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 8,
+            "score": 29.75,
+            "legs": [
+              {
+                "gameId": "82635798d7e0a24dc54a2138a1d94653",
+                "gameKey": "wnba|basketball_wnba|golden state valkyries|toronto tempo|2026-07-08T23:00:00Z",
+                "selection": "Toronto Tempo",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 31.06,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-08T23:00:00Z",
+                "homeTeam": "Toronto Tempo",
+                "awayTeam": "Golden State Valkyries"
+              },
+              {
+                "gameId": "0fc4abb4edf30887b57b4f686db8179a",
+                "gameKey": "wnba|basketball_wnba|minnesota lynx|connecticut sun|2026-07-08T23:30:00Z",
+                "selection": "Connecticut Sun",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 22.9,
+                "tags": [],
+                "commenceTime": "2026-07-08T23:30:00Z",
+                "homeTeam": "Connecticut Sun",
+                "awayTeam": "Minnesota Lynx"
+              },
+              {
+                "gameId": "b0cfbd10dffa5258c1e9dd6aca005a5a",
+                "gameKey": "wnba|basketball_wnba|indiana fever|los angeles sparks|2026-07-09T02:00:00Z",
+                "selection": "Los Angeles Sparks",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 35.3,
+                "tags": [],
+                "commenceTime": "2026-07-09T02:00:00Z",
+                "homeTeam": "Los Angeles Sparks",
+                "awayTeam": "Indiana Fever"
+              }
+            ],
+            "top3": false
+          }
+        ],
+        "previousNoBuildReason": "MISSING_TWO_STRONG_LEGS",
+        "fallbackApplied": true,
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#wnba#2026-07-07",
-          "sk": "BUILD#2026-07-07T04:14:00.868881+00:00",
+          "sk": "BUILD#2026-07-07T07:56:36.102430+00:00",
           "latestPk": "PARLAY_BUILDS#wnba#2026-07-07#LATEST",
           "latestSk": "LATEST"
         }
@@ -1638,9 +1646,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 12,
+          "missingPullCountSinceStart": 12,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -1661,7 +1669,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nfl#2026-07-07",
-          "sk": "BUILD#2026-07-07T04:14:01.085836+00:00",
+          "sk": "BUILD#2026-07-07T07:56:36.144930+00:00",
           "latestPk": "PARLAY_BUILDS#nfl#2026-07-07#LATEST",
           "latestSk": "LATEST"
         }
@@ -1685,9 +1693,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 12,
+          "missingPullCountSinceStart": 12,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -1708,7 +1716,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#cfb#2026-07-07",
-          "sk": "BUILD#2026-07-07T04:14:01.306493+00:00",
+          "sk": "BUILD#2026-07-07T07:56:36.179641+00:00",
           "latestPk": "PARLAY_BUILDS#cfb#2026-07-07#LATEST",
           "latestSk": "LATEST"
         }
@@ -1732,9 +1740,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 12,
+          "missingPullCountSinceStart": 12,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -1755,7 +1763,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nba#2026-07-07",
-          "sk": "BUILD#2026-07-07T04:14:01.524882+00:00",
+          "sk": "BUILD#2026-07-07T07:56:36.210670+00:00",
           "latestPk": "PARLAY_BUILDS#nba#2026-07-07#LATEST",
           "latestSk": "LATEST"
         }
@@ -1779,9 +1787,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 12,
+          "missingPullCountSinceStart": 12,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -1802,7 +1810,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#ncaam#2026-07-07",
-          "sk": "BUILD#2026-07-07T04:14:01.745616+00:00",
+          "sk": "BUILD#2026-07-07T07:56:36.264277+00:00",
           "latestPk": "PARLAY_BUILDS#ncaam#2026-07-07#LATEST",
           "latestSk": "LATEST"
         }
@@ -1826,9 +1834,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 12,
+          "missingPullCountSinceStart": 12,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -1849,7 +1857,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nhl#2026-07-07",
-          "sk": "BUILD#2026-07-07T04:14:01.961853+00:00",
+          "sk": "BUILD#2026-07-07T07:56:36.296909+00:00",
           "latestPk": "PARLAY_BUILDS#nhl#2026-07-07#LATEST",
           "latestSk": "LATEST"
         }
@@ -1858,45 +1866,531 @@
         "ok": true,
         "sport": "soccer",
         "slate_date": "2026-07-07",
-        "pullCount": 1,
-        "pullCoverage": {
-          "ok": true,
-          "sport": "soccer",
-          "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
-          "startHourEt": 1,
-          "intervalMinutes": 15,
-          "expectedStartAtUtc": "2026-07-07T05:00:00+00:00",
-          "expectedStartAtEt": "2026-07-07T01:00:00-04:00",
-          "firstPullAtUtc": "2026-07-07T04:07:15.787111+00:00",
-          "firstPullAtEt": "2026-07-07T00:07:15.787111-04:00",
-          "latestPullAtUtc": "2026-07-07T04:07:15.787111+00:00",
-          "latestPullAtEt": "2026-07-07T00:07:15.787111-04:00",
-          "actualPullCount": 1,
-          "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
-          "coverageComplete": false
-        },
-        "buildDeadline": {
-          "ok": false,
-          "reason": "NO_EVENT_TIME_AVAILABLE",
-          "deadlineHoursBeforeFirstEvent": 2
-        },
-        "rawSignalCount": 0,
-        "sameSlateSignalCount": 0,
+        "pullCount": 18,
         "minimumParlayPulls": 12,
-        "minimumStrongLegs": 2,
-        "maximumCoinFlipLegs": 1,
-        "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP_WITH_BASELINE_AFTER_12",
-        "strictDailySlate": false,
-        "buildStatus": "NO_BUILD",
-        "reason": "WAITING_FOR_12TH_PULL",
-        "message": "Refused before minimum pull depth.",
+        "buildStatus": "BUILT",
+        "buildQuality": "BASELINE_12_SNAPSHOT",
+        "reason": "BUILT_FROM_TOP_AVAILABLE_SIGNALS_AFTER_12_SNAPSHOTS",
+        "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
+        "officialStrength": "BASELINE_NOT_STRONG",
+        "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
+        "selectedStrongCount": 0,
+        "legs": [
+          {
+            "gameId": "1d13bd275c7b67b77bea8ff4d03850cc",
+            "gameKey": "soccer|soccer_usa_mls|vancouver whitecaps fc|chicago fire|2026-07-17T00:30:00Z",
+            "sport": "soccer",
+            "homeTeam": "Chicago Fire",
+            "awayTeam": "Vancouver Whitecaps FC",
+            "commenceTime": "2026-07-17T00:30:00Z",
+            "level": "mixed",
+            "gender": null,
+            "providerSportKey": "soccer_usa_mls",
+            "selection": "Vancouver Whitecaps FC",
+            "selectedSide": "away",
+            "grade": "COIN_FLIP",
+            "score": 52.83,
+            "tags": [],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.46465,
+              "probLatest": 0.46465,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0.0,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.07071,
+              "bookCount": 2,
+              "bookDivergence": 0.0,
+              "reversals": 0,
+              "tags": [],
+              "grade": "COIN_FLIP",
+              "score": 47.17,
+              "rawScoreBeforeGuard": 47.17,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.53535,
+              "probLatest": 0.53535,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0.0,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.07071,
+              "bookCount": 2,
+              "bookDivergence": 0.0,
+              "reversals": 0,
+              "tags": [],
+              "grade": "COIN_FLIP",
+              "score": 52.83,
+              "rawScoreBeforeGuard": 52.83,
+              "scoreGuardApplied": true
+            }
+          },
+          {
+            "gameId": "5c16421f1e1447792ee21d773bf528ec",
+            "gameKey": "soccer|soccer_usa_mls|toronto fc|cf montreal|2026-07-16T23:30:00Z",
+            "sport": "soccer",
+            "homeTeam": "CF Montreal",
+            "awayTeam": "Toronto FC",
+            "commenceTime": "2026-07-16T23:30:00Z",
+            "level": "mixed",
+            "gender": null,
+            "providerSportKey": "soccer_usa_mls",
+            "selection": "CF Montreal",
+            "selectedSide": "home",
+            "grade": "FRAGILE",
+            "score": 44.0,
+            "tags": [],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.67698,
+              "probLatest": 0.67698,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0.0,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.35396,
+              "bookCount": 2,
+              "bookDivergence": 0.01068,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 44.0,
+              "rawScoreBeforeGuard": 60.95,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.32302,
+              "probLatest": 0.32302,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0.0,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.35396,
+              "bookCount": 2,
+              "bookDivergence": 0.01068,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 32.64,
+              "rawScoreBeforeGuard": 32.64,
+              "scoreGuardApplied": true
+            }
+          },
+          {
+            "gameId": "fb40e730bdc7fbd168852ac3693c822d",
+            "gameKey": "soccer|soccer_usa_mls|sporting kansas city|st. louis city sc|2026-07-17T00:30:00Z",
+            "sport": "soccer",
+            "homeTeam": "St. Louis City SC",
+            "awayTeam": "Sporting Kansas City",
+            "commenceTime": "2026-07-17T00:30:00Z",
+            "level": "mixed",
+            "gender": null,
+            "providerSportKey": "soccer_usa_mls",
+            "selection": "St. Louis City SC",
+            "selectedSide": "home",
+            "grade": "FRAGILE",
+            "score": 44.0,
+            "tags": [],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.82904,
+              "probLatest": 0.82904,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0.0,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.65808,
+              "bookCount": 2,
+              "bookDivergence": 0.02409,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 44.0,
+              "rawScoreBeforeGuard": 69.1,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.17096,
+              "probLatest": 0.17096,
+              "delta": 0.0,
+              "velocityPpHr": 0.0,
+              "acceleration": 0.0,
+              "pullCount": 18,
+              "durationMinutes": 225.0,
+              "latestGap": 0.65808,
+              "bookCount": 2,
+              "bookDivergence": 0.02409,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 16.45,
+              "rawScoreBeforeGuard": 16.45,
+              "scoreGuardApplied": true
+            }
+          }
+        ],
+        "rankedCombos": [
+          {
+            "rank": 1,
+            "score": 46.94,
+            "legs": [
+              {
+                "gameId": "1d13bd275c7b67b77bea8ff4d03850cc",
+                "gameKey": "soccer|soccer_usa_mls|vancouver whitecaps fc|chicago fire|2026-07-17T00:30:00Z",
+                "selection": "Vancouver Whitecaps FC",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 52.83,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "Chicago Fire",
+                "awayTeam": "Vancouver Whitecaps FC"
+              },
+              {
+                "gameId": "5c16421f1e1447792ee21d773bf528ec",
+                "gameKey": "soccer|soccer_usa_mls|toronto fc|cf montreal|2026-07-16T23:30:00Z",
+                "selection": "CF Montreal",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-16T23:30:00Z",
+                "homeTeam": "CF Montreal",
+                "awayTeam": "Toronto FC"
+              },
+              {
+                "gameId": "fb40e730bdc7fbd168852ac3693c822d",
+                "gameKey": "soccer|soccer_usa_mls|sporting kansas city|st. louis city sc|2026-07-17T00:30:00Z",
+                "selection": "St. Louis City SC",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "St. Louis City SC",
+                "awayTeam": "Sporting Kansas City"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 2,
+            "score": 45.06,
+            "legs": [
+              {
+                "gameId": "1d13bd275c7b67b77bea8ff4d03850cc",
+                "gameKey": "soccer|soccer_usa_mls|vancouver whitecaps fc|chicago fire|2026-07-17T00:30:00Z",
+                "selection": "Chicago Fire",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 47.17,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "Chicago Fire",
+                "awayTeam": "Vancouver Whitecaps FC"
+              },
+              {
+                "gameId": "5c16421f1e1447792ee21d773bf528ec",
+                "gameKey": "soccer|soccer_usa_mls|toronto fc|cf montreal|2026-07-16T23:30:00Z",
+                "selection": "CF Montreal",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-16T23:30:00Z",
+                "homeTeam": "CF Montreal",
+                "awayTeam": "Toronto FC"
+              },
+              {
+                "gameId": "fb40e730bdc7fbd168852ac3693c822d",
+                "gameKey": "soccer|soccer_usa_mls|sporting kansas city|st. louis city sc|2026-07-17T00:30:00Z",
+                "selection": "St. Louis City SC",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "St. Louis City SC",
+                "awayTeam": "Sporting Kansas City"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 3,
+            "score": 43.16,
+            "legs": [
+              {
+                "gameId": "1d13bd275c7b67b77bea8ff4d03850cc",
+                "gameKey": "soccer|soccer_usa_mls|vancouver whitecaps fc|chicago fire|2026-07-17T00:30:00Z",
+                "selection": "Vancouver Whitecaps FC",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 52.83,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "Chicago Fire",
+                "awayTeam": "Vancouver Whitecaps FC"
+              },
+              {
+                "gameId": "5c16421f1e1447792ee21d773bf528ec",
+                "gameKey": "soccer|soccer_usa_mls|toronto fc|cf montreal|2026-07-16T23:30:00Z",
+                "selection": "Toronto FC",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 32.64,
+                "tags": [],
+                "commenceTime": "2026-07-16T23:30:00Z",
+                "homeTeam": "CF Montreal",
+                "awayTeam": "Toronto FC"
+              },
+              {
+                "gameId": "fb40e730bdc7fbd168852ac3693c822d",
+                "gameKey": "soccer|soccer_usa_mls|sporting kansas city|st. louis city sc|2026-07-17T00:30:00Z",
+                "selection": "St. Louis City SC",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "St. Louis City SC",
+                "awayTeam": "Sporting Kansas City"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 4,
+            "score": 41.27,
+            "legs": [
+              {
+                "gameId": "1d13bd275c7b67b77bea8ff4d03850cc",
+                "gameKey": "soccer|soccer_usa_mls|vancouver whitecaps fc|chicago fire|2026-07-17T00:30:00Z",
+                "selection": "Chicago Fire",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 47.17,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "Chicago Fire",
+                "awayTeam": "Vancouver Whitecaps FC"
+              },
+              {
+                "gameId": "5c16421f1e1447792ee21d773bf528ec",
+                "gameKey": "soccer|soccer_usa_mls|toronto fc|cf montreal|2026-07-16T23:30:00Z",
+                "selection": "Toronto FC",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 32.64,
+                "tags": [],
+                "commenceTime": "2026-07-16T23:30:00Z",
+                "homeTeam": "CF Montreal",
+                "awayTeam": "Toronto FC"
+              },
+              {
+                "gameId": "fb40e730bdc7fbd168852ac3693c822d",
+                "gameKey": "soccer|soccer_usa_mls|sporting kansas city|st. louis city sc|2026-07-17T00:30:00Z",
+                "selection": "St. Louis City SC",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "St. Louis City SC",
+                "awayTeam": "Sporting Kansas City"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 5,
+            "score": 37.76,
+            "legs": [
+              {
+                "gameId": "1d13bd275c7b67b77bea8ff4d03850cc",
+                "gameKey": "soccer|soccer_usa_mls|vancouver whitecaps fc|chicago fire|2026-07-17T00:30:00Z",
+                "selection": "Vancouver Whitecaps FC",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 52.83,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "Chicago Fire",
+                "awayTeam": "Vancouver Whitecaps FC"
+              },
+              {
+                "gameId": "5c16421f1e1447792ee21d773bf528ec",
+                "gameKey": "soccer|soccer_usa_mls|toronto fc|cf montreal|2026-07-16T23:30:00Z",
+                "selection": "CF Montreal",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-16T23:30:00Z",
+                "homeTeam": "CF Montreal",
+                "awayTeam": "Toronto FC"
+              },
+              {
+                "gameId": "fb40e730bdc7fbd168852ac3693c822d",
+                "gameKey": "soccer|soccer_usa_mls|sporting kansas city|st. louis city sc|2026-07-17T00:30:00Z",
+                "selection": "Sporting Kansas City",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 16.45,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "St. Louis City SC",
+                "awayTeam": "Sporting Kansas City"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 6,
+            "score": 35.87,
+            "legs": [
+              {
+                "gameId": "1d13bd275c7b67b77bea8ff4d03850cc",
+                "gameKey": "soccer|soccer_usa_mls|vancouver whitecaps fc|chicago fire|2026-07-17T00:30:00Z",
+                "selection": "Chicago Fire",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 47.17,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "Chicago Fire",
+                "awayTeam": "Vancouver Whitecaps FC"
+              },
+              {
+                "gameId": "5c16421f1e1447792ee21d773bf528ec",
+                "gameKey": "soccer|soccer_usa_mls|toronto fc|cf montreal|2026-07-16T23:30:00Z",
+                "selection": "CF Montreal",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-16T23:30:00Z",
+                "homeTeam": "CF Montreal",
+                "awayTeam": "Toronto FC"
+              },
+              {
+                "gameId": "fb40e730bdc7fbd168852ac3693c822d",
+                "gameKey": "soccer|soccer_usa_mls|sporting kansas city|st. louis city sc|2026-07-17T00:30:00Z",
+                "selection": "Sporting Kansas City",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 16.45,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "St. Louis City SC",
+                "awayTeam": "Sporting Kansas City"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 7,
+            "score": 33.97,
+            "legs": [
+              {
+                "gameId": "1d13bd275c7b67b77bea8ff4d03850cc",
+                "gameKey": "soccer|soccer_usa_mls|vancouver whitecaps fc|chicago fire|2026-07-17T00:30:00Z",
+                "selection": "Vancouver Whitecaps FC",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 52.83,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "Chicago Fire",
+                "awayTeam": "Vancouver Whitecaps FC"
+              },
+              {
+                "gameId": "5c16421f1e1447792ee21d773bf528ec",
+                "gameKey": "soccer|soccer_usa_mls|toronto fc|cf montreal|2026-07-16T23:30:00Z",
+                "selection": "Toronto FC",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 32.64,
+                "tags": [],
+                "commenceTime": "2026-07-16T23:30:00Z",
+                "homeTeam": "CF Montreal",
+                "awayTeam": "Toronto FC"
+              },
+              {
+                "gameId": "fb40e730bdc7fbd168852ac3693c822d",
+                "gameKey": "soccer|soccer_usa_mls|sporting kansas city|st. louis city sc|2026-07-17T00:30:00Z",
+                "selection": "Sporting Kansas City",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 16.45,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "St. Louis City SC",
+                "awayTeam": "Sporting Kansas City"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 8,
+            "score": 32.09,
+            "legs": [
+              {
+                "gameId": "1d13bd275c7b67b77bea8ff4d03850cc",
+                "gameKey": "soccer|soccer_usa_mls|vancouver whitecaps fc|chicago fire|2026-07-17T00:30:00Z",
+                "selection": "Chicago Fire",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 47.17,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "Chicago Fire",
+                "awayTeam": "Vancouver Whitecaps FC"
+              },
+              {
+                "gameId": "5c16421f1e1447792ee21d773bf528ec",
+                "gameKey": "soccer|soccer_usa_mls|toronto fc|cf montreal|2026-07-16T23:30:00Z",
+                "selection": "Toronto FC",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 32.64,
+                "tags": [],
+                "commenceTime": "2026-07-16T23:30:00Z",
+                "homeTeam": "CF Montreal",
+                "awayTeam": "Toronto FC"
+              },
+              {
+                "gameId": "fb40e730bdc7fbd168852ac3693c822d",
+                "gameKey": "soccer|soccer_usa_mls|sporting kansas city|st. louis city sc|2026-07-17T00:30:00Z",
+                "selection": "Sporting Kansas City",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 16.45,
+                "tags": [],
+                "commenceTime": "2026-07-17T00:30:00Z",
+                "homeTeam": "St. Louis City SC",
+                "awayTeam": "Sporting Kansas City"
+              }
+            ],
+            "top3": false
+          }
+        ],
+        "previousNoBuildReason": "MISSING_TWO_STRONG_LEGS",
+        "fallbackApplied": true,
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#soccer#2026-07-07",
-          "sk": "BUILD#2026-07-07T04:14:02.185977+00:00",
+          "sk": "BUILD#2026-07-07T07:56:36.372200+00:00",
           "latestPk": "PARLAY_BUILDS#soccer#2026-07-07#LATEST",
           "latestSk": "LATEST"
         }
@@ -1905,45 +2399,541 @@
         "ok": true,
         "sport": "tennis",
         "slate_date": "2026-07-07",
-        "pullCount": 1,
-        "pullCoverage": {
-          "ok": true,
-          "sport": "tennis",
-          "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
-          "startHourEt": 1,
-          "intervalMinutes": 15,
-          "expectedStartAtUtc": "2026-07-07T05:00:00+00:00",
-          "expectedStartAtEt": "2026-07-07T01:00:00-04:00",
-          "firstPullAtUtc": "2026-07-07T04:07:16.085134+00:00",
-          "firstPullAtEt": "2026-07-07T00:07:16.085134-04:00",
-          "latestPullAtUtc": "2026-07-07T04:07:16.085134+00:00",
-          "latestPullAtEt": "2026-07-07T00:07:16.085134-04:00",
-          "actualPullCount": 1,
-          "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
-          "coverageComplete": false
-        },
-        "buildDeadline": {
-          "ok": false,
-          "reason": "NO_EVENT_TIME_AVAILABLE",
-          "deadlineHoursBeforeFirstEvent": 2
-        },
-        "rawSignalCount": 0,
-        "sameSlateSignalCount": 0,
+        "pullCount": 33,
         "minimumParlayPulls": 12,
-        "minimumStrongLegs": 2,
-        "maximumCoinFlipLegs": 1,
-        "structure": "STRICT_2_STRONG_MAX_1_COIN_FLIP_WITH_BASELINE_AFTER_12",
-        "strictDailySlate": false,
-        "buildStatus": "NO_BUILD",
-        "reason": "WAITING_FOR_12TH_PULL",
-        "message": "Refused before minimum pull depth.",
+        "buildStatus": "BUILT",
+        "buildQuality": "BASELINE_12_SNAPSHOT",
+        "reason": "BUILT_FROM_TOP_AVAILABLE_SIGNALS_AFTER_12_SNAPSHOTS",
+        "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
+        "officialStrength": "BASELINE_NOT_STRONG",
+        "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
+        "selectedStrongCount": 0,
+        "legs": [
+          {
+            "gameId": "62ce3acf47d9edecc683892e8680375d",
+            "gameKey": "tennis|tennis_wta_wimbledon|coco gauff|jessica pegula|2026-07-07T12:30:00Z",
+            "sport": "tennis",
+            "homeTeam": "Jessica Pegula",
+            "awayTeam": "Coco Gauff",
+            "commenceTime": "2026-07-07T12:30:00Z",
+            "level": "mixed",
+            "gender": null,
+            "providerSportKey": "tennis_wta_wimbledon",
+            "selection": "Jessica Pegula",
+            "selectedSide": "home",
+            "grade": "FRAGILE",
+            "score": 44.0,
+            "tags": [],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.58463,
+              "probLatest": 0.58553,
+              "delta": 0.00091,
+              "velocityPpHr": 0.03,
+              "acceleration": 0.0002,
+              "pullCount": 15,
+              "durationMinutes": 180.0,
+              "latestGap": 0.17107,
+              "bookCount": 10,
+              "bookDivergence": 0.01067,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 44.0,
+              "rawScoreBeforeGuard": 54.28,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.41537,
+              "probLatest": 0.41447,
+              "delta": -0.00091,
+              "velocityPpHr": -0.03,
+              "acceleration": -0.0002,
+              "pullCount": 15,
+              "durationMinutes": 180.0,
+              "latestGap": 0.17107,
+              "bookCount": 10,
+              "bookDivergence": 0.01067,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 39.32,
+              "rawScoreBeforeGuard": 39.32,
+              "scoreGuardApplied": true
+            }
+          },
+          {
+            "gameId": "ce12ab4d3d0aa390920234e6b1b8401d",
+            "gameKey": "tennis|tennis_wta_wimbledon|elise mertens|linda noskova|2026-07-08T09:00:00Z",
+            "sport": "tennis",
+            "homeTeam": "Linda Noskova",
+            "awayTeam": "Elise Mertens",
+            "commenceTime": "2026-07-08T09:00:00Z",
+            "level": "mixed",
+            "gender": null,
+            "providerSportKey": "tennis_wta_wimbledon",
+            "selection": "Linda Noskova",
+            "selectedSide": "home",
+            "grade": "FRAGILE",
+            "score": 44.0,
+            "tags": [],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.58704,
+              "probLatest": 0.58611,
+              "delta": -0.00093,
+              "velocityPpHr": -0.031,
+              "acceleration": -0.00012,
+              "pullCount": 15,
+              "durationMinutes": 180.0,
+              "latestGap": 0.17222,
+              "bookCount": 10,
+              "bookDivergence": 0.02099,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 44.0,
+              "rawScoreBeforeGuard": 49.94,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.41296,
+              "probLatest": 0.41389,
+              "delta": 0.00093,
+              "velocityPpHr": 0.031,
+              "acceleration": 0.00012,
+              "pullCount": 15,
+              "durationMinutes": 180.0,
+              "latestGap": 0.17222,
+              "bookCount": 10,
+              "bookDivergence": 0.02099,
+              "reversals": 0,
+              "tags": [
+                "PUBLIC_FADE_CANDIDATE"
+              ],
+              "grade": "FRAGILE",
+              "score": 37.46,
+              "rawScoreBeforeGuard": 37.46,
+              "scoreGuardApplied": true
+            }
+          },
+          {
+            "gameId": "422e9daaacc114651853267b712e3125",
+            "gameKey": "tennis|tennis_wta_wimbledon|jasmine paolini|marta kostyuk|2026-07-08T09:00:00Z",
+            "sport": "tennis",
+            "homeTeam": "Marta Kostyuk",
+            "awayTeam": "Jasmine Paolini",
+            "commenceTime": "2026-07-08T09:00:00Z",
+            "level": "mixed",
+            "gender": null,
+            "providerSportKey": "tennis_wta_wimbledon",
+            "selection": "Marta Kostyuk",
+            "selectedSide": "home",
+            "grade": "FRAGILE",
+            "score": 44.0,
+            "tags": [],
+            "homeSignal": {
+              "side": "home",
+              "probStart": 0.68484,
+              "probLatest": 0.68559,
+              "delta": 0.00076,
+              "velocityPpHr": 0.025,
+              "acceleration": -0.00013,
+              "pullCount": 15,
+              "durationMinutes": 180.0,
+              "latestGap": 0.37118,
+              "bookCount": 10,
+              "bookDivergence": 0.02463,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 44.0,
+              "rawScoreBeforeGuard": 57.99,
+              "scoreGuardApplied": true
+            },
+            "awaySignal": {
+              "side": "away",
+              "probStart": 0.31516,
+              "probLatest": 0.31441,
+              "delta": -0.00076,
+              "velocityPpHr": -0.025,
+              "acceleration": 0.00013,
+              "pullCount": 15,
+              "durationMinutes": 180.0,
+              "latestGap": 0.37118,
+              "bookCount": 10,
+              "bookDivergence": 0.02463,
+              "reversals": 0,
+              "tags": [],
+              "grade": "FRAGILE",
+              "score": 27.23,
+              "rawScoreBeforeGuard": 27.23,
+              "scoreGuardApplied": true
+            }
+          }
+        ],
+        "rankedCombos": [
+          {
+            "rank": 1,
+            "score": 44.0,
+            "legs": [
+              {
+                "gameId": "62ce3acf47d9edecc683892e8680375d",
+                "gameKey": "tennis|tennis_wta_wimbledon|coco gauff|jessica pegula|2026-07-07T12:30:00Z",
+                "selection": "Jessica Pegula",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-07T12:30:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Coco Gauff"
+              },
+              {
+                "gameId": "ce12ab4d3d0aa390920234e6b1b8401d",
+                "gameKey": "tennis|tennis_wta_wimbledon|elise mertens|linda noskova|2026-07-08T09:00:00Z",
+                "selection": "Linda Noskova",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Linda Noskova",
+                "awayTeam": "Elise Mertens"
+              },
+              {
+                "gameId": "422e9daaacc114651853267b712e3125",
+                "gameKey": "tennis|tennis_wta_wimbledon|jasmine paolini|marta kostyuk|2026-07-08T09:00:00Z",
+                "selection": "Marta Kostyuk",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Marta Kostyuk",
+                "awayTeam": "Jasmine Paolini"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 2,
+            "score": 42.44,
+            "legs": [
+              {
+                "gameId": "62ce3acf47d9edecc683892e8680375d",
+                "gameKey": "tennis|tennis_wta_wimbledon|coco gauff|jessica pegula|2026-07-07T12:30:00Z",
+                "selection": "Coco Gauff",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 39.32,
+                "tags": [],
+                "commenceTime": "2026-07-07T12:30:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Coco Gauff"
+              },
+              {
+                "gameId": "ce12ab4d3d0aa390920234e6b1b8401d",
+                "gameKey": "tennis|tennis_wta_wimbledon|elise mertens|linda noskova|2026-07-08T09:00:00Z",
+                "selection": "Linda Noskova",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Linda Noskova",
+                "awayTeam": "Elise Mertens"
+              },
+              {
+                "gameId": "422e9daaacc114651853267b712e3125",
+                "gameKey": "tennis|tennis_wta_wimbledon|jasmine paolini|marta kostyuk|2026-07-08T09:00:00Z",
+                "selection": "Marta Kostyuk",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Marta Kostyuk",
+                "awayTeam": "Jasmine Paolini"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 3,
+            "score": 41.82,
+            "legs": [
+              {
+                "gameId": "62ce3acf47d9edecc683892e8680375d",
+                "gameKey": "tennis|tennis_wta_wimbledon|coco gauff|jessica pegula|2026-07-07T12:30:00Z",
+                "selection": "Jessica Pegula",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-07T12:30:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Coco Gauff"
+              },
+              {
+                "gameId": "ce12ab4d3d0aa390920234e6b1b8401d",
+                "gameKey": "tennis|tennis_wta_wimbledon|elise mertens|linda noskova|2026-07-08T09:00:00Z",
+                "selection": "Elise Mertens",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 37.46,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Linda Noskova",
+                "awayTeam": "Elise Mertens"
+              },
+              {
+                "gameId": "422e9daaacc114651853267b712e3125",
+                "gameKey": "tennis|tennis_wta_wimbledon|jasmine paolini|marta kostyuk|2026-07-08T09:00:00Z",
+                "selection": "Marta Kostyuk",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Marta Kostyuk",
+                "awayTeam": "Jasmine Paolini"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 4,
+            "score": 40.26,
+            "legs": [
+              {
+                "gameId": "62ce3acf47d9edecc683892e8680375d",
+                "gameKey": "tennis|tennis_wta_wimbledon|coco gauff|jessica pegula|2026-07-07T12:30:00Z",
+                "selection": "Coco Gauff",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 39.32,
+                "tags": [],
+                "commenceTime": "2026-07-07T12:30:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Coco Gauff"
+              },
+              {
+                "gameId": "ce12ab4d3d0aa390920234e6b1b8401d",
+                "gameKey": "tennis|tennis_wta_wimbledon|elise mertens|linda noskova|2026-07-08T09:00:00Z",
+                "selection": "Elise Mertens",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 37.46,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Linda Noskova",
+                "awayTeam": "Elise Mertens"
+              },
+              {
+                "gameId": "422e9daaacc114651853267b712e3125",
+                "gameKey": "tennis|tennis_wta_wimbledon|jasmine paolini|marta kostyuk|2026-07-08T09:00:00Z",
+                "selection": "Marta Kostyuk",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Marta Kostyuk",
+                "awayTeam": "Jasmine Paolini"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 5,
+            "score": 38.41,
+            "legs": [
+              {
+                "gameId": "62ce3acf47d9edecc683892e8680375d",
+                "gameKey": "tennis|tennis_wta_wimbledon|coco gauff|jessica pegula|2026-07-07T12:30:00Z",
+                "selection": "Jessica Pegula",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-07T12:30:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Coco Gauff"
+              },
+              {
+                "gameId": "ce12ab4d3d0aa390920234e6b1b8401d",
+                "gameKey": "tennis|tennis_wta_wimbledon|elise mertens|linda noskova|2026-07-08T09:00:00Z",
+                "selection": "Linda Noskova",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Linda Noskova",
+                "awayTeam": "Elise Mertens"
+              },
+              {
+                "gameId": "422e9daaacc114651853267b712e3125",
+                "gameKey": "tennis|tennis_wta_wimbledon|jasmine paolini|marta kostyuk|2026-07-08T09:00:00Z",
+                "selection": "Jasmine Paolini",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 27.23,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Marta Kostyuk",
+                "awayTeam": "Jasmine Paolini"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 6,
+            "score": 36.85,
+            "legs": [
+              {
+                "gameId": "62ce3acf47d9edecc683892e8680375d",
+                "gameKey": "tennis|tennis_wta_wimbledon|coco gauff|jessica pegula|2026-07-07T12:30:00Z",
+                "selection": "Coco Gauff",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 39.32,
+                "tags": [],
+                "commenceTime": "2026-07-07T12:30:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Coco Gauff"
+              },
+              {
+                "gameId": "ce12ab4d3d0aa390920234e6b1b8401d",
+                "gameKey": "tennis|tennis_wta_wimbledon|elise mertens|linda noskova|2026-07-08T09:00:00Z",
+                "selection": "Linda Noskova",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Linda Noskova",
+                "awayTeam": "Elise Mertens"
+              },
+              {
+                "gameId": "422e9daaacc114651853267b712e3125",
+                "gameKey": "tennis|tennis_wta_wimbledon|jasmine paolini|marta kostyuk|2026-07-08T09:00:00Z",
+                "selection": "Jasmine Paolini",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 27.23,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Marta Kostyuk",
+                "awayTeam": "Jasmine Paolini"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 7,
+            "score": 36.23,
+            "legs": [
+              {
+                "gameId": "62ce3acf47d9edecc683892e8680375d",
+                "gameKey": "tennis|tennis_wta_wimbledon|coco gauff|jessica pegula|2026-07-07T12:30:00Z",
+                "selection": "Jessica Pegula",
+                "side": "home",
+                "grade": "FRAGILE",
+                "score": 44.0,
+                "tags": [],
+                "commenceTime": "2026-07-07T12:30:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Coco Gauff"
+              },
+              {
+                "gameId": "ce12ab4d3d0aa390920234e6b1b8401d",
+                "gameKey": "tennis|tennis_wta_wimbledon|elise mertens|linda noskova|2026-07-08T09:00:00Z",
+                "selection": "Elise Mertens",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 37.46,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Linda Noskova",
+                "awayTeam": "Elise Mertens"
+              },
+              {
+                "gameId": "422e9daaacc114651853267b712e3125",
+                "gameKey": "tennis|tennis_wta_wimbledon|jasmine paolini|marta kostyuk|2026-07-08T09:00:00Z",
+                "selection": "Jasmine Paolini",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 27.23,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Marta Kostyuk",
+                "awayTeam": "Jasmine Paolini"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 8,
+            "score": 34.67,
+            "legs": [
+              {
+                "gameId": "62ce3acf47d9edecc683892e8680375d",
+                "gameKey": "tennis|tennis_wta_wimbledon|coco gauff|jessica pegula|2026-07-07T12:30:00Z",
+                "selection": "Coco Gauff",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 39.32,
+                "tags": [],
+                "commenceTime": "2026-07-07T12:30:00Z",
+                "homeTeam": "Jessica Pegula",
+                "awayTeam": "Coco Gauff"
+              },
+              {
+                "gameId": "ce12ab4d3d0aa390920234e6b1b8401d",
+                "gameKey": "tennis|tennis_wta_wimbledon|elise mertens|linda noskova|2026-07-08T09:00:00Z",
+                "selection": "Elise Mertens",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 37.46,
+                "tags": [
+                  "PUBLIC_FADE_CANDIDATE"
+                ],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Linda Noskova",
+                "awayTeam": "Elise Mertens"
+              },
+              {
+                "gameId": "422e9daaacc114651853267b712e3125",
+                "gameKey": "tennis|tennis_wta_wimbledon|jasmine paolini|marta kostyuk|2026-07-08T09:00:00Z",
+                "selection": "Jasmine Paolini",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 27.23,
+                "tags": [],
+                "commenceTime": "2026-07-08T09:00:00Z",
+                "homeTeam": "Marta Kostyuk",
+                "awayTeam": "Jasmine Paolini"
+              }
+            ],
+            "top3": false
+          }
+        ],
+        "previousNoBuildReason": "MISSING_TWO_STRONG_LEGS",
+        "fallbackApplied": true,
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#tennis#2026-07-07",
-          "sk": "BUILD#2026-07-07T04:14:02.407992+00:00",
+          "sk": "BUILD#2026-07-07T07:56:36.625366+00:00",
           "latestPk": "PARLAY_BUILDS#tennis#2026-07-07#LATEST",
           "latestSk": "LATEST"
         }
@@ -1953,7 +2943,7 @@
   "pullDiagnostics": {
     "ok": true,
     "source": "diagnostic_provider_probe_no_snapshot_storage",
-    "createdAt": "2026-07-07T04:14:05.207832+00:00",
+    "createdAt": "2026-07-07T07:56:38.451908+00:00",
     "sportsRequested": [
       "mlb",
       "wnba",
@@ -2042,9 +3032,9 @@
       {
         "ok": true,
         "appSport": "mlb",
-        "rawGamesReturned": 17,
-        "rawGamesInWindow": 17,
-        "gamesConvertible": 17,
+        "rawGamesReturned": 15,
+        "rawGamesInWindow": 15,
+        "gamesConvertible": 15,
         "gamesStored": null,
         "diagnosticOnlyNoSnapshotStored": true,
         "activeStorageFailure": false,
@@ -2053,14 +3043,14 @@
             "ok": true,
             "appSport": "mlb",
             "providerSportKey": "baseball_mlb",
-            "rawGamesReturned": 17,
-            "rawGamesInWindow": 17,
-            "gamesConvertible": 17,
+            "rawGamesReturned": 15,
+            "rawGamesInWindow": 15,
+            "gamesConvertible": 15,
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:02.707582+00:00",
-            "activeWindowEnd": "2026-07-09T04:14:02.707582+00:00",
+            "activeWindowStart": "2026-07-07T01:56:36.828984+00:00",
+            "activeWindowEnd": "2026-07-09T07:56:36.828984+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -2086,8 +3076,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:02.999757+00:00",
-            "activeWindowEnd": "2026-07-09T04:14:02.999757+00:00",
+            "activeWindowStart": "2026-07-07T01:56:36.909425+00:00",
+            "activeWindowEnd": "2026-07-09T07:56:36.909425+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -2113,8 +3103,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:03.369898+00:00",
-            "activeWindowEnd": "2026-07-14T04:14:03.369898+00:00",
+            "activeWindowStart": "2026-07-07T01:56:37.123052+00:00",
+            "activeWindowEnd": "2026-07-14T07:56:37.123052+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -2140,8 +3130,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:03.720084+00:00",
-            "activeWindowEnd": "2026-07-14T04:14:03.720084+00:00",
+            "activeWindowStart": "2026-07-07T01:56:37.312313+00:00",
+            "activeWindowEnd": "2026-07-14T07:56:37.312313+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -2167,8 +3157,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:03.958704+00:00",
-            "activeWindowEnd": "2026-07-09T04:14:03.958704+00:00",
+            "activeWindowStart": "2026-07-07T01:56:37.480795+00:00",
+            "activeWindowEnd": "2026-07-09T07:56:37.480795+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -2194,8 +3184,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:04.115332+00:00",
-            "activeWindowEnd": "2026-07-09T04:14:04.115332+00:00",
+            "activeWindowStart": "2026-07-07T01:56:37.587100+00:00",
+            "activeWindowEnd": "2026-07-09T07:56:37.587100+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -2221,8 +3211,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:04.311701+00:00",
-            "activeWindowEnd": "2026-07-09T04:14:04.311701+00:00",
+            "activeWindowStart": "2026-07-07T01:56:37.719983+00:00",
+            "activeWindowEnd": "2026-07-09T07:56:37.719983+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -2248,8 +3238,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:04.428082+00:00",
-            "activeWindowEnd": "2026-07-21T04:14:04.428082+00:00",
+            "activeWindowStart": "2026-07-07T01:56:37.880746+00:00",
+            "activeWindowEnd": "2026-07-21T07:56:37.880746+00:00",
             "slateWindowDays": 14,
             "error": null
           },
@@ -2263,8 +3253,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:04.600866+00:00",
-            "activeWindowEnd": "2026-07-21T04:14:04.600866+00:00",
+            "activeWindowStart": "2026-07-07T01:56:38.048229+00:00",
+            "activeWindowEnd": "2026-07-21T07:56:38.048229+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           },
@@ -2278,8 +3268,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:04.736332+00:00",
-            "activeWindowEnd": "2026-07-21T04:14:04.736332+00:00",
+            "activeWindowStart": "2026-07-07T01:56:38.133496+00:00",
+            "activeWindowEnd": "2026-07-21T07:56:38.133496+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           }
@@ -2289,8 +3279,8 @@
         "ok": true,
         "appSport": "tennis",
         "rawGamesReturned": 8,
-        "rawGamesInWindow": 7,
-        "gamesConvertible": 7,
+        "rawGamesInWindow": 8,
+        "gamesConvertible": 8,
         "gamesStored": null,
         "diagnosticOnlyNoSnapshotStored": true,
         "activeStorageFailure": false,
@@ -2300,13 +3290,13 @@
             "appSport": "tennis",
             "providerSportKey": "tennis_atp_wimbledon",
             "rawGamesReturned": 4,
-            "rawGamesInWindow": 3,
-            "gamesConvertible": 3,
+            "rawGamesInWindow": 4,
+            "gamesConvertible": 4,
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:05.057545+00:00",
-            "activeWindowEnd": "2026-07-14T04:14:05.057545+00:00",
+            "activeWindowStart": "2026-07-07T01:56:38.368740+00:00",
+            "activeWindowEnd": "2026-07-14T07:56:38.368740+00:00",
             "slateWindowDays": 7,
             "error": null
           },
@@ -2320,8 +3310,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-06T22:14:05.207757+00:00",
-            "activeWindowEnd": "2026-07-14T04:14:05.207757+00:00",
+            "activeWindowStart": "2026-07-07T01:56:38.451834+00:00",
+            "activeWindowEnd": "2026-07-14T07:56:38.451834+00:00",
             "slateWindowDays": 7,
             "error": null
           }
