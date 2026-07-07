@@ -2,8 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-VERSION = "MLB-SIGNAL-POLICY-v1.3-score-only-prediction-required"
+VERSION = "MLB-SIGNAL-POLICY-v1.4-score-only-show-non-official"
 REQUIRED_MINUTES_BEFORE_GAME = 45
+DAILY_SLATE_DISPLAY_RULE = "show_official_and_non_official_predictions_45_minutes_before_first_game_of_day"
 
 
 def _f(v: Any, d: float = 0.0) -> float:
@@ -91,6 +92,34 @@ def _components(row: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
+def _is_official(row: Dict[str, Any]) -> bool:
+    return bool(row.get("officialPick") is True or row.get("actionablePick") is True or row.get("accuracyTargetEligible") is True)
+
+
+def _display_card(row: Dict[str, Any]) -> Dict[str, Any]:
+    score_after = row.get("scoreAfterSignalPolicyV13", row.get("score"))
+    return {
+        "gameId": row.get("gameId"),
+        "gameKey": row.get("gameKey"),
+        "homeTeam": row.get("homeTeam"),
+        "awayTeam": row.get("awayTeam"),
+        "commenceTime": row.get("commenceTime"),
+        "predictedWinner": row.get("predictedWinner"),
+        "predictedSide": row.get("predictedSide"),
+        "confidenceTier": row.get("confidenceTier"),
+        "score": row.get("score"),
+        "scoreAfterSignalPolicyV13": score_after,
+        "winProbabilityPct": row.get("winProbabilityPct"),
+        "displayGroup": "official" if _is_official(row) else "non_official_prediction",
+        "isOfficial": _is_official(row),
+        "showAtSlateLock": True,
+        "displayRule": DAILY_SLATE_DISPLAY_RULE,
+        "actionability": row.get("actionability"),
+        "actionabilityReason": row.get("actionabilityReason"),
+        "riskReasons": row.get("actionabilityRiskReasons") or [],
+    }
+
+
 def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
     out = dict(row or {})
     before = _f(out.get("score"), 0.0)
@@ -99,12 +128,15 @@ def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
     after = max(0.0, min(100.0, before + adj))
     out["predictionRequired"] = True
     out["predictionRequiredMinutesBeforeGame"] = REQUIRED_MINUTES_BEFORE_GAME
+    out["showAtSlateLock"] = True
+    out["dailySlateDisplayRule"] = DAILY_SLATE_DISPLAY_RULE
     out["signalPolicyV13"] = {
         "applied": True,
         "version": VERSION,
         "scoreOnly": True,
         "blocksPrediction": False,
         "requiredMinutesBeforeGame": REQUIRED_MINUTES_BEFORE_GAME,
+        "showNonOfficialAtSlateLock": True,
         "scoreAdjustment": adj,
         "components": comps,
     }
@@ -112,9 +144,14 @@ def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
     out["signalPolicyV13Adjustment"] = adj
     out["scoreAfterSignalPolicyV13"] = round(after, 2)
     out["predictionRemainsAvailable"] = True
+    out["displayGroup"] = "official" if _is_official(out) else "non_official_prediction"
+    out["isOfficialDisplayPick"] = _is_official(out)
     tags = set(out.get("tags") or [])
     tags.add("SIGNAL_POLICY_V13_SCORE_ONLY")
     tags.add("PREDICTION_REMAINS_AVAILABLE")
+    tags.add("SHOW_AT_SLATE_LOCK")
+    if not _is_official(out):
+        tags.add("NON_OFFICIAL_PREDICTION_DISPLAY")
     out["tags"] = sorted(tags)
     return out
 
@@ -123,18 +160,35 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(result, dict):
         return result
     rows = [_apply_row(r) for r in (result.get("predictions") or []) if isinstance(r, dict)]
+    official_cards = [_display_card(r) for r in rows if _is_official(r)]
+    non_official_cards = [_display_card(r) for r in rows if not _is_official(r)]
     out = dict(result)
     out["predictions"] = rows
     out["allGamesPredictionRequired"] = True
     out["predictionRequiredMinutesBeforeGame"] = REQUIRED_MINUTES_BEFORE_GAME
+    out["showAllPredictionsAtSlateLock"] = True
+    out["showAllNonOfficialPredictionsAtSlateLock"] = True
+    out["dailySlateDisplayRule"] = DAILY_SLATE_DISPLAY_RULE
+    out["officialPredictionDisplay"] = official_cards
+    out["nonOfficialPredictionDisplay"] = non_official_cards
     out["signalPolicyV13"] = {
         "applied": True,
         "version": VERSION,
         "scoreOnly": True,
         "blocksPrediction": False,
         "rowCount": len(rows),
-        "policy": "Audit findings adjust score only. No signal rule removes a required game prediction.",
+        "officialDisplayCount": len(official_cards),
+        "nonOfficialDisplayCount": len(non_official_cards),
+        "showAllNonOfficialPredictionsAtSlateLock": True,
+        "displayRule": DAILY_SLATE_DISPLAY_RULE,
+        "policy": "Audit findings adjust score only. No signal rule removes a required game prediction. Non-official predictions are displayed at the daily slate lock.",
     }
+    summary = dict(out.get("rolling24hAccuracyTarget") or out.get("accuracyTarget") or {})
+    summary["signalPolicyV13"] = out["signalPolicyV13"]
+    summary["officialDisplayCount"] = len(official_cards)
+    summary["nonOfficialDisplayCount"] = len(non_official_cards)
+    out["rolling24hAccuracyTarget"] = summary
+    out["accuracyTarget"] = summary
     if VERSION not in str(out.get("modelVersion") or ""):
         out["modelVersion"] = str(out.get("modelVersion") or "") + "+" + VERSION
     return out
