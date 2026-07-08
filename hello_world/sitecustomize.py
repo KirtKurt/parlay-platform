@@ -48,6 +48,13 @@ except Exception:
     pass
 
 try:
+    import mlb_rolling_24h_audit as _mlb_rolling_24h_audit_for_locked_card
+    import mlb_locked_card_audit_v1
+    mlb_locked_card_audit_v1.apply(_mlb_rolling_24h_audit_for_locked_card)
+except Exception:
+    pass
+
+try:
     import api as _api_for_sportsdataio
     import sportsdataio_api_patch
     sportsdataio_api_patch.apply(_api_for_sportsdataio)
