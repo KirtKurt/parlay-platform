@@ -1,15 +1,15 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-08T16:51:22.064168+00:00",
+  "createdAt": "2026-07-08T18:48:11.850457+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
     "windowHours": 24,
     "targetAccuracyPct": 90.0,
-    "completedFinalGames": 16,
+    "completedFinalGames": 15,
     "gradedPredictionCount": 3,
-    "missingPredictionCount": 13,
+    "missingPredictionCount": 12,
     "optimizedPickCount": 0,
     "optimizedCorrect": 0,
     "optimizedWrong": 0,
@@ -19,8 +19,8 @@
     "winnerOptimizerFlipCount": 0,
     "allScoredPickAccuracyPct": 33.33,
     "historicalRowsUsedForLearning": 142,
-    "sevenDayRowsUsedForLearning": 105,
-    "sevenDayAccuracyPct": 60.95,
+    "sevenDayRowsUsedForLearning": 101,
+    "sevenDayAccuracyPct": 60.4,
     "thirtyDayRowsUsedForLearning": 142,
     "thirtyDayAccuracyPct": 61.97,
     "seasonRowsUsedForLearning": 142,
@@ -121,15 +121,15 @@
         }
       },
       "sevenDay": {
-        "rowCount": 105,
-        "correct": 64,
-        "wrong": 41,
-        "accuracyPct": 60.95,
+        "rowCount": 101,
+        "correct": 61,
+        "wrong": 40,
+        "accuracyPct": 60.4,
         "tagStats": {
           "BOOK_AGREEMENT": {
-            "count": 72,
-            "correct": 47,
-            "accuracyPct": 65.28
+            "count": 70,
+            "correct": 45,
+            "accuracyPct": 64.29
           },
           "MISSING_FUNDAMENTALS": {
             "count": 18,
@@ -137,19 +137,19 @@
             "accuracyPct": 44.44
           },
           "REVERSAL": {
-            "count": 89,
+            "count": 88,
             "correct": 52,
-            "accuracyPct": 58.43
+            "accuracyPct": 59.09
           },
           "RUN_LINE_MOVEMENT": {
-            "count": 67,
-            "correct": 42,
-            "accuracyPct": 62.69
+            "count": 63,
+            "correct": 39,
+            "accuracyPct": 61.9
           },
           "STEAM": {
-            "count": 54,
-            "correct": 38,
-            "accuracyPct": 70.37
+            "count": 50,
+            "correct": 35,
+            "accuracyPct": 70.0
           },
           "UNCONFIRMED_RUN_LINE_MOVE": {
             "count": 26,
@@ -162,9 +162,9 @@
             "accuracyPct": 48.0
           },
           "BOOK_DIVERGENCE": {
-            "count": 13,
-            "correct": 9,
-            "accuracyPct": 69.23
+            "count": 11,
+            "correct": 8,
+            "accuracyPct": 72.73
           },
           "RESISTANCE": {
             "count": 2,
@@ -172,14 +172,9 @@
             "accuracyPct": 0.0
           },
           "RUN_LINE_CONFIRMATION": {
-            "count": 13,
-            "correct": 7,
-            "accuracyPct": 53.85
-          },
-          "LOW_PULL_DEPTH": {
-            "count": 4,
-            "correct": 3,
-            "accuracyPct": 75.0
+            "count": 11,
+            "correct": 5,
+            "accuracyPct": 45.45
           }
         },
         "tagComboStats": {
@@ -402,26 +397,6 @@
             "count": 1,
             "correct": 1,
             "accuracyPct": 100.0
-          },
-          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
-          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
-          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
-          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
           }
         },
         "confidenceStats": {
@@ -449,18 +424,13 @@
             "count": 11,
             "correct": 7,
             "accuracyPct": 63.64
-          },
-          "Baseline": {
-            "count": 4,
-            "correct": 3,
-            "accuracyPct": 75.0
           }
         },
         "optimizerFlipStats": {
           "NOT_FLIPPED": {
-            "count": 105,
-            "correct": 64,
-            "accuracyPct": 60.95
+            "count": 101,
+            "correct": 61,
+            "accuracyPct": 60.4
           }
         }
       },
@@ -1212,17 +1182,16 @@
       },
       "sevenDay": {
         "tagScoreAdjustments": {
-          "BOOK_AGREEMENT": 0.85,
+          "BOOK_AGREEMENT": 0.79,
           "MISSING_FUNDAMENTALS": -0.31,
-          "REVERSAL": 0.47,
-          "RUN_LINE_MOVEMENT": 0.7,
-          "STEAM": 1.13,
+          "REVERSAL": 0.51,
+          "RUN_LINE_MOVEMENT": 0.66,
+          "STEAM": 1.11,
           "UNCONFIRMED_RUN_LINE_MOVE": 1.28,
           "COMPRESSED_MARKET": -0.11,
-          "BOOK_DIVERGENCE": 1.07,
+          "BOOK_DIVERGENCE": 1.26,
           "RESISTANCE": -2.78,
-          "RUN_LINE_CONFIRMATION": 0.21,
-          "LOW_PULL_DEPTH": 1.39
+          "RUN_LINE_CONFIRMATION": -0.25
         },
         "tagComboScoreAdjustments": {
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM+UNCONFIRMED_RUN_LINE_MOVE": -0.83,
@@ -1268,11 +1237,7 @@
           "BOOK_DIVERGENCE+RUN_LINE_MOVEMENT": -0.75,
           "RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75,
           "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -0.75,
-          "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75,
-          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75,
-          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -0.75,
-          "BOOK_AGREEMENT+LOW_PULL_DEPTH+RUN_LINE_MOVEMENT+STEAM": 0.75,
-          "BOOK_DIVERGENCE+LOW_PULL_DEPTH+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75
+          "BOOK_AGREEMENT+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75
         }
       },
       "thirtyDay": {
@@ -1587,16 +1552,16 @@
     },
     "adjustments": {
       "tagScoreAdjustments": {
-        "BOOK_AGREEMENT": -0.02,
-        "BOOK_DIVERGENCE": 0.71,
+        "BOOK_AGREEMENT": -0.03,
+        "BOOK_DIVERGENCE": 0.81,
         "COMPRESSED_MARKET": -0.4,
         "LOW_PULL_DEPTH": 0.76,
         "MISSING_FUNDAMENTALS": -0.62,
         "RESISTANCE": 0.0,
-        "REVERSAL": -0.24,
-        "RUN_LINE_CONFIRMATION": 0.3,
-        "RUN_LINE_MOVEMENT": 0.35,
-        "STEAM": 0.17,
+        "REVERSAL": -0.23,
+        "RUN_LINE_CONFIRMATION": 0.08,
+        "RUN_LINE_MOVEMENT": 0.34,
+        "STEAM": 0.16,
         "UNCONFIRMED_RUN_LINE_MOVE": 0.27
       },
       "tagComboScoreAdjustments": {
@@ -1685,28 +1650,6 @@
     "operationalTagFilterPolicy": "Final-gate, provider, model-discipline, and status tags are kept on audit rows for proof, but removed from signal-learning inputs so the model only learns from predictive market/fundamentals signals."
   },
   "rows": [
-    {
-      "id": "6611ecd500747b1f1aebe1ea49f9d00a",
-      "gameKeyBase": "milwaukee brewers|st. louis cardinals",
-      "homeTeam": "St. Louis Cardinals",
-      "awayTeam": "Milwaukee Brewers",
-      "matchup": "Milwaukee Brewers at St. Louis Cardinals",
-      "commenceTime": "2026-07-07T18:16:00Z",
-      "slateDateEt": "2026-07-07",
-      "homeScore": 3,
-      "awayScore": 4,
-      "winner": "Milwaukee Brewers",
-      "margin": 1,
-      "totalRuns": 7,
-      "completed": true,
-      "status": "MISSING_LOCKED_PREDICTION",
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
-        "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
-      }
-    },
     {
       "id": "c892fb37a2662fa901742b27c6b7f205",
       "gameKeyBase": "athletics|detroit tigers",
@@ -2485,7 +2428,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-08T16:51:22.064168+00:00"
+    "runSk": "AUDIT#2026-07-08T18:48:11.850457+00:00"
   },
   "mlTraining": {
     "ok": true,
