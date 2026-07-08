@@ -7,6 +7,8 @@ import os
 from typing import Any, Dict, List, Optional, Tuple
 
 ML_FEATURES = ["score", "winProbabilityPct", "marketProb", "marketEdge", "bookDivergence", "reversalCount", "runLineMoveAbs", "bookAgreement", "bookDivergenceFlag", "runLineMove", "unconfirmedRunLine", "compressedMarket", "lean", "passTier"]
+NO_PICK_TAGS = {"NO_PICK", "NO_PICK_DISCIPLINE"}
+NO_PICK_ACTIONABILITIES = {"PASS_NO_PICK", "NO_PICK", "NO_ACTIONABLE_PICK"}
 
 
 def _f(value: Any, default: float = 0.0) -> float:
@@ -18,14 +20,29 @@ def _f(value: Any, default: float = 0.0) -> float:
         return default
 
 
+def _is_actionable(row: Dict[str, Any]) -> bool:
+    return bool(row.get("actionablePick") is True or row.get("officialPick") is True or row.get("accuracyTargetEligible") is True)
+
+
+def _is_no_pick(row: Dict[str, Any]) -> bool:
+    tags = set(str(x) for x in (row.get("tags") or []))
+    actionability = str(row.get("actionability") or "").upper()
+    stack = row.get("winnerStackV2") or {}
+    discipline = stack.get("discipline") if isinstance(stack, dict) else {}
+    discipline_actionability = str((discipline or {}).get("actionability") or "").upper()
+    return bool(
+        tags & NO_PICK_TAGS
+        or actionability in NO_PICK_ACTIONABILITIES
+        or discipline_actionability in NO_PICK_ACTIONABILITIES
+    )
+
+
 def _is_optimized(row: Dict[str, Any]) -> bool:
+    if _is_no_pick(row) and not _is_actionable(row):
+        return False
     winner_optimizer = row.get("winnerOptimizer") or {}
     winner_stack = row.get("winnerStackV2") or {}
     return bool(row.get("individualWinnerOptimized") or winner_optimizer.get("applied") or winner_stack.get("applied"))
-
-
-def _is_actionable(row: Dict[str, Any]) -> bool:
-    return bool(row.get("actionablePick") is True or row.get("officialPick") is True or row.get("accuracyTargetEligible") is True)
 
 
 def _accuracy(rows: List[Dict[str, Any]]) -> Optional[float]:
@@ -173,6 +190,15 @@ def _write_ml_artifacts(report: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True, "recordCount": len(records), "datasetPath": csv_path, "modelPath": model_path, "modelSummary": {k: v for k, v in model.items() if k not in {"weights", "means", "scales", "holdoutThresholdCandidates"}}}
 
 
+def _target_rows(actionable: List[Dict[str, Any]], optimized: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], str]:
+    if actionable:
+        return actionable, "explicit_actionable_or_official_accuracy_target_rows"
+    targetable_optimized = [row for row in optimized if not _is_no_pick(row)]
+    if targetable_optimized:
+        return targetable_optimized, "optimized_rows_excluding_pass_no_pick_rows"
+    return [], "no_explicit_actionable_or_targetable_optimized_rows"
+
+
 def apply(module):
     if getattr(module, "_INQSI_MLB_AUDIT_ACTIONABILITY_APPLIED", False):
         return module
@@ -200,24 +226,78 @@ def apply(module):
                 rows.append({**final, "status": "MISSING_PREDICTION"})
                 continue
             correct = module.normalize_team(pred.get("predictedWinner")) == module.normalize_team(final.get("winner"))
-            rows.append({**final, "status": "GRADED", "predictedWinner": pred.get("predictedWinner"), "predictedSide": pred.get("predictedSide"), "score": pred.get("score"), "winProbabilityPct": pred.get("winProbabilityPct"), "confidenceTier": pred.get("confidenceTier"), "tags": pred.get("tags") or [], "winnerOptimizer": pred.get("winnerOptimizer"), "winnerStackV2": pred.get("winnerStackV2"), "officialPick": pred.get("officialPick"), "officialPrediction": pred.get("officialPrediction"), "actionablePick": pred.get("actionablePick"), "accuracyTargetEligible": pred.get("accuracyTargetEligible"), "actionability": pred.get("actionability"), "actionabilityReason": pred.get("actionabilityReason"), "actionabilityRiskReasons": pred.get("actionabilityRiskReasons") or [], "homeSignal": pred.get("homeSignal"), "awaySignal": pred.get("awaySignal"), "correct": correct})
+            rows.append({
+                **final,
+                "status": "GRADED",
+                "predictedWinner": pred.get("predictedWinner"),
+                "predictedSide": pred.get("predictedSide"),
+                "score": pred.get("score"),
+                "winProbabilityPct": pred.get("winProbabilityPct"),
+                "confidenceTier": pred.get("confidenceTier"),
+                "tags": pred.get("tags") or [],
+                "winnerOptimizer": pred.get("winnerOptimizer"),
+                "winnerStackV2": pred.get("winnerStackV2"),
+                "officialPick": pred.get("officialPick"),
+                "officialPrediction": pred.get("officialPrediction"),
+                "actionablePick": pred.get("actionablePick"),
+                "accuracyTargetEligible": pred.get("accuracyTargetEligible"),
+                "actionability": pred.get("actionability"),
+                "actionabilityReason": pred.get("actionabilityReason"),
+                "actionabilityRiskReasons": pred.get("actionabilityRiskReasons") or [],
+                "homeSignal": pred.get("homeSignal"),
+                "awaySignal": pred.get("awaySignal"),
+                "correct": correct,
+            })
         return rows
 
     def patched_summarize(rows: List[Dict[str, Any]], historical_rows: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
         historical_rows = historical_rows or []
         graded = [r for r in rows if r.get("status") == "GRADED"]
-        optimized = [r for r in graded if _is_optimized(r)]
-        optimized_base = optimized if optimized else graded
-        optimized_correct = [r for r in optimized_base if r.get("correct")]
+        optimized_applied = [r for r in graded if _is_optimized(r)]
         flipped = [r for r in graded if r.get("optimizerFlippedPick")]
         actionable = [r for r in graded if _is_actionable(r)]
         actionable_correct = [r for r in actionable if r.get("correct")]
+        target_rows, target_policy = _target_rows(actionable, optimized_applied)
+        target_correct = [r for r in target_rows if r.get("correct")]
         all_rows = module._dedupe_rows((rows or []) + (historical_rows or []))
         seven_day_rows = module._rows_since(all_rows, 7)
         thirty_day_rows = module._rows_since(all_rows, 30)
         season_rows = module._rows_since(all_rows, None)
-        optimized_accuracy = _accuracy(optimized_base)
-        return {"windowHours": module.WINDOW_HOURS, "targetAccuracyPct": module.TARGET_ACCURACY_PCT, "completedFinalGames": len(rows), "gradedPredictionCount": len(graded), "missingPredictionCount": len(rows) - len(graded), "optimizedPickCount": len(optimized_base), "optimizedCorrect": len(optimized_correct), "optimizedWrong": len(optimized_base) - len(optimized_correct), "rolling24hOptimizedAccuracyPct": optimized_accuracy, "rolling24hTargetMet": (optimized_accuracy >= module.TARGET_ACCURACY_PCT) if optimized_accuracy is not None else None, "winnerOptimizerAppliedCount": len(optimized), "winnerOptimizerFlipCount": len(flipped), "allScoredPickAccuracyPct": module._accuracy(graded), "historicalRowsUsedForLearning": len(module._dedupe_rows(historical_rows)), "sevenDayRowsUsedForLearning": len(seven_day_rows), "sevenDayAccuracyPct": module._accuracy(seven_day_rows), "thirtyDayRowsUsedForLearning": len(thirty_day_rows), "thirtyDayAccuracyPct": module._accuracy(thirty_day_rows), "seasonRowsUsedForLearning": len(season_rows), "seasonAccuracyPct": module._accuracy(season_rows), "multiWindowWeights": module.MULTI_WINDOW_WEIGHTS, "actionablePickCount": len(actionable), "actionableCorrect": len(actionable_correct), "actionableWrong": len(actionable) - len(actionable_correct), "rolling24hActionableAccuracyPct": _accuracy(actionable), "actionabilityPolicy": "Actionable metrics count explicit actionablePick/officialPick/accuracyTargetEligible rows; audits prefer enriched Winner Stack rows when more than one stored prediction exists for a game."}
+        target_accuracy = _accuracy(target_rows)
+        return {
+            "windowHours": module.WINDOW_HOURS,
+            "targetAccuracyPct": module.TARGET_ACCURACY_PCT,
+            "completedFinalGames": len(rows),
+            "gradedPredictionCount": len(graded),
+            "missingPredictionCount": len(rows) - len(graded),
+            "optimizedPickCount": len(target_rows),
+            "optimizedCorrect": len(target_correct),
+            "optimizedWrong": len(target_rows) - len(target_correct),
+            "rolling24hOptimizedAccuracyPct": target_accuracy,
+            "rolling24hTargetMet": (target_accuracy >= module.TARGET_ACCURACY_PCT) if target_accuracy is not None else None,
+            "winnerOptimizerAppliedCount": len(optimized_applied),
+            "winnerOptimizerFlipCount": len(flipped),
+            "allScoredPickAccuracyPct": module._accuracy(graded),
+            "historicalRowsUsedForLearning": len(module._dedupe_rows(historical_rows)),
+            "sevenDayRowsUsedForLearning": len(seven_day_rows),
+            "sevenDayAccuracyPct": module._accuracy(seven_day_rows),
+            "thirtyDayRowsUsedForLearning": len(thirty_day_rows),
+            "thirtyDayAccuracyPct": module._accuracy(thirty_day_rows),
+            "seasonRowsUsedForLearning": len(season_rows),
+            "seasonAccuracyPct": module._accuracy(season_rows),
+            "multiWindowWeights": module.MULTI_WINDOW_WEIGHTS,
+            "actionablePickCount": len(actionable),
+            "actionableCorrect": len(actionable_correct),
+            "actionableWrong": len(actionable) - len(actionable_correct),
+            "rolling24hActionableAccuracyPct": _accuracy(actionable),
+            "accuracyTargetRowPolicy": target_policy,
+            "excludedNoPickOptimizedRows": len([r for r in graded if _is_no_pick(r) and not _is_actionable(r)]),
+            "actionabilityPolicy": (
+                "Actionable metrics count explicit actionablePick/officialPick/accuracyTargetEligible rows. "
+                "Pass/no-pick rows remain graded for learning and all-scored diagnostics, but they are excluded "
+                "from optimized accuracy-target proof so the 90% target measures only real display/official picks."
+            ),
+        }
 
     def patched_build(*args, **kwargs):
         report = original_build(*args, **kwargs)
