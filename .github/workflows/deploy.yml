@@ -2,10 +2,10 @@ name: Deploy SAM to AWS
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
     paths-ignore:
-      - 'runtime_reports/**'
-      - '.github/workflows/**'
+      - "runtime_reports/**"
+      - ".github/workflows/**"
   workflow_dispatch:
 
 concurrency:
@@ -23,7 +23,7 @@ jobs:
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -40,35 +40,19 @@ jobs:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
           if [ -z "${ODDS_API_KEY_VALUE:-}" ]; then
-            echo "::error::Missing ODDS_API_KEY GitHub secret. MLB V1 uses The Odds API line movement."
+            echo "::error::Missing ODDS_API_KEY GitHub secret. MLB production pulls must use The Odds API only."
             exit 1
           fi
           echo "ODDS_API_KEY secret is present."
 
-      - name: Verify SportsDataIO secret present
-        env:
-          SPORTSDATAIO_API_KEY_VALUE: ${{ secrets.SPORTSDATAIO_API_KEY }}
-        run: |
-          if [ -z "${SPORTSDATAIO_API_KEY_VALUE:-}" ]; then
-            echo "::error::Missing SPORTSDATAIO_API_KEY GitHub secret. MLB fundamentals require this secret."
-            exit 1
-          fi
-          echo "SPORTSDATAIO_API_KEY secret is present."
-
       - name: Setup AWS SAM
         uses: aws-actions/setup-sam@v2
 
-      - name: Patch SAM template for MLB v1
+      - name: Patch SAM template for MLB v1 schedules and locks
         run: python scripts/patch_template_mlb_v1.py
-
-      - name: Patch SAM template for MLB quarter-hour schedule
-        run: python scripts/patch_template_mlb_hot_start_v2.py
 
       - name: Patch SAM template for MLB settlement routes
         run: python scripts/patch_template_mlb_results_routes.py
-
-      - name: Patch SAM template for SportsDataIO fundamentals
-        run: python scripts/patch_template_sportsdataio.py
 
       - name: Validate
         run: sam validate
@@ -106,7 +90,7 @@ jobs:
       - name: Deploy
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          SPORTSDATAIO_API_KEY_VALUE: ${{ secrets.SPORTSDATAIO_API_KEY }}
+          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
           sam deploy \
             --template-file template.yaml \
@@ -119,9 +103,10 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               OddsApiKey="${ODDS_API_KEY_VALUE}" \
-              SportsDataIOApiKey="${SPORTSDATAIO_API_KEY_VALUE}"
+              InqsiAdminApiToken="${INQSI_ADMIN_API_TOKEN_VALUE:-}"
 
       - name: Grant image moderation Rekognition access
+        continue-on-error: true
         run: |
           ROLE_NAME=$(aws cloudformation describe-stack-resource \
             --stack-name parlay-platform-dev \
@@ -134,38 +119,6 @@ jobs:
             --role-name "$ROLE_NAME" \
             --policy-name InqsiImageModerationRekognitionAccess \
             --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["rekognition:DetectModerationLabels","rekognition:DetectText"],"Resource":"*"}]}'
-
-      - name: Configure admin API token
-        env:
-          INQSI_ADMIN_API_TOKEN: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
-        run: |
-          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
-            --stack-name parlay-platform-dev \
-            --region ${{ secrets.AWS_REGION }} \
-            --logical-resource-id ApiFunction \
-            --query "StackResourceDetail.PhysicalResourceId" \
-            --output text)
-          test -n "$FUNCTION_NAME"
-          aws lambda get-function-configuration \
-            --function-name "$FUNCTION_NAME" \
-            --query "Environment.Variables" \
-            --output json > current-env.json
-          python - <<'PY'
-          import json, os
-          with open('current-env.json') as f:
-              variables = json.load(f) or {}
-          value = os.environ.get('INQSI_ADMIN_API_TOKEN', '').strip()
-          if value:
-              variables['INQSI_ADMIN_API_TOKEN'] = value
-          else:
-              variables.pop('INQSI_ADMIN_API_TOKEN', None)
-          with open('lambda-env.json', 'w') as f:
-              json.dump({'Variables': variables}, f)
-          PY
-          aws lambda update-function-configuration \
-            --function-name "$FUNCTION_NAME" \
-            --environment file://lambda-env.json >/tmp/lambda-update.json
-          aws lambda wait function-updated --function-name "$FUNCTION_NAME"
 
       - name: Read stack outputs
         id: stack_outputs
@@ -205,6 +158,11 @@ jobs:
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           curl --fail --silent --show-error "${API_URL}v1/mlb/today"
+
+      - name: Smoke test MLB lock status endpoint
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          curl --fail --silent --show-error "${API_URL}v1/mlb/locks/status"
 
       - name: Smoke test MLB game-winner endpoint
         run: |
