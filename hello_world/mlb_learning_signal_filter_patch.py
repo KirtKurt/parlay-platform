@@ -24,6 +24,13 @@ NON_PREDICTIVE_TAGS = {
     "NO_PICK_DISCIPLINE",
     "CALIBRATED_PROBABILITY",
     "WINNER_STACK_V2",
+    # ML signal-layer outputs are post-model decisions, not raw market evidence.
+    "ML_SIGNAL_LAYERS",
+    "ML_SIGNAL_HARD_BLOCKED",
+    "ML_PRIMARY_SIGNAL_CANDIDATE",
+    "ML_WATCHLIST_SIGNAL",
+    "ML_NO_PRIMARY_SIGNAL",
+    "ML_SIGNAL_LAYER_SELECTION",
 }
 
 
@@ -51,7 +58,7 @@ def apply(module):
         if isinstance(result, dict):
             result["excludedOperationalTags"] = sorted(NON_PREDICTIVE_TAGS)
             result["operationalTagFilterPolicy"] = (
-                "Final-gate, provider, model-discipline, and status tags are kept on audit rows for proof, "
+                "Final-gate, provider, model-discipline, ML signal-layer, and status tags are kept on audit rows for proof, "
                 "but removed from signal-learning inputs so the model only learns from predictive market/fundamentals signals."
             )
         return result
