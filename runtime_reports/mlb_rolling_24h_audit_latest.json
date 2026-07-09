@@ -1,15 +1,15 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-09T04:20:02.651193+00:00",
+  "createdAt": "2026-07-09T05:36:19.330655+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
     "windowHours": 24,
     "targetAccuracyPct": 90.0,
-    "completedFinalGames": 13,
+    "completedFinalGames": 15,
     "gradedPredictionCount": 1,
-    "missingPredictionCount": 12,
+    "missingPredictionCount": 14,
     "optimizedPickCount": 0,
     "optimizedCorrect": 0,
     "optimizedWrong": 0,
@@ -1525,6 +1525,12 @@
       "FUNDAMENTALS_APPLIED",
       "GAME_STARTED_OR_CLOSED",
       "LOCK_CLOSED",
+      "ML_NO_PRIMARY_SIGNAL",
+      "ML_PRIMARY_SIGNAL_CANDIDATE",
+      "ML_SIGNAL_HARD_BLOCKED",
+      "ML_SIGNAL_LAYERS",
+      "ML_SIGNAL_LAYER_SELECTION",
+      "ML_WATCHLIST_SIGNAL",
       "NO_PICK",
       "NO_PICK_DISCIPLINE",
       "ODDS_API_ONLY",
@@ -1536,7 +1542,7 @@
       "SPORTSDATAIO_FINAL_GATE_MISSING",
       "WINNER_STACK_V2"
     ],
-    "operationalTagFilterPolicy": "Final-gate, provider, model-discipline, and status tags are kept on audit rows for proof, but removed from signal-learning inputs so the model only learns from predictive market/fundamentals signals."
+    "operationalTagFilterPolicy": "Final-gate, provider, model-discipline, ML signal-layer, and status tags are kept on audit rows for proof, but removed from signal-learning inputs so the model only learns from predictive market/fundamentals signals."
   },
   "rows": [
     {
@@ -1962,6 +1968,50 @@
         "selectionPolicy": "strict_45_minute_locked_card_only",
         "missingReason": "no_prediction_row_at_or_before_lock"
       }
+    },
+    {
+      "id": "8c0695707371420ef6b1cf89c2d1b262",
+      "gameKeyBase": "arizona diamondbacks|san diego padres",
+      "homeTeam": "San Diego Padres",
+      "awayTeam": "Arizona Diamondbacks",
+      "matchup": "Arizona Diamondbacks at San Diego Padres",
+      "commenceTime": "2026-07-09T02:11:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 10,
+      "awayScore": 4,
+      "winner": "San Diego Padres",
+      "margin": 6,
+      "totalRuns": 14,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "49de1a8b7d85007610fb077c920e206a",
+      "gameKeyBase": "colorado rockies|los angeles dodgers",
+      "homeTeam": "Los Angeles Dodgers",
+      "awayTeam": "Colorado Rockies",
+      "matchup": "Colorado Rockies at Los Angeles Dodgers",
+      "commenceTime": "2026-07-09T02:11:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 4,
+      "awayScore": 3,
+      "winner": "Los Angeles Dodgers",
+      "margin": 1,
+      "totalRuns": 7,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
     }
   ],
   "policy": "Audit every completed MLB game in the trailing 24 hours. The optimizer target is correct team-winner selection for every individual game; 90% is measured as rolling 24h accuracy across all optimized picks. Signal scoring blends current 24h, 7-day, 30-day, and season audit trends.",
@@ -1970,7 +2020,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-09T04:20:02.651193+00:00"
+    "runSk": "AUDIT#2026-07-09T05:36:19.330655+00:00"
   },
   "mlTraining": {
     "ok": true,
