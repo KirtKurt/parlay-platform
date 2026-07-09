@@ -1,56 +1,20 @@
-from __future__ import annotations
-
-import re
 from pathlib import Path
 
-ROOT = Path.cwd()
-TEMPLATE = ROOT / "template.yaml"
+TEMPLATE = Path("template.yaml")
+text = TEMPLATE.read_text()
 
 
-def read(path: str) -> str:
-    return (ROOT / path).read_text()
-
-
-def write(path: str, text: str) -> None:
-    (ROOT / path).write_text(text)
-    print(f"patched {path}")
-
-
-def remove_indented_event_block(current: str, event_name: str) -> str:
-    lines = current.splitlines(keepends=True)
+def remove_child_event(s: str, name: str) -> str:
+    lines = s.splitlines(keepends=True)
     out = []
     i = 0
-    needle = f"        {event_name}:"
-    while i < len(lines):
-        line = lines[i]
-        if line.startswith(needle):
-            i += 1
-            while i < len(lines):
-                nxt = lines[i]
-                is_next_event = nxt.startswith("        ") and not nxt.startswith("          ")
-                is_next_resource = nxt.startswith("  ") and not nxt.startswith("    ")
-                if is_next_event or is_next_resource:
-                    break
-                i += 1
-            continue
-        out.append(line)
-        i += 1
-    return "".join(out)
-
-
-def remove_resource_block(current: str, resource_name: str) -> str:
-    lines = current.splitlines(keepends=True)
-    out = []
-    i = 0
-    needle = f"  {resource_name}:"
+    needle = f"        {name}:"
     while i < len(lines):
         if lines[i].startswith(needle):
             i += 1
             while i < len(lines):
                 nxt = lines[i]
-                is_next_resource = nxt.startswith("  ") and not nxt.startswith("    ")
-                is_outputs = nxt.startswith("Outputs:")
-                if is_next_resource or is_outputs:
+                if (nxt.startswith("        ") and not nxt.startswith("          ")) or (nxt.startswith("  ") and not nxt.startswith("    ")) or nxt.startswith("Outputs:"):
                     break
                 i += 1
             continue
@@ -59,55 +23,104 @@ def remove_resource_block(current: str, resource_name: str) -> str:
     return "".join(out)
 
 
-def insert_once(current: str, marker: str, block: str, contains: str) -> str:
-    if contains in current:
-        return current
-    if marker not in current:
+def remove_resource(s: str, name: str) -> str:
+    lines = s.splitlines(keepends=True)
+    out = []
+    i = 0
+    needle = f"  {name}:"
+    while i < len(lines):
+        if lines[i].startswith(needle):
+            i += 1
+            while i < len(lines):
+                nxt = lines[i]
+                if (nxt.startswith("  ") and not nxt.startswith("    ")) or nxt.startswith("Outputs:"):
+                    break
+                i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "".join(out)
+
+
+def insert_once(s: str, marker: str, block: str, token: str) -> str:
+    if token in s:
+        return s
+    if marker not in s:
         raise RuntimeError(f"Template marker not found: {marker.strip()}")
-    return current.replace(marker, block + marker, 1)
+    return s.replace(marker, block + marker, 1)
 
 
-def patch_template() -> None:
-    text = TEMPLATE.read_text()
-    for event_name in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET"]:
-        text = remove_indented_event_block(text, event_name)
-    text = remove_resource_block(text, "MLBHotPullRecoveryFunction")
-    text = re.sub(
-        r'(        MLBHotEvery15Min:\n          Type: Schedule\n          Properties:\n)            Schedule: [^\n]+\n            Input: .*?\n',
-        r'\1            Schedule: cron(0/15 * * * ? *)\n            Input: \'{"sport":"mlb","t":"HOT","run":"hot_pull_audited","days_ahead":0}\'\n',
-        text,
-        count=1,
-        flags=re.S,
-    )
-    text = text.replace('"days_ahead":1', '"days_ahead":0').replace('"days_ahead": 1', '"days_ahead": 0')
-    if "MLB_PULL_START_AT_ET:" not in text:
-        marker = "        ODDS_API_KEY: !Ref OddsApiKey\n"
-        if marker in text:
-            text = text.replace(marker, marker + "        MLB_PULL_START_AT_ET: '2026-07-02T01:00:00-04:00'\n        MLB_SCHED_INTERVAL_MINUTES: '15'\n", 1)
-    if "RawArchiveBucket:" not in text:
-        text = insert_once(text, "  InqsiMembersTable:\n", """
-  RawArchiveBucket:
-    Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    Properties:
-      BucketName: !Sub "${AWS::StackName}-raw-archive-${AWS::AccountId}-${AWS::Region}"
-      VersioningConfiguration:
-        Status: Enabled
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
+def add_global_env(s: str, key: str, value: str) -> str:
+    if f"        {key}:" in s:
+        return s
+    marker = "        ODDS_API_KEY: !Ref OddsApiKey\n"
+    if marker not in s:
+        raise RuntimeError("ODDS_API_KEY marker missing")
+    return s.replace(marker, marker + f"        {key}: {value}\n", 1)
 
-""", "RawArchiveBucket:")
-    if "RAW_ARCHIVE_BUCKET: !Ref RawArchiveBucket" not in text:
-        text = text.replace("        OUTCOMES_TABLE: !Ref OutcomesTable\n", "        OUTCOMES_TABLE: !Ref OutcomesTable\n        RAW_ARCHIVE_BUCKET: !Ref RawArchiveBucket\n", 1)
-    if "MLBDailyPickLockFunction:" not in text:
-        text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
+
+def patch_mlb_hot_block(s: str) -> str:
+    lines = s.splitlines(keepends=True)
+    out = []
+    in_block = False
+    seen = False
+    for line in lines:
+        if line.startswith("        MLBHotEvery15Min:"):
+            in_block = True
+            seen = True
+            out.append(line)
+            continue
+        if in_block:
+            if (line.startswith("        ") and not line.startswith("          ")) or (line.startswith("  ") and not line.startswith("    ")) or line.startswith("Outputs:"):
+                in_block = False
+                out.append(line)
+                continue
+            if line.lstrip().startswith("Schedule:"):
+                out.append(line[: len(line) - len(line.lstrip())] + "Schedule: cron(0/15 * * * ? *)\n")
+                continue
+            if line.lstrip().startswith("Input:") and '"sport":"mlb"' in line:
+                out.append(line[: len(line) - len(line.lstrip())] + "Input: '{\"sport\":\"mlb\",\"t\":\"HOT\",\"run\":\"hot_pull_audited\",\"days_ahead\":0}'\n")
+                continue
+        out.append(line)
+    if not seen:
+        raise RuntimeError("MLBHotEvery15Min block missing")
+    return "".join(out)
+
+
+def block_for(s: str, name: str) -> str:
+    lines = s.splitlines(keepends=True)
+    out = []
+    in_block = False
+    for line in lines:
+        if line.startswith(f"        {name}:"):
+            in_block = True
+            out.append(line)
+            continue
+        if in_block:
+            if (line.startswith("        ") and not line.startswith("          ")) or (line.startswith("  ") and not line.startswith("    ")) or line.startswith("Outputs:"):
+                break
+            out.append(line)
+    return "".join(out)
+
+
+for legacy in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET"]:
+    text = remove_child_event(text, legacy)
+text = remove_resource(text, "MLBHotPullRecoveryFunction")
+text = patch_mlb_hot_block(text)
+text = text.replace('"days_ahead":1', '"days_ahead":0').replace('"days_ahead": 1', '"days_ahead": 0')
+
+for key, value in [
+    ("MLB_PULL_START_AT_ET", "'2026-07-02T01:00:00-04:00'"),
+    ("MLB_SCHED_INTERVAL_MINUTES", "'15'"),
+    ("ODDS_PRIMARY_BOOK", "'fanduel'"),
+    ("MLB_PROMOTION_EDGE_THRESHOLD", "'0.0015'"),
+    ("MLB_PROMOTION_FALLBACK_EDGE_THRESHOLD", "'0.0005'"),
+    ("MLB_MIN_EV_FOR_PROMOTION", "'0.0'"),
+]:
+    text = add_global_env(text, key, value)
+
+if "MLBDailyPickLockFunction:" not in text:
+    text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
   MLBDailyPickLockFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -147,94 +160,25 @@ def patch_template() -> None:
             Method: GET
 
 """, "MLBDailyPickLockFunction:")
-    else:
-        for env_line in ["          MLB_MIN_PULLS_PER_GAME_FOR_LOCK: '4'\n", "          MLB_MAX_LATEST_PULL_AGE_MINUTES_FOR_LOCK: '20'\n"]:
-            if env_line.strip() not in text:
-                text = text.replace("          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n", "          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n" + env_line, 1)
-    text = text.replace('"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"', '"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"')
-    text = text.replace('"includeFullMlbSnapshots":true', '"includeFullMlbSnapshots":false')
-    violations = []
-    if '"days_ahead":1' in text or '"days_ahead": 1' in text:
-        violations.append("days_ahead:1 still present")
-    if "Schedule: rate(15 minutes)" in text and "MLBHotEvery15Min" in text:
-        violations.append("MLBHotEvery15Min is not quarter-hour cron")
-    for legacy_event in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET", "MLBHotPullRecoveryFunction"]:
-        if legacy_event in text:
-            violations.append(f"{legacy_event} still present")
-    if violations:
-        raise RuntimeError("Unsafe MLB SAM template after patch: " + "; ".join(violations))
-    TEMPLATE.write_text(text)
-    print("patched template.yaml for single MLB HOT ingest path plus T-minus-45 daily lock")
+else:
+    for line in ["          MLB_MIN_PULLS_PER_GAME_FOR_LOCK: '4'\n", "          MLB_MAX_LATEST_PULL_AGE_MINUTES_FOR_LOCK: '20'\n"]:
+        if line.strip() not in text:
+            text = text.replace("          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n", "          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n" + line, 1)
 
+text = text.replace('"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"', '"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"')
+text = text.replace('"includeFullMlbSnapshots":true', '"includeFullMlbSnapshots":false')
 
-def patch_manual_pull() -> None:
-    path = "hello_world/mlb_manual_pull.py"
-    text = read(path)
-    old = '''        game_key = f"mlb|{game_date}|{away.lower()}|{home.lower()}"
-        games_out.append({
-            "id": raw_game.get("id") or game_key,
-            "game_id": raw_game.get("id") or game_key,
-            "game_key": game_key,
-            "internal_key": game_key,
-'''
-    new = '''        provider_event_id = str(raw_game.get("id") or "").strip()
-        commence_key = str(raw_game.get("commence_time") or "unknown").replace("|", "_")
-        if provider_event_id:
-            game_key = f"mlb|{game_date}|event|{provider_event_id}"
-        else:
-            game_key = f"mlb|{game_date}|{commence_key}|{away.lower()}|{home.lower()}"
-        games_out.append({
-            "id": provider_event_id or game_key,
-            "game_id": provider_event_id or game_key,
-            "game_key": game_key,
-            "game_identity": provider_event_id or game_key,
-            "internal_key": game_key,
-'''
-    if old in text:
-        text = text.replace(old, new, 1)
-    text = text.replace('"game_key_pattern": "mlb|YYYY-MM-DD|away|home"', '"game_key_pattern": "mlb|YYYY-MM-DD|event|ODDS_API_EVENT_ID"')
-    write(path, text)
+hot = block_for(text, "MLBHotEvery15Min")
+violations = []
+if "Schedule: cron(0/15 * * * ? *)" not in hot:
+    violations.append("MLBHotEvery15Min is not quarter-hour cron")
+if '"days_ahead":1' in text or '"days_ahead": 1' in text:
+    violations.append("days_ahead:1 still present")
+for legacy in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET", "MLBHotPullRecoveryFunction"]:
+    if f"        {legacy}:" in text or f"  {legacy}:" in text:
+        violations.append(f"{legacy} still present")
+if violations:
+    raise RuntimeError("Unsafe MLB SAM template after patch: " + "; ".join(violations))
 
-
-def patch_signal_api() -> None:
-    path = "hello_world/mlb_signal_api.py"
-    text = read(path)
-    marker = '''def _build_three_leg_parlay(rows: List[Dict[str, Any]], latest_games: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:'''
-    start = text.find(marker)
-    end = text.find("\n\ndef hot_sides", start)
-    if start >= 0 and end > start:
-        text = text[:start] + '''def _build_three_leg_parlay(rows: List[Dict[str, Any]], latest_games: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
-    return {"ok": False, "deprecated": True, "reason": "MLB production is individual game moneyline picks only."}
-''' + text[end:]
-    text = text.replace('"message": "MLB game-winner attempts and the 3-leg parlay attempt are returned for pre-start display; No Clean Edge rows remain marked as No Clean Edge.",', '"message": "MLB individual game-winner attempts are returned for pre-start display; parlay output is deprecated for MLB production.",')
-    text = text.replace('"7_three_leg_parlay_attempt": "CONNECTED",', '"7_three_leg_parlay_attempt": "DEPRECATED_MLB_SINGLE_GAME_ONLY",')
-    write(path, text)
-
-
-def patch_date_signal_api() -> None:
-    path = "hello_world/mlb_date_signal_api.py"
-    text = read(path)
-    text = text.replace('parlay = _build_three_leg_parlay(rows, latest_games)', 'parlay = {"ok": False, "deprecated": True, "reason": "MLB production is individual game moneyline picks only."}')
-    text = text.replace('"message": "MLB game-winner attempts and 3-leg parlay are built only from date-isolated 15-minute HOT pull history. Advanced context is scored into eligibility and blocks ADVANCED_ELIGIBLE when required feeds are missing.",', '"message": "MLB individual game-winner attempts are built only from date-isolated 15-minute HOT pull history. Parlay output is deprecated for MLB production.",')
-    write(path, text)
-
-
-def patch_core_api() -> None:
-    path = "hello_world/inqsi_mlb_v1_core.py"
-    text = read(path)
-    text = text.replace('"message": "INQSI MLB v1.0 core is available. Individual game-winner prediction is now the first priority; parlays are secondary assembly."', '"message": "INQSI MLB core is single-game moneyline picks only. Parlays are deprecated on the MLB production path."')
-    text = text.replace(', "parlay_analysis": parlay_analysis(market_rows, data.get("three_leg_parlay") or {})', ', "parlay_analysis": {"deprecated": True, "reason": "MLB production is individual game moneyline picks only."}')
-    write(path, text)
-
-
-def main() -> None:
-    patch_template()
-    patch_manual_pull()
-    patch_signal_api()
-    patch_date_signal_api()
-    patch_core_api()
-    print("MLB AWS production patch complete: single-game ML engine, no MLB parlays, same-day quarter-hour HOT pulls, T-minus-45 lock.")
-
-
-if __name__ == "__main__":
-    main()
+TEMPLATE.write_text(text)
+print("Patched template.yaml: MLBHotEvery15Min is quarter-hour cron, same-day only, legacy MLB schedules removed, daily lock present.")
