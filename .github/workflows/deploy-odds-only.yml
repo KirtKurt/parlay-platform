@@ -6,12 +6,17 @@ on:
     branches: ["main"]
     paths:
       - "hello_world/mlb_manual_pull.py"
+      - "hello_world/mlb_daily_pick_lock.py"
       - "scripts/patch_template_mlb_hot_start_v2.py"
       - "scripts/patch_template_mlb_hot_pull_recovery_permanent.py"
       - "scripts/patch_template_mlb_v1.py"
       - "scripts/patch_template_mlb_results_routes.py"
       - "docs/MLB_PREDICTIVE_PLATFORM_V1.md"
       - ".github/workflows/deploy-odds-only.yml"
+
+concurrency:
+  group: parlay-platform-odds-only-deploy
+  cancel-in-progress: true
 
 jobs:
   deploy:
@@ -48,7 +53,7 @@ jobs:
       - name: Setup AWS SAM
         uses: aws-actions/setup-sam@v2
 
-      - name: Patch SAM template for MLB v1
+      - name: Patch SAM template for MLB v1 schedules and locks
         run: python scripts/patch_template_mlb_v1.py
 
       - name: Patch SAM template for MLB settlement routes
@@ -77,6 +82,17 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides OddsApiKey="${ODDS_API_KEY_VALUE}"
 
+      - name: Read stack output API URL
+        id: stack_outputs
+        run: |
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+          echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
+          echo "API_URL=$API_URL"
+
       - name: Confirm MLB audited pull function exists
         run: |
           aws cloudformation describe-stack-resource \
@@ -84,7 +100,19 @@ jobs:
             --region ${{ secrets.AWS_REGION }} \
             --logical-resource-id MLBAuditedPullFunction
 
-      - name: Confirm deployed stack outputs
+      - name: Confirm MLB daily lock function exists
+        run: |
+          aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --region ${{ secrets.AWS_REGION }} \
+            --logical-resource-id MLBDailyPickLockFunction
+
+      - name: Smoke test MLB lock status endpoint
+        run: |
+          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
+          curl --fail --silent --show-error "${API_URL}v1/mlb/locks/status"
+
+      - name: Confirm deployed stack status
         run: |
           aws cloudformation describe-stacks \
             --stack-name parlay-platform-dev \
