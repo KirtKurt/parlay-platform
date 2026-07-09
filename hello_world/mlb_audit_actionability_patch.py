@@ -6,6 +6,7 @@ import math
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
+from mlb_ml_candidate_policy import choose as choose_candidate_policy
 from mlb_ml_feature_vector import ML_FEATURES, VERSION as ML_FEATURE_VECTOR_VERSION, feature_vector
 
 NO_PICK_TAGS = {"NO_PICK", "NO_PICK_DISCIPLINE"}
@@ -149,7 +150,15 @@ def _train(records: List[Dict[str, Any]]) -> Dict[str, Any]:
         z = bias + sum(weights[f] * ((_f(r.get(f)) - means[f]) / (scales[f] or 1.0)) for f in ML_FEATURES)
         return _sigmoid(z)
 
-    scored = [{"p": predict(r), "label": int(r.get("label") or 0), "matchup": r.get("matchup")} for r in holdout]
+    scored = [
+        {
+            "p": predict(r),
+            "label": int(r.get("label") or 0),
+            "matchup": r.get("matchup"),
+            "features": {f: _f(r.get(f)) for f in ML_FEATURES},
+        }
+        for r in holdout
+    ]
     candidates = []
     for i in range(50, 96):
         threshold = i / 100.0
@@ -171,9 +180,19 @@ def _train(records: List[Dict[str, Any]]) -> Dict[str, Any]:
         {"threshold": 0.95, "selectedCount": 0, "correct": 0, "accuracyPct": None}
     )
     selected_threshold["validated"] = bool((selected_threshold.get("accuracyPct") or 0) >= target and selected_threshold.get("selectedCount"))
+    min_guarded = int(os.environ.get("INQSI_MLB_ML_MIN_GUARDED_HOLDOUT_SELECTED", "2"))
+    low_guarded = float(os.environ.get("INQSI_MLB_ML_GUARDED_LOWEST_THRESHOLD", "0.70"))
+    guarded_threshold = choose_candidate_policy(
+        scored,
+        target=target,
+        base=_f(selected_threshold.get("threshold"), 0.86),
+        min_selected=min_guarded,
+        low=low_guarded,
+    )
+    promotion_threshold = guarded_threshold or selected_threshold
     return {
         "ok": True,
-        "version": "MLB-ML-HOLDOUT-SCORER-v2-directional-locked-card",
+        "version": "MLB-ML-HOLDOUT-SCORER-v2.1-guarded-lower-threshold",
         "rowCount": len(rows),
         "trainCount": len(train_rows),
         "holdoutCount": len(holdout),
@@ -184,9 +203,11 @@ def _train(records: List[Dict[str, Any]]) -> Dict[str, Any]:
         "means": means,
         "scales": scales,
         "selectedThreshold": selected_threshold,
-        "validatedAgainstTarget": bool(selected_threshold.get("validated")),
+        "guardedPromotionThreshold": guarded_threshold,
+        "promotionThreshold": promotion_threshold,
+        "validatedAgainstTarget": bool(promotion_threshold and promotion_threshold.get("validated")),
         "holdoutThresholdCandidates": candidates,
-        "policy": "Use as gated overlay only when holdout threshold is validated against target accuracy.",
+        "policy": "Use a lower ML threshold only when the guarded promotion policy validates at the target holdout accuracy; otherwise use the standard validated threshold.",
     }
 
 
