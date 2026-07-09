@@ -7,6 +7,11 @@ on:
       - '.github/workflows/mlb-rolling-24h-audit.yml'
       - 'hello_world/mlb_rolling_24h_audit.py'
       - 'hello_world/mlb_accuracy_target_patch.py'
+      - 'hello_world/mlb_audit_actionability_patch.py'
+      - 'hello_world/mlb_learning_signal_filter_patch.py'
+      - 'hello_world/mlb_locked_card_audit_v1.py'
+      - 'hello_world/mlb_ml_signal_layers.py'
+      - 'hello_world/sitecustomize.py'
       - 'hello_world/all_sports_live_scheduler.py'
   schedule:
     - cron: '20 * * * *'
