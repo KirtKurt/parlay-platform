@@ -153,6 +153,51 @@ elif "Path: /v1/mlb/game-winners" not in text and "Path: /v1/mlb/predictions" in
         1,
     )
 
+if "MLBDailyPickLockFunction:" not in text:
+    text = insert_once(
+        text,
+        "  MLBResultsSchedulerFunction:\n",
+        """
+  MLBDailyPickLockFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_daily_pick_lock.lambda_handler
+      Timeout: 60
+      MemorySize: 1024
+      Environment:
+        Variables:
+          MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'
+          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+      Events:
+        MLBDailyPickLockEveryMinute:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Input: '{"sport":"mlb","run":"daily_lock_check","auto_ingest":false}'
+        MLBDailyPickLockRun:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/locks/run
+            Method: POST
+        MLBDailyPickLockStatus:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/locks/status
+            Method: GET
+        MLBDailyPickLockToday:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/locks/today
+            Method: GET
+
+""",
+        "MLBDailyPickLockFunction:",
+    )
+
 if "MLBResultSignalsFunction:" not in text:
     text = insert_once(
         text,
@@ -247,8 +292,8 @@ exec(Path("scripts/patch_template_mlb_hot_pull_recovery_permanent.py").read_text
 exec(Path("scripts/verify_mlb_schedule_invariants.py").read_text())
 print(
     "Patched template.yaml for INQSI MLB v1 routes, MLB game-winner route, "
-    "result-signal learning, raw S3 archive, AWS EventBridge primary all-sports "
-    "15-minute polling without MLB duplication, 1 AM ET kickoffs, HOT-only MLB pulls, "
-    "permanent dedicated MLB recovery polling removal, legacy MLB T-schedule removal, "
+    "daily T-minus-45 individual-game lock scheduler, result-signal learning, raw S3 archive, "
+    "AWS EventBridge primary all-sports 15-minute polling without MLB duplication, 1 AM ET kickoffs, "
+    "HOT-only MLB pulls, permanent dedicated MLB recovery polling removal, legacy MLB T-schedule removal, "
     "and verified same-day-only MLB schedule invariants."
 )
