@@ -15,11 +15,18 @@ from mlb_date_signal_api import hot_sides, source_status
 from mlb_audit import evaluate_mlb_predictions, settlement_proof_report
 import mlb_game_winner_engine
 
-MODEL_VERSION = "INQSI-MLB-v1.0-core"
-MODEL_CREATED_AT = "2026-06-24"
-MINIMUM_PULLS = 2
+MODEL_VERSION = "INQSI-MLB-v1.1-core-single-game"
+MODEL_CREATED_AT = "2026-07-09"
+MINIMUM_PULLS = int(os.environ.get("MLB_MIN_PULLS_FOR_LOCK", "4"))
 
-WEIGHTS = {"starting_pitcher": 0.20, "bullpen_freshness": 0.15, "lineup_strength": 0.15, "offensive_splits": 0.10, "park_weather": 0.10, "injuries_news": 0.10, "travel_rest": 0.07, "defense": 0.05, "market_movement": 0.05, "model_edge": 0.03}
+WEIGHTS = {
+    "market_consensus": 0.34,
+    "line_movement": 0.18,
+    "book_agreement": 0.12,
+    "real_book_ev": 0.18,
+    "pull_depth": 0.08,
+    "risk_guardrails": 0.10,
+}
 CONFIDENCE_TIERS = [(0.67, "Premium"), (0.60, "Solid"), (0.55, "Lean"), (0.50, "Coin Flip"), (0.00, "Pass")]
 
 PREDICTIONS_TABLE = os.environ.get("PREDICTIONS_TABLE", "")
@@ -40,7 +47,16 @@ def _json_default(value: Any) -> Any:
 
 
 def _resp(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
-    return {"statusCode": status, "headers": {"content-type": "application/json", "access-control-allow-origin": "*", "access-control-allow-headers": "content-type", "access-control-allow-methods": "GET,POST,OPTIONS"}, "body": json.dumps(body, default=_json_default)}
+    return {
+        "statusCode": status,
+        "headers": {
+            "content-type": "application/json",
+            "access-control-allow-origin": "*",
+            "access-control-allow-headers": "content-type",
+            "access-control-allow-methods": "GET,POST,OPTIONS",
+        },
+        "body": json.dumps(body, default=_json_default),
+    }
 
 
 def _params(event: Dict[str, Any]) -> Dict[str, str]:
@@ -62,60 +78,70 @@ def confidence_tier(prob: float) -> str:
     return "Pass"
 
 
-def _component_score(row: Dict[str, Any], component: str) -> Dict[str, Any]:
-    context = row.get("advanced_context") or {}
-    advanced = context.get("advanced_eligibility") or {}
-    blockers = set(advanced.get("blocked_missing_or_pending") or [])
-    if component == "market_movement":
-        hot_delta = abs(float(row.get("hot_delta") or 0))
-        agreement = row.get("book_agreement") or {}
-        agree = int(agreement.get("agreeing_books") or 0)
-        disagree = int(agreement.get("disagreeing_books") or 0)
-        raw = min(100.0, 50.0 + hot_delta * 1500.0 + agree * 3.0 - disagree * 4.0)
-        return {"score": max(0.0, raw), "source_status": "CONNECTED", "blocker": None}
-    blocker_map = {"starting_pitcher": "fip_xfip", "bullpen_freshness": "bullpen_fatigue", "lineup_strength": "confirmed_lineups", "offensive_splits": "wrc_plus", "park_weather": "weather_wind_roof", "injuries_news": "injuries_late_scratches_news", "travel_rest": "travel_rest", "defense": "defense", "model_edge": "closing_line_value"}
-    blocker = blocker_map.get(component)
-    if blocker in blockers or blocker in {"travel_rest", "defense"}:
-        return {"score": 50.0, "source_status": "PENDING_SOURCE", "blocker": blocker}
-    return {"score": 50.0, "source_status": "CONNECTED_NEUTRAL_UNTIL_CALIBRATED", "blocker": None}
-
-
-def score_prediction_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    components = {}
-    weighted = 0.0
-    total_weight = 0.0
-    blockers = set(row.get("advanced_blockers") or [])
-    for component, weight in WEIGHTS.items():
-        payload = _component_score(row, component)
-        components[component] = {**payload, "weight": weight}
-        weighted += float(payload["score"]) * weight
-        total_weight += weight
-        if payload.get("blocker"):
-            blockers.add(payload["blocker"])
-    score = weighted / total_weight if total_weight else 50.0
-    score_diff = score - 50.0
-    prob = probability_from_score(score_diff)
-    return {"model_version": MODEL_VERSION, "overall_score": round(score, 3), "score_diff": round(score_diff, 3), "win_probability": round(prob, 4), "confidence_tier": confidence_tier(prob), "advanced_eligible": len(blockers) == 0, "advanced_blockers": sorted(blockers), "components": components, "weights": WEIGHTS}
-
-
 def today(game_date: Optional[str] = None) -> Dict[str, Any]:
     game_date = game_date or _today_et()
-    return {"ok": True, "sport": "mlb", "date": game_date, "model_version": MODEL_VERSION, "game_winner_model": mlb_game_winner_engine.MODEL_VERSION, "source_status": source_status(), "message": "INQSI MLB v1.0 core is available. Individual game-winner prediction is now the first priority; parlays are secondary assembly."}
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "date": game_date,
+        "model_version": MODEL_VERSION,
+        "game_winner_model": mlb_game_winner_engine.MODEL_VERSION,
+        "source_status": source_status(),
+        "priority": "individual_game_moneyline_picks",
+        "parlays": "disabled_in_primary_mlb_surface",
+        "message": "INQSI MLB v1.1 is the production single-game moneyline surface. It uses stored Odds API pull history, real book prices, EV, and promotion guardrails. Parlays are not part of the primary MLB product.",
+    }
 
 
 def games(game_date: Optional[str] = None, limit: int = 80) -> Dict[str, Any]:
     game_date = game_date or _today_et()
     winners = mlb_game_winner_engine.predict_all(game_date, store=False, limit=limit)
-    return {"ok": True, "sport": "mlb", "date": game_date, "model_version": MODEL_VERSION, "game_winner_model": winners.get("modelVersion"), "count": winners.get("count", 0), "allGamesPredicted": winners.get("allGamesPredicted"), "games": winners.get("predictions") or [], "pullCount": winners.get("pullCount"), "latestPullAt": winners.get("latestPullAt")}
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "date": game_date,
+        "model_version": MODEL_VERSION,
+        "game_winner_model": winners.get("modelVersion"),
+        "priority": "individual_game_moneyline_picks",
+        "count": winners.get("count", 0),
+        "promotedCount": winners.get("promotedCount", 0),
+        "allGamesPredicted": winners.get("allGamesPredicted"),
+        "games": winners.get("predictions") or [],
+        "pullCount": winners.get("pullCount"),
+        "latestPullAt": winners.get("latestPullAt"),
+        "primaryBook": winners.get("primaryBook"),
+        "promotionPolicy": winners.get("promotionPolicy"),
+    }
 
 
 def predictions(game_date: Optional[str] = None, limit: int = 80, store: bool = False) -> Dict[str, Any]:
     game_date = game_date or _today_et()
-    data = hot_sides(game_date=game_date, limit=limit, store=store, include_no_edge=True)
-    market_rows = [{**row, "inqsi_v1_score": score_prediction_row(row)} for row in data.get("game_predictions") or []]
-    market_rows.sort(key=lambda r: (r.get("inqsi_v1_score") or {}).get("overall_score", 0), reverse=True)
     winners = mlb_game_winner_engine.predict_all(game_date, store=store, limit=500)
-    return {"ok": True, "sport": "mlb", "date": game_date, "model_version": MODEL_VERSION, "game_winner_model": winners.get("modelVersion"), "priority": "individual_game_winners", "count": winners.get("count", 0), "allGamesPredicted": winners.get("allGamesPredicted"), "winner_predictions": winners.get("predictions") or [], "market_research_count": len(market_rows), "market_research_rows": market_rows, "parlay_analysis": parlay_analysis(market_rows, data.get("three_leg_parlay") or {}), "storage": {"requested": store, "gameWinnerStoredCount": winners.get("storedCount"), "marketRowsStoredCount": data.get("stored_count")}}
+    market_research = hot_sides(game_date=game_date, limit=limit, store=False, include_no_edge=True)
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "date": game_date,
+        "model_version": MODEL_VERSION,
+        "game_winner_model": winners.get("modelVersion"),
+        "priority": "individual_game_moneyline_picks",
+        "parlay_status": "disabled_in_primary_mlb_surface",
+        "count": winners.get("count", 0),
+        "promotedCount": winners.get("promotedCount", 0),
+        "allGamesPredicted": winners.get("allGamesPredicted"),
+        "winner_predictions": winners.get("predictions") or [],
+        "market_research_count": market_research.get("count", 0),
+        "market_research_status_counts": market_research.get("status_counts") or {},
+        "advanced_context_status": market_research.get("advanced_context_status"),
+        "storage": {
+            "requested": store,
+            "gameWinnerStoredCount": winners.get("storedCount"),
+            "marketRowsStoredCount": 0,
+        },
+        "latestPullAt": winners.get("latestPullAt"),
+        "primaryBook": winners.get("primaryBook"),
+        "promotionPolicy": winners.get("promotionPolicy"),
+    }
 
 
 def _prediction_items(game_date: str) -> List[Dict[str, Any]]:
@@ -137,7 +163,18 @@ def audit(game_date: Optional[str] = None) -> Dict[str, Any]:
         actual = 1.0 if item.get("status") == "CORRECT" else 0.0
         brier_rows.append((prob - actual) ** 2)
     brier = round(sum(brier_rows) / len(brier_rows), 4) if brier_rows else None
-    return {"ok": True, "sport": "mlb", "date": game_date, "model_version": MODEL_VERSION, "evaluation": evaluation, "brier_score": brier, "calibration": calibration(settled), "ranked_pick_accuracy": ranked_accuracy(settled), "suggested_weight_adjustments": suggested_weight_adjustments(settled), "settlement_proof": settlement_proof_report(slate_date=game_date, fetch_scores=False)}
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "date": game_date,
+        "model_version": MODEL_VERSION,
+        "evaluation": evaluation,
+        "brier_score": brier,
+        "calibration": calibration(settled),
+        "ranked_pick_accuracy": ranked_accuracy(settled),
+        "suggested_weight_adjustments": suggested_weight_adjustments(settled),
+        "settlement_proof": settlement_proof_report(slate_date=game_date, fetch_scores=False),
+    }
 
 
 def calibration(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -169,15 +206,6 @@ def ranked_accuracy(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     return out
 
 
-def parlay_analysis(rows: List[Dict[str, Any]], parlay: Dict[str, Any]) -> Dict[str, Any]:
-    blockers = {}
-    for row in rows:
-        for blocker in (row.get("inqsi_v1_score") or {}).get("advanced_blockers") or []:
-            blockers[blocker] = blockers.get(blocker, 0) + 1
-    eligible = [row for row in rows if (row.get("inqsi_v1_score") or {}).get("advanced_eligible")]
-    return {"model_version": MODEL_VERSION, "advanced_eligible_legs": len(eligible), "blockers": blockers, "suggested_mode": "NO_ADVANCED_PARLAY" if len(eligible) < 3 else "ADVANCED_PARLAY_CANDIDATE", "three_leg_parlay": parlay, "notes": ["Do not force a 3-leg MLB parlay unless at least 3 legs are advanced-eligible or market-only mode is explicitly requested.", "Market-only research rows remain available for settlement learning."]}
-
-
 def suggested_weight_adjustments(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     if len(rows) < 30:
         return {"sample_size": len(rows), "adjustments": [], "message": "Need at least 30 settled rows before suggesting weight changes."}
@@ -185,7 +213,24 @@ def suggested_weight_adjustments(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def model_version() -> Dict[str, Any]:
-    return {"ok": True, "sport": "mlb", "model_version": MODEL_VERSION, "game_winner_model": mlb_game_winner_engine.MODEL_VERSION, "created_at": MODEL_CREATED_AT, "weights": WEIGHTS, "confidence_tiers": CONFIDENCE_TIERS, "probability_engine": "logistic(score_diff, k=0.075)", "data_architecture": {"lambda": True, "api_gateway": True, "dynamodb": True, "s3_raw_archive": bool(RAW_ARCHIVE_BUCKET), "eventbridge_15_min": True}}
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "model_version": MODEL_VERSION,
+        "game_winner_model": mlb_game_winner_engine.MODEL_VERSION,
+        "created_at": MODEL_CREATED_AT,
+        "weights": WEIGHTS,
+        "confidence_tiers": CONFIDENCE_TIERS,
+        "probability_engine": "market-anchored logistic score with real-book EV promotion guardrails",
+        "data_architecture": {
+            "lambda": True,
+            "api_gateway": True,
+            "dynamodb": True,
+            "s3_raw_archive": bool(RAW_ARCHIVE_BUCKET),
+            "eventbridge_15_min": True,
+            "daily_lock_t_minus_first_game": True,
+        },
+    }
 
 
 def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
