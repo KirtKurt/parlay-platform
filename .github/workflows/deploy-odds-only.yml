@@ -2,20 +2,9 @@ name: Deploy Odds API Only SAM to AWS
 
 on:
   workflow_dispatch:
-  push:
-    branches: ["main"]
-    paths:
-      - "hello_world/mlb_manual_pull.py"
-      - "hello_world/mlb_daily_pick_lock.py"
-      - "scripts/patch_template_mlb_hot_start_v2.py"
-      - "scripts/patch_template_mlb_hot_pull_recovery_permanent.py"
-      - "scripts/patch_template_mlb_v1.py"
-      - "scripts/patch_template_mlb_results_routes.py"
-      - "docs/MLB_PREDICTIVE_PLATFORM_V1.md"
-      - ".github/workflows/deploy-odds-only.yml"
 
 concurrency:
-  group: parlay-platform-odds-only-deploy
+  group: parlay-platform-deploy
   cancel-in-progress: true
 
 jobs:
@@ -59,7 +48,10 @@ jobs:
       - name: Patch SAM template for MLB settlement routes
         run: python scripts/patch_template_mlb_results_routes.py
 
-      - name: Validate
+      - name: Validate MLB production invariants
+        run: python scripts/verify_mlb_schedule_invariants.py
+
+      - name: Validate SAM template
         run: sam validate
 
       - name: Build clean
@@ -67,9 +59,35 @@ jobs:
           rm -rf .aws-sam
           sam build --no-cached
 
+      - name: Wait for existing CloudFormation update to finish
+        run: |
+          for i in $(seq 1 60); do
+            STATUS=$(aws cloudformation describe-stacks \
+              --stack-name parlay-platform-dev \
+              --region ${{ secrets.AWS_REGION }} \
+              --query "Stacks[0].StackStatus" \
+              --output text 2>/dev/null || echo "STACK_MISSING")
+            echo "CloudFormation status: ${STATUS}"
+            case "${STATUS}" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE|STACK_MISSING)
+                exit 0
+                ;;
+              *IN_PROGRESS)
+                sleep 30
+                ;;
+              *)
+                echo "Stack status is not safe for update: ${STATUS}"
+                exit 1
+                ;;
+            esac
+          done
+          echo "Timed out waiting for CloudFormation stack to be updateable."
+          exit 1
+
       - name: Deploy odds-only stack update
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
           sam deploy \
             --template-file template.yaml \
@@ -80,7 +98,9 @@ jobs:
             --force-upload \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --parameter-overrides OddsApiKey="${ODDS_API_KEY_VALUE}"
+            --parameter-overrides \
+              OddsApiKey="${ODDS_API_KEY_VALUE}" \
+              InqsiAdminApiToken="${INQSI_ADMIN_API_TOKEN_VALUE:-}"
 
       - name: Read stack output API URL
         id: stack_outputs
