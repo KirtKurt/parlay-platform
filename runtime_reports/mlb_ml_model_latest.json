@@ -30,10 +30,16 @@
     "opponentFavored",
     "highReversalDirectional",
     "highReversalWeak",
+    "selectedUnderdog",
+    "selectedFavorite",
+    "underdogPositiveMove",
+    "underdogEdgeImproving",
+    "favoriteFlatMoveRisk",
+    "favoriteCompressedRisk",
     "lean",
     "passTier"
   ],
-  "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v2-directional-locked-card",
+  "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v3-underdog-balanced-directional",
   "bias": 0.44349250369740373,
   "weights": {
     "score": 0.407144,
@@ -61,6 +67,12 @@
     "opponentFavored": -0.295047,
     "highReversalDirectional": 0.113762,
     "highReversalWeak": -0.350781,
+    "selectedUnderdog": -0.295047,
+    "selectedFavorite": 0.295047,
+    "underdogPositiveMove": -0.043754,
+    "underdogEdgeImproving": 0.157459,
+    "favoriteFlatMoveRisk": 0.212303,
+    "favoriteCompressedRisk": 0.051313,
     "lean": 0.006621,
     "passTier": -0.551709
   },
@@ -90,6 +102,12 @@
     "opponentFavored": 0.12962962962962962,
     "highReversalDirectional": 0.06481481481481481,
     "highReversalWeak": 0.08333333333333333,
+    "selectedUnderdog": 0.12962962962962962,
+    "selectedFavorite": 0.8703703703703703,
+    "underdogPositiveMove": 0.06481481481481481,
+    "underdogEdgeImproving": 0.009259259259259259,
+    "favoriteFlatMoveRisk": 0.19444444444444445,
+    "favoriteCompressedRisk": 0.12962962962962962,
     "lean": 0.12037037037037036,
     "passTier": 0.3611111111111111
   },
@@ -119,11 +137,17 @@
     "opponentFavored": 0.33746145761488416,
     "highReversalDirectional": 0.24734659734413675,
     "highReversalWeak": 0.2776739162008521,
+    "selectedUnderdog": 0.33746145761488416,
+    "selectedFavorite": 0.33746145761488416,
+    "underdogPositiveMove": 0.24734659734413672,
+    "underdogEdgeImproving": 0.09622504486493749,
+    "favoriteFlatMoveRisk": 0.39761751530021955,
+    "favoriteCompressedRisk": 0.3374614576148844,
     "lean": 0.3269111340734204,
     "passTier": 0.4825619583159323
   },
   "selectedThreshold": {
-    "threshold": 0.86,
+    "threshold": 0.87,
     "selectedCount": 16,
     "correct": 15,
     "accuracyPct": 93.75,
@@ -133,15 +157,15 @@
   "holdoutThresholdCandidates": [
     {
       "threshold": 0.5,
-      "selectedCount": 21,
-      "correct": 18,
-      "accuracyPct": 85.71
+      "selectedCount": 22,
+      "correct": 19,
+      "accuracyPct": 86.36
     },
     {
       "threshold": 0.51,
-      "selectedCount": 21,
-      "correct": 18,
-      "accuracyPct": 85.71
+      "selectedCount": 22,
+      "correct": 19,
+      "accuracyPct": 86.36
     },
     {
       "threshold": 0.52,
@@ -169,15 +193,15 @@
     },
     {
       "threshold": 0.56,
-      "selectedCount": 19,
-      "correct": 16,
-      "accuracyPct": 84.21
+      "selectedCount": 21,
+      "correct": 18,
+      "accuracyPct": 85.71
     },
     {
       "threshold": 0.57,
-      "selectedCount": 19,
-      "correct": 16,
-      "accuracyPct": 84.21
+      "selectedCount": 21,
+      "correct": 18,
+      "accuracyPct": 85.71
     },
     {
       "threshold": 0.58,
@@ -295,15 +319,15 @@
     },
     {
       "threshold": 0.77,
-      "selectedCount": 18,
-      "correct": 15,
-      "accuracyPct": 83.33
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
     },
     {
       "threshold": 0.78,
-      "selectedCount": 18,
-      "correct": 15,
-      "accuracyPct": 83.33
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
     },
     {
       "threshold": 0.79,
@@ -319,9 +343,9 @@
     },
     {
       "threshold": 0.81,
-      "selectedCount": 17,
+      "selectedCount": 18,
       "correct": 15,
-      "accuracyPct": 88.24
+      "accuracyPct": 83.33
     },
     {
       "threshold": 0.82,
@@ -349,52 +373,52 @@
     },
     {
       "threshold": 0.86,
+      "selectedCount": 17,
+      "correct": 15,
+      "accuracyPct": 88.24
+    },
+    {
+      "threshold": 0.87,
       "selectedCount": 16,
       "correct": 15,
       "accuracyPct": 93.75,
       "validated": true
     },
     {
-      "threshold": 0.87,
+      "threshold": 0.88,
       "selectedCount": 16,
       "correct": 15,
       "accuracyPct": 93.75
     },
     {
-      "threshold": 0.88,
-      "selectedCount": 15,
-      "correct": 15,
-      "accuracyPct": 100.0
-    },
-    {
       "threshold": 0.89,
-      "selectedCount": 15,
+      "selectedCount": 16,
       "correct": 15,
-      "accuracyPct": 100.0
+      "accuracyPct": 93.75
     },
     {
       "threshold": 0.9,
-      "selectedCount": 15,
+      "selectedCount": 16,
       "correct": 15,
-      "accuracyPct": 100.0
+      "accuracyPct": 93.75
     },
     {
       "threshold": 0.91,
-      "selectedCount": 15,
+      "selectedCount": 16,
       "correct": 15,
-      "accuracyPct": 100.0
+      "accuracyPct": 93.75
     },
     {
       "threshold": 0.92,
-      "selectedCount": 15,
+      "selectedCount": 16,
       "correct": 15,
-      "accuracyPct": 100.0
+      "accuracyPct": 93.75
     },
     {
       "threshold": 0.93,
-      "selectedCount": 15,
+      "selectedCount": 16,
       "correct": 15,
-      "accuracyPct": 100.0
+      "accuracyPct": 93.75
     },
     {
       "threshold": 0.94,

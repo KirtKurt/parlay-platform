@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-09T16:43:15.527588+00:00",
+  "createdAt": "2026-07-09T18:37:26.854481+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -19,8 +19,8 @@
     "winnerOptimizerFlipCount": 0,
     "allScoredPickAccuracyPct": 100.0,
     "historicalRowsUsedForLearning": 144,
-    "sevenDayRowsUsedForLearning": 91,
-    "sevenDayAccuracyPct": 61.54,
+    "sevenDayRowsUsedForLearning": 90,
+    "sevenDayAccuracyPct": 62.22,
     "thirtyDayRowsUsedForLearning": 144,
     "thirtyDayAccuracyPct": 62.5,
     "seasonRowsUsedForLearning": 144,
@@ -91,10 +91,10 @@
         }
       },
       "sevenDay": {
-        "rowCount": 91,
+        "rowCount": 90,
         "correct": 56,
-        "wrong": 35,
-        "accuracyPct": 61.54,
+        "wrong": 34,
+        "accuracyPct": 62.22,
         "tagStats": {
           "MISSING_FUNDAMENTALS": {
             "count": 20,
@@ -102,9 +102,9 @@
             "accuracyPct": 50.0
           },
           "REVERSAL": {
-            "count": 81,
+            "count": 80,
             "correct": 49,
-            "accuracyPct": 60.49
+            "accuracyPct": 61.25
           },
           "RUN_LINE_MOVEMENT": {
             "count": 55,
@@ -112,9 +112,9 @@
             "accuracyPct": 65.45
           },
           "STEAM": {
-            "count": 43,
+            "count": 42,
             "correct": 31,
-            "accuracyPct": 72.09
+            "accuracyPct": 73.81
           },
           "BOOK_AGREEMENT": {
             "count": 66,
@@ -333,11 +333,6 @@
             "correct": 1,
             "accuracyPct": 100.0
           },
-          "REVERSAL+STEAM": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
             "count": 1,
             "correct": 0,
@@ -351,9 +346,9 @@
             "accuracyPct": 69.23
           },
           "Pass": {
-            "count": 44,
+            "count": 43,
             "correct": 19,
-            "accuracyPct": 43.18
+            "accuracyPct": 44.19
           },
           "Premium": {
             "count": 21,
@@ -373,9 +368,9 @@
         },
         "optimizerFlipStats": {
           "NOT_FLIPPED": {
-            "count": 91,
+            "count": 90,
             "correct": 56,
-            "accuracyPct": 61.54
+            "accuracyPct": 62.22
           }
         }
       },
@@ -1133,9 +1128,9 @@
       "sevenDay": {
         "tagScoreAdjustments": {
           "MISSING_FUNDAMENTALS": 0.0,
-          "REVERSAL": 0.58,
+          "REVERSAL": 0.62,
           "RUN_LINE_MOVEMENT": 0.86,
-          "STEAM": 1.23,
+          "STEAM": 1.32,
           "BOOK_AGREEMENT": 0.84,
           "UNCONFIRMED_RUN_LINE_MOVE": 1.28,
           "COMPRESSED_MARKET": 0.0,
@@ -1181,7 +1176,6 @@
           "BOOK_AGREEMENT+STEAM": 0.75,
           "NO_TAGS": 0.75,
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT": 0.75,
-          "REVERSAL+STEAM": -0.75,
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.75
         }
       },
@@ -1440,10 +1434,10 @@
         "LOW_PULL_DEPTH": 0.76,
         "MISSING_FUNDAMENTALS": 0.38,
         "RESISTANCE": 0.0,
-        "REVERSAL": 0.64,
+        "REVERSAL": 0.65,
         "RUN_LINE_CONFIRMATION": 0.4,
         "RUN_LINE_MOVEMENT": 0.77,
-        "STEAM": 0.95,
+        "STEAM": 0.98,
         "UNCONFIRMED_RUN_LINE_MOVE": 1.28
       },
       "tagComboScoreAdjustments": {
@@ -2016,14 +2010,14 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-09T16:43:15.527588+00:00"
+    "runSk": "AUDIT#2026-07-09T18:37:26.854481+00:00"
   },
   "mlTraining": {
     "ok": true,
     "recordCount": 144,
     "datasetPath": "runtime_reports/mlb_ml_training_dataset_latest.csv",
     "modelPath": "runtime_reports/mlb_ml_model_latest.json",
-    "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v2-directional-locked-card",
+    "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v3-underdog-balanced-directional",
     "trainingSource": {
       "currentRows": 1,
       "historicalRows": 144,
@@ -2063,13 +2057,19 @@
         "opponentFavored",
         "highReversalDirectional",
         "highReversalWeak",
+        "selectedUnderdog",
+        "selectedFavorite",
+        "underdogPositiveMove",
+        "underdogEdgeImproving",
+        "favoriteFlatMoveRisk",
+        "favoriteCompressedRisk",
         "lean",
         "passTier"
       ],
-      "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v2-directional-locked-card",
+      "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v3-underdog-balanced-directional",
       "bias": 0.44349250369740373,
       "selectedThreshold": {
-        "threshold": 0.86,
+        "threshold": 0.87,
         "selectedCount": 16,
         "correct": 15,
         "accuracyPct": 93.75,
