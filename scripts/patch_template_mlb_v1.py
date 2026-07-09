@@ -1,21 +1,24 @@
+from __future__ import annotations
+
+import re
 from pathlib import Path
 
-TEMPLATE = Path("template.yaml")
-text = TEMPLATE.read_text()
+ROOT = Path.cwd()
+TEMPLATE = ROOT / "template.yaml"
 
 
-def insert_once(current: str, marker: str, block: str, contains: str) -> str:
-    if contains in current:
-        return current
-    if marker not in current:
-        raise RuntimeError(f"Template marker not found: {marker.strip()}")
-    return current.replace(marker, block + marker, 1)
+def read(path: str) -> str:
+    return (ROOT / path).read_text()
+
+
+def write(path: str, text: str) -> None:
+    (ROOT / path).write_text(text)
+    print(f"patched {path}")
 
 
 def remove_indented_event_block(current: str, event_name: str) -> str:
-    """Remove a SAM Events child block indented under a Function Events map."""
     lines = current.splitlines(keepends=True)
-    output = []
+    out = []
     i = 0
     needle = f"        {event_name}:"
     while i < len(lines):
@@ -30,44 +33,59 @@ def remove_indented_event_block(current: str, event_name: str) -> str:
                     break
                 i += 1
             continue
-        output.append(line)
+        out.append(line)
         i += 1
-    return "".join(output)
+    return "".join(out)
 
 
-def ensure_global_env(current: str, key: str, value_line: str) -> str:
-    if f"        {key}:" in current:
+def remove_resource_block(current: str, resource_name: str) -> str:
+    lines = current.splitlines(keepends=True)
+    out = []
+    i = 0
+    needle = f"  {resource_name}:"
+    while i < len(lines):
+        if lines[i].startswith(needle):
+            i += 1
+            while i < len(lines):
+                nxt = lines[i]
+                is_next_resource = nxt.startswith("  ") and not nxt.startswith("    ")
+                is_outputs = nxt.startswith("Outputs:")
+                if is_next_resource or is_outputs:
+                    break
+                i += 1
+            continue
+        out.append(lines[i])
+        i += 1
+    return "".join(out)
+
+
+def insert_once(current: str, marker: str, block: str, contains: str) -> str:
+    if contains in current:
         return current
-    marker = "        ODDS_API_KEY: !Ref OddsApiKey\n"
     if marker not in current:
-        raise RuntimeError("ODDS_API_KEY environment marker not found in template.yaml")
-    return current.replace(marker, marker + value_line, 1)
+        raise RuntimeError(f"Template marker not found: {marker.strip()}")
+    return current.replace(marker, block + marker, 1)
 
 
-for key, value in [
-    ("MLB_PULL_START_AT_ET", "        MLB_PULL_START_AT_ET: '2026-07-02T01:00:00-04:00'\n"),
-    ("MLB_SCHED_INTERVAL_MINUTES", "        MLB_SCHED_INTERVAL_MINUTES: '15'\n"),
-    ("MLB_PRIMARY_BOOK", "        MLB_PRIMARY_BOOK: 'fanduel'\n"),
-    ("MLB_PROMOTION_EDGE_THRESHOLD", "        MLB_PROMOTION_EDGE_THRESHOLD: '0.0015'\n"),
-    ("MLB_MIN_PROMOTION_EV", "        MLB_MIN_PROMOTION_EV: '0.0'\n"),
-    ("MLB_MAX_PROMOTED_DOG_PRICE", "        MLB_MAX_PROMOTED_DOG_PRICE: '170'\n"),
-    ("MLB_MIN_PULLS_FOR_LOCK", "        MLB_MIN_PULLS_FOR_LOCK: '4'\n"),
-    ("MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES", "        MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES: '20'\n"),
-]:
-    text = ensure_global_env(text, key, value)
-
-if "RAW_ARCHIVE_BUCKET:" not in text:
-    text = text.replace(
-        "        OUTCOMES_TABLE: !Ref OutcomesTable\n",
-        "        OUTCOMES_TABLE: !Ref OutcomesTable\n        RAW_ARCHIVE_BUCKET: !Ref RawArchiveBucket\n",
-        1,
-    )
-
-if "RawArchiveBucket:" not in text:
-    text = insert_once(
+def patch_template() -> None:
+    text = TEMPLATE.read_text()
+    for event_name in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET"]:
+        text = remove_indented_event_block(text, event_name)
+    text = remove_resource_block(text, "MLBHotPullRecoveryFunction")
+    text = re.sub(
+        r'(        MLBHotEvery15Min:\n          Type: Schedule\n          Properties:\n)            Schedule: [^\n]+\n            Input: .*?\n',
+        r'\1            Schedule: cron(0/15 * * * ? *)\n            Input: \'{"sport":"mlb","t":"HOT","run":"hot_pull_audited","days_ahead":0}\'\n',
         text,
-        "  InqsiMembersTable:\n",
-        """
+        count=1,
+        flags=re.S,
+    )
+    text = text.replace('"days_ahead":1', '"days_ahead":0').replace('"days_ahead": 1', '"days_ahead": 0')
+    if "MLB_PULL_START_AT_ET:" not in text:
+        marker = "        ODDS_API_KEY: !Ref OddsApiKey\n"
+        if marker in text:
+            text = text.replace(marker, marker + "        MLB_PULL_START_AT_ET: '2026-07-02T01:00:00-04:00'\n        MLB_SCHED_INTERVAL_MINUTES: '15'\n", 1)
+    if "RawArchiveBucket:" not in text:
+        text = insert_once(text, "  InqsiMembersTable:\n", """
   RawArchiveBucket:
     Type: AWS::S3::Bucket
     DeletionPolicy: Retain
@@ -85,104 +103,11 @@ if "RawArchiveBucket:" not in text:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
-""",
-        "RawArchiveBucket:",
-    )
-
-for legacy_event in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET"]:
-    text = remove_indented_event_block(text, legacy_event)
-
-text = text.replace(
-    "Schedule: rate(15 minutes)\n            Input: '{\"sport\":\"mlb\",\"t\":\"HOT\",\"run\":\"hot_pull_audited\",\"days_ahead\":1}'",
-    "Schedule: cron(0/15 * * * ? *)\n            Input: '{\"sport\":\"mlb\",\"t\":\"HOT\",\"run\":\"hot_pull_audited\",\"days_ahead\":0}'",
-)
-text = text.replace('"days_ahead":1', '"days_ahead":0')
-text = text.replace('"days_ahead": 1', '"days_ahead": 0')
-
-if "InqsiMLBV1CoreFunction:" not in text:
-    text = insert_once(
-        text,
-        "  MLBResultsSchedulerFunction:\n",
-        """
-  InqsiMLBV1CoreFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: hello_world/
-      Handler: inqsi_mlb_v1_core.lambda_handler
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalLedgerTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PredictionsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref OutcomesTable
-      Events:
-        InqsiMLBV1Today:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/today
-            Method: GET
-        InqsiMLBV1Games:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/games
-            Method: GET
-        InqsiMLBV1Predictions:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/predictions
-            Method: GET
-        InqsiMLBV1GameWinners:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/game-winners
-            Method: GET
-        InqsiMLBV1Audit:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/audit
-            Method: GET
-        InqsiMLBV1ModelVersion:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/model/version
-            Method: GET
-
-  MLBRawArchiveFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: hello_world/
-      Handler: mlb_raw_s3_archive.lambda_handler
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action:
-                - s3:PutObject
-              Resource: !Join ["", [!GetAtt RawArchiveBucket.Arn, "/*"]]
-      Events:
-        MLBRawArchiveEvery15Min:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0/15 * * * ? *)
-            Input: '{"sport":"mlb","run":"hot_raw_archive"}'
-
-""",
-        "InqsiMLBV1CoreFunction:",
-    )
-elif "Path: /v1/mlb/game-winners" not in text and "Path: /v1/mlb/predictions" in text:
-    text = text.replace(
-        "        InqsiMLBV1Audit:\n          Type: Api\n",
-        "        InqsiMLBV1GameWinners:\n          Type: Api\n          Properties:\n            Path: /v1/mlb/game-winners\n            Method: GET\n        InqsiMLBV1Audit:\n          Type: Api\n",
-        1,
-    )
-
-if "MLBDailyPickLockFunction:" not in text:
-    text = insert_once(
-        text,
-        "  MLBResultsSchedulerFunction:\n",
-        """
+""", "RawArchiveBucket:")
+    if "RAW_ARCHIVE_BUCKET: !Ref RawArchiveBucket" not in text:
+        text = text.replace("        OUTCOMES_TABLE: !Ref OutcomesTable\n", "        OUTCOMES_TABLE: !Ref OutcomesTable\n        RAW_ARCHIVE_BUCKET: !Ref RawArchiveBucket\n", 1)
+    if "MLBDailyPickLockFunction:" not in text:
+        text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
   MLBDailyPickLockFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -194,9 +119,8 @@ if "MLBDailyPickLockFunction:" not in text:
         Variables:
           MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'
           MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'
-          MLB_MIN_PULLS_FOR_LOCK: '4'
-          MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES: '20'
-          MLB_MIN_PROMOTED_PICKS_FOR_CLEAN_LOCK: '0'
+          MLB_MIN_PULLS_PER_GAME_FOR_LOCK: '4'
+          MLB_MAX_LATEST_PULL_AGE_MINUTES_FOR_LOCK: '20'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
@@ -222,106 +146,95 @@ if "MLBDailyPickLockFunction:" not in text:
             Path: /v1/mlb/locks/today
             Method: GET
 
-""",
-        "MLBDailyPickLockFunction:",
-    )
-else:
-    env_marker = "          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n"
-    additions = (
-        "          MLB_MIN_PULLS_FOR_LOCK: '4'\n"
-        "          MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES: '20'\n"
-        "          MLB_MIN_PROMOTED_PICKS_FOR_CLEAN_LOCK: '0'\n"
-    )
-    if env_marker in text and "          MLB_MIN_PULLS_FOR_LOCK:" not in text:
-        text = text.replace(env_marker, env_marker + additions, 1)
+""", "MLBDailyPickLockFunction:")
+    else:
+        for env_line in ["          MLB_MIN_PULLS_PER_GAME_FOR_LOCK: '4'\n", "          MLB_MAX_LATEST_PULL_AGE_MINUTES_FOR_LOCK: '20'\n"]:
+            if env_line.strip() not in text:
+                text = text.replace("          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n", "          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n" + env_line, 1)
+    text = text.replace('"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"', '"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"')
+    text = text.replace('"includeFullMlbSnapshots":true', '"includeFullMlbSnapshots":false')
+    violations = []
+    if '"days_ahead":1' in text or '"days_ahead": 1' in text:
+        violations.append("days_ahead:1 still present")
+    if "Schedule: rate(15 minutes)" in text and "MLBHotEvery15Min" in text:
+        violations.append("MLBHotEvery15Min is not quarter-hour cron")
+    for legacy_event in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET", "MLBHotPullRecoveryFunction"]:
+        if legacy_event in text:
+            violations.append(f"{legacy_event} still present")
+    if violations:
+        raise RuntimeError("Unsafe MLB SAM template after patch: " + "; ".join(violations))
+    TEMPLATE.write_text(text)
+    print("patched template.yaml for single MLB HOT ingest path plus T-minus-45 daily lock")
 
-if "MLBResultSignalsFunction:" not in text:
-    text = insert_once(
-        text,
-        "  MLBResultsSchedulerFunction:\n",
-        """
-  MLBResultSignalsFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: hello_world/
-      Handler: mlb_result_signals.lambda_handler
-      Timeout: 300
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalLedgerTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PredictionsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref OutcomesTable
-      Events:
-        MLBResultSignalsGet:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/result-signals
-            Method: GET
-        MLBResultSignalsBuild:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/result-signals
-            Method: POST
 
-""",
-        "MLBResultSignalsFunction:",
-    )
+def patch_manual_pull() -> None:
+    path = "hello_world/mlb_manual_pull.py"
+    text = read(path)
+    old = '''        game_key = f"mlb|{game_date}|{away.lower()}|{home.lower()}"
+        games_out.append({
+            "id": raw_game.get("id") or game_key,
+            "game_id": raw_game.get("id") or game_key,
+            "game_key": game_key,
+            "internal_key": game_key,
+'''
+    new = '''        provider_event_id = str(raw_game.get("id") or "").strip()
+        commence_key = str(raw_game.get("commence_time") or "unknown").replace("|", "_")
+        if provider_event_id:
+            game_key = f"mlb|{game_date}|event|{provider_event_id}"
+        else:
+            game_key = f"mlb|{game_date}|{commence_key}|{away.lower()}|{home.lower()}"
+        games_out.append({
+            "id": provider_event_id or game_key,
+            "game_id": provider_event_id or game_key,
+            "game_key": game_key,
+            "game_identity": provider_event_id or game_key,
+            "internal_key": game_key,
+'''
+    if old in text:
+        text = text.replace(old, new, 1)
+    text = text.replace('"game_key_pattern": "mlb|YYYY-MM-DD|away|home"', '"game_key_pattern": "mlb|YYYY-MM-DD|event|ODDS_API_EVENT_ID"')
+    write(path, text)
 
-if "AllSportsLiveSchedulerFunction:" not in text:
-    text = insert_once(
-        text,
-        "  InqsiAutopsySchedulerFunction:\n",
-        """
-  AllSportsLiveSchedulerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: hello_world/
-      Handler: all_sports_live_scheduler.lambda_handler
-      Timeout: 300
-      MemorySize: 1024
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalLedgerTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PredictionsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref OutcomesTable
-      Events:
-        AllSportsHotEvery15Min:
-          Type: Schedule
-          Properties:
-            Schedule: rate(15 minutes)
-            Input: '{"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_every_15_min","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
-        AllSportsHotKickoff1amEtDst:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 5 * * ? *)
-            Input: '{"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_dst","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
-        AllSportsHotKickoff1amEtStandard:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 6 * * ? *)
-            Input: '{"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_standard","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
 
-""",
-        "AllSportsLiveSchedulerFunction:",
-    )
+def patch_signal_api() -> None:
+    path = "hello_world/mlb_signal_api.py"
+    text = read(path)
+    marker = '''def _build_three_leg_parlay(rows: List[Dict[str, Any]], latest_games: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:'''
+    start = text.find(marker)
+    end = text.find("\n\ndef hot_sides", start)
+    if start >= 0 and end > start:
+        text = text[:start] + '''def _build_three_leg_parlay(rows: List[Dict[str, Any]], latest_games: Dict[str, Dict[str, Any]]) -> Dict[str, Any]:
+    return {"ok": False, "deprecated": True, "reason": "MLB production is individual game moneyline picks only."}
+''' + text[end:]
+    text = text.replace('"message": "MLB game-winner attempts and the 3-leg parlay attempt are returned for pre-start display; No Clean Edge rows remain marked as No Clean Edge.",', '"message": "MLB individual game-winner attempts are returned for pre-start display; parlay output is deprecated for MLB production.",')
+    text = text.replace('"7_three_leg_parlay_attempt": "CONNECTED",', '"7_three_leg_parlay_attempt": "DEPRECATED_MLB_SINGLE_GAME_ONLY",')
+    write(path, text)
 
-text = text.replace('"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"', '"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"')
-text = text.replace('"includeFullMlbSnapshots":true', '"includeFullMlbSnapshots":false')
 
-TEMPLATE.write_text(text)
-exec(Path("scripts/patch_template_mlb_hot_start_v2.py").read_text())
-exec(Path("scripts/patch_template_mlb_hot_pull_recovery_permanent.py").read_text())
-exec(Path("scripts/verify_mlb_schedule_invariants.py").read_text())
-print(
-    "Patched template.yaml for INQSI MLB v1.1 single-game routes, EV promotion model env, "
-    "fresh T-minus-45 daily lock guardrails, quarter-hour Odds API polling, same-day-only pulls, "
-    "no legacy MLB T schedules, no duplicate MLB all-sports polling, and verified schedule invariants."
-)
+def patch_date_signal_api() -> None:
+    path = "hello_world/mlb_date_signal_api.py"
+    text = read(path)
+    text = text.replace('parlay = _build_three_leg_parlay(rows, latest_games)', 'parlay = {"ok": False, "deprecated": True, "reason": "MLB production is individual game moneyline picks only."}')
+    text = text.replace('"message": "MLB game-winner attempts and 3-leg parlay are built only from date-isolated 15-minute HOT pull history. Advanced context is scored into eligibility and blocks ADVANCED_ELIGIBLE when required feeds are missing.",', '"message": "MLB individual game-winner attempts are built only from date-isolated 15-minute HOT pull history. Parlay output is deprecated for MLB production.",')
+    write(path, text)
+
+
+def patch_core_api() -> None:
+    path = "hello_world/inqsi_mlb_v1_core.py"
+    text = read(path)
+    text = text.replace('"message": "INQSI MLB v1.0 core is available. Individual game-winner prediction is now the first priority; parlays are secondary assembly."', '"message": "INQSI MLB core is single-game moneyline picks only. Parlays are deprecated on the MLB production path."')
+    text = text.replace(', "parlay_analysis": parlay_analysis(market_rows, data.get("three_leg_parlay") or {})', ', "parlay_analysis": {"deprecated": True, "reason": "MLB production is individual game moneyline picks only."}')
+    write(path, text)
+
+
+def main() -> None:
+    patch_template()
+    patch_manual_pull()
+    patch_signal_api()
+    patch_date_signal_api()
+    patch_core_api()
+    print("MLB AWS production patch complete: single-game ML engine, no MLB parlays, same-day quarter-hour HOT pulls, T-minus-45 lock.")
+
+
+if __name__ == "__main__":
+    main()

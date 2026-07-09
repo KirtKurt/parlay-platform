@@ -10,20 +10,27 @@ from zoneinfo import ZoneInfo
 import inqsi_pull_history as history
 
 SLATE_TZ = ZoneInfo("America/New_York")
-ENGINE = "MLB-GAME-WINNER-v1.2"
-MODEL_VERSION = "INQSI-MLB-GAME-WINNER-v1.2-2026-07-single-game-ev"
+ENGINE = "MLB-SINGLE-GAME-ML-PROMOTION-v2.1"
+MODEL_VERSION = "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production"
 
-PRIMARY_BOOK = os.environ.get("MLB_PRIMARY_BOOK", "fanduel").strip().lower()
-PROMOTION_EDGE_THRESHOLD = float(os.environ.get("MLB_PROMOTION_EDGE_THRESHOLD", "0.0015"))
-MIN_PROMOTION_EV = float(os.environ.get("MLB_MIN_PROMOTION_EV", "0.0"))
-MAX_PROMOTED_DOG_PRICE = int(os.environ.get("MLB_MAX_PROMOTED_DOG_PRICE", "170"))
-MAX_HEAVY_FAVORITE_PRICE = int(os.environ.get("MLB_MAX_HEAVY_FAVORITE_PRICE", "185"))
-MIN_PROMOTION_PROB = float(os.environ.get("MLB_MIN_PROMOTION_PROB", "0.35"))
-MIN_PROMOTION_PULLS = int(os.environ.get("MLB_MIN_PULLS_FOR_LOCK", "4"))
-
-MIN_CONFIRMED_MARKET_PROB = 0.52
-STRONG_MARKET_PROB = 0.54
-MAX_CONFIRMATION_DIVERGENCE = 0.025
+PRIMARY_BOOK = os.environ.get("ODDS_PRIMARY_BOOK", "fanduel").lower().strip()
+BOOK_PRIORITY = [
+    PRIMARY_BOOK,
+    "draftkings",
+    "betmgm",
+    "caesars",
+    "fanatics",
+    "betrivers",
+    "bovada",
+    "lowvig",
+]
+PROMOTION_THRESHOLD = float(os.environ.get("MLB_PROMOTION_EDGE_THRESHOLD", "0.0015"))
+FALLBACK_THRESHOLD = float(os.environ.get("MLB_PROMOTION_FALLBACK_EDGE_THRESHOLD", "0.0005"))
+MIN_EV_FOR_PROMOTION = float(os.environ.get("MLB_MIN_EV_FOR_PROMOTION", "0.0"))
+MIN_MODEL_PROB = float(os.environ.get("MLB_MIN_MODEL_PROBABILITY", "0.35"))
+MAX_PROMOTED_DOG_PRICE = float(os.environ.get("MLB_MAX_PROMOTED_DOG_PRICE", "180"))
+HEAVY_FAVORITE_PRICE = float(os.environ.get("MLB_HEAVY_FAVORITE_PRICE", "-185"))
+MAX_BOOK_DIVERGENCE = float(os.environ.get("MLB_MAX_BOOK_DIVERGENCE", "0.075"))
 
 
 def _today_et() -> str:
@@ -51,6 +58,27 @@ def _game_day(game: Dict[str, Any]) -> Optional[str]:
     return dt.astimezone(SLATE_TZ).date().isoformat() if dt else None
 
 
+def _game_identity(game: Dict[str, Any]) -> str:
+    provider_id = game.get("game_id") or game.get("id")
+    if provider_id:
+        return str(provider_id)
+    start = str(game.get("commence_time") or game.get("commenceTime") or "unknown")
+    key = str(game.get("game_key") or "")
+    if key:
+        return f"{key}|{start}"
+    home = str(game.get("home_team") or game.get("homeTeam") or "home").lower()
+    away = str(game.get("away_team") or game.get("awayTeam") or "away").lower()
+    return f"{start}|{away}|{home}"
+
+
+def _same_game(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    aid = a.get("game_id") or a.get("id")
+    bid = b.get("game_id") or b.get("id")
+    if aid and bid and str(aid) == str(bid):
+        return True
+    return _game_identity(a) == _game_identity(b)
+
+
 def _safe_float(value: Any, default: float = 0.0) -> float:
     try:
         return float(value)
@@ -58,39 +86,9 @@ def _safe_float(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _safe_int(value: Any) -> Optional[int]:
+def _american_prob(value: Any) -> Optional[float]:
     try:
-        if value is None:
-            return None
-        return int(float(value))
-    except Exception:
-        return None
-
-
-def _team_key(name: Any) -> str:
-    return " ".join(str(name or "").lower().strip().split())
-
-
-def _game_signature(game: Dict[str, Any]) -> str:
-    commence = str(game.get("commence_time") or game.get("commenceTime") or "")
-    return "|".join([
-        _team_key(game.get("away_team") or game.get("awayTeam") or game.get("away")),
-        _team_key(game.get("home_team") or game.get("homeTeam") or game.get("home")),
-        commence,
-    ])
-
-
-def _provider_game_id(game: Dict[str, Any]) -> str:
-    return str(game.get("game_id") or game.get("id") or "").strip()
-
-
-def _book_payloads(game: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    return {str(k).lower().strip(): v for k, v in (game.get("books") or {}).items() if isinstance(v, dict)}
-
-
-def _american_prob(v: Any) -> Optional[float]:
-    try:
-        a = int(float(v))
+        a = float(value)
     except Exception:
         return None
     if a == 0:
@@ -98,287 +96,206 @@ def _american_prob(v: Any) -> Optional[float]:
     return abs(a) / (abs(a) + 100.0) if a < 0 else 100.0 / (a + 100.0)
 
 
-def _american_profit_multiple(v: Any) -> Optional[float]:
+def _american_decimal(value: Any) -> Optional[float]:
     try:
-        a = int(float(v))
+        a = float(value)
     except Exception:
         return None
-    if a == 0:
+    return 1.0 + (100.0 / abs(a)) if a < 0 else 1.0 + (a / 100.0)
+
+
+def _devig_pair(home_price: Any, away_price: Any) -> Optional[Tuple[float, float]]:
+    hp, ap = _american_prob(home_price), _american_prob(away_price)
+    if hp is None or ap is None or hp + ap <= 0:
         return None
-    return a / 100.0 if a > 0 else 100.0 / abs(a)
+    return hp / (hp + ap), ap / (hp + ap)
 
 
-def _book_prices(game: Dict[str, Any], side: str) -> List[Tuple[str, int]]:
-    prices: List[Tuple[str, int]] = []
-    for book, payload in _book_payloads(game).items():
-        ml = payload.get("ml") or payload.get("moneyline") or payload.get("h2h") or {}
-        price = _safe_int(ml.get(side) or ml.get(f"{side}_price") or ml.get(f"{side}Price"))
-        if price is not None:
-            prices.append((book, price))
-    return prices
+def _books(game: Dict[str, Any]) -> Dict[str, Any]:
+    return game.get("books") or {}
 
 
-def _selected_price(game: Dict[str, Any], side: str) -> Dict[str, Any]:
-    prices = _book_prices(game, side)
-    if not prices:
-        return {"bookKey": None, "americanOdds": None, "priceSource": "missing"}
-    for book, price in prices:
-        if book == PRIMARY_BOOK:
-            return {"bookKey": book, "americanOdds": price, "priceSource": "primary_book"}
-    best_book, best_price = max(prices, key=lambda item: item[1])
-    return {"bookKey": best_book, "americanOdds": best_price, "priceSource": "best_available_book"}
+def _price_from_book(game: Dict[str, Any], side: str) -> Tuple[Optional[float], Optional[str]]:
+    books = _books(game)
+    ordered = []
+    for book in BOOK_PRIORITY:
+        if book and book in books and book not in ordered:
+            ordered.append(book)
+    ordered.extend([book for book in books if book not in ordered])
+    for book in ordered:
+        ml = (books.get(book) or {}).get("ml") or (books.get(book) or {}).get("moneyline") or {}
+        if ml.get(side) is not None:
+            return _safe_float(ml.get(side)), book
+    return None, None
 
 
-def _average_book_price(game: Dict[str, Any], side: str) -> Optional[float]:
-    vals = [float(price) for _, price in _book_prices(game, side)]
-    return mean(vals) if vals else None
-
-
-def _spread_price(game: Dict[str, Any], side: str) -> Optional[float]:
-    vals = []
-    key = f"{side}_price"
-    for payload in _book_payloads(game).values():
-        spread = payload.get("spread") or {}
-        if spread.get(key) is not None:
-            vals.append(_safe_float(spread.get(key)))
-    return mean(vals) if vals else None
+def _market_fair(game: Dict[str, Any]) -> Dict[str, Any]:
+    home_vals: List[float] = []
+    away_vals: List[float] = []
+    per_book: Dict[str, Any] = {}
+    for book, payload in _books(game).items():
+        ml = (payload or {}).get("ml") or (payload or {}).get("moneyline") or {}
+        pair = _devig_pair(ml.get("home"), ml.get("away"))
+        if not pair:
+            continue
+        hp, ap = pair
+        home_vals.append(hp)
+        away_vals.append(ap)
+        per_book[str(book)] = {"home": hp, "away": ap}
+    if not home_vals:
+        return {"home": 0.5, "away": 0.5, "book_count": 0, "book_divergence": 1.0, "book_probs": {}}
+    return {
+        "home": sum(home_vals) / len(home_vals),
+        "away": sum(away_vals) / len(away_vals),
+        "book_count": len(home_vals),
+        "book_divergence": max(home_vals) - min(home_vals) if len(home_vals) > 1 else 0.0,
+        "book_probs": per_book,
+    }
 
 
 def _series_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any]) -> List[Dict[str, Any]]:
-    latest_provider_id = _provider_game_id(latest_game)
-    latest_key = latest_game.get("game_key") or latest_provider_id
-    latest_sig = _game_signature(latest_game)
-    rows: List[Dict[str, Any]] = []
+    rows = []
     for pull in pulls:
         pulled_at = pull.get("pulled_at")
-        selected = None
         for game in pull.get("games") or []:
-            provider_id = _provider_game_id(game)
-            if latest_provider_id and provider_id == latest_provider_id:
-                selected = game
+            if _same_game(game, latest_game):
+                fair = _market_fair(game)
+                if fair.get("book_count", 0) > 0:
+                    rows.append({"pulled_at": pulled_at, "game": game, "fair": fair})
                 break
-        if selected is None and not latest_provider_id:
-            for game in pull.get("games") or []:
-                if (game.get("game_key") == latest_key) or (_game_signature(game) == latest_sig):
-                    selected = game
-                    break
-        if selected is not None:
-            probs = history.book_probs(selected)
-            if probs:
-                rows.append({"pulled_at": pulled_at, "game": selected, "probs": probs})
     return rows
 
 
 def _reversals(values: List[float]) -> int:
-    signs = []
+    signs: List[int] = []
     for i in range(1, len(values)):
         diff = values[i] - values[i - 1]
         signs.append(1 if diff > 0.0005 else -1 if diff < -0.0005 else 0)
     return sum(1 for i in range(1, len(signs)) if signs[i] and signs[i - 1] and signs[i] != signs[i - 1])
 
 
-def _confidence_tier(prob: float, score: float, tags: List[str], promotion_status: str) -> str:
-    edge = abs(prob - 0.5)
-    if promotion_status == "PROMOTED" and score >= 64 and edge >= 0.045:
-        return "Promoted"
-    if "INSUFFICIENT_PULL_DEPTH" in tags or "SINGLE_PULL_BASELINE" in tags:
-        return "Baseline"
-    if score >= 72 and edge >= 0.12:
-        return "Premium"
-    if score >= 64 and edge >= 0.08:
-        return "Solid"
-    if score >= 56 and edge >= 0.04:
-        return "Lean"
-    if score >= 50:
-        return "Coin Flip"
-    return "Pass"
-
-
-def _clamp_probability(prob: float, min_prob: float = 0.05, max_prob: float = 0.95) -> float:
-    return max(min_prob, min(max_prob, prob))
-
-
-def _confirmed_run_line(latest_prob: float, delta: float, spread_move: Optional[float], div: float, rev: int) -> bool:
-    if spread_move is None:
-        return False
-    if not (delta >= 0.012 and spread_move < -8):
-        return False
-    if latest_prob < MIN_CONFIRMED_MARKET_PROB:
-        return False
-    if div > MAX_CONFIRMATION_DIVERGENCE:
-        return False
-    if rev > 1:
-        return False
-    return True
-
-
-def _side_classification(price: Optional[int]) -> str:
+def _market_side(price: Optional[float]) -> str:
     if price is None:
         return "unknown"
-    if price <= -108:
+    if price <= -120:
         return "favorite"
-    if price >= 108:
+    if price >= 105:
         return "underdog"
     return "pickem"
 
 
-def _promotion_status(*, adjusted_prob: float, selected_price: Optional[int], edge_vs_book: float, ev: float, pull_count: int, tags: List[str]) -> Tuple[str, List[str]]:
-    reasons: List[str] = []
-    if selected_price is None:
-        return "NO_PLAY", ["NO_BETTABLE_PRICE"]
-    if pull_count < MIN_PROMOTION_PULLS:
-        reasons.append("INSUFFICIENT_PULL_DEPTH")
-    if adjusted_prob < MIN_PROMOTION_PROB:
-        reasons.append("LOW_MODEL_PROBABILITY")
-    if edge_vs_book < PROMOTION_EDGE_THRESHOLD:
-        reasons.append("EDGE_BELOW_THRESHOLD")
-    if ev < MIN_PROMOTION_EV:
-        reasons.append("NEGATIVE_OR_THIN_EV")
-    if selected_price > MAX_PROMOTED_DOG_PRICE:
-        reasons.append("LONG_DOG_GUARD")
-    if selected_price < -MAX_HEAVY_FAVORITE_PRICE and edge_vs_book < PROMOTION_EDGE_THRESHOLD * 2:
-        reasons.append("HEAVY_FAVORITE_PRICE_GUARD")
-    if "BOOK_DIVERGENCE" in tags and edge_vs_book < PROMOTION_EDGE_THRESHOLD * 2:
-        reasons.append("BOOK_DIVERGENCE_GUARD")
-    if reasons:
-        if any(r in reasons for r in ["INSUFFICIENT_PULL_DEPTH", "EDGE_BELOW_THRESHOLD", "NEGATIVE_OR_THIN_EV"]):
-            return "WATCHLIST", reasons
-        return "NO_PLAY", reasons
-    return "PROMOTED", ["POSITIVE_EV_EDGE"]
+def _confidence_tier(promoted: bool, score: float, edge: float, ev: float) -> str:
+    if not promoted:
+        return "Watchlist" if edge > 0 else "No Play"
+    if score >= 68 and edge >= 0.012 and ev >= 0.025:
+        return "Premium"
+    if score >= 60 and edge >= 0.006:
+        return "Solid"
+    return "Promoted"
 
 
 def _side_score(series: List[Dict[str, Any]], side: str) -> Dict[str, Any]:
     latest = series[-1]
     game = latest["game"]
-    probs = [float(row["probs"][side]) for row in series if row.get("probs") and row["probs"].get(side) is not None]
-    latest_prob = probs[-1] if probs else 0.5
-    start_prob = probs[0] if probs else latest_prob
-    delta = latest_prob - start_prob
-    rev = _reversals(probs)
-    latest_gap = abs(float(latest["probs"].get("home") or 0.5) - float(latest["probs"].get("away") or 0.5))
-    div = float(latest["probs"].get("book_divergence") or 0)
-    book_count = int(latest["probs"].get("book_count") or 0)
-    spread_start = _spread_price(series[0]["game"], side) if series else None
-    spread_latest = _spread_price(game, side)
-    spread_move = None if spread_start is None or spread_latest is None else spread_latest - spread_start
-    selected = _selected_price(game, side)
-    selected_price = selected.get("americanOdds")
-    avg_market_price = _average_book_price(game, side)
-    implied_prob = _american_prob(selected_price) if selected_price is not None else None
-    profit_multiple = _american_profit_multiple(selected_price) if selected_price is not None else None
+    fair_vals = [float(row["fair"].get(side, 0.5)) for row in series]
+    fair_latest = fair_vals[-1] if fair_vals else 0.5
+    fair_start = fair_vals[0] if fair_vals else fair_latest
+    delta = fair_latest - fair_start
+    reversals = _reversals(fair_vals)
+    latest_fair = latest["fair"]
+    book_count = int(latest_fair.get("book_count") or 0)
+    divergence = float(latest_fair.get("book_divergence") or 0.0)
+    price, price_book = _price_from_book(game, side)
+    decimal_odds = _american_decimal(price)
+    market_side = _market_side(price)
+
+    movement_adj = max(-0.03, min(0.03, delta * 0.70))
+    if market_side == "underdog" and delta > 0:
+        movement_adj += min(0.008, delta * 0.35)
+    if market_side == "favorite" and price is not None and price <= HEAVY_FAVORITE_PRICE:
+        movement_adj -= 0.004
+    if divergence > 0.035:
+        movement_adj -= min(0.012, (divergence - 0.035) * 0.5)
+    if reversals:
+        movement_adj -= min(0.018, reversals * 0.004)
+    if len(series) < 4:
+        movement_adj *= 0.55
+
+    model_prob = max(0.05, min(0.95, fair_latest + movement_adj))
+    edge = model_prob - fair_latest
+    ev = (model_prob * decimal_odds - 1.0) if decimal_odds else -1.0
 
     tags: List[str] = []
-    if len(series) < MIN_PROMOTION_PULLS:
-        tags.append("INSUFFICIENT_PULL_DEPTH")
-    if len(series) < 2:
-        tags.append("SINGLE_PULL_BASELINE")
-    if delta >= 0.012:
-        tags.append("STEAM")
-    if delta <= -0.012:
-        tags.append("RESISTANCE")
-    if div <= 0.020:
+    blocked: List[str] = []
+    if len(series) < 4:
+        tags.append("LOW_PULL_DEPTH")
+    if delta >= 0.006:
+        tags.append("POSITIVE_MOVE")
+    if delta <= -0.006:
+        tags.append("NEGATIVE_MOVE")
+    if divergence <= 0.02:
         tags.append("BOOK_AGREEMENT")
-    if div >= 0.040:
+    if divergence > 0.04:
         tags.append("BOOK_DIVERGENCE")
-    if rev:
+    if reversals:
         tags.append("REVERSAL")
-    if spread_move is not None and abs(spread_move) >= 8:
-        tags.append("RUN_LINE_MOVEMENT")
-    if _confirmed_run_line(latest_prob, delta, spread_move, div, rev):
-        tags.append("RUN_LINE_CONFIRMATION")
-    elif spread_move is not None and delta > 0 and spread_move < -8:
-        tags.append("UNCONFIRMED_RUN_LINE_MOVE")
-    if latest_gap < 0.05:
-        tags.append("COMPRESSED_MARKET")
+    if market_side == "underdog":
+        tags.append("UNDERDOG")
+    elif market_side == "favorite":
+        tags.append("FAVORITE")
+    else:
+        tags.append("PICKEM")
 
-    raw_score = 50 + (latest_prob - 0.5) * 78 + delta * 650 - div * 300 - rev * 6.5
-    raw_score += min(book_count, 10) * 0.65
+    if price is None:
+        blocked.append("NO_BETTABLE_PRICE")
+    if book_count < 1:
+        blocked.append("NO_BOOK_CONSENSUS")
+    if model_prob < MIN_MODEL_PROB:
+        blocked.append("MODEL_PROB_TOO_LOW")
+    if market_side == "underdog" and price is not None and price > MAX_PROMOTED_DOG_PRICE:
+        blocked.append("LONG_DOG_PRICE_GUARD")
+    if market_side == "favorite" and price is not None and price <= HEAVY_FAVORITE_PRICE and edge < 0.006:
+        blocked.append("HEAVY_FAVORITE_PRICE_GUARD")
+    if divergence > MAX_BOOK_DIVERGENCE:
+        blocked.append("BOOK_DIVERGENCE_GUARD")
+    if ev < MIN_EV_FOR_PROMOTION:
+        blocked.append("NEGATIVE_EV_GUARD")
 
-    tagset = set(tags)
-    market_edge = latest_prob - 0.5
-    if latest_prob < 0.50:
-        raw_score -= 4.0
-        if delta >= 0.018 and div <= 0.025 and rev <= 1:
-            raw_score += 5.5
-    elif latest_prob >= STRONG_MARKET_PROB and "BOOK_AGREEMENT" in tagset:
-        raw_score += 1.5
+    promoted = not blocked and edge >= PROMOTION_THRESHOLD and ev >= MIN_EV_FOR_PROMOTION
+    score = 50.0 + edge * 900.0 + ev * 220.0 + delta * 260.0 - divergence * 110.0 - reversals * 2.5
+    if market_side in {"underdog", "pickem"} and edge > 0 and ev > 0:
+        score += 4.0
+    if market_side == "favorite" and price is not None and price <= HEAVY_FAVORITE_PRICE:
+        score -= 4.0
+    score = round(max(0.0, min(100.0, score)), 2)
 
-    if "RUN_LINE_CONFIRMATION" in tagset:
-        raw_score += 2.0
-    elif "RUN_LINE_MOVEMENT" in tagset:
-        raw_score -= 1.25
-        if rev >= 2:
-            raw_score -= 2.0
-
-    if "STEAM" in tagset:
-        if "BOOK_AGREEMENT" in tagset and rev <= 1 and market_edge >= -0.015:
-            raw_score += 1.75
-        elif rev >= 3 or "BOOK_DIVERGENCE" in tagset:
-            raw_score -= 2.0
-
-    if "BOOK_DIVERGENCE" in tagset:
-        raw_score -= 7.0
-    if "COMPRESSED_MARKET" in tagset:
-        raw_score -= 1.0
-        if "RUN_LINE_MOVEMENT" in tagset:
-            raw_score -= 1.5
-    if "UNCONFIRMED_RUN_LINE_MOVE" in tagset:
-        raw_score -= 2.0
-    if "INSUFFICIENT_PULL_DEPTH" in tagset:
-        raw_score -= 4.0
-    if "SINGLE_PULL_BASELINE" in tagset:
-        raw_score -= 8.0
-
-    score = round(max(0.0, min(100.0, raw_score)), 2)
-    adjusted_prob = _clamp_probability(1.0 / (1.0 + math.exp(-(score - 50.0) / 12.0)))
-    adjusted_prob = _clamp_probability((adjusted_prob * 0.45) + (latest_prob * 0.55), 0.05, 0.95)
-    edge_vs_book = adjusted_prob - implied_prob if implied_prob is not None else 0.0
-    ev = adjusted_prob * profit_multiple - (1.0 - adjusted_prob) if profit_multiple is not None else -1.0
-    status, reasons = _promotion_status(
-        adjusted_prob=adjusted_prob,
-        selected_price=selected_price,
-        edge_vs_book=edge_vs_book,
-        ev=ev,
-        pull_count=len(series),
-        tags=tags,
-    )
     return {
         "side": side,
         "team": game.get("home_team") if side == "home" else game.get("away_team"),
         "score": score,
-        "winProbability": round(adjusted_prob, 4),
-        "winProbabilityPct": round(adjusted_prob * 100.0, 2),
-        "marketConsensusProbability": round(latest_prob, 5),
-        "probStart": round(start_prob, 5),
-        "probLatest": round(latest_prob, 5),
-        "delta": round(delta, 5),
-        "bookCount": book_count,
-        "bookDivergence": round(div, 5),
-        "latestGap": round(latest_gap, 5),
-        "reversalCount": rev,
-        "runLineMovement": round(spread_move, 3) if spread_move is not None else None,
-        "averageAmericanOdds": round(avg_market_price, 2) if avg_market_price is not None else None,
-        "americanOdds": selected_price,
-        "bookKey": selected.get("bookKey"),
-        "priceSource": selected.get("priceSource"),
-        "bookImpliedProbability": round(implied_prob, 5) if implied_prob is not None else None,
-        "edgeVsBook": round(edge_vs_book, 5),
-        "edgeVsBookPct": round(edge_vs_book * 100.0, 2),
-        "expectedValue": round(ev, 5),
+        "fairProbability": round(fair_latest, 6),
+        "fairProbabilityPct": round(fair_latest * 100.0, 2),
+        "winProbability": round(model_prob, 6),
+        "winProbabilityPct": round(model_prob * 100.0, 2),
+        "edgeVsBook": round(edge, 6),
+        "edgeVsBookPct": round(edge * 100.0, 2),
+        "expectedValue": round(ev, 6),
         "expectedValuePct": round(ev * 100.0, 2),
-        "marketSide": _side_classification(selected_price),
-        "promotionStatus": status,
-        "promotionReasons": reasons,
+        "americanOdds": round(price, 2) if price is not None else None,
+        "priceBook": price_book,
+        "priceSource": "real_book" if price_book else "missing",
+        "marketSide": market_side,
+        "probStart": round(fair_start, 6),
+        "probLatest": round(fair_latest, 6),
+        "delta": round(delta, 6),
+        "bookCount": book_count,
+        "bookDivergence": round(divergence, 6),
+        "reversalCount": reversals,
         "tags": sorted(set(tags)),
+        "blockedReasons": blocked,
+        "promoted": promoted,
+        "promotionStatus": "PROMOTED" if promoted else "NO_PLAY",
     }
-
-
-def _pick_score(side: Dict[str, Any]) -> float:
-    status_bonus = {"PROMOTED": 8.0, "WATCHLIST": 2.0, "NO_PLAY": -10.0}.get(str(side.get("promotionStatus")), 0.0)
-    ev = float(side.get("expectedValue") or -1.0)
-    edge = float(side.get("edgeVsBook") or 0.0)
-    score = float(side.get("score") or 0.0)
-    return score + ev * 80.0 + edge * 180.0 + status_bonus
 
 
 def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any], slate_date: str) -> Optional[Dict[str, Any]]:
@@ -387,17 +304,25 @@ def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any
         return None
     home = _side_score(series, "home")
     away = _side_score(series, "away")
-    pick = home if _pick_score(home) >= _pick_score(away) else away
+
+    def sort_key(row: Dict[str, Any]) -> Tuple[float, float, float, float]:
+        return (
+            1.0 if row.get("promoted") else 0.0,
+            float(row.get("expectedValue") or -9.0),
+            float(row.get("edgeVsBook") or -9.0),
+            float(row.get("score") or 0.0),
+        )
+
+    pick = home if sort_key(home) >= sort_key(away) else away
     opponent = away if pick["side"] == "home" else home
-    tags = sorted(set(pick.get("tags") or []))
-    confidence = _confidence_tier(float(pick["winProbability"]), float(pick["score"]), tags, str(pick.get("promotionStatus")))
     return {
         "ok": True,
         "sport": "mlb",
         "modelVersion": MODEL_VERSION,
         "engine": ENGINE,
         "slate_date": slate_date,
-        "gameId": latest_game.get("game_id") or latest_game.get("id") or latest_game.get("game_key"),
+        "gameId": latest_game.get("game_id") or latest_game.get("id") or _game_identity(latest_game),
+        "gameIdentity": _game_identity(latest_game),
         "gameKey": latest_game.get("game_key"),
         "homeTeam": latest_game.get("home_team"),
         "awayTeam": latest_game.get("away_team"),
@@ -407,26 +332,27 @@ def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any
         "predictedSide": pick.get("side"),
         "opponent": opponent.get("team"),
         "americanOdds": pick.get("americanOdds"),
-        "bookKey": pick.get("bookKey"),
+        "priceBook": pick.get("priceBook"),
         "priceSource": pick.get("priceSource"),
         "marketSide": pick.get("marketSide"),
+        "fairProbabilityPct": pick.get("fairProbabilityPct"),
         "winProbability": pick.get("winProbability"),
         "winProbabilityPct": pick.get("winProbabilityPct"),
-        "bookImpliedProbability": pick.get("bookImpliedProbability"),
         "edgeVsBook": pick.get("edgeVsBook"),
         "edgeVsBookPct": pick.get("edgeVsBookPct"),
         "expectedValue": pick.get("expectedValue"),
         "expectedValuePct": pick.get("expectedValuePct"),
+        "promoted": pick.get("promoted"),
         "promotionStatus": pick.get("promotionStatus"),
-        "promotionReasons": pick.get("promotionReasons") or [],
+        "blockedReasons": pick.get("blockedReasons") or [],
         "score": pick.get("score"),
-        "confidenceTier": confidence,
-        "pickQuality": "GAME_WINNER_BASELINE" if "INSUFFICIENT_PULL_DEPTH" in tags else "GAME_WINNER_SIGNAL",
-        "tags": tags,
+        "confidenceTier": _confidence_tier(bool(pick.get("promoted")), float(pick.get("score") or 0), float(pick.get("edgeVsBook") or 0), float(pick.get("expectedValue") or 0)),
+        "pickQuality": "PROMOTED_SINGLE_GAME_ML" if pick.get("promoted") else "WATCHLIST_OR_NO_PLAY",
+        "tags": pick.get("tags") or [],
         "pullCountForGame": len(series),
         "homeSignal": home,
         "awaySignal": away,
-        "reason": "Single-game MLB moneyline pick using de-vigged market consensus, 15-minute line movement, real book price, EV, pull depth, and promotion guardrails.",
+        "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
         "createdAt": _now(),
     }
 
@@ -436,21 +362,21 @@ def _store_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": "SNAPSHOTS_TABLE not configured"}
     item = history.ddb_safe({
         "PK": f"GAME_WINNERS#mlb#{row.get('slate_date')}",
-        "SK": f"GAME#{row.get('commenceTime') or 'unknown'}#{row.get('gameId')}",
+        "SK": f"GAME#{row.get('commenceTime') or 'unknown'}#{row.get('gameIdentity') or row.get('gameId')}",
         "record_type": "mlb_single_game_moneyline_prediction",
         "sport": "mlb",
         "slate_date": row.get("slate_date"),
         "game_id": row.get("gameId"),
+        "game_identity": row.get("gameIdentity"),
         "game_key": row.get("gameKey"),
         "predicted_winner": row.get("predictedWinner"),
         "confidence_tier": row.get("confidenceTier"),
         "promotion_status": row.get("promotionStatus"),
+        "promoted": row.get("promoted"),
         "score": row.get("score"),
         "win_probability": row.get("winProbability"),
-        "expected_value": row.get("expectedValue"),
         "edge_vs_book": row.get("edgeVsBook"),
-        "american_odds": row.get("americanOdds"),
-        "book_key": row.get("bookKey"),
+        "expected_value": row.get("expectedValue"),
         "created_at": row.get("createdAt"),
         "data": row,
     })
@@ -458,8 +384,8 @@ def _store_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
     return {"ok": True, "pk": item["PK"], "sk": item["SK"]}
 
 
-def predict_all(slate_date: Optional[str] = None, store: bool = False, limit: int = 500) -> Dict[str, Any]:
-    slate = slate_date or _today_et()
+def predict_all(game_date: Optional[str] = None, store: bool = False, limit: int = 500) -> Dict[str, Any]:
+    slate = game_date or _today_et()
     pulls = history.query_pulls("mlb", slate, limit)
     if not pulls:
         return {"ok": True, "sport": "mlb", "slate_date": slate, "engine": ENGINE, "count": 0, "predictions": [], "message": "No MLB pull history found for this slate."}
@@ -471,32 +397,44 @@ def predict_all(slate_date: Optional[str] = None, store: bool = False, limit: in
         row = _prediction_for_game(pulls, game, slate)
         if not row:
             continue
+        predictions.append(row)
+
+    if predictions and not any(row.get("promoted") for row in predictions):
+        fallback = [
+            row for row in predictions
+            if float(row.get("edgeVsBook") or 0) >= FALLBACK_THRESHOLD
+            and float(row.get("expectedValue") or -9) >= MIN_EV_FOR_PROMOTION
+            and not row.get("blockedReasons")
+        ]
+        if fallback:
+            best = max(fallback, key=lambda r: (float(r.get("expectedValue") or 0), float(r.get("edgeVsBook") or 0)))
+            best["promoted"] = True
+            best["promotionStatus"] = "PROMOTED_DYNAMIC_FLOOR"
+            best["confidenceTier"] = _confidence_tier(True, float(best.get("score") or 0), float(best.get("edgeVsBook") or 0), float(best.get("expectedValue") or 0))
+            best["pickQuality"] = "PROMOTED_SINGLE_GAME_ML_DYNAMIC_FLOOR"
+            best["tags"] = sorted(set((best.get("tags") or []) + ["DYNAMIC_PROMOTION_FLOOR"]))
+
+    predictions.sort(key=lambda r: (bool(r.get("promoted")), float(r.get("expectedValue") or -9), float(r.get("edgeVsBook") or -9), float(r.get("score") or 0)), reverse=True)
+    for idx, row in enumerate(predictions, 1):
+        row["rank"] = idx
         if store:
             row["stored"] = _store_prediction(row)
             stored.append(row.get("stored"))
-        predictions.append(row)
-    predictions.sort(key=lambda r: (str(r.get("promotionStatus") == "PROMOTED"), float(r.get("expectedValue") or -1), float(r.get("score") or 0)), reverse=True)
-    for idx, row in enumerate(predictions, 1):
-        row["rank"] = idx
+
     return {
         "ok": True,
         "sport": "mlb",
         "slate_date": slate,
         "engine": ENGINE,
         "modelVersion": MODEL_VERSION,
-        "primaryBook": PRIMARY_BOOK,
-        "promotionPolicy": {
-            "edgeThreshold": PROMOTION_EDGE_THRESHOLD,
-            "minEV": MIN_PROMOTION_EV,
-            "minPulls": MIN_PROMOTION_PULLS,
-            "maxPromotedDogPrice": MAX_PROMOTED_DOG_PRICE,
-        },
+        "promotionThreshold": PROMOTION_THRESHOLD,
+        "fallbackPromotionThreshold": FALLBACK_THRESHOLD,
         "pullCount": len(pulls),
         "latestPullAt": latest_pull.get("pulled_at"),
         "latestPullId": latest_pull.get("pull_id"),
         "gameCount": len(latest_games),
         "count": len(predictions),
-        "promotedCount": len([x for x in predictions if x.get("promotionStatus") == "PROMOTED"]),
+        "promotedCount": len([row for row in predictions if row.get("promoted")]),
         "allGamesPredicted": len(predictions) == len(latest_games),
         "stored": store,
         "storedCount": len([x for x in stored if x and x.get("ok")]),
