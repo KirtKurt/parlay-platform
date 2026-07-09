@@ -5,9 +5,10 @@ import math
 import os
 from typing import Any, Dict
 
+from mlb_ml_candidate_policy import miss as candidate_profile_misses
 from mlb_ml_feature_vector import VERSION as FEATURE_VECTOR_VERSION, feature_vector
 
-VERSION = "MLB-ML-RUNTIME-OVERLAY-v1-trained-holdout-gated"
+VERSION = "MLB-ML-RUNTIME-OVERLAY-v1.1-guarded-lower-threshold"
 MODEL_PATH = os.environ.get("INQSI_MLB_ML_MODEL_PATH", "runtime_reports/mlb_ml_model_latest.json")
 
 
@@ -29,7 +30,7 @@ def _load_model() -> Dict[str, Any] | None:
         return None
 
 
-def _score(row: Dict[str, Any], model: Dict[str, Any]) -> float | None:
+def _score(row: Dict[str, Any], model: Dict[str, Any]) -> tuple[float | None, Dict[str, float]]:
     features = model.get("features") or []
     weights = model.get("weights") or {}
     means = model.get("means") or {}
@@ -40,19 +41,30 @@ def _score(row: Dict[str, Any], model: Dict[str, Any]) -> float | None:
         scale = _f(scales.get(feature), 1.0) or 1.0
         z += _f(weights.get(feature), 0.0) * ((_f(fmap.get(feature), 0.0) - _f(means.get(feature), 0.0)) / scale)
     if z >= 35:
-        return 1.0
+        return 1.0, fmap
     if z <= -35:
-        return 0.0
-    return 1.0 / (1.0 + math.exp(-z))
+        return 0.0, fmap
+    return 1.0 / (1.0 + math.exp(-z)), fmap
+
+
+def _threshold_info(model: Dict[str, Any] | None) -> Dict[str, Any]:
+    if not model:
+        return {}
+    return (
+        model.get("promotionThreshold")
+        or model.get("guardedPromotionThreshold")
+        or model.get("selectedThreshold")
+        or {}
+    )
 
 
 def _validated(model: Dict[str, Any] | None, threshold_info: Dict[str, Any], target: float) -> bool:
     if not model:
         return False
-    if model.get("validatedAgainstTarget") is True:
-        return True
     if threshold_info.get("validated") is True and threshold_info.get("accuracyPct") is not None:
         return _f(threshold_info.get("accuracyPct"), 0.0) >= target
+    if model.get("validatedAgainstTarget") is True:
+        return True
     return bool(threshold_info.get("accuracyPct") is not None and _f(threshold_info.get("accuracyPct"), 0.0) >= target)
 
 
@@ -64,7 +76,9 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
         return result
     enabled = os.environ.get("INQSI_MLB_ML_OVERLAY_ENABLED", "true").lower() in {"1", "true", "yes"}
     model = _load_model() if enabled else None
-    threshold_info = (model or {}).get("selectedThreshold") or {}
+    threshold_info = _threshold_info(model)
+    standard_threshold_info = (model or {}).get("selectedThreshold") or {}
+    guarded_threshold_info = (model or {}).get("guardedPromotionThreshold")
     target = _f(os.environ.get("INQSI_MLB_ML_TARGET_ACCURACY"), 90.0)
     validated = _validated(model, threshold_info, target)
     threshold = _f(threshold_info.get("threshold"), _f(os.environ.get("INQSI_MLB_ML_MIN_PROBABILITY"), 0.90))
@@ -84,15 +98,25 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "trainingSource": (model or {}).get("trainingSource"),
         }
         if model:
-            p = _score(row, model)
+            p, fmap = _score(row, model)
             evaluated += 1
+            profile = threshold_info.get("profile") or threshold_info.get("guardPolicy")
+            profile_misses = candidate_profile_misses(fmap, profile) if isinstance(profile, dict) else []
+            profile_ok = not profile_misses
             risk_reasons = row.get("actionabilityRiskReasons") or []
-            confirmed = bool(p is not None and validated and p >= threshold and not risk_reasons)
+            if isinstance(profile, dict):
+                confirmed = bool(p is not None and validated and p >= threshold and profile_ok)
+            else:
+                confirmed = bool(p is not None and validated and p >= threshold and not risk_reasons)
             overlay.update({
                 "applied": True,
                 "probabilityPickCorrect": round(p, 4) if p is not None else None,
                 "confirmed": confirmed,
-                "selectedThreshold": threshold_info,
+                "promotionThreshold": threshold_info,
+                "standardThreshold": standard_threshold_info,
+                "guardedThreshold": guarded_threshold_info,
+                "promotionProfileMisses": profile_misses,
+                "usesGuardedLowerThreshold": bool(isinstance(profile, dict)),
             })
             tags = set(row.get("tags") or [])
             tags.add("ML_OVERLAY_EVALUATED")
@@ -109,11 +133,12 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
                 rejected += 1
             if confirmed:
                 tags.add("ML_CONFIRMED")
+                tags.add("ML_GUARDED_PROMOTION" if isinstance(profile, dict) else "ML_STANDARD_PROMOTION")
                 row["officialPick"] = True
                 row["accuracyTargetEligible"] = True
                 row["actionablePick"] = True
                 row["actionability"] = "ACTIONABLE_ML_CONFIRMED_WINNER"
-                row["actionabilityReason"] = "validated_ml_overlay_confirms_platform_selected_winner"
+                row["actionabilityReason"] = "validated_ml_overlay_confirms_platform_selected_winner_with_guarded_threshold"
                 promoted += 1
             row["tags"] = sorted(tags)
         row["mlOverlay"] = overlay
@@ -128,6 +153,8 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "promotedCount": promoted,
         "rejectedCount": rejected,
         "threshold": threshold_info,
+        "standardThreshold": standard_threshold_info,
+        "guardedThreshold": guarded_threshold_info,
         "runtimeVersion": VERSION,
         "modelVersion": (model or {}).get("version"),
         "featureVectorVersion": (model or {}).get("featureVectorVersion") or FEATURE_VECTOR_VERSION,
