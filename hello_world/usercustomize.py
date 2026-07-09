@@ -32,6 +32,7 @@ try:
     import mlb_ml_signal_layers as _inqsi_mlb_ml_signal_layers
     import mlb_signal_policy_v12 as _inqsi_mlb_signal_policy_v12
     import mlb_directional_score_v1 as _inqsi_mlb_directional_score_v1
+    import mlb_ml_runtime_overlay as _inqsi_mlb_ml_runtime_overlay
     _inqsi_mlb_slate_prediction_lock.apply(_inqsi_mlb_game_winner_for_slate_lock)
     if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED"):
         delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED")
@@ -48,6 +49,9 @@ try:
     if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_DIRECTIONAL_SCORE_V1_APPLIED"):
         delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_DIRECTIONAL_SCORE_V1_APPLIED")
     _inqsi_mlb_directional_score_v1.apply(_inqsi_mlb_game_winner_for_slate_lock)
+    if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_ML_RUNTIME_OVERLAY_APPLIED"):
+        delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_ML_RUNTIME_OVERLAY_APPLIED")
+    _inqsi_mlb_ml_runtime_overlay.apply(_inqsi_mlb_game_winner_for_slate_lock)
 except Exception:
     pass
 
