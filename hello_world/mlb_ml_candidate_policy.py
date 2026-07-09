@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional
 
-VERSION = "MLB-ML-CANDIDATE-POLICY-v1"
+VERSION = "MLB-ML-CANDIDATE-POLICY-v2-balanced-underdog"
 
 
 def _f(value: Any, default: float = 0.0) -> float:
@@ -20,9 +20,51 @@ def _on(value: Any) -> bool:
 
 def profiles() -> List[Dict[str, Any]]:
     return [
-        {"name": "clean_market", "minMarketEdge": 0.08, "minMarketProb": 0.54, "minScore": 45.0, "minWinProbabilityPct": 52.0},
-        {"name": "directional_move", "minMarketEdge": 0.04, "minMarketProb": 0.53, "minMarketDelta": 0.015, "minMovementPerReversal": 0.01, "minScore": 42.0, "minWinProbabilityPct": 52.0},
-        {"name": "aligned_steam", "minMarketEdge": 0.04, "minMarketProb": 0.53, "requireSteamAligned": True, "minScore": 42.0, "minWinProbabilityPct": 52.0},
+        {
+            "name": "clean_market",
+            "minMarketEdge": 0.08,
+            "minMarketProb": 0.54,
+            "minScore": 45.0,
+            "minWinProbabilityPct": 52.0,
+        },
+        {
+            "name": "directional_move",
+            "minMarketEdge": 0.04,
+            "minMarketProb": 0.53,
+            "minMarketDelta": 0.015,
+            "minMovementPerReversal": 0.01,
+            "minScore": 42.0,
+            "minWinProbabilityPct": 52.0,
+        },
+        {
+            "name": "aligned_steam",
+            "minMarketEdge": 0.04,
+            "minMarketProb": 0.53,
+            "requireSteamAligned": True,
+            "minScore": 42.0,
+            "minWinProbabilityPct": 52.0,
+        },
+        {
+            "name": "underdog_positive_move",
+            "requireSelectedUnderdog": True,
+            "requireUnderdogPositiveMove": True,
+            "minMarketEdge": -0.06,
+            "minMarketDelta": 0.02,
+            "minMovementPerReversal": 0.008,
+            "minScore": 38.0,
+            "minWinProbabilityPct": 48.0,
+            "allowOpponentFavored": True,
+        },
+        {
+            "name": "underdog_edge_improving",
+            "requireSelectedUnderdog": True,
+            "requireUnderdogEdgeImproving": True,
+            "minMarketEdge": -0.08,
+            "minMarketDelta": 0.035,
+            "minScore": 35.0,
+            "minWinProbabilityPct": 46.0,
+            "allowOpponentFavored": True,
+        },
     ]
 
 
@@ -39,16 +81,26 @@ def miss(features: Dict[str, Any], profile: Dict[str, Any]) -> List[str]:
     for feature, key, reason in checks:
         if key in profile and _f(features.get(feature), 0.0) < _f(profile.get(key), 0.0):
             out.append(reason)
-    if profile.get("requireSteamAligned") and not _on(features.get("steamAligned")):
-        out.append("steam_not_aligned")
+    required_flags = [
+        ("requireSteamAligned", "steamAligned", "steam_not_aligned"),
+        ("requireSelectedUnderdog", "selectedUnderdog", "not_selected_underdog"),
+        ("requireUnderdogPositiveMove", "underdogPositiveMove", "underdog_positive_move_missing"),
+        ("requireUnderdogEdgeImproving", "underdogEdgeImproving", "underdog_edge_improving_missing"),
+    ]
+    for profile_key, feature, reason in required_flags:
+        if profile.get(profile_key) and not _on(features.get(feature)):
+            out.append(reason)
     hard_flags = [
         ("compressedMarket", "compressed_market"),
-        ("opponentFavored", "opponent_favored"),
         ("highReversalWeak", "high_reversal_weak"),
         ("passTier", "pass_tier"),
         ("resistance", "resistance"),
         ("favoriteRisk", "favorite_risk"),
+        ("favoriteCompressedRisk", "favorite_compressed_risk"),
+        ("favoriteFlatMoveRisk", "favorite_flat_move_risk"),
     ]
+    if not profile.get("allowOpponentFavored"):
+        hard_flags.append(("opponentFavored", "opponent_favored"))
     for feature, reason in hard_flags:
         if _on(features.get(feature)):
             out.append(reason)
