@@ -1,6 +1,6 @@
 {
   "ok": true,
-  "version": "MLB-ML-HOLDOUT-SCORER-v2-directional-locked-card",
+  "version": "MLB-ML-HOLDOUT-SCORER-v2.1-guarded-lower-threshold",
   "rowCount": 144,
   "trainCount": 108,
   "holdoutCount": 36,
@@ -152,6 +152,40 @@
     "correct": 15,
     "accuracyPct": 93.75,
     "validated": true
+  },
+  "guardedPromotionThreshold": {
+    "threshold": 0.7,
+    "selectedCount": 17,
+    "correct": 16,
+    "accuracyPct": 94.12,
+    "validated": true,
+    "policyVersion": "MLB-ML-CANDIDATE-POLICY-v1",
+    "profile": {
+      "name": "directional_move",
+      "minMarketEdge": 0.04,
+      "minMarketProb": 0.53,
+      "minMarketDelta": 0.015,
+      "minMovementPerReversal": 0.01,
+      "minScore": 42.0,
+      "minWinProbabilityPct": 52.0
+    }
+  },
+  "promotionThreshold": {
+    "threshold": 0.7,
+    "selectedCount": 17,
+    "correct": 16,
+    "accuracyPct": 94.12,
+    "validated": true,
+    "policyVersion": "MLB-ML-CANDIDATE-POLICY-v1",
+    "profile": {
+      "name": "directional_move",
+      "minMarketEdge": 0.04,
+      "minMarketProb": 0.53,
+      "minMarketDelta": 0.015,
+      "minMovementPerReversal": 0.01,
+      "minScore": 42.0,
+      "minWinProbabilityPct": 52.0
+    }
   },
   "validatedAgainstTarget": true,
   "holdoutThresholdCandidates": [
@@ -433,7 +467,7 @@
       "accuracyPct": 100.0
     }
   ],
-  "policy": "Use as gated overlay only when holdout threshold is validated against target accuracy.",
+  "policy": "Use a lower ML threshold only when the guarded promotion policy validates at the target holdout accuracy; otherwise use the standard validated threshold.",
   "datasetPath": "runtime_reports/mlb_ml_training_dataset_latest.csv",
   "modelPath": "runtime_reports/mlb_ml_model_latest.json",
   "trainingSource": {
