@@ -54,7 +54,10 @@ jobs:
       - name: Patch SAM template for MLB settlement routes
         run: python scripts/patch_template_mlb_results_routes.py
 
-      - name: Validate
+      - name: Validate MLB production invariants
+        run: python scripts/verify_mlb_schedule_invariants.py
+
+      - name: Validate SAM template
         run: sam validate
 
       - name: Build clean
@@ -131,10 +134,6 @@ jobs:
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "API_URL=$API_URL"
 
-      - name: Confirm no forced pull during deploy
-        run: |
-          echo "Deploy smoke is read-only. No POST /v1/pull/mlb and no force pull."
-
       - name: Configure API WAF and throttling
         continue-on-error: true
         run: bash scripts/configure_api_protection.sh "${{ steps.stack_outputs.outputs.api_url }}" "${{ secrets.AWS_REGION }}"
@@ -153,6 +152,48 @@ jobs:
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           curl --fail --silent --show-error "${API_URL}v1/mlb/model/version"
+
+      - name: Smoke test live MLB Odds API pull and storage
+        env:
+          API_URL: ${{ steps.stack_outputs.outputs.api_url }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          api_url = os.environ.get("API_URL", "")
+          body = json.dumps({"t":"HOT","run":"deploy_live_odds_smoke","days_ahead":0,"force":True}).encode("utf-8")
+          req = urllib.request.Request(
+              api_url + "v1/pull/mlb",
+              data=body,
+              headers={"content-type":"application/json"},
+              method="POST",
+          )
+          with urllib.request.urlopen(req, timeout=45) as resp:
+              payload = json.loads(resp.read().decode("utf-8"))
+          print(json.dumps({
+              "ok": payload.get("ok"),
+              "live_pull_ok": payload.get("live_pull_ok"),
+              "fallback_used": payload.get("fallback_used"),
+              "count": payload.get("count"),
+              "game_dates_et": payload.get("game_dates_et"),
+              "canonical_pull_history": payload.get("canonical_pull_history"),
+              "game_winner_predictions": payload.get("game_winner_predictions"),
+          }, indent=2))
+          if not payload.get("ok"):
+              raise SystemExit("MLB live pull endpoint returned ok=false")
+          if payload.get("live_pull_ok") is not True:
+              raise SystemExit("MLB live pull did not use The Odds API successfully")
+          if payload.get("fallback_used"):
+              raise SystemExit("MLB live pull used fallback/cached data during deploy smoke")
+          canonical = payload.get("canonical_pull_history") or []
+          if not canonical or not any(row.get("ok") and int(row.get("games") or 0) > 0 for row in canonical):
+              raise SystemExit("MLB live pull did not store canonical pull history with games")
+          winners = payload.get("game_winner_predictions") or []
+          if not winners or not any(row.get("ok") for row in winners):
+              raise SystemExit("MLB live pull did not run game-winner predictions")
+          PY
 
       - name: Smoke test MLB v1 today endpoint
         run: |
