@@ -13,7 +13,6 @@ def insert_once(current: str, marker: str, block: str, contains: str) -> str:
 
 
 def remove_indented_event_block(current: str, event_name: str) -> str:
-    """Remove a SAM Events child block indented under a Function Events map."""
     lines = current.splitlines(keepends=True)
     output = []
     i = 0
@@ -26,7 +25,8 @@ def remove_indented_event_block(current: str, event_name: str) -> str:
                 nxt = lines[i]
                 is_next_event = nxt.startswith("        ") and not nxt.startswith("          ")
                 is_next_resource = nxt.startswith("  ") and not nxt.startswith("    ")
-                if is_next_event or is_next_resource:
+                is_outputs = nxt.startswith("Outputs:")
+                if is_next_event or is_next_resource or is_outputs:
                     break
                 i += 1
             continue
@@ -35,44 +35,58 @@ def remove_indented_event_block(current: str, event_name: str) -> str:
     return "".join(output)
 
 
-# Make the raw archive bucket available to Lambda functions.
-if "RAW_ARCHIVE_BUCKET:" not in text:
+def remove_resource_block(current: str, resource_name: str) -> str:
+    lines = current.splitlines(keepends=True)
+    output = []
+    i = 0
+    needle = f"  {resource_name}:"
+    while i < len(lines):
+        if lines[i].startswith(needle):
+            i += 1
+            while i < len(lines):
+                nxt = lines[i]
+                is_next_resource = nxt.startswith("  ") and not nxt.startswith("    ")
+                is_outputs = nxt.startswith("Outputs:")
+                if is_next_resource or is_outputs:
+                    break
+                i += 1
+            continue
+        output.append(lines[i])
+        i += 1
+    return "".join(output)
+
+
+# Global MLB runtime knobs. These are safe defaults for the SAM/Lambda platform.
+if "MLB_PULL_START_AT_ET:" not in text:
+    marker = "        ODDS_API_KEY: !Ref OddsApiKey\n"
+    if marker not in text:
+        raise RuntimeError("ODDS_API_KEY environment marker not found in template.yaml")
     text = text.replace(
-        "        OUTCOMES_TABLE: !Ref OutcomesTable\n",
-        "        OUTCOMES_TABLE: !Ref OutcomesTable\n        RAW_ARCHIVE_BUCKET: !Ref RawArchiveBucket\n",
+        marker,
+        marker
+        + "        MLB_PULL_START_AT_ET: '2026-07-02T01:00:00-04:00'\n"
+        + "        MLB_SCHED_INTERVAL_MINUTES: '15'\n"
+        + "        MLB_PROMOTION_THRESHOLD: '0.0015'\n"
+        + "        MLB_MIN_PROMOTION_EV: '0.001'\n"
+        + "        MLB_MIN_DOG_MODEL_PROB: '0.34'\n"
+        + "        MLB_MAX_PROMOTED_DOG_PRICE: '160'\n",
         1,
     )
 
-if "RawArchiveBucket:" not in text:
-    text = insert_once(
-        text,
-        "  InqsiMembersTable:\n",
-        """
-  RawArchiveBucket:
-    Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    Properties:
-      BucketName: !Sub "${AWS::StackName}-raw-archive-${AWS::AccountId}-${AWS::Region}"
-      VersioningConfiguration:
-        Status: Enabled
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-
-""",
-        "RawArchiveBucket:",
-    )
-
-# Remove obsolete T1/T2/T3/T4 snapshot schedules. MLB production polling is HOT
-# 15-minute pull history; T labels are legacy only.
-for legacy_event in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4"]:
+# MLB V2 has one automatic odds path: HOT 15-minute same-day Odds API pull.
+for legacy_event in ["MLBHotKickoff1amET", "MLBBasePull", "MLBT2", "MLBT3", "MLBT4"]:
     text = remove_indented_event_block(text, legacy_event)
+
+text = text.replace(
+    "        MLBHotEvery15Min:\n          Type: Schedule\n          Properties:\n            Schedule: rate(15 minutes)\n",
+    "        MLBHotEvery15Min:\n          Type: Schedule\n          Properties:\n            Schedule: cron(0/15 * * * ? *)\n",
+    1,
+)
+text = text.replace('"days_ahead":1', '"days_ahead":0')
+text = text.replace('"days_ahead": 1', '"days_ahead": 0')
+
+# Remove obsolete duplicate recovery/resource paths so there is one production pull source.
+text = remove_resource_block(text, "MLBHotPullRecoveryFunction")
 
 if "InqsiMLBV1CoreFunction:" not in text:
     text = insert_once(
@@ -84,6 +98,8 @@ if "InqsiMLBV1CoreFunction:" not in text:
     Properties:
       CodeUri: hello_world/
       Handler: inqsi_mlb_v1_core.lambda_handler
+      Timeout: 60
+      MemorySize: 1024
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
@@ -125,24 +141,6 @@ if "InqsiMLBV1CoreFunction:" not in text:
             Path: /v1/mlb/model/version
             Method: GET
 
-  MLBRawArchiveFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: hello_world/
-      Handler: mlb_raw_s3_archive.lambda_handler
-      Policies:
-        - Statement:
-            - Effect: Allow
-              Action:
-                - s3:PutObject
-              Resource: !Join ["", [!GetAtt RawArchiveBucket.Arn, "/*"]]
-      Events:
-        MLBRawArchiveEvery15Min:
-          Type: Schedule
-          Properties:
-            Schedule: rate(15 minutes)
-            Input: '{"sport":"mlb","run":"hot_raw_archive"}'
-
 """,
         "InqsiMLBV1CoreFunction:",
     )
@@ -167,8 +165,11 @@ if "MLBDailyPickLockFunction:" not in text:
       MemorySize: 1024
       Environment:
         Variables:
+          INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken
           MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'
           MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'
+          MLB_MIN_PULLS_FOR_LOCK: '4'
+          MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES: '20'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
@@ -197,103 +198,39 @@ if "MLBDailyPickLockFunction:" not in text:
 """,
         "MLBDailyPickLockFunction:",
     )
+else:
+    replacements = {
+        "          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n": "          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n          MLB_MIN_PULLS_FOR_LOCK: '4'\n          MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES: '20'\n",
+        "          MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'\n": "          INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken\n          MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'\n",
+    }
+    for old, new in replacements.items():
+        if old in text and new not in text:
+            text = text.replace(old, new, 1)
 
-if "MLBResultSignalsFunction:" not in text:
-    text = insert_once(
-        text,
-        "  MLBResultsSchedulerFunction:\n",
-        """
-  MLBResultSignalsFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: hello_world/
-      Handler: mlb_result_signals.lambda_handler
-      Timeout: 300
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalLedgerTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PredictionsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref OutcomesTable
-      Events:
-        MLBResultSignalsGet:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/result-signals
-            Method: GET
-        MLBResultSignalsBuild:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/result-signals
-            Method: POST
-
-""",
-        "MLBResultSignalsFunction:",
-    )
-
-if "AllSportsLiveSchedulerFunction:" not in text:
-    text = insert_once(
-        text,
-        "  InqsiAutopsySchedulerFunction:\n",
-        """
-  AllSportsLiveSchedulerFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: hello_world/
-      Handler: all_sports_live_scheduler.lambda_handler
-      Timeout: 300
-      MemorySize: 1024
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalLedgerTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PredictionsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref OutcomesTable
-      Events:
-        AllSportsHotEvery15Min:
-          Type: Schedule
-          Properties:
-            Schedule: rate(15 minutes)
-            Input: '{"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_every_15_min","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
-        AllSportsHotKickoff1amEtDst:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 5 * * ? *)
-            Input: '{"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_dst","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
-        AllSportsHotKickoff1amEtStandard:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 6 * * ? *)
-            Input: '{"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis","run":"all_sports_hot_1am_et_kickoff_standard","policy":"aws_eventbridge_primary_1am_et_start_plus_15min","includeFullMlbSnapshots":false}'
-
-""",
-        "AllSportsLiveSchedulerFunction:",
-    )
-
-# If the all-sports scheduler already exists from a previous deploy patch, remove
-# MLB from its inputs. MLB has one production primary: MLBAuditedPullFunction.
-for old in [
-    '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"',
-    '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"',
-    '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"',
-]:
-    text = text.replace(old, '"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"')
+# MLB must not also be pulled by the generic all-sports scheduler.
+text = text.replace('"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"', '"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"')
 text = text.replace('"includeFullMlbSnapshots":true', '"includeFullMlbSnapshots":false')
 
+violations = []
+for token in ['"days_ahead":1', '"days_ahead": 1']:
+    if token in text:
+        violations.append(f"unsafe scheduled MLB {token} still present")
+for legacy_event in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET", "MLBHotPullRecoveryFunction"]:
+    if legacy_event in text:
+        violations.append(f"obsolete MLB schedule/resource still present: {legacy_event}")
+required = [
+    "Schedule: cron(0/15 * * * ? *)",
+    "MLBDailyPickLockEveryMinute:",
+    "MLB_MIN_PULLS_FOR_LOCK: '4'",
+    "MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES: '20'",
+    "INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken",
+    "Path: /v1/mlb/game-winners",
+]
+for token in required:
+    if token not in text:
+        violations.append(f"required MLB V2 template token missing: {token}")
+if violations:
+    raise RuntimeError("Unsafe MLB V2 SAM template after patch: " + "; ".join(violations))
+
 TEMPLATE.write_text(text)
-exec(Path("scripts/patch_template_mlb_hot_start_v2.py").read_text())
-exec(Path("scripts/patch_template_mlb_hot_pull_recovery_permanent.py").read_text())
-exec(Path("scripts/verify_mlb_schedule_invariants.py").read_text())
-print(
-    "Patched template.yaml for INQSI MLB v1 routes, MLB game-winner route, "
-    "daily T-minus-45 individual-game lock scheduler, result-signal learning, raw S3 archive, "
-    "AWS EventBridge primary all-sports 15-minute polling without MLB duplication, 1 AM ET kickoffs, "
-    "HOT-only MLB pulls, permanent dedicated MLB recovery polling removal, legacy MLB T-schedule removal, "
-    "and verified same-day-only MLB schedule invariants."
-)
+print("Patched template.yaml for MLB V2: single-game EV picks, 15-minute same-day Odds API pulls, hardened T-minus-45 lock, no duplicate MLB schedules, and no odds-only deploy split.")
