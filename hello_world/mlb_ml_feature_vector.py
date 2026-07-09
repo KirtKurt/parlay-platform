@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-VERSION = "MLB-ML-FEATURE-VECTOR-v2-directional-locked-card"
+VERSION = "MLB-ML-FEATURE-VECTOR-v3-underdog-balanced-directional"
 
 ML_FEATURES: List[str] = [
     "score",
@@ -30,6 +30,12 @@ ML_FEATURES: List[str] = [
     "opponentFavored",
     "highReversalDirectional",
     "highReversalWeak",
+    "selectedUnderdog",
+    "selectedFavorite",
+    "underdogPositiveMove",
+    "underdogEdgeImproving",
+    "favoriteFlatMoveRisk",
+    "favoriteCompressedRisk",
     "lean",
     "passTier",
 ]
@@ -85,6 +91,7 @@ def feature_vector(row: Dict[str, Any]) -> Dict[str, float]:
     run_line_move = _f(sig.get("runLineMovement"), 0.0)
     run_line_abs = abs(run_line_move)
     pull_depth = _i(row.get("pullCountForGame"), _i(sig.get("pullCount"), 0))
+    avg_american_odds = _f(sig.get("averageAmericanOdds"), 0.0)
 
     run_line_aligned = bool((run_line_move < 0 and market_delta > 0) or (run_line_move > 0 and market_delta < 0))
     steam = "STEAM" in tags
@@ -95,6 +102,13 @@ def feature_vector(row: Dict[str, Any]) -> Dict[str, float]:
     favorite_risk = bool(market_prob >= 0.68 and market_delta < 0.025 and movement_abs < 0.20)
     high_reversal_directional = bool(reversal_count >= 4 and movement_abs >= 0.10 and market_edge > 0.05)
     high_reversal_weak = bool(reversal_count >= 4 and (market_edge <= 0.05 or compressed or movement_abs < 0.015))
+
+    selected_underdog = bool(avg_american_odds > 0 or market_prob < 0.50)
+    selected_favorite = bool(avg_american_odds < 0 and market_prob >= 0.50)
+    underdog_positive_move = bool(selected_underdog and market_delta > 0.02)
+    underdog_edge_improving = bool(selected_underdog and market_delta > 0.035 and market_edge >= -0.06 and not high_reversal_weak)
+    favorite_flat_move_risk = bool(selected_favorite and market_prob >= 0.58 and movement_abs < 0.015)
+    favorite_compressed_risk = bool(selected_favorite and compressed and market_edge < 0.08)
 
     return {
         "score": _f(row.get("score")),
@@ -122,6 +136,12 @@ def feature_vector(row: Dict[str, Any]) -> Dict[str, float]:
         "opponentFavored": 1.0 if market_edge < 0 else 0.0,
         "highReversalDirectional": 1.0 if high_reversal_directional else 0.0,
         "highReversalWeak": 1.0 if high_reversal_weak else 0.0,
+        "selectedUnderdog": 1.0 if selected_underdog else 0.0,
+        "selectedFavorite": 1.0 if selected_favorite else 0.0,
+        "underdogPositiveMove": 1.0 if underdog_positive_move else 0.0,
+        "underdogEdgeImproving": 1.0 if underdog_edge_improving else 0.0,
+        "favoriteFlatMoveRisk": 1.0 if favorite_flat_move_risk else 0.0,
+        "favoriteCompressedRisk": 1.0 if favorite_compressed_risk else 0.0,
         "lean": 1.0 if tier == "lean" else 0.0,
         "passTier": 1.0 if tier == "pass" else 0.0,
     }
