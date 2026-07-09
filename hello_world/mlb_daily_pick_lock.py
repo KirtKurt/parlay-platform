@@ -14,18 +14,15 @@ import inqsi_pull_history as history
 import mlb_game_winner_engine
 
 EASTERN = ZoneInfo("America/New_York")
-MODEL_VERSION = "INQSI-MLB-DAILY-LOCK-v1.0"
+MODEL_VERSION = "INQSI-MLB-DAILY-LOCK-v2.0"
 LOCK_POLICY = "first_mlb_game_minus_45_minutes"
 
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
-LOCK_MINUTES = int(
-    os.environ.get("MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME")
-    or os.environ.get("LOCK_MINUTES_BEFORE_FIRST_GAME")
-    or "45"
-)
-REQUIRE_ALL_GAMES_FOR_LOCK = str(
-    os.environ.get("MLB_REQUIRE_ALL_GAMES_FOR_LOCK", "true")
-).strip().lower() not in {"0", "false", "no", "off"}
+LOCK_MINUTES = int(os.environ.get("MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME") or os.environ.get("LOCK_MINUTES_BEFORE_FIRST_GAME") or "45")
+REQUIRE_ALL_GAMES_FOR_LOCK = str(os.environ.get("MLB_REQUIRE_ALL_GAMES_FOR_LOCK", "true")).strip().lower() not in {"0", "false", "no", "off"}
+MIN_PULLS_FOR_LOCK = int(os.environ.get("MLB_MIN_PULLS_FOR_LOCK", "4"))
+MAX_LOCK_SNAPSHOT_AGE_MINUTES = float(os.environ.get("MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES", "20"))
+ADMIN_TOKEN = os.environ.get("INQSI_ADMIN_API_TOKEN", "")
 
 DDB = boto3.resource("dynamodb")
 TABLE = DDB.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
@@ -43,7 +40,7 @@ def _resp(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
         "headers": {
             "content-type": "application/json",
             "access-control-allow-origin": "*",
-            "access-control-allow-headers": "content-type",
+            "access-control-allow-headers": "content-type,authorization,x-inqsi-admin-token",
             "access-control-allow-methods": "GET,POST,OPTIONS",
         },
         "body": json.dumps(body, default=_json_default),
@@ -65,7 +62,7 @@ def _payload(event: Dict[str, Any]) -> Dict[str, Any]:
     event = event or {}
     out: Dict[str, Any] = {}
     if not event.get("httpMethod") and not event.get("requestContext"):
-        out.update({k: v for k, v in event.items() if not k.startswith("aws")})
+        out.update({k: v for k, v in event.items() if not str(k).startswith("aws")})
     params = event.get("queryStringParameters") or {}
     if isinstance(params, dict):
         out.update(params)
@@ -75,6 +72,29 @@ def _payload(event: Dict[str, Any]) -> Dict[str, Any]:
 
 def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "force"}
+
+
+def _header(event: Dict[str, Any], name: str) -> str:
+    headers = event.get("headers") or {}
+    if isinstance(headers, dict):
+        for key, value in headers.items():
+            if str(key).lower() == name.lower():
+                return str(value or "")
+    return ""
+
+
+def _write_auth_error(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not (event.get("httpMethod") or event.get("requestContext")):
+        return None
+    if not ADMIN_TOKEN:
+        return None
+    token = _header(event, "x-inqsi-admin-token").strip()
+    auth = _header(event, "authorization").strip()
+    if auth.lower().startswith("bearer "):
+        auth = auth.split(" ", 1)[1].strip()
+    if token == ADMIN_TOKEN or auth == ADMIN_TOKEN:
+        return None
+    return _resp(401, {"ok": False, "sport": "mlb", "error": "ADMIN_TOKEN_REQUIRED"})
 
 
 def _now_utc() -> datetime:
@@ -124,6 +144,7 @@ def _get_lock_item(slate_date: str) -> Optional[Dict[str, Any]]:
 def _lock_response(item: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
     if not item:
         return None
+    data = item.get("data") or {}
     return {
         "locked": True,
         "slateDateEt": item.get("slate_date"),
@@ -135,9 +156,14 @@ def _lock_response(item: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
         "source": item.get("source"),
         "predictionCount": item.get("prediction_count"),
         "gameCount": item.get("game_count"),
+        "promotionCount": item.get("promotion_count"),
+        "underdogCount": item.get("underdog_count"),
+        "favoriteCount": item.get("favorite_count"),
         "allGamesPredicted": item.get("all_games_predicted"),
         "latestPullAt": item.get("latest_pull_at"),
-        "picks": (item.get("data") or {}).get("picks") or [],
+        "latestPullAgeMinutes": item.get("latest_pull_age_minutes"),
+        "minPullsForLock": item.get("min_pulls_for_lock"),
+        "picks": data.get("picks") or [],
         "pk": item.get("PK"),
         "sk": item.get("SK"),
     }
@@ -163,12 +189,13 @@ def _first_start_et(games: List[Dict[str, Any]]) -> Optional[datetime]:
     return min(starts) if starts else None
 
 
-def _american_odds(row: Dict[str, Any]) -> Optional[float]:
-    side = row.get("predictedSide")
-    signal = row.get("homeSignal") if side == "home" else row.get("awaySignal")
-    if isinstance(signal, dict):
-        return signal.get("averageAmericanOdds")
-    return None
+def _snapshot_age_minutes(pulls: List[Dict[str, Any]]) -> Optional[float]:
+    if not pulls:
+        return None
+    parsed = _parse_dt(pulls[-1].get("pulled_at"))
+    if not parsed:
+        return None
+    return round((_now_utc() - parsed).total_seconds() / 60.0, 2)
 
 
 def _compact_pick(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -182,23 +209,31 @@ def _compact_pick(row: Dict[str, Any]) -> Dict[str, Any]:
         "predictedWinner": row.get("predictedWinner"),
         "predictedSide": row.get("predictedSide"),
         "opponent": row.get("opponent"),
-        "americanOdds": _american_odds(row),
+        "book": row.get("book"),
+        "americanOdds": row.get("americanOdds"),
+        "marketSide": row.get("marketSide"),
         "winProbability": row.get("winProbability"),
         "winProbabilityPct": row.get("winProbabilityPct"),
+        "marketProbability": row.get("marketProbability"),
+        "marketProbabilityPct": row.get("marketProbabilityPct"),
+        "edgeVsBook": row.get("edgeVsBook"),
+        "edgeVsBookPct": row.get("edgeVsBookPct"),
+        "expectedValue": row.get("expectedValue"),
+        "expectedValuePct": row.get("expectedValuePct"),
         "score": row.get("score"),
         "confidenceTier": row.get("confidenceTier"),
+        "promotionStatus": row.get("promotionStatus"),
+        "promoted": row.get("promoted"),
         "pickQuality": row.get("pickQuality"),
         "pullCountForGame": row.get("pullCountForGame"),
+        "guardrails": row.get("guardrails") or [],
         "tags": row.get("tags") or [],
         "reason": row.get("reason"),
     }
 
 
 def _sort_picks(picks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    def key(row: Dict[str, Any]) -> str:
-        return str(row.get("commenceTime") or "9999")
-
-    return sorted(picks, key=key)
+    return sorted(picks, key=lambda row: str(row.get("commenceTime") or "9999"))
 
 
 def _status_payload(slate_date: Optional[str] = None) -> Dict[str, Any]:
@@ -208,9 +243,12 @@ def _status_payload(slate_date: Optional[str] = None) -> Dict[str, Any]:
         "ok": True,
         "sport": "mlb",
         "modelVersion": MODEL_VERSION,
+        "gameWinnerModel": mlb_game_winner_engine.MODEL_VERSION,
         "slateDateEt": slate,
         "lockPolicy": LOCK_POLICY,
         "lockMinutesBeforeFirstGame": LOCK_MINUTES,
+        "minPullsForLock": MIN_PULLS_FOR_LOCK,
+        "maxLockSnapshotAgeMinutes": MAX_LOCK_SNAPSHOT_AGE_MINUTES,
         "locked": bool(existing),
         "lock": existing,
     }
@@ -222,16 +260,23 @@ def _status_payload(slate_date: Optional[str] = None) -> Dict[str, Any]:
         first = _first_start_et(games)
         lock_time = first - timedelta(minutes=LOCK_MINUTES) if first else None
         now_et = _now_et()
+        age = _snapshot_age_minutes(pulls)
+        predictions = mlb_game_winner_engine.predict_all(slate, store=False, limit=500)
         return {
             **base,
             "pullCount": len(pulls),
             "gameCount": len(games),
             "latestPullAt": pulls[-1].get("pulled_at") if pulls else None,
+            "latestPullAgeMinutes": age,
+            "latestPullFresh": bool(age is not None and age <= MAX_LOCK_SNAPSHOT_AGE_MINUTES),
             "firstGameStartEt": first.isoformat() if first else None,
             "lockTimeEt": lock_time.isoformat() if lock_time else None,
             "nowEt": now_et.isoformat(),
             "lockDue": bool(lock_time and now_et >= lock_time),
             "minutesUntilLock": round((lock_time - now_et).total_seconds() / 60.0, 2) if lock_time and now_et < lock_time else 0,
+            "predictionCount": predictions.get("count"),
+            "promotionCount": predictions.get("promotionCount"),
+            "allGamesPredicted": predictions.get("allGamesPredicted"),
         }
     except Exception as exc:
         return {**base, "ok": False, "error": str(exc)}
@@ -244,59 +289,26 @@ def run_lock(slate_date: Optional[str] = None, force: bool = False) -> Dict[str,
 
     existing = _lock_response(_get_lock_item(slate))
     if existing:
-        return {
-            "ok": True,
-            "sport": "mlb",
-            "modelVersion": MODEL_VERSION,
-            "slateDateEt": slate,
-            "locked": True,
-            "alreadyLocked": True,
-            "lock": existing,
-        }
+        return {"ok": True, "sport": "mlb", "modelVersion": MODEL_VERSION, "slateDateEt": slate, "locked": True, "alreadyLocked": True, "lock": existing}
 
     pulls = _pulls_for_date(slate)
     if not pulls:
-        return {
-            "ok": True,
-            "sport": "mlb",
-            "modelVersion": MODEL_VERSION,
-            "slateDateEt": slate,
-            "locked": False,
-            "skipped": True,
-            "reason": "NO_STORED_ODDS_API_PULL_HISTORY",
-            "message": "Daily lock uses stored Odds API pull history only; it does not call the odds feed directly.",
-        }
+        return {"ok": True, "sport": "mlb", "modelVersion": MODEL_VERSION, "slateDateEt": slate, "locked": False, "skipped": True, "reason": "NO_STORED_ODDS_API_PULL_HISTORY", "message": "Daily lock uses stored Odds API pull history only; it does not call the odds feed directly."}
 
     games = _latest_games_for_date(slate, pulls)
     first = _first_start_et(games)
     if not games or first is None:
-        return {
-            "ok": True,
-            "sport": "mlb",
-            "modelVersion": MODEL_VERSION,
-            "slateDateEt": slate,
-            "locked": False,
-            "skipped": True,
-            "reason": "NO_MLB_GAMES_FOR_SLATE_DATE",
-            "pullCount": len(pulls),
-        }
+        return {"ok": True, "sport": "mlb", "modelVersion": MODEL_VERSION, "slateDateEt": slate, "locked": False, "skipped": True, "reason": "NO_MLB_GAMES_FOR_SLATE_DATE", "pullCount": len(pulls)}
 
     lock_time = first - timedelta(minutes=LOCK_MINUTES)
     now_et = _now_et()
     if now_et < lock_time and not force:
-        return {
-            "ok": True,
-            "sport": "mlb",
-            "modelVersion": MODEL_VERSION,
-            "slateDateEt": slate,
-            "locked": False,
-            "skipped": True,
-            "reason": "WAITING_FOR_T_MINUS_LOCK_WINDOW",
-            "nowEt": now_et.isoformat(),
-            "firstGameStartEt": first.isoformat(),
-            "lockTimeEt": lock_time.isoformat(),
-            "minutesUntilLock": round((lock_time - now_et).total_seconds() / 60.0, 2),
-        }
+        return {"ok": True, "sport": "mlb", "modelVersion": MODEL_VERSION, "slateDateEt": slate, "locked": False, "skipped": True, "reason": "WAITING_FOR_T_MINUS_LOCK_WINDOW", "nowEt": now_et.isoformat(), "firstGameStartEt": first.isoformat(), "lockTimeEt": lock_time.isoformat(), "minutesUntilLock": round((lock_time - now_et).total_seconds() / 60.0, 2)}
+
+    latest_age = _snapshot_age_minutes(pulls)
+    if latest_age is None or latest_age > MAX_LOCK_SNAPSHOT_AGE_MINUTES:
+        if not force:
+            return {"ok": False, "sport": "mlb", "modelVersion": MODEL_VERSION, "slateDateEt": slate, "locked": False, "reason": "STALE_ODDS_SNAPSHOT_NOT_LOCKED", "latestPullAt": pulls[-1].get("pulled_at"), "latestPullAgeMinutes": latest_age, "maxAllowedAgeMinutes": MAX_LOCK_SNAPSHOT_AGE_MINUTES}
 
     prediction_payload = mlb_game_winner_engine.predict_all(slate, store=True, limit=500)
     predictions = prediction_payload.get("predictions") or []
@@ -304,35 +316,21 @@ def run_lock(slate_date: Optional[str] = None, force: bool = False) -> Dict[str,
     all_games_predicted = bool(prediction_payload.get("allGamesPredicted"))
 
     if not predictions:
-        return {
-            "ok": False,
-            "sport": "mlb",
-            "modelVersion": MODEL_VERSION,
-            "slateDateEt": slate,
-            "locked": False,
-            "reason": "NO_GAME_WINNER_PREDICTIONS_AVAILABLE",
-            "predictionPayload": {k: prediction_payload.get(k) for k in ["ok", "pullCount", "gameCount", "count", "message"]},
-        }
+        return {"ok": False, "sport": "mlb", "modelVersion": MODEL_VERSION, "slateDateEt": slate, "locked": False, "reason": "NO_GAME_WINNER_PREDICTIONS_AVAILABLE", "predictionPayload": {k: prediction_payload.get(k) for k in ["ok", "pullCount", "gameCount", "count", "message"]}}
 
     if REQUIRE_ALL_GAMES_FOR_LOCK and len(predictions) < game_count:
-        return {
-            "ok": False,
-            "sport": "mlb",
-            "modelVersion": MODEL_VERSION,
-            "slateDateEt": slate,
-            "locked": False,
-            "reason": "INCOMPLETE_DAILY_CARD_NOT_LOCKED",
-            "predictionCount": len(predictions),
-            "gameCount": game_count,
-            "allGamesPredicted": all_games_predicted,
-        }
+        return {"ok": False, "sport": "mlb", "modelVersion": MODEL_VERSION, "slateDateEt": slate, "locked": False, "reason": "INCOMPLETE_DAILY_CARD_NOT_LOCKED", "predictionCount": len(predictions), "gameCount": game_count, "allGamesPredicted": all_games_predicted}
+
+    shallow = [row for row in predictions if int(row.get("pullCountForGame") or 0) < MIN_PULLS_FOR_LOCK]
+    if shallow and not force:
+        return {"ok": False, "sport": "mlb", "modelVersion": MODEL_VERSION, "slateDateEt": slate, "locked": False, "reason": "INSUFFICIENT_PULL_DEPTH_NOT_LOCKED", "minPullsForLock": MIN_PULLS_FOR_LOCK, "shallowGameCount": len(shallow), "shallowGames": [{"gameId": row.get("gameId"), "matchup": f"{row.get('awayTeam')} at {row.get('homeTeam')}", "pullCountForGame": row.get("pullCountForGame")} for row in shallow[:20]]}
 
     picks = _sort_picks([_compact_pick(row) for row in predictions])
     now_utc = _now_utc()
     item = history.ddb_safe({
         "PK": _lock_pk(slate),
         "SK": _lock_sk(),
-        "record_type": "mlb_daily_locked_individual_game_picks",
+        "record_type": "mlb_daily_locked_individual_game_moneyline_picks",
         "sport": "mlb",
         "model_version": MODEL_VERSION,
         "game_winner_model": prediction_payload.get("modelVersion"),
@@ -345,50 +343,28 @@ def run_lock(slate_date: Optional[str] = None, force: bool = False) -> Dict[str,
         "lock_time_et": lock_time.isoformat(),
         "lock_minutes_before_first_game": LOCK_MINUTES,
         "lock_policy": LOCK_POLICY,
-        "source": "stored_odds_api_pull_history",
+        "source": "stored_odds_api_pull_history_latest_fresh_snapshot",
         "latest_pull_at": pulls[-1].get("pulled_at"),
+        "latest_pull_id": pulls[-1].get("pull_id"),
+        "latest_pull_age_minutes": latest_age,
         "pull_count": len(pulls),
+        "min_pulls_for_lock": MIN_PULLS_FOR_LOCK,
         "game_count": game_count,
         "prediction_count": len(picks),
+        "promotion_count": prediction_payload.get("promotionCount"),
+        "underdog_count": prediction_payload.get("underdogCount"),
+        "favorite_count": prediction_payload.get("favoriteCount"),
         "all_games_predicted": all_games_predicted,
-        "data": {
-            "picks": picks,
-            "predictionSummary": {
-                "engine": prediction_payload.get("engine"),
-                "modelVersion": prediction_payload.get("modelVersion"),
-                "storedCount": prediction_payload.get("storedCount"),
-                "allGamesPredicted": all_games_predicted,
-            },
-        },
+        "data": {"picks": picks, "predictionSummary": {"engine": prediction_payload.get("engine"), "modelVersion": prediction_payload.get("modelVersion"), "storedCount": prediction_payload.get("storedCount"), "promotionCount": prediction_payload.get("promotionCount"), "allGamesPredicted": all_games_predicted}},
         "created_at": now_utc.isoformat(),
     })
 
     try:
-        TABLE.put_item(
-            Item=item,
-            ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
-        )
-        return {
-            "ok": True,
-            "sport": "mlb",
-            "modelVersion": MODEL_VERSION,
-            "slateDateEt": slate,
-            "locked": True,
-            "alreadyLocked": False,
-            "lock": _lock_response(item),
-        }
+        TABLE.put_item(Item=item, ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)")
+        return {"ok": True, "sport": "mlb", "modelVersion": MODEL_VERSION, "slateDateEt": slate, "locked": True, "alreadyLocked": False, "lock": _lock_response(item)}
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") == "ConditionalCheckFailedException":
-            existing_after_race = _lock_response(_get_lock_item(slate))
-            return {
-                "ok": True,
-                "sport": "mlb",
-                "modelVersion": MODEL_VERSION,
-                "slateDateEt": slate,
-                "locked": True,
-                "alreadyLocked": True,
-                "lock": existing_after_race,
-            }
+            return {"ok": True, "sport": "mlb", "modelVersion": MODEL_VERSION, "slateDateEt": slate, "locked": True, "alreadyLocked": True, "lock": _lock_response(_get_lock_item(slate))}
         raise
 
 
@@ -399,15 +375,16 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     payload = _payload(event)
     if method == "OPTIONS":
         return _resp(200, {"ok": True})
-
     slate_date = payload.get("slate_date") or payload.get("slateDateEt") or payload.get("date")
     try:
         if method == "GET" and path.endswith("/status"):
             return _resp(200, _status_payload(slate_date))
         if method == "GET" and path.endswith("/today"):
-            status = _status_payload(slate_date)
-            return _resp(200, status)
+            return _resp(200, _status_payload(slate_date))
         if method == "POST" or not method:
+            auth_error = _write_auth_error(event)
+            if auth_error is not None:
+                return auth_error
             return _resp(200, run_lock(slate_date=slate_date, force=_truthy(payload.get("force"))))
         return _resp(404, {"ok": False, "error": f"Route not found: {method} {path}"})
     except Exception as exc:
