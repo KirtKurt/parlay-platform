@@ -35,7 +35,27 @@ def remove_indented_event_block(current: str, event_name: str) -> str:
     return "".join(output)
 
 
-# Make the raw archive bucket available to Lambda functions.
+def ensure_global_env(current: str, key: str, value_line: str) -> str:
+    if f"        {key}:" in current:
+        return current
+    marker = "        ODDS_API_KEY: !Ref OddsApiKey\n"
+    if marker not in current:
+        raise RuntimeError("ODDS_API_KEY environment marker not found in template.yaml")
+    return current.replace(marker, marker + value_line, 1)
+
+
+for key, value in [
+    ("MLB_PULL_START_AT_ET", "        MLB_PULL_START_AT_ET: '2026-07-02T01:00:00-04:00'\n"),
+    ("MLB_SCHED_INTERVAL_MINUTES", "        MLB_SCHED_INTERVAL_MINUTES: '15'\n"),
+    ("MLB_PRIMARY_BOOK", "        MLB_PRIMARY_BOOK: 'fanduel'\n"),
+    ("MLB_PROMOTION_EDGE_THRESHOLD", "        MLB_PROMOTION_EDGE_THRESHOLD: '0.0015'\n"),
+    ("MLB_MIN_PROMOTION_EV", "        MLB_MIN_PROMOTION_EV: '0.0'\n"),
+    ("MLB_MAX_PROMOTED_DOG_PRICE", "        MLB_MAX_PROMOTED_DOG_PRICE: '170'\n"),
+    ("MLB_MIN_PULLS_FOR_LOCK", "        MLB_MIN_PULLS_FOR_LOCK: '4'\n"),
+    ("MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES", "        MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES: '20'\n"),
+]:
+    text = ensure_global_env(text, key, value)
+
 if "RAW_ARCHIVE_BUCKET:" not in text:
     text = text.replace(
         "        OUTCOMES_TABLE: !Ref OutcomesTable\n",
@@ -69,10 +89,15 @@ if "RawArchiveBucket:" not in text:
         "RawArchiveBucket:",
     )
 
-# Remove obsolete T1/T2/T3/T4 snapshot schedules. MLB production polling is HOT
-# 15-minute pull history; T labels are legacy only.
-for legacy_event in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4"]:
+for legacy_event in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET"]:
     text = remove_indented_event_block(text, legacy_event)
+
+text = text.replace(
+    "Schedule: rate(15 minutes)\n            Input: '{\"sport\":\"mlb\",\"t\":\"HOT\",\"run\":\"hot_pull_audited\",\"days_ahead\":1}'",
+    "Schedule: cron(0/15 * * * ? *)\n            Input: '{\"sport\":\"mlb\",\"t\":\"HOT\",\"run\":\"hot_pull_audited\",\"days_ahead\":0}'",
+)
+text = text.replace('"days_ahead":1', '"days_ahead":0')
+text = text.replace('"days_ahead": 1', '"days_ahead": 0')
 
 if "InqsiMLBV1CoreFunction:" not in text:
     text = insert_once(
@@ -140,7 +165,7 @@ if "InqsiMLBV1CoreFunction:" not in text:
         MLBRawArchiveEvery15Min:
           Type: Schedule
           Properties:
-            Schedule: rate(15 minutes)
+            Schedule: cron(0/15 * * * ? *)
             Input: '{"sport":"mlb","run":"hot_raw_archive"}'
 
 """,
@@ -169,6 +194,9 @@ if "MLBDailyPickLockFunction:" not in text:
         Variables:
           MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'
           MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'
+          MLB_MIN_PULLS_FOR_LOCK: '4'
+          MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES: '20'
+          MLB_MIN_PROMOTED_PICKS_FOR_CLEAN_LOCK: '0'
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
@@ -197,6 +225,15 @@ if "MLBDailyPickLockFunction:" not in text:
 """,
         "MLBDailyPickLockFunction:",
     )
+else:
+    env_marker = "          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n"
+    additions = (
+        "          MLB_MIN_PULLS_FOR_LOCK: '4'\n"
+        "          MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES: '20'\n"
+        "          MLB_MIN_PROMOTED_PICKS_FOR_CLEAN_LOCK: '0'\n"
+    )
+    if env_marker in text and "          MLB_MIN_PULLS_FOR_LOCK:" not in text:
+        text = text.replace(env_marker, env_marker + additions, 1)
 
 if "MLBResultSignalsFunction:" not in text:
     text = insert_once(
@@ -276,14 +313,7 @@ if "AllSportsLiveSchedulerFunction:" not in text:
         "AllSportsLiveSchedulerFunction:",
     )
 
-# If the all-sports scheduler already exists from a previous deploy patch, remove
-# MLB from its inputs. MLB has one production primary: MLBAuditedPullFunction.
-for old in [
-    '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"',
-    '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"',
-    '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"',
-]:
-    text = text.replace(old, '"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"')
+text = text.replace('"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"', '"sports":"wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"')
 text = text.replace('"includeFullMlbSnapshots":true', '"includeFullMlbSnapshots":false')
 
 TEMPLATE.write_text(text)
@@ -291,9 +321,7 @@ exec(Path("scripts/patch_template_mlb_hot_start_v2.py").read_text())
 exec(Path("scripts/patch_template_mlb_hot_pull_recovery_permanent.py").read_text())
 exec(Path("scripts/verify_mlb_schedule_invariants.py").read_text())
 print(
-    "Patched template.yaml for INQSI MLB v1 routes, MLB game-winner route, "
-    "daily T-minus-45 individual-game lock scheduler, result-signal learning, raw S3 archive, "
-    "AWS EventBridge primary all-sports 15-minute polling without MLB duplication, 1 AM ET kickoffs, "
-    "HOT-only MLB pulls, permanent dedicated MLB recovery polling removal, legacy MLB T-schedule removal, "
-    "and verified same-day-only MLB schedule invariants."
+    "Patched template.yaml for INQSI MLB v1.1 single-game routes, EV promotion model env, "
+    "fresh T-minus-45 daily lock guardrails, quarter-hour Odds API polling, same-day-only pulls, "
+    "no legacy MLB T schedules, no duplicate MLB all-sports polling, and verified schedule invariants."
 )
