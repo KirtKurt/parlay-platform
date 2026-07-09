@@ -1,82 +1,422 @@
 {
   "ok": true,
-  "version": "MLB-ML-PROVISIONAL-SAFETY-GATE-v1",
-  "mode": "provisional_safety_rejector_until_enough_training_rows",
-  "validatedAgainstTarget": false,
-  "rowCount": 17,
-  "minRowsForFullTraining": 40,
+  "version": "MLB-ML-HOLDOUT-SCORER-v2-directional-locked-card",
+  "rowCount": 144,
+  "trainCount": 108,
+  "holdoutCount": 36,
   "features": [
     "score",
     "winProbabilityPct",
     "marketProb",
     "marketEdge",
+    "marketDelta",
+    "marketGap",
     "bookDivergence",
     "reversalCount",
+    "movementPerReversal",
     "runLineMoveAbs",
     "bookAgreement",
     "bookDivergenceFlag",
     "runLineMove",
+    "runLineAligned",
     "unconfirmedRunLine",
+    "steam",
+    "steamAligned",
+    "resistance",
     "compressedMarket",
+    "missingFundamentals",
+    "lowPullDepth",
+    "favoriteRisk",
+    "opponentFavored",
+    "highReversalDirectional",
+    "highReversalWeak",
     "lean",
     "passTier"
   ],
-  "bias": -0.25,
+  "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v2-directional-locked-card",
+  "bias": 0.44349250369740373,
   "weights": {
-    "score": 0.15,
-    "winProbabilityPct": 0.12,
-    "marketProb": 0.45,
-    "marketEdge": 1.1,
-    "bookDivergence": -0.7,
-    "reversalCount": -0.65,
-    "runLineMoveAbs": -0.05,
-    "bookAgreement": 0.35,
-    "bookDivergenceFlag": -0.8,
-    "runLineMove": -0.2,
-    "unconfirmedRunLine": -0.85,
-    "compressedMarket": -0.65,
-    "lean": -0.15,
-    "passTier": -1.25
+    "score": 0.407144,
+    "winProbabilityPct": 0.48863,
+    "marketProb": 0.426559,
+    "marketEdge": 0.426559,
+    "marketDelta": 0.296927,
+    "marketGap": 0.399986,
+    "bookDivergence": -0.468073,
+    "reversalCount": -0.33652,
+    "movementPerReversal": 0.229206,
+    "runLineMoveAbs": 0.21526,
+    "bookAgreement": 0.309495,
+    "bookDivergenceFlag": -0.312175,
+    "runLineMove": -0.164531,
+    "runLineAligned": 0.018046,
+    "unconfirmedRunLine": 0.163835,
+    "steam": 0.185315,
+    "steamAligned": 0.205227,
+    "resistance": -0.247436,
+    "compressedMarket": -0.139083,
+    "missingFundamentals": -0.070156,
+    "lowPullDepth": 0.035616,
+    "favoriteRisk": 0.157459,
+    "opponentFavored": -0.295047,
+    "highReversalDirectional": 0.113762,
+    "highReversalWeak": -0.350781,
+    "lean": 0.006621,
+    "passTier": -0.551709
   },
   "means": {
-    "score": 50,
-    "winProbabilityPct": 50,
-    "marketProb": 0.5,
-    "marketEdge": 0,
-    "bookDivergence": 0.02,
-    "reversalCount": 1,
-    "runLineMoveAbs": 10,
-    "bookAgreement": 0.5,
-    "bookDivergenceFlag": 0,
-    "runLineMove": 0.5,
-    "unconfirmedRunLine": 0,
-    "compressedMarket": 0,
-    "lean": 0,
-    "passTier": 0
+    "score": 63.666759259259244,
+    "winProbabilityPct": 63.737870370370395,
+    "marketProb": 0.614909074074074,
+    "marketEdge": 0.22981814814814802,
+    "marketDelta": 0.08869027777777777,
+    "marketGap": 0.2492148148148147,
+    "bookDivergence": 0.03256101851851853,
+    "reversalCount": 1.9907407407407407,
+    "movementPerReversal": 0.06425938392857142,
+    "runLineMoveAbs": 226.3044074074073,
+    "bookAgreement": 0.6388888888888888,
+    "bookDivergenceFlag": 0.16666666666666666,
+    "runLineMove": 0.6666666666666666,
+    "runLineAligned": 0.6481481481481481,
+    "unconfirmedRunLine": 0.10185185185185185,
+    "steam": 0.5092592592592593,
+    "steamAligned": 0.37037037037037035,
+    "resistance": 0.009259259259259259,
+    "compressedMarket": 0.2037037037037037,
+    "missingFundamentals": 0.08333333333333333,
+    "lowPullDepth": 0.10185185185185185,
+    "favoriteRisk": 0.009259259259259259,
+    "opponentFavored": 0.12962962962962962,
+    "highReversalDirectional": 0.06481481481481481,
+    "highReversalWeak": 0.08333333333333333,
+    "lean": 0.12037037037037036,
+    "passTier": 0.3611111111111111
   },
   "scales": {
-    "score": 20,
-    "winProbabilityPct": 20,
-    "marketProb": 0.15,
-    "marketEdge": 0.15,
-    "bookDivergence": 0.03,
-    "reversalCount": 2,
-    "runLineMoveAbs": 50,
-    "bookAgreement": 1,
-    "bookDivergenceFlag": 1,
-    "runLineMove": 1,
-    "unconfirmedRunLine": 1,
-    "compressedMarket": 1,
-    "lean": 1,
-    "passTier": 1
+    "score": 24.347668288394463,
+    "winProbabilityPct": 26.397215374626942,
+    "marketProb": 0.1471572990084797,
+    "marketEdge": 0.2943145980169594,
+    "marketDelta": 0.15413615490680574,
+    "marketGap": 0.27792561304747687,
+    "bookDivergence": 0.05020919813597503,
+    "reversalCount": 2.128995947680635,
+    "movementPerReversal": 0.13053769171003102,
+    "runLineMoveAbs": 1116.8131341384096,
+    "bookAgreement": 0.48256195831593235,
+    "bookDivergenceFlag": 0.37441543222448903,
+    "runLineMove": 0.47360222277831465,
+    "runLineAligned": 0.4797743787266258,
+    "unconfirmedRunLine": 0.30386343510333763,
+    "steam": 0.5022448740055663,
+    "steamAligned": 0.48515519421971215,
+    "resistance": 0.09622504486493759,
+    "compressedMarket": 0.4046288078420604,
+    "missingFundamentals": 0.2776739162008519,
+    "lowPullDepth": 0.3038634351033384,
+    "favoriteRisk": 0.09622504486493758,
+    "opponentFavored": 0.33746145761488416,
+    "highReversalDirectional": 0.24734659734413675,
+    "highReversalWeak": 0.2776739162008521,
+    "lean": 0.3269111340734204,
+    "passTier": 0.4825619583159323
   },
   "selectedThreshold": {
-    "threshold": 0.9,
-    "selectedCount": 0,
-    "correct": 0,
-    "accuracyPct": null,
-    "validated": false,
-    "policy": "Do not promote picks from this provisional model; use it only to reject low-safety candidates until full training rows exist."
+    "threshold": 0.86,
+    "selectedCount": 16,
+    "correct": 15,
+    "accuracyPct": 93.75,
+    "validated": true
   },
-  "policy": "Loaded by runtime as a provisional ML safety gate. It may suppress weak picks but must not promote picks until validated holdout accuracy meets target."
+  "validatedAgainstTarget": true,
+  "holdoutThresholdCandidates": [
+    {
+      "threshold": 0.5,
+      "selectedCount": 21,
+      "correct": 18,
+      "accuracyPct": 85.71
+    },
+    {
+      "threshold": 0.51,
+      "selectedCount": 21,
+      "correct": 18,
+      "accuracyPct": 85.71
+    },
+    {
+      "threshold": 0.52,
+      "selectedCount": 21,
+      "correct": 18,
+      "accuracyPct": 85.71
+    },
+    {
+      "threshold": 0.53,
+      "selectedCount": 21,
+      "correct": 18,
+      "accuracyPct": 85.71
+    },
+    {
+      "threshold": 0.54,
+      "selectedCount": 21,
+      "correct": 18,
+      "accuracyPct": 85.71
+    },
+    {
+      "threshold": 0.55,
+      "selectedCount": 21,
+      "correct": 18,
+      "accuracyPct": 85.71
+    },
+    {
+      "threshold": 0.56,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.57,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.58,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.59,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.6,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.61,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.62,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.63,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.64,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.65,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.66,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.67,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.68,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.69,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.7,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.71,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.72,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.73,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.74,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.75,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.76,
+      "selectedCount": 19,
+      "correct": 16,
+      "accuracyPct": 84.21
+    },
+    {
+      "threshold": 0.77,
+      "selectedCount": 18,
+      "correct": 15,
+      "accuracyPct": 83.33
+    },
+    {
+      "threshold": 0.78,
+      "selectedCount": 18,
+      "correct": 15,
+      "accuracyPct": 83.33
+    },
+    {
+      "threshold": 0.79,
+      "selectedCount": 18,
+      "correct": 15,
+      "accuracyPct": 83.33
+    },
+    {
+      "threshold": 0.8,
+      "selectedCount": 18,
+      "correct": 15,
+      "accuracyPct": 83.33
+    },
+    {
+      "threshold": 0.81,
+      "selectedCount": 17,
+      "correct": 15,
+      "accuracyPct": 88.24
+    },
+    {
+      "threshold": 0.82,
+      "selectedCount": 17,
+      "correct": 15,
+      "accuracyPct": 88.24
+    },
+    {
+      "threshold": 0.83,
+      "selectedCount": 17,
+      "correct": 15,
+      "accuracyPct": 88.24
+    },
+    {
+      "threshold": 0.84,
+      "selectedCount": 17,
+      "correct": 15,
+      "accuracyPct": 88.24
+    },
+    {
+      "threshold": 0.85,
+      "selectedCount": 17,
+      "correct": 15,
+      "accuracyPct": 88.24
+    },
+    {
+      "threshold": 0.86,
+      "selectedCount": 16,
+      "correct": 15,
+      "accuracyPct": 93.75,
+      "validated": true
+    },
+    {
+      "threshold": 0.87,
+      "selectedCount": 16,
+      "correct": 15,
+      "accuracyPct": 93.75
+    },
+    {
+      "threshold": 0.88,
+      "selectedCount": 15,
+      "correct": 15,
+      "accuracyPct": 100.0
+    },
+    {
+      "threshold": 0.89,
+      "selectedCount": 15,
+      "correct": 15,
+      "accuracyPct": 100.0
+    },
+    {
+      "threshold": 0.9,
+      "selectedCount": 15,
+      "correct": 15,
+      "accuracyPct": 100.0
+    },
+    {
+      "threshold": 0.91,
+      "selectedCount": 15,
+      "correct": 15,
+      "accuracyPct": 100.0
+    },
+    {
+      "threshold": 0.92,
+      "selectedCount": 15,
+      "correct": 15,
+      "accuracyPct": 100.0
+    },
+    {
+      "threshold": 0.93,
+      "selectedCount": 15,
+      "correct": 15,
+      "accuracyPct": 100.0
+    },
+    {
+      "threshold": 0.94,
+      "selectedCount": 15,
+      "correct": 15,
+      "accuracyPct": 100.0
+    },
+    {
+      "threshold": 0.95,
+      "selectedCount": 15,
+      "correct": 15,
+      "accuracyPct": 100.0
+    }
+  ],
+  "policy": "Use as gated overlay only when holdout threshold is validated against target accuracy.",
+  "datasetPath": "runtime_reports/mlb_ml_training_dataset_latest.csv",
+  "modelPath": "runtime_reports/mlb_ml_model_latest.json",
+  "trainingSource": {
+    "currentRows": 1,
+    "historicalRows": 144,
+    "dedupedTrainingRows": 144,
+    "recordsWritten": 144,
+    "lockedCardAuditRequired": true
+  }
 }
