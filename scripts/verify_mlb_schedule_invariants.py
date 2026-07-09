@@ -25,6 +25,10 @@ if '"days_ahead":0' not in text and '"days_ahead": 0' not in text:
 required_template_strings = {
     'MLBDailyPickLockFunction': 'daily lock function missing',
     'MLBDailyPickLockEveryMinute': 'daily lock one-minute scheduler missing',
+    'MLBProductionVerifierFunction': 'AWS production verifier function missing',
+    'MLBProductionVerifierEvery5Min': '5-minute AWS production verifier schedule missing',
+    'MLBProductionIngestVerifyDaily435Et': 'daily ingest verification schedule missing',
+    'MLBProductionLockVerifyDaily556Et': 'daily lock verification schedule missing',
     'MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME': 'lock T-minus env missing',
     '/v1/mlb/locks/run': 'manual lock route missing',
     '/v1/mlb/locks/status': 'lock status route missing',
@@ -52,4 +56,4 @@ if '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"' in text:
 if violations:
     raise SystemExit('MLB production invariant failure: ' + '; '.join(violations))
 
-print('MLB production invariants PASS: same-day quarter-hour Odds API pulls, no legacy MLB schedules, daily T-minus lock, fresh-snapshot guardrails, real-book pricing, and promotion settings are present.')
+print('MLB production invariants PASS: same-day quarter-hour Odds API pulls, no legacy MLB schedules, daily T-minus lock, fresh-snapshot guardrails, real-book pricing, promotion settings, and AWS production verification schedules are present.')
