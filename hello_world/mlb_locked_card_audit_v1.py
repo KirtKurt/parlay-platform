@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "MLB-LOCKED-CARD-AUDIT-v1-45MIN"
+VERSION = "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX"
 
 
 def _parse_dt(value: Any) -> Optional[datetime]:
@@ -28,33 +28,49 @@ def _gate(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _lock_at(row: Dict[str, Any]) -> Optional[datetime]:
-    gate = _gate(row)
-    return _parse_dt(gate.get("lockAtUtc"))
+    return _parse_dt(_gate(row).get("lockAtUtc"))
 
 
-def _source_at(row: Dict[str, Any]) -> Optional[datetime]:
+def _explicit_source_at(row: Dict[str, Any]) -> Optional[datetime]:
+    """Return only a real scoring/source-pull timestamp, never row creation time."""
     gate = _gate(row)
-    for key in ("latestScoringPullAt", "latestAvailablePullAt", "predictionSourcePullAt", "createdAt", "created_at"):
+    for key in ("latestScoringPullAt", "latestAvailablePullAt", "predictionSourcePullAt", "sourcePullAt", "scoringPullAt"):
         dt = _parse_dt(gate.get(key) if key in gate else row.get(key))
         if dt:
             return dt
     return None
 
 
+def _created_at(row: Dict[str, Any]) -> Optional[datetime]:
+    return _parse_dt(row.get("createdAt") or row.get("created_at") or row.get("storedAt"))
+
+
 def _locked_flag(row: Dict[str, Any]) -> bool:
     gate = _gate(row)
     tags = set(str(x) for x in (row.get("tags") or []))
-    return bool(gate.get("locked") is True or gate.get("finalLocked") is True or gate.get("phase") == "SLATE_LOCKED" or "SLATE_LOCKED" in tags)
+    return bool(
+        gate.get("locked") is True
+        or gate.get("finalLocked") is True
+        or gate.get("phase") == "SLATE_LOCKED"
+        or gate.get("lockStatus") == "LOCKED"
+        or row.get("lockedPrediction") is True
+        or "SLATE_LOCKED" in tags
+        or "FINAL_LOCKED" in tags
+    )
 
 
 def _candidate_rank(row: Dict[str, Any]) -> Optional[Tuple[int, str]]:
     lock_at = _lock_at(row)
-    source_at = _source_at(row)
+    source_at = _explicit_source_at(row)
     locked = _locked_flag(row)
+
+    # Reject only when a real scoring/source timestamp is after the slate lock.
+    # Do not reject locked rows merely because the row itself was written later.
     if lock_at and source_at and source_at > lock_at:
         return None
     if not locked and not (lock_at and source_at and source_at <= lock_at):
         return None
+
     quality = 0
     if locked:
         quality += 1_000_000
@@ -65,12 +81,14 @@ def _candidate_rank(row: Dict[str, Any]) -> Optional[Tuple[int, str]]:
     if source_at and lock_at:
         seconds_before = max(0, int((lock_at - source_at).total_seconds()))
         quality += max(0, 100_000 - min(seconds_before, 100_000))
-    return quality, str(row.get("createdAt") or row.get("created_at") or "")
+    created = _created_at(row)
+    return quality, created.isoformat() if created else str(row.get("createdAt") or row.get("created_at") or "")
 
 
 def _copy_audit_fields(pred: Dict[str, Any]) -> Dict[str, Any]:
     lock_at = _lock_at(pred)
-    source_at = _source_at(pred)
+    source_at = _explicit_source_at(pred)
+    created = _created_at(pred)
     return {
         "predictedWinner": pred.get("predictedWinner"),
         "predictedSide": pred.get("predictedSide"),
@@ -92,10 +110,12 @@ def _copy_audit_fields(pred: Dict[str, Any]) -> Dict[str, Any]:
         "lockedCardAudit": {
             "applied": True,
             "version": VERSION,
-            "selectionPolicy": "use_prediction_available_at_or_before_45_minute_slate_lock_only",
+            "selectionPolicy": "use_locked_prediction_row_and_reject_only_explicit_post_lock_scoring_sources",
             "lockedFlag": _locked_flag(pred),
             "lockAtUtc": lock_at.isoformat() if lock_at else None,
-            "sourceAtUtc": source_at.isoformat() if source_at else None,
+            "explicitSourceAtUtc": source_at.isoformat() if source_at else None,
+            "rowCreatedAtUtc": created.isoformat() if created else None,
+            "createdAtNotUsedAsScoringSource": True,
             "preventsLateRows": True,
         },
     }
@@ -127,7 +147,16 @@ def apply(module: Any):
         for final in finals:
             pred = index.get(final.get("gameKeyBase")) or {}
             if not pred:
-                rows.append({**final, "status": "MISSING_LOCKED_PREDICTION", "lockedCardAudit": {"applied": True, "version": VERSION, "selectionPolicy": "strict_45_minute_locked_card_only", "missingReason": "no_prediction_row_at_or_before_lock"}})
+                rows.append({
+                    **final,
+                    "status": "MISSING_LOCKED_PREDICTION",
+                    "lockedCardAudit": {
+                        "applied": True,
+                        "version": VERSION,
+                        "selectionPolicy": "strict_45_minute_locked_card_only",
+                        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row",
+                    },
+                })
                 continue
             correct = module.normalize_team(pred.get("predictedWinner")) == module.normalize_team(final.get("winner"))
             rows.append({**final, "status": "GRADED", **_copy_audit_fields(pred), "correct": correct})
