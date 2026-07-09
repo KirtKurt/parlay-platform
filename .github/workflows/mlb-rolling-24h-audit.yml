@@ -11,6 +11,7 @@ on:
       - 'hello_world/mlb_learning_signal_filter_patch.py'
       - 'hello_world/mlb_locked_card_audit_v1.py'
       - 'hello_world/mlb_ml_signal_layers.py'
+      - 'hello_world/mlb_ml_feature_vector.py'
       - 'hello_world/sitecustomize.py'
       - 'hello_world/all_sports_live_scheduler.py'
   schedule:
@@ -42,7 +43,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Run rolling 24h MLB audit
+      - name: Run rolling 24h MLB audit and train ML
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           SNAPSHOTS_TABLE: parlay_platform_snapshots
@@ -57,17 +58,20 @@ jobs:
           print(json.dumps({
               'ok': report.get('ok'),
               'summary': report.get('summary'),
+              'mlTraining': report.get('mlTraining'),
               'stored': report.get('stored'),
               'storeError': report.get('storeError'),
           }, indent=2, default=str))
           PY
 
-      - name: Commit rolling audit proof
+      - name: Commit rolling audit proof and ML artifacts
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add runtime_reports/mlb_rolling_24h_audit_latest.json || true
-          git commit -m "Update MLB rolling 24h audit proof" || true
+          git add runtime_reports/mlb_ml_training_dataset_latest.csv || true
+          git add runtime_reports/mlb_ml_model_latest.json || true
+          git commit -m "Update MLB rolling audit and ML artifacts" || true
           git pull --rebase --autostash origin main || true
           git push || true
