@@ -1,15 +1,15 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-08T23:32:34.131110+00:00",
+  "createdAt": "2026-07-09T04:20:02.651193+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
     "windowHours": 24,
     "targetAccuracyPct": 90.0,
-    "completedFinalGames": 8,
-    "gradedPredictionCount": 2,
-    "missingPredictionCount": 6,
+    "completedFinalGames": 13,
+    "gradedPredictionCount": 1,
+    "missingPredictionCount": 12,
     "optimizedPickCount": 0,
     "optimizedCorrect": 0,
     "optimizedWrong": 0,
@@ -19,8 +19,8 @@
     "winnerOptimizerFlipCount": 0,
     "allScoredPickAccuracyPct": 100.0,
     "historicalRowsUsedForLearning": 144,
-    "sevenDayRowsUsedForLearning": 99,
-    "sevenDayAccuracyPct": 60.61,
+    "sevenDayRowsUsedForLearning": 92,
+    "sevenDayAccuracyPct": 60.87,
     "thirtyDayRowsUsedForLearning": 144,
     "thirtyDayAccuracyPct": 62.5,
     "seasonRowsUsedForLearning": 144,
@@ -36,65 +36,65 @@
     "actionableWrong": 0,
     "rolling24hActionableAccuracyPct": null,
     "accuracyTargetRowPolicy": "no_explicit_actionable_or_targetable_optimized_rows",
-    "excludedNoPickOptimizedRows": 2,
+    "excludedNoPickOptimizedRows": 1,
     "actionabilityPolicy": "Actionable metrics count explicit actionablePick/officialPick/accuracyTargetEligible rows. Pass/no-pick rows remain graded for learning and all-scored diagnostics, but they are excluded from optimized accuracy-target proof so the 90% target measures only real display/official picks."
   },
   "scoreLearning": {
     "multiWindowStats": {
       "current24h": {
-        "rowCount": 2,
-        "correct": 2,
+        "rowCount": 1,
+        "correct": 1,
         "wrong": 0,
         "accuracyPct": 100.0,
         "tagStats": {
           "MISSING_FUNDAMENTALS": {
-            "count": 2,
-            "correct": 2,
+            "count": 1,
+            "correct": 1,
             "accuracyPct": 100.0
           },
           "REVERSAL": {
-            "count": 2,
-            "correct": 2,
+            "count": 1,
+            "correct": 1,
             "accuracyPct": 100.0
           },
           "RUN_LINE_MOVEMENT": {
-            "count": 2,
-            "correct": 2,
+            "count": 1,
+            "correct": 1,
             "accuracyPct": 100.0
           },
           "STEAM": {
-            "count": 2,
-            "correct": 2,
+            "count": 1,
+            "correct": 1,
             "accuracyPct": 100.0
           }
         },
         "tagComboStats": {
           "MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 2,
-            "correct": 2,
+            "count": 1,
+            "correct": 1,
             "accuracyPct": 100.0
           }
         },
         "confidenceStats": {
           "Lean": {
-            "count": 2,
-            "correct": 2,
+            "count": 1,
+            "correct": 1,
             "accuracyPct": 100.0
           }
         },
         "optimizerFlipStats": {
           "NOT_FLIPPED": {
-            "count": 2,
-            "correct": 2,
+            "count": 1,
+            "correct": 1,
             "accuracyPct": 100.0
           }
         }
       },
       "sevenDay": {
-        "rowCount": 99,
-        "correct": 60,
-        "wrong": 39,
-        "accuracyPct": 60.61,
+        "rowCount": 92,
+        "correct": 56,
+        "wrong": 36,
+        "accuracyPct": 60.87,
         "tagStats": {
           "MISSING_FUNDAMENTALS": {
             "count": 20,
@@ -102,24 +102,24 @@
             "accuracyPct": 50.0
           },
           "REVERSAL": {
-            "count": 87,
-            "correct": 52,
-            "accuracyPct": 59.77
+            "count": 82,
+            "correct": 49,
+            "accuracyPct": 59.76
           },
           "RUN_LINE_MOVEMENT": {
-            "count": 61,
-            "correct": 38,
-            "accuracyPct": 62.3
+            "count": 56,
+            "correct": 36,
+            "accuracyPct": 64.29
           },
           "STEAM": {
-            "count": 49,
-            "correct": 34,
-            "accuracyPct": 69.39
+            "count": 44,
+            "correct": 31,
+            "accuracyPct": 70.45
           },
           "BOOK_AGREEMENT": {
-            "count": 68,
-            "correct": 44,
-            "accuracyPct": 64.71
+            "count": 66,
+            "correct": 43,
+            "accuracyPct": 65.15
           },
           "UNCONFIRMED_RUN_LINE_MOVE": {
             "count": 26,
@@ -132,9 +132,9 @@
             "accuracyPct": 50.0
           },
           "BOOK_DIVERGENCE": {
-            "count": 9,
+            "count": 7,
             "correct": 6,
-            "accuracyPct": 66.67
+            "accuracyPct": 85.71
           },
           "RESISTANCE": {
             "count": 2,
@@ -142,9 +142,9 @@
             "accuracyPct": 0.0
           },
           "RUN_LINE_CONFIRMATION": {
-            "count": 7,
-            "correct": 2,
-            "accuracyPct": 28.57
+            "count": 5,
+            "correct": 1,
+            "accuracyPct": 20.0
           }
         },
         "tagComboStats": {
@@ -274,9 +274,9 @@
             "accuracyPct": 0.0
           },
           "BOOK_AGREEMENT+REVERSAL": {
-            "count": 13,
-            "correct": 7,
-            "accuracyPct": 53.85
+            "count": 12,
+            "correct": 6,
+            "accuracyPct": 50.0
           },
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT": {
             "count": 4,
@@ -334,12 +334,12 @@
             "accuracyPct": 100.0
           },
           "REVERSAL+STEAM": {
-            "count": 2,
-            "correct": 1,
-            "accuracyPct": 50.0
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
           },
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 2,
+            "count": 1,
             "correct": 0,
             "accuracyPct": 0.0
           },
@@ -347,48 +347,28 @@
             "count": 1,
             "correct": 0,
             "accuracyPct": 0.0
-          },
-          "REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
-          "BOOK_DIVERGENCE+RUN_LINE_MOVEMENT": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
-          "RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
-          "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
           }
         },
         "confidenceStats": {
           "Lean": {
-            "count": 15,
-            "correct": 10,
-            "accuracyPct": 66.67
+            "count": 13,
+            "correct": 9,
+            "accuracyPct": 69.23
           },
           "Pass": {
-            "count": 47,
-            "correct": 20,
-            "accuracyPct": 42.55
+            "count": 44,
+            "correct": 19,
+            "accuracyPct": 43.18
           },
           "Premium": {
-            "count": 23,
-            "correct": 20,
-            "accuracyPct": 86.96
+            "count": 22,
+            "correct": 19,
+            "accuracyPct": 86.36
           },
           "Solid": {
-            "count": 4,
-            "correct": 3,
-            "accuracyPct": 75.0
+            "count": 3,
+            "correct": 2,
+            "accuracyPct": 66.67
           },
           "Coin Flip": {
             "count": 10,
@@ -398,9 +378,9 @@
         },
         "optimizerFlipStats": {
           "NOT_FLIPPED": {
-            "count": 99,
-            "correct": 60,
-            "accuracyPct": 60.61
+            "count": 92,
+            "correct": 56,
+            "accuracyPct": 60.87
           }
         }
       },
@@ -1146,27 +1126,27 @@
     "windowAdjustments": {
       "current24h": {
         "tagScoreAdjustments": {
-          "MISSING_FUNDAMENTALS": 2.78,
-          "REVERSAL": 2.78,
-          "RUN_LINE_MOVEMENT": 2.78,
-          "STEAM": 2.78
+          "MISSING_FUNDAMENTALS": 0.75,
+          "REVERSAL": 0.75,
+          "RUN_LINE_MOVEMENT": 0.75,
+          "STEAM": 0.75
         },
         "tagComboScoreAdjustments": {
-          "MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 4.17
+          "MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.75
         }
       },
       "sevenDay": {
         "tagScoreAdjustments": {
           "MISSING_FUNDAMENTALS": 0.0,
           "REVERSAL": 0.54,
-          "RUN_LINE_MOVEMENT": 0.68,
-          "STEAM": 1.08,
-          "BOOK_AGREEMENT": 0.82,
+          "RUN_LINE_MOVEMENT": 0.79,
+          "STEAM": 1.14,
+          "BOOK_AGREEMENT": 0.84,
           "UNCONFIRMED_RUN_LINE_MOVE": 1.28,
           "COMPRESSED_MARKET": 0.0,
-          "BOOK_DIVERGENCE": 0.93,
+          "BOOK_DIVERGENCE": 1.98,
           "RESISTANCE": -2.78,
-          "RUN_LINE_CONFIRMATION": -1.19
+          "RUN_LINE_CONFIRMATION": -1.67
         },
         "tagComboScoreAdjustments": {
           "MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 4.17,
@@ -1194,7 +1174,7 @@
           "BOOK_AGREEMENT": 1.39,
           "COMPRESSED_MARKET+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -4.17,
           "RESISTANCE+REVERSAL": -4.17,
-          "BOOK_AGREEMENT+REVERSAL": 0.32,
+          "BOOK_AGREEMENT+REVERSAL": 0.0,
           "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT": 0.0,
           "BOOK_AGREEMENT+COMPRESSED_MARKET+RUN_LINE_MOVEMENT": 0.0,
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL": 0.75,
@@ -1206,13 +1186,9 @@
           "BOOK_AGREEMENT+STEAM": 0.75,
           "NO_TAGS": 0.75,
           "BOOK_AGREEMENT+COMPRESSED_MARKET+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT": 0.75,
-          "REVERSAL+STEAM": 0.0,
-          "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -4.17,
-          "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.75,
-          "REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.75,
-          "BOOK_DIVERGENCE+RUN_LINE_MOVEMENT": -0.75,
-          "RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": 0.75,
-          "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -0.75
+          "REVERSAL+STEAM": -0.75,
+          "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.75,
+          "BOOK_DIVERGENCE+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.75
         }
       },
       "thirtyDay": {
@@ -1357,61 +1333,61 @@
       }
     },
     "currentWindowStats": {
-      "rowCount": 2,
-      "correct": 2,
+      "rowCount": 1,
+      "correct": 1,
       "wrong": 0,
       "accuracyPct": 100.0,
       "tagStats": {
         "MISSING_FUNDAMENTALS": {
-          "count": 2,
-          "correct": 2,
+          "count": 1,
+          "correct": 1,
           "accuracyPct": 100.0
         },
         "REVERSAL": {
-          "count": 2,
-          "correct": 2,
+          "count": 1,
+          "correct": 1,
           "accuracyPct": 100.0
         },
         "RUN_LINE_MOVEMENT": {
-          "count": 2,
-          "correct": 2,
+          "count": 1,
+          "correct": 1,
           "accuracyPct": 100.0
         },
         "STEAM": {
-          "count": 2,
-          "correct": 2,
+          "count": 1,
+          "correct": 1,
           "accuracyPct": 100.0
         }
       },
       "tagComboStats": {
         "MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
-          "count": 2,
-          "correct": 2,
+          "count": 1,
+          "correct": 1,
           "accuracyPct": 100.0
         }
       },
       "confidenceStats": {
         "Lean": {
-          "count": 2,
-          "correct": 2,
+          "count": 1,
+          "correct": 1,
           "accuracyPct": 100.0
         }
       },
       "optimizerFlipStats": {
         "NOT_FLIPPED": {
-          "count": 2,
-          "correct": 2,
+          "count": 1,
+          "correct": 1,
           "accuracyPct": 100.0
         }
       },
       "tagScoreAdjustments": {
-        "MISSING_FUNDAMENTALS": 2.78,
-        "REVERSAL": 2.78,
-        "RUN_LINE_MOVEMENT": 2.78,
-        "STEAM": 2.78
+        "MISSING_FUNDAMENTALS": 0.75,
+        "REVERSAL": 0.75,
+        "RUN_LINE_MOVEMENT": 0.75,
+        "STEAM": 0.75
       },
       "tagComboScoreAdjustments": {
-        "MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 4.17
+        "MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.75
       }
     },
     "historicalStats": {
@@ -1421,59 +1397,59 @@
     },
     "tagStats": {
       "MISSING_FUNDAMENTALS": {
-        "count": 2,
-        "correct": 2,
+        "count": 1,
+        "correct": 1,
         "accuracyPct": 100.0
       },
       "REVERSAL": {
-        "count": 2,
-        "correct": 2,
+        "count": 1,
+        "correct": 1,
         "accuracyPct": 100.0
       },
       "RUN_LINE_MOVEMENT": {
-        "count": 2,
-        "correct": 2,
+        "count": 1,
+        "correct": 1,
         "accuracyPct": 100.0
       },
       "STEAM": {
-        "count": 2,
-        "correct": 2,
+        "count": 1,
+        "correct": 1,
         "accuracyPct": 100.0
       }
     },
     "tagComboStats": {
       "MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": {
-        "count": 2,
-        "correct": 2,
+        "count": 1,
+        "correct": 1,
         "accuracyPct": 100.0
       }
     },
     "confidenceStats": {
       "Lean": {
-        "count": 2,
-        "correct": 2,
+        "count": 1,
+        "correct": 1,
         "accuracyPct": 100.0
       }
     },
     "optimizerFlipStats": {
       "NOT_FLIPPED": {
-        "count": 2,
-        "correct": 2,
+        "count": 1,
+        "correct": 1,
         "accuracyPct": 100.0
       }
     },
     "adjustments": {
       "tagScoreAdjustments": {
-        "BOOK_AGREEMENT": 0.89,
-        "BOOK_DIVERGENCE": 0.65,
+        "BOOK_AGREEMENT": 0.9,
+        "BOOK_DIVERGENCE": 1.17,
         "COMPRESSED_MARKET": 0.0,
         "LOW_PULL_DEPTH": 0.76,
-        "MISSING_FUNDAMENTALS": 1.39,
+        "MISSING_FUNDAMENTALS": 0.38,
         "RESISTANCE": 0.0,
-        "REVERSAL": 1.64,
-        "RUN_LINE_CONFIRMATION": -0.39,
-        "RUN_LINE_MOVEMENT": 1.74,
-        "STEAM": 1.93,
+        "REVERSAL": 0.63,
+        "RUN_LINE_CONFIRMATION": 0.4,
+        "RUN_LINE_MOVEMENT": 0.76,
+        "STEAM": 0.93,
         "UNCONFIRMED_RUN_LINE_MOVE": 1.28
       },
       "tagComboScoreAdjustments": {
@@ -1496,7 +1472,7 @@
         "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL": 0.0,
         "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT": 0.0,
         "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM+UNCONFIRMED_RUN_LINE_MOVE": 0.0,
-        "BOOK_AGREEMENT+REVERSAL": 0.3,
+        "BOOK_AGREEMENT+REVERSAL": 0.14,
         "BOOK_AGREEMENT+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT+STEAM": -0.6,
         "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT": 0.0,
         "BOOK_AGREEMENT+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 2.78,
@@ -1519,7 +1495,7 @@
         "COMPRESSED_MARKET+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT": 0.0,
         "COMPRESSED_MARKET+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.0,
         "COMPRESSED_MARKET+REVERSAL+RUN_LINE_MOVEMENT+STEAM+UNCONFIRMED_RUN_LINE_MOVE": 0.0,
-        "MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 4.17,
+        "MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.75,
         "MISSING_FUNDAMENTALS+REVERSAL+STEAM": 0.0,
         "NO_TAGS": 0.0,
         "RESISTANCE+REVERSAL": 0.0,
@@ -1563,298 +1539,6 @@
     "operationalTagFilterPolicy": "Final-gate, provider, model-discipline, and status tags are kept on audit rows for proof, but removed from signal-learning inputs so the model only learns from predictive market/fundamentals signals."
   },
   "rows": [
-    {
-      "id": "fa63ecda3e7fe4b049c7e9cfd633f461",
-      "gameKeyBase": "boston red sox|chicago white sox",
-      "homeTeam": "Chicago White Sox",
-      "awayTeam": "Boston Red Sox",
-      "matchup": "Boston Red Sox at Chicago White Sox",
-      "commenceTime": "2026-07-07T23:41:00Z",
-      "slateDateEt": "2026-07-07",
-      "homeScore": 1,
-      "awayScore": 8,
-      "winner": "Boston Red Sox",
-      "margin": 7,
-      "totalRuns": 9,
-      "completed": true,
-      "status": "MISSING_LOCKED_PREDICTION",
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
-        "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
-      }
-    },
-    {
-      "id": "a21ff3f3e886298451df6978c4be743c",
-      "gameKeyBase": "cleveland guardians|minnesota twins",
-      "homeTeam": "Minnesota Twins",
-      "awayTeam": "Cleveland Guardians",
-      "matchup": "Cleveland Guardians at Minnesota Twins",
-      "commenceTime": "2026-07-07T23:41:00Z",
-      "slateDateEt": "2026-07-07",
-      "homeScore": 3,
-      "awayScore": 1,
-      "winner": "Minnesota Twins",
-      "margin": 2,
-      "totalRuns": 4,
-      "completed": true,
-      "status": "MISSING_LOCKED_PREDICTION",
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
-        "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
-      }
-    },
-    {
-      "id": "53966d4de4d1da8972c6564664409a9b",
-      "gameKeyBase": "milwaukee brewers|st. louis cardinals",
-      "homeTeam": "St. Louis Cardinals",
-      "awayTeam": "Milwaukee Brewers",
-      "matchup": "Milwaukee Brewers at St. Louis Cardinals",
-      "commenceTime": "2026-07-07T23:46:00Z",
-      "slateDateEt": "2026-07-07",
-      "homeScore": 2,
-      "awayScore": 10,
-      "winner": "Milwaukee Brewers",
-      "margin": 8,
-      "totalRuns": 12,
-      "completed": true,
-      "status": "MISSING_LOCKED_PREDICTION",
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
-        "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
-      }
-    },
-    {
-      "id": "c6ef398cb6827a8a660c67c3f3e6dbd5",
-      "gameKeyBase": "los angeles angels|texas rangers",
-      "homeTeam": "Texas Rangers",
-      "awayTeam": "Los Angeles Angels",
-      "matchup": "Los Angeles Angels at Texas Rangers",
-      "commenceTime": "2026-07-08T00:06:00Z",
-      "slateDateEt": "2026-07-07",
-      "homeScore": 8,
-      "awayScore": 3,
-      "winner": "Texas Rangers",
-      "margin": 5,
-      "totalRuns": 11,
-      "completed": true,
-      "status": "MISSING_LOCKED_PREDICTION",
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
-        "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
-      }
-    },
-    {
-      "id": "622a46f12d0dc3b057125b0b59f00507",
-      "gameKeyBase": "arizona diamondbacks|san diego padres",
-      "homeTeam": "San Diego Padres",
-      "awayTeam": "Arizona Diamondbacks",
-      "matchup": "Arizona Diamondbacks at San Diego Padres",
-      "commenceTime": "2026-07-08T01:41:00Z",
-      "slateDateEt": "2026-07-07",
-      "homeScore": 4,
-      "awayScore": 1,
-      "winner": "San Diego Padres",
-      "margin": 3,
-      "totalRuns": 5,
-      "completed": true,
-      "status": "MISSING_LOCKED_PREDICTION",
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
-        "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
-      }
-    },
-    {
-      "id": "0ae1e836fd92f0f98b83e2d7451f6f97",
-      "gameKeyBase": "toronto blue jays|san francisco giants",
-      "homeTeam": "San Francisco Giants",
-      "awayTeam": "Toronto Blue Jays",
-      "matchup": "Toronto Blue Jays at San Francisco Giants",
-      "commenceTime": "2026-07-08T01:46:00Z",
-      "slateDateEt": "2026-07-07",
-      "homeScore": 3,
-      "awayScore": 9,
-      "winner": "Toronto Blue Jays",
-      "margin": 6,
-      "totalRuns": 12,
-      "completed": true,
-      "status": "GRADED",
-      "predictedWinner": "Toronto Blue Jays",
-      "predictedSide": "away",
-      "score": "60.17",
-      "winProbabilityPct": "61.19",
-      "confidenceTier": "Lean",
-      "tags": [
-        "CALIBRATED_PROBABILITY",
-        "FINAL_LOCKED",
-        "MISSING_FUNDAMENTALS",
-        "NO_PICK",
-        "NO_PICK_DISCIPLINE",
-        "REVERSAL",
-        "RUN_LINE_MOVEMENT",
-        "SLATE_LOCKED",
-        "SLATE_WIDE_45_MIN_LOCK_POLICY",
-        "STEAM",
-        "WINNER_STACK_V2"
-      ],
-      "winnerOptimizer": {
-        "fundamentalsApplied": false,
-        "basis": "market_signal_plus_multi_window_learning",
-        "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
-      },
-      "winnerStackV2": {
-        "components": {
-          "market": {
-            "consensusProbability": "0.5421",
-            "score": "57.58",
-            "consensusEdge": "0.0842",
-            "source": "de_vigged_moneyline_consensus",
-            "opponentConsensusProbability": "0.4579"
-          },
-          "fundamentals": {
-            "mode": "SPORTSDATAIO_UNAVAILABLE",
-            "score": "50",
-            "source": "neutral_fundamentals_until_live_provider_enabled",
-            "applied": false
-          },
-          "movement": {
-            "score": "66.22",
-            "cleanRunLineConfirmation": false,
-            "cleanSteam": false,
-            "marketEdge": "0.0842",
-            "runLineMovement": "121.182",
-            "source": "line_movement_steam_resistance_reversal_runline_confirmation_risk_calibrated",
-            "reversalCount": "1",
-            "tags": [
-              "REVERSAL",
-              "RUN_LINE_MOVEMENT",
-              "STEAM"
-            ]
-          }
-        },
-        "ensembleScore": "60.17",
-        "applied": true,
-        "discipline": {
-          "reason": "edge_exists_but_not_strong_enough_for_primary_actionable_bucket",
-          "actionability": "WATCHLIST_LEAN",
-          "actionablePick": false,
-          "riskReasons": [
-            "unconfirmed_run_line_movement"
-          ]
-        },
-        "weights": {
-          "market": "0.7",
-          "fundamentals": "0",
-          "movement": "0.3"
-        },
-        "version": "MLB-WINNER-STACK-v2.2-market-confirmed-actionable-lean",
-        "calibration": {
-          "calibratedProbability": "0.6119",
-          "shrinkageToward50": "0.025",
-          "method": "ensemble_probability_anchored_to_de_vigged_market_consensus_with_false_confirmation_shrinkage",
-          "marketAnchorProbability": "0.5421",
-          "rawProbability": "0.7001",
-          "riskReasons": [
-            "unconfirmed_run_line_movement"
-          ]
-        },
-        "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
-      },
-      "officialPick": false,
-      "officialPrediction": true,
-      "actionablePick": false,
-      "accuracyTargetEligible": false,
-      "actionability": "WATCHLIST_LEAN",
-      "actionabilityReason": "edge_exists_but_not_strong_enough_for_primary_actionable_bucket",
-      "actionabilityRiskReasons": [
-        "unconfirmed_run_line_movement"
-      ],
-      "homeSignal": {
-        "probStart": "0.4942",
-        "probLatest": "0.4579",
-        "side": "home",
-        "averageAmericanOdds": "110.45",
-        "bookCount": "11",
-        "delta": "-0.0363",
-        "latestGap": "0.0842",
-        "runLineMovement": "-111.545",
-        "team": "San Francisco Giants",
-        "tags": [
-          "RESISTANCE",
-          "REVERSAL",
-          "RUN_LINE_MOVEMENT"
-        ],
-        "score": "10.47",
-        "winProbability": "0.05",
-        "marketConsensusProbability": "0.4579",
-        "bookDivergence": "0.02134",
-        "reversalCount": "1",
-        "winProbabilityPct": "5"
-      },
-      "awaySignal": {
-        "probStart": "0.5058",
-        "probLatest": "0.5421",
-        "side": "away",
-        "averageAmericanOdds": "-128.73",
-        "bookCount": "11",
-        "delta": "0.0363",
-        "latestGap": "0.0842",
-        "runLineMovement": "121.182",
-        "team": "Toronto Blue Jays",
-        "tags": [
-          "REVERSAL",
-          "RUN_LINE_MOVEMENT",
-          "STEAM"
-        ],
-        "score": "67.22",
-        "winProbability": "0.8077",
-        "marketConsensusProbability": "0.5421",
-        "bookDivergence": "0.02134",
-        "reversalCount": "1",
-        "winProbabilityPct": "80.77"
-      },
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
-        "selectionPolicy": "use_prediction_available_at_or_before_45_minute_slate_lock_only",
-        "lockedFlag": true,
-        "lockAtUtc": "2026-07-08T19:01:00+00:00",
-        "sourceAtUtc": "2026-07-08T19:00:25.924801+00:00",
-        "preventsLateRows": true
-      },
-      "correct": true
-    },
-    {
-      "id": "8df69c8e501590af54db5363e5fdc3af",
-      "gameKeyBase": "colorado rockies|los angeles dodgers",
-      "homeTeam": "Los Angeles Dodgers",
-      "awayTeam": "Colorado Rockies",
-      "matchup": "Colorado Rockies at Los Angeles Dodgers",
-      "commenceTime": "2026-07-08T02:11:00Z",
-      "slateDateEt": "2026-07-07",
-      "homeScore": 3,
-      "awayScore": 4,
-      "winner": "Colorado Rockies",
-      "margin": 1,
-      "totalRuns": 7,
-      "completed": true,
-      "status": "MISSING_LOCKED_PREDICTION",
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
-        "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
-      }
-    },
     {
       "id": "57172eebee377baa85502b3c14ce8249",
       "gameKeyBase": "toronto blue jays|san francisco giants",
@@ -2014,6 +1698,270 @@
         "preventsLateRows": true
       },
       "correct": true
+    },
+    {
+      "id": "fbdf2c9598b2ee82ae2cd6b9934f9b67",
+      "gameKeyBase": "chicago cubs|baltimore orioles",
+      "homeTeam": "Baltimore Orioles",
+      "awayTeam": "Chicago Cubs",
+      "matchup": "Chicago Cubs at Baltimore Orioles",
+      "commenceTime": "2026-07-08T22:36:51Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 7,
+      "awayScore": 9,
+      "winner": "Chicago Cubs",
+      "margin": 2,
+      "totalRuns": 16,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "8d7cadd457d4e05f27a0ef6feab14d62",
+      "gameKeyBase": "athletics|detroit tigers",
+      "homeTeam": "Detroit Tigers",
+      "awayTeam": "Athletics",
+      "matchup": "Athletics at Detroit Tigers",
+      "commenceTime": "2026-07-08T22:41:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 6,
+      "awayScore": 1,
+      "winner": "Detroit Tigers",
+      "margin": 5,
+      "totalRuns": 7,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "f30eb3060b32a01dced2737d2398b918",
+      "gameKeyBase": "atlanta braves|pittsburgh pirates",
+      "homeTeam": "Pittsburgh Pirates",
+      "awayTeam": "Atlanta Braves",
+      "matchup": "Atlanta Braves at Pittsburgh Pirates",
+      "commenceTime": "2026-07-08T22:41:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 0,
+      "awayScore": 3,
+      "winner": "Atlanta Braves",
+      "margin": 3,
+      "totalRuns": 3,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "ee87ced2d6a2acedec0ca6c9d37dde8c",
+      "gameKeyBase": "seattle mariners|miami marlins",
+      "homeTeam": "Miami Marlins",
+      "awayTeam": "Seattle Mariners",
+      "matchup": "Seattle Mariners at Miami Marlins",
+      "commenceTime": "2026-07-08T22:41:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 2,
+      "awayScore": 0,
+      "winner": "Miami Marlins",
+      "margin": 2,
+      "totalRuns": 2,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "79b379f1dea98a6b1596852f00534a6c",
+      "gameKeyBase": "new york yankees|tampa bay rays",
+      "homeTeam": "Tampa Bay Rays",
+      "awayTeam": "New York Yankees",
+      "matchup": "New York Yankees at Tampa Bay Rays",
+      "commenceTime": "2026-07-08T22:41:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 3,
+      "awayScore": 0,
+      "winner": "Tampa Bay Rays",
+      "margin": 3,
+      "totalRuns": 3,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "673394fe5878e43a0bdc2feb5f6634d3",
+      "gameKeyBase": "houston astros|washington nationals",
+      "homeTeam": "Washington Nationals",
+      "awayTeam": "Houston Astros",
+      "matchup": "Houston Astros at Washington Nationals",
+      "commenceTime": "2026-07-08T22:46:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 8,
+      "awayScore": 2,
+      "winner": "Washington Nationals",
+      "margin": 6,
+      "totalRuns": 10,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "1b110742f40a58c2e76a9743faf4a07c",
+      "gameKeyBase": "philadelphia phillies|cincinnati reds",
+      "homeTeam": "Cincinnati Reds",
+      "awayTeam": "Philadelphia Phillies",
+      "matchup": "Philadelphia Phillies at Cincinnati Reds",
+      "commenceTime": "2026-07-08T23:11:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 11,
+      "awayScore": 5,
+      "winner": "Cincinnati Reds",
+      "margin": 6,
+      "totalRuns": 16,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "fa2f6fc2aee410abafe5d685acfde5f3",
+      "gameKeyBase": "kansas city royals|new york mets",
+      "homeTeam": "New York Mets",
+      "awayTeam": "Kansas City Royals",
+      "matchup": "Kansas City Royals at New York Mets",
+      "commenceTime": "2026-07-08T23:11:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 6,
+      "awayScore": 2,
+      "winner": "New York Mets",
+      "margin": 4,
+      "totalRuns": 8,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "e8175b3e1d8e51c76f4fad9075a7d707",
+      "gameKeyBase": "boston red sox|chicago white sox",
+      "homeTeam": "Chicago White Sox",
+      "awayTeam": "Boston Red Sox",
+      "matchup": "Boston Red Sox at Chicago White Sox",
+      "commenceTime": "2026-07-08T23:41:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 0,
+      "awayScore": 5,
+      "winner": "Boston Red Sox",
+      "margin": 5,
+      "totalRuns": 5,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "f69a7dce841f22ee977afebfd8dfc142",
+      "gameKeyBase": "cleveland guardians|minnesota twins",
+      "homeTeam": "Minnesota Twins",
+      "awayTeam": "Cleveland Guardians",
+      "matchup": "Cleveland Guardians at Minnesota Twins",
+      "commenceTime": "2026-07-08T23:41:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 6,
+      "awayScore": 5,
+      "winner": "Minnesota Twins",
+      "margin": 1,
+      "totalRuns": 11,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "e885d80c0e3339f69c0a7c1b898c173e",
+      "gameKeyBase": "milwaukee brewers|st. louis cardinals",
+      "homeTeam": "St. Louis Cardinals",
+      "awayTeam": "Milwaukee Brewers",
+      "matchup": "Milwaukee Brewers at St. Louis Cardinals",
+      "commenceTime": "2026-07-08T23:46:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 5,
+      "awayScore": 1,
+      "winner": "St. Louis Cardinals",
+      "margin": 4,
+      "totalRuns": 6,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
+    },
+    {
+      "id": "88cb3f823f958bc6b24e7f918541e63f",
+      "gameKeyBase": "los angeles angels|texas rangers",
+      "homeTeam": "Texas Rangers",
+      "awayTeam": "Los Angeles Angels",
+      "matchup": "Los Angeles Angels at Texas Rangers",
+      "commenceTime": "2026-07-09T00:06:00Z",
+      "slateDateEt": "2026-07-08",
+      "homeScore": 1,
+      "awayScore": 13,
+      "winner": "Los Angeles Angels",
+      "margin": 12,
+      "totalRuns": 14,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_prediction_row_at_or_before_lock"
+      }
     }
   ],
   "policy": "Audit every completed MLB game in the trailing 24 hours. The optimizer target is correct team-winner selection for every individual game; 90% is measured as rolling 24h accuracy across all optimized picks. Signal scoring blends current 24h, 7-day, 30-day, and season audit trends.",
@@ -2022,17 +1970,17 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-08T23:32:34.131110+00:00"
+    "runSk": "AUDIT#2026-07-09T04:20:02.651193+00:00"
   },
   "mlTraining": {
     "ok": true,
-    "recordCount": 2,
+    "recordCount": 1,
     "datasetPath": "runtime_reports/mlb_ml_training_dataset_latest.csv",
     "modelPath": "runtime_reports/mlb_ml_model_latest.json",
     "modelSummary": {
       "ok": false,
       "reason": "not_enough_rows",
-      "rowCount": 2,
+      "rowCount": 1,
       "minRows": 40,
       "datasetPath": "runtime_reports/mlb_ml_training_dataset_latest.csv",
       "modelPath": "runtime_reports/mlb_ml_model_latest.json"
