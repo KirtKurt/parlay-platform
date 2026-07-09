@@ -6,6 +6,8 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict
 
+from mlb_ml_feature_vector import feature_vector
+
 REPORT_PATH = "runtime_reports/mlb_hot_pull_recovery_latest.json"
 ML_MODEL_PATH = os.environ.get("INQSI_MLB_ML_MODEL_PATH", "runtime_reports/mlb_ml_model_latest.json")
 
@@ -43,11 +45,6 @@ def _num(value: Any, default: float = 0.0) -> float:
         return default
 
 
-def _sig(row: Dict[str, Any], side: str) -> Dict[str, Any]:
-    value = row.get("homeSignal") if side == "home" else row.get("awaySignal")
-    return value if isinstance(value, dict) else {}
-
-
 def _load_model() -> Dict[str, Any] | None:
     try:
         with open(ML_MODEL_PATH, "r", encoding="utf-8") as f:
@@ -57,40 +54,12 @@ def _load_model() -> Dict[str, Any] | None:
         return None
 
 
-def _ml_features(row: Dict[str, Any]) -> Dict[str, float]:
-    side = str(row.get("predictedSide") or "home").lower()
-    if side not in {"home", "away"}:
-        side = "home"
-    other = "away" if side == "home" else "home"
-    sig = _sig(row, side)
-    opp = _sig(row, other)
-    tags = set([str(x) for x in (row.get("tags") or [])] + [str(x) for x in (sig.get("tags") or [])])
-    mp = _num(sig.get("marketConsensusProbability"), _num(sig.get("probLatest"), 0.5))
-    op = _num(opp.get("marketConsensusProbability"), 1.0 - mp)
-    return {
-        "score": _num(row.get("score")),
-        "winProbabilityPct": _num(row.get("winProbabilityPct")),
-        "marketProb": mp,
-        "marketEdge": mp - op,
-        "bookDivergence": _num(sig.get("bookDivergence")),
-        "reversalCount": _num(sig.get("reversalCount")),
-        "runLineMoveAbs": abs(_num(sig.get("runLineMovement"))),
-        "bookAgreement": 1.0 if "BOOK_AGREEMENT" in tags else 0.0,
-        "bookDivergenceFlag": 1.0 if "BOOK_DIVERGENCE" in tags else 0.0,
-        "runLineMove": 1.0 if "RUN_LINE_MOVEMENT" in tags else 0.0,
-        "unconfirmedRunLine": 1.0 if "UNCONFIRMED_RUN_LINE_MOVE" in tags else 0.0,
-        "compressedMarket": 1.0 if "COMPRESSED_MARKET" in tags else 0.0,
-        "lean": 1.0 if str(row.get("confidenceTier") or "").lower() == "lean" else 0.0,
-        "passTier": 1.0 if str(row.get("confidenceTier") or "").lower() == "pass" else 0.0,
-    }
-
-
 def _ml_score(row: Dict[str, Any], model: Dict[str, Any]) -> float | None:
     features = model.get("features") or []
     weights = model.get("weights") or {}
     means = model.get("means") or {}
     scales = model.get("scales") or model.get("stds") or {}
-    fmap = _ml_features(row)
+    fmap = feature_vector(row)
     z = _num(model.get("bias"))
     for feature in features:
         scale = _num(scales.get(feature), 1.0) or 1.0
@@ -100,6 +69,16 @@ def _ml_score(row: Dict[str, Any], model: Dict[str, Any]) -> float | None:
     if z <= -35:
         return 0.0
     return 1.0 / (1.0 + math.exp(-z))
+
+
+def _validated_model(model: Dict[str, Any] | None, threshold_info: Dict[str, Any], target: float) -> bool:
+    if not model:
+        return False
+    if model.get("validatedAgainstTarget") is True:
+        return True
+    if threshold_info.get("validated") is True and threshold_info.get("accuracyPct") is not None:
+        return _num(threshold_info.get("accuracyPct")) >= target
+    return bool(threshold_info.get("accuracyPct") is not None and _num(threshold_info.get("accuracyPct")) >= target)
 
 
 def _apply_ml_overlay(predictions: Dict[str, Any]) -> Dict[str, Any]:
@@ -112,18 +91,32 @@ def _apply_ml_overlay(predictions: Dict[str, Any]) -> Dict[str, Any]:
     model = _load_model() if enabled else None
     threshold_info = (model or {}).get("selectedThreshold") or {}
     target = _num(os.environ.get("INQSI_MLB_ML_TARGET_ACCURACY"), 90.0)
-    validated = bool(model and threshold_info.get("accuracyPct") is not None and _num(threshold_info.get("accuracyPct")) >= target)
+    validated = _validated_model(model, threshold_info, target)
     threshold = _num(threshold_info.get("threshold"), _num(os.environ.get("INQSI_MLB_ML_MIN_PROBABILITY"), 0.90))
     promoted = 0
     evaluated = 0
     rejected = 0
     for row in rows:
-        overlay = {"enabled": enabled, "modelAvailable": bool(model), "applied": False, "validatedAgainstTarget": validated}
+        overlay = {
+            "enabled": enabled,
+            "modelAvailable": bool(model),
+            "applied": False,
+            "validatedAgainstTarget": validated,
+            "modelVersion": (model or {}).get("version"),
+            "featureVectorVersion": (model or {}).get("featureVectorVersion"),
+            "rowCount": (model or {}).get("rowCount"),
+        }
         if model:
             p = _ml_score(row, model)
             evaluated += 1
-            confirmed = bool(p is not None and validated and p >= threshold and not (row.get("actionabilityRiskReasons") or []))
-            overlay.update({"applied": True, "probabilityPickCorrect": round(p, 4) if p is not None else None, "confirmed": confirmed, "selectedThreshold": threshold_info})
+            risk_reasons = row.get("actionabilityRiskReasons") or []
+            confirmed = bool(p is not None and validated and p >= threshold and not risk_reasons)
+            overlay.update({
+                "applied": True,
+                "probabilityPickCorrect": round(p, 4) if p is not None else None,
+                "confirmed": confirmed,
+                "selectedThreshold": threshold_info,
+            })
             tags = set(row.get("tags") or [])
             tags.add("ML_OVERLAY_EVALUATED")
             if p is not None and p < float(os.environ.get("INQSI_MLB_ML_REJECT_BELOW", "0.52")):
@@ -151,7 +144,19 @@ def _apply_ml_overlay(predictions: Dict[str, Any]) -> Dict[str, Any]:
     predictions["noPickCount"] = len([r for r in rows if not r.get("actionablePick")])
     stack = predictions.get("winnerStackV2") or {}
     if isinstance(stack, dict):
-        stack["mlOverlay"] = {"enabled": enabled, "modelAvailable": bool(model), "validatedAgainstTarget": validated, "evaluatedCount": evaluated, "promotedCount": promoted, "rejectedCount": rejected, "threshold": threshold_info}
+        stack["mlOverlay"] = {
+            "enabled": enabled,
+            "modelAvailable": bool(model),
+            "validatedAgainstTarget": validated,
+            "evaluatedCount": evaluated,
+            "promotedCount": promoted,
+            "rejectedCount": rejected,
+            "threshold": threshold_info,
+            "modelVersion": (model or {}).get("version"),
+            "featureVectorVersion": (model or {}).get("featureVectorVersion"),
+            "rowCount": (model or {}).get("rowCount"),
+            "trainingSource": (model or {}).get("trainingSource"),
+        }
         stack["actionablePickCount"] = predictions["actionablePickCount"]
         stack["passNoPickCount"] = predictions["noPickCount"]
         predictions["winnerStackV2"] = stack
