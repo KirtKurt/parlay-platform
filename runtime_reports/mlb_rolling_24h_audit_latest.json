@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-09T11:20:06.981557+00:00",
+  "createdAt": "2026-07-09T13:28:04.111705+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -1696,11 +1696,13 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
-        "selectionPolicy": "use_prediction_available_at_or_before_45_minute_slate_lock_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
+        "selectionPolicy": "use_locked_prediction_row_and_reject_only_explicit_post_lock_scoring_sources",
         "lockedFlag": true,
         "lockAtUtc": "2026-07-08T19:01:00+00:00",
-        "sourceAtUtc": "2026-07-08T19:00:25.924801+00:00",
+        "explicitSourceAtUtc": "2026-07-08T19:00:25.924801+00:00",
+        "rowCreatedAtUtc": "2026-07-08T23:56:02.800580+00:00",
+        "createdAtNotUsedAsScoringSource": true,
         "preventsLateRows": true
       },
       "correct": true
@@ -1722,9 +1724,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1744,9 +1746,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1766,9 +1768,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1788,9 +1790,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1810,9 +1812,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1832,9 +1834,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1854,9 +1856,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1876,9 +1878,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1898,9 +1900,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1920,9 +1922,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1942,9 +1944,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1964,9 +1966,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -1986,9 +1988,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     },
     {
@@ -2008,9 +2010,9 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1-45MIN",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
         "selectionPolicy": "strict_45_minute_locked_card_only",
-        "missingReason": "no_prediction_row_at_or_before_lock"
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
     }
   ],
@@ -2020,20 +2022,76 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-09T11:20:06.981557+00:00"
+    "runSk": "AUDIT#2026-07-09T13:28:04.111705+00:00"
   },
   "mlTraining": {
     "ok": true,
-    "recordCount": 1,
+    "recordCount": 144,
     "datasetPath": "runtime_reports/mlb_ml_training_dataset_latest.csv",
     "modelPath": "runtime_reports/mlb_ml_model_latest.json",
+    "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v2-directional-locked-card",
+    "trainingSource": {
+      "currentRows": 1,
+      "historicalRows": 144,
+      "dedupedTrainingRows": 144,
+      "recordsWritten": 144,
+      "lockedCardAuditRequired": true
+    },
     "modelSummary": {
-      "ok": false,
-      "reason": "not_enough_rows",
-      "rowCount": 1,
-      "minRows": 40,
+      "ok": true,
+      "version": "MLB-ML-HOLDOUT-SCORER-v2-directional-locked-card",
+      "rowCount": 144,
+      "trainCount": 108,
+      "holdoutCount": 36,
+      "features": [
+        "score",
+        "winProbabilityPct",
+        "marketProb",
+        "marketEdge",
+        "marketDelta",
+        "marketGap",
+        "bookDivergence",
+        "reversalCount",
+        "movementPerReversal",
+        "runLineMoveAbs",
+        "bookAgreement",
+        "bookDivergenceFlag",
+        "runLineMove",
+        "runLineAligned",
+        "unconfirmedRunLine",
+        "steam",
+        "steamAligned",
+        "resistance",
+        "compressedMarket",
+        "missingFundamentals",
+        "lowPullDepth",
+        "favoriteRisk",
+        "opponentFavored",
+        "highReversalDirectional",
+        "highReversalWeak",
+        "lean",
+        "passTier"
+      ],
+      "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v2-directional-locked-card",
+      "bias": 0.44349250369740373,
+      "selectedThreshold": {
+        "threshold": 0.86,
+        "selectedCount": 16,
+        "correct": 15,
+        "accuracyPct": 93.75,
+        "validated": true
+      },
+      "validatedAgainstTarget": true,
+      "policy": "Use as gated overlay only when holdout threshold is validated against target accuracy.",
       "datasetPath": "runtime_reports/mlb_ml_training_dataset_latest.csv",
-      "modelPath": "runtime_reports/mlb_ml_model_latest.json"
+      "modelPath": "runtime_reports/mlb_ml_model_latest.json",
+      "trainingSource": {
+        "currentRows": 1,
+        "historicalRows": 144,
+        "dedupedTrainingRows": 144,
+        "recordsWritten": 144,
+        "lockedCardAuditRequired": true
+      }
     }
   }
 }
