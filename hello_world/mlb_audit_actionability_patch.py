@@ -6,7 +6,8 @@ import math
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-ML_FEATURES = ["score", "winProbabilityPct", "marketProb", "marketEdge", "bookDivergence", "reversalCount", "runLineMoveAbs", "bookAgreement", "bookDivergenceFlag", "runLineMove", "unconfirmedRunLine", "compressedMarket", "lean", "passTier"]
+from mlb_ml_feature_vector import ML_FEATURES, VERSION as ML_FEATURE_VECTOR_VERSION, feature_vector
+
 NO_PICK_TAGS = {"NO_PICK", "NO_PICK_DISCIPLINE"}
 NO_PICK_ACTIONABILITIES = {"PASS_NO_PICK", "NO_PICK", "NO_ACTIONABLE_PICK"}
 
@@ -70,43 +71,6 @@ def _prediction_quality(pred: Dict[str, Any]) -> Tuple[int, str]:
     return quality, str(pred.get("createdAt") or pred.get("created_at") or "")
 
 
-def _side(row: Dict[str, Any]) -> str:
-    side = str(row.get("predictedSide") or "").lower()
-    return side if side in {"home", "away"} else "home"
-
-
-def _signal(row: Dict[str, Any], side: str) -> Dict[str, Any]:
-    sig = row.get("homeSignal") if side == "home" else row.get("awaySignal")
-    return sig if isinstance(sig, dict) else {}
-
-
-def _ml_features(row: Dict[str, Any]) -> Dict[str, float]:
-    side = _side(row)
-    other = "away" if side == "home" else "home"
-    sig = _signal(row, side)
-    opp = _signal(row, other)
-    tags = set([str(x) for x in (row.get("tags") or [])] + [str(x) for x in (sig.get("tags") or [])])
-    market_prob = _f(sig.get("marketConsensusProbability"), _f(sig.get("probLatest"), 0.5))
-    opp_prob = _f(opp.get("marketConsensusProbability"), 1.0 - market_prob)
-    tier = str(row.get("confidenceTier") or "").lower()
-    return {
-        "score": _f(row.get("score")),
-        "winProbabilityPct": _f(row.get("winProbabilityPct")),
-        "marketProb": market_prob,
-        "marketEdge": market_prob - opp_prob,
-        "bookDivergence": _f(sig.get("bookDivergence")),
-        "reversalCount": _f(sig.get("reversalCount")),
-        "runLineMoveAbs": abs(_f(sig.get("runLineMovement"))),
-        "bookAgreement": 1.0 if "BOOK_AGREEMENT" in tags else 0.0,
-        "bookDivergenceFlag": 1.0 if "BOOK_DIVERGENCE" in tags else 0.0,
-        "runLineMove": 1.0 if "RUN_LINE_MOVEMENT" in tags else 0.0,
-        "unconfirmedRunLine": 1.0 if "UNCONFIRMED_RUN_LINE_MOVE" in tags else 0.0,
-        "compressedMarket": 1.0 if "COMPRESSED_MARKET" in tags else 0.0,
-        "lean": 1.0 if tier == "lean" else 0.0,
-        "passTier": 1.0 if tier == "pass" else 0.0,
-    }
-
-
 def _dataset(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     out = []
     for row in rows or []:
@@ -121,16 +85,48 @@ def _dataset(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "winner": row.get("winner"),
             "label": 1 if row.get("correct") else 0,
         }
-        rec.update(_ml_features(row))
+        rec.update(feature_vector(row))
         out.append(rec)
     return out
+
+
+def _dedupe_training_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    seen: Dict[str, Dict[str, Any]] = {}
+    for row in rows or []:
+        if row.get("status") != "GRADED" or row.get("correct") is None:
+            continue
+        key = "|".join([
+            str(row.get("id") or ""),
+            str(row.get("gameKeyBase") or ""),
+            str(row.get("commenceTime") or ""),
+            str(row.get("predictedWinner") or ""),
+        ])
+        if key not in seen:
+            seen[key] = row
+    return list(seen.values())
+
+
+def _sigmoid(z: float) -> float:
+    if z >= 35:
+        return 1.0
+    if z <= -35:
+        return 0.0
+    return 1.0 / (1.0 + math.exp(-z))
 
 
 def _train(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     rows = sorted(records, key=lambda r: str(r.get("commenceTime") or ""))
     min_rows = int(os.environ.get("INQSI_MLB_ML_MIN_ROWS", "40"))
+    target = float(os.environ.get("INQSI_MLB_ML_TARGET_ACCURACY", "90"))
     if len(rows) < min_rows:
-        return {"ok": False, "reason": "not_enough_rows", "rowCount": len(rows), "minRows": min_rows}
+        return {
+            "ok": False,
+            "reason": "not_enough_rows",
+            "rowCount": len(rows),
+            "minRows": min_rows,
+            "validatedAgainstTarget": False,
+            "featureVectorVersion": ML_FEATURE_VECTOR_VERSION,
+        }
     holdout_count = max(1, int(len(rows) * float(os.environ.get("INQSI_MLB_ML_HOLDOUT_FRAC", "0.25"))))
     train_rows = rows[:-holdout_count]
     holdout = rows[-holdout_count:]
@@ -150,12 +146,8 @@ def _train(records: List[Dict[str, Any]]) -> Dict[str, Any]:
     bias = math.log((sum(1 for r in train_rows if int(r.get("label") or 0) == 1) + 1) / (sum(1 for r in train_rows if int(r.get("label") or 0) == 0) + 1))
 
     def predict(r: Dict[str, Any]) -> float:
-        z = bias + sum(weights[f] * ((_f(r.get(f)) - means[f]) / scales[f]) for f in ML_FEATURES)
-        if z >= 35:
-            return 1.0
-        if z <= -35:
-            return 0.0
-        return 1.0 / (1.0 + math.exp(-z))
+        z = bias + sum(weights[f] * ((_f(r.get(f)) - means[f]) / (scales[f] or 1.0)) for f in ML_FEATURES)
+        return _sigmoid(z)
 
     scored = [{"p": predict(r), "label": int(r.get("label") or 0), "matchup": r.get("matchup")} for r in holdout]
     candidates = []
@@ -163,15 +155,49 @@ def _train(records: List[Dict[str, Any]]) -> Dict[str, Any]:
         threshold = i / 100.0
         selected = [r for r in scored if r["p"] >= threshold]
         correct = [r for r in selected if r["label"] == 1]
-        candidates.append({"threshold": threshold, "selectedCount": len(selected), "correct": len(correct), "accuracyPct": round(len(correct) / len(selected) * 100.0, 2) if selected else None})
-    target = float(os.environ.get("INQSI_MLB_ML_TARGET_ACCURACY", "90"))
+        candidates.append({
+            "threshold": threshold,
+            "selectedCount": len(selected),
+            "correct": len(correct),
+            "accuracyPct": round(len(correct) / len(selected) * 100.0, 2) if selected else None,
+        })
     viable = [c for c in candidates if c.get("selectedCount") and (c.get("accuracyPct") or 0) >= target]
-    selected_threshold = sorted(viable, key=lambda x: (x["selectedCount"], x["accuracyPct"]), reverse=True)[0] if viable else sorted([c for c in candidates if c.get("selectedCount")], key=lambda x: ((x.get("accuracyPct") or 0), x["selectedCount"]), reverse=True)[0]
-    return {"ok": True, "version": "MLB-ML-HOLDOUT-SCORER-v1", "rowCount": len(rows), "trainCount": len(train_rows), "holdoutCount": len(holdout), "features": ML_FEATURES, "bias": bias, "weights": weights, "means": means, "scales": scales, "selectedThreshold": selected_threshold, "holdoutThresholdCandidates": candidates, "policy": "Use as gated overlay only when holdout threshold is validated against target accuracy."}
+    non_empty = [c for c in candidates if c.get("selectedCount")]
+    selected_threshold = (
+        sorted(viable, key=lambda x: (x["selectedCount"], x["accuracyPct"]), reverse=True)[0]
+        if viable else
+        sorted(non_empty, key=lambda x: ((x.get("accuracyPct") or 0), x["selectedCount"]), reverse=True)[0]
+        if non_empty else
+        {"threshold": 0.95, "selectedCount": 0, "correct": 0, "accuracyPct": None}
+    )
+    selected_threshold["validated"] = bool((selected_threshold.get("accuracyPct") or 0) >= target and selected_threshold.get("selectedCount"))
+    return {
+        "ok": True,
+        "version": "MLB-ML-HOLDOUT-SCORER-v2-directional-locked-card",
+        "rowCount": len(rows),
+        "trainCount": len(train_rows),
+        "holdoutCount": len(holdout),
+        "features": ML_FEATURES,
+        "featureVectorVersion": ML_FEATURE_VECTOR_VERSION,
+        "bias": bias,
+        "weights": weights,
+        "means": means,
+        "scales": scales,
+        "selectedThreshold": selected_threshold,
+        "validatedAgainstTarget": bool(selected_threshold.get("validated")),
+        "holdoutThresholdCandidates": candidates,
+        "policy": "Use as gated overlay only when holdout threshold is validated against target accuracy.",
+    }
 
 
-def _write_ml_artifacts(report: Dict[str, Any]) -> Dict[str, Any]:
-    records = _dataset(report.get("rows") or [])
+def _write_ml_artifacts(report: Dict[str, Any], module: Any) -> Dict[str, Any]:
+    current_rows = report.get("rows") or []
+    try:
+        historical_rows = module.historical_audit_rows()
+    except Exception:
+        historical_rows = []
+    training_rows = _dedupe_training_rows(list(current_rows or []) + list(historical_rows or []))
+    records = _dataset(training_rows)
     os.makedirs("runtime_reports", exist_ok=True)
     csv_path = "runtime_reports/mlb_ml_training_dataset_latest.csv"
     model_path = "runtime_reports/mlb_ml_model_latest.json"
@@ -184,10 +210,25 @@ def _write_ml_artifacts(report: Dict[str, Any]) -> Dict[str, Any]:
     model = _train(records)
     model["datasetPath"] = csv_path
     model["modelPath"] = model_path
+    model["trainingSource"] = {
+        "currentRows": len([r for r in current_rows if r.get("status") == "GRADED"]),
+        "historicalRows": len([r for r in historical_rows if r.get("status") == "GRADED"]),
+        "dedupedTrainingRows": len(training_rows),
+        "recordsWritten": len(records),
+        "lockedCardAuditRequired": True,
+    }
     with open(model_path, "w", encoding="utf-8") as f:
         json.dump(model, f, indent=2, default=str)
         f.write("\n")
-    return {"ok": True, "recordCount": len(records), "datasetPath": csv_path, "modelPath": model_path, "modelSummary": {k: v for k, v in model.items() if k not in {"weights", "means", "scales", "holdoutThresholdCandidates"}}}
+    return {
+        "ok": True,
+        "recordCount": len(records),
+        "datasetPath": csv_path,
+        "modelPath": model_path,
+        "featureVectorVersion": ML_FEATURE_VECTOR_VERSION,
+        "trainingSource": model["trainingSource"],
+        "modelSummary": {k: v for k, v in model.items() if k not in {"weights", "means", "scales", "holdoutThresholdCandidates"}},
+    }
 
 
 def _target_rows(actionable: List[Dict[str, Any]], optimized: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], str]:
@@ -303,7 +344,7 @@ def apply(module):
         report = original_build(*args, **kwargs)
         if isinstance(report, dict) and os.environ.get("INQSI_MLB_ML_ARTIFACTS_ENABLED", "true").lower() in {"1", "true", "yes"}:
             try:
-                report["mlTraining"] = _write_ml_artifacts(report)
+                report["mlTraining"] = _write_ml_artifacts(report, module)
                 if kwargs.get("store", True):
                     try:
                         report["stored"] = module.store_report(report)
