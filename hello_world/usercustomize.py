@@ -53,6 +53,7 @@ except Exception:
 
 try:
     import mlb_game_winner_engine as _inqsi_mlb_game_winner_for_slate_lock
+    import mlb_accuracy_target_patch as _inqsi_mlb_accuracy_target_patch
     import mlb_slate_prediction_lock as _inqsi_mlb_slate_prediction_lock
     import mlb_last_possible_prediction_gate as _inqsi_mlb_last_possible_prediction_gate
     import mlb_balanced_signal_gate as _inqsi_mlb_balanced_signal_gate
@@ -62,6 +63,7 @@ try:
     import mlb_ml_runtime_overlay as _inqsi_mlb_ml_runtime_overlay
     _inqsi_mlb_slate_prediction_lock.apply(_inqsi_mlb_game_winner_for_slate_lock)
     for attr, patch in [
+        ("_INQSI_MLB_90_TARGET_APPLIED", _inqsi_mlb_accuracy_target_patch),
         ("_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED", _inqsi_mlb_last_possible_prediction_gate),
         ("_INQSI_MLB_BALANCED_SIGNAL_GATE_APPLIED", _inqsi_mlb_balanced_signal_gate),
         ("_INQSI_MLB_ML_SIGNAL_LAYERS_APPLIED", _inqsi_mlb_ml_signal_layers),
@@ -141,12 +143,13 @@ try:
             return _json_resp(200, {
                 "ok": True,
                 "sport": "mlb",
-                "model_version": "INQSI-MLB-v2.1-core-proxy-smoke-safe",
+                "model_version": "INQSI-MLB-v2.2-core-proxy-required-winner-picks",
                 "game_winner_model": getattr(engine, "MODEL_VERSION", None) if engine is not None else None,
                 "game_winner_engine": getattr(engine, "ENGINE", None) if engine is not None else None,
                 "engine_import_ok": engine_ok,
                 "engine_import_error": engine_error,
                 "pick_type": "individual_game_moneyline",
+                "requiredWinnerPickPolicy": "one_visible_predicted_winner_for_every_mlb_game",
                 "parlaysEnabled": False,
                 "sourcePolicy": "The Odds API stored pull history only for production picks.",
             })
@@ -163,13 +166,16 @@ try:
                     "ok": True,
                     "sport": "mlb",
                     "date": date,
-                    "model_version": "INQSI-MLB-v2.1-core-proxy-smoke-safe",
+                    "model_version": "INQSI-MLB-v2.2-core-proxy-required-winner-picks",
                     "game_winner_model": payload.get("modelVersion"),
                     "count": payload.get("count", 0),
+                    "requiredGameWinnerPredictionCount": payload.get("requiredGameWinnerPredictionCount"),
+                    "displayPredictionCount": payload.get("displayPredictionCount"),
+                    "allGamesHaveDisplayedWinnerPrediction": payload.get("allGamesHaveDisplayedWinnerPrediction"),
                     "promotedCount": payload.get("promotedCount", 0),
                     "pullCount": payload.get("pullCount"),
                     "latestPullAt": payload.get("latestPullAt"),
-                    "priority": "individual_game_moneyline_picks",
+                    "priority": "one_required_individual_game_moneyline_pick_per_game",
                     "parlaysEnabled": False,
                 })
             return _json_resp(200, {**payload, "winner_predictions": payload.get("predictions") or [], "parlaysEnabled": False})
