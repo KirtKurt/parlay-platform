@@ -2,10 +2,13 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
-VERSION = "MLB-ML-SIGNAL-LAYERS-v1.1-hard-blocked-reversal-movement-book-runline-instability"
+VERSION = "MLB-ML-SIGNAL-LAYERS-v1.2-score-only-required-pick-preservation"
 MAX_SIGNAL_LAYER_PROMOTIONS = 2
 HARD_BLOCK_TAGS = {"LOW_PULL_DEPTH", "SINGLE_PULL_BASELINE", "BOOK_DIVERGENCE", "LATE_INSTABILITY"}
-ROW_HARD_BLOCK_TAGS = HARD_BLOCK_TAGS | {"MISSING_FUNDAMENTALS"}
+# Missing fundamentals is a risk note, not a blocker. Odds API-only rows must
+# still keep the platform's required one-winner-per-game prediction.
+ROW_HARD_BLOCK_TAGS = HARD_BLOCK_TAGS
+RISK_ONLY_TAGS = {"MISSING_FUNDAMENTALS"}
 
 
 def _f(value: Any, default: float = 0.0) -> float:
@@ -52,6 +55,11 @@ def _hard_blocks(row: Dict[str, Any], selected: Dict[str, Any]) -> List[str]:
     if _i(row.get("pullCountForGame"), 0) < 12 and "LOW_PULL_DEPTH" not in blocks:
         blocks.append("LOW_PULL_DEPTH")
     return sorted(set(blocks))
+
+
+def _risk_only_tags(row: Dict[str, Any], selected: Dict[str, Any]) -> List[str]:
+    tags = _selected_tags(row, selected)
+    return sorted(tags & RISK_ONLY_TAGS)
 
 
 def _reversal_layer(selected: Dict[str, Any], opponent: Dict[str, Any], pull_count: int) -> Dict[str, Any]:
@@ -292,6 +300,10 @@ def build_signal_layers(row: Dict[str, Any]) -> Dict[str, Any]:
     }
     score, risk, reasons = _score_layers(layers)
     hard_blocks = _hard_blocks(row, selected)
+    risk_only_tags = _risk_only_tags(row, selected)
+    if risk_only_tags:
+        risk = round(min(0.60, risk + 0.02), 4)
+        reasons = sorted(set(reasons + [f"risk_only:{tag.lower()}" for tag in risk_only_tags]))
     if hard_blocks:
         risk = round(max(risk, 0.35), 4)
         reasons = sorted(set(reasons + [f"hard_block:{tag.lower()}" for tag in hard_blocks]))
@@ -308,6 +320,7 @@ def build_signal_layers(row: Dict[str, Any]) -> Dict[str, Any]:
         "selectedTeam": selected.get("team") or row.get("predictedWinner"),
         "opponentTeam": opponent.get("team") or row.get("opponent"),
         "hardBlocks": hard_blocks,
+        "riskOnlyTags": risk_only_tags,
         "layers": layers,
         "featureVector": {
             "marketProbability": layers["winningTeamMovement"]["selectedMarketProbability"],
@@ -339,12 +352,29 @@ def build_signal_layers(row: Dict[str, Any]) -> Dict[str, Any]:
             "lateInstability",
             "pullCountForGame",
             "hardBlocks",
+            "riskOnlyTags",
         ],
     }
 
 
 def _get_primary_key() -> str:
     return "actionable" + "Pick"
+
+
+def _ensure_required_prediction(row: Dict[str, Any]) -> None:
+    has_winner = bool(row.get("predictedWinner"))
+    row["predictionRequired"] = True
+    row["requiredGameWinnerPrediction"] = has_winner
+    row["winnerPredictionAvailable"] = has_winner
+    row["displayPrediction"] = has_winner
+    row["platformPick"] = has_winner
+    row["customerVisibleWinnerPick"] = has_winner
+    row["officialPrediction"] = has_winner
+    if has_winner:
+        tags = set(row.get("tags") or [])
+        tags.add("REQUIRED_GAME_WINNER_PREDICTION")
+        tags.add("PLATFORM_PICK")
+        row["tags"] = sorted(tags)
 
 
 def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -358,6 +388,8 @@ def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
     tags.add("ML_SIGNAL_LAYERS")
     if payload.get("hardBlocks"):
         tags.add("ML_SIGNAL_HARD_BLOCKED")
+    if payload.get("riskOnlyTags"):
+        tags.add("ML_SIGNAL_RISK_ONLY")
     if payload["decision"] == "PRIMARY_SIGNAL_CANDIDATE":
         tags.add("ML_PRIMARY_SIGNAL_CANDIDATE")
     elif payload["decision"] == "WATCHLIST_SIGNAL":
@@ -365,6 +397,7 @@ def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
     else:
         tags.add("ML_NO_PRIMARY_SIGNAL")
     out["tags"] = sorted(tags)
+    _ensure_required_prediction(out)
     return out
 
 
@@ -394,6 +427,7 @@ def _promote_from_signal_layers(row: Dict[str, Any]) -> None:
     tags.add("ACTIONABLE_" + "PICK")
     tags.add("ML_SIGNAL_LAYER_SELECTION")
     row["tags"] = sorted(tags)
+    _ensure_required_prediction(row)
 
 
 def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -411,6 +445,8 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
             if layer.get("decision") == "PRIMARY_SIGNAL_CANDIDATE" and not layer.get("hardBlocks"):
                 _promote_from_signal_layers(row)
                 promoted.append(row)
+    for row in rows:
+        _ensure_required_prediction(row)
     rows.sort(key=lambda r: (float(bool(r.get(key))), _f(r.get("mlSignalLayerScore"), 0.0), _f(r.get("winProbability"), 0.5)), reverse=True)
     for idx, row in enumerate(rows, 1):
         row["rank"] = idx
@@ -431,13 +467,19 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "steam_resistance",
             "late_instability",
             "hard_block_gate",
+            "risk_only_missing_fundamentals",
+            "required_pick_preservation",
         ],
         "rowCount": len(rows),
         "primarySignalCandidateCount": len([r for r in rows if (r.get("mlSignalLayers") or {}).get("decision") == "PRIMARY_SIGNAL_CANDIDATE"]),
         "watchlistSignalCount": len([r for r in rows if (r.get("mlSignalLayers") or {}).get("decision") == "WATCHLIST_SIGNAL"]),
         "hardBlockedCount": len([r for r in rows if (r.get("mlSignalLayers") or {}).get("hardBlocks")]),
+        "riskOnlyCount": len([r for r in rows if (r.get("mlSignalLayers") or {}).get("riskOnlyTags")]),
         "controlledPromotedCount": len(promoted),
         "maxControlledPromotions": MAX_SIGNAL_LAYER_PROMOTIONS,
+        "requiredGameWinnerPredictionCount": len([r for r in rows if r.get("requiredGameWinnerPrediction")]),
+        "displayPredictionCount": len([r for r in rows if r.get("displayPrediction")]),
+        "missingFundamentalsIsHardBlock": False,
         "outcomeLearningReady": True,
     }
     out["mlSignalLayers"] = layer_summary
@@ -445,6 +487,8 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
     summary["mlSignalLayers"] = layer_summary
     summary["actionablePickCount"] = out["actionablePickCount"]
     summary["noPickCount"] = out["noPickCount"]
+    summary["requiredGameWinnerPredictionCount"] = layer_summary["requiredGameWinnerPredictionCount"]
+    summary["displayPredictionCount"] = layer_summary["displayPredictionCount"]
     out["rolling24hAccuracyTarget"] = summary
     out["accuracyTarget"] = summary
     if VERSION not in str(out.get("modelVersion") or ""):
