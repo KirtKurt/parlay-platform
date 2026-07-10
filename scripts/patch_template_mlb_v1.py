@@ -103,6 +103,10 @@ def block_for(s: str, name: str) -> str:
     return "".join(out)
 
 
+# Remove old/dedicated MLB route functions that caused API Gateway/Lambda 502 on smoke tests.
+# The stable ApiFunction proxy handles /v1/mlb/* through usercustomize.py.
+text = remove_resource(text, "InqsiMLBV1CoreFunction")
+
 for legacy in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET"]:
     text = remove_child_event(text, legacy)
 text = remove_resource(text, "MLBHotPullRecoveryFunction")
@@ -118,57 +122,6 @@ for key, value in [
     ("MLB_MIN_EV_FOR_PROMOTION", "'0.0'"),
 ]:
     text = add_global_env(text, key, value)
-
-text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
-  InqsiMLBV1CoreFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: hello_world/
-      Handler: inqsi_mlb_v1_core.lambda_handler
-      Timeout: 60
-      MemorySize: 1024
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref SignalLedgerTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref PredictionsTable
-        - DynamoDBCrudPolicy:
-            TableName: !Ref OutcomesTable
-      Events:
-        InqsiMLBV1Today:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/today
-            Method: GET
-        InqsiMLBV1Games:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/games
-            Method: GET
-        InqsiMLBV1Predictions:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/predictions
-            Method: GET
-        InqsiMLBV1GameWinners:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/game-winners
-            Method: GET
-        InqsiMLBV1Audit:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/audit
-            Method: GET
-        InqsiMLBV1ModelVersion:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/model/version
-            Method: GET
-
-""", "InqsiMLBV1CoreFunction:")
 
 text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
   MLBDailyPickLockFunction:
@@ -221,18 +174,18 @@ text = text.replace('"includeFullMlbSnapshots":true', '"includeFullMlbSnapshots"
 
 hot = block_for(text, "MLBHotEvery15Min")
 violations = []
-for required in ["InqsiMLBV1CoreFunction:", "Path: /v1/mlb/model/version", "MLBDailyPickLockFunction:"]:
+for required in ["MLBDailyPickLockFunction:", "Path: /v1/mlb/locks/status"]:
     if required not in text:
         violations.append(f"missing {required}")
 if "Schedule: cron(0/15 * * * ? *)" not in hot:
     violations.append("MLBHotEvery15Min is not quarter-hour cron")
 if '"days_ahead":1' in text or '"days_ahead": 1' in text:
     violations.append("days_ahead:1 still present")
-for legacy in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET", "MLBHotPullRecoveryFunction"]:
+for legacy in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET", "MLBHotPullRecoveryFunction", "InqsiMLBV1CoreFunction"]:
     if f"        {legacy}:" in text or f"  {legacy}:" in text:
         violations.append(f"{legacy} still present")
 if violations:
     raise RuntimeError("Unsafe MLB SAM template after patch: " + "; ".join(violations))
 
 TEMPLATE.write_text(text)
-print("Patched template.yaml: MLB core API routes, model version route, quarter-hour MLB HOT schedule, and daily lock are present.")
+print("Patched template.yaml: MLB uses stable proxy routes, quarter-hour MLB HOT schedule, and daily lock.")
