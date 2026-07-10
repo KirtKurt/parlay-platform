@@ -1,14 +1,14 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-10T15:03:15.577976+00:00",
+  "createdAt": "2026-07-10T17:09:58.790833+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
     "windowHours": 24,
     "targetAccuracyPct": 90.0,
-    "completedFinalGames": 13,
-    "gradedPredictionCount": 7,
+    "completedFinalGames": 12,
+    "gradedPredictionCount": 6,
     "missingPredictionCount": 6,
     "optimizedPickCount": 0,
     "optimizedCorrect": 0,
@@ -17,7 +17,7 @@
     "rolling24hTargetMet": null,
     "winnerOptimizerAppliedCount": 0,
     "winnerOptimizerFlipCount": 0,
-    "allScoredPickAccuracyPct": 14.29,
+    "allScoredPickAccuracyPct": 16.67,
     "historicalRowsUsedForLearning": 162,
     "sevenDayRowsUsedForLearning": 101,
     "sevenDayAccuracyPct": 56.44,
@@ -36,41 +36,36 @@
     "actionableWrong": 0,
     "rolling24hActionableAccuracyPct": null,
     "accuracyTargetRowPolicy": "no_explicit_actionable_or_targetable_optimized_rows",
-    "excludedNoPickOptimizedRows": 7,
+    "excludedNoPickOptimizedRows": 6,
     "actionabilityPolicy": "Actionable metrics count explicit actionablePick/officialPick/accuracyTargetEligible rows. Pass/no-pick rows remain graded for learning and all-scored diagnostics, but they are excluded from optimized accuracy-target proof so the 90% target measures only real display/official picks."
   },
   "scoreLearning": {
     "multiWindowStats": {
       "current24h": {
-        "rowCount": 7,
+        "rowCount": 6,
         "correct": 1,
-        "wrong": 6,
-        "accuracyPct": 14.29,
+        "wrong": 5,
+        "accuracyPct": 16.67,
         "tagStats": {
-          "MISSING_FUNDAMENTALS": {
-            "count": 7,
-            "correct": 1,
-            "accuracyPct": 14.29
-          },
-          "PICKEM": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
-          "POSITIVE_MOVE": {
-            "count": 5,
-            "correct": 1,
-            "accuracyPct": 20.0
-          },
-          "REVERSAL": {
-            "count": 6,
-            "correct": 1,
-            "accuracyPct": 16.67
-          },
           "BOOK_AGREEMENT": {
             "count": 4,
             "correct": 1,
             "accuracyPct": 25.0
+          },
+          "MISSING_FUNDAMENTALS": {
+            "count": 6,
+            "correct": 1,
+            "accuracyPct": 16.67
+          },
+          "POSITIVE_MOVE": {
+            "count": 4,
+            "correct": 1,
+            "accuracyPct": 25.0
+          },
+          "REVERSAL": {
+            "count": 5,
+            "correct": 1,
+            "accuracyPct": 20.0
           },
           "UNDERDOG": {
             "count": 5,
@@ -84,11 +79,6 @@
           }
         },
         "tagComboStats": {
-          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
             "count": 1,
             "correct": 1,
@@ -122,16 +112,16 @@
         },
         "confidenceStats": {
           "Pass": {
-            "count": 7,
+            "count": 6,
             "correct": 1,
-            "accuracyPct": 14.29
+            "accuracyPct": 16.67
           }
         },
         "optimizerFlipStats": {
           "NOT_FLIPPED": {
-            "count": 7,
+            "count": 6,
             "correct": 1,
-            "accuracyPct": 14.29
+            "accuracyPct": 16.67
           }
         }
       },
@@ -141,15 +131,15 @@
         "wrong": 44,
         "accuracyPct": 56.44,
         "tagStats": {
+          "BOOK_AGREEMENT": {
+            "count": 70,
+            "correct": 42,
+            "accuracyPct": 60.0
+          },
           "MISSING_FUNDAMENTALS": {
             "count": 38,
             "correct": 16,
             "accuracyPct": 42.11
-          },
-          "PICKEM": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
           },
           "POSITIVE_MOVE": {
             "count": 5,
@@ -161,17 +151,17 @@
             "correct": 51,
             "accuracyPct": 56.04
           },
-          "BOOK_AGREEMENT": {
-            "count": 70,
-            "correct": 42,
-            "accuracyPct": 60.0
-          },
           "UNDERDOG": {
             "count": 5,
             "correct": 1,
             "accuracyPct": 20.0
           },
           "FAVORITE": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
+          },
+          "PICKEM": {
             "count": 1,
             "correct": 0,
             "accuracyPct": 0.0
@@ -213,11 +203,6 @@
           }
         },
         "tagComboStats": {
-          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
             "count": 1,
             "correct": 1,
@@ -244,6 +229,11 @@
             "accuracyPct": 0.0
           },
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+UNDERDOG": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
+          },
+          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": {
             "count": 1,
             "correct": 0,
             "accuracyPct": 0.0
@@ -485,15 +475,15 @@
         "wrong": 66,
         "accuracyPct": 59.26,
         "tagStats": {
+          "BOOK_AGREEMENT": {
+            "count": 103,
+            "correct": 66,
+            "accuracyPct": 64.08
+          },
           "MISSING_FUNDAMENTALS": {
             "count": 38,
             "correct": 16,
             "accuracyPct": 42.11
-          },
-          "PICKEM": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
           },
           "POSITIVE_MOVE": {
             "count": 5,
@@ -505,17 +495,17 @@
             "correct": 72,
             "accuracyPct": 55.38
           },
-          "BOOK_AGREEMENT": {
-            "count": 103,
-            "correct": 66,
-            "accuracyPct": 64.08
-          },
           "UNDERDOG": {
             "count": 5,
             "correct": 1,
             "accuracyPct": 20.0
           },
           "FAVORITE": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
+          },
+          "PICKEM": {
             "count": 1,
             "correct": 0,
             "accuracyPct": 0.0
@@ -562,11 +552,6 @@
           }
         },
         "tagComboStats": {
-          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
             "count": 1,
             "correct": 1,
@@ -593,6 +578,11 @@
             "accuracyPct": 0.0
           },
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+UNDERDOG": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
+          },
+          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": {
             "count": 1,
             "correct": 0,
             "accuracyPct": 0.0
@@ -929,15 +919,15 @@
         "wrong": 66,
         "accuracyPct": 59.26,
         "tagStats": {
+          "BOOK_AGREEMENT": {
+            "count": 103,
+            "correct": 66,
+            "accuracyPct": 64.08
+          },
           "MISSING_FUNDAMENTALS": {
             "count": 38,
             "correct": 16,
             "accuracyPct": 42.11
-          },
-          "PICKEM": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
           },
           "POSITIVE_MOVE": {
             "count": 5,
@@ -949,17 +939,17 @@
             "correct": 72,
             "accuracyPct": 55.38
           },
-          "BOOK_AGREEMENT": {
-            "count": 103,
-            "correct": 66,
-            "accuracyPct": 64.08
-          },
           "UNDERDOG": {
             "count": 5,
             "correct": 1,
             "accuracyPct": 20.0
           },
           "FAVORITE": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
+          },
+          "PICKEM": {
             "count": 1,
             "correct": 0,
             "accuracyPct": 0.0
@@ -1006,11 +996,6 @@
           }
         },
         "tagComboStats": {
-          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
             "count": 1,
             "correct": 1,
@@ -1037,6 +1022,11 @@
             "accuracyPct": 0.0
           },
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+UNDERDOG": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
+          },
+          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": {
             "count": 1,
             "correct": 0,
             "accuracyPct": 0.0
@@ -1371,16 +1361,14 @@
     "windowAdjustments": {
       "current24h": {
         "tagScoreAdjustments": {
-          "MISSING_FUNDAMENTALS": -1.98,
-          "PICKEM": -0.75,
-          "POSITIVE_MOVE": -1.67,
-          "REVERSAL": -1.85,
           "BOOK_AGREEMENT": -1.39,
+          "MISSING_FUNDAMENTALS": -1.85,
+          "POSITIVE_MOVE": -1.39,
+          "REVERSAL": -1.67,
           "UNDERDOG": -1.67,
           "FAVORITE": -0.75
         },
         "tagComboScoreAdjustments": {
-          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": 0.75,
           "MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": -0.75,
           "MISSING_FUNDAMENTALS+REVERSAL+UNDERDOG": -0.75,
@@ -1391,13 +1379,13 @@
       },
       "sevenDay": {
         "tagScoreAdjustments": {
+          "BOOK_AGREEMENT": 0.56,
           "MISSING_FUNDAMENTALS": -0.44,
-          "PICKEM": -0.75,
           "POSITIVE_MOVE": -1.67,
           "REVERSAL": 0.34,
-          "BOOK_AGREEMENT": 0.56,
           "UNDERDOG": -1.67,
           "FAVORITE": -0.75,
+          "PICKEM": -0.75,
           "RUN_LINE_MOVEMENT": 0.79,
           "STEAM": 1.29,
           "COMPRESSED_MARKET": -0.25,
@@ -1407,13 +1395,13 @@
           "RUN_LINE_CONFIRMATION": -2.78
         },
         "tagComboScoreAdjustments": {
-          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": 0.75,
           "MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": -0.75,
           "MISSING_FUNDAMENTALS+REVERSAL+UNDERDOG": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL+UNDERDOG": -0.75,
           "BOOK_AGREEMENT+FAVORITE+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+UNDERDOG": -0.75,
+          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
           "MISSING_FUNDAMENTALS+REVERSAL": 1.39,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL": 0.6,
@@ -1457,13 +1445,13 @@
       },
       "thirtyDay": {
         "tagScoreAdjustments": {
+          "BOOK_AGREEMENT": 0.78,
           "MISSING_FUNDAMENTALS": -0.44,
-          "PICKEM": -0.75,
           "POSITIVE_MOVE": -1.67,
           "REVERSAL": 0.3,
-          "BOOK_AGREEMENT": 0.78,
           "UNDERDOG": -1.67,
           "FAVORITE": -0.75,
+          "PICKEM": -0.75,
           "RUN_LINE_MOVEMENT": 0.69,
           "STEAM": 0.99,
           "COMPRESSED_MARKET": -0.09,
@@ -1474,13 +1462,13 @@
           "LOW_PULL_DEPTH": 0.76
         },
         "tagComboScoreAdjustments": {
-          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": 0.75,
           "MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": -0.75,
           "MISSING_FUNDAMENTALS+REVERSAL+UNDERDOG": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL+UNDERDOG": -0.75,
           "BOOK_AGREEMENT+FAVORITE+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+UNDERDOG": -0.75,
+          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
           "MISSING_FUNDAMENTALS+REVERSAL": 1.39,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL": 0.6,
@@ -1542,13 +1530,13 @@
       },
       "season": {
         "tagScoreAdjustments": {
+          "BOOK_AGREEMENT": 0.78,
           "MISSING_FUNDAMENTALS": -0.44,
-          "PICKEM": -0.75,
           "POSITIVE_MOVE": -1.67,
           "REVERSAL": 0.3,
-          "BOOK_AGREEMENT": 0.78,
           "UNDERDOG": -1.67,
           "FAVORITE": -0.75,
+          "PICKEM": -0.75,
           "RUN_LINE_MOVEMENT": 0.69,
           "STEAM": 0.99,
           "COMPRESSED_MARKET": -0.09,
@@ -1559,13 +1547,13 @@
           "LOW_PULL_DEPTH": 0.76
         },
         "tagComboScoreAdjustments": {
-          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": 0.75,
           "MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": -0.75,
           "MISSING_FUNDAMENTALS+REVERSAL+UNDERDOG": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL+UNDERDOG": -0.75,
           "BOOK_AGREEMENT+FAVORITE+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+UNDERDOG": -0.75,
+          "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
           "MISSING_FUNDAMENTALS+REVERSAL": 1.39,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM": -0.75,
           "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+REVERSAL": 0.6,
@@ -1627,35 +1615,30 @@
       }
     },
     "currentWindowStats": {
-      "rowCount": 7,
+      "rowCount": 6,
       "correct": 1,
-      "wrong": 6,
-      "accuracyPct": 14.29,
+      "wrong": 5,
+      "accuracyPct": 16.67,
       "tagStats": {
-        "MISSING_FUNDAMENTALS": {
-          "count": 7,
-          "correct": 1,
-          "accuracyPct": 14.29
-        },
-        "PICKEM": {
-          "count": 1,
-          "correct": 0,
-          "accuracyPct": 0.0
-        },
-        "POSITIVE_MOVE": {
-          "count": 5,
-          "correct": 1,
-          "accuracyPct": 20.0
-        },
-        "REVERSAL": {
-          "count": 6,
-          "correct": 1,
-          "accuracyPct": 16.67
-        },
         "BOOK_AGREEMENT": {
           "count": 4,
           "correct": 1,
           "accuracyPct": 25.0
+        },
+        "MISSING_FUNDAMENTALS": {
+          "count": 6,
+          "correct": 1,
+          "accuracyPct": 16.67
+        },
+        "POSITIVE_MOVE": {
+          "count": 4,
+          "correct": 1,
+          "accuracyPct": 25.0
+        },
+        "REVERSAL": {
+          "count": 5,
+          "correct": 1,
+          "accuracyPct": 20.0
         },
         "UNDERDOG": {
           "count": 5,
@@ -1669,11 +1652,6 @@
         }
       },
       "tagComboStats": {
-        "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": {
-          "count": 1,
-          "correct": 0,
-          "accuracyPct": 0.0
-        },
         "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
           "count": 1,
           "correct": 1,
@@ -1707,29 +1685,27 @@
       },
       "confidenceStats": {
         "Pass": {
-          "count": 7,
+          "count": 6,
           "correct": 1,
-          "accuracyPct": 14.29
+          "accuracyPct": 16.67
         }
       },
       "optimizerFlipStats": {
         "NOT_FLIPPED": {
-          "count": 7,
+          "count": 6,
           "correct": 1,
-          "accuracyPct": 14.29
+          "accuracyPct": 16.67
         }
       },
       "tagScoreAdjustments": {
-        "MISSING_FUNDAMENTALS": -1.98,
-        "PICKEM": -0.75,
-        "POSITIVE_MOVE": -1.67,
-        "REVERSAL": -1.85,
         "BOOK_AGREEMENT": -1.39,
+        "MISSING_FUNDAMENTALS": -1.85,
+        "POSITIVE_MOVE": -1.39,
+        "REVERSAL": -1.67,
         "UNDERDOG": -1.67,
         "FAVORITE": -0.75
       },
       "tagComboScoreAdjustments": {
-        "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
         "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": 0.75,
         "MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": -0.75,
         "MISSING_FUNDAMENTALS+REVERSAL+UNDERDOG": -0.75,
@@ -1744,30 +1720,25 @@
       "minHistoricalSampleForBlend": 6
     },
     "tagStats": {
-      "MISSING_FUNDAMENTALS": {
-        "count": 7,
-        "correct": 1,
-        "accuracyPct": 14.29
-      },
-      "PICKEM": {
-        "count": 1,
-        "correct": 0,
-        "accuracyPct": 0.0
-      },
-      "POSITIVE_MOVE": {
-        "count": 5,
-        "correct": 1,
-        "accuracyPct": 20.0
-      },
-      "REVERSAL": {
-        "count": 6,
-        "correct": 1,
-        "accuracyPct": 16.67
-      },
       "BOOK_AGREEMENT": {
         "count": 4,
         "correct": 1,
         "accuracyPct": 25.0
+      },
+      "MISSING_FUNDAMENTALS": {
+        "count": 6,
+        "correct": 1,
+        "accuracyPct": 16.67
+      },
+      "POSITIVE_MOVE": {
+        "count": 4,
+        "correct": 1,
+        "accuracyPct": 25.0
+      },
+      "REVERSAL": {
+        "count": 5,
+        "correct": 1,
+        "accuracyPct": 20.0
       },
       "UNDERDOG": {
         "count": 5,
@@ -1781,11 +1752,6 @@
       }
     },
     "tagComboStats": {
-      "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": {
-        "count": 1,
-        "correct": 0,
-        "accuracyPct": 0.0
-      },
       "BOOK_AGREEMENT+MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
         "count": 1,
         "correct": 1,
@@ -1819,16 +1785,16 @@
     },
     "confidenceStats": {
       "Pass": {
-        "count": 7,
+        "count": 6,
         "correct": 1,
-        "accuracyPct": 14.29
+        "accuracyPct": 16.67
       }
     },
     "optimizerFlipStats": {
       "NOT_FLIPPED": {
-        "count": 7,
+        "count": 6,
         "correct": 1,
-        "accuracyPct": 14.29
+        "accuracyPct": 16.67
       }
     },
     "adjustments": {
@@ -1838,11 +1804,11 @@
         "COMPRESSED_MARKET": -0.17,
         "FAVORITE": -0.75,
         "LOW_PULL_DEPTH": 0.76,
-        "MISSING_FUNDAMENTALS": -1.21,
-        "PICKEM": -0.75,
-        "POSITIVE_MOVE": -1.67,
+        "MISSING_FUNDAMENTALS": -1.15,
+        "PICKEM": 0.0,
+        "POSITIVE_MOVE": -1.39,
         "RESISTANCE": 0.0,
-        "REVERSAL": -0.77,
+        "REVERSAL": -0.67,
         "RUN_LINE_CONFIRMATION": 0.4,
         "RUN_LINE_MOVEMENT": 0.74,
         "STEAM": 1.14,
@@ -1898,7 +1864,7 @@
         "COMPRESSED_MARKET+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT": 0.0,
         "COMPRESSED_MARKET+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.0,
         "COMPRESSED_MARKET+REVERSAL+RUN_LINE_MOVEMENT+STEAM+UNCONFIRMED_RUN_LINE_MOVE": 0.0,
-        "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
+        "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": 0.0,
         "MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": -0.75,
         "MISSING_FUNDAMENTALS+REVERSAL": 0.0,
         "MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT": 0.0,
@@ -1953,194 +1919,6 @@
     "operationalTagFilterPolicy": "Final-gate, provider, model-discipline, ML signal-layer, and status tags are kept on audit rows for proof, but removed from signal-learning inputs so the model only learns from predictive market/fundamentals signals."
   },
   "rows": [
-    {
-      "id": "2b3ca3496277938aa74f87f24a2c064c",
-      "gameKeyBase": "atlanta braves|pittsburgh pirates",
-      "homeTeam": "Pittsburgh Pirates",
-      "awayTeam": "Atlanta Braves",
-      "matchup": "Atlanta Braves at Pittsburgh Pirates",
-      "commenceTime": "2026-07-09T16:37:41Z",
-      "slateDateEt": "2026-07-09",
-      "homeScore": 5,
-      "awayScore": 10,
-      "winner": "Atlanta Braves",
-      "margin": 5,
-      "totalRuns": 15,
-      "completed": true,
-      "status": "GRADED",
-      "predictedWinner": "Pittsburgh Pirates",
-      "predictedSide": "home",
-      "score": "38.99",
-      "winProbabilityPct": "41.24",
-      "confidenceTier": "Pass",
-      "tags": [
-        "CALIBRATED_PROBABILITY",
-        "FINAL_LOCKED",
-        "MISSING_FUNDAMENTALS",
-        "NO_PICK",
-        "NO_PICK_DISCIPLINE",
-        "PICKEM",
-        "POSITIVE_MOVE",
-        "REVERSAL",
-        "SLATE_LOCKED",
-        "SLATE_WIDE_45_MIN_LOCK_POLICY",
-        "WINNER_STACK_V2"
-      ],
-      "winnerOptimizer": {
-        "fundamentalsApplied": false,
-        "basis": "market_signal_plus_multi_window_learning",
-        "fundamentalsMode": "SPORTSDATAIO_UNAVAILABLE"
-      },
-      "winnerStackV2": {
-        "components": {
-          "market": {
-            "consensusProbability": "0.49935",
-            "score": "49.88",
-            "consensusEdge": "-0.00131",
-            "source": "de_vigged_moneyline_consensus",
-            "opponentConsensusProbability": "0.50065"
-          },
-          "fundamentals": {
-            "mode": "SPORTSDATAIO_UNAVAILABLE",
-            "score": "50",
-            "source": "neutral_fundamentals_until_live_provider_enabled",
-            "applied": false
-          },
-          "movement": {
-            "score": "13.59",
-            "cleanRunLineConfirmation": false,
-            "cleanSteam": false,
-            "marketEdge": "-0.00131",
-            "source": "line_movement_steam_resistance_reversal_runline_confirmation_risk_calibrated",
-            "reversalCount": "6",
-            "tags": [
-              "PICKEM",
-              "POSITIVE_MOVE",
-              "REVERSAL"
-            ]
-          }
-        },
-        "ensembleScore": "38.99",
-        "applied": true,
-        "discipline": {
-          "reason": "coin_flip_pass_or_hard_weakness_present",
-          "actionability": "PASS_NO_PICK",
-          "actionablePick": false,
-          "riskReasons": [
-            "very_high_reversal_count",
-            "weak_market_edge",
-            "reversal_count_actionability_block"
-          ]
-        },
-        "weights": {
-          "market": "0.7",
-          "fundamentals": "0",
-          "movement": "0.3"
-        },
-        "version": "MLB-WINNER-STACK-v2.2-market-confirmed-actionable-lean",
-        "calibration": {
-          "calibratedProbability": "0.4124",
-          "shrinkageToward50": "0.115",
-          "method": "ensemble_probability_anchored_to_de_vigged_market_consensus_with_false_confirmation_shrinkage",
-          "marketAnchorProbability": "0.4994",
-          "rawProbability": "0.2855",
-          "riskReasons": [
-            "very_high_reversal_count",
-            "weak_market_edge"
-          ]
-        },
-        "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
-      },
-      "officialPick": false,
-      "officialPrediction": true,
-      "actionablePick": false,
-      "accuracyTargetEligible": false,
-      "actionability": "PASS_NO_PICK",
-      "actionabilityReason": "coin_flip_pass_or_hard_weakness_present",
-      "actionabilityRiskReasons": [
-        "very_high_reversal_count",
-        "weak_market_edge",
-        "reversal_count_actionability_block"
-      ],
-      "homeSignal": {
-        "probStart": "0.479041",
-        "bookCount": "11",
-        "delta": "0.020305",
-        "promoted": false,
-        "promotionStatus": "NO_PLAY",
-        "score": "25.59",
-        "winProbability": "0.495559",
-        "priceBook": "fanduel",
-        "blockedReasons": [
-          "NEGATIVE_EV_GUARD"
-        ],
-        "bookDivergence": "0.028666",
-        "probLatest": "0.499346",
-        "side": "home",
-        "americanOdds": "-106",
-        "marketSide": "pickem",
-        "team": "Pittsburgh Pirates",
-        "tags": [
-          "PICKEM",
-          "POSITIVE_MOVE",
-          "REVERSAL"
-        ],
-        "edgeVsBookPct": "-0.38",
-        "priceSource": "real_book",
-        "expectedValue": "-0.036933",
-        "edgeVsBook": "-0.003787",
-        "fairProbabilityPct": "49.93",
-        "fairProbability": "0.499346",
-        "expectedValuePct": "-3.69",
-        "reversalCount": "6",
-        "winProbabilityPct": "49.56"
-      },
-      "awaySignal": {
-        "probStart": "0.520959",
-        "bookCount": "11",
-        "delta": "-0.020305",
-        "promoted": false,
-        "promotionStatus": "NO_PLAY",
-        "score": "0",
-        "winProbability": "0.468441",
-        "priceBook": "fanduel",
-        "blockedReasons": [
-          "NEGATIVE_EV_GUARD"
-        ],
-        "bookDivergence": "0.028666",
-        "probLatest": "0.500654",
-        "side": "away",
-        "americanOdds": "-110",
-        "marketSide": "pickem",
-        "team": "Atlanta Braves",
-        "tags": [
-          "NEGATIVE_MOVE",
-          "PICKEM",
-          "REVERSAL"
-        ],
-        "edgeVsBookPct": "-3.22",
-        "priceSource": "real_book",
-        "expectedValue": "-0.105703",
-        "edgeVsBook": "-0.032213",
-        "fairProbabilityPct": "50.07",
-        "fairProbability": "0.500654",
-        "expectedValuePct": "-10.57",
-        "reversalCount": "6",
-        "winProbabilityPct": "46.84"
-      },
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
-        "selectionPolicy": "use_locked_prediction_row_and_reject_only_explicit_post_lock_scoring_sources",
-        "lockedFlag": true,
-        "lockAtUtc": "2026-07-09T15:52:41+00:00",
-        "explicitSourceAtUtc": "2026-07-09T15:45:26.057330+00:00",
-        "rowCreatedAtUtc": "2026-07-10T01:16:02.097116+00:00",
-        "createdAtNotUsedAsScoringSource": true,
-        "preventsLateRows": true
-      },
-      "correct": false
-    },
     {
       "id": "be3485a7acdabede1a849330fcc226dc",
       "gameKeyBase": "new york yankees|tampa bay rays",
@@ -3394,7 +3172,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-10T15:03:15.577976+00:00"
+    "runSk": "AUDIT#2026-07-10T17:09:58.790833+00:00"
   },
   "mlTraining": {
     "ok": true,
@@ -3403,7 +3181,7 @@
     "modelPath": "runtime_reports/mlb_ml_model_latest.json",
     "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v3-underdog-balanced-directional",
     "trainingSource": {
-      "currentRows": 7,
+      "currentRows": 6,
       "historicalRows": 162,
       "dedupedTrainingRows": 162,
       "recordsWritten": 162,
@@ -3494,7 +3272,7 @@
       "datasetPath": "runtime_reports/mlb_ml_training_dataset_latest.csv",
       "modelPath": "runtime_reports/mlb_ml_model_latest.json",
       "trainingSource": {
-        "currentRows": 7,
+        "currentRows": 6,
         "historicalRows": 162,
         "dedupedTrainingRows": 162,
         "recordsWritten": 162,
