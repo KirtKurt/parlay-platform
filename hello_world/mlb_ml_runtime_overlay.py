@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 from mlb_ml_candidate_policy import VERSION as CANDIDATE_POLICY_VERSION, miss as candidate_profile_misses, ok as candidate_ok
 from mlb_ml_feature_vector import VERSION as FEATURE_VECTOR_VERSION, feature_vector
 
-VERSION = "MLB-ML-RUNTIME-OVERLAY-v2-guarded-backstop-underdog"
+VERSION = "MLB-ML-RUNTIME-OVERLAY-v3-required-winner-pick-display"
 MODEL_PATH = os.environ.get("INQSI_MLB_ML_MODEL_PATH", "runtime_reports/mlb_ml_model_latest.json")
 
 
@@ -95,11 +95,70 @@ def _profile_status(features: Dict[str, float], profile: Dict[str, Any] | None) 
 def _promote(row: Dict[str, Any], tags: set[str], reason: str) -> None:
     tags.add("ML_CONFIRMED")
     tags.add("ACTIONABLE_PICK")
+    tags.discard("NO_PICK")
+    tags.discard("NO_PICK_DISCIPLINE")
     row["officialPick"] = True
     row["accuracyTargetEligible"] = True
     row["actionablePick"] = True
     row["actionability"] = "ACTIONABLE_ML_CONFIRMED_WINNER"
     row["actionabilityReason"] = reason
+
+
+def _preserve_required_winner_pick(row: Dict[str, Any]) -> None:
+    """Keep the required winner prediction visible even when not playable.
+
+    Actionability is a bet-quality gate. It must never erase the platform's
+    required one-winner-per-game prediction.
+    """
+    tags = set(row.get("tags") or [])
+    has_winner = bool(row.get("predictedWinner"))
+    row["predictionRequired"] = True
+    row["requiredGameWinnerPrediction"] = has_winner
+    row["winnerPredictionAvailable"] = has_winner
+    row["displayPrediction"] = has_winner
+    row["platformPick"] = has_winner
+    row["customerVisibleWinnerPick"] = has_winner
+    row["officialPrediction"] = has_winner
+    row["predictionDisplayStatus"] = "REQUIRED_GAME_WINNER_PREDICTION" if has_winner else "MISSING_GAME_WINNER_PREDICTION"
+    if has_winner:
+        tags.add("REQUIRED_GAME_WINNER_PREDICTION")
+        tags.add("PLATFORM_PICK")
+    if row.get("actionablePick") is True or row.get("officialPick") is True:
+        row["recommendationStatus"] = "PLAYABLE_PREDICTION"
+        tags.discard("NO_PICK")
+        tags.discard("NO_PICK_DISCIPLINE")
+    else:
+        row["recommendationStatus"] = "LOW_CONFIDENCE_PREDICTION_NOT_PLAYABLE"
+        tags.discard("NO_PICK")
+        tags.discard("NO_PICK_DISCIPLINE")
+        tags.add("LOW_CONFIDENCE_PREDICTION")
+        tags.add("NOT_PLAYABLE")
+    row["tags"] = sorted(tags)
+
+
+def _display_card(row: Dict[str, Any]) -> Dict[str, Any]:
+    playable = bool(row.get("actionablePick") is True or row.get("officialPick") is True)
+    return {
+        "gameId": row.get("gameId"),
+        "gameKey": row.get("gameKey"),
+        "homeTeam": row.get("homeTeam"),
+        "awayTeam": row.get("awayTeam"),
+        "commenceTime": row.get("commenceTime"),
+        "predictedWinner": row.get("predictedWinner"),
+        "predictedSide": row.get("predictedSide"),
+        "confidenceTier": row.get("confidenceTier"),
+        "winProbabilityPct": row.get("winProbabilityPct"),
+        "score": row.get("score"),
+        "rank": row.get("rank"),
+        "platformPick": row.get("platformPick"),
+        "customerVisibleWinnerPick": row.get("customerVisibleWinnerPick"),
+        "playable": playable,
+        "recommendationStatus": row.get("recommendationStatus"),
+        "actionability": row.get("actionability"),
+        "actionabilityReason": row.get("actionabilityReason"),
+        "riskReasons": row.get("actionabilityRiskReasons") or [],
+        "tags": row.get("tags") or [],
+    }
 
 
 def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
@@ -164,12 +223,14 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
                 row["officialPick"] = False
                 row["accuracyTargetEligible"] = False
                 row["actionablePick"] = False
-                row["actionability"] = "NO_PICK_ML_REJECTED"
-                row["actionabilityReason"] = "ml_overlay_rejected_low_correct_probability"
+                row["actionability"] = "LOW_CONFIDENCE_ML_REJECTED_NOT_PLAYABLE"
+                row["actionabilityReason"] = "ml_overlay_rejected_low_correct_probability_but_required_winner_pick_preserved"
                 risks = list(row.get("actionabilityRiskReasons") or [])
                 risks.append("ml_overlay_rejected_low_correct_probability")
                 row["actionabilityRiskReasons"] = sorted(set(risks))
                 tags.add("ML_REJECTED")
+                tags.add("LOW_CONFIDENCE_PREDICTION")
+                tags.add("NOT_PLAYABLE")
                 rejected += 1
             if confirmed and promoted < max_promotions:
                 tags.add("ML_GUARDED_PROMOTION" if isinstance(profile, dict) else "ML_STANDARD_PROMOTION")
@@ -199,8 +260,24 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
             row["mlOverlay"] = overlay
             promoted += 1
 
-    result["actionablePickCount"] = len([r for r in rows if r.get("actionablePick")])
-    result["noPickCount"] = len([r for r in rows if not r.get("actionablePick")])
+    for row in rows:
+        _preserve_required_winner_pick(row)
+
+    actionable_count = len([r for r in rows if r.get("actionablePick") is True or r.get("officialPick") is True])
+    required_count = len([r for r in rows if r.get("requiredGameWinnerPrediction") is True])
+    display_count = len([r for r in rows if r.get("displayPrediction") is True])
+    missing_display = [r.get("gameKey") or r.get("gameId") for r in rows if not r.get("displayPrediction")]
+    low_confidence_count = len([r for r in rows if r.get("displayPrediction") is True and not (r.get("actionablePick") is True or r.get("officialPick") is True)])
+    result["actionablePickCount"] = actionable_count
+    result["lowConfidencePredictionCount"] = low_confidence_count
+    result["nonActionablePredictionCount"] = low_confidence_count
+    result["requiredGameWinnerPredictionCount"] = required_count
+    result["displayPredictionCount"] = display_count
+    result["missingDisplayedWinnerPredictions"] = missing_display
+    result["allGamesHaveWinnerPrediction"] = bool(rows and required_count == len(rows))
+    result["allGamesHaveDisplayedWinnerPrediction"] = bool(rows and display_count == len(rows))
+    # Preserve old key without using it as customer-facing product language.
+    result["noPickCount"] = 0
     overlay_summary = {
         "enabled": enabled,
         "modelAvailable": bool(model),
@@ -219,18 +296,32 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "trainingSource": (model or {}).get("trainingSource"),
         "minGuardedPromotions": min_promotions,
         "maxGuardedPromotions": max_promotions,
+        "requiredWinnerPickPreserved": True,
+        "displayPredictionCount": display_count,
+        "lowConfidencePredictionCount": low_confidence_count,
     }
+    result["requiredWinnerPredictionDisplay"] = [_display_card(r) for r in rows if r.get("displayPrediction")]
+    result["officialPredictionDisplay"] = result["requiredWinnerPredictionDisplay"]
+    result["nonOfficialPredictionDisplay"] = [_display_card(r) for r in rows if r.get("displayPrediction") and not (r.get("actionablePick") is True or r.get("officialPick") is True)]
     stack = result.get("winnerStackV2") or {}
     if isinstance(stack, dict):
         stack["mlOverlay"] = overlay_summary
         stack["actionablePickCount"] = result["actionablePickCount"]
-        stack["passNoPickCount"] = result["noPickCount"]
+        stack["passNoPickCount"] = 0
+        stack["lowConfidencePredictionCount"] = result["lowConfidencePredictionCount"]
+        stack["requiredGameWinnerPredictionCount"] = result["requiredGameWinnerPredictionCount"]
+        stack["displayPredictionCount"] = result["displayPredictionCount"]
+        stack["allGamesHaveDisplayedWinnerPrediction"] = result["allGamesHaveDisplayedWinnerPrediction"]
         result["winnerStackV2"] = stack
     target_summary = result.get("rolling24hAccuracyTarget") or result.get("accuracyTarget") or {}
     if isinstance(target_summary, dict):
         target_summary["mlOverlay"] = overlay_summary
         target_summary["actionablePickCount"] = result["actionablePickCount"]
-        target_summary["noPickCount"] = result["noPickCount"]
+        target_summary["noPickCount"] = 0
+        target_summary["lowConfidencePredictionCount"] = result["lowConfidencePredictionCount"]
+        target_summary["requiredGameWinnerPredictionCount"] = result["requiredGameWinnerPredictionCount"]
+        target_summary["displayPredictionCount"] = result["displayPredictionCount"]
+        target_summary["allGamesHaveDisplayedWinnerPrediction"] = result["allGamesHaveDisplayedWinnerPrediction"]
         result["rolling24hAccuracyTarget"] = target_summary
         result["accuracyTarget"] = target_summary
     if VERSION not in str(result.get("modelVersion") or ""):
