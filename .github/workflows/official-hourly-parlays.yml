@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       sports:
-        description: 'Comma-separated sports to evaluate for official Inqis parlays'
+        description: 'Comma-separated non-MLB sports to evaluate for official Inqis parlays'
         required: false
-        default: 'nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer'
+        default: 'nfl,cfb,nba,wnba,ncaam,nhl,tennis,soccer'
 
 jobs:
   build-official-parlays:
@@ -39,7 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          SPORTS="${INPUT_SPORTS:-nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer}"
+          SPORTS="${INPUT_SPORTS:-nfl,cfb,nba,wnba,ncaam,nhl,tennis,soccer}"
 
           curl --silent --show-error --output market-board.json --write-out "%{http_code}" \
             "${API_URL}v1/inqsi/markets/board?sports=${SPORTS}" > http-code.txt
@@ -67,6 +67,7 @@ jobs:
         run: |
           echo "No stored market rows visible yet. Skipping official hourly parlay build cleanly."
           echo "Official parlays require confirmed pull history and the 12-pull gate."
+          echo "MLB is intentionally excluded because production MLB is individual-game moneyline picks only."
 
       - name: Build or update official hourly three-leg parlays
         if: steps.market_gate.outputs.has_market_rows == 'true'
@@ -76,7 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          SPORTS="${INPUT_SPORTS:-nfl,cfb,mlb,college_baseball_men,nba,wnba,ncaam,nhl,tennis,soccer}"
+          SPORTS="${INPUT_SPORTS:-nfl,cfb,nba,wnba,ncaam,nhl,tennis,soccer}"
           test -n "$ADMIN_TOKEN"
           curl --fail --silent --show-error \
             -H "x-inqsi-admin-token: $ADMIN_TOKEN" \
