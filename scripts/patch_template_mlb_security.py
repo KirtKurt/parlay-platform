@@ -19,6 +19,43 @@ if admin_env not in text:
         raise RuntimeError("ODDS_API_KEY global env marker not found; cannot inject INQSI_ADMIN_API_TOKEN")
     text = text.replace(marker, marker + admin_env, 1)
 
+# Keep the stable /v1/health Lambda as the smoke-test owner for MLB read endpoints.
+# The older frontend proxy path can cold-start into legacy MLB modules and return API Gateway 502s.
+text = text.replace("Handler: inqsi_backend_api.lambda_handler", "Handler: inqsi_backend_api_wrapper.lambda_handler", 1)
+
+backend_event_marker = "        InqsiMembersRegister:\n"
+backend_mlb_events = """
+        InqsiMlbModelVersion:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/model/version
+            Method: GET
+        InqsiMlbToday:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/today
+            Method: GET
+        InqsiMlbGameWinners:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/game-winners
+            Method: GET
+        InqsiMlbPredictions:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/predictions
+            Method: GET
+        InqsiMlbGames:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/games
+            Method: GET
+"""
+if "Path: /v1/mlb/model/version" not in text:
+    if backend_event_marker not in text:
+        raise RuntimeError("InqsiBackendApiFunction event marker not found; cannot add MLB smoke routes")
+    text = text.replace(backend_event_marker, backend_mlb_events + backend_event_marker, 1)
+
 text = text.replace("Handler: mlb_manual_pull.lambda_handler", "Handler: mlb_manual_pull_protected.lambda_handler", 1)
 text = text.replace("Handler: mlb_daily_pick_lock.lambda_handler", "Handler: mlb_daily_pick_lock_protected.lambda_handler", 1)
 
@@ -61,6 +98,10 @@ text = insert_once(
 )
 
 required = [
+    "Handler: inqsi_backend_api_wrapper.lambda_handler",
+    "Path: /v1/mlb/model/version",
+    "Path: /v1/mlb/today",
+    "Path: /v1/mlb/game-winners",
     "Handler: mlb_manual_pull_protected.lambda_handler",
     "Handler: mlb_daily_pick_lock_protected.lambda_handler",
     "INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken",
@@ -74,4 +115,4 @@ if missing:
     raise RuntimeError("MLB security/schedule patch failed; missing: " + ", ".join(missing))
 
 TEMPLATE.write_text(text)
-print("Patched template.yaml to protect HTTP MLB writes and schedule AWS MLB production verification checks: every 5 minutes, daily ingest check, and daily lock check.")
+print("Patched template.yaml to route MLB smoke endpoints through backend wrapper, protect HTTP MLB writes, and schedule AWS MLB production verification checks.")
