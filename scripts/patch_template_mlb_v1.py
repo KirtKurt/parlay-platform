@@ -119,8 +119,58 @@ for key, value in [
 ]:
     text = add_global_env(text, key, value)
 
-if "MLBDailyPickLockFunction:" not in text:
-    text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
+text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
+  InqsiMLBV1CoreFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: inqsi_mlb_v1_core.lambda_handler
+      Timeout: 60
+      MemorySize: 1024
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SignalLedgerTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PredictionsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref OutcomesTable
+      Events:
+        InqsiMLBV1Today:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/today
+            Method: GET
+        InqsiMLBV1Games:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/games
+            Method: GET
+        InqsiMLBV1Predictions:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/predictions
+            Method: GET
+        InqsiMLBV1GameWinners:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/game-winners
+            Method: GET
+        InqsiMLBV1Audit:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/audit
+            Method: GET
+        InqsiMLBV1ModelVersion:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/model/version
+            Method: GET
+
+""", "InqsiMLBV1CoreFunction:")
+
+text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
   MLBDailyPickLockFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -160,7 +210,8 @@ if "MLBDailyPickLockFunction:" not in text:
             Method: GET
 
 """, "MLBDailyPickLockFunction:")
-else:
+
+if "MLBDailyPickLockFunction:" in text:
     for line in ["          MLB_MIN_PULLS_PER_GAME_FOR_LOCK: '4'\n", "          MLB_MAX_LATEST_PULL_AGE_MINUTES_FOR_LOCK: '20'\n"]:
         if line.strip() not in text:
             text = text.replace("          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n", "          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'\n" + line, 1)
@@ -170,6 +221,9 @@ text = text.replace('"includeFullMlbSnapshots":true', '"includeFullMlbSnapshots"
 
 hot = block_for(text, "MLBHotEvery15Min")
 violations = []
+for required in ["InqsiMLBV1CoreFunction:", "Path: /v1/mlb/model/version", "MLBDailyPickLockFunction:"]:
+    if required not in text:
+        violations.append(f"missing {required}")
 if "Schedule: cron(0/15 * * * ? *)" not in hot:
     violations.append("MLBHotEvery15Min is not quarter-hour cron")
 if '"days_ahead":1' in text or '"days_ahead": 1' in text:
@@ -181,4 +235,4 @@ if violations:
     raise RuntimeError("Unsafe MLB SAM template after patch: " + "; ".join(violations))
 
 TEMPLATE.write_text(text)
-print("Patched template.yaml: MLBHotEvery15Min is quarter-hour cron, same-day only, legacy MLB schedules removed, daily lock present.")
+print("Patched template.yaml: MLB core API routes, model version route, quarter-hour MLB HOT schedule, and daily lock are present.")
