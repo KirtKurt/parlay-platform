@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-VERSION = "MLB-SIGNAL-POLICY-v1.4-score-only-show-non-official"
+VERSION = "MLB-SIGNAL-POLICY-v1.5-required-winner-display"
 REQUIRED_MINUTES_BEFORE_GAME = 45
-DAILY_SLATE_DISPLAY_RULE = "show_official_and_non_official_predictions_45_minutes_before_first_game_of_day"
+DAILY_SLATE_DISPLAY_RULE = "show_one_required_winner_prediction_for_every_game_45_minutes_before_first_game_of_day"
 
 
 def _f(v: Any, d: float = 0.0) -> float:
@@ -92,12 +92,25 @@ def _components(row: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
-def _is_official(row: Dict[str, Any]) -> bool:
+def _is_playable(row: Dict[str, Any]) -> bool:
     return bool(row.get("officialPick") is True or row.get("actionablePick") is True or row.get("accuracyTargetEligible") is True)
+
+
+def _is_official(row: Dict[str, Any]) -> bool:
+    # Official display means the platform has made the required winner prediction.
+    # Playable/actionable remains separate and is shown on the display card.
+    return bool(
+        _is_playable(row)
+        or row.get("officialPrediction") is True
+        or row.get("platformPick") is True
+        or row.get("customerVisibleWinnerPick") is True
+        or row.get("predictedWinner")
+    )
 
 
 def _display_card(row: Dict[str, Any]) -> Dict[str, Any]:
     score_after = row.get("scoreAfterSignalPolicyV13", row.get("score"))
+    playable = _is_playable(row)
     return {
         "gameId": row.get("gameId"),
         "gameKey": row.get("gameKey"),
@@ -110,8 +123,12 @@ def _display_card(row: Dict[str, Any]) -> Dict[str, Any]:
         "score": row.get("score"),
         "scoreAfterSignalPolicyV13": score_after,
         "winProbabilityPct": row.get("winProbabilityPct"),
-        "displayGroup": "official" if _is_official(row) else "non_official_prediction",
+        "displayGroup": "required_game_prediction" if _is_official(row) else "missing_required_prediction",
         "isOfficial": _is_official(row),
+        "isPlayable": playable,
+        "platformPick": bool(row.get("predictedWinner")),
+        "customerVisibleWinnerPick": bool(row.get("predictedWinner")),
+        "recommendationStatus": "PLAYABLE_PREDICTION" if playable else "LOW_CONFIDENCE_PREDICTION_NOT_PLAYABLE",
         "showAtSlateLock": True,
         "displayRule": DAILY_SLATE_DISPLAY_RULE,
         "actionability": row.get("actionability"),
@@ -126,7 +143,14 @@ def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
     comps = _components(out)
     adj = round(sum(_f(c.get("value"), 0.0) for c in comps), 2)
     after = max(0.0, min(100.0, before + adj))
+    has_winner = bool(out.get("predictedWinner"))
     out["predictionRequired"] = True
+    out["requiredGameWinnerPrediction"] = has_winner
+    out["winnerPredictionAvailable"] = has_winner
+    out["platformPick"] = has_winner
+    out["officialPrediction"] = has_winner
+    out["customerVisibleWinnerPick"] = has_winner
+    out["displayPrediction"] = has_winner
     out["predictionRequiredMinutesBeforeGame"] = REQUIRED_MINUTES_BEFORE_GAME
     out["showAtSlateLock"] = True
     out["dailySlateDisplayRule"] = DAILY_SLATE_DISPLAY_RULE
@@ -136,22 +160,29 @@ def _apply_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "scoreOnly": True,
         "blocksPrediction": False,
         "requiredMinutesBeforeGame": REQUIRED_MINUTES_BEFORE_GAME,
-        "showNonOfficialAtSlateLock": True,
+        "showOneWinnerForEveryGameAtSlateLock": True,
         "scoreAdjustment": adj,
         "components": comps,
     }
     out["scoreBeforeSignalPolicyV13"] = round(before, 2)
     out["signalPolicyV13Adjustment"] = adj
     out["scoreAfterSignalPolicyV13"] = round(after, 2)
-    out["predictionRemainsAvailable"] = True
-    out["displayGroup"] = "official" if _is_official(out) else "non_official_prediction"
-    out["isOfficialDisplayPick"] = _is_official(out)
+    out["predictionRemainsAvailable"] = has_winner
+    out["displayGroup"] = "required_game_prediction" if has_winner else "missing_required_prediction"
+    out["isOfficialDisplayPick"] = has_winner
+    out["recommendationStatus"] = "PLAYABLE_PREDICTION" if _is_playable(out) else "LOW_CONFIDENCE_PREDICTION_NOT_PLAYABLE"
     tags = set(out.get("tags") or [])
     tags.add("SIGNAL_POLICY_V13_SCORE_ONLY")
-    tags.add("PREDICTION_REMAINS_AVAILABLE")
-    tags.add("SHOW_AT_SLATE_LOCK")
-    if not _is_official(out):
-        tags.add("NON_OFFICIAL_PREDICTION_DISPLAY")
+    if has_winner:
+        tags.add("REQUIRED_GAME_WINNER_PREDICTION")
+        tags.add("PREDICTION_REMAINS_AVAILABLE")
+        tags.add("SHOW_AT_SLATE_LOCK")
+        tags.add("PLATFORM_PICK")
+    if not _is_playable(out):
+        tags.discard("NO_PICK")
+        tags.discard("NO_PICK_DISCIPLINE")
+        tags.add("LOW_CONFIDENCE_PREDICTION")
+        tags.add("NOT_PLAYABLE")
     out["tags"] = sorted(tags)
     return out
 
@@ -160,33 +191,42 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
     if not isinstance(result, dict):
         return result
     rows = [_apply_row(r) for r in (result.get("predictions") or []) if isinstance(r, dict)]
-    official_cards = [_display_card(r) for r in rows if _is_official(r)]
-    non_official_cards = [_display_card(r) for r in rows if not _is_official(r)]
+    required_cards = [_display_card(r) for r in rows if r.get("predictedWinner")]
+    playable_cards = [_display_card(r) for r in rows if _is_playable(r)]
+    low_confidence_cards = [_display_card(r) for r in rows if r.get("predictedWinner") and not _is_playable(r)]
     out = dict(result)
     out["predictions"] = rows
     out["allGamesPredictionRequired"] = True
     out["predictionRequiredMinutesBeforeGame"] = REQUIRED_MINUTES_BEFORE_GAME
     out["showAllPredictionsAtSlateLock"] = True
-    out["showAllNonOfficialPredictionsAtSlateLock"] = True
+    out["showAllNonPlayablePredictionsAtSlateLock"] = True
     out["dailySlateDisplayRule"] = DAILY_SLATE_DISPLAY_RULE
-    out["officialPredictionDisplay"] = official_cards
-    out["nonOfficialPredictionDisplay"] = non_official_cards
+    out["requiredWinnerPredictionDisplay"] = required_cards
+    # Preserve existing consumer key, but populate it with all required platform picks.
+    out["officialPredictionDisplay"] = required_cards
+    out["playablePredictionDisplay"] = playable_cards
+    out["nonOfficialPredictionDisplay"] = low_confidence_cards
     out["signalPolicyV13"] = {
         "applied": True,
         "version": VERSION,
         "scoreOnly": True,
         "blocksPrediction": False,
         "rowCount": len(rows),
-        "officialDisplayCount": len(official_cards),
-        "nonOfficialDisplayCount": len(non_official_cards),
-        "showAllNonOfficialPredictionsAtSlateLock": True,
+        "requiredPredictionDisplayCount": len(required_cards),
+        "officialDisplayCount": len(required_cards),
+        "playableDisplayCount": len(playable_cards),
+        "lowConfidenceDisplayCount": len(low_confidence_cards),
+        "showOneWinnerForEveryGameAtSlateLock": True,
         "displayRule": DAILY_SLATE_DISPLAY_RULE,
-        "policy": "Audit findings adjust score only. No signal rule removes a required game prediction. Non-official predictions are displayed at the daily slate lock.",
+        "policy": "Audit findings adjust score only. No signal rule removes a required game prediction. Every MLB game keeps one visible platform winner pick; playable status remains separate.",
     }
     summary = dict(out.get("rolling24hAccuracyTarget") or out.get("accuracyTarget") or {})
     summary["signalPolicyV13"] = out["signalPolicyV13"]
-    summary["officialDisplayCount"] = len(official_cards)
-    summary["nonOfficialDisplayCount"] = len(non_official_cards)
+    summary["requiredPredictionDisplayCount"] = len(required_cards)
+    summary["officialDisplayCount"] = len(required_cards)
+    summary["playableDisplayCount"] = len(playable_cards)
+    summary["lowConfidenceDisplayCount"] = len(low_confidence_cards)
+    summary["allGamesHaveDisplayedWinnerPrediction"] = bool(rows and len(required_cards) == len(rows))
     out["rolling24hAccuracyTarget"] = summary
     out["accuracyTarget"] = summary
     if VERSION not in str(out.get("modelVersion") or ""):
