@@ -1,15 +1,15 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-10T04:28:19.383038+00:00",
+  "createdAt": "2026-07-10T08:43:09.623879+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
     "windowHours": 24,
     "targetAccuracyPct": 90.0,
-    "completedFinalGames": 12,
+    "completedFinalGames": 13,
     "gradedPredictionCount": 7,
-    "missingPredictionCount": 5,
+    "missingPredictionCount": 6,
     "optimizedPickCount": 0,
     "optimizedCorrect": 0,
     "optimizedWrong": 0,
@@ -18,7 +18,7 @@
     "winnerOptimizerAppliedCount": 0,
     "winnerOptimizerFlipCount": 0,
     "allScoredPickAccuracyPct": 14.29,
-    "historicalRowsUsedForLearning": 161,
+    "historicalRowsUsedForLearning": 162,
     "sevenDayRowsUsedForLearning": 101,
     "sevenDayAccuracyPct": 56.44,
     "thirtyDayRowsUsedForLearning": 162,
@@ -1739,7 +1739,7 @@
       }
     },
     "historicalStats": {
-      "historicalRowsUsed": 161,
+      "historicalRowsUsed": 162,
       "historicalRunLimit": 720,
       "minHistoricalSampleForBlend": 6
     },
@@ -3364,6 +3364,28 @@
         "selectionPolicy": "strict_45_minute_locked_card_only",
         "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
+    },
+    {
+      "id": "f6d5d25a3b26ed6f4b0aa584e75b872c",
+      "gameKeyBase": "colorado rockies|san francisco giants",
+      "homeTeam": "San Francisco Giants",
+      "awayTeam": "Colorado Rockies",
+      "matchup": "Colorado Rockies at San Francisco Giants",
+      "commenceTime": "2026-07-10T01:46:00Z",
+      "slateDateEt": "2026-07-09",
+      "homeScore": 8,
+      "awayScore": 2,
+      "winner": "San Francisco Giants",
+      "margin": 6,
+      "totalRuns": 10,
+      "completed": true,
+      "status": "MISSING_LOCKED_PREDICTION",
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
+        "selectionPolicy": "strict_45_minute_locked_card_only",
+        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
+      }
     }
   ],
   "policy": "Audit every completed MLB game in the trailing 24 hours. The optimizer target is correct team-winner selection for every individual game; 90% is measured as rolling 24h accuracy across all optimized picks. Signal scoring blends current 24h, 7-day, 30-day, and season audit trends.",
@@ -3372,7 +3394,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-10T04:28:19.383038+00:00"
+    "runSk": "AUDIT#2026-07-10T08:43:09.623879+00:00"
   },
   "mlTraining": {
     "ok": true,
