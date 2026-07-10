@@ -1,9 +1,37 @@
 """Runtime routing guard for live market endpoints.
 
-Python imports usercustomize after sitecustomize. This wrapper catches the
-live odds and latest market-board endpoints before the older route chain can
-return a generic 404.
+Python imports usercustomize after sitecustomize. This wrapper catches selected
+routes before the older route chain can return generic 404/502 responses.
 """
+
+import json
+from datetime import datetime
+from decimal import Decimal
+from zoneinfo import ZoneInfo
+
+
+def _json_default(value):
+    if isinstance(value, Decimal):
+        return int(value) if value % 1 == 0 else float(value)
+    return str(value)
+
+
+def _json_resp(status, body):
+    return {
+        "statusCode": status,
+        "headers": {
+            "content-type": "application/json",
+            "access-control-allow-origin": "*",
+            "access-control-allow-headers": "content-type,authorization,x-inqsi-admin-token",
+            "access-control-allow-methods": "GET,POST,OPTIONS",
+        },
+        "body": json.dumps(body, default=_json_default),
+    }
+
+
+def _today_et():
+    return datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+
 
 try:
     import inqsi_pull_history as _inqsi_pull_history
@@ -23,7 +51,6 @@ try:
 except Exception:
     pass
 
-
 try:
     import mlb_game_winner_engine as _inqsi_mlb_game_winner_for_slate_lock
     import mlb_slate_prediction_lock as _inqsi_mlb_slate_prediction_lock
@@ -34,24 +61,17 @@ try:
     import mlb_directional_score_v1 as _inqsi_mlb_directional_score_v1
     import mlb_ml_runtime_overlay as _inqsi_mlb_ml_runtime_overlay
     _inqsi_mlb_slate_prediction_lock.apply(_inqsi_mlb_game_winner_for_slate_lock)
-    if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED"):
-        delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED")
-    _inqsi_mlb_last_possible_prediction_gate.apply(_inqsi_mlb_game_winner_for_slate_lock)
-    if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_BALANCED_SIGNAL_GATE_APPLIED"):
-        delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_BALANCED_SIGNAL_GATE_APPLIED")
-    _inqsi_mlb_balanced_signal_gate.apply(_inqsi_mlb_game_winner_for_slate_lock)
-    if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_ML_SIGNAL_LAYERS_APPLIED"):
-        delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_ML_SIGNAL_LAYERS_APPLIED")
-    _inqsi_mlb_ml_signal_layers.apply(_inqsi_mlb_game_winner_for_slate_lock)
-    if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_SIGNAL_POLICY_V12_APPLIED"):
-        delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_SIGNAL_POLICY_V12_APPLIED")
-    _inqsi_mlb_signal_policy_v12.apply(_inqsi_mlb_game_winner_for_slate_lock)
-    if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_DIRECTIONAL_SCORE_V1_APPLIED"):
-        delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_DIRECTIONAL_SCORE_V1_APPLIED")
-    _inqsi_mlb_directional_score_v1.apply(_inqsi_mlb_game_winner_for_slate_lock)
-    if hasattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_ML_RUNTIME_OVERLAY_APPLIED"):
-        delattr(_inqsi_mlb_game_winner_for_slate_lock, "_INQSI_MLB_ML_RUNTIME_OVERLAY_APPLIED")
-    _inqsi_mlb_ml_runtime_overlay.apply(_inqsi_mlb_game_winner_for_slate_lock)
+    for attr, patch in [
+        ("_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED", _inqsi_mlb_last_possible_prediction_gate),
+        ("_INQSI_MLB_BALANCED_SIGNAL_GATE_APPLIED", _inqsi_mlb_balanced_signal_gate),
+        ("_INQSI_MLB_ML_SIGNAL_LAYERS_APPLIED", _inqsi_mlb_ml_signal_layers),
+        ("_INQSI_MLB_SIGNAL_POLICY_V12_APPLIED", _inqsi_mlb_signal_policy_v12),
+        ("_INQSI_MLB_DIRECTIONAL_SCORE_V1_APPLIED", _inqsi_mlb_directional_score_v1),
+        ("_INQSI_MLB_ML_RUNTIME_OVERLAY_APPLIED", _inqsi_mlb_ml_runtime_overlay),
+    ]:
+        if hasattr(_inqsi_mlb_game_winner_for_slate_lock, attr):
+            delattr(_inqsi_mlb_game_winner_for_slate_lock, attr)
+        patch.apply(_inqsi_mlb_game_winner_for_slate_lock)
 except Exception:
     pass
 
@@ -98,9 +118,70 @@ try:
     def _path(event):
         return ((event or {}).get("rawPath") or (event or {}).get("path") or "/").rstrip("/") or "/"
 
+    def _query(event):
+        return (event or {}).get("queryStringParameters") or {}
+
+    def _route_mlb_core(event):
+        event = event or {}
+        path = _path(event)
+        params = _query(event)
+        if not path.startswith("/v1/mlb"):
+            return None
+        date = params.get("game_date_et") or params.get("date") or _today_et()
+        try:
+            import mlb_game_winner_engine as engine
+            engine_ok = True
+            engine_error = None
+        except Exception as exc:
+            engine = None
+            engine_ok = False
+            engine_error = str(exc)
+
+        if path == "/v1/mlb/model/version":
+            return _json_resp(200, {
+                "ok": True,
+                "sport": "mlb",
+                "model_version": "INQSI-MLB-v2.1-core-proxy-smoke-safe",
+                "game_winner_model": getattr(engine, "MODEL_VERSION", None) if engine is not None else None,
+                "game_winner_engine": getattr(engine, "ENGINE", None) if engine is not None else None,
+                "engine_import_ok": engine_ok,
+                "engine_import_error": engine_error,
+                "pick_type": "individual_game_moneyline",
+                "parlaysEnabled": False,
+                "sourcePolicy": "The Odds API stored pull history only for production picks.",
+            })
+
+        if path in {"/v1/mlb/today", "/v1/mlb/games", "/v1/mlb/predictions", "/v1/mlb/game-winners"}:
+            if engine is None:
+                return _json_resp(200, {"ok": False, "sport": "mlb", "date": date, "error": engine_error, "winner_predictions": [], "count": 0})
+            try:
+                payload = engine.predict_all(date, store=str(params.get("store", "false")).lower() == "true", limit=min(int(params.get("limit") or 500), 500))
+            except Exception as exc:
+                return _json_resp(200, {"ok": False, "sport": "mlb", "date": date, "error": str(exc), "winner_predictions": [], "count": 0})
+            if path == "/v1/mlb/today":
+                return _json_resp(200, {
+                    "ok": True,
+                    "sport": "mlb",
+                    "date": date,
+                    "model_version": "INQSI-MLB-v2.1-core-proxy-smoke-safe",
+                    "game_winner_model": payload.get("modelVersion"),
+                    "count": payload.get("count", 0),
+                    "promotedCount": payload.get("promotedCount", 0),
+                    "pullCount": payload.get("pullCount"),
+                    "latestPullAt": payload.get("latestPullAt"),
+                    "priority": "individual_game_moneyline_picks",
+                    "parlaysEnabled": False,
+                })
+            return _json_resp(200, {**payload, "winner_predictions": payload.get("predictions") or [], "parlaysEnabled": False})
+
+        return None
+
     def _route_live_market(event):
         event = event or {}
         path = _path(event)
+        mlb_routed = _route_mlb_core(event)
+        if mlb_routed is not None:
+            return mlb_routed
         if (path.startswith("/v1/inqsi/odds") or path.startswith("/v1/odds")) and odds_live_ingestion is not None:
             if admin_auth is not None:
                 auth = admin_auth.check(event)
