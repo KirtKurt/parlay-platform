@@ -164,10 +164,33 @@ jobs:
           test -n "$API_URL"
           curl --fail --silent --show-error "${API_URL}v1/health"
 
-      - name: Smoke test MLB v1 model version endpoint
+      - name: Verify live MLB ML v3 model and runtime installation
+        env:
+          API_URL: ${{ steps.stack_outputs.outputs.api_url }}
         run: |
-          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          curl --fail --silent --show-error "${API_URL}v1/mlb/model/version"
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          with urllib.request.urlopen(os.environ["API_URL"] + "v1/mlb/model/version", timeout=45) as resp:
+              payload = json.loads(resp.read().decode("utf-8"))
+          print(json.dumps(payload, indent=2, default=str))
+          if payload.get("ok") is not True or payload.get("engine_import_ok") is not True:
+              raise SystemExit("MLB v3 engine did not import in live AWS Lambda")
+          if not str(payload.get("model_version") or "").startswith("INQSI-MLB-v3.0"):
+              raise SystemExit("live model version is not MLB v3")
+          if not str(payload.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"):
+              raise SystemExit("live ML optimization v3 orchestrator is missing")
+          runtime = payload.get("ml_runtime_install") or {}
+          if runtime.get("ok") is not True:
+              raise SystemExit(f"live MLB ML runtime install failed: {runtime}")
+          steps = runtime.get("steps") or {}
+          required = ["legacyReliabilityOverlaySafety", "singleDdbChampionAuthority", "officialSemanticsFinalized", "immutableFeatureFreeze"]
+          missing = [name for name in required if steps.get(name) is not True]
+          if missing:
+              raise SystemExit(f"live MLB ML runtime steps missing: {missing}")
+          PY
 
       - name: Smoke test live MLB Odds API pull and storage
         env:
@@ -228,7 +251,7 @@ jobs:
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           curl --fail --silent --show-error "${API_URL}v1/mlb/game-winners?store=false"
 
-      - name: Verify live official prediction/playability separation
+      - name: Verify live official prediction, playability, and ML shadow/champion semantics
         env:
           API_URL: ${{ steps.stack_outputs.outputs.api_url }}
         run: |
@@ -242,8 +265,18 @@ jobs:
           rows = payload.get("predictions") or payload.get("winner_predictions") or []
           locked = bool((payload.get("slatePredictionLock") or {}).get("locked"))
           semantics = payload.get("predictionSemantics") or {}
+          optimization = payload.get("mlOptimizationRuntime") or {}
+          freeze = payload.get("mlFeatureFreeze") or {}
           if semantics.get("applied") is not True:
               raise SystemExit("official prediction semantics guard was not applied")
+          if optimization.get("applied") is not True:
+              raise SystemExit("ML optimization runtime was not applied")
+          if optimization.get("directionAuthorityEnabled") and not optimization.get("championAvailable"):
+              raise SystemExit("direction authority enabled without a DDB champion")
+          if optimization.get("playabilityAuthorityEnabled") and not optimization.get("championAvailable"):
+              raise SystemExit("playability authority enabled without a DDB champion")
+          if freeze.get("applied") is not True:
+              raise SystemExit("immutable feature-freeze layer was not applied")
           if locked and rows:
               if not all(row.get("officialPrediction") is True and row.get("officialPick") is True for row in rows):
                   raise SystemExit("locked winner rows were not preserved as official predictions")
@@ -253,6 +286,9 @@ jobs:
               playable_count = sum(row.get("playable") is True for row in rows)
               if playable_count != int(payload.get("playablePredictionCount") or 0):
                   raise SystemExit("playable prediction count is inconsistent")
+              missing_vectors = [row.get("gameId") for row in rows if not ((row.get("frozenFeatureVector") or {}).get("fingerprint"))]
+              if missing_vectors:
+                  raise SystemExit(f"locked rows missing exact stored feature vectors: {missing_vectors}")
           print(json.dumps({
               "locked": locked,
               "rows": len(rows),
@@ -260,6 +296,8 @@ jobs:
               "playablePredictionCount": payload.get("playablePredictionCount"),
               "nonPlayableOfficialPredictionCount": payload.get("nonPlayableOfficialPredictionCount"),
               "semanticsVersion": semantics.get("version"),
+              "mlOptimizationRuntime": optimization,
+              "mlFeatureFreeze": freeze,
           }, indent=2))
           PY
 
