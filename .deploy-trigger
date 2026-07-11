@@ -1,4 +1,5 @@
 Deploy trigger for current main.
-Purpose: start a fresh Deploy SAM to AWS run after the MLB import-safe model-version endpoint fix.
-Timestamp UTC: 2026-07-10T00:15:00Z
-Previous failed run to supersede: Deploy SAM to AWS #1084 on commit 06456f4.
+Purpose: deploy MLB official prediction/playability separation with semantic invariants.
+Timestamp UTC: 2026-07-11T18:40:00Z
+Required live proof: every locked winner is official; playable recommendations are counted separately.
+Supersedes the prior conflated official/actionable semantics.
