@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-11T22:31:26.854887+00:00",
+  "createdAt": "2026-07-11T22:33:48.762278+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -18,7 +18,7 @@
     "winnerOptimizerAppliedCount": 0,
     "winnerOptimizerFlipCount": 1,
     "allScoredPickAccuracyPct": 46.15,
-    "historicalRowsUsedForLearning": 185,
+    "historicalRowsUsedForLearning": 186,
     "sevenDayRowsUsedForLearning": 62,
     "sevenDayAccuracyPct": 46.77,
     "thirtyDayRowsUsedForLearning": 87,
@@ -2548,7 +2548,7 @@
       }
     },
     "historicalStats": {
-      "historicalRowsUsed": 185,
+      "historicalRowsUsed": 186,
       "historicalRunLimit": 720,
       "minHistoricalSampleForBlend": 6
     },
@@ -9287,7 +9287,7 @@
     "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v3-underdog-balanced-directional",
     "trainingSource": {
       "currentRows": 13,
-      "historicalRows": 185,
+      "historicalRows": 186,
       "dedupedTrainingRows": 186,
       "recordsWritten": 186,
       "lockedCardAuditRequired": true
@@ -9378,7 +9378,7 @@
       "modelPath": "runtime_reports/mlb_ml_model_latest.json",
       "trainingSource": {
         "currentRows": 13,
-        "historicalRows": 185,
+        "historicalRows": 186,
         "dedupedTrainingRows": 186,
         "recordsWritten": 186,
         "lockedCardAuditRequired": true
@@ -9931,28 +9931,28 @@
     "ledgerReadbackPolicy": "Immutable ledger rows without an older status field are treated as GRADED when final winner and correctness are stored.",
     "mlCriticalFixStatus": {
       "ok": false,
-      "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v4-single-authority-standard-manual-promotion",
+      "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v5-canonical-manual-promotion",
       "applied": [
         "legacy_local_reliability_runtime_disabled",
         "immutable_lock_feature_freeze"
       ],
       "errors": [
-        "promotion_safety:No module named 'mlb_ml_manual_promotion_only_v1'"
+        "promotion_safety:No module named 'mlb_ml_manual_promotion_only_patch'"
       ],
       "authoritativeTrainer": "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger",
       "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
       "duplicateTrainerAuthorityDisabled": true,
       "duplicateOutcomeRuntimeAuthorityDisabled": true,
       "automaticPromotionDisabled": true,
-      "manualPromotionModule": "MLB-ML-MANUAL-PROMOTION-ONLY-v1",
+      "manualPromotionModule": "MLB-ML-PROMOTION-SAFETY-v1-manual-review-only",
       "manualPromotionWorkflow": "mlb-ml-promote-champion.yml"
     },
     "mlTrainingPolicy": "Only immutable lock-time feature vectors with current semantics and complete slate coverage may train the dual-model ML v3 system."
   },
   "accuracyLedger": {
     "ok": true,
-    "inserted": 1,
-    "existing": 86,
+    "inserted": 0,
+    "existing": 87,
     "errors": [],
     "ledgerPk": "MLB_REAL_WORLD_ACCURACY#LEDGER",
     "queriedRowCount": 72,
@@ -9965,6 +9965,6 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-11T22:31:26.854887+00:00"
+    "runSk": "AUDIT#2026-07-11T22:33:48.762278+00:00"
   }
 }
