@@ -1,4 +1,4 @@
-name: Diagnose Corrected Deploy 7010
+name: Diagnose Live V3 Route Deploy A1D0
 
 on:
   push:
@@ -17,11 +17,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Wait for corrected deploy and capture result
+      - name: Wait for live v3 route deploy and capture result
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          TARGET_HEAD_SHA: '7010a2cf3266442e75a7de7da734d0ffcc8ab3d3'
+          TARGET_HEAD_SHA: 'a1d0c9914614de6dac0d2f2326bddfd655ec10da'
         run: |
           set -euo pipefail
           mkdir -p runtime_reports
@@ -35,7 +35,7 @@ jobs:
           done
 
           if [ -z "${RUN_ID:-}" ]; then
-            echo '{"ok":false,"error":"corrected deploy run not found"}' > runtime_reports/deploy_fix_7010_diagnostic.json
+            echo '{"ok":false,"error":"v3 route deploy run not found"}' > runtime_reports/deploy_fix_a1d0_diagnostic.json
             exit 0
           fi
 
@@ -45,16 +45,16 @@ jobs:
             sleep 10
           done
 
-          gh api "/repos/${REPO}/actions/runs/${RUN_ID}" > runtime_reports/deploy_fix_7010_run.json
-          gh api "/repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" > runtime_reports/deploy_fix_7010_jobs.json
+          gh api "/repos/${REPO}/actions/runs/${RUN_ID}" > runtime_reports/deploy_fix_a1d0_run.json
+          gh api "/repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" > runtime_reports/deploy_fix_a1d0_jobs.json
 
           python - <<'PY'
           import json, os, subprocess
           from pathlib import Path
 
           repo = os.environ['REPO']
-          run = json.loads(Path('runtime_reports/deploy_fix_7010_run.json').read_text())
-          jobs = (json.loads(Path('runtime_reports/deploy_fix_7010_jobs.json').read_text()).get('jobs') or [])
+          run = json.loads(Path('runtime_reports/deploy_fix_a1d0_run.json').read_text())
+          jobs = (json.loads(Path('runtime_reports/deploy_fix_a1d0_jobs.json').read_text()).get('jobs') or [])
           out = {
               'ok': run.get('status') == 'completed' and run.get('conclusion') == 'success',
               'runId': run.get('id'),
@@ -77,20 +77,20 @@ jobs:
               for step in entry['steps']:
                   text.append(f"  STEP {step.get('number')}: {step.get('name')} conclusion={step.get('conclusion')}")
               if job.get('conclusion') == 'failure':
-                  path = Path(f"runtime_reports/deploy_fix_7010_job_{job['id']}.log")
+                  path = Path(f"runtime_reports/deploy_fix_a1d0_job_{job['id']}.log")
                   with path.open('wb') as fh:
                       subprocess.run(['gh','api',f"/repos/{repo}/actions/jobs/{job['id']}/logs"], stdout=fh, stderr=subprocess.STDOUT, check=False)
-                  text.append('\nFAILED JOB LOG TAIL\n' + '\n'.join(path.read_text(errors='replace').splitlines()[-260:]))
-          Path('runtime_reports/deploy_fix_7010_diagnostic.json').write_text(json.dumps(out, indent=2) + '\n')
-          Path('runtime_reports/deploy_fix_7010_diagnostic.txt').write_text('\n'.join(text) + '\n')
+                  text.append('\nFAILED JOB LOG TAIL\n' + '\n'.join(path.read_text(errors='replace').splitlines()[-320:]))
+          Path('runtime_reports/deploy_fix_a1d0_diagnostic.json').write_text(json.dumps(out, indent=2) + '\n')
+          Path('runtime_reports/deploy_fix_a1d0_diagnostic.txt').write_text('\n'.join(text) + '\n')
           PY
 
-      - name: Commit corrected deploy diagnostic
+      - name: Commit live v3 route deploy diagnostic
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add runtime_reports/deploy_fix_7010_* || true
-          git commit -m "Persist corrected Deploy SAM diagnostic for 7010a2c" || true
+          git add runtime_reports/deploy_fix_a1d0_* || true
+          git commit -m "Persist live v3 route Deploy SAM diagnostic for a1d0c99" || true
           git pull --rebase --autostash origin main || true
           git push || true
