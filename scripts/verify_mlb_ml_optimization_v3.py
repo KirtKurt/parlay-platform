@@ -93,14 +93,15 @@ def main() -> int:
     assert frozen["labels"]["homeWon"] is None and frozen["labels"]["pickCorrect"] is None
     assert frozen["features"]["homeMarketProb"] != frozen["features"]["awayMarketProb"]
     assert modern["mlFeatureFreeze"]["trainingEligible"] is True
-    joined = dual.records_from_clean_rows([modern])
+    normalized_single = cohort.build([modern])["cleanRows"]
+    joined = dual.records_from_clean_rows(normalized_single)
     assert len(joined) == 1
     assert joined[0]["homeWon"] in {0, 1} and joined[0]["pickCorrect"] in {0, 1}
     assert joined[0]["labelSource"] == "final_settlement_join_not_pregame_feature_vector"
 
     rows = [frozen_row(index, modern=True) for index in range(180)]
     built = cohort.build([legacy, *rows])
-    assert built["cleanRowCount"] == 180 and built["quarantinedRowCount"] == 1
+    assert built["cleanRowCount"] == 180 and built["quarantinedRowCount"] == 1, built
     assert built["completeSlateCoverageRequired"] is True and built["immutableFrozenFeatureVectorRequired"] is True
     trained = dual.train(built["cleanRows"])
     assert trained["ok"] is True, trained
