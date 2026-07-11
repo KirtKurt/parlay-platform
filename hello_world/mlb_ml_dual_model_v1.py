@@ -1,0 +1,269 @@
+from __future__ import annotations
+
+import math
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+
+import mlb_ml_walk_forward_v1 as walk_forward
+
+VERSION = "MLB-ML-DUAL-MODEL-v1-outcome-direction-plus-pick-reliability"
+OUTCOME_MODEL_VERSION = "MLB-OUTCOME-MODEL-v1-home-win-probability"
+RELIABILITY_MODEL_VERSION = "MLB-RELIABILITY-MODEL-v1-selected-pick-correctness"
+
+OUTCOME_FEATURES = [
+    "homeMarketProb",
+    "marketGapHome",
+    "homeDelta",
+    "awayDelta",
+    "deltaGapHome",
+    "homeBookDivergence",
+    "awayBookDivergence",
+    "homeReversalCount",
+    "awayReversalCount",
+    "homeRunLineMove",
+    "awayRunLineMove",
+    "homeBookAgreement",
+    "awayBookAgreement",
+    "homeSteam",
+    "awaySteam",
+    "homeResistance",
+    "awayResistance",
+    "homePriceImpliedProb",
+    "awayPriceImpliedProb",
+    "fundamentalsCompleteness",
+    "homeStarterFip",
+    "awayStarterFip",
+    "homeStarterXfip",
+    "awayStarterXfip",
+    "homeWrcPlus",
+    "awayWrcPlus",
+    "homeBullpenFatigue",
+    "awayBullpenFatigue",
+    "homeLineupStrengthDelta",
+    "awayLineupStrengthDelta",
+    "parkFactorRuns",
+    "windOutMph",
+    "homeRestDays",
+    "awayRestDays",
+]
+
+RELIABILITY_FEATURES = [
+    "selectedMarketProb",
+    "selectedMarketEdge",
+    "selectedScore",
+    "selectedReversalCount",
+    "selectedBookDivergence",
+    "selectedDelta",
+    "selectedFavorite",
+    "selectedHome",
+    "fundamentalsCompleteness",
+]
+
+
+def _f(value: Any, default: float = 0.0) -> float:
+    try:
+        if value is None or value == "":
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _sigmoid(value: float) -> float:
+    if value >= 35:
+        return 1.0
+    if value <= -35:
+        return 0.0
+    return 1.0 / (1.0 + math.exp(-value))
+
+
+def records_from_clean_rows(clean_rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    records: List[Dict[str, Any]] = []
+    for item in clean_rows or []:
+        snapshot = item.get("featureSnapshot") or {}
+        features = snapshot.get("features") or {}
+        labels = snapshot.get("labels") or {}
+        if labels.get("homeWon") not in {0, 1} or labels.get("pickCorrect") not in {0, 1}:
+            continue
+        record = {
+            "gameId": item.get("gameId"),
+            "slateDateEt": item.get("slateDateEt"),
+            "commenceTime": item.get("commenceTime"),
+            "homeTeam": item.get("homeTeam"),
+            "awayTeam": item.get("awayTeam"),
+            "predictedSide": item.get("predictedSide"),
+            "homeWon": int(labels.get("homeWon")),
+            "pickCorrect": int(labels.get("pickCorrect")),
+            "marketHomeProbability": _f(features.get("homeMarketProb"), 0.5),
+        }
+        for feature in sorted(set(OUTCOME_FEATURES + RELIABILITY_FEATURES)):
+            record[feature] = _f(features.get(feature), 0.0)
+        records.append(record)
+    return sorted(records, key=lambda row: str(row.get("commenceTime") or ""))
+
+
+def _standardize(records: Sequence[Dict[str, Any]], features: Sequence[str]) -> Tuple[Dict[str, float], Dict[str, float]]:
+    means: Dict[str, float] = {}
+    scales: Dict[str, float] = {}
+    for feature in features:
+        values = [_f(record.get(feature)) for record in records]
+        mean = sum(values) / len(values) if values else 0.0
+        variance = sum((value - mean) ** 2 for value in values) / max(1, len(values) - 1)
+        means[feature] = mean
+        scales[feature] = math.sqrt(variance) or 1.0
+    return means, scales
+
+
+def fit_logistic(
+    records: Sequence[Dict[str, Any]],
+    features: Sequence[str],
+    target: str,
+    version: str,
+    epochs: int = 320,
+    learning_rate: float = 0.035,
+    l2: float = 0.02,
+) -> Dict[str, Any]:
+    rows = list(records or [])
+    if not rows:
+        return {"ok": False, "version": version, "reason": "no_training_rows"}
+    positives = sum(int(row.get(target) or 0) for row in rows)
+    negatives = len(rows) - positives
+    if not positives or not negatives:
+        return {"ok": False, "version": version, "reason": "target_has_single_class", "rowCount": len(rows), "positives": positives, "negatives": negatives}
+
+    means, scales = _standardize(rows, features)
+    weights = {feature: 0.0 for feature in features}
+    bias = math.log((positives + 1.0) / (negatives + 1.0))
+
+    for epoch in range(epochs):
+        grad_bias = 0.0
+        grad = {feature: 0.0 for feature in features}
+        for row in rows:
+            z = bias
+            normalized: Dict[str, float] = {}
+            for feature in features:
+                value = (_f(row.get(feature)) - means[feature]) / scales[feature]
+                normalized[feature] = value
+                z += weights[feature] * value
+            probability = _sigmoid(z)
+            error = probability - int(row.get(target) or 0)
+            grad_bias += error
+            for feature in features:
+                grad[feature] += error * normalized[feature]
+        rate = learning_rate / (1.0 + epoch / 500.0)
+        bias -= rate * grad_bias / len(rows)
+        for feature in features:
+            regularized = grad[feature] / len(rows) + l2 * weights[feature]
+            weights[feature] -= rate * regularized
+
+    return {
+        "ok": True,
+        "version": version,
+        "rowCount": len(rows),
+        "positiveCount": positives,
+        "negativeCount": negatives,
+        "target": target,
+        "features": list(features),
+        "bias": bias,
+        "weights": weights,
+        "means": means,
+        "scales": scales,
+        "training": {"epochs": epochs, "learningRate": learning_rate, "l2": l2},
+    }
+
+
+def score(record: Dict[str, Any], model: Dict[str, Any]) -> float:
+    if not model or not model.get("ok"):
+        return 0.5
+    z = _f(model.get("bias"))
+    means = model.get("means") or {}
+    scales = model.get("scales") or {}
+    weights = model.get("weights") or {}
+    for feature in model.get("features") or []:
+        scale = _f(scales.get(feature), 1.0) or 1.0
+        z += _f(weights.get(feature)) * ((_f(record.get(feature)) - _f(means.get(feature))) / scale)
+    return _sigmoid(z)
+
+
+def _selected_reliability_test(rows: Sequence[Dict[str, Any]], threshold: float) -> Dict[str, Any]:
+    selected = [row for row in rows if walk_forward.clip_probability(row.get("reliabilityProbability")) >= threshold]
+    return {
+        "count": len(selected),
+        "coveragePct": round(len(selected) / len(rows) * 100.0, 2) if rows else 0.0,
+        "accuracyPct": walk_forward.accuracy(selected, "reliabilityProbability", "pickCorrect", threshold=threshold),
+        "brierScore": walk_forward.brier(selected, "reliabilityProbability", "pickCorrect"),
+        "logLoss": walk_forward.log_loss(selected, "reliabilityProbability", "pickCorrect"),
+        "threshold": threshold,
+    }
+
+
+def train(clean_rows: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    records = records_from_clean_rows(clean_rows)
+    split = walk_forward.split_chronological(records)
+    if not split.get("ok"):
+        return {
+            "ok": False,
+            "version": VERSION,
+            "recordCount": len(records),
+            "split": {key: value for key, value in split.items() if key not in {"train", "validation", "test"}},
+            "outcomeModel": {"ok": False, "reason": "insufficient_clean_rows"},
+            "reliabilityModel": {"ok": False, "reason": "insufficient_clean_rows"},
+            "status": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
+        }
+
+    train_rows = split["train"]
+    validation_rows = split["validation"]
+    test_rows = split["test"]
+
+    outcome_model = fit_logistic(train_rows, OUTCOME_FEATURES, "homeWon", OUTCOME_MODEL_VERSION)
+    reliability_model = fit_logistic(train_rows, RELIABILITY_FEATURES, "pickCorrect", RELIABILITY_MODEL_VERSION)
+    if not outcome_model.get("ok") or not reliability_model.get("ok"):
+        return {
+            "ok": False,
+            "version": VERSION,
+            "recordCount": len(records),
+            "outcomeModel": outcome_model,
+            "reliabilityModel": reliability_model,
+            "status": "TRAINING_BLOCKED",
+        }
+
+    validation_scored: List[Dict[str, Any]] = []
+    for row in validation_rows:
+        validation_scored.append({
+            **row,
+            "outcomeProbability": score(row, outcome_model),
+            "reliabilityProbability": score(row, reliability_model),
+        })
+    threshold = walk_forward.select_reliability_threshold(validation_scored)
+    selected_threshold = _f(threshold.get("threshold"), 0.70) if threshold.get("ok") else 0.70
+
+    test_scored: List[Dict[str, Any]] = []
+    for row in test_rows:
+        test_scored.append({
+            **row,
+            "outcomeProbability": score(row, outcome_model),
+            "reliabilityProbability": score(row, reliability_model),
+        })
+
+    outcome_validation = walk_forward.evaluate(validation_scored, "outcomeProbability", "homeWon", baseline_probability_key="marketHomeProbability")
+    outcome_test = walk_forward.evaluate(test_scored, "outcomeProbability", "homeWon", baseline_probability_key="marketHomeProbability")
+    reliability_validation = walk_forward.evaluate(validation_scored, "reliabilityProbability", "pickCorrect")
+    reliability_test = walk_forward.evaluate(test_scored, "reliabilityProbability", "pickCorrect")
+    selected_test = _selected_reliability_test(test_scored, selected_threshold)
+
+    reliability_model["selectedThreshold"] = {**threshold, "threshold": selected_threshold}
+    reliability_model["thresholdSelectedOnValidationOnly"] = True
+    outcome_model["directionThreshold"] = 0.5
+
+    return {
+        "ok": True,
+        "version": VERSION,
+        "recordCount": len(records),
+        "split": {key: value for key, value in split.items() if key not in {"train", "validation", "test"}},
+        "outcomeModel": outcome_model,
+        "reliabilityModel": reliability_model,
+        "validation": {"outcome": outcome_validation, "reliability": reliability_validation, "selectedReliability": threshold},
+        "untouchedTest": {"outcome": outcome_test, "reliability": reliability_test, "selectedReliability": selected_test},
+        "testWasUntouchedDuringFitAndThresholdSelection": True,
+        "status": "CHALLENGER_TRAINED_AWAITING_PROMOTION_GATES",
+        "policy": "The outcome model predicts home-team win probability. The reliability model predicts whether the already selected pick is correct. Their probabilities are never interchangeable.",
+    }
