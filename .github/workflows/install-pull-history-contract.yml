@@ -149,10 +149,18 @@ jobs:
           PY
 
       - name: Run exact mandatory pre-deploy validation
-        run: python scripts/verify_mlb_schedule_invariants.py
+        run: |
+          set -euo pipefail
+          cp template.yaml /tmp/template.yaml.source
+          trap 'cp /tmp/template.yaml.source template.yaml' EXIT
+          python scripts/patch_template_mlb_v1.py
+          python scripts/patch_template_mlb_security.py
+          python scripts/patch_template_mlb_results_routes.py
+          python scripts/verify_mlb_schedule_invariants.py
 
       - name: Commit consolidated import repair
         run: |
+          git checkout -- template.yaml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add hello_world/inqsi_pull_history.py scripts/verify_api_function_mlb_v3_import.py scripts/verify_mlb_schedule_invariants.py
