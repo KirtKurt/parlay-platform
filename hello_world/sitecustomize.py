@@ -64,8 +64,10 @@ except Exception:
 try:
     import mlb_rolling_24h_audit as _mlb_rolling_24h_audit_for_locked_card
     import mlb_locked_card_audit_v1
+    import mlb_ml_audit_feature_bridge_v1
     import mlb_doubleheader_safe_audit_patch
     mlb_locked_card_audit_v1.apply(_mlb_rolling_24h_audit_for_locked_card)
+    mlb_ml_audit_feature_bridge_v1.apply(mlb_locked_card_audit_v1)
     mlb_doubleheader_safe_audit_patch.apply(_mlb_rolling_24h_audit_for_locked_card)
 except Exception:
     pass
@@ -81,7 +83,10 @@ except Exception:
 
 try:
     import mlb_rolling_24h_audit as _mlb_rolling_24h_audit_for_optimization_v3
+    import mlb_ml_clean_cohort_v1
+    import mlb_ml_clean_cohort_hardening_v1
     import mlb_ml_optimization_v3
+    mlb_ml_clean_cohort_hardening_v1.apply(mlb_ml_clean_cohort_v1)
     mlb_ml_optimization_v3.apply(_mlb_rolling_24h_audit_for_optimization_v3)
 except Exception:
     pass
