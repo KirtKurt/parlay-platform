@@ -9,8 +9,11 @@ import mlb_fundamentals_snapshot_v1 as fundamentals
 import mlb_ml_champion_challenger_v1 as champion
 import mlb_ml_clean_cohort_v1 as cohort
 import mlb_ml_dual_model_v1 as dual_model
+import mlb_ml_manual_promotion_only_v1 as manual_promotion
 
-VERSION = "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger"
+manual_promotion.apply(champion)
+
+VERSION = "MLB-ML-OPTIMIZATION-v3.1-clean-dual-manual-champion-promotion"
 REPORT_PATH = "runtime_reports/mlb_ml_optimization_status_latest.json"
 CLEAN_PATH = "runtime_reports/mlb_ml_clean_cohort_latest.json"
 OUTCOME_PATH = "runtime_reports/mlb_ml_outcome_challenger_latest.json"
@@ -72,17 +75,20 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
         "version": VERSION,
         "createdAtUtc": created,
         "sport": "mlb",
-        "mode": "SHADOW_CHALLENGER" if gate.get("promotionDecision") != "PROMOTE" else "APPROVED_CHAMPION",
+        "mode": "READY_FOR_MANUAL_REVIEW" if gate.get("promotionEligible") else "SHADOW_CHALLENGER",
         "cleanCohort": {key: value for key, value in clean.items() if key not in {"cleanRows", "quarantinedRows"}},
         "dualModel": trained,
         "promotionGate": gate,
         "outcomeModel": trained.get("outcomeModel"),
         "reliabilityModel": trained.get("reliabilityModel"),
-        "directionAuthorityEnabled": bool(gate.get("directionAuthorityEnabled")),
-        "playabilityAuthorityEnabled": bool(gate.get("playabilityAuthorityEnabled")),
+        "directionAuthorityEnabled": False,
+        "playabilityAuthorityEnabled": False,
+        "automaticPromotionSupported": False,
+        "manualPromotionRequired": True,
+        "manualPromotionFunction": "promote_reviewed_latest",
         "legacyTrainerAuthorityDisabled": True,
         "legacyTrainingArtifacts": "diagnostic_only_not_authoritative",
-        "policy": "Only the clean post-fix cohort may train the dual challenger. The challenger remains shadow-only until untouched-test and market-baseline promotion gates pass.",
+        "policy": "Only the exact stored post-fix lock-time feature vector may train the dual challenger. The challenger remains shadow-only until its eligible authority is manually reviewed and promoted from DynamoDB.",
     }
 
     store_result = champion.store_challenger(bundle) if store else {"ok": True, "stored": False}
@@ -104,10 +110,12 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
             "quarantineReasonCounts": clean.get("quarantineReasonCounts"),
             "trainingStatus": trained.get("status"),
             "recordCount": trained.get("recordCount"),
+            "dataQuality": trained.get("dataQuality"),
             "split": trained.get("split"),
             "validation": trained.get("validation"),
             "untouchedTest": trained.get("untouchedTest"),
             "promotionGate": gate,
+            "automaticPromotionSupported": False,
             "stored": store_result,
             "promotion": promotion_result,
         })
@@ -121,6 +129,7 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
         "quarantineReasonCounts": clean.get("quarantineReasonCounts"),
         "trainingStatus": trained.get("status"),
         "recordCount": trained.get("recordCount"),
+        "dataQuality": trained.get("dataQuality"),
         "split": trained.get("split"),
         "validation": trained.get("validation"),
         "untouchedTest": trained.get("untouchedTest"),
@@ -129,6 +138,7 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
         "reliabilityModelVersion": (trained.get("reliabilityModel") or {}).get("version"),
         "testWasUntouched": trained.get("testWasUntouchedDuringFitAndThresholdSelection"),
         "legacyTrainerAuthorityDisabled": True,
+        "automaticPromotionSupported": False,
         "stored": store_result,
         "promotion": promotion_result,
     }
@@ -136,6 +146,8 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
         "authoritative": "mlOptimizationV3_clean_dual_model_only",
         "legacyArtifactRole": "diagnostic_only",
         "automaticWeightMutation": False,
+        "automaticChampionPromotion": False,
+        "productionAuthoritySource": "reviewed_DynamoDB_champion_bundle_only",
     }
     return report
 
