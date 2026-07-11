@@ -8,6 +8,7 @@ COVERAGE_VERIFY = Path('scripts/verify_mlb_complete_slate_coverage.py')
 ML_OPTIMIZATION_VERIFY = Path('scripts/verify_mlb_ml_optimization_v3.py')
 ML_PROMOTION_VERIFY = Path('scripts/verify_mlb_ml_promotion_safety.py')
 ML_FEATURE_INTEGRITY_VERIFY = Path('scripts/verify_mlb_ml_feature_integrity.py')
+ML_INSTALLATION_1_5_VERIFY = Path('scripts/verify_mlb_ml_installation_1_5.py')
 text = TEMPLATE.read_text()
 engine = ENGINE.read_text() if ENGINE.exists() else ''
 violations = []
@@ -55,6 +56,8 @@ for required_path in [
     Path('hello_world/mlb_doubleheader_safe_audit_patch.py'),
     Path('hello_world/mlb_all_games_coverage_patch.py'),
     Path('hello_world/mlb_ml_frozen_features.py'),
+    Path('hello_world/mlb_ml_exact_lock_vector_patch.py'),
+    Path('hello_world/mlb_official_freeze_bridge.py'),
     Path('hello_world/mlb_ml_audit_feature_bridge_v1.py'),
     Path('hello_world/mlb_ml_clean_cohort_v1.py'),
     Path('hello_world/mlb_ml_clean_cohort_hardening_v1.py'),
@@ -73,6 +76,7 @@ for required_path in [
     ML_OPTIMIZATION_VERIFY,
     ML_PROMOTION_VERIFY,
     ML_FEATURE_INTEGRITY_VERIFY,
+    ML_INSTALLATION_1_5_VERIFY,
 ]:
     if not required_path.exists():
         violations.append(f'production component missing: {required_path}')
@@ -84,5 +88,6 @@ subprocess.run([sys.executable, str(COVERAGE_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_OPTIMIZATION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_PROMOTION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_FEATURE_INTEGRITY_VERIFY)], check=True)
+subprocess.run([sys.executable, str(ML_INSTALLATION_1_5_VERIFY)], check=True)
 
-print('MLB production invariants PASS: complete-slate coverage, verified lock-time fingerprints, final-label joins, separate outcome/reliability models, untouched validation with priced ROI, source-honest fundamentals, independent promotion gates, manual-only DDB champion promotion, and single runtime authority are installed.')
+print('MLB production invariants PASS: complete-slate coverage, exact clean-cohort lock vectors, final-label joins, separate outcome/reliability models, untouched validation with priced ROI, source-honest fundamentals, independent promotion gates, manual-only DDB champion promotion, and single runtime authority are installed.')
