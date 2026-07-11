@@ -1,9 +1,18 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+# boto3 resources are imported by production modules even though this regression
+# test replaces every table/network dependency. Give botocore a deterministic
+# offline region and disable metadata lookup before those imports occur.
+os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+os.environ.setdefault("AWS_REGION", "us-east-1")
+os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
+os.environ.setdefault("SNAPSHOTS_TABLE", "")
 
 ROOT = Path(__file__).resolve().parents[1]
 HELLO_WORLD = ROOT / "hello_world"
