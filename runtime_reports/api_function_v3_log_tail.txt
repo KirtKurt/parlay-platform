@@ -1,0 +1,11 @@
+[WARNING]	2026-07-11T23:23:22.008Z		LAMBDA_WARNING: Unhandled exception. The most likely cause is an issue in the function code. However, in rare cases, a Lambda runtime update can cause unexpected function behavior. For functions using managed runtimes, runtime updates can be triggered by a function change, or can be applied automatically. To determine if the runtime has been updated, check the runtime version in the INIT_START log entry. If this error correlates with a change in the runtime version, you may be able to mitigate this error by temporarily rolling back to the previous runtime version. For more information, see https://docs.aws.amazon.com/lambda/latest/dg/runtimes-update.html
+[ERROR] Runtime.ImportModuleError: Unable to import module 'frontend_app': cannot import name 'handle_pull_history_route' from 'inqsi_pull_history' (/var/task/inqsi_pull_history.py)
+Traceback (most recent call last):
+INIT_REPORT Init Duration: 848.33 ms	Phase: init	Status: error	Error Type: Runtime.ImportModuleError
+[WARNING]	2026-07-11T23:23:22.651Z		LAMBDA_WARNING: Unhandled exception. The most likely cause is an issue in the function code. However, in rare cases, a Lambda runtime update can cause unexpected function behavior. For functions using managed runtimes, runtime updates can be triggered by a function change, or can be applied automatically. To determine if the runtime has been updated, check the runtime version in the INIT_START log entry. If this error correlates with a change in the runtime version, you may be able to mitigate this error by temporarily rolling back to the previous runtime version. For more information, see https://docs.aws.amazon.com/lambda/latest/dg/runtimes-update.html
+[ERROR] Runtime.ImportModuleError: Unable to import module 'frontend_app': cannot import name 'handle_pull_history_route' from 'inqsi_pull_history' (/var/task/inqsi_pull_history.py)
+Traceback (most recent call last):
+INIT_REPORT Init Duration: 626.71 ms	Phase: invoke	Status: error	Error Type: Runtime.ImportModuleError
+START RequestId: f66e9789-ea67-47b2-9690-56b6eac6d1b6 Version: $LATEST
+END RequestId: f66e9789-ea67-47b2-9690-56b6eac6d1b6
+REPORT RequestId: f66e9789-ea67-47b2-9690-56b6eac6d1b6	Duration: 639.31 ms	Billed Duration: 640 ms	Memory Size: 1024 MB	Max Memory Used: 99 MB	Status: error	Error Type: Runtime.ImportModuleError
