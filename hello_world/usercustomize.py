@@ -163,6 +163,7 @@ try:
                 optimization_version = optimization.VERSION
             except Exception:
                 optimization_version = None
+            runtime_install = getattr(engine, "MLB_ML_RUNTIME_INSTALL_V3", None) if engine is not None else None
             return _json_resp(200, {
                 "ok": True,
                 "sport": "mlb",
@@ -170,6 +171,7 @@ try:
                 "game_winner_model": getattr(engine, "MODEL_VERSION", None) if engine is not None else None,
                 "game_winner_engine": getattr(engine, "ENGINE", None) if engine is not None else None,
                 "ml_optimization_version": optimization_version,
+                "ml_runtime_install": runtime_install,
                 "engine_import_ok": engine_ok,
                 "engine_import_error": engine_error,
                 "pick_type": "individual_game_moneyline",
@@ -206,6 +208,7 @@ try:
                     "pullCount": payload.get("pullCount"),
                     "latestPullAt": payload.get("latestPullAt"),
                     "mlOptimizationRuntime": payload.get("mlOptimizationRuntime"),
+                    "mlFeatureFreeze": payload.get("mlFeatureFreeze"),
                     "fundamentalsSnapshot": payload.get("fundamentalsSnapshot"),
                     "priority": "one_official_locked_individual_game_moneyline_prediction_per_game",
                     "playabilitySeparateFromOfficialPrediction": True,
@@ -260,5 +263,11 @@ try:
     _inqsi_slate_patch_for_odds.apply_to_odds(_inqsi_odds_for_tennis)
     _inqsi_sport_key_patch.apply(_inqsi_odds_for_tennis)
     _inqsi_pull_report_guard.apply(_inqsi_odds_for_tennis)
+except Exception:
+    pass
+
+try:
+    import mlb_ml_runtime_install_v3 as _inqsi_mlb_ml_runtime_install_v3
+    _inqsi_mlb_ml_runtime_install_v3.install()
 except Exception:
     pass
