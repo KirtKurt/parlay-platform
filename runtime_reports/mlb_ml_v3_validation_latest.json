@@ -1,7 +1,7 @@
 {
   "ok": false,
   "proofType": "MLB_ML_V3_VALIDATION",
-  "createdAtUtc": "2026-07-11T22:26:30.106444+00:00",
+  "createdAtUtc": "2026-07-11T22:27:19.059671+00:00",
   "results": [
     {
       "command": [
@@ -31,7 +31,7 @@
       "returnCode": 1,
       "ok": false,
       "stdout": "",
-      "stderr": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_ml_optimization_v3.py\", line 138, in <module>\n    raise SystemExit(main())\n                     ^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_ml_optimization_v3.py\", line 97, in main\n    assert built[\"cleanRowCount\"] == 180 and built[\"quarantinedRowCount\"] == 1\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+      "stderr": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_ml_optimization_v3.py\", line 138, in <module>\n    raise SystemExit(main())\n                     ^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_ml_optimization_v3.py\", line 97, in main\n    assert len(joined) == 1\n           ^^^^^^^^^^^^^^^^\nAssertionError\n"
     }
   ]
 }
