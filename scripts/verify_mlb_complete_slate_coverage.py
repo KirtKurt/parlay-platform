@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -9,6 +10,8 @@ HELLO_WORLD = ROOT / "hello_world"
 if str(HELLO_WORLD) not in sys.path:
     sys.path.insert(0, str(HELLO_WORLD))
 
+import mlb_daily_lock_coverage_patch as daily_lock_patch
+import mlb_daily_pick_lock as daily_lock
 import mlb_doubleheader_safe_audit_patch as audit_patch
 import mlb_locked_card_audit_v1 as locked_audit
 import mlb_slate_coverage_patch as coverage_patch
@@ -38,8 +41,8 @@ def main() -> int:
     assert coverage_patch.game_identity(no_id_early) != coverage_patch.game_identity(no_id_late)
 
     pulls = [
-        {"pulled_at": "2020-07-11T14:00:00Z", "games": [early, late, third]},
-        {"pulled_at": "2020-07-11T15:00:00Z", "games": [late, early, third]},
+        {"pulled_at": "2020-07-11T14:00:00Z", "pull_id": "pull-1", "games": [early, late, third]},
+        {"pulled_at": "2020-07-11T15:00:00Z", "pull_id": "pull-2", "games": [late, early, third]},
     ]
 
     class History:
@@ -152,7 +155,53 @@ def main() -> int:
     assert all((row.get("lockedCardAudit") or {}).get("matchMethod") == "provider_game_id" for row in audited)
     assert audited[0]["predictedWinner"] != audited[1]["predictedWinner"]
 
-    print("MLB complete-slate coverage and doubleheader-safe audit verified")
+    daily_lock_patch.apply(daily_lock)
+
+    class FakeTable:
+        def __init__(self):
+            self.item = None
+
+        def put_item(self, Item, ConditionExpression=None):
+            self.item = Item
+            return {"ResponseMetadata": {"HTTPStatusCode": 200}}
+
+    fake_table = FakeTable()
+    original_table = daily_lock.TABLE
+    original_get = daily_lock._get_lock_item
+    original_pulls = daily_lock._pulls_for_date
+    original_now = daily_lock._now_utc
+    original_min_depth = daily_lock.MIN_PULLS_PER_GAME_FOR_LOCK
+    original_predict_all = daily_lock.mlb_game_winner_engine.predict_all
+    daily_lock.TABLE = fake_table
+    daily_lock._get_lock_item = lambda slate: None
+    daily_lock._pulls_for_date = lambda slate: pulls
+    daily_lock._now_utc = lambda: datetime(2020, 7, 11, 15, 15, tzinfo=timezone.utc)
+    daily_lock.MIN_PULLS_PER_GAME_FOR_LOCK = 2
+    daily_lock.mlb_game_winner_engine.predict_all = lambda slate, store, limit: result
+    try:
+        daily_result = daily_lock.run_lock("2020-07-11", force=False)
+        assert daily_result["locked"] is True
+        assert daily_result["lock"]["manifestGameCount"] == 3
+        assert daily_result["lock"]["predictionCount"] == 3
+        assert daily_result["lock"]["coverageComplete"] is True
+        assert daily_result["lock"]["doubleheaderSafeIdentity"] is True
+        assert len(daily_result["lock"]["picks"]) == 3
+        assert fake_table.item["manifest_game_count"] == 3
+        assert fake_table.item["coverage_complete"] is True
+
+        daily_lock._now_utc = lambda: datetime(2020, 7, 11, 17, 0, tzinfo=timezone.utc)
+        late_result = daily_lock.run_lock("2020-07-11", force=True)
+        assert late_result["locked"] is False
+        assert late_result["reason"] == "MISSED_FULL_SLATE_LOCK_WINDOW_NOT_BACKFILLED"
+    finally:
+        daily_lock.TABLE = original_table
+        daily_lock._get_lock_item = original_get
+        daily_lock._pulls_for_date = original_pulls
+        daily_lock._now_utc = original_now
+        daily_lock.MIN_PULLS_PER_GAME_FOR_LOCK = original_min_depth
+        daily_lock.mlb_game_winner_engine.predict_all = original_predict_all
+
+    print("MLB complete-slate coverage, AWS daily lock, no-backfill policy, and doubleheader-safe audit verified")
     return 0
 
 
