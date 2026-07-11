@@ -18,10 +18,19 @@ on:
       - 'hello_world/mlb_ml_feature_vector.py'
       - 'hello_world/mlb_ml_candidate_policy.py'
       - 'hello_world/mlb_ml_runtime_overlay.py'
+      - 'hello_world/mlb_ml_clean_cohort_v1.py'
+      - 'hello_world/mlb_ml_dual_model_v1.py'
+      - 'hello_world/mlb_ml_walk_forward_v1.py'
+      - 'hello_world/mlb_fundamentals_snapshot_v1.py'
+      - 'hello_world/mlb_ml_champion_challenger_v1.py'
+      - 'hello_world/mlb_ml_champion_runtime_v1.py'
+      - 'hello_world/mlb_ml_optimization_v3.py'
       - 'hello_world/sitecustomize.py'
+      - 'hello_world/usercustomize.py'
       - 'hello_world/all_sports_live_scheduler.py'
       - 'scripts/verify_mlb_official_prediction_semantics.py'
       - 'scripts/verify_mlb_complete_slate_coverage.py'
+      - 'scripts/verify_mlb_ml_optimization_v3.py'
   schedule:
     - cron: '20 * * * *'
   workflow_dispatch:
@@ -50,6 +59,9 @@ jobs:
       - name: Validate complete-slate and doubleheader coverage
         run: python scripts/verify_mlb_complete_slate_coverage.py
 
+      - name: Validate ML optimization v3 architecture
+        run: python scripts/verify_mlb_ml_optimization_v3.py
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -57,10 +69,11 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Run rolling 24h MLB audit and train ML
+      - name: Run rolling 24h MLB audit and train clean dual challenger
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           SNAPSHOTS_TABLE: parlay_platform_snapshots
+          INQSI_MLB_ML_AUTO_PROMOTE: 'false'
         run: |
           set -euo pipefail
           mkdir -p runtime_reports
@@ -71,6 +84,7 @@ jobs:
           report = mlb_rolling_24h_audit.build(store=True, write_file=True)
           accuracy = report.get('realWorldAccuracy') or {}
           windows = accuracy.get('windows') or {}
+          optimization = report.get('mlOptimizationV3') or {}
           print(json.dumps({
               'ok': report.get('ok'),
               'summary': report.get('summary'),
@@ -78,7 +92,8 @@ jobs:
               'current24h': windows.get('current24h'),
               'evidenceProgress': accuracy.get('evidenceProgress'),
               'accuracyLedger': report.get('accuracyLedger'),
-              'mlTraining': report.get('mlTraining'),
+              'mlOptimizationV3': optimization,
+              'mlTrainingAuthority': report.get('mlTrainingAuthority'),
               'stored': report.get('stored'),
               'storeError': report.get('storeError'),
           }, indent=2, default=str))
@@ -86,6 +101,10 @@ jobs:
               raise SystemExit('real-world accuracy scorecard was not applied')
           if report.get('accuracyLedger', {}).get('immutable') is not True:
               raise SystemExit('immutable settled-game accuracy ledger was not enabled')
+          if optimization.get('applied') is not True:
+              raise SystemExit('ML optimization v3 was not applied')
+          if report.get('mlTrainingAuthority', {}).get('authoritative') != 'mlOptimizationV3_clean_dual_model_only':
+              raise SystemExit('legacy ML trainer still has production authority')
           PY
 
       - name: Commit rolling audit proof and ML artifacts
@@ -96,6 +115,11 @@ jobs:
           git add runtime_reports/mlb_rolling_24h_audit_latest.json || true
           git add runtime_reports/mlb_ml_training_dataset_latest.csv || true
           git add runtime_reports/mlb_ml_model_latest.json || true
-          git commit -m "Update MLB rolling audit and ML artifacts" || true
+          git add runtime_reports/mlb_ml_clean_cohort_latest.json || true
+          git add runtime_reports/mlb_ml_outcome_challenger_latest.json || true
+          git add runtime_reports/mlb_ml_reliability_challenger_latest.json || true
+          git add runtime_reports/mlb_ml_challenger_bundle_latest.json || true
+          git add runtime_reports/mlb_ml_optimization_status_latest.json || true
+          git commit -m "Update MLB rolling audit and ML optimization artifacts" || true
           git pull --rebase --autostash origin main || true
           git push || true
