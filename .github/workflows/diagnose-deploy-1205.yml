@@ -1,0 +1,105 @@
+name: Diagnose Deploy 1205
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-deploy-1205.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Capture deploy run 1205 metadata and failed logs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_RUN_NUMBER: '1205'
+          TARGET_HEAD_SHA: '8df3d0438e94918654a4e5a226e23b7b4e02af2c'
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+
+          RUN_ID=$(gh api "/repos/${REPO}/actions/workflows/deploy.yml/runs?per_page=100" \
+            --jq ".workflow_runs[] | select(.run_number == (${TARGET_RUN_NUMBER}|tonumber)) | .id" | head -n1)
+
+          if [ -z "${RUN_ID:-}" ]; then
+            RUN_ID=$(gh api "/repos/${REPO}/actions/runs?head_sha=${TARGET_HEAD_SHA}&per_page=100" \
+              --jq '.workflow_runs[] | select(.path == ".github/workflows/deploy.yml") | .id' | head -n1)
+          fi
+
+          if [ -z "${RUN_ID:-}" ]; then
+            printf '{"ok":false,"error":"deploy run not found","runNumber":%s,"headSha":"%s"}\n' \
+              "$TARGET_RUN_NUMBER" "$TARGET_HEAD_SHA" > runtime_reports/deploy_1205_diagnostic.json
+            exit 0
+          fi
+
+          gh api "/repos/${REPO}/actions/runs/${RUN_ID}" > runtime_reports/deploy_1205_run.json
+          gh api "/repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" > runtime_reports/deploy_1205_jobs.json
+
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+
+          repo = os.environ['REPO']
+          run_id = os.environ['RUN_ID'] if 'RUN_ID' in os.environ else None
+          run = json.loads(Path('runtime_reports/deploy_1205_run.json').read_text())
+          jobs_payload = json.loads(Path('runtime_reports/deploy_1205_jobs.json').read_text())
+          jobs = jobs_payload.get('jobs') or []
+          summary = {
+              'ok': True,
+              'runId': run.get('id'),
+              'runNumber': run.get('run_number'),
+              'name': run.get('name'),
+              'event': run.get('event'),
+              'status': run.get('status'),
+              'conclusion': run.get('conclusion'),
+              'headSha': run.get('head_sha'),
+              'htmlUrl': run.get('html_url'),
+              'jobs': [],
+          }
+          lines = []
+          for job in jobs:
+              entry = {
+                  'id': job.get('id'),
+                  'name': job.get('name'),
+                  'status': job.get('status'),
+                  'conclusion': job.get('conclusion'),
+                  'startedAt': job.get('started_at'),
+                  'completedAt': job.get('completed_at'),
+                  'steps': job.get('steps') or [],
+              }
+              summary['jobs'].append(entry)
+              lines.append(f"JOB {entry['name']} conclusion={entry['conclusion']} id={entry['id']}")
+              for step in entry['steps']:
+                  lines.append(f"  STEP {step.get('number')}: {step.get('name')} status={step.get('status')} conclusion={step.get('conclusion')}")
+              if job.get('conclusion') == 'failure':
+                  log_path = Path(f"runtime_reports/deploy_1205_job_{job['id']}.log")
+                  with log_path.open('wb') as fh:
+                      subprocess.run([
+                          'gh','api',f"/repos/{repo}/actions/jobs/{job['id']}/logs"
+                      ], stdout=fh, stderr=subprocess.STDOUT, check=False)
+                  text = log_path.read_text(errors='replace')
+                  tail = '\n'.join(text.splitlines()[-220:])
+                  lines.append('\nFAILED JOB LOG TAIL\n' + tail)
+          Path('runtime_reports/deploy_1205_diagnostic.json').write_text(json.dumps(summary, indent=2) + '\n')
+          Path('runtime_reports/deploy_1205_diagnostic.txt').write_text('\n'.join(lines) + '\n')
+          PY
+        shell: bash
+
+      - name: Commit diagnostic report
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/deploy_1205_* || true
+          git commit -m "Persist Deploy SAM #1205 diagnostic" || true
+          git pull --rebase --autostash origin main || true
+          git push || true
