@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-VERSION = "MLB-SIGNAL-POLICY-v1.5-required-winner-display"
+VERSION = "MLB-SIGNAL-POLICY-v1.6-official-prediction-playability-separated"
 REQUIRED_MINUTES_BEFORE_GAME = 45
 DAILY_SLATE_DISPLAY_RULE = "show_one_required_winner_prediction_for_every_game_45_minutes_before_first_game_of_day"
 
@@ -93,15 +93,22 @@ def _components(row: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _is_playable(row: Dict[str, Any]) -> bool:
-    return bool(row.get("officialPick") is True or row.get("actionablePick") is True or row.get("accuracyTargetEligible") is True)
+    # Official prediction status is intentionally excluded. A locked prediction may
+    # be official while still failing the higher-confidence playable gate.
+    return bool(
+        row.get("playable") is True
+        or row.get("playablePick") is True
+        or row.get("actionablePick") is True
+        or row.get("accuracyTargetEligible") is True
+        or row.get("recommendationStatus") == "PLAYABLE_PREDICTION"
+    )
 
 
 def _is_official(row: Dict[str, Any]) -> bool:
     # Official display means the platform has made the required winner prediction.
     # Playable/actionable remains separate and is shown on the display card.
     return bool(
-        _is_playable(row)
-        or row.get("officialPrediction") is True
+        row.get("officialPrediction") is True
         or row.get("platformPick") is True
         or row.get("customerVisibleWinnerPick") is True
         or row.get("predictedWinner")
@@ -202,7 +209,6 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
     out["showAllNonPlayablePredictionsAtSlateLock"] = True
     out["dailySlateDisplayRule"] = DAILY_SLATE_DISPLAY_RULE
     out["requiredWinnerPredictionDisplay"] = required_cards
-    # Preserve existing consumer key, but populate it with all required platform picks.
     out["officialPredictionDisplay"] = required_cards
     out["playablePredictionDisplay"] = playable_cards
     out["nonOfficialPredictionDisplay"] = low_confidence_cards
