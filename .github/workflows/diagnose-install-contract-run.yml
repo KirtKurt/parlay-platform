@@ -1,0 +1,63 @@
+name: Diagnose Pull History Contract Install
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-install-contract-run.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Capture install workflow run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: d08ad165edce0d7ca776ae299fce626e071302b3
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          RUN_ID=$(gh api "/repos/${REPO}/actions/runs?head_sha=${TARGET_SHA}&per_page=100" --jq '.workflow_runs[] | select(.path == ".github/workflows/install-pull-history-contract.yml") | .id' | head -n1)
+          if [ -z "${RUN_ID:-}" ]; then
+            echo '{"ok":false,"error":"install workflow run not found"}' > runtime_reports/pull_history_contract_install_diagnostic.json
+            exit 0
+          fi
+          gh api "/repos/${REPO}/actions/runs/${RUN_ID}" > runtime_reports/pull_history_contract_install_run.json
+          gh api "/repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" > runtime_reports/pull_history_contract_install_jobs.json
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          repo = os.environ['REPO']
+          run = json.loads(Path('runtime_reports/pull_history_contract_install_run.json').read_text())
+          jobs = (json.loads(Path('runtime_reports/pull_history_contract_install_jobs.json').read_text()).get('jobs') or [])
+          out = {'ok': run.get('conclusion') == 'success', 'runId': run.get('id'), 'runNumber': run.get('run_number'), 'status': run.get('status'), 'conclusion': run.get('conclusion'), 'jobs': []}
+          text = []
+          for job in jobs:
+              entry = {'id': job.get('id'), 'name': job.get('name'), 'conclusion': job.get('conclusion'), 'steps': job.get('steps') or []}
+              out['jobs'].append(entry)
+              text.append(f"JOB {entry['name']} conclusion={entry['conclusion']} id={entry['id']}")
+              for step in entry['steps']:
+                  text.append(f"  STEP {step.get('number')}: {step.get('name')} conclusion={step.get('conclusion')}")
+              if job.get('conclusion') == 'failure':
+                  p = Path(f"runtime_reports/pull_history_contract_install_job_{job['id']}.log")
+                  with p.open('wb') as fh:
+                      subprocess.run(['gh','api',f"/repos/{repo}/actions/jobs/{job['id']}/logs"], stdout=fh, stderr=subprocess.STDOUT, check=False)
+                  text.append('\nFAILED JOB LOG TAIL\n' + '\n'.join(p.read_text(errors='replace').splitlines()[-300:]))
+          Path('runtime_reports/pull_history_contract_install_diagnostic.json').write_text(json.dumps(out, indent=2) + '\n')
+          Path('runtime_reports/pull_history_contract_install_diagnostic.txt').write_text('\n'.join(text) + '\n')
+          PY
+      - name: Commit diagnostic
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/pull_history_contract_install_* || true
+          git commit -m "Persist pull-history contract install diagnostic" || true
+          git pull --rebase --autostash origin main || true
+          git push || true
