@@ -43,8 +43,7 @@ def row(index: int, modern: bool = True):
     predicted_side = "home" if home_probability >= 0.5 else "away"
     predicted_winner = "Home Team" if predicted_side == "home" else "Away Team"
     winner = "Home Team" if home_won else "Away Team"
-    lock_hour = 15 + (index // 60)
-    minute = index % 60
+    lock_hour = 15 + (index // 60); minute = index % 60
     lock_at = f"2026-07-12T{lock_hour:02d}:{minute:02d}:00+00:00"
     source_at = f"2026-07-12T{lock_hour:02d}:{max(0, minute - 1):02d}:00+00:00"
     selected_price = -110 if predicted_side == "home" else (100 if home_probability >= 0.5 else -120)
@@ -71,16 +70,19 @@ def row(index: int, modern: bool = True):
 
 def frozen_row(index: int, modern: bool = True):
     base = row(index, modern=modern)
+    final = {"status": base.pop("status"), "winner": base.pop("winner"), "correct": base.pop("correct")}
     base["fundamentalsSnapshot"] = fundamentals.build(base)
     frozen = canonical_freeze.freeze_row(base, coverage_complete=True)
     frozen["frozenFeatureVector"] = cohort.freeze_feature_snapshot(frozen)
     frozen["frozenFeatureVectorVersion"] = frozen["frozenFeatureVector"].get("version")
+    assert frozen["frozenFeatureVector"]["labels"]["homeWon"] is None
+    assert frozen["frozenFeatureVector"]["labels"]["pickCorrect"] is None
+    frozen.update(final)
     return frozen
 
 
 def main() -> int:
-    legacy = frozen_row(1, modern=False)
-    modern = frozen_row(2, modern=True)
+    legacy = frozen_row(1, modern=False); modern = frozen_row(2, modern=True)
     ok, reasons = cohort.eligibility(legacy)
     assert ok is False and "legacy_probability_semantics" in reasons
     ok, reasons = cohort.eligibility(modern)
@@ -88,19 +90,22 @@ def main() -> int:
     snapshot = modern["fundamentalsSnapshot"]
     assert snapshot["missingnessIsFeature"] is True and "sourceStatuses" in snapshot
     frozen = modern["frozenFeatureVector"]
-    assert frozen["labels"]["homeWon"] in {0, 1} and frozen["labels"]["pickCorrect"] in {0, 1}
+    assert frozen["labels"]["homeWon"] is None and frozen["labels"]["pickCorrect"] is None
     assert frozen["features"]["homeMarketProb"] != frozen["features"]["awayMarketProb"]
     assert modern["mlFeatureFreeze"]["trainingEligible"] is True
+    joined = dual.records_from_clean_rows([modern])
+    assert len(joined) == 1
+    assert joined[0]["homeWon"] in {0, 1} and joined[0]["pickCorrect"] in {0, 1}
+    assert joined[0]["labelSource"] == "final_settlement_join_not_pregame_feature_vector"
 
     rows = [frozen_row(index, modern=True) for index in range(180)]
     built = cohort.build([legacy, *rows])
     assert built["cleanRowCount"] == 180 and built["quarantinedRowCount"] == 1
     assert built["completeSlateCoverageRequired"] is True and built["immutableFrozenFeatureVectorRequired"] is True
-
     trained = dual.train(built["cleanRows"])
     assert trained["ok"] is True, trained
-    assert trained["outcomeModel"]["target"] == "homeWon"
-    assert trained["reliabilityModel"]["target"] == "pickCorrect"
+    assert trained["featureLabelPolicy"] == "immutable_pregame_features_plus_final_settlement_labels"
+    assert trained["outcomeModel"]["target"] == "homeWon" and trained["reliabilityModel"]["target"] == "pickCorrect"
     assert trained["testWasUntouchedDuringFitAndThresholdSelection"] is True
     assert trained["reliabilityModel"]["thresholdSelectedOnValidationOnly"] is True
     assert trained["split"]["counts"]["test"] >= 30
@@ -110,27 +115,22 @@ def main() -> int:
 
     gate = champion.evaluate(trained, clean_count=180, playable_evidence_count=20)
     assert gate["promotionEligible"] is False
-    direction_codes = {item["code"] for item in gate["directionBlockers"]}
-    playability_codes = {item["code"] for item in gate["playabilityBlockers"]}
-    assert "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE" in direction_codes
-    assert "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE" in playability_codes
+    assert "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE" in {item["code"] for item in gate["directionBlockers"]}
+    assert "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE" in {item["code"] for item in gate["playabilityBlockers"]}
     assert gate["publicPlayableClaim"]["eligible"] is False
     assert gate["directionAuthorityEnabled"] is False and gate["playabilityAuthorityEnabled"] is False
 
-    original_loader = runtime.champion_store.load_champion
-    runtime.champion_store.load_champion = lambda: None
+    original_loader = runtime.champion_store.load_champion; runtime.champion_store.load_champion = lambda: None
     try:
         pregame = row(181, modern=True); pregame.pop("winner", None); pregame.pop("correct", None)
         original_winner = pregame["predictedWinner"]
-        result = runtime.enhance_result({"predictions": [pregame]})
-        scored = result["predictions"][0]
+        result = runtime.enhance_result({"predictions": [pregame]}); scored = result["predictions"][0]
         assert scored["predictedWinner"] == original_winner
-        assert scored["mlOptimizationShadowOnly"] is True
-        assert result["mlOptimizationRuntime"]["shadowOnly"] is True
+        assert scored["mlOptimizationShadowOnly"] is True and result["mlOptimizationRuntime"]["shadowOnly"] is True
     finally:
         runtime.champion_store.load_champion = original_loader
 
-    print("MLB ML optimization v3 verified: clean frozen cohort, dual labels, untouched test, market baseline, priced ROI, independent promotion gates, and shadow-only runtime")
+    print("MLB ML optimization v3 verified: immutable pregame features, final-label join, dual models, untouched priced ROI, independent gates, and shadow-only runtime")
     return 0
 
 
