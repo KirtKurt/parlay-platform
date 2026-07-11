@@ -48,91 +48,99 @@ for name in [
 text = text.replace("Handler: mlb_manual_pull.lambda_handler", "Handler: mlb_manual_pull_protected.lambda_handler", 1)
 text = text.replace("Handler: mlb_daily_pick_lock.lambda_handler", "Handler: mlb_daily_pick_lock_protected.lambda_handler", 1)
 
+# Resource entries must be indented exactly two spaces beneath Resources:.
 dedicated = """
-MLBV3ReadFunction:
-  Type: AWS::Serverless::Function
-  Properties:
-    CodeUri: hello_world/
-    Handler: mlb_v3_read_api.lambda_handler
-    Timeout: 60
-    MemorySize: 1024
-    Policies:
-      - DynamoDBCrudPolicy:
-          TableName: !Ref SnapshotsTable
-    Events:
-      MLBV3ModelVersion:
-        Type: Api
-        Properties:
-          Path: /v1/mlb/model/version
-          Method: GET
-      MLBV3Today:
-        Type: Api
-        Properties:
-          Path: /v1/mlb/today
-          Method: GET
-      MLBV3GameWinners:
-        Type: Api
-        Properties:
-          Path: /v1/mlb/game-winners
-          Method: GET
-      MLBV3Predictions:
-        Type: Api
-        Properties:
-          Path: /v1/mlb/predictions
-          Method: GET
-      MLBV3Games:
-        Type: Api
-        Properties:
-          Path: /v1/mlb/games
-          Method: GET
+  MLBV3ReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_v3_read_api.lambda_handler
+      Timeout: 60
+      MemorySize: 1024
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+      Events:
+        MLBV3ModelVersion:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/model/version
+            Method: GET
+        MLBV3Today:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/today
+            Method: GET
+        MLBV3GameWinners:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/game-winners
+            Method: GET
+        MLBV3Predictions:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/predictions
+            Method: GET
+        MLBV3Games:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/games
+            Method: GET
 
 """
 text = insert_once(text, "  ApiFunction:\n", dedicated, "  MLBV3ReadFunction:\n")
 
 verifier = """
-MLBProductionVerifierFunction:
-  Type: AWS::Serverless::Function
-  Properties:
-    CodeUri: hello_world/
-    Handler: mlb_production_verifier.lambda_handler
-    Timeout: 60
-    MemorySize: 1024
-    Environment:
-      Variables:
-        MLB_VERIFY_MAX_PULL_AGE_MINUTES: '20'
-    Policies:
-      - DynamoDBCrudPolicy:
-          TableName: !Ref SnapshotsTable
-    Events:
-      MLBProductionVerifierEvery5Min:
-        Type: Schedule
-        Properties:
-          Schedule: rate(5 minutes)
-          Input: '{"sport":"mlb","mode":"continuous","run":"aws_production_verifier_5m"}'
-      MLBProductionIngestVerifyDaily435Et:
-        Type: Schedule
-        Properties:
-          Schedule: cron(35 20 * * ? *)
-          Input: '{"sport":"mlb","mode":"ingest","run":"daily_ingest_verify_1635_et"}'
-      MLBProductionLockVerifyDaily556Et:
-        Type: Schedule
-        Properties:
-          Schedule: cron(56 21 * * ? *)
-          Input: '{"sport":"mlb","mode":"lock","run":"daily_lock_verify_1756_et"}'
+  MLBProductionVerifierFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_production_verifier.lambda_handler
+      Timeout: 60
+      MemorySize: 1024
+      Environment:
+        Variables:
+          MLB_VERIFY_MAX_PULL_AGE_MINUTES: '20'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+      Events:
+        MLBProductionVerifierEvery5Min:
+          Type: Schedule
+          Properties:
+            Schedule: rate(5 minutes)
+            Input: '{"sport":"mlb","mode":"continuous","run":"aws_production_verifier_5m"}'
+        MLBProductionIngestVerifyDaily435Et:
+          Type: Schedule
+          Properties:
+            Schedule: cron(35 20 * * ? *)
+            Input: '{"sport":"mlb","mode":"ingest","run":"daily_ingest_verify_1635_et"}'
+        MLBProductionLockVerifyDaily556Et:
+          Type: Schedule
+          Properties:
+            Schedule: cron(56 21 * * ? *)
+            Input: '{"sport":"mlb","mode":"lock","run":"daily_lock_verify_1756_et"}'
 
 """
-text = insert_once(text, "  MLBResultsSchedulerFunction:\n", verifier, "MLBProductionVerifierFunction:")
+text = insert_once(text, "  MLBResultsSchedulerFunction:\n", verifier, "  MLBProductionVerifierFunction:\n")
 
 required = [
     "Handler: inqsi_backend_api_wrapper.lambda_handler",
-    "MLBV3ReadFunction:", "Handler: mlb_v3_read_api.lambda_handler",
+    "  MLBV3ReadFunction:", "Handler: mlb_v3_read_api.lambda_handler",
     "Path: /v1/mlb/model/version", "Path: /v1/mlb/today", "Path: /v1/mlb/game-winners", "Path: /v1/mlb/predictions", "Path: /v1/mlb/games",
     "Handler: mlb_manual_pull_protected.lambda_handler", "Handler: mlb_daily_pick_lock_protected.lambda_handler",
     "INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken",
-    "MLBProductionVerifierFunction:", "MLBProductionVerifierEvery5Min:", "MLBProductionIngestVerifyDaily435Et:", "MLBProductionLockVerifyDaily556Et:",
+    "  MLBProductionVerifierFunction:", "MLBProductionVerifierEvery5Min:", "MLBProductionIngestVerifyDaily435Et:", "MLBProductionLockVerifyDaily556Et:",
 ]
 missing = [value for value in required if value not in text]
-if missing:
-    raise RuntimeError("MLB dedicated v3 route patch failed; missing: " + ", ".join(missing))
+invalid_top_level = [name for name in ("MLBV3ReadFunction", "MLBProductionVerifierFunction") if f"\n{name}:\n" in text]
+if missing or invalid_top_level:
+    details = []
+    if missing:
+        details.append("missing: " + ", ".join(missing))
+    if invalid_top_level:
+        details.append("resource indentation invalid: " + ", ".join(invalid_top_level))
+    raise RuntimeError("MLB dedicated v3 route patch failed; " + "; ".join(details))
+
 TEMPLATE.write_text(text)
-print("Patched template.yaml with dedicated MLB v3 read Lambda, protected writes, and production verification schedules.")
+print("Patched template.yaml with correctly indented dedicated MLB v3 read Lambda and production verifier resources.")
