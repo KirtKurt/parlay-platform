@@ -1,0 +1,37 @@
+{
+  "ok": false,
+  "proofType": "MLB_ML_V3_VALIDATION",
+  "createdAtUtc": "2026-07-11T22:25:30.890433+00:00",
+  "results": [
+    {
+      "command": [
+        "/opt/hostedtoolcache/Python/3.11.15/x64/bin/python",
+        "scripts/verify_mlb_official_prediction_semantics.py"
+      ],
+      "returnCode": 0,
+      "ok": true,
+      "stdout": "MLB official/playable, immutable-ledger, selected-odds, and real-world accuracy metrics verified\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/opt/hostedtoolcache/Python/3.11.15/x64/bin/python",
+        "scripts/verify_mlb_complete_slate_coverage.py"
+      ],
+      "returnCode": 1,
+      "ok": false,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_complete_slate_coverage.py\", line 14, in <module>\n    import mlb_daily_pick_lock as daily_lock\n  File \"/home/runner/work/parlay-platform/parlay-platform/hello_world/mlb_daily_pick_lock.py\", line 13, in <module>\n    import inqsi_pull_history as history\n  File \"/home/runner/work/parlay-platform/parlay-platform/hello_world/inqsi_pull_history.py\", line 10, in <module>\n    DDB = boto3.resource(\"dynamodb\")\n          ^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/boto3/__init__.py\", line 102, in resource\n    return _get_default_session().resource(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/boto3/session.py\", line 475, in resource\n    client = self.client(\n             ^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/boto3/session.py\", line 337, in client\n    return self._session.create_client(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/botocore/context.py\", line 123, in wrapper\n    return func(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/botocore/session.py\", line 1031, in create_client\n    client = client_creator.create_client(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/botocore/client.py\", line 161, in create_client\n    client_args = self._get_client_args(\n                  ^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/botocore/client.py\", line 561, in _get_client_args\n    return args_creator.get_client_args(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/botocore/args.py\", line 121, in get_client_args\n    final_args = self.compute_client_args(\n                 ^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/botocore/args.py\", line 265, in compute_client_args\n    endpoint_config = self._compute_endpoint_config(\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/botocore/args.py\", line 459, in _compute_endpoint_config\n    return self._resolve_endpoint(**resolve_endpoint_kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/botocore/args.py\", line 577, in _resolve_endpoint\n    return endpoint_bridge.resolve(\n           ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/botocore/client.py\", line 675, in resolve\n    resolved = self.endpoint_resolver.construct_endpoint(\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/botocore/regions.py\", line 237, in construct_endpoint\n    result = self._endpoint_for_partition(\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/site-packages/botocore/regions.py\", line 285, in _endpoint_for_partition\n    raise NoRegionError()\nbotocore.exceptions.NoRegionError: You must specify a region.\n"
+    },
+    {
+      "command": [
+        "/opt/hostedtoolcache/Python/3.11.15/x64/bin/python",
+        "scripts/verify_mlb_ml_optimization_v3.py"
+      ],
+      "returnCode": 1,
+      "ok": false,
+      "stdout": "",
+      "stderr": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_ml_optimization_v3.py\", line 138, in <module>\n    raise SystemExit(main())\n                     ^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_ml_optimization_v3.py\", line 97, in main\n    assert built[\"cleanRowCount\"] == 180 and built[\"quarantinedRowCount\"] == 1\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError\n"
+    }
+  ]
+}
