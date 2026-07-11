@@ -11,8 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REPORT = ROOT / "runtime_reports" / "mlb_ml_v3_validation_latest.json"
 COMMANDS = [
     [sys.executable, "scripts/verify_mlb_official_prediction_semantics.py"],
-    [sys.executable, "scripts/verify_mlb_complete_slate_coverage.py"],
-    [sys.executable, "scripts/verify_mlb_ml_optimization_v3.py"],
+    [sys.executable, "scripts/verify_mlb_schedule_invariants.py"],
 ]
 
 
@@ -27,23 +26,27 @@ def main() -> int:
             stderr=subprocess.PIPE,
             check=False,
         )
-        results.append({
-            "command": command,
-            "returnCode": completed.returncode,
-            "ok": completed.returncode == 0,
-            "stdout": completed.stdout,
-            "stderr": completed.stderr,
-        })
+        results.append(
+            {
+                "command": command,
+                "returnCode": completed.returncode,
+                "ok": completed.returncode == 0,
+                "stdout": completed.stdout,
+                "stderr": completed.stderr,
+            }
+        )
+
     payload = {
         "ok": all(item["ok"] for item in results),
-        "proofType": "MLB_ML_V3_VALIDATION",
+        "proofType": "MLB_ML_V3_AND_DEPLOY_INVARIANT_VALIDATION",
         "createdAtUtc": datetime.now(timezone.utc).isoformat(),
         "results": results,
+        "policy": "This report runs the same mandatory MLB production invariant used before SAM validation and build.",
     }
     REPORT.parent.mkdir(parents=True, exist_ok=True)
     REPORT.write_text(json.dumps(payload, indent=2, default=str) + "\n", encoding="utf-8")
     print(json.dumps(payload, indent=2, default=str))
-    return 0
+    return 0 if payload["ok"] else 1
 
 
 if __name__ == "__main__":
