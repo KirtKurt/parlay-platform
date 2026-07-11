@@ -80,6 +80,22 @@ except Exception:
     pass
 
 try:
+    import mlb_game_winner_engine as _inqsi_mlb_game_winner_for_optimization_v3
+    import mlb_fundamentals_snapshot_v1 as _inqsi_mlb_fundamentals_snapshot_v1
+    import mlb_ml_champion_runtime_v1 as _inqsi_mlb_ml_champion_runtime_v1
+    import mlb_official_prediction_semantics as _inqsi_mlb_official_prediction_semantics_v3
+    for attr, patch in [
+        ("_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED", _inqsi_mlb_fundamentals_snapshot_v1),
+        ("_INQSI_MLB_ML_CHAMPION_RUNTIME_V1_APPLIED", _inqsi_mlb_ml_champion_runtime_v1),
+        ("_INQSI_MLB_OFFICIAL_PREDICTION_SEMANTICS_APPLIED", _inqsi_mlb_official_prediction_semantics_v3),
+    ]:
+        if hasattr(_inqsi_mlb_game_winner_for_optimization_v3, attr):
+            delattr(_inqsi_mlb_game_winner_for_optimization_v3, attr)
+        patch.apply(_inqsi_mlb_game_winner_for_optimization_v3)
+except Exception:
+    pass
+
+try:
     import frontend_app
     import inqsi_api
 
@@ -142,19 +158,27 @@ try:
             engine_error = str(exc)
 
         if path == "/v1/mlb/model/version":
+            try:
+                import mlb_ml_optimization_v3 as optimization
+                optimization_version = optimization.VERSION
+            except Exception:
+                optimization_version = None
             return _json_resp(200, {
                 "ok": True,
                 "sport": "mlb",
-                "model_version": "INQSI-MLB-v2.3-official-prediction-playability-separated",
+                "model_version": "INQSI-MLB-v3.0-clean-dual-model-shadow-challenger",
                 "game_winner_model": getattr(engine, "MODEL_VERSION", None) if engine is not None else None,
                 "game_winner_engine": getattr(engine, "ENGINE", None) if engine is not None else None,
+                "ml_optimization_version": optimization_version,
                 "engine_import_ok": engine_ok,
                 "engine_import_error": engine_error,
                 "pick_type": "individual_game_moneyline",
                 "requiredWinnerPickPolicy": "one_official_locked_winner_prediction_for_every_mlb_game",
                 "playablePolicy": "playability_is_separate_and_may_be_false_for_an_official_prediction",
+                "mlDirectionPolicy": "outcome_model_is_shadow_only_until_champion_promotion_gates_pass",
+                "mlReliabilityPolicy": "reliability_model_probability_is_never_used_as_team_win_probability",
                 "parlaysEnabled": False,
-                "sourcePolicy": "The Odds API stored pull history only for production picks.",
+                "sourcePolicy": "The Odds API stored pull history plus timestamped source-honest fundamentals snapshots.",
             })
 
         if path in {"/v1/mlb/today", "/v1/mlb/games", "/v1/mlb/predictions", "/v1/mlb/game-winners"}:
@@ -169,7 +193,7 @@ try:
                     "ok": True,
                     "sport": "mlb",
                     "date": date,
-                    "model_version": "INQSI-MLB-v2.3-official-prediction-playability-separated",
+                    "model_version": "INQSI-MLB-v3.0-clean-dual-model-shadow-challenger",
                     "game_winner_model": payload.get("modelVersion"),
                     "count": payload.get("count", 0),
                     "requiredGameWinnerPredictionCount": payload.get("requiredGameWinnerPredictionCount"),
@@ -181,6 +205,8 @@ try:
                     "promotedCount": payload.get("promotedCount", 0),
                     "pullCount": payload.get("pullCount"),
                     "latestPullAt": payload.get("latestPullAt"),
+                    "mlOptimizationRuntime": payload.get("mlOptimizationRuntime"),
+                    "fundamentalsSnapshot": payload.get("fundamentalsSnapshot"),
                     "priority": "one_official_locked_individual_game_moneyline_prediction_per_game",
                     "playabilitySeparateFromOfficialPrediction": True,
                     "parlaysEnabled": False,
