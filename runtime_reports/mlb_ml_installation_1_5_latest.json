@@ -1,0 +1,57 @@
+{
+  "ok": true,
+  "proofType": "MLB_ML_INSTALLATION_1_5",
+  "version": "MLB-ML-INSTALLATION-1-5-v1",
+  "checks": {
+    "1_cleanPostFixCohort": {
+      "installed": true,
+      "exactVectorVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
+      "fingerprintVerified": true,
+      "outcomeLabelsAbsentAtLock": true
+    },
+    "2_separateOutcomeAndReliabilityModels": {
+      "installed": true,
+      "outcomeModelVersion": "MLB-OUTCOME-MODEL-v1-home-win-probability",
+      "reliabilityModelVersion": "MLB-RELIABILITY-MODEL-v1.2-selected-pick-correctness-priced",
+      "probabilitiesInterchangeable": false
+    },
+    "3_chronologicalValidation": {
+      "installed": true,
+      "trainMinimum": 80,
+      "validationMinimum": 30,
+      "untouchedTestMinimum": 30,
+      "thresholdSelection": "validation_only"
+    },
+    "4_baseballFundamentals": {
+      "installed": true,
+      "snapshotVersion": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
+      "connectedGroups": [
+        "confirmed_probable_pitchers"
+      ],
+      "missingGroups": [
+        "fip_xfip",
+        "wrc_plus",
+        "starter_handedness_splits",
+        "bullpen_fatigue",
+        "confirmed_lineups",
+        "weather_wind_roof",
+        "ballpark_factors",
+        "injuries_late_scratches_news",
+        "public_betting_handle",
+        "closing_line_value"
+      ],
+      "missingInputsFabricated": false,
+      "modelScopeUntilFeedsConnected": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS"
+    },
+    "5_acceptanceAndPromotionGates": {
+      "installed": true,
+      "directionAndPlayabilityIndependent": true,
+      "automaticPromotion": false,
+      "manualReviewedDynamoDbPromotionRequired": true,
+      "minimumCleanOfficial": 500,
+      "minimumUntouchedTest": 100
+    }
+  },
+  "cleanSettlementJoinVerified": true,
+  "policy": "All five optimization components are installed. Production ML remains shadow-only until clean evidence and reviewed promotion gates pass."
+}
