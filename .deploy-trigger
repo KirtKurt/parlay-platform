@@ -1,8 +1,9 @@
 Deploy trigger for current main.
-Purpose: deploy repaired MLB v3 ApiFunction import contract plus optimization installation items 1 through 5.
-Timestamp UTC: 2026-07-11T23:31:00Z
-Required cold-start proof: frontend_app imports successfully, inqsi_pull_history exports handle_pull_history_route, and /v1/mlb/model/version returns INQSI-MLB-v3.0.
-Required live model proof: ml_runtime_install.ok=true with legacyReliabilityOverlaySafety, singleDdbChampionAuthority, officialSemanticsFinalized, immutableFeatureFreeze, exactCleanCohortVectorPatch, and officialFreezeBridge all true.
+Purpose: deploy the dedicated MLB v3 read Lambda plus optimization installation items 1 through 5.
+Timestamp UTC: 2026-07-11T23:46:00Z
+Required route proof: MLBV3ReadFunction owns /v1/mlb/model/version, /today, /game-winners, /predictions, and /games.
+Required live model proof: model_version starts INQSI-MLB-v3.0 and ml_runtime_install.ok=true with legacyReliabilityOverlaySafety, singleDdbChampionAuthority, officialSemanticsFinalized, immutableFeatureFreeze, exactCleanCohortVectorPatch, and officialFreezeBridge all true.
+Required live data proof: The Odds API pull and canonical DynamoDB storage succeed without fallback.
 Required locked-row proof: every locked prediction preserves official status and contains a fingerprinted frozenFeatureVector created from the pregame source at or before lock.
 Required ML policy: outcome and reliability models remain separate, challenger remains shadow-only, and champion promotion remains manual and DynamoDB-reviewed.
 Required cohort behavior: historical legacy rows remain quarantined; new post-deployment locked rows enter the clean cohort only after final labels are joined without altering features.
