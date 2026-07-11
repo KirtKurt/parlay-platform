@@ -43,9 +43,9 @@ if admin_env not in text:
         raise RuntimeError("ODDS_API_KEY global env marker not found; cannot inject INQSI_ADMIN_API_TOKEN")
     text = text.replace(marker, marker + admin_env, 1)
 
-# Keep the backend wrapper for member/admin/health routes, but do not attach MLB
-# read routes to it. The backend package does not contain the live hello_world
-# MLB v3 runtime and previously returned a hard-coded v2.1 smoke response.
+# Keep the backend wrapper for member/admin/health routes, but never attach MLB
+# read routes to it. The backend package does not contain the hello_world v3
+# runtime and previously returned a hard-coded v2.1 response.
 text = text.replace("Handler: inqsi_backend_api.lambda_handler", "Handler: inqsi_backend_api_wrapper.lambda_handler", 1)
 
 legacy_backend_mlb_events = [
@@ -58,11 +58,40 @@ legacy_backend_mlb_events = [
 for event_name in legacy_backend_mlb_events:
     text = remove_child_event(text, event_name)
 
-# MLB reads are intentionally handled by ApiFunction's /{proxy+} event. That
-# Lambda packages hello_world and runs usercustomize.py, including the v3 runtime
-# installer and exact frozen-vector pipeline.
-if "  ApiFunction:\n" not in text or "            Path: /{proxy+}\n" not in text:
-    raise RuntimeError("ApiFunction catch-all route missing; cannot route MLB reads to live v3 runtime")
+# Give the live hello_world ApiFunction explicit ownership of MLB read routes.
+# API Gateway did not reliably remap deleted concrete routes to /{proxy+}; the
+# explicit events remove that ambiguity while retaining the generic proxy.
+if "  ApiFunction:\n" not in text or "        RootAny:\n" not in text:
+    raise RuntimeError("ApiFunction event marker missing; cannot attach MLB v3 routes")
+
+api_mlb_events = """
+        ApiMlbV3ModelVersion:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/model/version
+            Method: GET
+        ApiMlbV3Today:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/today
+            Method: GET
+        ApiMlbV3GameWinners:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/game-winners
+            Method: GET
+        ApiMlbV3Predictions:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/predictions
+            Method: GET
+        ApiMlbV3Games:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/games
+            Method: GET
+"""
+text = insert_once(text, "        RootAny:\n", api_mlb_events, "ApiMlbV3ModelVersion:")
 
 text = text.replace("Handler: mlb_manual_pull.lambda_handler", "Handler: mlb_manual_pull_protected.lambda_handler", 1)
 text = text.replace("Handler: mlb_daily_pick_lock.lambda_handler", "Handler: mlb_daily_pick_lock_protected.lambda_handler", 1)
@@ -109,6 +138,16 @@ required = [
     "Handler: inqsi_backend_api_wrapper.lambda_handler",
     "  ApiFunction:",
     "Path: /{proxy+}",
+    "ApiMlbV3ModelVersion:",
+    "Path: /v1/mlb/model/version",
+    "ApiMlbV3Today:",
+    "Path: /v1/mlb/today",
+    "ApiMlbV3GameWinners:",
+    "Path: /v1/mlb/game-winners",
+    "ApiMlbV3Predictions:",
+    "Path: /v1/mlb/predictions",
+    "ApiMlbV3Games:",
+    "Path: /v1/mlb/games",
     "Handler: mlb_manual_pull_protected.lambda_handler",
     "Handler: mlb_daily_pick_lock_protected.lambda_handler",
     "INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken",
@@ -128,4 +167,4 @@ if missing or remaining_legacy:
     raise RuntimeError("MLB security/schedule patch failed; " + "; ".join(details))
 
 TEMPLATE.write_text(text)
-print("Patched template.yaml to protect MLB writes, route MLB reads through the live v3 ApiFunction, and schedule AWS production verification checks.")
+print("Patched template.yaml to protect MLB writes, assign explicit MLB v3 reads to ApiFunction, and schedule AWS production verification checks.")
