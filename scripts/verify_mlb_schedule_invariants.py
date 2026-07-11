@@ -7,6 +7,7 @@ ENGINE = Path('hello_world/mlb_game_winner_engine.py')
 COVERAGE_VERIFY = Path('scripts/verify_mlb_complete_slate_coverage.py')
 ML_OPTIMIZATION_VERIFY = Path('scripts/verify_mlb_ml_optimization_v3.py')
 ML_PROMOTION_VERIFY = Path('scripts/verify_mlb_ml_promotion_safety.py')
+ML_FEATURE_INTEGRITY_VERIFY = Path('scripts/verify_mlb_ml_feature_integrity.py')
 text = TEMPLATE.read_text()
 engine = ENGINE.read_text() if ENGINE.exists() else ''
 violations = []
@@ -71,6 +72,7 @@ for required_path in [
     COVERAGE_VERIFY,
     ML_OPTIMIZATION_VERIFY,
     ML_PROMOTION_VERIFY,
+    ML_FEATURE_INTEGRITY_VERIFY,
 ]:
     if not required_path.exists():
         violations.append(f'production component missing: {required_path}')
@@ -81,5 +83,6 @@ if violations:
 subprocess.run([sys.executable, str(COVERAGE_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_OPTIMIZATION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_PROMOTION_VERIFY)], check=True)
+subprocess.run([sys.executable, str(ML_FEATURE_INTEGRITY_VERIFY)], check=True)
 
-print('MLB production invariants PASS: complete-slate coverage, exact stored lock-time feature vectors, separate outcome/reliability models, untouched validation with priced ROI, source-honest fundamentals, independent promotion gates, manual-only DDB champion promotion, and single runtime authority are installed.')
+print('MLB production invariants PASS: complete-slate coverage, verified lock-time fingerprints, final-label joins, separate outcome/reliability models, untouched validation with priced ROI, source-honest fundamentals, independent promotion gates, manual-only DDB champion promotion, and single runtime authority are installed.')
