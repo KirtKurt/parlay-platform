@@ -5,6 +5,7 @@ import sys
 TEMPLATE = Path('template.yaml')
 ENGINE = Path('hello_world/mlb_game_winner_engine.py')
 COVERAGE_VERIFY = Path('scripts/verify_mlb_complete_slate_coverage.py')
+ML_OPTIMIZATION_VERIFY = Path('scripts/verify_mlb_ml_optimization_v3.py')
 text = TEMPLATE.read_text()
 engine = ENGINE.read_text() if ENGINE.exists() else ''
 violations = []
@@ -60,14 +61,23 @@ for required_path in [
     Path('hello_world/mlb_slate_coverage_patch.py'),
     Path('hello_world/mlb_doubleheader_safe_audit_patch.py'),
     Path('hello_world/mlb_all_games_coverage_patch.py'),
+    Path('hello_world/mlb_ml_clean_cohort_v1.py'),
+    Path('hello_world/mlb_ml_dual_model_v1.py'),
+    Path('hello_world/mlb_ml_walk_forward_v1.py'),
+    Path('hello_world/mlb_fundamentals_snapshot_v1.py'),
+    Path('hello_world/mlb_ml_champion_challenger_v1.py'),
+    Path('hello_world/mlb_ml_champion_runtime_v1.py'),
+    Path('hello_world/mlb_ml_optimization_v3.py'),
     COVERAGE_VERIFY,
+    ML_OPTIMIZATION_VERIFY,
 ]:
     if not required_path.exists():
-        violations.append(f'complete-slate coverage component missing: {required_path}')
+        violations.append(f'production component missing: {required_path}')
 
 if violations:
     raise SystemExit('MLB production invariant failure: ' + '; '.join(violations))
 
 subprocess.run([sys.executable, str(COVERAGE_VERIFY)], check=True)
+subprocess.run([sys.executable, str(ML_OPTIMIZATION_VERIFY)], check=True)
 
-print('MLB production invariants PASS: same-day quarter-hour Odds API pulls, no legacy MLB schedules, daily T-minus lock, fresh-snapshot guardrails, real-book pricing, promotion settings, complete-slate doubleheader-safe coverage, and AWS production verification schedules are present.')
+print('MLB production invariants PASS: complete-slate coverage plus clean post-fix dual-model ML, untouched validation, source-honest fundamentals, and champion/challenger gates are installed.')
