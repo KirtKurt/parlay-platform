@@ -1,0 +1,291 @@
+{
+  "ok": false,
+  "runId": 29172775685,
+  "runNumber": 1212,
+  "status": "completed",
+  "conclusion": "failure",
+  "headSha": "67ef918b8ee6d099529f808e947453efda4c08ae",
+  "htmlUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/29172775685",
+  "jobs": [
+    {
+      "id": 86596565433,
+      "name": "deploy",
+      "status": "completed",
+      "conclusion": "failure",
+      "steps": [
+        {
+          "name": "Set up job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 1,
+          "started_at": "2026-07-11T23:51:29Z",
+          "completed_at": "2026-07-11T23:51:31Z"
+        },
+        {
+          "name": "Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 2,
+          "started_at": "2026-07-11T23:51:31Z",
+          "completed_at": "2026-07-11T23:51:32Z"
+        },
+        {
+          "name": "Setup Python 3.11",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 3,
+          "started_at": "2026-07-11T23:51:32Z",
+          "completed_at": "2026-07-11T23:51:32Z"
+        },
+        {
+          "name": "Configure AWS credentials",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 4,
+          "started_at": "2026-07-11T23:51:32Z",
+          "completed_at": "2026-07-11T23:51:33Z"
+        },
+        {
+          "name": "Verify AWS connection",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 5,
+          "started_at": "2026-07-11T23:51:33Z",
+          "completed_at": "2026-07-11T23:51:36Z"
+        },
+        {
+          "name": "Verify Odds API secret present",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 6,
+          "started_at": "2026-07-11T23:51:36Z",
+          "completed_at": "2026-07-11T23:51:36Z"
+        },
+        {
+          "name": "Verify admin token secret present",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 7,
+          "started_at": "2026-07-11T23:51:36Z",
+          "completed_at": "2026-07-11T23:51:36Z"
+        },
+        {
+          "name": "Setup AWS SAM",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 8,
+          "started_at": "2026-07-11T23:51:36Z",
+          "completed_at": "2026-07-11T23:52:06Z"
+        },
+        {
+          "name": "Patch SAM template for MLB v1 schedules and locks",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 9,
+          "started_at": "2026-07-11T23:52:06Z",
+          "completed_at": "2026-07-11T23:52:06Z"
+        },
+        {
+          "name": "Patch SAM template for protected MLB write endpoints",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 10,
+          "started_at": "2026-07-11T23:52:06Z",
+          "completed_at": "2026-07-11T23:52:06Z"
+        },
+        {
+          "name": "Patch SAM template for MLB settlement routes",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 11,
+          "started_at": "2026-07-11T23:52:06Z",
+          "completed_at": "2026-07-11T23:52:06Z"
+        },
+        {
+          "name": "Validate MLB production invariants",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 12,
+          "started_at": "2026-07-11T23:52:06Z",
+          "completed_at": "2026-07-11T23:52:10Z"
+        },
+        {
+          "name": "Validate MLB official prediction semantics",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 13,
+          "started_at": "2026-07-11T23:52:10Z",
+          "completed_at": "2026-07-11T23:52:10Z"
+        },
+        {
+          "name": "Validate SAM template",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 14,
+          "started_at": "2026-07-11T23:52:10Z",
+          "completed_at": "2026-07-11T23:52:11Z"
+        },
+        {
+          "name": "Build clean",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 15,
+          "started_at": "2026-07-11T23:52:11Z",
+          "completed_at": "2026-07-11T23:52:14Z"
+        },
+        {
+          "name": "Wait for existing CloudFormation update to finish",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 16,
+          "started_at": "2026-07-11T23:52:14Z",
+          "completed_at": "2026-07-11T23:52:15Z"
+        },
+        {
+          "name": "Deploy",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 17,
+          "started_at": "2026-07-11T23:52:15Z",
+          "completed_at": "2026-07-11T23:53:34Z"
+        },
+        {
+          "name": "Grant image moderation Rekognition access",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 18,
+          "started_at": "2026-07-11T23:53:34Z",
+          "completed_at": "2026-07-11T23:53:36Z"
+        },
+        {
+          "name": "Read stack outputs",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 19,
+          "started_at": "2026-07-11T23:53:36Z",
+          "completed_at": "2026-07-11T23:53:37Z"
+        },
+        {
+          "name": "Configure API WAF and throttling",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 20,
+          "started_at": "2026-07-11T23:53:37Z",
+          "completed_at": "2026-07-11T23:53:38Z"
+        },
+        {
+          "name": "Configure security alarms and budget guardrail",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 21,
+          "started_at": "2026-07-11T23:53:38Z",
+          "completed_at": "2026-07-11T23:53:49Z"
+        },
+        {
+          "name": "Smoke test live health endpoint",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 22,
+          "started_at": "2026-07-11T23:53:49Z",
+          "completed_at": "2026-07-11T23:53:50Z"
+        },
+        {
+          "name": "Verify live MLB ML v3 model and runtime installation",
+          "status": "completed",
+          "conclusion": "failure",
+          "number": 23,
+          "started_at": "2026-07-11T23:53:50Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        },
+        {
+          "name": "Smoke test live MLB Odds API pull and storage",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 24,
+          "started_at": "2026-07-11T23:53:51Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        },
+        {
+          "name": "Smoke test MLB v1 today endpoint",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 25,
+          "started_at": "2026-07-11T23:53:51Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        },
+        {
+          "name": "Smoke test MLB lock status endpoint",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 26,
+          "started_at": "2026-07-11T23:53:51Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        },
+        {
+          "name": "Smoke test MLB game-winner endpoint",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 27,
+          "started_at": "2026-07-11T23:53:51Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        },
+        {
+          "name": "Verify live official prediction, playability, and ML shadow/champion semantics",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 28,
+          "started_at": "2026-07-11T23:53:51Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        },
+        {
+          "name": "Smoke test MLB signal learning endpoint",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 29,
+          "started_at": "2026-07-11T23:53:51Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        },
+        {
+          "name": "Smoke test image moderation policy endpoint",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 30,
+          "started_at": "2026-07-11T23:53:51Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        },
+        {
+          "name": "Post Configure AWS credentials",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 58,
+          "started_at": "2026-07-11T23:53:51Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        },
+        {
+          "name": "Post Setup Python 3.11",
+          "status": "completed",
+          "conclusion": "skipped",
+          "number": 59,
+          "started_at": "2026-07-11T23:53:51Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        },
+        {
+          "name": "Post Checkout",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 60,
+          "started_at": "2026-07-11T23:53:51Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        },
+        {
+          "name": "Complete job",
+          "status": "completed",
+          "conclusion": "success",
+          "number": 61,
+          "started_at": "2026-07-11T23:53:51Z",
+          "completed_at": "2026-07-11T23:53:51Z"
+        }
+      ]
+    }
+  ]
+}

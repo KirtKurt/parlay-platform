@@ -1,0 +1,687 @@
+JOB deploy conclusion=failure id=86596565433
+  STEP 1: Set up job conclusion=success
+  STEP 2: Checkout conclusion=success
+  STEP 3: Setup Python 3.11 conclusion=success
+  STEP 4: Configure AWS credentials conclusion=success
+  STEP 5: Verify AWS connection conclusion=success
+  STEP 6: Verify Odds API secret present conclusion=success
+  STEP 7: Verify admin token secret present conclusion=success
+  STEP 8: Setup AWS SAM conclusion=success
+  STEP 9: Patch SAM template for MLB v1 schedules and locks conclusion=success
+  STEP 10: Patch SAM template for protected MLB write endpoints conclusion=success
+  STEP 11: Patch SAM template for MLB settlement routes conclusion=success
+  STEP 12: Validate MLB production invariants conclusion=success
+  STEP 13: Validate MLB official prediction semantics conclusion=success
+  STEP 14: Validate SAM template conclusion=success
+  STEP 15: Build clean conclusion=success
+  STEP 16: Wait for existing CloudFormation update to finish conclusion=success
+  STEP 17: Deploy conclusion=success
+  STEP 18: Grant image moderation Rekognition access conclusion=success
+  STEP 19: Read stack outputs conclusion=success
+  STEP 20: Configure API WAF and throttling conclusion=success
+  STEP 21: Configure security alarms and budget guardrail conclusion=success
+  STEP 22: Smoke test live health endpoint conclusion=success
+  STEP 23: Verify live MLB ML v3 model and runtime installation conclusion=failure
+  STEP 24: Smoke test live MLB Odds API pull and storage conclusion=skipped
+  STEP 25: Smoke test MLB v1 today endpoint conclusion=skipped
+  STEP 26: Smoke test MLB lock status endpoint conclusion=skipped
+  STEP 27: Smoke test MLB game-winner endpoint conclusion=skipped
+  STEP 28: Verify live official prediction, playability, and ML shadow/champion semantics conclusion=skipped
+  STEP 29: Smoke test MLB signal learning endpoint conclusion=skipped
+  STEP 30: Smoke test image moderation policy endpoint conclusion=skipped
+  STEP 58: Post Configure AWS credentials conclusion=success
+  STEP 59: Post Setup Python 3.11 conclusion=skipped
+  STEP 60: Post Checkout conclusion=success
+  STEP 61: Complete job conclusion=success
+
+FAILED JOB LOG TAIL
+2026-07-11T23:52:10.1631992Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:10.1632392Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:52:10.1632793Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:52:10.1633057Z   AWS_REGION: ***
+2026-07-11T23:52:10.1633301Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:52:10.1633672Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:52:10.1633920Z ##[endgroup]
+2026-07-11T23:52:10.2013493Z MLB official/playable, immutable-ledger, selected-odds, and real-world accuracy metrics verified
+2026-07-11T23:52:10.2103379Z ##[group]Run sam validate
+2026-07-11T23:52:10.2103684Z [36;1msam validate[0m
+2026-07-11T23:52:10.2134106Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:52:10.2134358Z env:
+2026-07-11T23:52:10.2134636Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:10.2135089Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:52:10.2135521Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:10.2135916Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:10.2136308Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:10.2136701Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:52:10.2137108Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:52:10.2137359Z   AWS_REGION: ***
+2026-07-11T23:52:10.2137598Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:52:10.2137926Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:52:10.2138166Z ##[endgroup]
+2026-07-11T23:52:10.7048165Z 
+2026-07-11T23:52:10.7048794Z 	SAM CLI now collects telemetry to better understand customer needs.
+2026-07-11T23:52:10.7049200Z 
+2026-07-11T23:52:10.7049425Z 	You can OPT OUT and disable telemetry collection by setting the
+2026-07-11T23:52:10.7050329Z 	environment variable SAM_CLI_TELEMETRY=0 in your shell.
+2026-07-11T23:52:10.7050878Z 	Thanks for your help!
+2026-07-11T23:52:10.7051093Z 
+2026-07-11T23:52:10.7051687Z 	Learn More: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-telemetry.html
+2026-07-11T23:52:10.7052448Z 
+2026-07-11T23:52:11.6174560Z /home/runner/work/parlay-platform/parlay-platform/template.yaml is a valid SAM Template. This is according to basic SAM Validation, for additional validation, please run with "--lint" option
+2026-07-11T23:52:11.9308947Z ##[group]Run rm -rf .aws-sam
+2026-07-11T23:52:11.9309281Z [36;1mrm -rf .aws-sam[0m
+2026-07-11T23:52:11.9309535Z [36;1msam build --no-cached[0m
+2026-07-11T23:52:11.9342026Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:52:11.9342303Z env:
+2026-07-11T23:52:11.9342578Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:11.9343038Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:52:11.9343476Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:11.9343863Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:11.9344271Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:11.9344666Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:52:11.9345064Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:52:11.9345336Z   AWS_REGION: ***
+2026-07-11T23:52:11.9345580Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:52:11.9345937Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:52:11.9346186Z ##[endgroup]
+2026-07-11T23:52:12.9862037Z Building codeuri: /home/runner/work/parlay-platform/parlay-platform/backend/src runtime: python3.11 architecture: x86_64 functions: InqsiBackendApiFunction
+2026-07-11T23:52:12.9872148Z Building codeuri: /home/runner/work/parlay-platform/parlay-platform/hello_world runtime: python3.11 architecture: x86_64 functions: MLBV3ReadFunction, ApiFunction, MLBAuditedPullFunction, MLBSignalApiFunction, MLBDailyPickLockFunction, MLBProductionVerifierFunction, MLBResultsSchedulerFunction, SoccerSchedulerFunction, SoccerSignalApiFunction, SoccerResultsAuditFunction, SoccerAppApiFunction, InqsiAutopsySchedulerFunction
+2026-07-11T23:52:13.0123299Z  Running PythonPipBuilder:ResolveDependencies
+2026-07-11T23:52:13.0137626Z  Running PythonPipBuilder:ResolveDependencies
+2026-07-11T23:52:13.0450452Z  Running PythonPipBuilder:CopySource
+2026-07-11T23:52:13.7278480Z  Running PythonPipBuilder:CopySource
+2026-07-11T23:52:14.0955343Z 
+2026-07-11T23:52:14.0955960Z Build Succeeded
+2026-07-11T23:52:14.0956308Z 
+2026-07-11T23:52:14.0956532Z Built Artifacts  : .aws-sam/build
+2026-07-11T23:52:14.0957154Z Built Template   : .aws-sam/build/template.yaml
+2026-07-11T23:52:14.0957605Z 
+2026-07-11T23:52:14.0958169Z Commands you can use next
+2026-07-11T23:52:14.0958658Z =========================
+2026-07-11T23:52:14.0959143Z [*] Validate SAM template: sam validate
+2026-07-11T23:52:14.0959744Z [*] Invoke Function: sam local invoke
+2026-07-11T23:52:14.0960913Z [*] Test Function in the Cloud: sam sync --stack-name {{stack-name}} --watch
+2026-07-11T23:52:14.0961750Z [*] Deploy: sam deploy --guided
+2026-07-11T23:52:14.3973075Z ##[group]Run for i in $(seq 1 60); do
+2026-07-11T23:52:14.3973446Z [36;1mfor i in $(seq 1 60); do[0m
+2026-07-11T23:52:14.3973780Z [36;1m  STATUS=$(aws cloudformation describe-stacks \[0m
+2026-07-11T23:52:14.3974154Z [36;1m    --stack-name parlay-platform-dev \[0m
+2026-07-11T23:52:14.3974541Z [36;1m    --region *** \[0m
+2026-07-11T23:52:14.3974830Z [36;1m    --query "Stacks[0].StackStatus" \[0m
+2026-07-11T23:52:14.3975194Z [36;1m    --output text 2>/dev/null || echo "STACK_MISSING")[0m
+2026-07-11T23:52:14.3975571Z [36;1m  echo "CloudFormation status: ${STATUS}"[0m
+2026-07-11T23:52:14.3975904Z [36;1m  case "${STATUS}" in[0m
+2026-07-11T23:52:14.3976357Z [36;1m    CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE|STACK_MISSING)[0m
+2026-07-11T23:52:14.3976841Z [36;1m      exit 0[0m
+2026-07-11T23:52:14.3977059Z [36;1m      ;;[0m
+2026-07-11T23:52:14.3977271Z [36;1m    *IN_PROGRESS)[0m
+2026-07-11T23:52:14.3977514Z [36;1m      sleep 30[0m
+2026-07-11T23:52:14.3977770Z [36;1m      ;;[0m
+2026-07-11T23:52:14.3977972Z [36;1m    *)[0m
+2026-07-11T23:52:14.3978250Z [36;1m      echo "Stack status is not safe for update: ${STATUS}"[0m
+2026-07-11T23:52:14.3978596Z [36;1m      exit 1[0m
+2026-07-11T23:52:14.3978807Z [36;1m      ;;[0m
+2026-07-11T23:52:14.3979009Z [36;1m  esac[0m
+2026-07-11T23:52:14.3979215Z [36;1mdone[0m
+2026-07-11T23:52:14.3979542Z [36;1mecho "Timed out waiting for CloudFormation stack to be updateable."[0m
+2026-07-11T23:52:14.3980124Z [36;1mexit 1[0m
+2026-07-11T23:52:14.4012040Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:52:14.4012318Z env:
+2026-07-11T23:52:14.4012597Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:14.4013042Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:52:14.4013487Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:14.4013876Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:14.4014270Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:14.4014664Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:52:14.4015089Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:52:14.4015352Z   AWS_REGION: ***
+2026-07-11T23:52:14.4015591Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:52:14.4015918Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:52:14.4016158Z ##[endgroup]
+2026-07-11T23:52:15.3807876Z CloudFormation status: UPDATE_COMPLETE
+2026-07-11T23:52:15.3850883Z ##[group]Run sam deploy \
+2026-07-11T23:52:15.3851395Z [36;1msam deploy \[0m
+2026-07-11T23:52:15.3851936Z [36;1m  --template-file template.yaml \[0m
+2026-07-11T23:52:15.3852535Z [36;1m  --stack-name parlay-platform-dev \[0m
+2026-07-11T23:52:15.3853139Z [36;1m  --region *** \[0m
+2026-07-11T23:52:15.3853636Z [36;1m  --capabilities CAPABILITY_IAM \[0m
+2026-07-11T23:52:15.3854216Z [36;1m  --resolve-s3 \[0m
+2026-07-11T23:52:15.3854654Z [36;1m  --force-upload \[0m
+2026-07-11T23:52:15.3855117Z [36;1m  --no-confirm-changeset \[0m
+2026-07-11T23:52:15.3855632Z [36;1m  --no-fail-on-empty-changeset \[0m
+2026-07-11T23:52:15.3856157Z [36;1m  --parameter-overrides \[0m
+2026-07-11T23:52:15.3856701Z [36;1m    OddsApiKey="${ODDS_API_KEY_VALUE}" \[0m
+2026-07-11T23:52:15.3857433Z [36;1m    InqsiAdminApiToken="${INQSI_ADMIN_API_TOKEN_VALUE:-}"[0m
+2026-07-11T23:52:15.3905166Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:52:15.3905608Z env:
+2026-07-11T23:52:15.3906138Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:15.3906960Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:52:15.3908063Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:15.3908783Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:15.3909556Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:52:15.3910544Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:52:15.3911229Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:52:15.3911685Z   AWS_REGION: ***
+2026-07-11T23:52:15.3912122Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:52:15.3912702Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:52:15.3913215Z   ODDS_API_KEY_VALUE: ***
+2026-07-11T23:52:15.3913685Z   INQSI_ADMIN_API_TOKEN_VALUE: ***
+2026-07-11T23:52:15.3914148Z ##[endgroup]
+2026-07-11T23:52:17.0193622Z 
+2026-07-11T23:52:17.0194333Z 	Managed S3 bucket: aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr
+2026-07-11T23:52:17.0195348Z 	Auto resolution of buckets can be turned off by setting resolve_s3=False
+2026-07-11T23:52:17.0196157Z 	To use a specific S3 bucket, set --s3-bucket=<bucket_name>
+2026-07-11T23:52:17.0196821Z 	Above settings can be stored in samconfig.toml
+2026-07-11T23:52:17.8075172Z 
+2026-07-11T23:52:17.8076069Z 	Uploading to parlay-platform-dev/86cd3c671fb865b4a74f7aebe18d6c87  44020 / 44020  (100.00%)
+2026-07-11T23:52:17.9911846Z 
+2026-07-11T23:52:18.4589431Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:18.4612260Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:18.6447001Z 
+2026-07-11T23:52:18.8261263Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:18.8262935Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:19.0079719Z 
+2026-07-11T23:52:19.1326331Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:19.1327748Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:19.3145751Z 
+2026-07-11T23:52:19.4567300Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:19.4568161Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:19.6401632Z 
+2026-07-11T23:52:19.7990667Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:19.7991786Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:19.9808934Z 
+2026-07-11T23:52:20.1022554Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:20.1023808Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:20.2851830Z 
+2026-07-11T23:52:20.4076854Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:20.4077988Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:20.5896137Z 
+2026-07-11T23:52:20.7456556Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:20.7457473Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:20.9289963Z 
+2026-07-11T23:52:21.0591397Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:21.0592642Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:21.2415313Z 
+2026-07-11T23:52:21.3485083Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:21.3486012Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:21.5306220Z 
+2026-07-11T23:52:21.6478846Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:21.6479715Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:21.8315338Z 
+2026-07-11T23:52:21.9474124Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1048576 / 1172024  (89.47%)
+2026-07-11T23:52:21.9474969Z 	Uploading to parlay-platform-dev/cb5152c45143edf59488f4a76de0e226  1172024 / 1172024  (100.00%)
+2026-07-11T23:52:22.0516610Z 
+2026-07-11T23:52:22.0517074Z 	Deploying with following values
+2026-07-11T23:52:22.0517584Z 	===============================
+2026-07-11T23:52:22.0518087Z 	Stack name                   : parlay-platform-dev
+2026-07-11T23:52:22.0518692Z 	Region                       : ***
+2026-07-11T23:52:22.0519173Z 	Confirm changeset            : False
+2026-07-11T23:52:22.0519723Z 	Disable rollback             : False
+2026-07-11T23:52:22.0520881Z 	Deployment s3 bucket         : aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr
+2026-07-11T23:52:22.0521791Z 	Capabilities                 : ["CAPABILITY_IAM"]
+2026-07-11T23:52:22.0522584Z 	Parameter overrides          : {"OddsApiKey": "*****", "InqsiAdminApiToken": "*****"}
+2026-07-11T23:52:22.0523342Z 	Signing Profiles             : {}
+2026-07-11T23:52:22.0523650Z 
+2026-07-11T23:52:22.0523831Z Initiating deployment
+2026-07-11T23:52:22.0524223Z =====================
+2026-07-11T23:52:22.0524464Z 
+2026-07-11T23:52:23.3244804Z 
+2026-07-11T23:52:23.3245816Z 	Uploading to parlay-platform-dev/2017d7c7e27b595fb9b6385526dcad0b.template  29233 / 29233  (100.00%)
+2026-07-11T23:52:23.7438195Z 
+2026-07-11T23:52:23.7438265Z 
+2026-07-11T23:52:23.7438709Z Waiting for changeset to be created..
+2026-07-11T23:52:23.7439105Z 
+2026-07-11T23:52:44.4939505Z CloudFormation stack changeset
+2026-07-11T23:52:44.4941061Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:52:44.4941884Z Operation                LogicalResourceId        ResourceType             Replacement            
+2026-07-11T23:52:44.4942619Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:52:44.8584937Z + Add                    MLBV3ReadFunctionMLBV3   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:52:44.8585882Z                          GameWinnersPermissionP   n                                               
+2026-07-11T23:52:44.8586678Z                          rod                                                                      
+2026-07-11T23:52:44.8587705Z + Add                    MLBV3ReadFunctionMLBV3   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:52:44.8589128Z                          GamesPermissionProd      n                                               
+2026-07-11T23:52:44.8590607Z + Add                    MLBV3ReadFunctionMLBV3   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:52:44.8591500Z                          ModelVersionPermission   n                                               
+2026-07-11T23:52:44.8592305Z                          Prod                                                                     
+2026-07-11T23:52:44.8593017Z + Add                    MLBV3ReadFunctionMLBV3   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:52:44.8593983Z                          PredictionsPermissionP   n                                               
+2026-07-11T23:52:44.8594660Z                          rod                                                                      
+2026-07-11T23:52:44.8595472Z + Add                    MLBV3ReadFunctionMLBV3   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:52:44.8596330Z                          TodayPermissionProd      n                                               
+2026-07-11T23:52:44.8597153Z + Add                    MLBV3ReadFunctionRole    AWS::IAM::Role           N/A                    
+2026-07-11T23:52:44.8598386Z + Add                    MLBV3ReadFunction        AWS::Lambda::Function    N/A                    
+2026-07-11T23:52:44.8599368Z + Add                    ServerlessRestApiDeplo   AWS::ApiGateway::Deplo   N/A                    
+2026-07-11T23:52:44.8600146Z                          ymentc35edf569b          yment                                           
+2026-07-11T23:52:44.8601125Z * Modify                 ApiFunction              AWS::Lambda::Function    False                  
+2026-07-11T23:52:44.8601812Z * Modify                 InqsiAutopsySchedulerF   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:52:44.8602511Z                          unctionInqsiNightlyAut   n                                               
+2026-07-11T23:52:44.8603357Z                          opsyAt1AMPermission                                                      
+2026-07-11T23:52:44.8604048Z * Modify                 InqsiAutopsySchedulerF   AWS::Events::Rule        False                  
+2026-07-11T23:52:44.8604825Z                          unctionInqsiNightlyAut                                                   
+2026-07-11T23:52:44.8605590Z                          opsyAt1AM                                                                
+2026-07-11T23:52:44.8606126Z * Modify                 InqsiAutopsySchedulerF   AWS::Lambda::Function    False                  
+2026-07-11T23:52:44.8606918Z                          unction                                                                  
+2026-07-11T23:52:44.8607654Z * Modify                 MLBAuditedPullFunction   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:52:44.8608438Z                          MLBHotEvery15MinPermis   n                                               
+2026-07-11T23:52:44.8609021Z                          sion                                                                     
+2026-07-11T23:52:44.8609766Z * Modify                 MLBAuditedPullFunction   AWS::Events::Rule        False                  
+2026-07-11T23:52:44.8610734Z                          MLBHotEvery15Min                                                         
+2026-07-11T23:52:44.8611407Z * Modify                 MLBAuditedPullFunction   AWS::Lambda::Function    False                  
+2026-07-11T23:52:44.8612232Z * Modify                 MLBDailyPickLockFuncti   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:52:44.8613064Z                          onMLBDailyPickLockEver   n                                               
+2026-07-11T23:52:44.8613775Z                          yMinutePermission                                                        
+2026-07-11T23:52:44.8614431Z * Modify                 MLBDailyPickLockFuncti   AWS::Events::Rule        False                  
+2026-07-11T23:52:44.8615481Z                          onMLBDailyPickLockEver                                                   
+2026-07-11T23:52:44.8616076Z                          yMinute                                                                  
+2026-07-11T23:52:44.8616776Z * Modify                 MLBDailyPickLockFuncti   AWS::Lambda::Function    False                  
+2026-07-11T23:52:44.8617438Z                          on                                                                       
+2026-07-11T23:52:44.8618149Z * Modify                 MLBProductionVerifierF   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:52:44.8618907Z                          unctionMLBProductionIn   n                                               
+2026-07-11T23:52:44.8619527Z                          gestVerifyDaily435EtPe                                                   
+2026-07-11T23:52:44.8620408Z                          rmission                                                                 
+2026-07-11T23:52:44.8621178Z * Modify                 MLBProductionVerifierF   AWS::Events::Rule        False                  
+2026-07-11T23:52:44.8621944Z                          unctionMLBProductionIn                                                   
+2026-07-11T23:52:44.8622778Z                          gestVerifyDaily435Et                                                     
+2026-07-11T23:52:44.8623550Z * Modify                 MLBProductionVerifierF   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:52:44.8624086Z                          unctionMLBProductionLo   n                                               
+2026-07-11T23:52:44.8624589Z                          ckVerifyDaily556EtPerm                                                   
+2026-07-11T23:52:44.8625033Z                          ission                                                                   
+2026-07-11T23:52:44.8625524Z * Modify                 MLBProductionVerifierF   AWS::Events::Rule        False                  
+2026-07-11T23:52:44.8626050Z                          unctionMLBProductionLo                                                   
+2026-07-11T23:52:44.8626529Z                          ckVerifyDaily556Et                                                       
+2026-07-11T23:52:44.8627060Z * Modify                 MLBProductionVerifierF   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:52:44.8627591Z                          unctionMLBProductionVe   n                                               
+2026-07-11T23:52:44.8628081Z                          rifierEvery5MinPermiss                                                   
+2026-07-11T23:52:44.8628519Z                          ion                                                                      
+2026-07-11T23:52:44.8628988Z * Modify                 MLBProductionVerifierF   AWS::Events::Rule        False                  
+2026-07-11T23:52:44.8629523Z                          unctionMLBProductionVe                                                   
+2026-07-11T23:52:44.8630305Z                          rifierEvery5Min                                                          
+2026-07-11T23:52:44.8630900Z * Modify                 MLBProductionVerifierF   AWS::Lambda::Function    False                  
+2026-07-11T23:52:44.8631417Z                          unction                                                                  
+2026-07-11T23:52:44.8631918Z * Modify                 MLBResultsSchedulerFun   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:52:44.8632451Z                          ctionMLBResultsEvery6H   n                                               
+2026-07-11T23:52:44.8632917Z                          oursPermission                                                           
+2026-07-11T23:52:44.8633422Z * Modify                 MLBResultsSchedulerFun   AWS::Events::Rule        False                  
+2026-07-11T23:52:44.8633944Z                          ctionMLBResultsEvery6H                                                   
+2026-07-11T23:52:44.8634538Z                          ours                                                                     
+2026-07-11T23:52:44.8635024Z * Modify                 MLBResultsSchedulerFun   AWS::Lambda::Function    False                  
+2026-07-11T23:52:44.8635504Z                          ction                                                                    
+2026-07-11T23:52:44.8636025Z * Modify                 MLBSignalApiFunction     AWS::Lambda::Function    False                  
+2026-07-11T23:52:44.8636589Z * Modify                 ServerlessRestApiProdS   AWS::ApiGateway::Stage   False                  
+2026-07-11T23:52:44.8637069Z                          tage                                                                     
+2026-07-11T23:52:44.8637538Z * Modify                 ServerlessRestApi        AWS::ApiGateway::RestA   False                  
+2026-07-11T23:52:44.8637995Z                                                   pi                                              
+2026-07-11T23:52:44.8638482Z * Modify                 SoccerAppApiFunction     AWS::Lambda::Function    False                  
+2026-07-11T23:52:44.8639040Z * Modify                 SoccerResultsAuditFunc   AWS::Lambda::Function    False                  
+2026-07-11T23:52:44.8639641Z                          tion                                                                     
+2026-07-11T23:52:44.8640412Z * Modify                 SoccerSchedulerFunctio   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:52:44.8640958Z                          nSoccerHotEvery15MinPe   n                                               
+2026-07-11T23:52:44.8641422Z                          rmission                                                                 
+2026-07-11T23:52:44.8641913Z * Modify                 SoccerSchedulerFunctio   AWS::Events::Rule        False                  
+2026-07-11T23:52:44.8642432Z                          nSoccerHotEvery15Min                                                     
+2026-07-11T23:52:44.8642964Z * Modify                 SoccerSchedulerFunctio   AWS::Lambda::Function    False                  
+2026-07-11T23:52:44.8643426Z                          n                                                                        
+2026-07-11T23:52:44.8643917Z * Modify                 SoccerSignalApiFunctio   AWS::Lambda::Function    False                  
+2026-07-11T23:52:44.8644380Z                          n                                                                        
+2026-07-11T23:52:44.8644856Z - Delete                 ApiFunctionApiMlbV3Gam   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:52:44.8645392Z                          eWinnersPermissionProd   n                                               
+2026-07-11T23:52:44.8645917Z - Delete                 ApiFunctionApiMlbV3Gam   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:52:44.8646434Z                          esPermissionProd         n                                               
+2026-07-11T23:52:44.8646955Z - Delete                 ApiFunctionApiMlbV3Mod   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:52:44.8647481Z                          elVersionPermissionPro   n                                               
+2026-07-11T23:52:44.8647923Z                          d                                                                        
+2026-07-11T23:52:44.8648386Z - Delete                 ApiFunctionApiMlbV3Pre   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:52:44.8648916Z                          dictionsPermissionProd   n                                               
+2026-07-11T23:52:44.8649445Z - Delete                 ApiFunctionApiMlbV3Tod   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:52:44.8650079Z                          ayPermissionProd         n                                               
+2026-07-11T23:52:44.8650605Z - Delete                 ServerlessRestApiDeplo   AWS::ApiGateway::Deplo   N/A                    
+2026-07-11T23:52:44.8651253Z                          yment9eb2a2dc2e          yment                                           
+2026-07-11T23:52:44.8651742Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:52:44.8652057Z 
+2026-07-11T23:52:44.8652062Z 
+2026-07-11T23:52:44.8652590Z Changeset created successfully. arn:aws:cloudformation:***:735707987003:changeSet/samcli-deploy1783813942/5d9f71c2-854a-4293-8a5b-a7e38a37d6db
+2026-07-11T23:52:44.8653126Z 
+2026-07-11T23:52:45.6157067Z 
+2026-07-11T23:52:45.6157653Z 2026-07-11 23:52:45 - Waiting for stack create/update to complete
+2026-07-11T23:52:45.6158013Z 
+2026-07-11T23:52:45.6158258Z CloudFormation events from stack operations (refresh every 5.0 seconds)
+2026-07-11T23:52:45.6158851Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:52:45.6159490Z ResourceStatus           ResourceType             LogicalResourceId        ResourceStatusReason   
+2026-07-11T23:52:45.6160461Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:52:51.0083579Z UPDATE_IN_PROGRESS       AWS::CloudFormation::S   parlay-platform-dev      User Initiated         
+2026-07-11T23:52:51.0085172Z                          tack                                                                     
+2026-07-11T23:52:51.0086191Z CREATE_IN_PROGRESS       AWS::IAM::Role           MLBV3ReadFunctionRole    -                      
+2026-07-11T23:52:51.0087297Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    MLBResultsSchedulerFun   -                      
+2026-07-11T23:52:51.0088228Z                                                   ction                                           
+2026-07-11T23:52:51.0092682Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    SoccerSignalApiFunctio   -                      
+2026-07-11T23:52:51.0093341Z                                                   n                                               
+2026-07-11T23:52:51.0093888Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    SoccerResultsAuditFunc   -                      
+2026-07-11T23:52:51.0094397Z                                                   tion                                            
+2026-07-11T23:52:51.0094900Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    SoccerSchedulerFunctio   -                      
+2026-07-11T23:52:51.0095396Z                                                   n                                               
+2026-07-11T23:52:51.0095912Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    InqsiAutopsySchedulerF   -                      
+2026-07-11T23:52:51.0096414Z                                                   unction                                         
+2026-07-11T23:52:51.0096910Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    MLBDailyPickLockFuncti   -                      
+2026-07-11T23:52:51.0097392Z                                                   on                                              
+2026-07-11T23:52:51.0097881Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    MLBProductionVerifierF   -                      
+2026-07-11T23:52:51.0098401Z                                                   unction                                         
+2026-07-11T23:52:51.0098902Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    SoccerAppApiFunction     -                      
+2026-07-11T23:52:51.0099609Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    MLBAuditedPullFunction   -                      
+2026-07-11T23:52:51.0100629Z CREATE_IN_PROGRESS       AWS::IAM::Role           MLBV3ReadFunctionRole    Resource creation      
+2026-07-11T23:52:51.0154561Z                                                                            Initiated              
+2026-07-11T23:52:51.0155222Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    MLBSignalApiFunction     -                      
+2026-07-11T23:52:51.0155852Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    ApiFunction              -                      
+2026-07-11T23:53:01.8267284Z UPDATE_COMPLETE          AWS::Lambda::Function    SoccerResultsAuditFunc   -                      
+2026-07-11T23:53:01.8268476Z                                                   tion                                            
+2026-07-11T23:53:01.8269655Z UPDATE_COMPLETE          AWS::Lambda::Function    MLBProductionVerifierF   -                      
+2026-07-11T23:53:01.8270963Z                                                   unction                                         
+2026-07-11T23:53:01.8272020Z UPDATE_COMPLETE          AWS::Lambda::Function    MLBResultsSchedulerFun   -                      
+2026-07-11T23:53:01.8272962Z                                                   ction                                           
+2026-07-11T23:53:01.8273720Z UPDATE_COMPLETE          AWS::Lambda::Function    SoccerSignalApiFunctio   -                      
+2026-07-11T23:53:01.8274458Z                                                   n                                               
+2026-07-11T23:53:01.8275200Z UPDATE_COMPLETE          AWS::Lambda::Function    InqsiAutopsySchedulerF   -                      
+2026-07-11T23:53:01.8275953Z                                                   unction                                         
+2026-07-11T23:53:01.8276930Z UPDATE_COMPLETE          AWS::Lambda::Function    MLBAuditedPullFunction   -                      
+2026-07-11T23:53:01.8277831Z UPDATE_COMPLETE          AWS::Lambda::Function    SoccerSchedulerFunctio   -                      
+2026-07-11T23:53:01.8278475Z                                                   n                                               
+2026-07-11T23:53:01.8279120Z UPDATE_COMPLETE          AWS::Lambda::Function    SoccerAppApiFunction     -                      
+2026-07-11T23:53:01.8280105Z UPDATE_COMPLETE          AWS::Lambda::Function    MLBDailyPickLockFuncti   -                      
+2026-07-11T23:53:01.8280762Z                                                   on                                              
+2026-07-11T23:53:01.8281413Z UPDATE_COMPLETE          AWS::Lambda::Function    ApiFunction              -                      
+2026-07-11T23:53:01.8282188Z UPDATE_COMPLETE          AWS::Lambda::Function    MLBSignalApiFunction     -                      
+2026-07-11T23:53:07.2256762Z CREATE_COMPLETE          AWS::IAM::Role           MLBV3ReadFunctionRole    -                      
+2026-07-11T23:53:12.6109537Z CREATE_IN_PROGRESS       AWS::Lambda::Function    MLBV3ReadFunction        -                      
+2026-07-11T23:53:12.6110961Z CREATE_IN_PROGRESS       AWS::Lambda::Function    MLBV3ReadFunction        Resource creation      
+2026-07-11T23:53:12.6111708Z                                                                            Initiated              
+2026-07-11T23:53:18.0066425Z CREATE_COMPLETE          AWS::Lambda::Function    MLBV3ReadFunction        -                      
+2026-07-11T23:53:18.0069634Z UPDATE_IN_PROGRESS       AWS::ApiGateway::RestA   ServerlessRestApi        -                      
+2026-07-11T23:53:18.0070789Z                          pi                                                                       
+2026-07-11T23:53:23.3977165Z UPDATE_COMPLETE          AWS::ApiGateway::RestA   ServerlessRestApi        -                      
+2026-07-11T23:53:23.3978475Z                          pi                                                                       
+2026-07-11T23:53:23.3979585Z CREATE_IN_PROGRESS       AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   -                      
+2026-07-11T23:53:23.3981190Z                          n                        ModelVersionPermission                          
+2026-07-11T23:53:23.3982056Z                                                   Prod                                            
+2026-07-11T23:53:23.3983139Z CREATE_IN_PROGRESS       AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   -                      
+2026-07-11T23:53:23.3984054Z                          n                        GamesPermissionProd                             
+2026-07-11T23:53:23.3985298Z CREATE_IN_PROGRESS       AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   -                      
+2026-07-11T23:53:23.3986283Z                          n                        TodayPermissionProd                             
+2026-07-11T23:53:23.3987217Z CREATE_IN_PROGRESS       AWS::ApiGateway::Deplo   ServerlessRestApiDeplo   -                      
+2026-07-11T23:53:23.3987978Z                          yment                    ymentc35edf569b                                 
+2026-07-11T23:53:23.3988913Z CREATE_IN_PROGRESS       AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   -                      
+2026-07-11T23:53:23.3989780Z                          n                        PredictionsPermissionP                          
+2026-07-11T23:53:23.3990771Z                                                   rod                                             
+2026-07-11T23:53:23.3991610Z CREATE_IN_PROGRESS       AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   -                      
+2026-07-11T23:53:23.3992308Z                          n                        GameWinnersPermissionP                          
+2026-07-11T23:53:23.3993040Z                                                   rod                                             
+2026-07-11T23:53:23.3994102Z CREATE_IN_PROGRESS       AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   Resource creation      
+2026-07-11T23:53:23.3994733Z                          n                        TodayPermissionProd      Initiated              
+2026-07-11T23:53:23.3995503Z CREATE_IN_PROGRESS       AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   Resource creation      
+2026-07-11T23:53:23.3996266Z                          n                        GamesPermissionProd      Initiated              
+2026-07-11T23:53:23.3996799Z CREATE_IN_PROGRESS       AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   Resource creation      
+2026-07-11T23:53:23.3997317Z                          n                        ModelVersionPermission   Initiated              
+2026-07-11T23:53:23.3997737Z                                                   Prod                                            
+2026-07-11T23:53:23.3998236Z CREATE_IN_PROGRESS       AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   Resource creation      
+2026-07-11T23:53:23.3998764Z                          n                        PredictionsPermissionP   Initiated              
+2026-07-11T23:53:23.3999179Z                                                   rod                                             
+2026-07-11T23:53:23.3999673Z CREATE_IN_PROGRESS       AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   Resource creation      
+2026-07-11T23:53:23.4000486Z                          n                        GameWinnersPermissionP   Initiated              
+2026-07-11T23:53:23.4000905Z                                                   rod                                             
+2026-07-11T23:53:23.4001402Z CREATE_COMPLETE          AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   -                      
+2026-07-11T23:53:23.4001920Z                          n                        TodayPermissionProd                             
+2026-07-11T23:53:23.4002420Z CREATE_COMPLETE          AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   -                      
+2026-07-11T23:53:23.4002946Z                          n                        GamesPermissionProd                             
+2026-07-11T23:53:23.4003451Z CREATE_COMPLETE          AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   -                      
+2026-07-11T23:53:23.4003957Z                          n                        ModelVersionPermission                          
+2026-07-11T23:53:23.4004372Z                                                   Prod                                            
+2026-07-11T23:53:23.4004856Z CREATE_COMPLETE          AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   -                      
+2026-07-11T23:53:23.4005365Z                          n                        PredictionsPermissionP                          
+2026-07-11T23:53:23.4005963Z                                                   rod                                             
+2026-07-11T23:53:23.4006453Z CREATE_COMPLETE          AWS::Lambda::Permissio   MLBV3ReadFunctionMLBV3   -                      
+2026-07-11T23:53:23.4006966Z                          n                        GameWinnersPermissionP                          
+2026-07-11T23:53:23.4007365Z                                                   rod                                             
+2026-07-11T23:53:23.4007872Z CREATE_IN_PROGRESS       AWS::ApiGateway::Deplo   ServerlessRestApiDeplo   Resource creation      
+2026-07-11T23:53:23.4008404Z                          yment                    ymentc35edf569b          Initiated              
+2026-07-11T23:53:23.4008921Z CREATE_COMPLETE          AWS::ApiGateway::Deplo   ServerlessRestApiDeplo   -                      
+2026-07-11T23:53:23.4009442Z                          yment                    ymentc35edf569b                                 
+2026-07-11T23:53:28.7829843Z UPDATE_IN_PROGRESS       AWS::ApiGateway::Stage   ServerlessRestApiProdS   -                      
+2026-07-11T23:53:28.7833316Z                                                   tage                                            
+2026-07-11T23:53:28.7834626Z UPDATE_COMPLETE          AWS::ApiGateway::Stage   ServerlessRestApiProdS   -                      
+2026-07-11T23:53:28.7835490Z                                                   tage                                            
+2026-07-11T23:53:28.7836414Z UPDATE_COMPLETE_CLEANU   AWS::CloudFormation::S   parlay-platform-dev      -                      
+2026-07-11T23:53:28.7837345Z P_IN_PROGRESS            tack                                                                     
+2026-07-11T23:53:28.7838035Z DELETE_IN_PROGRESS       AWS::Lambda::Permissio   ApiFunctionApiMlbV3Gam   -                      
+2026-07-11T23:53:28.7838674Z                          n                        esPermissionProd                                
+2026-07-11T23:53:28.7839311Z DELETE_IN_PROGRESS       AWS::Lambda::Permissio   ApiFunctionApiMlbV3Gam   -                      
+2026-07-11T23:53:28.7840255Z                          n                        eWinnersPermissionProd                          
+2026-07-11T23:53:28.7841034Z DELETE_IN_PROGRESS       AWS::Lambda::Permissio   ApiFunctionApiMlbV3Mod   -                      
+2026-07-11T23:53:28.7841675Z                          n                        elVersionPermissionPro                          
+2026-07-11T23:53:28.7842168Z                                                   d                                               
+2026-07-11T23:53:28.7842713Z DELETE_IN_PROGRESS       AWS::ApiGateway::Deplo   ServerlessRestApiDeplo   -                      
+2026-07-11T23:53:28.7843237Z                          yment                    yment9eb2a2dc2e                                 
+2026-07-11T23:53:28.7843754Z DELETE_IN_PROGRESS       AWS::Lambda::Permissio   ApiFunctionApiMlbV3Pre   -                      
+2026-07-11T23:53:28.7844273Z                          n                        dictionsPermissionProd                          
+2026-07-11T23:53:28.7844782Z DELETE_IN_PROGRESS       AWS::Lambda::Permissio   ApiFunctionApiMlbV3Tod   -                      
+2026-07-11T23:53:28.7845283Z                          n                        ayPermissionProd                                
+2026-07-11T23:53:34.1725702Z DELETE_COMPLETE          AWS::Lambda::Permissio   ApiFunctionApiMlbV3Mod   -                      
+2026-07-11T23:53:34.1726892Z                          n                        elVersionPermissionPro                          
+2026-07-11T23:53:34.1727890Z                                                   d                                               
+2026-07-11T23:53:34.1729063Z DELETE_COMPLETE          AWS::Lambda::Permissio   ApiFunctionApiMlbV3Gam   -                      
+2026-07-11T23:53:34.1730548Z                          n                        eWinnersPermissionProd                          
+2026-07-11T23:53:34.1732259Z DELETE_COMPLETE          AWS::Lambda::Permissio   ApiFunctionApiMlbV3Gam   -                      
+2026-07-11T23:53:34.1733113Z                          n                        esPermissionProd                                
+2026-07-11T23:53:34.1733856Z DELETE_COMPLETE          AWS::ApiGateway::Deplo   ServerlessRestApiDeplo   -                      
+2026-07-11T23:53:34.1734549Z                          yment                    yment9eb2a2dc2e                                 
+2026-07-11T23:53:34.1735238Z DELETE_COMPLETE          AWS::Lambda::Permissio   ApiFunctionApiMlbV3Tod   -                      
+2026-07-11T23:53:34.1735918Z                          n                        ayPermissionProd                                
+2026-07-11T23:53:34.1736590Z DELETE_COMPLETE          AWS::Lambda::Permissio   ApiFunctionApiMlbV3Pre   -                      
+2026-07-11T23:53:34.1737273Z                          n                        dictionsPermissionProd                          
+2026-07-11T23:53:34.1737962Z UPDATE_COMPLETE          AWS::CloudFormation::S   parlay-platform-dev      -                      
+2026-07-11T23:53:34.1738622Z                          tack                                                                     
+2026-07-11T23:53:34.1739375Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:53:34.1739792Z 
+2026-07-11T23:53:34.3482412Z CloudFormation outputs from deployed stack
+2026-07-11T23:53:34.3483564Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:53:34.3484849Z Outputs                                                                                         
+2026-07-11T23:53:34.3485682Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:53:34.3486354Z Key                 ApiUrl                                                                      
+2026-07-11T23:53:34.3487002Z Description         API Gateway endpoint base URL                                               
+2026-07-11T23:53:34.3487926Z Value               https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/                
+2026-07-11T23:53:34.3488399Z 
+2026-07-11T23:53:34.3488702Z Key                 InqsiBackendApiFunctionArn                                                  
+2026-07-11T23:53:34.3489491Z Description         InQsi backend member/slip/social/admin Lambda function ARN                  
+2026-07-11T23:53:34.3490625Z Value               arn:aws:lambda:***:735707987003:function:parlay-platform-dev-         
+2026-07-11T23:53:34.3491389Z InqsiBackendApiFunction-6o4yiFnCS4Hm                                                            
+2026-07-11T23:53:34.3492123Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:53:34.3492534Z 
+2026-07-11T23:53:34.3492539Z 
+2026-07-11T23:53:34.3492820Z Successfully created/updated stack - parlay-platform-dev in ***
+2026-07-11T23:53:34.3493187Z 
+2026-07-11T23:53:34.6795285Z ##[group]Run ROLE_NAME=$(aws cloudformation describe-stack-resource \
+2026-07-11T23:53:34.6795824Z [36;1mROLE_NAME=$(aws cloudformation describe-stack-resource \[0m
+2026-07-11T23:53:34.6796252Z [36;1m  --stack-name parlay-platform-dev \[0m
+2026-07-11T23:53:34.6796607Z [36;1m  --region *** \[0m
+2026-07-11T23:53:34.6796907Z [36;1m  --logical-resource-id ApiFunctionRole \[0m
+2026-07-11T23:53:34.6797300Z [36;1m  --query "StackResourceDetail.PhysicalResourceId" \[0m
+2026-07-11T23:53:34.6797657Z [36;1m  --output text)[0m
+2026-07-11T23:53:34.6797908Z [36;1mtest -n "$ROLE_NAME"[0m
+2026-07-11T23:53:34.6798166Z [36;1maws iam put-role-policy \[0m
+2026-07-11T23:53:34.6798439Z [36;1m  --role-name "$ROLE_NAME" \[0m
+2026-07-11T23:53:34.6798803Z [36;1m  --policy-name InqsiImageModerationRekognitionAccess \[0m
+2026-07-11T23:53:34.6799613Z [36;1m  --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["rekognition:DetectModerationLabels","rekognition:DetectText"],"Resource":"*"}]}'[0m
+2026-07-11T23:53:34.6832509Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:53:34.6832762Z env:
+2026-07-11T23:53:34.6833036Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:34.6833498Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:53:34.6833926Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:34.6834311Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:34.6834704Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:34.6835095Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:53:34.6835465Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:53:34.6835718Z   AWS_REGION: ***
+2026-07-11T23:53:34.6835957Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:53:34.6836286Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:53:34.6836529Z ##[endgroup]
+2026-07-11T23:53:36.5350893Z ##[group]Run API_URL=$(aws cloudformation describe-stacks \
+2026-07-11T23:53:36.5351394Z [36;1mAPI_URL=$(aws cloudformation describe-stacks \[0m
+2026-07-11T23:53:36.5351797Z [36;1m  --stack-name parlay-platform-dev \[0m
+2026-07-11T23:53:36.5352199Z [36;1m  --region *** \[0m
+2026-07-11T23:53:36.5352757Z [36;1m  --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \[0m
+2026-07-11T23:53:36.5353171Z [36;1m  --output text)[0m
+2026-07-11T23:53:36.5353488Z [36;1mecho "api_url=$API_URL" >> "$GITHUB_OUTPUT"[0m
+2026-07-11T23:53:36.5353853Z [36;1mecho "API_URL=$API_URL"[0m
+2026-07-11T23:53:36.5386105Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:53:36.5386391Z env:
+2026-07-11T23:53:36.5386692Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:36.5387161Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:53:36.5387630Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:36.5388077Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:36.5388493Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:36.5388911Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:53:36.5389302Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:53:36.5389594Z   AWS_REGION: ***
+2026-07-11T23:53:36.5389866Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:53:36.5390498Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:53:36.5390773Z ##[endgroup]
+2026-07-11T23:53:37.4350506Z API_URL=https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/
+2026-07-11T23:53:37.4398201Z ##[group]Run bash scripts/configure_api_protection.sh "https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/" "***"
+2026-07-11T23:53:37.4399147Z [36;1mbash scripts/configure_api_protection.sh "https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/" "***"[0m
+2026-07-11T23:53:37.4431904Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:53:37.4432172Z env:
+2026-07-11T23:53:37.4432449Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:37.4432896Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:53:37.4433337Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:37.4433724Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:37.4434134Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:37.4434535Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:53:37.4434902Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:53:37.4435186Z   AWS_REGION: ***
+2026-07-11T23:53:37.4435427Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:53:37.4435749Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:53:37.4435994Z ##[endgroup]
+2026-07-11T23:53:38.2697512Z 
+2026-07-11T23:53:38.2701059Z aws: [ERROR]: An error occurred (AccessDeniedException) when calling the ListWebACLs operation: User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: wafv2:ListWebACLs on resource: arn:aws:wafv2:***:735707987003:regional/webacl/*/* because no identity-based policy allows the wafv2:ListWebACLs action
+2026-07-11T23:53:38.3432902Z ##[error]Process completed with exit code 254.
+2026-07-11T23:53:38.3477833Z ##[group]Run bash scripts/configure_security_alarms.sh "parlay-platform-dev" "***" "100"
+2026-07-11T23:53:38.3478621Z [36;1mbash scripts/configure_security_alarms.sh "parlay-platform-dev" "***" "100"[0m
+2026-07-11T23:53:38.3511362Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:53:38.3511626Z env:
+2026-07-11T23:53:38.3511901Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:38.3512359Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:53:38.3512813Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:38.3513203Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:38.3513607Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:38.3514006Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:53:38.3514396Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:53:38.3514652Z   AWS_REGION: ***
+2026-07-11T23:53:38.3514921Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:53:38.3515248Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:53:38.3515495Z ##[endgroup]
+2026-07-11T23:53:41.8338095Z Configured alarm: inqsi-api-5xx-spike
+2026-07-11T23:53:42.6821974Z Configured alarm: inqsi-api-4xx-spike
+2026-07-11T23:53:43.5377007Z Configured alarm: inqsi-api-request-volume-spike
+2026-07-11T23:53:44.3869348Z Configured alarm: inqsi-lambda-errors
+2026-07-11T23:53:45.2401658Z Configured alarm: inqsi-lambda-throttles
+2026-07-11T23:53:46.0982166Z Configured alarm: inqsi-ddb-throttles-parlay_platform_snapshots
+2026-07-11T23:53:46.9226128Z Configured alarm: inqsi-ddb-throttles-parlay_platform_signals
+2026-07-11T23:53:47.7801851Z Configured alarm: inqsi-ddb-throttles-parlay_platform_predictions
+2026-07-11T23:53:48.6198355Z Configured alarm: inqsi-ddb-throttles-parlay_platform_outcomes
+2026-07-11T23:53:49.5288467Z Budget guardrail skipped: deploy IAM user likely needs budgets:CreateBudget.
+2026-07-11T23:53:49.5296451Z 
+2026-07-11T23:53:49.5298278Z aws: [ERROR]: An error occurred (AccessDeniedException) when calling the CreateBudget operation: User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: budgets:ModifyBudget on resource: arn:aws:budgets::735707987003:budget/inqsi-monthly-cost-guardrail because no identity-based policy allows the budgets:ModifyBudget action
+2026-07-11T23:53:49.5300759Z Security alarms configuration attempted. Missing permissions are non-fatal.
+2026-07-11T23:53:49.5330721Z ##[group]Run API_URL="https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/"
+2026-07-11T23:53:49.5331405Z [36;1mAPI_URL="https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/"[0m
+2026-07-11T23:53:49.5331815Z [36;1mtest -n "$API_URL"[0m
+2026-07-11T23:53:49.5332145Z [36;1mcurl --fail --silent --show-error "${API_URL}v1/health"[0m
+2026-07-11T23:53:49.5364272Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:53:49.5364533Z env:
+2026-07-11T23:53:49.5364812Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:49.5365268Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:53:49.5365718Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:49.5366109Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:49.5366507Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:49.5366910Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:53:49.5367303Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:53:49.5367557Z   AWS_REGION: ***
+2026-07-11T23:53:49.5367828Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:53:49.5383070Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:53:49.5383342Z ##[endgroup]
+2026-07-11T23:53:50.4018640Z {"ok": true, "service": "inqsi-backend-api", "time": "2026-07-11T23:53:50.361497Z", "storage": "dynamodb", "maxSlipLegs": 3, "paymentProviderMode": "NONE", "scannerReadyWithoutOddsApi": true, "oddsApiDependentItemsSkipped": ["odds ingestion", "multi-book normalization", "scheduled T snapshots"], "socialProviders": ["facebook", "instagram", "reddit", "x", "tiktok", "youtube", "discord", "linkedin", "twitch", "snapchat", "other"], "routes": [{"method": "GET", "path": "/v1/members/me", "auth_required": true, "owner_only": false, "description": "Return authenticated member profile", "storage_required": ["members", "subscriptions", "social_accounts"], "live_data_required": true}, {"method": "PATCH", "path": "/v1/members/me", "auth_required": true, "owner_only": false, "description": "Update member profile and privacy settings", "storage_required": ["members", "admin_audit_logs"], "live_data_required": true}, {"method": "POST", "path": "/v1/members/social/connect/start", "auth_required": true, "owner_only": false, "description": "Begin provider OAuth connection", "storage_required": ["social_accounts", "admin_audit_logs"], "live_data_required": false}, {"method": "GET", "path": "/v1/members/social/callback", "auth_required": false, "owner_only": false, "description": "Complete provider OAuth callback", "storage_required": ["social_accounts", "admin_audit_logs"], "live_data_required": false}, {"method": "DELETE", "path": "/v1/members/social/{connectionId}", "auth_required": true, "owner_only": false, "description": "Revoke connected social account", "storage_required": ["social_accounts", "admin_audit_logs"], "live_data_required": true}, {"method": "POST", "path": "/v1/slips", "auth_required": true, "owner_only": false, "description": "Save a member slip with max-three-leg enforcement", "storage_required": ["saved_slips", "members", "admin_audit_logs"], "live_data_required": true}, {"method": "GET", "path": "/v1/slips", "auth_required": true, "owner_only": false, "description": "List member saved slips", "storage_required": ["saved_slips"], "live_data_required": true}, {"method": "GET", "path": "/v1/slips/{slipId}", "auth_required": true, "owner_only": false, "description": "Read one saved slip", "storage_required": ["saved_slips", "score_history"], "live_data_required": true}, {"method": "POST", "path": "/v1/slips/{slipId}/grade", "auth_required": true, "owner_only": true, "description": "Grade completed slip and write score history", "storage_required": ["saved_slips", "score_history", "admin_audit_logs"], "live_data_required": true}, {"method": "GET", "path": "/v1/scores/me", "auth_required": true, "owner_only": false, "description": "Return private member score windows", "storage_required": ["score_history"], "live_data_required": true}, {"method": "GET", "path": "/v1/public/u/{handle}", "auth_required": false, "owner_only": false, "description": "Return opt-in public member score card", "storage_required": ["members", "score_history"], "live_data_required": true}, {"method": "POST", "path": "/v1/attribution/visit", "auth_required": false, "owner_only": false, "description": "Record anonymous creator/referral visit", "storage_required": ["creator_attribution"], "live_data_required": false}, {"method": "POST", "path": "/v1/attribution/convert", "auth_required": true, "owner_only": false, "description": "Attach attribution to member signup", "storage_required": ["creator_attribution", "members"], "live_data_required": true}, {"method": "POST", "path": "/v1/subscriptions/checkout", "auth_required": true, "owner_only": false, "description": "Create payment-provider checkout/session", "storage_required": ["subscriptions", "members"], "live_data_required": false}, {"method": "POST", "path": "/v1/subscriptions/webhook", "auth_required": false, "owner_only": false, "description": "Process payment-provider subscription webhook", "storage_required": ["subscriptions", "members", "admin_audit_logs"], "live_data_required": false}, {"method": "GET", "path": "/v1/admin/dashboard", "auth_required": true, "owner_only": true, "description": "Owner/admin dashboard aggregate", "storage_required": ["members", "saved_slips", "score_history", "creator_attribution", "subscriptions", "support_notes", "feature_flags"], "live_data_required": true}, {"method": "GET", "path": "/v1/admin/members", "auth_required": true, "owner_only": true, "description": "Owner/admin member management list", "storage_required": ["members", "subscriptions", "creator_attribution", "social_accounts"], "live_data_required": true}, {"method": "GET", "path": "/v1/admin/social-accounts", "auth_required": true, "owner_only": true, "description": "Owner/admin social connection overview without exposing raw tokens", "storage_required": ["social_accounts", "members"], "live_data_required": true}, {"method": "GET", "path": "/v1/admin/audit", "auth_required": true, "owner_only": true, "description": "Owner/admin audit log search", "storage_required": ["admin_audit_logs"], "live_data_required": true}, {"method": "PATCH", "path": "/v1/admin/feature-flags/{flagKey}", "auth_required": true, "owner_only": true, "description": "Owner/admin feature flag update", "storage_required": ["feature_flags", "admin_audit_logs"], "live_data_required": true}], "productRoutes": ["/v1/scanner/scan", "/v1/slips/{slipId}/scan", "/v1/slips/{slipId}/scan-history", "/v1/parlays/build", "/v1/subscriptions/access", "/v1/results/grade", "/v1/monitoring/data-quality"]}
+2026-07-11T23:53:50.4060412Z ##[group]Run python - <<'PY'
+2026-07-11T23:53:50.4060935Z [36;1mpython - <<'PY'[0m
+2026-07-11T23:53:50.4061180Z [36;1mimport json[0m
+2026-07-11T23:53:50.4061396Z [36;1mimport os[0m
+2026-07-11T23:53:50.4061618Z [36;1mimport urllib.request[0m
+2026-07-11T23:53:50.4061861Z [36;1m[0m
+2026-07-11T23:53:50.4062271Z [36;1mwith urllib.request.urlopen(os.environ["API_URL"] + "v1/mlb/model/version", timeout=45) as resp:[0m
+2026-07-11T23:53:50.4062815Z [36;1m    payload = json.loads(resp.read().decode("utf-8"))[0m
+2026-07-11T23:53:50.4063226Z [36;1mprint(json.dumps(payload, indent=2, default=str))[0m
+2026-07-11T23:53:50.4063699Z [36;1mif payload.get("ok") is not True or payload.get("engine_import_ok") is not True:[0m
+2026-07-11T23:53:50.4064236Z [36;1m    raise SystemExit("MLB v3 engine did not import in live AWS Lambda")[0m
+2026-07-11T23:53:50.4064761Z [36;1mif not str(payload.get("model_version") or "").startswith("INQSI-MLB-v3.0"):[0m
+2026-07-11T23:53:50.4065270Z [36;1m    raise SystemExit("live model version is not MLB v3")[0m
+2026-07-11T23:53:50.4065815Z [36;1mif not str(payload.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"):[0m
+2026-07-11T23:53:50.4066431Z [36;1m    raise SystemExit("live ML optimization v3 orchestrator is missing")[0m
+2026-07-11T23:53:50.4066885Z [36;1mruntime = payload.get("ml_runtime_install") or {}[0m
+2026-07-11T23:53:50.4067232Z [36;1mif runtime.get("ok") is not True:[0m
+2026-07-11T23:53:50.4067640Z [36;1m    raise SystemExit(f"live MLB ML runtime install failed: {runtime}")[0m
+2026-07-11T23:53:50.4068054Z [36;1msteps = runtime.get("steps") or {}[0m
+2026-07-11T23:53:50.4068705Z [36;1mrequired = ["legacyReliabilityOverlaySafety", "singleDdbChampionAuthority", "officialSemanticsFinalized", "immutableFeatureFreeze"][0m
+2026-07-11T23:53:50.4069443Z [36;1mmissing = [name for name in required if steps.get(name) is not True][0m
+2026-07-11T23:53:50.4069823Z [36;1mif missing:[0m
+2026-07-11T23:53:50.4070555Z [36;1m    raise SystemExit(f"live MLB ML runtime steps missing: {missing}")[0m
+2026-07-11T23:53:50.4070937Z [36;1mPY[0m
+2026-07-11T23:53:50.4102549Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:53:50.4102802Z env:
+2026-07-11T23:53:50.4103075Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:50.4103528Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:53:50.4103961Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:50.4104354Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:50.4104734Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:53:50.4105120Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:53:50.4105503Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:53:50.4105750Z   AWS_REGION: ***
+2026-07-11T23:53:50.4105989Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:53:50.4106308Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:53:50.4106695Z   API_URL: https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/
+2026-07-11T23:53:50.4107060Z ##[endgroup]
+2026-07-11T23:53:51.4356795Z Traceback (most recent call last):
+2026-07-11T23:53:51.4363054Z   File "<stdin>", line 5, in <module>
+2026-07-11T23:53:51.4363745Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 216, in urlopen
+2026-07-11T23:53:51.4538640Z     return opener.open(url, data, timeout)
+2026-07-11T23:53:51.4539345Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-07-11T23:53:51.4540785Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 525, in open
+2026-07-11T23:53:51.4575578Z     response = meth(req, response)
+2026-07-11T23:53:51.4576188Z                ^^^^^^^^^^^^^^^^^^^
+2026-07-11T23:53:51.4577432Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 634, in http_response
+2026-07-11T23:53:51.4578672Z     response = self.parent.error(
+2026-07-11T23:53:51.4579240Z                ^^^^^^^^^^^^^^^^^^
+2026-07-11T23:53:51.4580916Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 563, in error
+2026-07-11T23:53:51.4582215Z     return self._call_chain(*args)
+2026-07-11T23:53:51.4582760Z            ^^^^^^^^^^^^^^^^^^^^^^^
+2026-07-11T23:53:51.4583818Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 496, in _call_chain
+2026-07-11T23:53:51.4584857Z     result = func(*args)
+2026-07-11T23:53:51.4585346Z              ^^^^^^^^^^^
+2026-07-11T23:53:51.4586365Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 643, in http_error_default
+2026-07-11T23:53:51.4587456Z     raise HTTPError(req.full_url, code, msg, hdrs, fp)
+2026-07-11T23:53:51.4588117Z urllib.error.HTTPError: HTTP Error 404: Not Found
+2026-07-11T23:53:51.4678010Z ##[error]Process completed with exit code 1.
+2026-07-11T23:53:51.4787402Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-11T23:53:51.4788684Z Post job cleanup.
+2026-07-11T23:53:51.5875802Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-11T23:53:51.5877060Z Post job cleanup.
+2026-07-11T23:53:51.6900650Z [command]/usr/bin/git version
+2026-07-11T23:53:51.6960671Z git version 2.54.0
+2026-07-11T23:53:51.7018540Z Temporarily overriding HOME='/home/runner/work/_temp/81772b7b-07cc-4f20-9ba5-aacefa1febd1' before making global git config changes
+2026-07-11T23:53:51.7020252Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-11T23:53:51.7021633Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-11T23:53:51.7074427Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-11T23:53:51.7126275Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-11T23:53:51.7438142Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-11T23:53:51.7490229Z http.https://github.com/.extraheader
+2026-07-11T23:53:51.7510331Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-11T23:53:51.7555425Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-11T23:53:51.7915025Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-11T23:53:51.7974921Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-11T23:53:51.8392860Z Cleaning up orphan processes
+2026-07-11T23:53:51.8691485Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5, aws-actions/configure-aws-credentials@v4, aws-actions/setup-sam@v2. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
