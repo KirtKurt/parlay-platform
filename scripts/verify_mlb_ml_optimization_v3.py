@@ -12,8 +12,12 @@ if str(HELLO_WORLD) not in sys.path:
 import mlb_fundamentals_snapshot_v1 as fundamentals
 import mlb_ml_champion_challenger_v1 as champion
 import mlb_ml_champion_runtime_v1 as runtime
+import mlb_ml_clean_cohort_hardening_v1 as cohort_hardening
 import mlb_ml_clean_cohort_v1 as cohort
 import mlb_ml_dual_model_v1 as dual
+import mlb_ml_frozen_features as canonical_freeze
+
+cohort_hardening.apply(cohort)
 
 
 def source_honest_context():
@@ -47,6 +51,7 @@ def row(index: int, modern: bool = True):
     return {
         "status": "GRADED",
         "id": f"game-{index}",
+        "gameId": f"game-{index}",
         "slateDateEt": "2026-07-12",
         "commenceTime": f"2026-07-12T{18 + (index // 60):02d}:{minute:02d}:00Z",
         "homeTeam": "Home Team",
@@ -64,6 +69,14 @@ def row(index: int, modern: bool = True):
         "winProbabilityMeaning": "estimated_probability_selected_team_wins_game" if modern else "legacy_reliability",
         "score": 50 + (home_probability - 0.5) * 100,
         "advanced_context": source_honest_context(),
+        "slateCoverage": {"coverageComplete": True, "manifestGameCount": 1, "predictionGameCount": 1, "storedPredictionCount": 1},
+        "slatePredictionLock": {
+            "locked": True,
+            "finalLocked": True,
+            "phase": "SLATE_LOCKED",
+            "lockAtUtc": lock_at,
+            "latestScoringPullAt": source_at,
+        },
         "lockedCardAudit": {
             "lockedFlag": True,
             "lockAtUtc": lock_at,
@@ -94,27 +107,38 @@ def row(index: int, modern: bool = True):
     }
 
 
+def frozen_row(index: int, modern: bool = True):
+    base = row(index, modern=modern)
+    base["fundamentalsSnapshot"] = fundamentals.build(base)
+    frozen = canonical_freeze.freeze_row(base, coverage_complete=True)
+    frozen["frozenFeatureVector"] = cohort.freeze_feature_snapshot(frozen)
+    frozen["frozenFeatureVectorVersion"] = frozen["frozenFeatureVector"].get("version")
+    return frozen
+
+
 def main() -> int:
-    legacy = row(1, modern=False)
-    modern = row(2, modern=True)
+    legacy = frozen_row(1, modern=False)
+    modern = frozen_row(2, modern=True)
     ok, reasons = cohort.eligibility(legacy)
     assert ok is False and "legacy_probability_semantics" in reasons
     ok, reasons = cohort.eligibility(modern)
     assert ok is True, reasons
 
-    snapshot = fundamentals.build(modern)
+    snapshot = modern["fundamentalsSnapshot"]
     assert snapshot["missingnessIsFeature"] is True
     assert "sourceStatuses" in snapshot
-    modern["fundamentalsSnapshot"] = snapshot
-    frozen = cohort.freeze_feature_snapshot(modern)
+    frozen = modern["frozenFeatureVector"]
     assert frozen["labels"]["homeWon"] in {0, 1}
     assert frozen["labels"]["pickCorrect"] in {0, 1}
     assert frozen["features"]["homeMarketProb"] != frozen["features"]["awayMarketProb"]
+    assert modern["mlFeatureFreeze"]["trainingEligible"] is True
 
-    rows = [row(index, modern=True) for index in range(180)]
+    rows = [frozen_row(index, modern=True) for index in range(180)]
     built = cohort.build([legacy, *rows])
-    assert built["cleanRowCount"] == 180
+    assert built["cleanRowCount"] == 180, built
     assert built["quarantinedRowCount"] == 1
+    assert built["completeSlateCoverageRequired"] is True
+    assert built["immutableFrozenFeatureVectorRequired"] is True
 
     trained = dual.train(built["cleanRows"])
     assert trained["ok"] is True, trained
@@ -146,7 +170,7 @@ def main() -> int:
     finally:
         runtime.champion_store.load_champion = original_loader
 
-    print("MLB ML optimization v3 clean cohort, dual models, untouched test, fundamentals, and promotion gates verified")
+    print("MLB ML optimization v3 clean cohort, complete-slate frozen vectors, dual models, untouched test, fundamentals, and promotion gates verified")
     return 0
 
 
