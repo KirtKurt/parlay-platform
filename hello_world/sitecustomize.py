@@ -80,6 +80,13 @@ except Exception:
     pass
 
 try:
+    import mlb_rolling_24h_audit as _mlb_rolling_24h_audit_for_optimization_v3
+    import mlb_ml_optimization_v3
+    mlb_ml_optimization_v3.apply(_mlb_rolling_24h_audit_for_optimization_v3)
+except Exception:
+    pass
+
+try:
     import api as _api_for_sportsdataio
     import sportsdataio_api_patch
     sportsdataio_api_patch.apply(_api_for_sportsdataio)
