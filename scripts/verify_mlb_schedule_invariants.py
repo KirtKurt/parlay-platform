@@ -69,7 +69,7 @@ for required_path in [
     Path('hello_world/mlb_ml_walk_forward_v1.py'),
     Path('hello_world/mlb_fundamentals_snapshot_v1.py'),
     Path('hello_world/mlb_ml_champion_challenger_v1.py'),
-    Path('hello_world/mlb_ml_manual_promotion_only_v1.py'),
+    Path('hello_world/mlb_ml_manual_promotion_only_patch.py'),
     Path('hello_world/mlb_ml_champion_runtime_v1.py'),
     Path('hello_world/mlb_ml_runtime_safety_patch.py'),
     Path('hello_world/mlb_ml_runtime_install_v3.py'),
