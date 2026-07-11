@@ -1,7 +1,10 @@
 from pathlib import Path
+import subprocess
+import sys
 
 TEMPLATE = Path('template.yaml')
 ENGINE = Path('hello_world/mlb_game_winner_engine.py')
+COVERAGE_VERIFY = Path('scripts/verify_mlb_complete_slate_coverage.py')
 text = TEMPLATE.read_text()
 engine = ENGINE.read_text() if ENGINE.exists() else ''
 violations = []
@@ -53,7 +56,18 @@ if not ('MLB_PROMOTION_EDGE_THRESHOLD' in text or 'PROMOTION_THRESHOLD' in engin
 if '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"' in text:
     violations.append('all-sports scheduler still includes MLB duplicate pulls')
 
+for required_path in [
+    Path('hello_world/mlb_slate_coverage_patch.py'),
+    Path('hello_world/mlb_doubleheader_safe_audit_patch.py'),
+    Path('hello_world/mlb_all_games_coverage_patch.py'),
+    COVERAGE_VERIFY,
+]:
+    if not required_path.exists():
+        violations.append(f'complete-slate coverage component missing: {required_path}')
+
 if violations:
     raise SystemExit('MLB production invariant failure: ' + '; '.join(violations))
 
-print('MLB production invariants PASS: same-day quarter-hour Odds API pulls, no legacy MLB schedules, daily T-minus lock, fresh-snapshot guardrails, real-book pricing, promotion settings, and AWS production verification schedules are present.')
+subprocess.run([sys.executable, str(COVERAGE_VERIFY)], check=True)
+
+print('MLB production invariants PASS: same-day quarter-hour Odds API pulls, no legacy MLB schedules, daily T-minus lock, fresh-snapshot guardrails, real-book pricing, promotion settings, complete-slate doubleheader-safe coverage, and AWS production verification schedules are present.')
