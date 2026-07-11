@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-11T05:46:55.095317+00:00",
+  "createdAt": "2026-07-11T05:49:14.742431+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -16,9 +16,9 @@
     "rolling24hOptimizedAccuracyPct": 20.0,
     "rolling24hTargetMet": false,
     "winnerOptimizerAppliedCount": 5,
-    "winnerOptimizerFlipCount": 0,
+    "winnerOptimizerFlipCount": 1,
     "allScoredPickAccuracyPct": 20.0,
-    "historicalRowsUsedForLearning": 166,
+    "historicalRowsUsedForLearning": 167,
     "sevenDayRowsUsedForLearning": 87,
     "sevenDayAccuracyPct": 54.02,
     "thirtyDayRowsUsedForLearning": 167,
@@ -119,9 +119,14 @@
         },
         "optimizerFlipStats": {
           "NOT_FLIPPED": {
-            "count": 5,
+            "count": 4,
             "correct": 1,
-            "accuracyPct": 20.0
+            "accuracyPct": 25.0
+          },
+          "FLIPPED": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
           }
         }
       },
@@ -453,9 +458,14 @@
         },
         "optimizerFlipStats": {
           "NOT_FLIPPED": {
-            "count": 87,
+            "count": 86,
             "correct": 47,
-            "accuracyPct": 54.02
+            "accuracyPct": 54.65
+          },
+          "FLIPPED": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
           }
         }
       },
@@ -922,9 +932,14 @@
         },
         "optimizerFlipStats": {
           "NOT_FLIPPED": {
-            "count": 167,
+            "count": 166,
             "correct": 97,
-            "accuracyPct": 58.08
+            "accuracyPct": 58.43
+          },
+          "FLIPPED": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
           }
         }
       },
@@ -1391,9 +1406,14 @@
         },
         "optimizerFlipStats": {
           "NOT_FLIPPED": {
-            "count": 167,
+            "count": 166,
             "correct": 97,
-            "accuracyPct": 58.08
+            "accuracyPct": 58.43
+          },
+          "FLIPPED": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
           }
         }
       }
@@ -1739,9 +1759,14 @@
       },
       "optimizerFlipStats": {
         "NOT_FLIPPED": {
-          "count": 5,
+          "count": 4,
           "correct": 1,
-          "accuracyPct": 20.0
+          "accuracyPct": 25.0
+        },
+        "FLIPPED": {
+          "count": 1,
+          "correct": 0,
+          "accuracyPct": 0.0
         }
       },
       "tagScoreAdjustments": {
@@ -1761,7 +1786,7 @@
       }
     },
     "historicalStats": {
-      "historicalRowsUsed": 166,
+      "historicalRowsUsed": 167,
       "historicalRunLimit": 720,
       "minHistoricalSampleForBlend": 6
     },
@@ -1838,9 +1863,14 @@
     },
     "optimizerFlipStats": {
       "NOT_FLIPPED": {
-        "count": 5,
+        "count": 4,
         "correct": 1,
-        "accuracyPct": 20.0
+        "accuracyPct": 25.0
+      },
+      "FLIPPED": {
+        "count": 1,
+        "correct": 0,
+        "accuracyPct": 0.0
       }
     },
     "adjustments": {
@@ -1989,7 +2019,9 @@
       "predictedSide": "away",
       "score": "21.13",
       "winProbabilityPct": "8.27",
+      "cappedWinProbabilityPct": null,
       "confidenceTier": "Pass",
+      "choiceQuality": null,
       "tags": [
         "BOOK_AGREEMENT",
         "FINAL_LOCKED",
@@ -2069,10 +2101,26 @@
         },
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
+      "winnerOptimizerProtection": null,
+      "directionalScoreV1": null,
+      "mlOverlay": null,
+      "signalPolicyV13": null,
       "officialPick": true,
       "officialPrediction": true,
       "actionablePick": false,
       "accuracyTargetEligible": true,
+      "platformPick": null,
+      "customerVisibleWinnerPick": null,
+      "recommendationStatus": null,
+      "predictionVisibility": null,
+      "isOfficialDisplayPick": null,
+      "doNotUseAsWinnerPick": null,
+      "publicPick": null,
+      "displayWinner": null,
+      "optimizerFlippedPick": false,
+      "optimizerFlipRequested": null,
+      "optimizerFlipAllowed": null,
+      "optimizerFlipBlockedReasons": [],
       "actionability": "OPTIMIZED_GAME_WINNER_PICK",
       "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
       "actionabilityRiskReasons": [
@@ -2156,16 +2204,30 @@
         "reversalCount": "3",
         "winProbabilityPct": "8.27"
       },
+      "finalGuardedStored": null,
+      "finalPipelineVersion": null,
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
-        "selectionPolicy": "use_locked_prediction_row_and_reject_only_explicit_post_lock_scoring_sources",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
+        "selectionPolicy": "prefer_latest_final_guarded_locked_state_and_reject_only_explicit_post_lock_scoring_sources",
         "lockedFlag": true,
         "lockAtUtc": "2026-07-10T21:56:00+00:00",
         "explicitSourceAtUtc": "2026-07-10T21:45:26.141765+00:00",
         "rowCreatedAtUtc": "2026-07-11T01:05:12.239073+00:00",
         "createdAtNotUsedAsScoringSource": true,
-        "preventsLateRows": true
+        "preventsLateRows": true,
+        "finalPipelineState": {
+          "integrityApplied": false,
+          "directionalApplied": false,
+          "mlOverlayApplied": false,
+          "signalPolicyApplied": false,
+          "finalGuardedStored": false,
+          "playable": true,
+          "explicitNonPlayable": false,
+          "pipelineDepth": 0,
+          "predictionVisibility": null,
+          "recommendationStatus": null
+        }
       },
       "correct": false
     },
@@ -2188,7 +2250,9 @@
       "predictedSide": "home",
       "score": "22.85",
       "winProbabilityPct": "9.43",
+      "cappedWinProbabilityPct": null,
       "confidenceTier": "Pass",
+      "choiceQuality": null,
       "tags": [
         "FAVORITE",
         "FINAL_LOCKED",
@@ -2264,10 +2328,26 @@
         },
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
+      "winnerOptimizerProtection": null,
+      "directionalScoreV1": null,
+      "mlOverlay": null,
+      "signalPolicyV13": null,
       "officialPick": true,
       "officialPrediction": true,
       "actionablePick": false,
       "accuracyTargetEligible": true,
+      "platformPick": null,
+      "customerVisibleWinnerPick": null,
+      "recommendationStatus": null,
+      "predictionVisibility": null,
+      "isOfficialDisplayPick": null,
+      "doNotUseAsWinnerPick": null,
+      "publicPick": null,
+      "displayWinner": null,
+      "optimizerFlippedPick": false,
+      "optimizerFlipRequested": null,
+      "optimizerFlipAllowed": null,
+      "optimizerFlipBlockedReasons": [],
       "actionability": "OPTIMIZED_GAME_WINNER_PICK",
       "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
       "actionabilityRiskReasons": [
@@ -2348,16 +2428,30 @@
         "reversalCount": "3",
         "winProbabilityPct": "5"
       },
+      "finalGuardedStored": null,
+      "finalPipelineVersion": null,
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
-        "selectionPolicy": "use_locked_prediction_row_and_reject_only_explicit_post_lock_scoring_sources",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
+        "selectionPolicy": "prefer_latest_final_guarded_locked_state_and_reject_only_explicit_post_lock_scoring_sources",
         "lockedFlag": true,
         "lockAtUtc": "2026-07-10T21:56:00+00:00",
         "explicitSourceAtUtc": "2026-07-10T21:45:26.141765+00:00",
         "rowCreatedAtUtc": "2026-07-11T01:05:12.267933+00:00",
         "createdAtNotUsedAsScoringSource": true,
-        "preventsLateRows": true
+        "preventsLateRows": true,
+        "finalPipelineState": {
+          "integrityApplied": false,
+          "directionalApplied": false,
+          "mlOverlayApplied": false,
+          "signalPolicyApplied": false,
+          "finalGuardedStored": false,
+          "playable": true,
+          "explicitNonPlayable": false,
+          "pipelineDepth": 0,
+          "predictionVisibility": null,
+          "recommendationStatus": null
+        }
       },
       "correct": true
     },
@@ -2378,7 +2472,7 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
         "selectionPolicy": "strict_45_minute_locked_card_only",
         "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
@@ -2400,7 +2494,7 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
         "selectionPolicy": "strict_45_minute_locked_card_only",
         "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
@@ -2422,7 +2516,7 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
         "selectionPolicy": "strict_45_minute_locked_card_only",
         "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
@@ -2444,7 +2538,7 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
         "selectionPolicy": "strict_45_minute_locked_card_only",
         "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
@@ -2468,7 +2562,9 @@
       "predictedSide": "home",
       "score": "34.11",
       "winProbabilityPct": "21.01",
+      "cappedWinProbabilityPct": null,
       "confidenceTier": "Pass",
+      "choiceQuality": null,
       "tags": [
         "BOOK_AGREEMENT",
         "FAVORITE",
@@ -2546,10 +2642,26 @@
         },
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
+      "winnerOptimizerProtection": null,
+      "directionalScoreV1": null,
+      "mlOverlay": null,
+      "signalPolicyV13": null,
       "officialPick": true,
       "officialPrediction": true,
       "actionablePick": false,
       "accuracyTargetEligible": true,
+      "platformPick": null,
+      "customerVisibleWinnerPick": null,
+      "recommendationStatus": null,
+      "predictionVisibility": null,
+      "isOfficialDisplayPick": null,
+      "doNotUseAsWinnerPick": null,
+      "publicPick": null,
+      "displayWinner": null,
+      "optimizerFlippedPick": false,
+      "optimizerFlipRequested": null,
+      "optimizerFlipAllowed": null,
+      "optimizerFlipBlockedReasons": [],
       "actionability": "OPTIMIZED_GAME_WINNER_PICK",
       "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
       "actionabilityRiskReasons": [
@@ -2632,16 +2744,30 @@
         "reversalCount": "5",
         "winProbabilityPct": "5"
       },
+      "finalGuardedStored": null,
+      "finalPipelineVersion": null,
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
-        "selectionPolicy": "use_locked_prediction_row_and_reject_only_explicit_post_lock_scoring_sources",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
+        "selectionPolicy": "prefer_latest_final_guarded_locked_state_and_reject_only_explicit_post_lock_scoring_sources",
         "lockedFlag": true,
         "lockAtUtc": "2026-07-10T21:56:00+00:00",
         "explicitSourceAtUtc": "2026-07-10T21:45:26.141765+00:00",
         "rowCreatedAtUtc": "2026-07-11T01:05:12.330371+00:00",
         "createdAtNotUsedAsScoringSource": true,
-        "preventsLateRows": true
+        "preventsLateRows": true,
+        "finalPipelineState": {
+          "integrityApplied": false,
+          "directionalApplied": false,
+          "mlOverlayApplied": false,
+          "signalPolicyApplied": false,
+          "finalGuardedStored": false,
+          "playable": true,
+          "explicitNonPlayable": false,
+          "pipelineDepth": 0,
+          "predictionVisibility": null,
+          "recommendationStatus": null
+        }
       },
       "correct": false
     },
@@ -2664,7 +2790,9 @@
       "predictedSide": "away",
       "score": "18.32",
       "winProbabilityPct": "6.66",
+      "cappedWinProbabilityPct": null,
       "confidenceTier": "Pass",
+      "choiceQuality": null,
       "tags": [
         "BOOK_AGREEMENT",
         "FAVORITE",
@@ -2742,10 +2870,26 @@
         },
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
+      "winnerOptimizerProtection": null,
+      "directionalScoreV1": null,
+      "mlOverlay": null,
+      "signalPolicyV13": null,
       "officialPick": true,
       "officialPrediction": true,
       "actionablePick": false,
       "accuracyTargetEligible": true,
+      "platformPick": null,
+      "customerVisibleWinnerPick": null,
+      "recommendationStatus": null,
+      "predictionVisibility": null,
+      "isOfficialDisplayPick": null,
+      "doNotUseAsWinnerPick": null,
+      "publicPick": null,
+      "displayWinner": null,
+      "optimizerFlippedPick": true,
+      "optimizerFlipRequested": null,
+      "optimizerFlipAllowed": null,
+      "optimizerFlipBlockedReasons": [],
       "actionability": "OPTIMIZED_GAME_WINNER_PICK",
       "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
       "actionabilityRiskReasons": [
@@ -2827,16 +2971,30 @@
         "reversalCount": "3",
         "winProbabilityPct": "6.66"
       },
+      "finalGuardedStored": null,
+      "finalPipelineVersion": null,
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
-        "selectionPolicy": "use_locked_prediction_row_and_reject_only_explicit_post_lock_scoring_sources",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
+        "selectionPolicy": "prefer_latest_final_guarded_locked_state_and_reject_only_explicit_post_lock_scoring_sources",
         "lockedFlag": true,
         "lockAtUtc": "2026-07-10T21:56:00+00:00",
         "explicitSourceAtUtc": "2026-07-10T21:45:26.141765+00:00",
         "rowCreatedAtUtc": "2026-07-11T01:05:12.359814+00:00",
         "createdAtNotUsedAsScoringSource": true,
-        "preventsLateRows": true
+        "preventsLateRows": true,
+        "finalPipelineState": {
+          "integrityApplied": false,
+          "directionalApplied": false,
+          "mlOverlayApplied": false,
+          "signalPolicyApplied": false,
+          "finalGuardedStored": false,
+          "playable": true,
+          "explicitNonPlayable": false,
+          "pipelineDepth": 0,
+          "predictionVisibility": null,
+          "recommendationStatus": null
+        }
       },
       "correct": false
     },
@@ -2857,7 +3015,7 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
         "selectionPolicy": "strict_45_minute_locked_card_only",
         "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
@@ -2879,7 +3037,7 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
         "selectionPolicy": "strict_45_minute_locked_card_only",
         "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
@@ -2903,7 +3061,9 @@
       "predictedSide": "home",
       "score": "62.57",
       "winProbabilityPct": "74.03",
+      "cappedWinProbabilityPct": null,
       "confidenceTier": "Lean",
+      "choiceQuality": null,
       "tags": [
         "BOOK_AGREEMENT",
         "FINAL_LOCKED",
@@ -2980,10 +3140,26 @@
         },
         "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
       },
+      "winnerOptimizerProtection": null,
+      "directionalScoreV1": null,
+      "mlOverlay": null,
+      "signalPolicyV13": null,
       "officialPick": true,
       "officialPrediction": true,
       "actionablePick": false,
       "accuracyTargetEligible": true,
+      "platformPick": null,
+      "customerVisibleWinnerPick": null,
+      "recommendationStatus": null,
+      "predictionVisibility": null,
+      "isOfficialDisplayPick": null,
+      "doNotUseAsWinnerPick": null,
+      "publicPick": null,
+      "displayWinner": null,
+      "optimizerFlippedPick": false,
+      "optimizerFlipRequested": null,
+      "optimizerFlipAllowed": null,
+      "optimizerFlipBlockedReasons": [],
       "actionability": "OPTIMIZED_GAME_WINNER_PICK",
       "actionabilityReason": "all_games_are_optimized_for_team_winner_selection",
       "actionabilityRiskReasons": [
@@ -3063,16 +3239,30 @@
         "reversalCount": "1",
         "winProbabilityPct": "5.4"
       },
+      "finalGuardedStored": null,
+      "finalPipelineVersion": null,
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
-        "selectionPolicy": "use_locked_prediction_row_and_reject_only_explicit_post_lock_scoring_sources",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
+        "selectionPolicy": "prefer_latest_final_guarded_locked_state_and_reject_only_explicit_post_lock_scoring_sources",
         "lockedFlag": true,
         "lockAtUtc": "2026-07-10T21:56:00+00:00",
         "explicitSourceAtUtc": "2026-07-10T21:45:26.141765+00:00",
         "rowCreatedAtUtc": "2026-07-11T01:05:12.253419+00:00",
         "createdAtNotUsedAsScoringSource": true,
-        "preventsLateRows": true
+        "preventsLateRows": true,
+        "finalPipelineState": {
+          "integrityApplied": false,
+          "directionalApplied": false,
+          "mlOverlayApplied": false,
+          "signalPolicyApplied": false,
+          "finalGuardedStored": false,
+          "playable": true,
+          "explicitNonPlayable": false,
+          "pipelineDepth": 0,
+          "predictionVisibility": null,
+          "recommendationStatus": null
+        }
       },
       "correct": false
     },
@@ -3093,7 +3283,7 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
         "selectionPolicy": "strict_45_minute_locked_card_only",
         "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
@@ -3115,7 +3305,7 @@
       "status": "MISSING_LOCKED_PREDICTION",
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v1.1-45MIN-SOURCE-FIX",
+        "version": "MLB-LOCKED-CARD-AUDIT-v1.2-FINAL-GUARDED-STATE",
         "selectionPolicy": "strict_45_minute_locked_card_only",
         "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row"
       }
@@ -3127,7 +3317,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-11T05:46:55.095317+00:00"
+    "runSk": "AUDIT#2026-07-11T05:49:14.742431+00:00"
   },
   "mlTraining": {
     "ok": true,
