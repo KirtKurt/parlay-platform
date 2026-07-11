@@ -20,6 +20,13 @@ except Exception:
     pass
 
 try:
+    import mlb_daily_pick_lock as _inqsi_mlb_daily_pick_lock_for_coverage
+    import mlb_daily_lock_coverage_patch as _inqsi_mlb_daily_lock_coverage_patch
+    _inqsi_mlb_daily_lock_coverage_patch.apply(_inqsi_mlb_daily_pick_lock_for_coverage)
+except Exception:
+    pass
+
+try:
     import mlb_game_winner_engine
     import mlb_accuracy_target_patch
     mlb_accuracy_target_patch.apply(mlb_game_winner_engine)
