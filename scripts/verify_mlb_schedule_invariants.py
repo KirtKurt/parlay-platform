@@ -9,6 +9,7 @@ ML_OPTIMIZATION_VERIFY = Path('scripts/verify_mlb_ml_optimization_v3.py')
 ML_PROMOTION_VERIFY = Path('scripts/verify_mlb_ml_promotion_safety.py')
 ML_FEATURE_INTEGRITY_VERIFY = Path('scripts/verify_mlb_ml_feature_integrity.py')
 ML_INSTALLATION_1_5_VERIFY = Path('scripts/verify_mlb_ml_installation_1_5.py')
+MLB_API_FUNCTION_IMPORT_VERIFY = Path('scripts/verify_api_function_mlb_v3_import.py')
 text = TEMPLATE.read_text()
 engine = ENGINE.read_text() if ENGINE.exists() else ''
 violations = []
@@ -108,6 +109,7 @@ for required_path in [
     ML_PROMOTION_VERIFY,
     ML_FEATURE_INTEGRITY_VERIFY,
     ML_INSTALLATION_1_5_VERIFY,
+    MLB_API_FUNCTION_IMPORT_VERIFY,
 ]:
     if not required_path.exists():
         violations.append(f'production component missing: {required_path}')
@@ -121,5 +123,6 @@ subprocess.run([sys.executable, str(ML_OPTIMIZATION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_PROMOTION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_FEATURE_INTEGRITY_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_INSTALLATION_1_5_VERIFY)], check=True)
+subprocess.run([sys.executable, str(MLB_API_FUNCTION_IMPORT_VERIFY)], check=True)
 
 print('MLB production invariants PASS: complete-slate coverage, exact clean-cohort lock vectors, final-label joins, separate outcome/reliability models, untouched validation with priced ROI, source-honest fundamentals, independent promotion gates, manual-only DDB champion promotion, and single runtime authority are installed.')

@@ -285,3 +285,7 @@ def readiness(p: Dict[str, Any]) -> Dict[str, Any]:
     else:
         status = "BUILDING_ELIGIBLE_SIGNAL_DEPTH"
     return {"ok": True, "sport": r.get("sport"), "slate_date": r.get("slate_date"), "status": status, "pullCount": pull_count, "eligibleSignals": len(elig), "strongSignals": len(strong), "minimumParlayPulls": MIN_PARLAY_PULLS, "minimumParlayHistoryMinutes": MIN_PARLAY_PULLS * 15, "parlayEligible": status == "READY", "notes": ["Uses many timestamped pulls, not fixed T1-T3 snapshots.", "Three-leg parlays are refused until the 12th 15-minute pull for this sport/slate."]}
+
+
+# Backward-compatible API route contract used by inqsi_api.
+from inqsi_pull_history_routes import handle_pull_history_route
