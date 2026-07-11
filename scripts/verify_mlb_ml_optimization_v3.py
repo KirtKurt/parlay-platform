@@ -38,8 +38,7 @@ def source_honest_context():
 
 
 def row(index: int, modern: bool = True):
-    home_probability = 0.42 + (index % 17) * 0.01
-    home_probability = min(0.68, home_probability)
+    home_probability = min(0.68, 0.42 + (index % 17) * 0.01)
     home_won = 1 if (home_probability >= 0.52 and index % 5 != 0) or index % 11 == 0 else 0
     predicted_side = "home" if home_probability >= 0.5 else "away"
     predicted_winner = "Home Team" if predicted_side == "home" else "Away Team"
@@ -48,62 +47,25 @@ def row(index: int, modern: bool = True):
     minute = index % 60
     lock_at = f"2026-07-12T{lock_hour:02d}:{minute:02d}:00+00:00"
     source_at = f"2026-07-12T{lock_hour:02d}:{max(0, minute - 1):02d}:00+00:00"
+    selected_price = -110 if predicted_side == "home" else (100 if home_probability >= 0.5 else -120)
     return {
-        "status": "GRADED",
-        "id": f"game-{index}",
-        "gameId": f"game-{index}",
-        "slateDateEt": "2026-07-12",
-        "commenceTime": f"2026-07-12T{18 + (index // 60):02d}:{minute:02d}:00Z",
-        "homeTeam": "Home Team",
-        "awayTeam": "Away Team",
-        "winner": winner,
-        "predictedWinner": predicted_winner,
-        "predictedSide": predicted_side,
-        "correct": predicted_winner == winner,
-        "officialPrediction": True,
-        "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
-        "lockedPrediction": True,
+        "status": "GRADED", "id": f"game-{index}", "gameId": f"game-{index}",
+        "slateDateEt": "2026-07-12", "commenceTime": f"2026-07-12T{18 + (index // 60):02d}:{minute:02d}:00Z",
+        "homeTeam": "Home Team", "awayTeam": "Away Team", "winner": winner,
+        "predictedWinner": predicted_winner, "predictedSide": predicted_side,
+        "correct": predicted_winner == winner, "officialPrediction": True,
+        "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION", "lockedPrediction": True,
         "probabilitySemanticsFixed": modern,
         "predictionSemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1" if modern else None,
         "teamWinProbabilityPct": round(max(home_probability, 1.0 - home_probability) * 100.0, 2) if modern else 7.5,
         "winProbabilityMeaning": "estimated_probability_selected_team_wins_game" if modern else "legacy_reliability",
-        "score": 50 + (home_probability - 0.5) * 100,
+        "score": 50 + (home_probability - 0.5) * 100, "lockedAmericanOdds": selected_price,
         "advanced_context": source_honest_context(),
         "slateCoverage": {"coverageComplete": True, "manifestGameCount": 1, "predictionGameCount": 1, "storedPredictionCount": 1},
-        "slatePredictionLock": {
-            "locked": True,
-            "finalLocked": True,
-            "phase": "SLATE_LOCKED",
-            "lockAtUtc": lock_at,
-            "latestScoringPullAt": source_at,
-        },
-        "lockedCardAudit": {
-            "lockedFlag": True,
-            "lockAtUtc": lock_at,
-            "explicitSourceAtUtc": source_at,
-            "preventsLateRows": True,
-            "version": "MLB-LOCKED-CARD-AUDIT-v2-doubleheader-safe-provider-time-match",
-        },
-        "homeSignal": {
-            "marketConsensusProbability": home_probability,
-            "probLatest": home_probability,
-            "delta": (index % 7 - 3) / 1000.0,
-            "bookDivergence": 0.01 + (index % 4) / 1000.0,
-            "reversalCount": index % 3,
-            "runLineMovement": index % 5,
-            "americanOdds": -110 if home_probability >= 0.5 else 120,
-            "tags": ["BOOK_AGREEMENT"] + (["STEAM"] if index % 4 == 0 else []),
-        },
-        "awaySignal": {
-            "marketConsensusProbability": 1.0 - home_probability,
-            "probLatest": 1.0 - home_probability,
-            "delta": -(index % 7 - 3) / 1000.0,
-            "bookDivergence": 0.01 + (index % 4) / 1000.0,
-            "reversalCount": (index + 1) % 3,
-            "runLineMovement": -(index % 5),
-            "americanOdds": 100 if home_probability >= 0.5 else -120,
-            "tags": ["BOOK_AGREEMENT"],
-        },
+        "slatePredictionLock": {"locked": True, "finalLocked": True, "phase": "SLATE_LOCKED", "lockAtUtc": lock_at, "latestScoringPullAt": source_at},
+        "lockedCardAudit": {"lockedFlag": True, "lockAtUtc": lock_at, "explicitSourceAtUtc": source_at, "preventsLateRows": True, "version": "MLB-LOCKED-CARD-AUDIT-v2-doubleheader-safe-provider-time-match"},
+        "homeSignal": {"marketConsensusProbability": home_probability, "probLatest": home_probability, "delta": (index % 7 - 3) / 1000.0, "bookDivergence": 0.01 + (index % 4) / 1000.0, "reversalCount": index % 3, "runLineMovement": index % 5, "americanOdds": -110 if home_probability >= 0.5 else 120, "tags": ["BOOK_AGREEMENT"] + (["STEAM"] if index % 4 == 0 else [])},
+        "awaySignal": {"marketConsensusProbability": 1.0 - home_probability, "probLatest": 1.0 - home_probability, "delta": -(index % 7 - 3) / 1000.0, "bookDivergence": 0.01 + (index % 4) / 1000.0, "reversalCount": (index + 1) % 3, "runLineMovement": -(index % 5), "americanOdds": 100 if home_probability >= 0.5 else -120, "tags": ["BOOK_AGREEMENT"]},
     }
 
 
@@ -123,22 +85,17 @@ def main() -> int:
     assert ok is False and "legacy_probability_semantics" in reasons
     ok, reasons = cohort.eligibility(modern)
     assert ok is True, reasons
-
     snapshot = modern["fundamentalsSnapshot"]
-    assert snapshot["missingnessIsFeature"] is True
-    assert "sourceStatuses" in snapshot
+    assert snapshot["missingnessIsFeature"] is True and "sourceStatuses" in snapshot
     frozen = modern["frozenFeatureVector"]
-    assert frozen["labels"]["homeWon"] in {0, 1}
-    assert frozen["labels"]["pickCorrect"] in {0, 1}
+    assert frozen["labels"]["homeWon"] in {0, 1} and frozen["labels"]["pickCorrect"] in {0, 1}
     assert frozen["features"]["homeMarketProb"] != frozen["features"]["awayMarketProb"]
     assert modern["mlFeatureFreeze"]["trainingEligible"] is True
 
     rows = [frozen_row(index, modern=True) for index in range(180)]
     built = cohort.build([legacy, *rows])
-    assert built["cleanRowCount"] == 180, built
-    assert built["quarantinedRowCount"] == 1
-    assert built["completeSlateCoverageRequired"] is True
-    assert built["immutableFrozenFeatureVectorRequired"] is True
+    assert built["cleanRowCount"] == 180 and built["quarantinedRowCount"] == 1
+    assert built["completeSlateCoverageRequired"] is True and built["immutableFrozenFeatureVectorRequired"] is True
 
     trained = dual.train(built["cleanRows"])
     assert trained["ok"] is True, trained
@@ -147,20 +104,23 @@ def main() -> int:
     assert trained["testWasUntouchedDuringFitAndThresholdSelection"] is True
     assert trained["reliabilityModel"]["thresholdSelectedOnValidationOnly"] is True
     assert trained["split"]["counts"]["test"] >= 30
+    selected_test = trained["untouchedTest"]["selectedReliability"]
+    assert "priceCoveragePct" in selected_test and "flatUnitRoiPct" in selected_test
+    assert trained["dataQuality"]["modelScope"] == "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS"
 
     gate = champion.evaluate(trained, clean_count=180, playable_evidence_count=20)
     assert gate["promotionEligible"] is False
-    blocker_codes = {item["code"] for item in gate["blockers"]}
-    assert "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE" in blocker_codes
-    assert "INSUFFICIENT_PLAYABLE_EVIDENCE" in blocker_codes
-    assert gate["directionAuthorityEnabled"] is False
+    direction_codes = {item["code"] for item in gate["directionBlockers"]}
+    playability_codes = {item["code"] for item in gate["playabilityBlockers"]}
+    assert "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE" in direction_codes
+    assert "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE" in playability_codes
+    assert gate["publicPlayableClaim"]["eligible"] is False
+    assert gate["directionAuthorityEnabled"] is False and gate["playabilityAuthorityEnabled"] is False
 
     original_loader = runtime.champion_store.load_champion
     runtime.champion_store.load_champion = lambda: None
     try:
-        pregame = row(181, modern=True)
-        pregame.pop("winner", None)
-        pregame.pop("correct", None)
+        pregame = row(181, modern=True); pregame.pop("winner", None); pregame.pop("correct", None)
         original_winner = pregame["predictedWinner"]
         result = runtime.enhance_result({"predictions": [pregame]})
         scored = result["predictions"][0]
@@ -170,7 +130,7 @@ def main() -> int:
     finally:
         runtime.champion_store.load_champion = original_loader
 
-    print("MLB ML optimization v3 clean cohort, complete-slate frozen vectors, dual models, untouched test, fundamentals, and promotion gates verified")
+    print("MLB ML optimization v3 verified: clean frozen cohort, dual labels, untouched test, market baseline, priced ROI, independent promotion gates, and shadow-only runtime")
     return 0
 
 
