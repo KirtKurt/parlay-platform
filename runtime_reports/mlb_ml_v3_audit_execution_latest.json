@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ML_V3_AWS_AUDIT_EXECUTION",
-  "createdAtUtc": "2026-07-11T22:50:10.012562+00:00",
+  "createdAtUtc": "2026-07-11T22:51:01.664728+00:00",
   "environment": {
     "snapshotsTableConfigured": true,
     "oddsApiKeyConfigured": true,
@@ -9,7 +9,7 @@
     "allowLocalFileChampion": "false"
   },
   "failures": [],
-  "reportCreatedAt": "2026-07-11T22:50:13.706274+00:00",
+  "reportCreatedAt": "2026-07-11T22:51:09.496243+00:00",
   "reportOk": true,
   "summary": {
     "windowHours": 24,
@@ -83,37 +83,23 @@
   },
   "mlCriticalFixStatus": {
     "ok": true,
-    "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v7-runtime-installer-executed",
+    "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v8-single-runtime-install-call",
     "applied": [
       "legacy_local_reliability_runtime_disabled",
       "immutable_exact_lock_feature_freeze",
-      "automatic_champion_promotion_permanently_disabled",
-      "single_authority_runtime_installed"
+      "automatic_champion_promotion_permanently_disabled"
     ],
     "errors": [],
     "authoritativeTrainer": "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger",
     "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
+    "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.2-single-authority-exact-lock-vector",
+    "runtimeInstallerCallSite": "usercustomize.py_after_prediction_chain",
+    "singleRuntimeInstallCall": true,
     "duplicateTrainerAuthorityDisabled": true,
     "duplicateOutcomeRuntimeAuthorityDisabled": true,
     "automaticPromotionDisabled": true,
     "manualPromotionModule": "MLB-ML-MANUAL-PROMOTION-ONLY-v1",
-    "manualPromotionWorkflow": "mlb-ml-promote-champion.yml",
-    "runtimeInstallation": {
-      "applied": true,
-      "version": "MLB-ML-RUNTIME-INSTALL-v3.2-single-authority-exact-lock-vector",
-      "steps": {
-        "legacyReliabilityOverlaySafety": true,
-        "sourceHonestFundamentals": true,
-        "singleDdbChampionAuthority": true,
-        "officialSemanticsFinalized": true,
-        "exactCleanCohortVectorPatch": true,
-        "officialFreezeBridge": true,
-        "immutableFeatureFreeze": true
-      },
-      "errors": [],
-      "ok": true,
-      "policy": "The reviewed DynamoDB champion is the only model allowed to change direction or playability. Every new locked game stores the exact immutable clean-cohort vector before final labels exist."
-    }
+    "manualPromotionWorkflow": "mlb-ml-promote-champion.yml"
   },
   "mlOptimizationV3": {
     "applied": true,
@@ -168,7 +154,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.1-separate-direction-playability-gates",
-      "evaluatedAtUtc": "2026-07-11T22:50:26.496733+00:00",
+      "evaluatedAtUtc": "2026-07-11T22:51:39.046320+00:00",
       "automaticPromotionEnabled": false,
       "promotionEligible": false,
       "directionPromotionEligible": false,
@@ -387,7 +373,7 @@
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-11T22:50:21.413916+00:00"
+      "runSk": "CHALLENGER#2026-07-11T22:51:30.196032+00:00"
     },
     "promotion": {
       "ok": true,
@@ -412,7 +398,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-11T22:50:13.706274+00:00"
+    "runSk": "AUDIT#2026-07-11T22:51:09.496243+00:00"
   },
   "storeError": null
 }
