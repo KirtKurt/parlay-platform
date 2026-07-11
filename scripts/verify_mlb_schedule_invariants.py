@@ -13,6 +13,37 @@ text = TEMPLATE.read_text()
 engine = ENGINE.read_text() if ENGINE.exists() else ''
 violations = []
 
+
+def _ensure_validation_dependencies() -> None:
+    """Install the AWS SDK only when the runner does not already provide it.
+
+    The production-invariant suite imports Lambda modules that initialize DynamoDB
+    clients at import time. GitHub's setup-sam action keeps its boto3 dependency in
+    an isolated virtual environment, so the workflow Python interpreter may still
+    lack boto3. Installing it here makes the mandatory pre-deploy check deterministic
+    without weakening or skipping the coverage tests.
+    """
+    try:
+        import boto3  # noqa: F401
+        import botocore  # noqa: F401
+        return
+    except ModuleNotFoundError:
+        pass
+
+    subprocess.run(
+        [
+            sys.executable,
+            '-m',
+            'pip',
+            'install',
+            '--disable-pip-version-check',
+            '--quiet',
+            'boto3>=1.34,<2',
+        ],
+        check=True,
+    )
+
+
 if '"days_ahead":1' in text or '"days_ahead": 1' in text:
     violations.append('unsafe days_ahead=1 exists in template')
 for event_name in ['MLBBasePull', 'MLBT2', 'MLBT3', 'MLBT4', 'MLBHotKickoff1amET', 'MLBHotPullRecoveryFunction']:
@@ -84,6 +115,7 @@ for required_path in [
 if violations:
     raise SystemExit('MLB production invariant failure: ' + '; '.join(violations))
 
+_ensure_validation_dependencies()
 subprocess.run([sys.executable, str(COVERAGE_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_OPTIMIZATION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_PROMOTION_VERIFY)], check=True)
