@@ -1,4 +1,4 @@
-name: Monitor Explicit MLB V3 Route Deploy A3F6
+name: Monitor Dedicated MLB V3 Read Deploy
 
 on:
   push:
@@ -16,11 +16,11 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Capture explicit v3 route deployment result
+      - name: Capture dedicated v3 deployment result
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          TARGET_SHA: a3f6a21e7566e0af38d63e62c01ec5604fe7173e
+          TARGET_SHA: 0f0e2ef1485ebc699551ad1a70156e24782dc7ff
         run: |
           set -euo pipefail
           mkdir -p runtime_reports
@@ -31,7 +31,7 @@ jobs:
             sleep 10
           done
           if [ -z "${RUN_ID:-}" ]; then
-            echo '{"ok":false,"error":"a3f6 deploy run not found"}' > runtime_reports/deploy_a3f6_diagnostic.json
+            echo '{"ok":false,"error":"dedicated v3 deploy run not found"}' > runtime_reports/deploy_0f0_diagnostic.json
             exit 0
           fi
           for i in $(seq 1 120); do
@@ -39,14 +39,14 @@ jobs:
             [ "$STATUS" = "completed" ] && break
             sleep 10
           done
-          gh api "/repos/${REPO}/actions/runs/${RUN_ID}" > runtime_reports/deploy_a3f6_run.json
-          gh api "/repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" > runtime_reports/deploy_a3f6_jobs.json
+          gh api "/repos/${REPO}/actions/runs/${RUN_ID}" > runtime_reports/deploy_0f0_run.json
+          gh api "/repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" > runtime_reports/deploy_0f0_jobs.json
           python - <<'PY'
           import json, os, subprocess
           from pathlib import Path
           repo = os.environ['REPO']
-          run = json.loads(Path('runtime_reports/deploy_a3f6_run.json').read_text())
-          jobs = (json.loads(Path('runtime_reports/deploy_a3f6_jobs.json').read_text()).get('jobs') or [])
+          run = json.loads(Path('runtime_reports/deploy_0f0_run.json').read_text())
+          jobs = (json.loads(Path('runtime_reports/deploy_0f0_jobs.json').read_text()).get('jobs') or [])
           out = {'ok': run.get('status') == 'completed' and run.get('conclusion') == 'success', 'runId': run.get('id'), 'runNumber': run.get('run_number'), 'status': run.get('status'), 'conclusion': run.get('conclusion'), 'headSha': run.get('head_sha'), 'htmlUrl': run.get('html_url'), 'jobs': []}
           text = []
           for job in jobs:
@@ -56,19 +56,19 @@ jobs:
               for step in entry['steps']:
                   text.append(f"  STEP {step.get('number')}: {step.get('name')} conclusion={step.get('conclusion')}")
               if job.get('conclusion') == 'failure':
-                  p = Path(f"runtime_reports/deploy_a3f6_job_{job['id']}.log")
+                  p = Path(f"runtime_reports/deploy_0f0_job_{job['id']}.log")
                   with p.open('wb') as fh:
                       subprocess.run(['gh','api',f"/repos/{repo}/actions/jobs/{job['id']}/logs"], stdout=fh, stderr=subprocess.STDOUT, check=False)
-                  text.append('\nFAILED JOB LOG TAIL\n' + '\n'.join(p.read_text(errors='replace').splitlines()[-500:]))
-          Path('runtime_reports/deploy_a3f6_diagnostic.json').write_text(json.dumps(out, indent=2) + '\n')
-          Path('runtime_reports/deploy_a3f6_diagnostic.txt').write_text('\n'.join(text) + '\n')
+                  text.append('\nFAILED JOB LOG TAIL\n' + '\n'.join(p.read_text(errors='replace').splitlines()[-600:]))
+          Path('runtime_reports/deploy_0f0_diagnostic.json').write_text(json.dumps(out, indent=2) + '\n')
+          Path('runtime_reports/deploy_0f0_diagnostic.txt').write_text('\n'.join(text) + '\n')
           PY
-      - name: Commit explicit route deployment proof
+      - name: Commit dedicated deployment proof
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add runtime_reports/deploy_a3f6_* || true
-          git commit -m "Persist explicit MLB v3 route Deploy SAM proof" || true
+          git add runtime_reports/deploy_0f0_* || true
+          git commit -m "Persist dedicated MLB v3 Deploy SAM proof" || true
           git pull --rebase --autostash origin main || true
           git push || true
