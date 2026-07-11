@@ -10,6 +10,8 @@ on:
       - 'hello_world/mlb_audit_actionability_patch.py'
       - 'hello_world/mlb_learning_signal_filter_patch.py'
       - 'hello_world/mlb_locked_card_audit_v1.py'
+      - 'hello_world/mlb_doubleheader_safe_audit_patch.py'
+      - 'hello_world/mlb_slate_coverage_patch.py'
       - 'hello_world/mlb_real_world_accuracy_patch.py'
       - 'hello_world/mlb_real_world_accuracy_semantics_fix.py'
       - 'hello_world/mlb_ml_signal_layers.py'
@@ -19,6 +21,7 @@ on:
       - 'hello_world/sitecustomize.py'
       - 'hello_world/all_sports_live_scheduler.py'
       - 'scripts/verify_mlb_official_prediction_semantics.py'
+      - 'scripts/verify_mlb_complete_slate_coverage.py'
   schedule:
     - cron: '20 * * * *'
   workflow_dispatch:
@@ -43,6 +46,9 @@ jobs:
 
       - name: Validate official/playable accuracy semantics
         run: python scripts/verify_mlb_official_prediction_semantics.py
+
+      - name: Validate complete-slate and doubleheader coverage
+        run: python scripts/verify_mlb_complete_slate_coverage.py
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
