@@ -14,6 +14,7 @@ on:
       - 'hello_world/mlb_slate_coverage_patch.py'
       - 'hello_world/mlb_real_world_accuracy_patch.py'
       - 'hello_world/mlb_real_world_accuracy_semantics_fix.py'
+      - 'hello_world/mlb_ml_critical_blockers_patch.py'
       - 'hello_world/mlb_ml_signal_layers.py'
       - 'hello_world/mlb_ml_feature_vector.py'
       - 'hello_world/mlb_ml_candidate_policy.py'
@@ -105,6 +106,7 @@ jobs:
           windows = accuracy.get('windows') or {}
           optimization = report.get('mlOptimizationV3') or {}
           authority = report.get('mlTrainingAuthority') or {}
+          critical = accuracy.get('mlCriticalFixStatus') or {}
           print(json.dumps({
               'ok': report.get('ok'),
               'summary': report.get('summary'),
@@ -112,6 +114,7 @@ jobs:
               'current24h': windows.get('current24h'),
               'evidenceProgress': accuracy.get('evidenceProgress'),
               'accuracyLedger': report.get('accuracyLedger'),
+              'mlCriticalFixStatus': critical,
               'mlOptimizationV3': optimization,
               'mlTrainingAuthority': authority,
               'stored': report.get('stored'),
@@ -121,6 +124,8 @@ jobs:
               raise SystemExit('real-world accuracy scorecard was not applied')
           if report.get('accuracyLedger', {}).get('immutable') is not True:
               raise SystemExit('immutable settled-game accuracy ledger was not enabled')
+          if critical.get('ok') is not True:
+              raise SystemExit('critical ML blocker installation failed: ' + json.dumps(critical, default=str))
           if optimization.get('applied') is not True:
               raise SystemExit('ML optimization v3 was not applied')
           if authority.get('authoritative') != 'mlOptimizationV3_clean_dual_model_only':
