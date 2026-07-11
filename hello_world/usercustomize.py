@@ -61,6 +61,7 @@ try:
     import mlb_signal_policy_v12 as _inqsi_mlb_signal_policy_v12
     import mlb_directional_score_v1 as _inqsi_mlb_directional_score_v1
     import mlb_ml_runtime_overlay as _inqsi_mlb_ml_runtime_overlay
+    import mlb_official_prediction_semantics as _inqsi_mlb_official_prediction_semantics
     _inqsi_mlb_slate_prediction_lock.apply(_inqsi_mlb_game_winner_for_slate_lock)
     for attr, patch in [
         ("_INQSI_MLB_90_TARGET_APPLIED", _inqsi_mlb_accuracy_target_patch),
@@ -70,6 +71,7 @@ try:
         ("_INQSI_MLB_SIGNAL_POLICY_V12_APPLIED", _inqsi_mlb_signal_policy_v12),
         ("_INQSI_MLB_DIRECTIONAL_SCORE_V1_APPLIED", _inqsi_mlb_directional_score_v1),
         ("_INQSI_MLB_ML_RUNTIME_OVERLAY_APPLIED", _inqsi_mlb_ml_runtime_overlay),
+        ("_INQSI_MLB_OFFICIAL_PREDICTION_SEMANTICS_APPLIED", _inqsi_mlb_official_prediction_semantics),
     ]:
         if hasattr(_inqsi_mlb_game_winner_for_slate_lock, attr):
             delattr(_inqsi_mlb_game_winner_for_slate_lock, attr)
@@ -143,13 +145,14 @@ try:
             return _json_resp(200, {
                 "ok": True,
                 "sport": "mlb",
-                "model_version": "INQSI-MLB-v2.2-core-proxy-required-winner-picks",
+                "model_version": "INQSI-MLB-v2.3-official-prediction-playability-separated",
                 "game_winner_model": getattr(engine, "MODEL_VERSION", None) if engine is not None else None,
                 "game_winner_engine": getattr(engine, "ENGINE", None) if engine is not None else None,
                 "engine_import_ok": engine_ok,
                 "engine_import_error": engine_error,
                 "pick_type": "individual_game_moneyline",
-                "requiredWinnerPickPolicy": "one_visible_predicted_winner_for_every_mlb_game",
+                "requiredWinnerPickPolicy": "one_official_locked_winner_prediction_for_every_mlb_game",
+                "playablePolicy": "playability_is_separate_and_may_be_false_for_an_official_prediction",
                 "parlaysEnabled": False,
                 "sourcePolicy": "The Odds API stored pull history only for production picks.",
             })
@@ -166,16 +169,20 @@ try:
                     "ok": True,
                     "sport": "mlb",
                     "date": date,
-                    "model_version": "INQSI-MLB-v2.2-core-proxy-required-winner-picks",
+                    "model_version": "INQSI-MLB-v2.3-official-prediction-playability-separated",
                     "game_winner_model": payload.get("modelVersion"),
                     "count": payload.get("count", 0),
                     "requiredGameWinnerPredictionCount": payload.get("requiredGameWinnerPredictionCount"),
+                    "officialPredictionCount": payload.get("officialPredictionCount"),
+                    "playablePredictionCount": payload.get("playablePredictionCount"),
+                    "nonPlayableOfficialPredictionCount": payload.get("nonPlayableOfficialPredictionCount"),
                     "displayPredictionCount": payload.get("displayPredictionCount"),
                     "allGamesHaveDisplayedWinnerPrediction": payload.get("allGamesHaveDisplayedWinnerPrediction"),
                     "promotedCount": payload.get("promotedCount", 0),
                     "pullCount": payload.get("pullCount"),
                     "latestPullAt": payload.get("latestPullAt"),
-                    "priority": "one_required_individual_game_moneyline_pick_per_game",
+                    "priority": "one_official_locked_individual_game_moneyline_prediction_per_game",
+                    "playabilitySeparateFromOfficialPrediction": True,
                     "parlaysEnabled": False,
                 })
             return _json_resp(200, {**payload, "winner_predictions": payload.get("predictions") or [], "parlaysEnabled": False})
