@@ -1,21 +1,24 @@
 from __future__ import annotations
 
-VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v7-runtime-installer-executed"
+VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v8-single-runtime-install-call"
 AUTHORITATIVE_TRAINER = "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger"
 _INSTALLED = False
-_INSTALL_RESULT = None
 
 
 def install() -> dict:
-    """Install safeguards and execute the single authoritative MLB ML runtime."""
-    global _INSTALLED, _INSTALL_RESULT
+    """Install safeguards without duplicating the runtime wrapper chain.
+
+    `usercustomize.py` executes the one authoritative runtime installer after the
+    legacy prediction chain has been assembled. This function only installs
+    module-level safety and freeze bridges that must exist before that final call.
+    """
+    global _INSTALLED
     if _INSTALLED:
         return {
             "ok": True,
             "version": VERSION,
             "alreadyInstalled": True,
             "authoritativeTrainer": AUTHORITATIVE_TRAINER,
-            "runtimeInstallation": _INSTALL_RESULT,
         }
 
     applied = []
@@ -45,17 +48,6 @@ def install() -> dict:
     except Exception as exc:
         errors.append(f"promotion_safety:{exc}")
 
-    try:
-        import mlb_ml_runtime_install_v3
-        _INSTALL_RESULT = mlb_ml_runtime_install_v3.install()
-        if _INSTALL_RESULT.get("ok") is not True:
-            errors.append(f"runtime_install:{_INSTALL_RESULT}")
-        else:
-            applied.append("single_authority_runtime_installed")
-    except Exception as exc:
-        _INSTALL_RESULT = {"ok": False, "error": str(exc)}
-        errors.append(f"runtime_install:{exc}")
-
     _INSTALLED = not errors
     return {
         "ok": not errors,
@@ -64,10 +56,12 @@ def install() -> dict:
         "errors": errors,
         "authoritativeTrainer": AUTHORITATIVE_TRAINER,
         "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
+        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.2-single-authority-exact-lock-vector",
+        "runtimeInstallerCallSite": "usercustomize.py_after_prediction_chain",
+        "singleRuntimeInstallCall": True,
         "duplicateTrainerAuthorityDisabled": True,
         "duplicateOutcomeRuntimeAuthorityDisabled": True,
         "automaticPromotionDisabled": True,
         "manualPromotionModule": "MLB-ML-MANUAL-PROMOTION-ONLY-v1",
         "manualPromotionWorkflow": "mlb-ml-promote-champion.yml",
-        "runtimeInstallation": _INSTALL_RESULT,
     }
