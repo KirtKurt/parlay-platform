@@ -61,13 +61,21 @@ for required_path in [
     Path('hello_world/mlb_slate_coverage_patch.py'),
     Path('hello_world/mlb_doubleheader_safe_audit_patch.py'),
     Path('hello_world/mlb_all_games_coverage_patch.py'),
+    Path('hello_world/mlb_ml_frozen_features.py'),
+    Path('hello_world/mlb_ml_audit_feature_bridge_v1.py'),
     Path('hello_world/mlb_ml_clean_cohort_v1.py'),
+    Path('hello_world/mlb_ml_clean_cohort_hardening_v1.py'),
     Path('hello_world/mlb_ml_dual_model_v1.py'),
     Path('hello_world/mlb_ml_walk_forward_v1.py'),
     Path('hello_world/mlb_fundamentals_snapshot_v1.py'),
     Path('hello_world/mlb_ml_champion_challenger_v1.py'),
+    Path('hello_world/mlb_ml_manual_promotion_only_v1.py'),
     Path('hello_world/mlb_ml_champion_runtime_v1.py'),
+    Path('hello_world/mlb_ml_runtime_safety_patch.py'),
+    Path('hello_world/mlb_ml_runtime_install_v3.py'),
     Path('hello_world/mlb_ml_optimization_v3.py'),
+    Path('scripts/promote_mlb_ml_champion.py'),
+    Path('.github/workflows/mlb-ml-promote-champion.yml'),
     COVERAGE_VERIFY,
     ML_OPTIMIZATION_VERIFY,
 ]:
@@ -80,4 +88,4 @@ if violations:
 subprocess.run([sys.executable, str(COVERAGE_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_OPTIMIZATION_VERIFY)], check=True)
 
-print('MLB production invariants PASS: complete-slate coverage plus clean post-fix dual-model ML, untouched validation, source-honest fundamentals, and champion/challenger gates are installed.')
+print('MLB production invariants PASS: complete-slate coverage, exact stored lock-time feature vectors, separate outcome/reliability models, untouched validation, source-honest fundamentals, manual-only DDB champion promotion, and single runtime authority are installed.')
