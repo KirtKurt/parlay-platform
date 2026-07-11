@@ -11,6 +11,9 @@ if str(HELLO_WORLD) not in sys.path:
 
 import mlb_official_prediction_semantics as semantics
 import mlb_real_world_accuracy_patch as accuracy
+import mlb_real_world_accuracy_semantics_fix as accuracy_fix
+
+accuracy_fix.apply(accuracy)
 
 
 def main() -> int:
@@ -84,6 +87,7 @@ def main() -> int:
             "actionablePick": False,
             "accuracyTargetEligible": False,
             "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
+            "predictionSemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1",
             "tags": ["SLATE_LOCKED", "ML_REJECTED", "NOT_PLAYABLE"],
             "teamWinProbabilityPct": 58.0,
             "americanOdds": -125,
@@ -106,6 +110,7 @@ def main() -> int:
             "actionablePick": True,
             "accuracyTargetEligible": True,
             "recommendationStatus": "PLAYABLE_PREDICTION",
+            "predictionSemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1",
             "tags": ["SLATE_LOCKED", "ACTIONABLE_PICK"],
             "teamWinProbabilityPct": 55.0,
             "americanOdds": -110,
@@ -130,7 +135,34 @@ def main() -> int:
     assert metrics["marketFavoriteBaseline"]["count"] == 2
     assert metrics["comparison"]["modelAccuracyLiftVsMarketPct"] is not None
 
-    print("MLB official prediction/playability and real-world accuracy metrics verified")
+    legacy = accuracy._normalize_audit_row(
+        {
+            "status": "GRADED",
+            "id": "legacy-official-not-proven-playable",
+            "slateDateEt": "2026-07-10",
+            "commenceTime": "2026-07-10T20:00:00Z",
+            "homeTeam": "Baltimore Orioles",
+            "awayTeam": "Kansas City Royals",
+            "winner": "Baltimore Orioles",
+            "predictedWinner": "Baltimore Orioles",
+            "predictedSide": "home",
+            "correct": True,
+            "officialPick": True,
+            "actionablePick": True,
+            "accuracyTargetEligible": True,
+            "actionability": "OPTIMIZED_GAME_WINNER_PICK",
+            "tags": ["SLATE_LOCKED", "FAVORITE"],
+            "winProbabilityPct": 9.43,
+            "americanOdds": -156,
+            "homeSignal": {"probLatest": 0.587345, "americanOdds": -156},
+            "awaySignal": {"probLatest": 0.412655, "americanOdds": 132},
+        }
+    )
+    assert legacy["officialPrediction"] is True
+    assert legacy["playable"] is False
+    assert legacy["teamWinProbabilityPct"] == 58.73
+
+    print("MLB official/playable, legacy probability, and real-world accuracy metrics verified")
     return 0
 
 
