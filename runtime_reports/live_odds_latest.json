@@ -1,7 +1,7 @@
 {
   "ok": true,
-  "createdAtUtc": "2026-07-10T23:25:59.601867+00:00",
-  "createdAtEt": "2026-07-10T19:25:59.601882-04:00",
+  "createdAtUtc": "2026-07-11T01:05:05.282550+00:00",
+  "createdAtEt": "2026-07-10T21:05:05.282568-04:00",
   "sportsRequested": [
     "mlb"
   ],
@@ -19,12 +19,12 @@
     "modelVersion": "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production+individual-winner-optimizer-90pct-target-risk-v3+fundamentals-calibration-no-pick-v1+last-possible-gate-v4-12h-individual-game-odds-api-only+MLB-WINNER-STACK-v2.2-market-confirmed-actionable-lean+individual-winner-optimizer-90pct-target-risk-v3+slate-wide-45min-final-gate+MLB-BALANCED-SIGNAL-GATE-v1-controlled-market-backed-output+MLB-ML-SIGNAL-LAYERS-v1.2-score-only-required-pick-preservation+MLB-SIGNAL-POLICY-v1.5-required-winner-display+MLB-DIRECTIONAL-SCORE-v1+MLB-ML-RUNTIME-OVERLAY-v3-required-winner-pick-display",
     "promotionThreshold": 0.0015,
     "fallbackPromotionThreshold": 0.0005,
-    "pullCount": 78,
-    "latestPullAt": "2026-07-10T23:15:26.233944+00:00",
-    "latestPullId": "mlb_v1_2026-07-10_2026_07_10T23_15_26_233944_00_00",
+    "pullCount": 85,
+    "latestPullAt": "2026-07-11T01:00:26.147974+00:00",
+    "latestPullId": "mlb_v1_2026-07-10_2026_07_11T01_00_26_147974_00_00",
     "gameCount": 15,
     "count": 15,
-    "promotedCount": 0,
+    "promotedCount": 1,
     "allGamesPredicted": true,
     "stored": true,
     "storedCount": 15,
@@ -50,8 +50,8 @@
         "priceSource": "real_book",
         "marketSide": "favorite",
         "fairProbabilityPct": 60.87,
-        "winProbability": 0.1888,
-        "winProbabilityPct": 18.88,
+        "winProbability": 0.1886,
+        "winProbabilityPct": 18.86,
         "edgeVsBook": -0.00207,
         "edgeVsBookPct": -0.21,
         "expectedValue": -0.052617,
@@ -61,7 +61,7 @@
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "score": 32.51,
+        "score": 32.49,
         "confidenceTier": "Pass",
         "pickQuality": "WATCHLIST_OR_NO_PLAY",
         "tags": [
@@ -91,11 +91,11 @@
         "homeSignal": {
           "side": "home",
           "team": "Chicago White Sox",
-          "score": 32.51,
+          "score": 32.49,
           "fairProbability": 0.608668,
           "fairProbabilityPct": 60.87,
-          "winProbability": 0.1888,
-          "winProbabilityPct": 18.88,
+          "winProbability": 0.1886,
+          "winProbabilityPct": 18.86,
           "edgeVsBook": -0.00207,
           "edgeVsBookPct": -0.21,
           "expectedValue": -0.052617,
@@ -122,14 +122,14 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 32.25,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -0.75,
-          "optimizedWinnerScore": 32.51
+          "optimizedWinnerScore": 32.49
         },
         "awaySignal": {
           "side": "away",
           "team": "Athletics",
-          "score": 12.08,
+          "score": 12.06,
           "fairProbability": 0.391332,
           "fairProbabilityPct": 39.13,
           "winProbability": 0.05,
@@ -160,18 +160,18 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 16.32,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -5.25,
-          "optimizedWinnerScore": 12.08
+          "optimizedWinnerScore": 12.06
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.764271+00:00",
+        "createdAt": "2026-07-11T01:05:08.667087+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 32.51,
-          "awayOptimizedScore": 12.08,
+          "homeOptimizedScore": 32.49,
+          "awayOptimizedScore": 12.06,
           "flippedPick": false,
           "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3"
         },
@@ -245,11 +245,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -361,7 +361,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -371,9 +371,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -526,9 +526,9 @@
             }
           ]
         },
-        "scoreBeforeSignalPolicyV13": 32.51,
+        "scoreBeforeSignalPolicyV13": 32.49,
         "signalPolicyV13Adjustment": -4.0,
-        "scoreAfterSignalPolicyV13": 28.51,
+        "scoreAfterSignalPolicyV13": 28.49,
         "predictionRemainsAvailable": true,
         "displayGroup": "non_official_prediction",
         "isOfficialDisplayPick": false,
@@ -579,20 +579,20 @@
           ],
           "adjustment": -7.0,
           "probabilityCap": {
-            "raw": 18.88,
+            "raw": 18.86,
             "cap": 49.0,
-            "capped": 18.88,
+            "capped": 18.86,
             "reasons": [
               "pass"
             ],
-            "score": 21.51
+            "score": 21.49
           },
           "officialAllowed": false
         },
-        "scoreBeforeDirectionalV1": 28.51,
+        "scoreBeforeDirectionalV1": 28.49,
         "directionalScoreV1Adjustment": -7.0,
-        "scoreAfterDirectionalV1": 21.51,
-        "cappedWinProbabilityPct": 18.88,
+        "scoreAfterDirectionalV1": 21.49,
+        "cappedWinProbabilityPct": 18.86,
         "choiceQuality": "Pass / Forced Prediction",
         "mlOverlay": {
           "enabled": true,
@@ -660,8 +660,8 @@
           "promotionProfileOk": false,
           "usesGuardedLowerThreshold": true,
           "features": {
-            "score": 32.51,
-            "winProbabilityPct": 18.88,
+            "score": 32.49,
+            "winProbabilityPct": 18.86,
             "marketProb": 0.608668,
             "marketEdge": 0.21733599999999997,
             "marketDelta": 0.008472,
@@ -830,7 +830,7 @@
           "optimizedWinnerScore": 0.0
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.427509+00:00",
+        "createdAt": "2026-07-11T01:05:08.593373+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
@@ -910,11 +910,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -1026,7 +1026,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -1036,9 +1036,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -1383,8 +1383,8 @@
         "priceSource": "real_book",
         "marketSide": "underdog",
         "fairProbabilityPct": 44.26,
-        "winProbability": 0.0667,
-        "winProbabilityPct": 6.67,
+        "winProbability": 0.0666,
+        "winProbabilityPct": 6.66,
         "edgeVsBook": -0.015066,
         "edgeVsBookPct": -1.51,
         "expectedValue": -0.059444,
@@ -1394,7 +1394,7 @@
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "score": 18.34,
+        "score": 18.32,
         "confidenceTier": "Pass",
         "pickQuality": "WATCHLIST_OR_NO_PLAY",
         "tags": [
@@ -1423,7 +1423,7 @@
         "homeSignal": {
           "side": "home",
           "team": "Texas Rangers",
-          "score": 7.33,
+          "score": 7.31,
           "fairProbability": 0.442592,
           "fairProbabilityPct": 44.26,
           "winProbability": 0.05,
@@ -1453,18 +1453,18 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 13.57,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -7.25,
-          "optimizedWinnerScore": 7.33
+          "optimizedWinnerScore": 7.31
         },
         "awaySignal": {
           "side": "away",
           "team": "Houston Astros",
-          "score": 18.34,
+          "score": 18.32,
           "fairProbability": 0.557408,
           "fairProbabilityPct": 55.74,
-          "winProbability": 0.0667,
-          "winProbabilityPct": 6.67,
+          "winProbability": 0.0666,
+          "winProbabilityPct": 6.66,
           "edgeVsBook": -0.008934,
           "edgeVsBookPct": -0.89,
           "expectedValue": -0.065276,
@@ -1490,18 +1490,18 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 20.08,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -2.75,
-          "optimizedWinnerScore": 18.34
+          "optimizedWinnerScore": 18.32
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.831451+00:00",
+        "createdAt": "2026-07-11T01:05:08.681678+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 7.33,
-          "awayOptimizedScore": 18.34,
+          "homeOptimizedScore": 7.31,
+          "awayOptimizedScore": 18.32,
           "flippedPick": true,
           "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3"
         },
@@ -1575,11 +1575,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -1694,7 +1694,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -1704,9 +1704,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -1859,9 +1859,9 @@
             }
           ]
         },
-        "scoreBeforeSignalPolicyV13": 18.34,
+        "scoreBeforeSignalPolicyV13": 18.32,
         "signalPolicyV13Adjustment": -8.0,
-        "scoreAfterSignalPolicyV13": 10.34,
+        "scoreAfterSignalPolicyV13": 10.32,
         "predictionRemainsAvailable": true,
         "displayGroup": "non_official_prediction",
         "isOfficialDisplayPick": false,
@@ -1912,9 +1912,9 @@
           ],
           "adjustment": -11.0,
           "probabilityCap": {
-            "raw": 6.67,
+            "raw": 6.66,
             "cap": 49.0,
-            "capped": 6.67,
+            "capped": 6.66,
             "reasons": [
               "pass"
             ],
@@ -1922,10 +1922,10 @@
           },
           "officialAllowed": false
         },
-        "scoreBeforeDirectionalV1": 10.34,
+        "scoreBeforeDirectionalV1": 10.32,
         "directionalScoreV1Adjustment": -11.0,
         "scoreAfterDirectionalV1": 0.0,
-        "cappedWinProbabilityPct": 6.67,
+        "cappedWinProbabilityPct": 6.66,
         "choiceQuality": "Pass / Forced Prediction",
         "mlOverlay": {
           "enabled": true,
@@ -1993,8 +1993,8 @@
           "promotionProfileOk": false,
           "usesGuardedLowerThreshold": true,
           "features": {
-            "score": 18.34,
-            "winProbabilityPct": 6.67,
+            "score": 18.32,
+            "winProbabilityPct": 6.66,
             "marketProb": 0.557408,
             "marketEdge": 0.11481600000000003,
             "marketDelta": 0.00438,
@@ -2163,7 +2163,7 @@
           "optimizedWinnerScore": 0.0
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.899290+00:00",
+        "createdAt": "2026-07-11T01:05:08.696453+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
@@ -2243,11 +2243,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -2359,7 +2359,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -2369,9 +2369,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -2708,8 +2708,8 @@
         "priceSource": "real_book",
         "marketSide": "favorite",
         "fairProbabilityPct": 57.79,
-        "winProbability": 0.2104,
-        "winProbabilityPct": 21.04,
+        "winProbability": 0.2101,
+        "winProbabilityPct": 21.01,
         "edgeVsBook": 0.002689,
         "edgeVsBookPct": 0.27,
         "expectedValue": -0.037377,
@@ -2719,7 +2719,7 @@
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "score": 34.13,
+        "score": 34.11,
         "confidenceTier": "Pass",
         "pickQuality": "WATCHLIST_OR_NO_PLAY",
         "tags": [
@@ -2749,11 +2749,11 @@
         "homeSignal": {
           "side": "home",
           "team": "New York Mets",
-          "score": 34.13,
+          "score": 34.11,
           "fairProbability": 0.57794,
           "fairProbabilityPct": 57.79,
-          "winProbability": 0.2104,
-          "winProbabilityPct": 21.04,
+          "winProbability": 0.2101,
+          "winProbabilityPct": 21.01,
           "edgeVsBook": 0.002689,
           "edgeVsBookPct": 0.27,
           "expectedValue": -0.037377,
@@ -2780,9 +2780,9 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 37.37,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -4.25,
-          "optimizedWinnerScore": 34.13
+          "optimizedWinnerScore": 34.11
         },
         "awaySignal": {
           "side": "away",
@@ -2818,17 +2818,17 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 0.0,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -8.75,
           "optimizedWinnerScore": 0.0
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.696978+00:00",
+        "createdAt": "2026-07-11T01:05:08.651811+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 34.13,
+          "homeOptimizedScore": 34.11,
           "awayOptimizedScore": 0.0,
           "flippedPick": false,
           "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3"
@@ -2903,11 +2903,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -3021,7 +3021,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -3031,9 +3031,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -3186,9 +3186,9 @@
             }
           ]
         },
-        "scoreBeforeSignalPolicyV13": 34.13,
+        "scoreBeforeSignalPolicyV13": 34.11,
         "signalPolicyV13Adjustment": -12.0,
-        "scoreAfterSignalPolicyV13": 22.13,
+        "scoreAfterSignalPolicyV13": 22.11,
         "predictionRemainsAvailable": true,
         "displayGroup": "non_official_prediction",
         "isOfficialDisplayPick": false,
@@ -3231,20 +3231,20 @@
           ],
           "adjustment": -4.0,
           "probabilityCap": {
-            "raw": 21.04,
+            "raw": 21.01,
             "cap": 49.0,
-            "capped": 21.04,
+            "capped": 21.01,
             "reasons": [
               "pass"
             ],
-            "score": 18.13
+            "score": 18.11
           },
           "officialAllowed": false
         },
-        "scoreBeforeDirectionalV1": 22.13,
+        "scoreBeforeDirectionalV1": 22.11,
         "directionalScoreV1Adjustment": -4.0,
-        "scoreAfterDirectionalV1": 18.13,
-        "cappedWinProbabilityPct": 21.04,
+        "scoreAfterDirectionalV1": 18.11,
+        "cappedWinProbabilityPct": 21.01,
         "choiceQuality": "Pass / Forced Prediction",
         "mlOverlay": {
           "enabled": true,
@@ -3263,7 +3263,7 @@
             "recordsWritten": 162,
             "lockedCardAuditRequired": true
           },
-          "probabilityPickCorrect": 0.0595,
+          "probabilityPickCorrect": 0.0594,
           "confirmed": false,
           "confirmReason": null,
           "promotionThreshold": {
@@ -3312,8 +3312,8 @@
           "promotionProfileOk": false,
           "usesGuardedLowerThreshold": true,
           "features": {
-            "score": 34.13,
-            "winProbabilityPct": 21.04,
+            "score": 34.11,
+            "winProbabilityPct": 21.01,
             "marketProb": 0.57794,
             "marketEdge": 0.15588000000000002,
             "marketDelta": 0.029556,
@@ -3370,8 +3370,8 @@
         "priceSource": "real_book",
         "marketSide": "pickem",
         "fairProbabilityPct": 52.22,
-        "winProbability": 0.2399,
-        "winProbabilityPct": 23.99,
+        "winProbability": 0.2396,
+        "winProbabilityPct": 23.96,
         "edgeVsBook": -0.00033,
         "edgeVsBookPct": -0.03,
         "expectedValue": -0.028312,
@@ -3381,7 +3381,7 @@
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "score": 36.16,
+        "score": 36.14,
         "confidenceTier": "Pass",
         "pickQuality": "WATCHLIST_OR_NO_PLAY",
         "tags": [
@@ -3411,11 +3411,11 @@
         "homeSignal": {
           "side": "home",
           "team": "Tampa Bay Rays",
-          "score": 36.16,
+          "score": 36.14,
           "fairProbability": 0.522163,
           "fairProbabilityPct": 52.22,
-          "winProbability": 0.2399,
-          "winProbabilityPct": 23.99,
+          "winProbability": 0.2396,
+          "winProbabilityPct": 23.96,
           "edgeVsBook": -0.00033,
           "edgeVsBookPct": -0.03,
           "expectedValue": -0.028312,
@@ -3442,9 +3442,9 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 38.9,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -3.75,
-          "optimizedWinnerScore": 36.16
+          "optimizedWinnerScore": 36.14
         },
         "awaySignal": {
           "side": "away",
@@ -3480,17 +3480,17 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 0.0,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -7.25,
           "optimizedWinnerScore": 0.0
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.629601+00:00",
+        "createdAt": "2026-07-11T01:05:08.637219+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 36.16,
+          "homeOptimizedScore": 36.14,
           "awayOptimizedScore": 0.0,
           "flippedPick": false,
           "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3"
@@ -3565,11 +3565,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -3683,7 +3683,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -3693,9 +3693,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -3856,9 +3856,9 @@
             }
           ]
         },
-        "scoreBeforeSignalPolicyV13": 36.16,
+        "scoreBeforeSignalPolicyV13": 36.14,
         "signalPolicyV13Adjustment": -18.0,
-        "scoreAfterSignalPolicyV13": 18.16,
+        "scoreAfterSignalPolicyV13": 18.14,
         "predictionRemainsAvailable": true,
         "displayGroup": "non_official_prediction",
         "isOfficialDisplayPick": false,
@@ -3909,9 +3909,9 @@
           ],
           "adjustment": -23.0,
           "probabilityCap": {
-            "raw": 23.99,
+            "raw": 23.96,
             "cap": 49.0,
-            "capped": 23.99,
+            "capped": 23.96,
             "reasons": [
               "compressed",
               "pass"
@@ -3920,10 +3920,10 @@
           },
           "officialAllowed": false
         },
-        "scoreBeforeDirectionalV1": 18.16,
+        "scoreBeforeDirectionalV1": 18.14,
         "directionalScoreV1Adjustment": -23.0,
         "scoreAfterDirectionalV1": 0.0,
-        "cappedWinProbabilityPct": 23.99,
+        "cappedWinProbabilityPct": 23.96,
         "choiceQuality": "Pass / Forced Prediction",
         "mlOverlay": {
           "enabled": true,
@@ -3994,8 +3994,8 @@
           "promotionProfileOk": false,
           "usesGuardedLowerThreshold": true,
           "features": {
-            "score": 36.16,
-            "winProbabilityPct": 23.99,
+            "score": 36.14,
+            "winProbabilityPct": 23.96,
             "marketProb": 0.522163,
             "marketEdge": 0.04432600000000003,
             "marketDelta": 0.016671,
@@ -4052,8 +4052,8 @@
         "priceSource": "real_book",
         "marketSide": "pickem",
         "fairProbabilityPct": 51.22,
-        "winProbability": 0.2156,
-        "winProbabilityPct": 21.56,
+        "winProbability": 0.2153,
+        "winProbabilityPct": 21.53,
         "edgeVsBook": -0.002713,
         "edgeVsBookPct": -0.27,
         "expectedValue": -0.035695,
@@ -4063,7 +4063,7 @@
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "score": 34.5,
+        "score": 34.48,
         "confidenceTier": "Pass",
         "pickQuality": "WATCHLIST_OR_NO_PLAY",
         "tags": [
@@ -4093,7 +4093,7 @@
         "homeSignal": {
           "side": "home",
           "team": "Cincinnati Reds",
-          "score": 10.7,
+          "score": 10.68,
           "fairProbability": 0.487843,
           "fairProbabilityPct": 48.78,
           "winProbability": 0.05,
@@ -4124,18 +4124,18 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 14.94,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -5.25,
-          "optimizedWinnerScore": 10.7
+          "optimizedWinnerScore": 10.68
         },
         "awaySignal": {
           "side": "away",
           "team": "Chicago Cubs",
-          "score": 34.5,
+          "score": 34.48,
           "fairProbability": 0.512157,
           "fairProbabilityPct": 51.22,
-          "winProbability": 0.2156,
-          "winProbabilityPct": 21.56,
+          "winProbability": 0.2153,
+          "winProbabilityPct": 21.53,
           "edgeVsBook": -0.002713,
           "edgeVsBookPct": -0.27,
           "expectedValue": -0.035695,
@@ -4162,18 +4162,18 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 35.74,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -2.25,
-          "optimizedWinnerScore": 34.5
+          "optimizedWinnerScore": 34.48
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.494596+00:00",
+        "createdAt": "2026-07-11T01:05:08.607704+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 10.7,
-          "awayOptimizedScore": 34.5,
+          "homeOptimizedScore": 10.68,
+          "awayOptimizedScore": 34.48,
           "flippedPick": false,
           "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3"
         },
@@ -4247,11 +4247,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -4366,7 +4366,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -4376,9 +4376,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -4539,9 +4539,9 @@
             }
           ]
         },
-        "scoreBeforeSignalPolicyV13": 34.5,
+        "scoreBeforeSignalPolicyV13": 34.48,
         "signalPolicyV13Adjustment": -14.0,
-        "scoreAfterSignalPolicyV13": 20.5,
+        "scoreAfterSignalPolicyV13": 20.48,
         "predictionRemainsAvailable": true,
         "displayGroup": "non_official_prediction",
         "isOfficialDisplayPick": false,
@@ -4596,9 +4596,9 @@
           ],
           "adjustment": -24.0,
           "probabilityCap": {
-            "raw": 21.56,
+            "raw": 21.53,
             "cap": 49.0,
-            "capped": 21.56,
+            "capped": 21.53,
             "reasons": [
               "compressed",
               "pass"
@@ -4607,10 +4607,10 @@
           },
           "officialAllowed": false
         },
-        "scoreBeforeDirectionalV1": 20.5,
+        "scoreBeforeDirectionalV1": 20.48,
         "directionalScoreV1Adjustment": -24.0,
         "scoreAfterDirectionalV1": 0.0,
-        "cappedWinProbabilityPct": 21.56,
+        "cappedWinProbabilityPct": 21.53,
         "choiceQuality": "Pass / Forced Prediction",
         "mlOverlay": {
           "enabled": true,
@@ -4681,8 +4681,8 @@
           "promotionProfileOk": false,
           "usesGuardedLowerThreshold": true,
           "features": {
-            "score": 34.5,
-            "winProbabilityPct": 21.56,
+            "score": 34.48,
+            "winProbabilityPct": 21.53,
             "marketProb": 0.512157,
             "marketEdge": 0.024313999999999947,
             "marketDelta": 0.007553,
@@ -4739,8 +4739,8 @@
         "priceSource": "real_book",
         "marketSide": "pickem",
         "fairProbabilityPct": 52.28,
-        "winProbability": 0.0641,
-        "winProbabilityPct": 6.41,
+        "winProbability": 0.064,
+        "winProbabilityPct": 6.4,
         "edgeVsBook": -0.010792,
         "edgeVsBookPct": -1.08,
         "expectedValue": -0.046526,
@@ -4750,7 +4750,7 @@
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "score": 17.83,
+        "score": 17.81,
         "confidenceTier": "Pass",
         "pickQuality": "WATCHLIST_OR_NO_PLAY",
         "tags": [
@@ -4780,11 +4780,11 @@
         "homeSignal": {
           "side": "home",
           "team": "Miami Marlins",
-          "score": 17.83,
+          "score": 17.81,
           "fairProbability": 0.522843,
           "fairProbabilityPct": 52.28,
-          "winProbability": 0.0641,
-          "winProbabilityPct": 6.41,
+          "winProbability": 0.064,
+          "winProbabilityPct": 6.4,
           "edgeVsBook": -0.010792,
           "edgeVsBookPct": -1.08,
           "expectedValue": -0.046526,
@@ -4811,9 +4811,9 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 20.57,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -3.75,
-          "optimizedWinnerScore": 17.83
+          "optimizedWinnerScore": 17.81
         },
         "awaySignal": {
           "side": "away",
@@ -4849,17 +4849,17 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 0.0,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -7.25,
           "optimizedWinnerScore": 0.0
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.562102+00:00",
+        "createdAt": "2026-07-11T01:05:08.622367+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 17.83,
+          "homeOptimizedScore": 17.81,
           "awayOptimizedScore": 0.0,
           "flippedPick": false,
           "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3"
@@ -4934,11 +4934,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -5052,7 +5052,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -5062,9 +5062,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -5225,7 +5225,7 @@
             }
           ]
         },
-        "scoreBeforeSignalPolicyV13": 17.83,
+        "scoreBeforeSignalPolicyV13": 17.81,
         "signalPolicyV13Adjustment": -22.0,
         "scoreAfterSignalPolicyV13": 0.0,
         "predictionRemainsAvailable": true,
@@ -5282,9 +5282,9 @@
           ],
           "adjustment": -35.0,
           "probabilityCap": {
-            "raw": 6.41,
+            "raw": 6.4,
             "cap": 49.0,
-            "capped": 6.41,
+            "capped": 6.4,
             "reasons": [
               "compressed",
               "reversal_weak_edge",
@@ -5297,7 +5297,7 @@
         "scoreBeforeDirectionalV1": 0.0,
         "directionalScoreV1Adjustment": -35.0,
         "scoreAfterDirectionalV1": 0.0,
-        "cappedWinProbabilityPct": 6.41,
+        "cappedWinProbabilityPct": 6.4,
         "choiceQuality": "Pass / Forced Prediction",
         "mlOverlay": {
           "enabled": true,
@@ -5369,8 +5369,8 @@
           "promotionProfileOk": false,
           "usesGuardedLowerThreshold": true,
           "features": {
-            "score": 17.83,
-            "winProbabilityPct": 6.41,
+            "score": 17.81,
+            "winProbabilityPct": 6.4,
             "marketProb": 0.522843,
             "marketEdge": 0.04568599999999995,
             "marketDelta": 0.00744,
@@ -5539,7 +5539,7 @@
           "optimizedWinnerScore": 0.0
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:07.039264+00:00",
+        "createdAt": "2026-07-11T01:05:08.725923+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
@@ -5619,11 +5619,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -5735,7 +5735,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -5745,9 +5745,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -6091,8 +6091,8 @@
         "priceSource": "real_book",
         "marketSide": "underdog",
         "fairProbabilityPct": 41.79,
-        "winProbability": 0.7406,
-        "winProbabilityPct": 74.06,
+        "winProbability": 0.7403,
+        "winProbabilityPct": 74.03,
         "edgeVsBook": 0.01127,
         "edgeVsBookPct": 1.13,
         "expectedValue": 0.004369,
@@ -6100,7 +6100,7 @@
         "promoted": true,
         "promotionStatus": "PROMOTED",
         "blockedReasons": [],
-        "score": 62.59,
+        "score": 62.57,
         "confidenceTier": "Lean",
         "pickQuality": "PROMOTED_SINGLE_GAME_ML",
         "tags": [
@@ -6130,11 +6130,11 @@
         "homeSignal": {
           "side": "home",
           "team": "Washington Nationals",
-          "score": 62.59,
+          "score": 62.57,
           "fairProbability": 0.417947,
           "fairProbabilityPct": 41.79,
-          "winProbability": 0.7406,
-          "winProbabilityPct": 74.06,
+          "winProbability": 0.7403,
+          "winProbabilityPct": 74.03,
           "edgeVsBook": 0.01127,
           "edgeVsBookPct": 1.13,
           "expectedValue": 0.004369,
@@ -6159,18 +6159,18 @@
           "promoted": true,
           "promotionStatus": "PROMOTED",
           "rawScoreBeforeWinnerOptimizer": 64.33,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -2.75,
-          "optimizedWinnerScore": 62.59
+          "optimizedWinnerScore": 62.57
         },
         "awaySignal": {
           "side": "away",
           "team": "New York Yankees",
-          "score": 15.66,
+          "score": 15.64,
           "fairProbability": 0.582053,
           "fairProbabilityPct": 58.21,
-          "winProbability": 0.0541,
-          "winProbabilityPct": 5.41,
+          "winProbability": 0.054,
+          "winProbabilityPct": 5.4,
           "edgeVsBook": -0.01418,
           "edgeVsBookPct": -1.42,
           "expectedValue": -0.072715,
@@ -6197,18 +6197,18 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 12.9,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": 1.75,
-          "optimizedWinnerScore": 15.66
+          "optimizedWinnerScore": 15.64
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.360670+00:00",
+        "createdAt": "2026-07-11T01:05:08.579116+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 62.59,
-          "awayOptimizedScore": 15.66,
+          "homeOptimizedScore": 62.57,
+          "awayOptimizedScore": 15.64,
           "flippedPick": false,
           "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3"
         },
@@ -6281,11 +6281,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -6397,7 +6397,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -6407,9 +6407,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -6565,9 +6565,9 @@
             }
           ]
         },
-        "scoreBeforeSignalPolicyV13": 62.59,
+        "scoreBeforeSignalPolicyV13": 62.57,
         "signalPolicyV13Adjustment": -10.0,
-        "scoreAfterSignalPolicyV13": 52.59,
+        "scoreAfterSignalPolicyV13": 52.57,
         "predictionRemainsAvailable": true,
         "displayGroup": "non_official_prediction",
         "isOfficialDisplayPick": false,
@@ -6618,19 +6618,19 @@
           ],
           "adjustment": -16.0,
           "probabilityCap": {
-            "raw": 74.06,
+            "raw": 74.03,
             "cap": 48.0,
             "capped": 48.0,
             "reasons": [
               "opponent_favored"
             ],
-            "score": 36.59
+            "score": 36.57
           },
           "officialAllowed": false
         },
-        "scoreBeforeDirectionalV1": 52.59,
+        "scoreBeforeDirectionalV1": 52.57,
         "directionalScoreV1Adjustment": -16.0,
-        "scoreAfterDirectionalV1": 36.59,
+        "scoreAfterDirectionalV1": 36.57,
         "cappedWinProbabilityPct": 48.0,
         "choiceQuality": "Pass / Forced Prediction",
         "mlOverlay": {
@@ -6699,8 +6699,8 @@
           "promotionProfileOk": false,
           "usesGuardedLowerThreshold": true,
           "features": {
-            "score": 62.59,
-            "winProbabilityPct": 74.06,
+            "score": 62.57,
+            "winProbabilityPct": 74.03,
             "marketProb": 0.417947,
             "marketEdge": -0.16410600000000003,
             "marketDelta": 0.014543,
@@ -6757,8 +6757,8 @@
         "priceSource": "real_book",
         "marketSide": "pickem",
         "fairProbabilityPct": 47.87,
-        "winProbability": 0.0829,
-        "winProbabilityPct": 8.29,
+        "winProbability": 0.0827,
+        "winProbabilityPct": 8.27,
         "edgeVsBook": -0.006483,
         "edgeVsBookPct": -0.65,
         "expectedValue": -0.046064,
@@ -6768,7 +6768,7 @@
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "score": 21.15,
+        "score": 21.13,
         "confidenceTier": "Pass",
         "pickQuality": "WATCHLIST_OR_NO_PLAY",
         "tags": [
@@ -6798,7 +6798,7 @@
         "homeSignal": {
           "side": "home",
           "team": "Detroit Tigers",
-          "score": 3.93,
+          "score": 3.91,
           "fairProbability": 0.521271,
           "fairProbabilityPct": 52.13,
           "winProbability": 0.05,
@@ -6829,18 +6829,18 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 6.67,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -3.75,
-          "optimizedWinnerScore": 3.93
+          "optimizedWinnerScore": 3.91
         },
         "awaySignal": {
           "side": "away",
           "team": "Philadelphia Phillies",
-          "score": 21.15,
+          "score": 21.13,
           "fairProbability": 0.478729,
           "fairProbabilityPct": 47.87,
-          "winProbability": 0.0829,
-          "winProbabilityPct": 8.29,
+          "winProbability": 0.0827,
+          "winProbabilityPct": 8.27,
           "edgeVsBook": -0.006483,
           "edgeVsBookPct": -0.65,
           "expectedValue": -0.046064,
@@ -6867,18 +6867,18 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 27.39,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -7.25,
-          "optimizedWinnerScore": 21.15
+          "optimizedWinnerScore": 21.13
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.293397+00:00",
+        "createdAt": "2026-07-11T01:05:08.564791+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 3.93,
-          "awayOptimizedScore": 21.15,
+          "homeOptimizedScore": 3.91,
+          "awayOptimizedScore": 21.13,
           "flippedPick": false,
           "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3"
         },
@@ -6952,11 +6952,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -7073,7 +7073,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -7083,9 +7083,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -7247,7 +7247,7 @@
             }
           ]
         },
-        "scoreBeforeSignalPolicyV13": 21.15,
+        "scoreBeforeSignalPolicyV13": 21.13,
         "signalPolicyV13Adjustment": -22.0,
         "scoreAfterSignalPolicyV13": 0.0,
         "predictionRemainsAvailable": true,
@@ -7304,9 +7304,9 @@
           ],
           "adjustment": -33.0,
           "probabilityCap": {
-            "raw": 8.29,
+            "raw": 8.27,
             "cap": 48.0,
-            "capped": 8.29,
+            "capped": 8.27,
             "reasons": [
               "compressed",
               "opponent_favored",
@@ -7319,7 +7319,7 @@
         "scoreBeforeDirectionalV1": 0.0,
         "directionalScoreV1Adjustment": -33.0,
         "scoreAfterDirectionalV1": 0.0,
-        "cappedWinProbabilityPct": 8.29,
+        "cappedWinProbabilityPct": 8.27,
         "choiceQuality": "Pass / Forced Prediction",
         "mlOverlay": {
           "enabled": true,
@@ -7391,8 +7391,8 @@
           "promotionProfileOk": false,
           "usesGuardedLowerThreshold": true,
           "features": {
-            "score": 21.15,
-            "winProbabilityPct": 8.29,
+            "score": 21.13,
+            "winProbabilityPct": 8.27,
             "marketProb": 0.478729,
             "marketEdge": -0.042542000000000024,
             "marketDelta": 0.007881,
@@ -7561,7 +7561,7 @@
           "optimizedWinnerScore": 30.98
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.226140+00:00",
+        "createdAt": "2026-07-11T01:05:08.549908+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
@@ -7641,11 +7641,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -7760,7 +7760,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -7770,9 +7770,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -8133,8 +8133,8 @@
         "priceSource": "real_book",
         "marketSide": "underdog",
         "fairProbabilityPct": 41.9,
-        "winProbability": 0.1697,
-        "winProbabilityPct": 16.97,
+        "winProbability": 0.1695,
+        "winProbabilityPct": 16.95,
         "edgeVsBook": -0.000173,
         "edgeVsBookPct": -0.02,
         "expectedValue": -0.028392,
@@ -8144,7 +8144,7 @@
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "score": 30.95,
+        "score": 30.93,
         "confidenceTier": "Pass",
         "pickQuality": "WATCHLIST_OR_NO_PLAY",
         "tags": [
@@ -8174,7 +8174,7 @@
         "homeSignal": {
           "side": "home",
           "team": "San Francisco Giants",
-          "score": 0.68,
+          "score": 0.66,
           "fairProbability": 0.581031,
           "fairProbabilityPct": 58.1,
           "winProbability": 0.05,
@@ -8205,18 +8205,18 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 2.42,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -2.75,
-          "optimizedWinnerScore": 0.68
+          "optimizedWinnerScore": 0.66
         },
         "awaySignal": {
           "side": "away",
           "team": "Colorado Rockies",
-          "score": 30.95,
+          "score": 30.93,
           "fairProbability": 0.418969,
           "fairProbabilityPct": 41.9,
-          "winProbability": 0.1697,
-          "winProbabilityPct": 16.97,
+          "winProbability": 0.1695,
+          "winProbabilityPct": 16.95,
           "edgeVsBook": -0.000173,
           "edgeVsBookPct": -0.02,
           "expectedValue": -0.028392,
@@ -8243,18 +8243,18 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 37.19,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -7.25,
-          "optimizedWinnerScore": 30.95
+          "optimizedWinnerScore": 30.93
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:07.174305+00:00",
+        "createdAt": "2026-07-11T01:05:08.806693+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 0.68,
-          "awayOptimizedScore": 30.95,
+          "homeOptimizedScore": 0.66,
+          "awayOptimizedScore": 30.93,
           "flippedPick": false,
           "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3"
         },
@@ -8328,11 +8328,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -8449,7 +8449,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -8459,9 +8459,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -8619,9 +8619,9 @@
             }
           ]
         },
-        "scoreBeforeSignalPolicyV13": 30.95,
+        "scoreBeforeSignalPolicyV13": 30.93,
         "signalPolicyV13Adjustment": -16.0,
-        "scoreAfterSignalPolicyV13": 14.95,
+        "scoreAfterSignalPolicyV13": 14.93,
         "predictionRemainsAvailable": true,
         "displayGroup": "non_official_prediction",
         "isOfficialDisplayPick": false,
@@ -8672,9 +8672,9 @@
           ],
           "adjustment": -24.0,
           "probabilityCap": {
-            "raw": 16.97,
+            "raw": 16.95,
             "cap": 48.0,
-            "capped": 16.97,
+            "capped": 16.95,
             "reasons": [
               "opponent_favored",
               "pass"
@@ -8683,10 +8683,10 @@
           },
           "officialAllowed": false
         },
-        "scoreBeforeDirectionalV1": 14.95,
+        "scoreBeforeDirectionalV1": 14.93,
         "directionalScoreV1Adjustment": -24.0,
         "scoreAfterDirectionalV1": 0.0,
-        "cappedWinProbabilityPct": 16.97,
+        "cappedWinProbabilityPct": 16.95,
         "choiceQuality": "Pass / Forced Prediction",
         "mlOverlay": {
           "enabled": true,
@@ -8757,8 +8757,8 @@
           "promotionProfileOk": false,
           "usesGuardedLowerThreshold": true,
           "features": {
-            "score": 30.95,
-            "winProbabilityPct": 16.97,
+            "score": 30.93,
+            "winProbabilityPct": 16.95,
             "marketProb": 0.418969,
             "marketEdge": -0.16206199999999998,
             "marketDelta": 0.011264,
@@ -8924,7 +8924,7 @@
           "optimizedWinnerScore": 18.49
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:06.966598+00:00",
+        "createdAt": "2026-07-11T01:05:08.711277+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
@@ -9004,11 +9004,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -9119,7 +9119,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -9129,9 +9129,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -9485,8 +9485,8 @@
         "priceSource": "real_book",
         "marketSide": "underdog",
         "fairProbabilityPct": 34.48,
-        "winProbability": 0.9348,
-        "winProbabilityPct": 93.48,
+        "winProbability": 0.9347,
+        "winProbabilityPct": 93.47,
         "edgeVsBook": 0.028075,
         "edgeVsBookPct": 2.81,
         "expectedValue": 0.014317,
@@ -9494,7 +9494,7 @@
         "promoted": true,
         "promotionStatus": "PROMOTED",
         "blockedReasons": [],
-        "score": 81.96,
+        "score": 81.94,
         "confidenceTier": "Premium",
         "pickQuality": "PROMOTED_SINGLE_GAME_ML",
         "tags": [
@@ -9524,7 +9524,7 @@
         "homeSignal": {
           "side": "home",
           "team": "Los Angeles Dodgers",
-          "score": 0.26,
+          "score": 0.24,
           "fairProbability": 0.655165,
           "fairProbabilityPct": 65.52,
           "winProbability": 0.05,
@@ -9556,18 +9556,18 @@
           "promoted": false,
           "promotionStatus": "NO_PLAY",
           "rawScoreBeforeWinnerOptimizer": 0.0,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -0.75,
-          "optimizedWinnerScore": 0.26
+          "optimizedWinnerScore": 0.24
         },
         "awaySignal": {
           "side": "away",
           "team": "Arizona Diamondbacks",
-          "score": 81.96,
+          "score": 81.94,
           "fairProbability": 0.344835,
           "fairProbabilityPct": 34.48,
-          "winProbability": 0.9348,
-          "winProbabilityPct": 93.48,
+          "winProbability": 0.9347,
+          "winProbabilityPct": 93.47,
           "edgeVsBook": 0.028075,
           "edgeVsBookPct": 2.81,
           "expectedValue": 0.014317,
@@ -9592,18 +9592,18 @@
           "promoted": true,
           "promotionStatus": "PROMOTED",
           "rawScoreBeforeWinnerOptimizer": 86.2,
-          "rolling24hLearningAdjustment": 1.01,
+          "rolling24hLearningAdjustment": 0.99,
           "winnerRuleAdjustment": -5.25,
-          "optimizedWinnerScore": 81.96
+          "optimizedWinnerScore": 81.94
         },
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
-        "createdAt": "2026-07-10T23:26:07.107144+00:00",
+        "createdAt": "2026-07-11T01:05:08.764218+00:00",
         "winnerOptimizer": {
           "applied": true,
           "basis": "market_signal_plus_multi_window_learning_plus_risk_calibrated_confirmation",
           "latestLearningApplied": true,
-          "homeOptimizedScore": 0.26,
-          "awayOptimizedScore": 81.96,
+          "homeOptimizedScore": 0.24,
+          "awayOptimizedScore": 81.94,
           "flippedPick": false,
           "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v3"
         },
@@ -9676,11 +9676,11 @@
           "locked": true,
           "lockStatus": "LOCKED",
           "source": "latest_pre_lock_pull_history",
-          "minutesUntilFirstGameStart": -45.1,
-          "minutesUntilSlateLock": -90.1,
-          "totalPullCountAvailable": 78,
+          "minutesUntilFirstGameStart": -144.14,
+          "minutesUntilSlateLock": -189.14,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
           "rules": [
             "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -9795,7 +9795,7 @@
         "lastPossiblePredictionGate": {
           "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN",
           "phase": "SLATE_LOCKED",
-          "minutesToStart": -45.1,
+          "minutesToStart": -144.14,
           "gateWindowMinutesBeforeStart": {
             "opensAt": 45,
             "closesAt": 45,
@@ -9805,9 +9805,9 @@
           "lockMinutesBeforeFirstGame": 45,
           "firstGameStartUtc": "2026-07-10T22:41:00+00:00",
           "lockAtUtc": "2026-07-10T21:56:00+00:00",
-          "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+          "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
           "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
-          "totalPullCountAvailable": 78,
+          "totalPullCountAvailable": 85,
           "scoringPullCount": 72,
           "finalWindowActive": true,
           "finalLocked": true,
@@ -9965,9 +9965,9 @@
             }
           ]
         },
-        "scoreBeforeSignalPolicyV13": 81.96,
+        "scoreBeforeSignalPolicyV13": 81.94,
         "signalPolicyV13Adjustment": -2.0,
-        "scoreAfterSignalPolicyV13": 79.96,
+        "scoreAfterSignalPolicyV13": 79.94,
         "predictionRemainsAvailable": true,
         "displayGroup": "non_official_prediction",
         "isOfficialDisplayPick": false,
@@ -10014,19 +10014,19 @@
           ],
           "adjustment": -5.0,
           "probabilityCap": {
-            "raw": 93.48,
+            "raw": 93.47,
             "cap": 48.0,
             "capped": 48.0,
             "reasons": [
               "opponent_favored"
             ],
-            "score": 74.96
+            "score": 74.94
           },
           "officialAllowed": false
         },
-        "scoreBeforeDirectionalV1": 79.96,
+        "scoreBeforeDirectionalV1": 79.94,
         "directionalScoreV1Adjustment": -5.0,
-        "scoreAfterDirectionalV1": 74.96,
+        "scoreAfterDirectionalV1": 74.94,
         "cappedWinProbabilityPct": 48.0,
         "choiceQuality": "Coin Flip Prediction",
         "mlOverlay": {
@@ -10046,7 +10046,7 @@
             "recordsWritten": 162,
             "lockedCardAuditRequired": true
           },
-          "probabilityPickCorrect": 0.0674,
+          "probabilityPickCorrect": 0.0673,
           "confirmed": false,
           "confirmReason": null,
           "promotionThreshold": {
@@ -10095,8 +10095,8 @@
           "promotionProfileOk": false,
           "usesGuardedLowerThreshold": true,
           "features": {
-            "score": 81.96,
-            "winProbabilityPct": 93.48,
+            "score": 81.94,
+            "winProbabilityPct": 93.47,
             "marketProb": 0.344835,
             "marketEdge": -0.31033,
             "marketDelta": 0.040107,
@@ -10751,7 +10751,7 @@
       "displayPredictionCount": 15,
       "allGamesHaveDisplayedWinnerPrediction": true
     },
-    "totalPullCountAvailable": 78,
+    "totalPullCountAvailable": 85,
     "scoringPullCount": 72,
     "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
     "slatePredictionLock": {
@@ -10764,11 +10764,11 @@
       "locked": true,
       "lockStatus": "LOCKED",
       "source": "latest_pre_lock_pull_history",
-      "minutesUntilFirstGameStart": -45.1,
-      "minutesUntilSlateLock": -90.1,
-      "totalPullCountAvailable": 78,
+      "minutesUntilFirstGameStart": -144.14,
+      "minutesUntilSlateLock": -189.14,
+      "totalPullCountAvailable": 85,
       "scoringPullCount": 72,
-      "latestAvailablePullAt": "2026-07-10T23:15:26.233944+00:00",
+      "latestAvailablePullAt": "2026-07-11T01:00:26.147974+00:00",
       "latestScoringPullAt": "2026-07-10T21:45:26.141765+00:00",
       "rules": [
         "All predictions for the slate lock together 45 minutes before the first game begins.",
@@ -10819,8 +10819,8 @@
         "predictedWinner": "Chicago White Sox",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 18.88,
-        "score": 32.51,
+        "winProbabilityPct": 18.86,
+        "score": 32.49,
         "rank": 1,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -10911,8 +10911,8 @@
         "predictedWinner": "Houston Astros",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 6.67,
-        "score": 18.34,
+        "winProbabilityPct": 6.66,
+        "score": 18.32,
         "rank": 3,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11004,8 +11004,8 @@
         "predictedWinner": "New York Mets",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 21.04,
-        "score": 34.13,
+        "winProbabilityPct": 21.01,
+        "score": 34.11,
         "rank": 5,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11051,8 +11051,8 @@
         "predictedWinner": "Tampa Bay Rays",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 23.99,
-        "score": 36.16,
+        "winProbabilityPct": 23.96,
+        "score": 36.14,
         "rank": 6,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11098,8 +11098,8 @@
         "predictedWinner": "Chicago Cubs",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 21.56,
-        "score": 34.5,
+        "winProbabilityPct": 21.53,
+        "score": 34.48,
         "rank": 7,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11145,8 +11145,8 @@
         "predictedWinner": "Miami Marlins",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 6.41,
-        "score": 17.83,
+        "winProbabilityPct": 6.4,
+        "score": 17.81,
         "rank": 8,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11238,8 +11238,8 @@
         "predictedWinner": "Washington Nationals",
         "predictedSide": "home",
         "confidenceTier": "Lean",
-        "winProbabilityPct": 74.06,
-        "score": 62.59,
+        "winProbabilityPct": 74.03,
+        "score": 62.57,
         "rank": 10,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11284,8 +11284,8 @@
         "predictedWinner": "Philadelphia Phillies",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 8.29,
-        "score": 21.15,
+        "winProbabilityPct": 8.27,
+        "score": 21.13,
         "rank": 11,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11379,8 +11379,8 @@
         "predictedWinner": "Colorado Rockies",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 16.97,
-        "score": 30.95,
+        "winProbabilityPct": 16.95,
+        "score": 30.93,
         "rank": 13,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11472,8 +11472,8 @@
         "predictedWinner": "Arizona Diamondbacks",
         "predictedSide": "away",
         "confidenceTier": "Premium",
-        "winProbabilityPct": 93.48,
-        "score": 81.96,
+        "winProbabilityPct": 93.47,
+        "score": 81.94,
         "rank": 15,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11521,8 +11521,8 @@
         "predictedWinner": "Chicago White Sox",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 18.88,
-        "score": 32.51,
+        "winProbabilityPct": 18.86,
+        "score": 32.49,
         "rank": 1,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11613,8 +11613,8 @@
         "predictedWinner": "Houston Astros",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 6.67,
-        "score": 18.34,
+        "winProbabilityPct": 6.66,
+        "score": 18.32,
         "rank": 3,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11706,8 +11706,8 @@
         "predictedWinner": "New York Mets",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 21.04,
-        "score": 34.13,
+        "winProbabilityPct": 21.01,
+        "score": 34.11,
         "rank": 5,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11753,8 +11753,8 @@
         "predictedWinner": "Tampa Bay Rays",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 23.99,
-        "score": 36.16,
+        "winProbabilityPct": 23.96,
+        "score": 36.14,
         "rank": 6,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11800,8 +11800,8 @@
         "predictedWinner": "Chicago Cubs",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 21.56,
-        "score": 34.5,
+        "winProbabilityPct": 21.53,
+        "score": 34.48,
         "rank": 7,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11847,8 +11847,8 @@
         "predictedWinner": "Miami Marlins",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 6.41,
-        "score": 17.83,
+        "winProbabilityPct": 6.4,
+        "score": 17.81,
         "rank": 8,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11940,8 +11940,8 @@
         "predictedWinner": "Washington Nationals",
         "predictedSide": "home",
         "confidenceTier": "Lean",
-        "winProbabilityPct": 74.06,
-        "score": 62.59,
+        "winProbabilityPct": 74.03,
+        "score": 62.57,
         "rank": 10,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -11986,8 +11986,8 @@
         "predictedWinner": "Philadelphia Phillies",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 8.29,
-        "score": 21.15,
+        "winProbabilityPct": 8.27,
+        "score": 21.13,
         "rank": 11,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -12081,8 +12081,8 @@
         "predictedWinner": "Colorado Rockies",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 16.97,
-        "score": 30.95,
+        "winProbabilityPct": 16.95,
+        "score": 30.93,
         "rank": 13,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -12174,8 +12174,8 @@
         "predictedWinner": "Arizona Diamondbacks",
         "predictedSide": "away",
         "confidenceTier": "Premium",
-        "winProbabilityPct": 93.48,
-        "score": 81.96,
+        "winProbabilityPct": 93.47,
+        "score": 81.94,
         "rank": 15,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -12223,9 +12223,9 @@
         "predictedWinner": "Chicago White Sox",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "score": 32.51,
-        "scoreAfterSignalPolicyV13": 28.51,
-        "winProbabilityPct": 18.88,
+        "score": 32.49,
+        "scoreAfterSignalPolicyV13": 28.49,
+        "winProbabilityPct": 18.86,
         "displayGroup": "required_game_prediction",
         "isOfficial": true,
         "isPlayable": true,
@@ -12276,9 +12276,9 @@
         "predictedWinner": "Houston Astros",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "score": 18.34,
-        "scoreAfterSignalPolicyV13": 10.34,
-        "winProbabilityPct": 6.67,
+        "score": 18.32,
+        "scoreAfterSignalPolicyV13": 10.32,
+        "winProbabilityPct": 6.66,
         "displayGroup": "required_game_prediction",
         "isOfficial": true,
         "isPlayable": true,
@@ -12331,9 +12331,9 @@
         "predictedWinner": "New York Mets",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "score": 34.13,
-        "scoreAfterSignalPolicyV13": 22.13,
-        "winProbabilityPct": 21.04,
+        "score": 34.11,
+        "scoreAfterSignalPolicyV13": 22.11,
+        "winProbabilityPct": 21.01,
         "displayGroup": "required_game_prediction",
         "isOfficial": true,
         "isPlayable": true,
@@ -12358,9 +12358,9 @@
         "predictedWinner": "Tampa Bay Rays",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "score": 36.16,
-        "scoreAfterSignalPolicyV13": 18.16,
-        "winProbabilityPct": 23.99,
+        "score": 36.14,
+        "scoreAfterSignalPolicyV13": 18.14,
+        "winProbabilityPct": 23.96,
         "displayGroup": "required_game_prediction",
         "isOfficial": true,
         "isPlayable": true,
@@ -12385,9 +12385,9 @@
         "predictedWinner": "Chicago Cubs",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "score": 34.5,
-        "scoreAfterSignalPolicyV13": 20.5,
-        "winProbabilityPct": 21.56,
+        "score": 34.48,
+        "scoreAfterSignalPolicyV13": 20.48,
+        "winProbabilityPct": 21.53,
         "displayGroup": "required_game_prediction",
         "isOfficial": true,
         "isPlayable": true,
@@ -12412,9 +12412,9 @@
         "predictedWinner": "Miami Marlins",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "score": 17.83,
+        "score": 17.81,
         "scoreAfterSignalPolicyV13": 0.0,
-        "winProbabilityPct": 6.41,
+        "winProbabilityPct": 6.4,
         "displayGroup": "required_game_prediction",
         "isOfficial": true,
         "isPlayable": true,
@@ -12466,9 +12466,9 @@
         "predictedWinner": "Washington Nationals",
         "predictedSide": "home",
         "confidenceTier": "Lean",
-        "score": 62.59,
-        "scoreAfterSignalPolicyV13": 52.59,
-        "winProbabilityPct": 74.06,
+        "score": 62.57,
+        "scoreAfterSignalPolicyV13": 52.57,
+        "winProbabilityPct": 74.03,
         "displayGroup": "required_game_prediction",
         "isOfficial": true,
         "isPlayable": true,
@@ -12492,9 +12492,9 @@
         "predictedWinner": "Philadelphia Phillies",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "score": 21.15,
+        "score": 21.13,
         "scoreAfterSignalPolicyV13": 0.0,
-        "winProbabilityPct": 8.29,
+        "winProbabilityPct": 8.27,
         "displayGroup": "required_game_prediction",
         "isOfficial": true,
         "isPlayable": true,
@@ -12548,9 +12548,9 @@
         "predictedWinner": "Colorado Rockies",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "score": 30.95,
-        "scoreAfterSignalPolicyV13": 14.95,
-        "winProbabilityPct": 16.97,
+        "score": 30.93,
+        "scoreAfterSignalPolicyV13": 14.93,
+        "winProbabilityPct": 16.95,
         "displayGroup": "required_game_prediction",
         "isOfficial": true,
         "isPlayable": true,
@@ -12603,9 +12603,9 @@
         "predictedWinner": "Arizona Diamondbacks",
         "predictedSide": "away",
         "confidenceTier": "Premium",
-        "score": 81.96,
-        "scoreAfterSignalPolicyV13": 79.96,
-        "winProbabilityPct": 93.48,
+        "score": 81.94,
+        "scoreAfterSignalPolicyV13": 79.94,
+        "winProbabilityPct": 93.47,
         "displayGroup": "required_game_prediction",
         "isOfficial": true,
         "isPlayable": true,
@@ -12632,8 +12632,8 @@
         "predictedWinner": "Chicago White Sox",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 18.88,
-        "score": 32.51,
+        "winProbabilityPct": 18.86,
+        "score": 32.49,
         "rank": 1,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -12724,8 +12724,8 @@
         "predictedWinner": "Houston Astros",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 6.67,
-        "score": 18.34,
+        "winProbabilityPct": 6.66,
+        "score": 18.32,
         "rank": 3,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -12817,8 +12817,8 @@
         "predictedWinner": "New York Mets",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 21.04,
-        "score": 34.13,
+        "winProbabilityPct": 21.01,
+        "score": 34.11,
         "rank": 5,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -12864,8 +12864,8 @@
         "predictedWinner": "Tampa Bay Rays",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 23.99,
-        "score": 36.16,
+        "winProbabilityPct": 23.96,
+        "score": 36.14,
         "rank": 6,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -12911,8 +12911,8 @@
         "predictedWinner": "Chicago Cubs",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 21.56,
-        "score": 34.5,
+        "winProbabilityPct": 21.53,
+        "score": 34.48,
         "rank": 7,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -12958,8 +12958,8 @@
         "predictedWinner": "Miami Marlins",
         "predictedSide": "home",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 6.41,
-        "score": 17.83,
+        "winProbabilityPct": 6.4,
+        "score": 17.81,
         "rank": 8,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -13051,8 +13051,8 @@
         "predictedWinner": "Washington Nationals",
         "predictedSide": "home",
         "confidenceTier": "Lean",
-        "winProbabilityPct": 74.06,
-        "score": 62.59,
+        "winProbabilityPct": 74.03,
+        "score": 62.57,
         "rank": 10,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -13097,8 +13097,8 @@
         "predictedWinner": "Philadelphia Phillies",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 8.29,
-        "score": 21.15,
+        "winProbabilityPct": 8.27,
+        "score": 21.13,
         "rank": 11,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -13192,8 +13192,8 @@
         "predictedWinner": "Colorado Rockies",
         "predictedSide": "away",
         "confidenceTier": "Pass",
-        "winProbabilityPct": 16.97,
-        "score": 30.95,
+        "winProbabilityPct": 16.95,
+        "score": 30.93,
         "rank": 13,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -13285,8 +13285,8 @@
         "predictedWinner": "Arizona Diamondbacks",
         "predictedSide": "away",
         "confidenceTier": "Premium",
-        "winProbabilityPct": 93.48,
-        "score": 81.96,
+        "winProbabilityPct": 93.47,
+        "score": 81.94,
         "rank": 15,
         "platformPick": true,
         "customerVisibleWinnerPick": true,
@@ -13417,32 +13417,36 @@
     ],
     "mlbBuilt": true,
     "mlbLatestBuild": {
-      "pullCount": "78",
+      "pullCount": "85",
       "reason": "BUILT_FROM_TOP_AVAILABLE_SIGNALS_AFTER_12_SNAPSHOTS",
       "selectedStrongCount": "0",
       "rankedCombos": [
         {
           "top3": true,
           "rank": "1",
-          "score": "13.55",
+          "score": "14",
           "legs": [
             {
-              "gameId": "250b0373676b10f51ed1c59c93714245",
-              "score": "32.17",
+              "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+              "score": "16",
               "side": "away",
-              "selection": "New York Yankees",
-              "awayTeam": "New York Yankees",
+              "selection": "Houston Astros",
+              "awayTeam": "Houston Astros",
               "grade": "FRAGILE",
-              "homeTeam": "Washington Nationals",
-              "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-              "commenceTime": "2026-07-10T23:46:00Z",
+              "homeTeam": "Texas Rangers",
+              "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+              "commenceTime": "2026-07-11T00:09:00Z",
               "tags": [
+                "BOOK_DIVERGENCE",
+                "CHAOS",
+                "DECELERATION",
+                "RESISTANCE",
                 "REVERSAL"
               ]
             },
             {
               "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
-              "score": "8.47",
+              "score": "15",
               "side": "away",
               "selection": "Athletics",
               "awayTeam": "Athletics",
@@ -13451,13 +13455,16 @@
               "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
               "commenceTime": "2026-07-10T23:41:00Z",
               "tags": [
+                "BOOK_DIVERGENCE",
                 "CHAOS",
+                "DECELERATION",
+                "RESISTANCE",
                 "REVERSAL"
               ]
             },
             {
               "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
-              "score": "0",
+              "score": "11",
               "side": "away",
               "selection": "Philadelphia Phillies",
               "awayTeam": "Philadelphia Phillies",
@@ -13466,10 +13473,10 @@
               "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
               "commenceTime": "2026-07-10T22:41:00Z",
               "tags": [
-                "BOOK_DIVERGENCE",
                 "CHAOS",
-                "REVERSAL",
-                "STEAM"
+                "DECELERATION",
+                "RESISTANCE",
+                "REVERSAL"
               ]
             }
           ]
@@ -13477,25 +13484,89 @@
         {
           "top3": true,
           "rank": "2",
-          "score": "13.55",
+          "score": "14",
           "legs": [
             {
-              "gameId": "250b0373676b10f51ed1c59c93714245",
-              "score": "32.17",
-              "side": "away",
-              "selection": "New York Yankees",
-              "awayTeam": "New York Yankees",
+              "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+              "score": "16",
+              "side": "home",
+              "selection": "Texas Rangers",
+              "awayTeam": "Houston Astros",
               "grade": "FRAGILE",
-              "homeTeam": "Washington Nationals",
-              "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-              "commenceTime": "2026-07-10T23:46:00Z",
+              "homeTeam": "Texas Rangers",
+              "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+              "commenceTime": "2026-07-11T00:09:00Z",
               "tags": [
+                "ACCELERATION",
+                "BOOK_DIVERGENCE",
+                "CHAOS",
+                "REVERSAL",
+                "STEAM"
+              ]
+            },
+            {
+              "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
+              "score": "15",
+              "side": "away",
+              "selection": "Athletics",
+              "awayTeam": "Athletics",
+              "grade": "FRAGILE",
+              "homeTeam": "Chicago White Sox",
+              "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
+              "commenceTime": "2026-07-10T23:41:00Z",
+              "tags": [
+                "BOOK_DIVERGENCE",
+                "CHAOS",
+                "DECELERATION",
+                "RESISTANCE",
+                "REVERSAL"
+              ]
+            },
+            {
+              "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
+              "score": "11",
+              "side": "away",
+              "selection": "Philadelphia Phillies",
+              "awayTeam": "Philadelphia Phillies",
+              "grade": "FRAGILE",
+              "homeTeam": "Detroit Tigers",
+              "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
+              "commenceTime": "2026-07-10T22:41:00Z",
+              "tags": [
+                "CHAOS",
+                "DECELERATION",
+                "RESISTANCE",
+                "REVERSAL"
+              ]
+            }
+          ]
+        },
+        {
+          "top3": true,
+          "rank": "3",
+          "score": "14",
+          "legs": [
+            {
+              "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+              "score": "16",
+              "side": "away",
+              "selection": "Houston Astros",
+              "awayTeam": "Houston Astros",
+              "grade": "FRAGILE",
+              "homeTeam": "Texas Rangers",
+              "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+              "commenceTime": "2026-07-11T00:09:00Z",
+              "tags": [
+                "BOOK_DIVERGENCE",
+                "CHAOS",
+                "DECELERATION",
+                "RESISTANCE",
                 "REVERSAL"
               ]
             },
             {
               "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
-              "score": "8.47",
+              "score": "15",
               "side": "home",
               "selection": "Chicago White Sox",
               "awayTeam": "Athletics",
@@ -13504,14 +13575,16 @@
               "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
               "commenceTime": "2026-07-10T23:41:00Z",
               "tags": [
-                "CERTAINTY_ANCHOR",
+                "ACCELERATION",
+                "BOOK_DIVERGENCE",
                 "CHAOS",
-                "REVERSAL"
+                "REVERSAL",
+                "STEAM"
               ]
             },
             {
               "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
-              "score": "0",
+              "score": "11",
               "side": "away",
               "selection": "Philadelphia Phillies",
               "awayTeam": "Philadelphia Phillies",
@@ -13520,61 +13593,8 @@
               "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
               "commenceTime": "2026-07-10T22:41:00Z",
               "tags": [
-                "BOOK_DIVERGENCE",
                 "CHAOS",
-                "REVERSAL",
-                "STEAM"
-              ]
-            }
-          ]
-        },
-        {
-          "top3": true,
-          "rank": "3",
-          "score": "13.55",
-          "legs": [
-            {
-              "gameId": "250b0373676b10f51ed1c59c93714245",
-              "score": "32.17",
-              "side": "away",
-              "selection": "New York Yankees",
-              "awayTeam": "New York Yankees",
-              "grade": "FRAGILE",
-              "homeTeam": "Washington Nationals",
-              "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-              "commenceTime": "2026-07-10T23:46:00Z",
-              "tags": [
-                "REVERSAL"
-              ]
-            },
-            {
-              "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
-              "score": "8.47",
-              "side": "away",
-              "selection": "Athletics",
-              "awayTeam": "Athletics",
-              "grade": "FRAGILE",
-              "homeTeam": "Chicago White Sox",
-              "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
-              "commenceTime": "2026-07-10T23:41:00Z",
-              "tags": [
-                "CHAOS",
-                "REVERSAL"
-              ]
-            },
-            {
-              "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
-              "score": "0",
-              "side": "home",
-              "selection": "Detroit Tigers",
-              "awayTeam": "Philadelphia Phillies",
-              "grade": "FRAGILE",
-              "homeTeam": "Detroit Tigers",
-              "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
-              "commenceTime": "2026-07-10T22:41:00Z",
-              "tags": [
-                "BOOK_DIVERGENCE",
-                "CHAOS",
+                "DECELERATION",
                 "RESISTANCE",
                 "REVERSAL"
               ]
@@ -13584,25 +13604,29 @@
         {
           "top3": false,
           "rank": "4",
-          "score": "13.55",
+          "score": "14",
           "legs": [
             {
-              "gameId": "250b0373676b10f51ed1c59c93714245",
-              "score": "32.17",
-              "side": "away",
-              "selection": "New York Yankees",
-              "awayTeam": "New York Yankees",
+              "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+              "score": "16",
+              "side": "home",
+              "selection": "Texas Rangers",
+              "awayTeam": "Houston Astros",
               "grade": "FRAGILE",
-              "homeTeam": "Washington Nationals",
-              "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-              "commenceTime": "2026-07-10T23:46:00Z",
+              "homeTeam": "Texas Rangers",
+              "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+              "commenceTime": "2026-07-11T00:09:00Z",
               "tags": [
-                "REVERSAL"
+                "ACCELERATION",
+                "BOOK_DIVERGENCE",
+                "CHAOS",
+                "REVERSAL",
+                "STEAM"
               ]
             },
             {
               "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
-              "score": "8.47",
+              "score": "15",
               "side": "home",
               "selection": "Chicago White Sox",
               "awayTeam": "Athletics",
@@ -13611,24 +13635,26 @@
               "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
               "commenceTime": "2026-07-10T23:41:00Z",
               "tags": [
-                "CERTAINTY_ANCHOR",
+                "ACCELERATION",
+                "BOOK_DIVERGENCE",
                 "CHAOS",
-                "REVERSAL"
+                "REVERSAL",
+                "STEAM"
               ]
             },
             {
               "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
-              "score": "0",
-              "side": "home",
-              "selection": "Detroit Tigers",
+              "score": "11",
+              "side": "away",
+              "selection": "Philadelphia Phillies",
               "awayTeam": "Philadelphia Phillies",
               "grade": "FRAGILE",
               "homeTeam": "Detroit Tigers",
               "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
               "commenceTime": "2026-07-10T22:41:00Z",
               "tags": [
-                "BOOK_DIVERGENCE",
                 "CHAOS",
+                "DECELERATION",
                 "RESISTANCE",
                 "REVERSAL"
               ]
@@ -13638,26 +13664,29 @@
         {
           "top3": false,
           "rank": "5",
-          "score": "13.1",
+          "score": "14",
           "legs": [
             {
-              "gameId": "250b0373676b10f51ed1c59c93714245",
-              "score": "30.84",
-              "side": "home",
-              "selection": "Washington Nationals",
-              "awayTeam": "New York Yankees",
+              "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+              "score": "16",
+              "side": "away",
+              "selection": "Houston Astros",
+              "awayTeam": "Houston Astros",
               "grade": "FRAGILE",
-              "homeTeam": "Washington Nationals",
-              "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-              "commenceTime": "2026-07-10T23:46:00Z",
+              "homeTeam": "Texas Rangers",
+              "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+              "commenceTime": "2026-07-11T00:09:00Z",
               "tags": [
-                "PUBLIC_FADE_CANDIDATE",
+                "BOOK_DIVERGENCE",
+                "CHAOS",
+                "DECELERATION",
+                "RESISTANCE",
                 "REVERSAL"
               ]
             },
             {
               "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
-              "score": "8.47",
+              "score": "15",
               "side": "away",
               "selection": "Athletics",
               "awayTeam": "Athletics",
@@ -13666,23 +13695,28 @@
               "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
               "commenceTime": "2026-07-10T23:41:00Z",
               "tags": [
+                "BOOK_DIVERGENCE",
                 "CHAOS",
+                "DECELERATION",
+                "RESISTANCE",
                 "REVERSAL"
               ]
             },
             {
               "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
-              "score": "0",
-              "side": "away",
-              "selection": "Philadelphia Phillies",
+              "score": "11",
+              "side": "home",
+              "selection": "Detroit Tigers",
               "awayTeam": "Philadelphia Phillies",
               "grade": "FRAGILE",
               "homeTeam": "Detroit Tigers",
               "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
               "commenceTime": "2026-07-10T22:41:00Z",
               "tags": [
-                "BOOK_DIVERGENCE",
+                "ACCELERATION",
+                "CERTAINTY_ANCHOR",
                 "CHAOS",
+                "MOMENTUM",
                 "REVERSAL",
                 "STEAM"
               ]
@@ -13692,52 +13726,59 @@
         {
           "top3": false,
           "rank": "6",
-          "score": "13.1",
+          "score": "14",
           "legs": [
             {
-              "gameId": "250b0373676b10f51ed1c59c93714245",
-              "score": "30.84",
+              "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+              "score": "16",
               "side": "home",
-              "selection": "Washington Nationals",
-              "awayTeam": "New York Yankees",
+              "selection": "Texas Rangers",
+              "awayTeam": "Houston Astros",
               "grade": "FRAGILE",
-              "homeTeam": "Washington Nationals",
-              "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-              "commenceTime": "2026-07-10T23:46:00Z",
+              "homeTeam": "Texas Rangers",
+              "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+              "commenceTime": "2026-07-11T00:09:00Z",
               "tags": [
-                "PUBLIC_FADE_CANDIDATE",
-                "REVERSAL"
+                "ACCELERATION",
+                "BOOK_DIVERGENCE",
+                "CHAOS",
+                "REVERSAL",
+                "STEAM"
               ]
             },
             {
               "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
-              "score": "8.47",
-              "side": "home",
-              "selection": "Chicago White Sox",
+              "score": "15",
+              "side": "away",
+              "selection": "Athletics",
               "awayTeam": "Athletics",
               "grade": "FRAGILE",
               "homeTeam": "Chicago White Sox",
               "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
               "commenceTime": "2026-07-10T23:41:00Z",
               "tags": [
-                "CERTAINTY_ANCHOR",
+                "BOOK_DIVERGENCE",
                 "CHAOS",
+                "DECELERATION",
+                "RESISTANCE",
                 "REVERSAL"
               ]
             },
             {
               "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
-              "score": "0",
-              "side": "away",
-              "selection": "Philadelphia Phillies",
+              "score": "11",
+              "side": "home",
+              "selection": "Detroit Tigers",
               "awayTeam": "Philadelphia Phillies",
               "grade": "FRAGILE",
               "homeTeam": "Detroit Tigers",
               "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
               "commenceTime": "2026-07-10T22:41:00Z",
               "tags": [
-                "BOOK_DIVERGENCE",
+                "ACCELERATION",
+                "CERTAINTY_ANCHOR",
                 "CHAOS",
+                "MOMENTUM",
                 "REVERSAL",
                 "STEAM"
               ]
@@ -13747,80 +13788,29 @@
         {
           "top3": false,
           "rank": "7",
-          "score": "13.1",
+          "score": "14",
           "legs": [
             {
-              "gameId": "250b0373676b10f51ed1c59c93714245",
-              "score": "30.84",
-              "side": "home",
-              "selection": "Washington Nationals",
-              "awayTeam": "New York Yankees",
-              "grade": "FRAGILE",
-              "homeTeam": "Washington Nationals",
-              "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-              "commenceTime": "2026-07-10T23:46:00Z",
-              "tags": [
-                "PUBLIC_FADE_CANDIDATE",
-                "REVERSAL"
-              ]
-            },
-            {
-              "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
-              "score": "8.47",
+              "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+              "score": "16",
               "side": "away",
-              "selection": "Athletics",
-              "awayTeam": "Athletics",
+              "selection": "Houston Astros",
+              "awayTeam": "Houston Astros",
               "grade": "FRAGILE",
-              "homeTeam": "Chicago White Sox",
-              "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
-              "commenceTime": "2026-07-10T23:41:00Z",
-              "tags": [
-                "CHAOS",
-                "REVERSAL"
-              ]
-            },
-            {
-              "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
-              "score": "0",
-              "side": "home",
-              "selection": "Detroit Tigers",
-              "awayTeam": "Philadelphia Phillies",
-              "grade": "FRAGILE",
-              "homeTeam": "Detroit Tigers",
-              "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
-              "commenceTime": "2026-07-10T22:41:00Z",
+              "homeTeam": "Texas Rangers",
+              "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+              "commenceTime": "2026-07-11T00:09:00Z",
               "tags": [
                 "BOOK_DIVERGENCE",
                 "CHAOS",
+                "DECELERATION",
                 "RESISTANCE",
-                "REVERSAL"
-              ]
-            }
-          ]
-        },
-        {
-          "top3": false,
-          "rank": "8",
-          "score": "13.1",
-          "legs": [
-            {
-              "gameId": "250b0373676b10f51ed1c59c93714245",
-              "score": "30.84",
-              "side": "home",
-              "selection": "Washington Nationals",
-              "awayTeam": "New York Yankees",
-              "grade": "FRAGILE",
-              "homeTeam": "Washington Nationals",
-              "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-              "commenceTime": "2026-07-10T23:46:00Z",
-              "tags": [
-                "PUBLIC_FADE_CANDIDATE",
                 "REVERSAL"
               ]
             },
             {
               "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
-              "score": "8.47",
+              "score": "15",
               "side": "home",
               "selection": "Chicago White Sox",
               "awayTeam": "Athletics",
@@ -13829,14 +13819,16 @@
               "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
               "commenceTime": "2026-07-10T23:41:00Z",
               "tags": [
-                "CERTAINTY_ANCHOR",
+                "ACCELERATION",
+                "BOOK_DIVERGENCE",
                 "CHAOS",
-                "REVERSAL"
+                "REVERSAL",
+                "STEAM"
               ]
             },
             {
               "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
-              "score": "0",
+              "score": "11",
               "side": "home",
               "selection": "Detroit Tigers",
               "awayTeam": "Philadelphia Phillies",
@@ -13845,10 +13837,74 @@
               "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
               "commenceTime": "2026-07-10T22:41:00Z",
               "tags": [
+                "ACCELERATION",
+                "CERTAINTY_ANCHOR",
+                "CHAOS",
+                "MOMENTUM",
+                "REVERSAL",
+                "STEAM"
+              ]
+            }
+          ]
+        },
+        {
+          "top3": false,
+          "rank": "8",
+          "score": "14",
+          "legs": [
+            {
+              "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+              "score": "16",
+              "side": "home",
+              "selection": "Texas Rangers",
+              "awayTeam": "Houston Astros",
+              "grade": "FRAGILE",
+              "homeTeam": "Texas Rangers",
+              "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+              "commenceTime": "2026-07-11T00:09:00Z",
+              "tags": [
+                "ACCELERATION",
                 "BOOK_DIVERGENCE",
                 "CHAOS",
-                "RESISTANCE",
-                "REVERSAL"
+                "REVERSAL",
+                "STEAM"
+              ]
+            },
+            {
+              "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
+              "score": "15",
+              "side": "home",
+              "selection": "Chicago White Sox",
+              "awayTeam": "Athletics",
+              "grade": "FRAGILE",
+              "homeTeam": "Chicago White Sox",
+              "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
+              "commenceTime": "2026-07-10T23:41:00Z",
+              "tags": [
+                "ACCELERATION",
+                "BOOK_DIVERGENCE",
+                "CHAOS",
+                "REVERSAL",
+                "STEAM"
+              ]
+            },
+            {
+              "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
+              "score": "11",
+              "side": "home",
+              "selection": "Detroit Tigers",
+              "awayTeam": "Philadelphia Phillies",
+              "grade": "FRAGILE",
+              "homeTeam": "Detroit Tigers",
+              "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
+              "commenceTime": "2026-07-10T22:41:00Z",
+              "tags": [
+                "ACCELERATION",
+                "CERTAINTY_ANCHOR",
+                "CHAOS",
+                "MOMENTUM",
+                "REVERSAL",
+                "STEAM"
               ]
             }
           ]
@@ -13858,7 +13914,7 @@
       "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
       "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
       "buildStatus": "BUILT",
-      "storedAt": "2026-07-10T23:26:30.978048+00:00",
+      "storedAt": "2026-07-11T01:05:22.266081+00:00",
       "slate_date": "2026-07-10",
       "previousNoBuildReason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
       "storeMode": "mlb_b10_or_strict_auto_after_live_pull_with_12_snapshot_baseline",
@@ -13866,65 +13922,76 @@
       "officialStrength": "BASELINE_NOT_STRONG",
       "legs": [
         {
-          "gameId": "250b0373676b10f51ed1c59c93714245",
+          "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
           "providerSportKey": "baseball_mlb",
           "gender": "men",
-          "awayTeam": "New York Yankees",
+          "awayTeam": "Houston Astros",
           "level": "pro",
-          "commenceTime": "2026-07-10T23:46:00Z",
+          "commenceTime": "2026-07-11T00:09:00Z",
           "tags": [
-            "REVERSAL"
+            "ACCELERATION",
+            "BOOK_DIVERGENCE",
+            "CHAOS",
+            "REVERSAL",
+            "STEAM"
           ],
-          "score": "32.17",
-          "selection": "New York Yankees",
+          "score": "16",
+          "selection": "Texas Rangers",
           "homeSignal": {
-            "pullCount": "78",
-            "reversals": "1",
-            "probStart": "0.4034",
-            "probLatest": "0.41246",
+            "pullCount": "85",
+            "reversals": "4",
+            "probStart": "0.44697",
+            "probLatest": "0.72625",
             "side": "home",
             "scoreGuardApplied": true,
-            "bookCount": "10",
-            "delta": "0.00905",
-            "latestGap": "0.17509",
-            "rawScoreBeforeGuard": "38.84",
-            "velocityPpHr": "0.047",
+            "bookCount": "8",
+            "delta": "0.27928",
+            "latestGap": "0.45251",
+            "rawScoreBeforeGuard": "100",
+            "velocityPpHr": "1.33",
             "tags": [
-              "PUBLIC_FADE_CANDIDATE",
-              "REVERSAL"
+              "ACCELERATION",
+              "BOOK_DIVERGENCE",
+              "CHAOS",
+              "REVERSAL",
+              "STEAM"
             ],
-            "acceleration": "-0.00001",
-            "durationMinutes": "1155",
-            "score": "30.84",
-            "bookDivergence": "0.00832",
+            "acceleration": "0.00683",
+            "durationMinutes": "1260",
+            "score": "16",
+            "bookDivergence": "0.06908",
             "grade": "FRAGILE"
           },
           "grade": "FRAGILE",
           "awaySignal": {
-            "pullCount": "78",
-            "reversals": "1",
-            "probStart": "0.5966",
-            "probLatest": "0.58754",
+            "pullCount": "85",
+            "reversals": "4",
+            "probStart": "0.55303",
+            "probLatest": "0.27375",
             "side": "away",
             "scoreGuardApplied": true,
-            "bookCount": "10",
-            "delta": "-0.00905",
-            "latestGap": "0.17509",
-            "rawScoreBeforeGuard": "40.17",
-            "velocityPpHr": "-0.047",
+            "bookCount": "8",
+            "delta": "-0.27928",
+            "latestGap": "0.45251",
+            "rawScoreBeforeGuard": "0",
+            "velocityPpHr": "-1.33",
             "tags": [
+              "BOOK_DIVERGENCE",
+              "CHAOS",
+              "DECELERATION",
+              "RESISTANCE",
               "REVERSAL"
             ],
-            "acceleration": "0.00001",
-            "durationMinutes": "1155",
-            "score": "32.17",
-            "bookDivergence": "0.00832",
+            "acceleration": "-0.00683",
+            "durationMinutes": "1260",
+            "score": "0",
+            "bookDivergence": "0.06908",
             "grade": "FRAGILE"
           },
-          "homeTeam": "Washington Nationals",
-          "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
+          "homeTeam": "Texas Rangers",
+          "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
           "sport": "mlb",
-          "selectedSide": "away"
+          "selectedSide": "home"
         },
         {
           "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
@@ -13934,56 +14001,63 @@
           "level": "pro",
           "commenceTime": "2026-07-10T23:41:00Z",
           "tags": [
-            "CERTAINTY_ANCHOR",
+            "ACCELERATION",
+            "BOOK_DIVERGENCE",
             "CHAOS",
-            "REVERSAL"
+            "REVERSAL",
+            "STEAM"
           ],
-          "score": "8.47",
+          "score": "15",
           "selection": "Chicago White Sox",
           "homeSignal": {
-            "pullCount": "78",
-            "reversals": "2",
+            "pullCount": "85",
+            "reversals": "6",
             "probStart": "0.6002",
-            "probLatest": "0.61652",
+            "probLatest": "0.9219",
             "side": "home",
             "scoreGuardApplied": true,
-            "bookCount": "11",
-            "delta": "0.01632",
-            "latestGap": "0.23304",
-            "rawScoreBeforeGuard": "49.47",
-            "velocityPpHr": "0.085",
+            "bookCount": "7",
+            "delta": "0.3217",
+            "latestGap": "0.8438",
+            "rawScoreBeforeGuard": "100",
+            "velocityPpHr": "1.532",
             "tags": [
-              "CERTAINTY_ANCHOR",
+              "ACCELERATION",
+              "BOOK_DIVERGENCE",
               "CHAOS",
-              "REVERSAL"
+              "REVERSAL",
+              "STEAM"
             ],
-            "acceleration": "0.0004",
-            "durationMinutes": "1155",
-            "score": "8.47",
-            "bookDivergence": "0.01761",
+            "acceleration": "0.00756",
+            "durationMinutes": "1260",
+            "score": "15",
+            "bookDivergence": "0.04721",
             "grade": "FRAGILE"
           },
           "grade": "FRAGILE",
           "awaySignal": {
-            "pullCount": "78",
-            "reversals": "2",
+            "pullCount": "85",
+            "reversals": "6",
             "probStart": "0.3998",
-            "probLatest": "0.38348",
+            "probLatest": "0.0781",
             "side": "away",
             "scoreGuardApplied": true,
-            "bookCount": "11",
-            "delta": "-0.01632",
-            "latestGap": "0.23304",
-            "rawScoreBeforeGuard": "7.97",
-            "velocityPpHr": "-0.085",
+            "bookCount": "7",
+            "delta": "-0.3217",
+            "latestGap": "0.8438",
+            "rawScoreBeforeGuard": "0",
+            "velocityPpHr": "-1.532",
             "tags": [
+              "BOOK_DIVERGENCE",
               "CHAOS",
+              "DECELERATION",
+              "RESISTANCE",
               "REVERSAL"
             ],
-            "acceleration": "-0.0004",
-            "durationMinutes": "1155",
+            "acceleration": "-0.00756",
+            "durationMinutes": "1260",
             "score": "0",
-            "bookDivergence": "0.01761",
+            "bookDivergence": "0.04721",
             "grade": "FRAGILE"
           },
           "homeTeam": "Chicago White Sox",
@@ -13999,60 +14073,64 @@
           "level": "pro",
           "commenceTime": "2026-07-10T22:41:00Z",
           "tags": [
-            "BOOK_DIVERGENCE",
+            "ACCELERATION",
+            "CERTAINTY_ANCHOR",
             "CHAOS",
-            "RESISTANCE",
-            "REVERSAL"
+            "MOMENTUM",
+            "REVERSAL",
+            "STEAM"
           ],
-          "score": "0",
+          "score": "11",
           "selection": "Detroit Tigers",
           "homeSignal": {
-            "pullCount": "78",
-            "reversals": "5",
+            "pullCount": "85",
+            "reversals": "8",
             "probStart": "0.52915",
-            "probLatest": "0.44856",
+            "probLatest": "0.97115",
             "side": "home",
             "scoreGuardApplied": true,
-            "bookCount": "8",
-            "delta": "-0.08059",
-            "latestGap": "0.10288",
-            "rawScoreBeforeGuard": "0",
-            "velocityPpHr": "-0.419",
+            "bookCount": "1",
+            "delta": "0.442",
+            "latestGap": "0.9423",
+            "rawScoreBeforeGuard": "100",
+            "velocityPpHr": "2.105",
             "tags": [
-              "BOOK_DIVERGENCE",
+              "ACCELERATION",
+              "CERTAINTY_ANCHOR",
               "CHAOS",
-              "RESISTANCE",
-              "REVERSAL"
+              "MOMENTUM",
+              "REVERSAL",
+              "STEAM"
             ],
-            "acceleration": "-0.00215",
-            "durationMinutes": "1155",
-            "score": "0",
-            "bookDivergence": "0.07516",
+            "acceleration": "0.0103",
+            "durationMinutes": "1260",
+            "score": "11",
+            "bookDivergence": "0",
             "grade": "FRAGILE"
           },
           "grade": "FRAGILE",
           "awaySignal": {
-            "pullCount": "78",
-            "reversals": "5",
+            "pullCount": "85",
+            "reversals": "8",
             "probStart": "0.47085",
-            "probLatest": "0.55144",
+            "probLatest": "0.02885",
             "side": "away",
             "scoreGuardApplied": true,
-            "bookCount": "8",
-            "delta": "0.08059",
-            "latestGap": "0.10288",
-            "rawScoreBeforeGuard": "47.98",
-            "velocityPpHr": "0.419",
+            "bookCount": "1",
+            "delta": "-0.442",
+            "latestGap": "0.9423",
+            "rawScoreBeforeGuard": "0",
+            "velocityPpHr": "-2.105",
             "tags": [
-              "BOOK_DIVERGENCE",
               "CHAOS",
-              "REVERSAL",
-              "STEAM"
+              "DECELERATION",
+              "RESISTANCE",
+              "REVERSAL"
             ],
-            "acceleration": "0.00215",
-            "durationMinutes": "1155",
+            "acceleration": "-0.0103",
+            "durationMinutes": "1260",
             "score": "0",
-            "bookDivergence": "0.07516",
+            "bookDivergence": "0",
             "grade": "FRAGILE"
           },
           "homeTeam": "Detroit Tigers",
@@ -14074,7 +14152,7 @@
           "ok": true,
           "sport": "mlb",
           "slate_date": "2026-07-10",
-          "pullCount": 78,
+          "pullCount": 85,
           "minimumParlayPulls": 12,
           "buildStatus": "BUILT",
           "buildQuality": "BASELINE_12_SNAPSHOT",
@@ -14085,63 +14163,74 @@
           "selectedStrongCount": 0,
           "legs": [
             {
-              "gameId": "250b0373676b10f51ed1c59c93714245",
-              "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
+              "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+              "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
               "sport": "mlb",
-              "homeTeam": "Washington Nationals",
-              "awayTeam": "New York Yankees",
-              "commenceTime": "2026-07-10T23:46:00Z",
+              "homeTeam": "Texas Rangers",
+              "awayTeam": "Houston Astros",
+              "commenceTime": "2026-07-11T00:09:00Z",
               "level": "pro",
               "gender": "men",
               "providerSportKey": "baseball_mlb",
-              "selection": "New York Yankees",
-              "selectedSide": "away",
+              "selection": "Texas Rangers",
+              "selectedSide": "home",
               "grade": "FRAGILE",
-              "score": 32.17,
+              "score": 16.0,
               "tags": [
-                "REVERSAL"
+                "ACCELERATION",
+                "BOOK_DIVERGENCE",
+                "CHAOS",
+                "REVERSAL",
+                "STEAM"
               ],
               "homeSignal": {
                 "side": "home",
-                "probStart": 0.4034,
-                "probLatest": 0.41246,
-                "delta": 0.00905,
-                "velocityPpHr": 0.047,
-                "acceleration": -1e-05,
-                "pullCount": 78,
-                "durationMinutes": 1155.0,
-                "latestGap": 0.17509,
-                "bookCount": 10,
-                "bookDivergence": 0.00832,
-                "reversals": 1,
+                "probStart": 0.44697,
+                "probLatest": 0.72625,
+                "delta": 0.27928,
+                "velocityPpHr": 1.33,
+                "acceleration": 0.00683,
+                "pullCount": 85,
+                "durationMinutes": 1260.0,
+                "latestGap": 0.45251,
+                "bookCount": 8,
+                "bookDivergence": 0.06908,
+                "reversals": 4,
                 "tags": [
-                  "PUBLIC_FADE_CANDIDATE",
-                  "REVERSAL"
+                  "ACCELERATION",
+                  "BOOK_DIVERGENCE",
+                  "CHAOS",
+                  "REVERSAL",
+                  "STEAM"
                 ],
                 "grade": "FRAGILE",
-                "score": 30.84,
-                "rawScoreBeforeGuard": 38.84,
+                "score": 16.0,
+                "rawScoreBeforeGuard": 100,
                 "scoreGuardApplied": true
               },
               "awaySignal": {
                 "side": "away",
-                "probStart": 0.5966,
-                "probLatest": 0.58754,
-                "delta": -0.00905,
-                "velocityPpHr": -0.047,
-                "acceleration": 1e-05,
-                "pullCount": 78,
-                "durationMinutes": 1155.0,
-                "latestGap": 0.17509,
-                "bookCount": 10,
-                "bookDivergence": 0.00832,
-                "reversals": 1,
+                "probStart": 0.55303,
+                "probLatest": 0.27375,
+                "delta": -0.27928,
+                "velocityPpHr": -1.33,
+                "acceleration": -0.00683,
+                "pullCount": 85,
+                "durationMinutes": 1260.0,
+                "latestGap": 0.45251,
+                "bookCount": 8,
+                "bookDivergence": 0.06908,
+                "reversals": 4,
                 "tags": [
+                  "BOOK_DIVERGENCE",
+                  "CHAOS",
+                  "DECELERATION",
+                  "RESISTANCE",
                   "REVERSAL"
                 ],
                 "grade": "FRAGILE",
-                "score": 32.17,
-                "rawScoreBeforeGuard": 40.17,
+                "score": 0.0,
+                "rawScoreBeforeGuard": 0,
                 "scoreGuardApplied": true
               }
             },
@@ -14158,55 +14247,62 @@
               "selection": "Chicago White Sox",
               "selectedSide": "home",
               "grade": "FRAGILE",
-              "score": 8.47,
+              "score": 15.0,
               "tags": [
-                "CERTAINTY_ANCHOR",
+                "ACCELERATION",
+                "BOOK_DIVERGENCE",
                 "CHAOS",
-                "REVERSAL"
+                "REVERSAL",
+                "STEAM"
               ],
               "homeSignal": {
                 "side": "home",
                 "probStart": 0.6002,
-                "probLatest": 0.61652,
-                "delta": 0.01632,
-                "velocityPpHr": 0.085,
-                "acceleration": 0.0004,
-                "pullCount": 78,
-                "durationMinutes": 1155.0,
-                "latestGap": 0.23304,
-                "bookCount": 11,
-                "bookDivergence": 0.01761,
-                "reversals": 2,
+                "probLatest": 0.9219,
+                "delta": 0.3217,
+                "velocityPpHr": 1.532,
+                "acceleration": 0.00756,
+                "pullCount": 85,
+                "durationMinutes": 1260.0,
+                "latestGap": 0.8438,
+                "bookCount": 7,
+                "bookDivergence": 0.04721,
+                "reversals": 6,
                 "tags": [
-                  "CERTAINTY_ANCHOR",
+                  "ACCELERATION",
+                  "BOOK_DIVERGENCE",
                   "CHAOS",
-                  "REVERSAL"
+                  "REVERSAL",
+                  "STEAM"
                 ],
                 "grade": "FRAGILE",
-                "score": 8.47,
-                "rawScoreBeforeGuard": 49.47,
+                "score": 15.0,
+                "rawScoreBeforeGuard": 100,
                 "scoreGuardApplied": true
               },
               "awaySignal": {
                 "side": "away",
                 "probStart": 0.3998,
-                "probLatest": 0.38348,
-                "delta": -0.01632,
-                "velocityPpHr": -0.085,
-                "acceleration": -0.0004,
-                "pullCount": 78,
-                "durationMinutes": 1155.0,
-                "latestGap": 0.23304,
-                "bookCount": 11,
-                "bookDivergence": 0.01761,
-                "reversals": 2,
+                "probLatest": 0.0781,
+                "delta": -0.3217,
+                "velocityPpHr": -1.532,
+                "acceleration": -0.00756,
+                "pullCount": 85,
+                "durationMinutes": 1260.0,
+                "latestGap": 0.8438,
+                "bookCount": 7,
+                "bookDivergence": 0.04721,
+                "reversals": 6,
                 "tags": [
+                  "BOOK_DIVERGENCE",
                   "CHAOS",
+                  "DECELERATION",
+                  "RESISTANCE",
                   "REVERSAL"
                 ],
                 "grade": "FRAGILE",
                 "score": 0.0,
-                "rawScoreBeforeGuard": 7.97,
+                "rawScoreBeforeGuard": 0,
                 "scoreGuardApplied": true
               }
             },
@@ -14223,29 +14319,57 @@
               "selection": "Detroit Tigers",
               "selectedSide": "home",
               "grade": "FRAGILE",
-              "score": 0.0,
+              "score": 11.0,
               "tags": [
-                "BOOK_DIVERGENCE",
+                "ACCELERATION",
+                "CERTAINTY_ANCHOR",
                 "CHAOS",
-                "RESISTANCE",
-                "REVERSAL"
+                "MOMENTUM",
+                "REVERSAL",
+                "STEAM"
               ],
               "homeSignal": {
                 "side": "home",
                 "probStart": 0.52915,
-                "probLatest": 0.44856,
-                "delta": -0.08059,
-                "velocityPpHr": -0.419,
-                "acceleration": -0.00215,
-                "pullCount": 78,
-                "durationMinutes": 1155.0,
-                "latestGap": 0.10288,
-                "bookCount": 8,
-                "bookDivergence": 0.07516,
-                "reversals": 5,
+                "probLatest": 0.97115,
+                "delta": 0.442,
+                "velocityPpHr": 2.105,
+                "acceleration": 0.0103,
+                "pullCount": 85,
+                "durationMinutes": 1260.0,
+                "latestGap": 0.9423,
+                "bookCount": 1,
+                "bookDivergence": 0.0,
+                "reversals": 8,
                 "tags": [
-                  "BOOK_DIVERGENCE",
+                  "ACCELERATION",
+                  "CERTAINTY_ANCHOR",
                   "CHAOS",
+                  "MOMENTUM",
+                  "REVERSAL",
+                  "STEAM"
+                ],
+                "grade": "FRAGILE",
+                "score": 11.0,
+                "rawScoreBeforeGuard": 100,
+                "scoreGuardApplied": true
+              },
+              "awaySignal": {
+                "side": "away",
+                "probStart": 0.47085,
+                "probLatest": 0.02885,
+                "delta": -0.442,
+                "velocityPpHr": -2.105,
+                "acceleration": -0.0103,
+                "pullCount": 85,
+                "durationMinutes": 1260.0,
+                "latestGap": 0.9423,
+                "bookCount": 1,
+                "bookDivergence": 0.0,
+                "reversals": 8,
+                "tags": [
+                  "CHAOS",
+                  "DECELERATION",
                   "RESISTANCE",
                   "REVERSAL"
                 ],
@@ -14253,51 +14377,31 @@
                 "score": 0.0,
                 "rawScoreBeforeGuard": 0,
                 "scoreGuardApplied": true
-              },
-              "awaySignal": {
-                "side": "away",
-                "probStart": 0.47085,
-                "probLatest": 0.55144,
-                "delta": 0.08059,
-                "velocityPpHr": 0.419,
-                "acceleration": 0.00215,
-                "pullCount": 78,
-                "durationMinutes": 1155.0,
-                "latestGap": 0.10288,
-                "bookCount": 8,
-                "bookDivergence": 0.07516,
-                "reversals": 5,
-                "tags": [
-                  "BOOK_DIVERGENCE",
-                  "CHAOS",
-                  "REVERSAL",
-                  "STEAM"
-                ],
-                "grade": "FRAGILE",
-                "score": 0.0,
-                "rawScoreBeforeGuard": 47.98,
-                "scoreGuardApplied": true
               }
             }
           ],
           "rankedCombos": [
             {
               "rank": 1,
-              "score": 13.55,
+              "score": 14.0,
               "legs": [
                 {
-                  "gameId": "250b0373676b10f51ed1c59c93714245",
-                  "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-                  "selection": "New York Yankees",
+                  "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+                  "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+                  "selection": "Houston Astros",
                   "side": "away",
                   "grade": "FRAGILE",
-                  "score": 32.17,
+                  "score": 16.0,
                   "tags": [
+                    "BOOK_DIVERGENCE",
+                    "CHAOS",
+                    "DECELERATION",
+                    "RESISTANCE",
                     "REVERSAL"
                   ],
-                  "commenceTime": "2026-07-10T23:46:00Z",
-                  "homeTeam": "Washington Nationals",
-                  "awayTeam": "New York Yankees"
+                  "commenceTime": "2026-07-11T00:09:00Z",
+                  "homeTeam": "Texas Rangers",
+                  "awayTeam": "Houston Astros"
                 },
                 {
                   "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
@@ -14305,9 +14409,12 @@
                   "selection": "Athletics",
                   "side": "away",
                   "grade": "FRAGILE",
-                  "score": 8.47,
+                  "score": 15.0,
                   "tags": [
+                    "BOOK_DIVERGENCE",
                     "CHAOS",
+                    "DECELERATION",
+                    "RESISTANCE",
                     "REVERSAL"
                   ],
                   "commenceTime": "2026-07-10T23:41:00Z",
@@ -14320,12 +14427,12 @@
                   "selection": "Philadelphia Phillies",
                   "side": "away",
                   "grade": "FRAGILE",
-                  "score": 0,
+                  "score": 11.0,
                   "tags": [
-                    "BOOK_DIVERGENCE",
                     "CHAOS",
-                    "REVERSAL",
-                    "STEAM"
+                    "DECELERATION",
+                    "RESISTANCE",
+                    "REVERSAL"
                   ],
                   "commenceTime": "2026-07-10T22:41:00Z",
                   "homeTeam": "Detroit Tigers",
@@ -14336,32 +14443,38 @@
             },
             {
               "rank": 2,
-              "score": 13.55,
+              "score": 14.0,
               "legs": [
                 {
-                  "gameId": "250b0373676b10f51ed1c59c93714245",
-                  "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-                  "selection": "New York Yankees",
-                  "side": "away",
+                  "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+                  "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+                  "selection": "Texas Rangers",
+                  "side": "home",
                   "grade": "FRAGILE",
-                  "score": 32.17,
+                  "score": 16.0,
                   "tags": [
-                    "REVERSAL"
+                    "ACCELERATION",
+                    "BOOK_DIVERGENCE",
+                    "CHAOS",
+                    "REVERSAL",
+                    "STEAM"
                   ],
-                  "commenceTime": "2026-07-10T23:46:00Z",
-                  "homeTeam": "Washington Nationals",
-                  "awayTeam": "New York Yankees"
+                  "commenceTime": "2026-07-11T00:09:00Z",
+                  "homeTeam": "Texas Rangers",
+                  "awayTeam": "Houston Astros"
                 },
                 {
                   "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
                   "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
-                  "selection": "Chicago White Sox",
-                  "side": "home",
+                  "selection": "Athletics",
+                  "side": "away",
                   "grade": "FRAGILE",
-                  "score": 8.47,
+                  "score": 15.0,
                   "tags": [
-                    "CERTAINTY_ANCHOR",
+                    "BOOK_DIVERGENCE",
                     "CHAOS",
+                    "DECELERATION",
+                    "RESISTANCE",
                     "REVERSAL"
                   ],
                   "commenceTime": "2026-07-10T23:41:00Z",
@@ -14374,12 +14487,12 @@
                   "selection": "Philadelphia Phillies",
                   "side": "away",
                   "grade": "FRAGILE",
-                  "score": 0,
+                  "score": 11.0,
                   "tags": [
-                    "BOOK_DIVERGENCE",
                     "CHAOS",
-                    "REVERSAL",
-                    "STEAM"
+                    "DECELERATION",
+                    "RESISTANCE",
+                    "REVERSAL"
                   ],
                   "commenceTime": "2026-07-10T22:41:00Z",
                   "homeTeam": "Detroit Tigers",
@@ -14390,32 +14503,39 @@
             },
             {
               "rank": 3,
-              "score": 13.55,
+              "score": 14.0,
               "legs": [
                 {
-                  "gameId": "250b0373676b10f51ed1c59c93714245",
-                  "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-                  "selection": "New York Yankees",
+                  "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+                  "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+                  "selection": "Houston Astros",
                   "side": "away",
                   "grade": "FRAGILE",
-                  "score": 32.17,
+                  "score": 16.0,
                   "tags": [
+                    "BOOK_DIVERGENCE",
+                    "CHAOS",
+                    "DECELERATION",
+                    "RESISTANCE",
                     "REVERSAL"
                   ],
-                  "commenceTime": "2026-07-10T23:46:00Z",
-                  "homeTeam": "Washington Nationals",
-                  "awayTeam": "New York Yankees"
+                  "commenceTime": "2026-07-11T00:09:00Z",
+                  "homeTeam": "Texas Rangers",
+                  "awayTeam": "Houston Astros"
                 },
                 {
                   "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
                   "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
-                  "selection": "Athletics",
-                  "side": "away",
+                  "selection": "Chicago White Sox",
+                  "side": "home",
                   "grade": "FRAGILE",
-                  "score": 8.47,
+                  "score": 15.0,
                   "tags": [
+                    "ACCELERATION",
+                    "BOOK_DIVERGENCE",
                     "CHAOS",
-                    "REVERSAL"
+                    "REVERSAL",
+                    "STEAM"
                   ],
                   "commenceTime": "2026-07-10T23:41:00Z",
                   "homeTeam": "Chicago White Sox",
@@ -14424,13 +14544,13 @@
                 {
                   "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
                   "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
-                  "selection": "Detroit Tigers",
-                  "side": "home",
+                  "selection": "Philadelphia Phillies",
+                  "side": "away",
                   "grade": "FRAGILE",
-                  "score": 0,
+                  "score": 11.0,
                   "tags": [
-                    "BOOK_DIVERGENCE",
                     "CHAOS",
+                    "DECELERATION",
                     "RESISTANCE",
                     "REVERSAL"
                   ],
@@ -14443,21 +14563,25 @@
             },
             {
               "rank": 4,
-              "score": 13.55,
+              "score": 14.0,
               "legs": [
                 {
-                  "gameId": "250b0373676b10f51ed1c59c93714245",
-                  "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-                  "selection": "New York Yankees",
-                  "side": "away",
+                  "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+                  "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+                  "selection": "Texas Rangers",
+                  "side": "home",
                   "grade": "FRAGILE",
-                  "score": 32.17,
+                  "score": 16.0,
                   "tags": [
-                    "REVERSAL"
+                    "ACCELERATION",
+                    "BOOK_DIVERGENCE",
+                    "CHAOS",
+                    "REVERSAL",
+                    "STEAM"
                   ],
-                  "commenceTime": "2026-07-10T23:46:00Z",
-                  "homeTeam": "Washington Nationals",
-                  "awayTeam": "New York Yankees"
+                  "commenceTime": "2026-07-11T00:09:00Z",
+                  "homeTeam": "Texas Rangers",
+                  "awayTeam": "Houston Astros"
                 },
                 {
                   "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
@@ -14465,11 +14589,13 @@
                   "selection": "Chicago White Sox",
                   "side": "home",
                   "grade": "FRAGILE",
-                  "score": 8.47,
+                  "score": 15.0,
                   "tags": [
-                    "CERTAINTY_ANCHOR",
+                    "ACCELERATION",
+                    "BOOK_DIVERGENCE",
                     "CHAOS",
-                    "REVERSAL"
+                    "REVERSAL",
+                    "STEAM"
                   ],
                   "commenceTime": "2026-07-10T23:41:00Z",
                   "homeTeam": "Chicago White Sox",
@@ -14478,13 +14604,13 @@
                 {
                   "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
                   "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
-                  "selection": "Detroit Tigers",
-                  "side": "home",
+                  "selection": "Philadelphia Phillies",
+                  "side": "away",
                   "grade": "FRAGILE",
-                  "score": 0,
+                  "score": 11.0,
                   "tags": [
-                    "BOOK_DIVERGENCE",
                     "CHAOS",
+                    "DECELERATION",
                     "RESISTANCE",
                     "REVERSAL"
                   ],
@@ -14497,22 +14623,25 @@
             },
             {
               "rank": 5,
-              "score": 13.1,
+              "score": 14.0,
               "legs": [
                 {
-                  "gameId": "250b0373676b10f51ed1c59c93714245",
-                  "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-                  "selection": "Washington Nationals",
-                  "side": "home",
+                  "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+                  "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+                  "selection": "Houston Astros",
+                  "side": "away",
                   "grade": "FRAGILE",
-                  "score": 30.84,
+                  "score": 16.0,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE",
+                    "BOOK_DIVERGENCE",
+                    "CHAOS",
+                    "DECELERATION",
+                    "RESISTANCE",
                     "REVERSAL"
                   ],
-                  "commenceTime": "2026-07-10T23:46:00Z",
-                  "homeTeam": "Washington Nationals",
-                  "awayTeam": "New York Yankees"
+                  "commenceTime": "2026-07-11T00:09:00Z",
+                  "homeTeam": "Texas Rangers",
+                  "awayTeam": "Houston Astros"
                 },
                 {
                   "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
@@ -14520,9 +14649,12 @@
                   "selection": "Athletics",
                   "side": "away",
                   "grade": "FRAGILE",
-                  "score": 8.47,
+                  "score": 15.0,
                   "tags": [
+                    "BOOK_DIVERGENCE",
                     "CHAOS",
+                    "DECELERATION",
+                    "RESISTANCE",
                     "REVERSAL"
                   ],
                   "commenceTime": "2026-07-10T23:41:00Z",
@@ -14532,13 +14664,15 @@
                 {
                   "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
                   "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
-                  "selection": "Philadelphia Phillies",
-                  "side": "away",
+                  "selection": "Detroit Tigers",
+                  "side": "home",
                   "grade": "FRAGILE",
-                  "score": 0,
+                  "score": 11.0,
                   "tags": [
-                    "BOOK_DIVERGENCE",
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR",
                     "CHAOS",
+                    "MOMENTUM",
                     "REVERSAL",
                     "STEAM"
                   ],
@@ -14551,33 +14685,38 @@
             },
             {
               "rank": 6,
-              "score": 13.1,
+              "score": 14.0,
               "legs": [
                 {
-                  "gameId": "250b0373676b10f51ed1c59c93714245",
-                  "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-                  "selection": "Washington Nationals",
+                  "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+                  "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+                  "selection": "Texas Rangers",
                   "side": "home",
                   "grade": "FRAGILE",
-                  "score": 30.84,
+                  "score": 16.0,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE",
-                    "REVERSAL"
+                    "ACCELERATION",
+                    "BOOK_DIVERGENCE",
+                    "CHAOS",
+                    "REVERSAL",
+                    "STEAM"
                   ],
-                  "commenceTime": "2026-07-10T23:46:00Z",
-                  "homeTeam": "Washington Nationals",
-                  "awayTeam": "New York Yankees"
+                  "commenceTime": "2026-07-11T00:09:00Z",
+                  "homeTeam": "Texas Rangers",
+                  "awayTeam": "Houston Astros"
                 },
                 {
                   "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
                   "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
-                  "selection": "Chicago White Sox",
-                  "side": "home",
+                  "selection": "Athletics",
+                  "side": "away",
                   "grade": "FRAGILE",
-                  "score": 8.47,
+                  "score": 15.0,
                   "tags": [
-                    "CERTAINTY_ANCHOR",
+                    "BOOK_DIVERGENCE",
                     "CHAOS",
+                    "DECELERATION",
+                    "RESISTANCE",
                     "REVERSAL"
                   ],
                   "commenceTime": "2026-07-10T23:41:00Z",
@@ -14587,13 +14726,15 @@
                 {
                   "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
                   "gameKey": "mlb|2026-07-10|philadelphia phillies|detroit tigers",
-                  "selection": "Philadelphia Phillies",
-                  "side": "away",
+                  "selection": "Detroit Tigers",
+                  "side": "home",
                   "grade": "FRAGILE",
-                  "score": 0,
+                  "score": 11.0,
                   "tags": [
-                    "BOOK_DIVERGENCE",
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR",
                     "CHAOS",
+                    "MOMENTUM",
                     "REVERSAL",
                     "STEAM"
                   ],
@@ -14606,33 +14747,39 @@
             },
             {
               "rank": 7,
-              "score": 13.1,
+              "score": 14.0,
               "legs": [
                 {
-                  "gameId": "250b0373676b10f51ed1c59c93714245",
-                  "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-                  "selection": "Washington Nationals",
-                  "side": "home",
+                  "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+                  "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+                  "selection": "Houston Astros",
+                  "side": "away",
                   "grade": "FRAGILE",
-                  "score": 30.84,
+                  "score": 16.0,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE",
+                    "BOOK_DIVERGENCE",
+                    "CHAOS",
+                    "DECELERATION",
+                    "RESISTANCE",
                     "REVERSAL"
                   ],
-                  "commenceTime": "2026-07-10T23:46:00Z",
-                  "homeTeam": "Washington Nationals",
-                  "awayTeam": "New York Yankees"
+                  "commenceTime": "2026-07-11T00:09:00Z",
+                  "homeTeam": "Texas Rangers",
+                  "awayTeam": "Houston Astros"
                 },
                 {
                   "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
                   "gameKey": "mlb|2026-07-10|athletics|chicago white sox",
-                  "selection": "Athletics",
-                  "side": "away",
+                  "selection": "Chicago White Sox",
+                  "side": "home",
                   "grade": "FRAGILE",
-                  "score": 8.47,
+                  "score": 15.0,
                   "tags": [
+                    "ACCELERATION",
+                    "BOOK_DIVERGENCE",
                     "CHAOS",
-                    "REVERSAL"
+                    "REVERSAL",
+                    "STEAM"
                   ],
                   "commenceTime": "2026-07-10T23:41:00Z",
                   "homeTeam": "Chicago White Sox",
@@ -14644,12 +14791,14 @@
                   "selection": "Detroit Tigers",
                   "side": "home",
                   "grade": "FRAGILE",
-                  "score": 0,
+                  "score": 11.0,
                   "tags": [
-                    "BOOK_DIVERGENCE",
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR",
                     "CHAOS",
-                    "RESISTANCE",
-                    "REVERSAL"
+                    "MOMENTUM",
+                    "REVERSAL",
+                    "STEAM"
                   ],
                   "commenceTime": "2026-07-10T22:41:00Z",
                   "homeTeam": "Detroit Tigers",
@@ -14660,22 +14809,25 @@
             },
             {
               "rank": 8,
-              "score": 13.1,
+              "score": 14.0,
               "legs": [
                 {
-                  "gameId": "250b0373676b10f51ed1c59c93714245",
-                  "gameKey": "mlb|2026-07-10|new york yankees|washington nationals",
-                  "selection": "Washington Nationals",
+                  "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+                  "gameKey": "mlb|2026-07-10|houston astros|texas rangers",
+                  "selection": "Texas Rangers",
                   "side": "home",
                   "grade": "FRAGILE",
-                  "score": 30.84,
+                  "score": 16.0,
                   "tags": [
-                    "PUBLIC_FADE_CANDIDATE",
-                    "REVERSAL"
+                    "ACCELERATION",
+                    "BOOK_DIVERGENCE",
+                    "CHAOS",
+                    "REVERSAL",
+                    "STEAM"
                   ],
-                  "commenceTime": "2026-07-10T23:46:00Z",
-                  "homeTeam": "Washington Nationals",
-                  "awayTeam": "New York Yankees"
+                  "commenceTime": "2026-07-11T00:09:00Z",
+                  "homeTeam": "Texas Rangers",
+                  "awayTeam": "Houston Astros"
                 },
                 {
                   "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
@@ -14683,11 +14835,13 @@
                   "selection": "Chicago White Sox",
                   "side": "home",
                   "grade": "FRAGILE",
-                  "score": 8.47,
+                  "score": 15.0,
                   "tags": [
-                    "CERTAINTY_ANCHOR",
+                    "ACCELERATION",
+                    "BOOK_DIVERGENCE",
                     "CHAOS",
-                    "REVERSAL"
+                    "REVERSAL",
+                    "STEAM"
                   ],
                   "commenceTime": "2026-07-10T23:41:00Z",
                   "homeTeam": "Chicago White Sox",
@@ -14699,12 +14853,14 @@
                   "selection": "Detroit Tigers",
                   "side": "home",
                   "grade": "FRAGILE",
-                  "score": 0,
+                  "score": 11.0,
                   "tags": [
-                    "BOOK_DIVERGENCE",
+                    "ACCELERATION",
+                    "CERTAINTY_ANCHOR",
                     "CHAOS",
-                    "RESISTANCE",
-                    "REVERSAL"
+                    "MOMENTUM",
+                    "REVERSAL",
+                    "STEAM"
                   ],
                   "commenceTime": "2026-07-10T22:41:00Z",
                   "homeTeam": "Detroit Tigers",
@@ -14719,7 +14875,7 @@
           "stored": {
             "ok": true,
             "pk": "PARLAY_BUILDS#mlb#2026-07-10",
-            "sk": "BUILD#2026-07-10T23:26:30.978048+00:00",
+            "sk": "BUILD#2026-07-11T01:05:22.266081+00:00",
             "latestPk": "PARLAY_BUILDS#mlb#2026-07-10#LATEST",
             "latestSk": "LATEST"
           }
@@ -14743,8 +14899,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 74,
-            "missingPullCountSinceStart": 74,
+            "expectedPullCountSinceStart": 81,
+            "missingPullCountSinceStart": 81,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -14766,7 +14922,7 @@
           "stored": {
             "ok": true,
             "pk": "PARLAY_BUILDS#wnba#2026-07-10",
-            "sk": "BUILD#2026-07-10T23:26:31.363445+00:00",
+            "sk": "BUILD#2026-07-11T01:05:22.328785+00:00",
             "latestPk": "PARLAY_BUILDS#wnba#2026-07-10#LATEST",
             "latestSk": "LATEST"
           }
@@ -14790,8 +14946,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 74,
-            "missingPullCountSinceStart": 74,
+            "expectedPullCountSinceStart": 81,
+            "missingPullCountSinceStart": 81,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -14813,7 +14969,7 @@
           "stored": {
             "ok": true,
             "pk": "PARLAY_BUILDS#nfl#2026-07-10",
-            "sk": "BUILD#2026-07-10T23:26:31.681053+00:00",
+            "sk": "BUILD#2026-07-11T01:05:22.382522+00:00",
             "latestPk": "PARLAY_BUILDS#nfl#2026-07-10#LATEST",
             "latestSk": "LATEST"
           }
@@ -14837,8 +14993,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 74,
-            "missingPullCountSinceStart": 74,
+            "expectedPullCountSinceStart": 81,
+            "missingPullCountSinceStart": 81,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -14860,7 +15016,7 @@
           "stored": {
             "ok": true,
             "pk": "PARLAY_BUILDS#cfb#2026-07-10",
-            "sk": "BUILD#2026-07-10T23:26:31.991958+00:00",
+            "sk": "BUILD#2026-07-11T01:05:22.428061+00:00",
             "latestPk": "PARLAY_BUILDS#cfb#2026-07-10#LATEST",
             "latestSk": "LATEST"
           }
@@ -14884,8 +15040,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 74,
-            "missingPullCountSinceStart": 74,
+            "expectedPullCountSinceStart": 81,
+            "missingPullCountSinceStart": 81,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -14907,7 +15063,7 @@
           "stored": {
             "ok": true,
             "pk": "PARLAY_BUILDS#nba#2026-07-10",
-            "sk": "BUILD#2026-07-10T23:26:32.303375+00:00",
+            "sk": "BUILD#2026-07-11T01:05:22.471634+00:00",
             "latestPk": "PARLAY_BUILDS#nba#2026-07-10#LATEST",
             "latestSk": "LATEST"
           }
@@ -14931,8 +15087,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 74,
-            "missingPullCountSinceStart": 74,
+            "expectedPullCountSinceStart": 81,
+            "missingPullCountSinceStart": 81,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -14954,7 +15110,7 @@
           "stored": {
             "ok": true,
             "pk": "PARLAY_BUILDS#ncaam#2026-07-10",
-            "sk": "BUILD#2026-07-10T23:26:32.613431+00:00",
+            "sk": "BUILD#2026-07-11T01:05:22.519048+00:00",
             "latestPk": "PARLAY_BUILDS#ncaam#2026-07-10#LATEST",
             "latestSk": "LATEST"
           }
@@ -14978,8 +15134,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 74,
-            "missingPullCountSinceStart": 74,
+            "expectedPullCountSinceStart": 81,
+            "missingPullCountSinceStart": 81,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -15001,7 +15157,7 @@
           "stored": {
             "ok": true,
             "pk": "PARLAY_BUILDS#nhl#2026-07-10",
-            "sk": "BUILD#2026-07-10T23:26:32.924229+00:00",
+            "sk": "BUILD#2026-07-11T01:05:22.562965+00:00",
             "latestPk": "PARLAY_BUILDS#nhl#2026-07-10#LATEST",
             "latestSk": "LATEST"
           }
@@ -15025,8 +15181,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 74,
-            "missingPullCountSinceStart": 74,
+            "expectedPullCountSinceStart": 81,
+            "missingPullCountSinceStart": 81,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -15048,7 +15204,7 @@
           "stored": {
             "ok": true,
             "pk": "PARLAY_BUILDS#soccer#2026-07-10",
-            "sk": "BUILD#2026-07-10T23:26:33.235888+00:00",
+            "sk": "BUILD#2026-07-11T01:05:22.606722+00:00",
             "latestPk": "PARLAY_BUILDS#soccer#2026-07-10#LATEST",
             "latestSk": "LATEST"
           }
@@ -15072,8 +15228,8 @@
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 74,
-            "missingPullCountSinceStart": 74,
+            "expectedPullCountSinceStart": 81,
+            "missingPullCountSinceStart": 81,
             "coverageRatio": 0.0,
             "coverageComplete": false
           },
@@ -15095,7 +15251,7 @@
           "stored": {
             "ok": true,
             "pk": "PARLAY_BUILDS#tennis#2026-07-10",
-            "sk": "BUILD#2026-07-10T23:26:33.544653+00:00",
+            "sk": "BUILD#2026-07-11T01:05:22.652745+00:00",
             "latestPk": "PARLAY_BUILDS#tennis#2026-07-10#LATEST",
             "latestSk": "LATEST"
           }
@@ -15105,7 +15261,7 @@
     "pullDiagnostics": {
       "ok": true,
       "source": "diagnostic_provider_probe_no_snapshot_storage",
-      "createdAt": "2026-07-10T23:26:37.152953+00:00",
+      "createdAt": "2026-07-11T01:05:24.605076+00:00",
       "sportsRequested": [
         "mlb",
         "wnba",
@@ -15194,9 +15350,9 @@
         {
           "ok": true,
           "appSport": "mlb",
-          "rawGamesReturned": 29,
-          "rawGamesInWindow": 29,
-          "gamesConvertible": 29,
+          "rawGamesReturned": 27,
+          "rawGamesInWindow": 27,
+          "gamesConvertible": 27,
           "gamesStored": null,
           "diagnosticOnlyNoSnapshotStored": true,
           "activeStorageFailure": false,
@@ -15205,14 +15361,14 @@
               "ok": true,
               "appSport": "mlb",
               "providerSportKey": "baseball_mlb",
-              "rawGamesReturned": 29,
-              "rawGamesInWindow": 29,
-              "gamesConvertible": 29,
+              "rawGamesReturned": 27,
+              "rawGamesInWindow": 27,
+              "gamesConvertible": 27,
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:34.119660+00:00",
-              "activeWindowEnd": "2026-07-12T23:26:34.119660+00:00",
+              "activeWindowStart": "2026-07-10T19:05:22.886667+00:00",
+              "activeWindowEnd": "2026-07-13T01:05:22.886667+00:00",
               "slateWindowDays": 2,
               "error": null
             }
@@ -15238,8 +15394,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:34.441962+00:00",
-              "activeWindowEnd": "2026-07-12T23:26:34.441962+00:00",
+              "activeWindowStart": "2026-07-10T19:05:23.017506+00:00",
+              "activeWindowEnd": "2026-07-13T01:05:23.017506+00:00",
               "slateWindowDays": 2,
               "error": null
             }
@@ -15265,8 +15421,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:34.796661+00:00",
-              "activeWindowEnd": "2026-07-17T23:26:34.796661+00:00",
+              "activeWindowStart": "2026-07-10T19:05:23.242921+00:00",
+              "activeWindowEnd": "2026-07-18T01:05:23.242921+00:00",
               "slateWindowDays": 7,
               "error": "active_slate_window_empty"
             }
@@ -15292,8 +15448,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:35.229983+00:00",
-              "activeWindowEnd": "2026-07-17T23:26:35.229983+00:00",
+              "activeWindowStart": "2026-07-10T19:05:23.447465+00:00",
+              "activeWindowEnd": "2026-07-18T01:05:23.447465+00:00",
               "slateWindowDays": 7,
               "error": "active_slate_window_empty"
             }
@@ -15319,8 +15475,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:35.475355+00:00",
-              "activeWindowEnd": "2026-07-12T23:26:35.475355+00:00",
+              "activeWindowStart": "2026-07-10T19:05:23.613105+00:00",
+              "activeWindowEnd": "2026-07-13T01:05:23.613105+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -15346,8 +15502,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:35.589398+00:00",
-              "activeWindowEnd": "2026-07-12T23:26:35.589398+00:00",
+              "activeWindowStart": "2026-07-10T19:05:23.685260+00:00",
+              "activeWindowEnd": "2026-07-13T01:05:23.685260+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -15373,8 +15529,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:35.861429+00:00",
-              "activeWindowEnd": "2026-07-12T23:26:35.861429+00:00",
+              "activeWindowStart": "2026-07-10T19:05:23.826385+00:00",
+              "activeWindowEnd": "2026-07-13T01:05:23.826385+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -15400,8 +15556,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:36.130120+00:00",
-              "activeWindowEnd": "2026-07-24T23:26:36.130120+00:00",
+              "activeWindowStart": "2026-07-10T19:05:23.912841+00:00",
+              "activeWindowEnd": "2026-07-25T01:05:23.912841+00:00",
               "slateWindowDays": 14,
               "error": null
             },
@@ -15415,8 +15571,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:36.455895+00:00",
-              "activeWindowEnd": "2026-07-24T23:26:36.455895+00:00",
+              "activeWindowStart": "2026-07-10T19:05:24.127280+00:00",
+              "activeWindowEnd": "2026-07-25T01:05:24.127280+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             },
@@ -15430,8 +15586,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:36.571858+00:00",
-              "activeWindowEnd": "2026-07-24T23:26:36.571858+00:00",
+              "activeWindowStart": "2026-07-10T19:05:24.204751+00:00",
+              "activeWindowEnd": "2026-07-25T01:05:24.204751+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             }
@@ -15457,8 +15613,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:37.023313+00:00",
-              "activeWindowEnd": "2026-07-17T23:26:37.023313+00:00",
+              "activeWindowStart": "2026-07-10T19:05:24.442048+00:00",
+              "activeWindowEnd": "2026-07-18T01:05:24.442048+00:00",
               "slateWindowDays": 7,
               "error": null
             },
@@ -15472,8 +15628,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-10T17:26:37.152903+00:00",
-              "activeWindowEnd": "2026-07-17T23:26:37.152903+00:00",
+              "activeWindowStart": "2026-07-10T19:05:24.605019+00:00",
+              "activeWindowEnd": "2026-07-18T01:05:24.605019+00:00",
               "slateWindowDays": 7,
               "error": null
             }
