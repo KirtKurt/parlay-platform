@@ -13,6 +13,13 @@ except Exception:
     pass
 
 try:
+    import mlb_slate_prediction_lock as _inqsi_mlb_slate_prediction_lock_for_coverage
+    import mlb_slate_coverage_patch as _inqsi_mlb_slate_coverage_patch
+    _inqsi_mlb_slate_coverage_patch.apply(_inqsi_mlb_slate_prediction_lock_for_coverage)
+except Exception:
+    pass
+
+try:
     import mlb_game_winner_engine
     import mlb_accuracy_target_patch
     mlb_accuracy_target_patch.apply(mlb_game_winner_engine)
@@ -50,7 +57,9 @@ except Exception:
 try:
     import mlb_rolling_24h_audit as _mlb_rolling_24h_audit_for_locked_card
     import mlb_locked_card_audit_v1
+    import mlb_doubleheader_safe_audit_patch
     mlb_locked_card_audit_v1.apply(_mlb_rolling_24h_audit_for_locked_card)
+    mlb_doubleheader_safe_audit_patch.apply(_mlb_rolling_24h_audit_for_locked_card)
 except Exception:
     pass
 
