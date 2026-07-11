@@ -1,0 +1,70 @@
+name: Diagnose ApiFunction MLB V3 Runtime
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-api-function-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke ApiFunction directly
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set +e
+          mkdir -p runtime_reports
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource --stack-name parlay-platform-dev --region "$AWS_REGION_VALUE" --logical-resource-id ApiFunction --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          cat > /tmp/mlb-v3-event.json <<'JSON'
+          {"resource":"/{proxy+}","path":"/v1/mlb/model/version","rawPath":"/v1/mlb/model/version","httpMethod":"GET","headers":{},"queryStringParameters":null,"pathParameters":{"proxy":"v1/mlb/model/version"},"requestContext":{"stage":"Prod","httpMethod":"GET"},"body":null,"isBase64Encoded":false}
+          JSON
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-binary-format raw-in-base64-out --payload file:///tmp/mlb-v3-event.json --log-type Tail /tmp/mlb-v3-response.json > /tmp/mlb-v3-meta.json 2>/tmp/mlb-v3-invoke-error.txt
+          RC=$?
+          cp /tmp/mlb-v3-response.json runtime_reports/api_function_v3_response.json 2>/dev/null || true
+          cp /tmp/mlb-v3-invoke-error.txt runtime_reports/api_function_v3_invoke_error.txt 2>/dev/null || true
+          python - <<'PY'
+          import base64, json, re
+          from pathlib import Path
+          raw = Path('/tmp/mlb-v3-meta.json').read_text(errors='replace') if Path('/tmp/mlb-v3-meta.json').exists() else '{}'
+          try:
+              meta = json.loads(raw or '{}')
+          except Exception:
+              meta = {'raw': raw}
+          log = ''
+          if isinstance(meta, dict) and meta.get('LogResult'):
+              log = base64.b64decode(meta['LogResult']).decode('utf-8', 'replace')
+          def sanitize(text):
+              text = re.sub(r'arn:aws:[^\s]+', 'arn:aws:REDACTED', text)
+              text = re.sub(r'\b\d{12}\b', 'ACCOUNT_REDACTED', text)
+              return text
+          Path('runtime_reports/api_function_v3_invoke_meta.json').write_text(json.dumps(meta, indent=2) + '\n')
+          Path('runtime_reports/api_function_v3_log_tail.txt').write_text(sanitize(log))
+          if Path('runtime_reports/api_function_v3_response.json').exists():
+              p = Path('runtime_reports/api_function_v3_response.json')
+              p.write_text(sanitize(p.read_text(errors='replace')))
+          PY
+          echo "$RC" > runtime_reports/api_function_v3_invoke_rc.txt
+
+      - name: Commit diagnostic
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/api_function_v3_* || true
+          git commit -m "Persist direct ApiFunction MLB v3 diagnostic" || true
+          git pull --rebase --autostash origin main || true
+          git push || true
