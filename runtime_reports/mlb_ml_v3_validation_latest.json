@@ -1,8 +1,38 @@
 {
-  "ok": false,
+  "ok": true,
   "proofType": "MLB_ML_V3_AND_DEPLOY_INVARIANT_VALIDATION",
-  "createdAtUtc": "2026-07-11T22:37:48.936647+00:00",
+  "createdAtUtc": "2026-07-11T22:38:38.669579+00:00",
   "results": [
+    {
+      "command": [
+        "/opt/hostedtoolcache/Python/3.11.15/x64/bin/python",
+        "scripts/patch_template_mlb_v1.py"
+      ],
+      "returnCode": 0,
+      "ok": true,
+      "stdout": "Patched template.yaml: MLB uses stable proxy routes, quarter-hour MLB HOT schedule, and daily lock.\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/opt/hostedtoolcache/Python/3.11.15/x64/bin/python",
+        "scripts/patch_template_mlb_security.py"
+      ],
+      "returnCode": 0,
+      "ok": true,
+      "stdout": "Patched template.yaml to route MLB smoke endpoints through backend wrapper, protect HTTP MLB writes, and schedule AWS MLB production verification checks.\n",
+      "stderr": ""
+    },
+    {
+      "command": [
+        "/opt/hostedtoolcache/Python/3.11.15/x64/bin/python",
+        "scripts/patch_template_mlb_results_routes.py"
+      ],
+      "returnCode": 0,
+      "ok": true,
+      "stdout": "Patched MLB results routes and routed final deploy smoke check through main API.\n",
+      "stderr": ""
+    },
     {
       "command": [
         "/opt/hostedtoolcache/Python/3.11.15/x64/bin/python",
@@ -18,11 +48,13 @@
         "/opt/hostedtoolcache/Python/3.11.15/x64/bin/python",
         "scripts/verify_mlb_schedule_invariants.py"
       ],
-      "returnCode": 1,
-      "ok": false,
-      "stdout": "",
-      "stderr": "MLB production invariant failure: unsafe days_ahead=1 exists in template; legacy/duplicate MLB schedule still exists: MLBBasePull; legacy/duplicate MLB schedule still exists: MLBT2; legacy/duplicate MLB schedule still exists: MLBT3; legacy/duplicate MLB schedule still exists: MLBT4; MLBHotEvery15Min is not quarter-hour cron; same-day days_ahead=0 input missing; daily lock function missing; daily lock one-minute scheduler missing; AWS production verifier function missing; 5-minute AWS production verifier schedule missing; daily ingest verification schedule missing; daily lock verification schedule missing; lock T-minus env missing; manual lock route missing; lock status route missing; lock today route missing; minimum pull-depth lock guardrail missing; stale snapshot lock guardrail missing\n"
+      "returnCode": 0,
+      "ok": true,
+      "stdout": "MLB complete-slate coverage, AWS daily lock, no-backfill policy, and doubleheader-safe audit verified\nMLB ML optimization v3 verified: immutable pregame features, final-label join, dual models, untouched priced ROI, independent gates, and shadow-only runtime\nMLB ML promotion safety verified: automatic promotion is impossible; reviewed DynamoDB promotion is required\nMLB frozen feature integrity verified: fingerprint, game identity, and lock timestamp are enforced\nMLB production invariants PASS: complete-slate coverage, verified lock-time fingerprints, final-label joins, separate outcome/reliability models, untouched validation with priced ROI, source-honest fundamentals, independent promotion gates, manual-only DDB champion promotion, and single runtime authority are installed.\n",
+      "stderr": ""
     }
   ],
-  "policy": "This report runs the same mandatory MLB production invariant used before SAM validation and build."
+  "templatePatchOrderMirrorsDeploy": true,
+  "sourceTemplateRestoredAfterValidation": true,
+  "policy": "Patch the SAM template exactly as deploy.yml does, run the mandatory production invariant, then restore the source template."
 }

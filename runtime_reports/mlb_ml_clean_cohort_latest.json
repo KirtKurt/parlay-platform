@@ -1,0 +1,3518 @@
+{
+  "ok": true,
+  "version": "MLB-ML-CLEAN-COHORT-v1-post-fix-immutable-feature-snapshot+MLB-ML-CLEAN-COHORT-HARDENING-v4-valid-candidate-wins-dedup",
+  "featureSnapshotVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
+  "minimumLockAtUtc": "2026-07-11T15:22:00+00:00",
+  "inputRows": 191,
+  "cleanRowCount": 0,
+  "quarantinedRowCount": 191,
+  "quarantineReasonCounts": {
+    "feature_vector_not_proven_immutable": 183,
+    "feature_vector_source_not_lock_time_prediction": 183,
+    "frozen_vector_features_missing": 183,
+    "frozen_vector_game_identity_mismatch": 187,
+    "frozen_vector_source_after_or_missing_lock": 183,
+    "incomplete_or_unproven_slate_coverage": 183,
+    "legacy_probability_semantics": 174,
+    "missing_exact_stored_lock_time_feature_vector": 183,
+    "pre_clean_cohort_cutoff": 28,
+    "wrong_frozen_feature_vector_version": 183,
+    "late_row_protection_not_proven": 5,
+    "missing_lock_timestamp": 144,
+    "missing_outcome_label": 5,
+    "missing_source_pull_timestamp": 148,
+    "missing_team_win_probability": 167,
+    "not_graded": 5,
+    "not_immutable_locked_prediction": 144,
+    "frozen_vector_fingerprint_mismatch": 8,
+    "superseded_invalid_duplicate": 32
+  },
+  "cleanRows": [],
+  "quarantinedRows": [
+    {
+      "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "b11bed54d0340b0a1865d2f8d41bb050",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "55c7996867831d050e3a904c541089d8",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "late_row_protection_not_proven",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_outcome_label",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_graded",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "e1b31472ec00cc3475d077ee22298ef8",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "late_row_protection_not_proven",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_outcome_label",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_graded",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "781ce9e5ac0cd1e3339085c1fb7d7b39",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch",
+        "frozen_vector_game_identity_mismatch"
+      ]
+    },
+    {
+      "gameId": "c710eb874e3d11ac6f032fbc186f2e5f",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch",
+        "frozen_vector_game_identity_mismatch"
+      ]
+    },
+    {
+      "gameId": "76ab48541c0690199e815574c469d162",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "2461d70fb5485aced0029aaea219afeb",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch",
+        "frozen_vector_game_identity_mismatch"
+      ]
+    },
+    {
+      "gameId": "2ac65fed3f431f0601c2e788aee18cab",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "late_row_protection_not_proven",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_outcome_label",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_graded",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "250b0373676b10f51ed1c59c93714245",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "cc0b13e921789925a1c0502553d4ec9b",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "late_row_protection_not_proven",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_outcome_label",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_graded",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ca5e8cb9be664ff91b121c15379d7ce9",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "late_row_protection_not_proven",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_outcome_label",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_graded",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "976819aa47554213e70bc968d9356fc4",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch",
+        "frozen_vector_game_identity_mismatch"
+      ]
+    },
+    {
+      "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch"
+      ]
+    },
+    {
+      "gameId": "8ec769ee362e5e0e25ac93ee886cdfd4",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch"
+      ]
+    },
+    {
+      "gameId": "39a35ef6ca846e78caf1d3d4063cba8b",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch"
+      ]
+    },
+    {
+      "gameId": "def5adac76d2258bb7ff1a427e09f8a8",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch"
+      ]
+    },
+    {
+      "gameId": "55c7996867831d050e3a904c541089d8",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "e1b31472ec00cc3475d077ee22298ef8",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "2ac65fed3f431f0601c2e788aee18cab",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "cc0b13e921789925a1c0502553d4ec9b",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ca5e8cb9be664ff91b121c15379d7ce9",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "2461d70fb5485aced0029aaea219afeb",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "39a35ef6ca846e78caf1d3d4063cba8b",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "250b0373676b10f51ed1c59c93714245",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "673121d56b103f8d38738980fbffafef",
+      "slateDateEt": "2026-07-09",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "be3485a7acdabede1a849330fcc226dc",
+      "slateDateEt": "2026-07-09",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "4690bcfaacd780fc44c057a6a7a4cc46",
+      "slateDateEt": "2026-07-09",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "9f1eb41cd2972a08e88069d6c5b4bb6c",
+      "slateDateEt": "2026-07-09",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a3b9b93cdd33f60538713d337711afe2",
+      "slateDateEt": "2026-07-09",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "2c1eb8ab560fe810d23f21a2acf7cbe6",
+      "slateDateEt": "2026-07-09",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "2b3ca3496277938aa74f87f24a2c064c",
+      "slateDateEt": "2026-07-09",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "fa2f6fc2aee410abafe5d685acfde5f3",
+      "slateDateEt": "2026-07-08",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "e8175b3e1d8e51c76f4fad9075a7d707",
+      "slateDateEt": "2026-07-08",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "f69a7dce841f22ee977afebfd8dfc142",
+      "slateDateEt": "2026-07-08",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "fbdf2c9598b2ee82ae2cd6b9934f9b67",
+      "slateDateEt": "2026-07-08",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "f30eb3060b32a01dced2737d2398b918",
+      "slateDateEt": "2026-07-08",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "79b379f1dea98a6b1596852f00534a6c",
+      "slateDateEt": "2026-07-08",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "57172eebee377baa85502b3c14ce8249",
+      "slateDateEt": "2026-07-08",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "0ae1e836fd92f0f98b83e2d7451f6f97",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "e38e52ed47e9148a67603013c94f7295",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "7b7ae2c411b9b8122144d502c0bd1757",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a250fe250560caa8b56cd4e061c8e7b0",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "c892fb37a2662fa901742b27c6b7f205",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "157306fb8124249fa8e55016561ce711",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "e3cd1f3a8c40c74e867b7713af7e6365",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a11dc5b41df437e869c4abe72abced1f",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "288b4514ed237def0df905ead634d530",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "fa63ecda3e7fe4b049c7e9cfd633f461",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a21ff3f3e886298451df6978c4be743c",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "53966d4de4d1da8972c6564664409a9b",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "c6ef398cb6827a8a660c67c3f3e6dbd5",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "d1ba74caa5492c9e300650c9ba7bebab",
+      "slateDateEt": "2026-07-06",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "92bad434cf32ec6dd5e2b856708a6596",
+      "slateDateEt": "2026-07-06",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ce47831dfdb0f68ba311fd79cc19d68a",
+      "slateDateEt": "2026-07-06",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "8708f0b1ad493caa280c8d963be2dc0b",
+      "slateDateEt": "2026-07-06",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "14986526f62254742f296b0eda680507",
+      "slateDateEt": "2026-07-06",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ceda0420b6aec99d07f85f99472f8c68",
+      "slateDateEt": "2026-07-06",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "e5295ada7ac0d16be6bf67d6a4a2923b",
+      "slateDateEt": "2026-07-06",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "caea4c3449e9f30ffe2c708a884e3296",
+      "slateDateEt": "2026-07-06",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "0351ac13f45c028104c1b860422817ef",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "2991d31eedcff470d7105f7237e66e03",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "5fb0c67a8c660b822db6b5a2a9d75125",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "2cf5f7fa6ed79ae90ee9f6aa70ceb1e2",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "6f0fa1db67e69c8f534003061fdedee9",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "5aed324537c72e3b3cd7d1f3e3905db5",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "4dea73f21196e43153d6355e7f5d1266",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "12eaa8dfb716d6ed545a6e1fed88cc2a",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "1dea84746e977d3a57b78a0a47ba6935",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "8ea201bdda2a6a63bd3a6bc19250e4a0",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "acc7a54706d2d24e201d069a00e76d50",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a2dde9d9ca56dc238d564ace87b244f0",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "e7bb88c6da50433a86db985ff3c21afe",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ff0f58dec0d0f4a36d53233a99151d06",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "29749cde930adfaf1cbc374908eeac88",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "56eb72104fb4612dbd0953df70201727",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a523c1ba668649088416935d2bc9a573",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "33b4c5f526bcc56b10bb39d97a8b942d",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "937c0d8ee53bf0a6f8f1e472832b86c5",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "304cfd624e72dea59a61624cfad305d8",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "478dd82a6850dc38220b29a31ad54938",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "01abcc9d9a9408b8be4a4acc7dc53ec5",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ee9972cacf647720c50225d0f8004a91",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "e9d56acb32e4662dcb7e8858362e887a",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "929b8a02afe41332232a35f04aba423a",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "516860d105f26cb11a4c57a773a851f5",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ec4b853359310a5bcf7395eeb51dc121",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "984229c1b91fa0876a5f4e5c584d4387",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "612d9a4c3240e9ad249a9e03681b4a6c",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "cf30692398660f7bad608a5e820b0d31",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "f0e24a50674443856bff31b645ff5572",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "10e96b5a6a3e81aac49e9771082a5bea",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "5434f34b7e8232a7091f0e3efdd4a175",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "bb4dc431a7347100e9781696b2bcf256",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "0341580e2426c65b63d7fb929214eb65",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "90671747520f496e2e8e3b667c7c4286",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "02a01af3575ee92bb974caaf28f76911",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "3bf177f10d546535921fa6be841880f7",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "14423828314cc83167d6c7ce88323746",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "0a7769461d3b3126c2e4bb98b8cee225",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "b854e09aa9677136666533dc8d2459ff",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "6a7d6767bd4da0f044ab6d250c233769",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "471b2b7bb19f52be5e618aec359cd8e5",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "283444f773ee82cae9a5977e9266baac",
+      "slateDateEt": "2026-07-02",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ae95cd98700fec55791774682d6b0b06",
+      "slateDateEt": "2026-07-02",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "e01b5de283d3047c0c1bc73082a2d67a",
+      "slateDateEt": "2026-07-02",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "63d068d292e5a379ba2a1d669c979313",
+      "slateDateEt": "2026-07-02",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "6f7b9d64e494097e8646d88ca4c33577",
+      "slateDateEt": "2026-07-02",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a0e93fcad5a057f362a048be909d86c8",
+      "slateDateEt": "2026-07-02",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "2bbaa286b732c0af8947d273e164f15e",
+      "slateDateEt": "2026-07-02",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "bf902b3b8ba731d8cf4b422470319439",
+      "slateDateEt": "2026-07-02",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "0d018935d27849176c88ca1dae8a8da8",
+      "slateDateEt": "2026-07-02",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "cf32c9650e5e4179dbc82552ff735228",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "155102fc6ca2d46399a620f515ffe2b3",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "c771b9e374413d651231684704a5bbfe",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "8cb46e5f7992c07772b03c820bcc5a46",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "4613f606f40dfab948c795bcde2caaa2",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "89e2407a67afd5e02ec12a372a53fa18",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "5961513fee89b7b96eae78376ec2fe3f",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "9bc02db3da6a621d686c70c4384d1a9f",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "cea9b7f2ef253ee28f6d6888b9eecd00",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "51cf948cf7f0602d670ed6a922636887",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "afdb817faca36038ccfa594672010b63",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "53f6cd5e0c90cba30f35638b85a72ef6",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "f59c1e3050cb7baeab3f1b997ee3a895",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "2788dd0a2625745466747d10af8f3447",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "1c4be9313fc412b34cc158daa4b7fdac",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "2b3a5c8c1587ea527558ec8e6fb514ee",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "835944b5efc736fb06b73068a981fde5",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "5ee2ae64246b36c95376f981cb3551da",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "d394e34530919df3f80263c0e0176924",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ff56e951fb2920b6a40e41ddccbe184b",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "6685cf659fbcccab05e1e35fcf4dcbb9",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "1d26cb2e8c25cee366cca30f7ae6428a",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "5a0c2a8da870604e8dffcb6d053cd738",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "090b0370fb46541b0a17771a0d86e281",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "878878a6f002b3712f580e398e40dc1a",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "c9a7f8f74b4ae9a65c80d47993dfeb86",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "fc7f74688fa7a695570c6e2a546a1b4c",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "0673c603ed95036d0dd89744802e018b",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "f62667265f8ded9cddabcc82eecfb2a4",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "bc5ac70107417075ffd9dda7565caff3",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a898264b051f27a33274cbdacc554c46",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "0ce57b4f423d4bee56a8b4b941856426",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "894c544f93b835c08a74ade08d26888f",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "140bee4546319ca4bfbaa6d6bf8d2016",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ca341550fc4220b9ee976aaa8bc933db",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "74432b663df15c5695ec62a802768a60",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "67d21f1e1c41537ef5b58b9abb1ff742",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "9e37d48efb8cc346ca1c01402049c4c0",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ea976bf03d60b635db0b332eb5f79a0e",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "08c10b4a78eb4168d07c1e53f345d13f",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "da58edb8a6932f91a04f398f83ed0658",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "e82ac8c2a7cc7adb87a3de75b787a898",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "be3485a7acdabede1a849330fcc226dc",
+      "slateDateEt": "2026-07-09",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "4690bcfaacd780fc44c057a6a7a4cc46",
+      "slateDateEt": "2026-07-09",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "9f1eb41cd2972a08e88069d6c5b4bb6c",
+      "slateDateEt": "2026-07-09",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a3b9b93cdd33f60538713d337711afe2",
+      "slateDateEt": "2026-07-09",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "fa2f6fc2aee410abafe5d685acfde5f3",
+      "slateDateEt": "2026-07-08",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_team_win_probability",
+        "pre_clean_cohort_cutoff",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "6611ecd500747b1f1aebe1ea49f9d00a",
+      "slateDateEt": "2026-07-07",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "92bad434cf32ec6dd5e2b856708a6596",
+      "slateDateEt": "2026-07-06",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "8708f0b1ad493caa280c8d963be2dc0b",
+      "slateDateEt": "2026-07-06",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "e5295ada7ac0d16be6bf67d6a4a2923b",
+      "slateDateEt": "2026-07-06",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "5fb0c67a8c660b822db6b5a2a9d75125",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "6f0fa1db67e69c8f534003061fdedee9",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "8ea201bdda2a6a63bd3a6bc19250e4a0",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a2dde9d9ca56dc238d564ace87b244f0",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ff0f58dec0d0f4a36d53233a99151d06",
+      "slateDateEt": "2026-07-05",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "33b4c5f526bcc56b10bb39d97a8b942d",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "937c0d8ee53bf0a6f8f1e472832b86c5",
+      "slateDateEt": "2026-07-04",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "f0e24a50674443856bff31b645ff5572",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "5434f34b7e8232a7091f0e3efdd4a175",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "90671747520f496e2e8e3b667c7c4286",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "02a01af3575ee92bb974caaf28f76911",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "14423828314cc83167d6c7ce88323746",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "6a7d6767bd4da0f044ab6d250c233769",
+      "slateDateEt": "2026-07-03",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "155102fc6ca2d46399a620f515ffe2b3",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "9bc02db3da6a621d686c70c4384d1a9f",
+      "slateDateEt": "2026-07-01",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "5ee2ae64246b36c95376f981cb3551da",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "d394e34530919df3f80263c0e0176924",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "6685cf659fbcccab05e1e35fcf4dcbb9",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "5a0c2a8da870604e8dffcb6d053cd738",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "c9a7f8f74b4ae9a65c80d47993dfeb86",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "0673c603ed95036d0dd89744802e018b",
+      "slateDateEt": "2026-06-30",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a898264b051f27a33274cbdacc554c46",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "0ce57b4f423d4bee56a8b4b941856426",
+      "slateDateEt": "2026-06-29",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_immutable_locked_prediction",
+        "superseded_invalid_duplicate",
+        "wrong_frozen_feature_vector_version"
+      ]
+    }
+  ],
+  "policy": "Only post-fix immutable locked rows with explicit modern probability semantics and pre-lock source timestamps may train ML.",
+  "deduplicatedIdentityCount": 159,
+  "supersededValidDuplicateCount": 0,
+  "validCandidateWinsDuplicateSelection": true,
+  "hardeningVersion": "MLB-ML-CLEAN-COHORT-HARDENING-v4-valid-candidate-wins-dedup",
+  "completeSlateCoverageRequired": true,
+  "immutableFrozenFeatureVectorRequired": true,
+  "fingerprintRecalculationRequired": true,
+  "gameIdentityAndLockMustMatchAuditRow": true,
+  "laterFeatureReconstructionAllowed": false,
+  "requiredFeatureVectorVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome"
+}

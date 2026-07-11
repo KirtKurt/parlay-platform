@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-11T22:33:48.762278+00:00",
+  "createdAt": "2026-07-11T22:38:43.926031+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -3138,7 +3138,84 @@
       "marketBaselineAmericanOdds": -120.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.833333,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
+      "fundamentalsSnapshot": {
+        "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
+        "createdAtUtc": "2026-07-11T22:38:58.725119+00:00",
+        "asOfUtc": null,
+        "gameId": "895dfbfbbb57ff9ecc3cb430a9c69076",
+        "sourceStatuses": {
+          "confirmed_probable_pitchers": "CONNECTED",
+          "fip_xfip": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "wrc_plus": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "starter_handedness_splits": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "bullpen_fatigue": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "confirmed_lineups": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "public_betting_handle": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "closing_line_value": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"
+        },
+        "connectedGroups": [
+          "confirmed_probable_pitchers"
+        ],
+        "partialGroups": [
+          "closing_line_value"
+        ],
+        "missingGroups": [
+          "fip_xfip",
+          "wrc_plus",
+          "starter_handedness_splits",
+          "bullpen_fatigue",
+          "confirmed_lineups",
+          "weather_wind_roof",
+          "ballpark_factors",
+          "injuries_late_scratches_news",
+          "public_betting_handle",
+          "closing_line_value"
+        ],
+        "completenessRatio": 0.0909,
+        "probablePitchers": {
+          "home": "Jack Flaherty",
+          "away": "Aaron Nola",
+          "homeId": 656427,
+          "awayId": 605400,
+          "source": "MLB Stats API schedule hydrate=probablePitcher"
+        },
+        "venue": {
+          "source_status": "CONNECTED",
+          "source": "MLB Stats API schedule hydrate=venue",
+          "venue_name": "Comerica Park",
+          "venue_id": 2394
+        },
+        "injuryFlags": {
+          "home": [],
+          "away": [],
+          "lateScratches": [],
+          "pitcherChange": null
+        },
+        "numericValues": {
+          "homeStarterFip": 0.0,
+          "awayStarterFip": 0.0,
+          "homeStarterXfip": 0.0,
+          "awayStarterXfip": 0.0,
+          "homeWrcPlus": 0.0,
+          "awayWrcPlus": 0.0,
+          "homeBullpenFatigue": 0.0,
+          "awayBullpenFatigue": 0.0,
+          "homeLineupStrengthDelta": 0.0,
+          "awayLineupStrengthDelta": 0.0,
+          "parkFactorRuns": 1.0,
+          "windOutMph": 0.0,
+          "homeRestDays": 0.0,
+          "awayRestDays": 0.0
+        },
+        "missingnessIsFeature": true,
+        "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
+        "advancedEligible": false,
+        "rawContextVersion": "MLB-B1.0-advanced-context-v1"
+      }
     },
     {
       "id": "b11bed54d0340b0a1865d2f8d41bb050",
@@ -3394,7 +3471,84 @@
       "marketBaselineAmericanOdds": -156.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.641026,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
+      "fundamentalsSnapshot": {
+        "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
+        "createdAtUtc": "2026-07-11T22:38:58.725187+00:00",
+        "asOfUtc": null,
+        "gameId": "b11bed54d0340b0a1865d2f8d41bb050",
+        "sourceStatuses": {
+          "confirmed_probable_pitchers": "CONNECTED",
+          "fip_xfip": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "wrc_plus": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "starter_handedness_splits": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "bullpen_fatigue": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "confirmed_lineups": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "public_betting_handle": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "closing_line_value": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"
+        },
+        "connectedGroups": [
+          "confirmed_probable_pitchers"
+        ],
+        "partialGroups": [
+          "closing_line_value"
+        ],
+        "missingGroups": [
+          "fip_xfip",
+          "wrc_plus",
+          "starter_handedness_splits",
+          "bullpen_fatigue",
+          "confirmed_lineups",
+          "weather_wind_roof",
+          "ballpark_factors",
+          "injuries_late_scratches_news",
+          "public_betting_handle",
+          "closing_line_value"
+        ],
+        "completenessRatio": 0.0909,
+        "probablePitchers": {
+          "home": "Brandon Young",
+          "away": "Luinder Avila",
+          "homeId": 687064,
+          "awayId": 679883,
+          "source": "MLB Stats API schedule hydrate=probablePitcher"
+        },
+        "venue": {
+          "source_status": "CONNECTED",
+          "source": "MLB Stats API schedule hydrate=venue",
+          "venue_name": "Oriole Park at Camden Yards",
+          "venue_id": 2
+        },
+        "injuryFlags": {
+          "home": [],
+          "away": [],
+          "lateScratches": [],
+          "pitcherChange": null
+        },
+        "numericValues": {
+          "homeStarterFip": 0.0,
+          "awayStarterFip": 0.0,
+          "homeStarterXfip": 0.0,
+          "awayStarterXfip": 0.0,
+          "homeWrcPlus": 0.0,
+          "awayWrcPlus": 0.0,
+          "homeBullpenFatigue": 0.0,
+          "awayBullpenFatigue": 0.0,
+          "homeLineupStrengthDelta": 0.0,
+          "awayLineupStrengthDelta": 0.0,
+          "parkFactorRuns": 1.0,
+          "windOutMph": 0.0,
+          "homeRestDays": 0.0,
+          "awayRestDays": 0.0
+        },
+        "missingnessIsFeature": true,
+        "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
+        "advancedEligible": false,
+        "rawContextVersion": "MLB-B1.0-advanced-context-v1"
+      }
     },
     {
       "id": "55c7996867831d050e3a904c541089d8",
@@ -4951,7 +5105,84 @@
       "marketBaselineAmericanOdds": -152.0,
       "marketBaselineCorrect": false,
       "marketBaselineUnitProfit": -1.0,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
+      "fundamentalsSnapshot": {
+        "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
+        "createdAtUtc": "2026-07-11T22:38:58.725245+00:00",
+        "asOfUtc": null,
+        "gameId": "76ab48541c0690199e815574c469d162",
+        "sourceStatuses": {
+          "confirmed_probable_pitchers": "CONNECTED",
+          "fip_xfip": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "wrc_plus": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "starter_handedness_splits": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "bullpen_fatigue": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "confirmed_lineups": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "public_betting_handle": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "closing_line_value": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"
+        },
+        "connectedGroups": [
+          "confirmed_probable_pitchers"
+        ],
+        "partialGroups": [
+          "closing_line_value"
+        ],
+        "missingGroups": [
+          "fip_xfip",
+          "wrc_plus",
+          "starter_handedness_splits",
+          "bullpen_fatigue",
+          "confirmed_lineups",
+          "weather_wind_roof",
+          "ballpark_factors",
+          "injuries_late_scratches_news",
+          "public_betting_handle",
+          "closing_line_value"
+        ],
+        "completenessRatio": 0.0909,
+        "probablePitchers": {
+          "home": "Nolan McLean",
+          "away": "Sonny Gray",
+          "homeId": 690997,
+          "awayId": 543243,
+          "source": "MLB Stats API schedule hydrate=probablePitcher"
+        },
+        "venue": {
+          "source_status": "CONNECTED",
+          "source": "MLB Stats API schedule hydrate=venue",
+          "venue_name": "Citi Field",
+          "venue_id": 3289
+        },
+        "injuryFlags": {
+          "home": [],
+          "away": [],
+          "lateScratches": [],
+          "pitcherChange": null
+        },
+        "numericValues": {
+          "homeStarterFip": 0.0,
+          "awayStarterFip": 0.0,
+          "homeStarterXfip": 0.0,
+          "awayStarterXfip": 0.0,
+          "homeWrcPlus": 0.0,
+          "awayWrcPlus": 0.0,
+          "homeBullpenFatigue": 0.0,
+          "awayBullpenFatigue": 0.0,
+          "homeLineupStrengthDelta": 0.0,
+          "awayLineupStrengthDelta": 0.0,
+          "parkFactorRuns": 1.0,
+          "windOutMph": 0.0,
+          "homeRestDays": 0.0,
+          "awayRestDays": 0.0
+        },
+        "missingnessIsFeature": true,
+        "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
+        "advancedEligible": false,
+        "rawContextVersion": "MLB-B1.0-advanced-context-v1"
+      }
     },
     {
       "id": "583d3f0f064fd76fdea2bc583f0eb548",
@@ -5210,7 +5441,84 @@
       "marketBaselineAmericanOdds": -142.0,
       "marketBaselineCorrect": false,
       "marketBaselineUnitProfit": -1.0,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
+      "fundamentalsSnapshot": {
+        "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
+        "createdAtUtc": "2026-07-11T22:38:58.725323+00:00",
+        "asOfUtc": null,
+        "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
+        "sourceStatuses": {
+          "confirmed_probable_pitchers": "CONNECTED",
+          "fip_xfip": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "wrc_plus": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "starter_handedness_splits": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "bullpen_fatigue": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "confirmed_lineups": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "public_betting_handle": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "closing_line_value": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"
+        },
+        "connectedGroups": [
+          "confirmed_probable_pitchers"
+        ],
+        "partialGroups": [
+          "closing_line_value"
+        ],
+        "missingGroups": [
+          "fip_xfip",
+          "wrc_plus",
+          "starter_handedness_splits",
+          "bullpen_fatigue",
+          "confirmed_lineups",
+          "weather_wind_roof",
+          "ballpark_factors",
+          "injuries_late_scratches_news",
+          "public_betting_handle",
+          "closing_line_value"
+        ],
+        "completenessRatio": 0.0909,
+        "probablePitchers": {
+          "home": "Cal Quantrill",
+          "away": "Hunter Brown",
+          "homeId": 615698,
+          "awayId": 686613,
+          "source": "MLB Stats API schedule hydrate=probablePitcher"
+        },
+        "venue": {
+          "source_status": "CONNECTED",
+          "source": "MLB Stats API schedule hydrate=venue",
+          "venue_name": "Globe Life Field",
+          "venue_id": 5325
+        },
+        "injuryFlags": {
+          "home": [],
+          "away": [],
+          "lateScratches": [],
+          "pitcherChange": null
+        },
+        "numericValues": {
+          "homeStarterFip": 0.0,
+          "awayStarterFip": 0.0,
+          "homeStarterXfip": 0.0,
+          "awayStarterXfip": 0.0,
+          "homeWrcPlus": 0.0,
+          "awayWrcPlus": 0.0,
+          "homeBullpenFatigue": 0.0,
+          "awayBullpenFatigue": 0.0,
+          "homeLineupStrengthDelta": 0.0,
+          "awayLineupStrengthDelta": 0.0,
+          "parkFactorRuns": 1.0,
+          "windOutMph": 0.0,
+          "homeRestDays": 0.0,
+          "awayRestDays": 0.0
+        },
+        "missingnessIsFeature": true,
+        "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
+        "advancedEligible": false,
+        "rawContextVersion": "MLB-B1.0-advanced-context-v1"
+      }
     },
     {
       "id": "2461d70fb5485aced0029aaea219afeb",
@@ -6113,7 +6421,84 @@
       "marketBaselineAmericanOdds": -158.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.632911,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
+      "fundamentalsSnapshot": {
+        "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
+        "createdAtUtc": "2026-07-11T22:38:58.725363+00:00",
+        "asOfUtc": null,
+        "gameId": "250b0373676b10f51ed1c59c93714245",
+        "sourceStatuses": {
+          "confirmed_probable_pitchers": "CONNECTED",
+          "fip_xfip": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "wrc_plus": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "starter_handedness_splits": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "bullpen_fatigue": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "confirmed_lineups": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "public_betting_handle": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "closing_line_value": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"
+        },
+        "connectedGroups": [
+          "confirmed_probable_pitchers"
+        ],
+        "partialGroups": [
+          "closing_line_value"
+        ],
+        "missingGroups": [
+          "fip_xfip",
+          "wrc_plus",
+          "starter_handedness_splits",
+          "bullpen_fatigue",
+          "confirmed_lineups",
+          "weather_wind_roof",
+          "ballpark_factors",
+          "injuries_late_scratches_news",
+          "public_betting_handle",
+          "closing_line_value"
+        ],
+        "completenessRatio": 0.0909,
+        "probablePitchers": {
+          "home": "Carson Palmquist",
+          "away": "Ryan Weathers",
+          "homeId": 687223,
+          "awayId": 677960,
+          "source": "MLB Stats API schedule hydrate=probablePitcher"
+        },
+        "venue": {
+          "source_status": "CONNECTED",
+          "source": "MLB Stats API schedule hydrate=venue",
+          "venue_name": "Nationals Park",
+          "venue_id": 3309
+        },
+        "injuryFlags": {
+          "home": [],
+          "away": [],
+          "lateScratches": [],
+          "pitcherChange": null
+        },
+        "numericValues": {
+          "homeStarterFip": 0.0,
+          "awayStarterFip": 0.0,
+          "homeStarterXfip": 0.0,
+          "awayStarterXfip": 0.0,
+          "homeWrcPlus": 0.0,
+          "awayWrcPlus": 0.0,
+          "homeBullpenFatigue": 0.0,
+          "awayBullpenFatigue": 0.0,
+          "homeLineupStrengthDelta": 0.0,
+          "awayLineupStrengthDelta": 0.0,
+          "parkFactorRuns": 1.0,
+          "windOutMph": 0.0,
+          "homeRestDays": 0.0,
+          "awayRestDays": 0.0
+        },
+        "missingnessIsFeature": true,
+        "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
+        "advancedEligible": false,
+        "rawContextVersion": "MLB-B1.0-advanced-context-v1"
+      }
     },
     {
       "id": "cc0b13e921789925a1c0502553d4ec9b",
@@ -9930,21 +10315,20 @@
     "selectedOddsPolicy": "Use the final predicted side's stored signal price; row-level pre-flip prices are fallback only.",
     "ledgerReadbackPolicy": "Immutable ledger rows without an older status field are treated as GRADED when final winner and correctness are stored.",
     "mlCriticalFixStatus": {
-      "ok": false,
-      "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v5-canonical-manual-promotion",
+      "ok": true,
+      "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v6-canonical-manual-promotion-v1",
       "applied": [
         "legacy_local_reliability_runtime_disabled",
-        "immutable_lock_feature_freeze"
+        "immutable_lock_feature_freeze",
+        "automatic_champion_promotion_permanently_disabled"
       ],
-      "errors": [
-        "promotion_safety:No module named 'mlb_ml_manual_promotion_only_patch'"
-      ],
+      "errors": [],
       "authoritativeTrainer": "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger",
       "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
       "duplicateTrainerAuthorityDisabled": true,
       "duplicateOutcomeRuntimeAuthorityDisabled": true,
       "automaticPromotionDisabled": true,
-      "manualPromotionModule": "MLB-ML-PROMOTION-SAFETY-v1-manual-review-only",
+      "manualPromotionModule": "MLB-ML-MANUAL-PROMOTION-ONLY-v1",
       "manualPromotionWorkflow": "mlb-ml-promote-champion.yml"
     },
     "mlTrainingPolicy": "Only immutable lock-time feature vectors with current semantics and complete slate coverage may train the dual-model ML v3 system."
@@ -9965,6 +10349,298 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-11T22:33:48.762278+00:00"
+    "runSk": "AUDIT#2026-07-11T22:38:43.926031+00:00"
+  },
+  "mlOptimizationV3": {
+    "applied": true,
+    "version": "MLB-ML-OPTIMIZATION-v3.1-clean-dual-manual-champion-promotion",
+    "mode": "SHADOW_CHALLENGER",
+    "cleanRowCount": 0,
+    "quarantinedRowCount": 191,
+    "quarantineReasonCounts": {
+      "feature_vector_not_proven_immutable": 183,
+      "feature_vector_source_not_lock_time_prediction": 183,
+      "frozen_vector_features_missing": 183,
+      "frozen_vector_game_identity_mismatch": 187,
+      "frozen_vector_source_after_or_missing_lock": 183,
+      "incomplete_or_unproven_slate_coverage": 183,
+      "legacy_probability_semantics": 174,
+      "missing_exact_stored_lock_time_feature_vector": 183,
+      "pre_clean_cohort_cutoff": 28,
+      "wrong_frozen_feature_vector_version": 183,
+      "late_row_protection_not_proven": 5,
+      "missing_lock_timestamp": 144,
+      "missing_outcome_label": 5,
+      "missing_source_pull_timestamp": 148,
+      "missing_team_win_probability": 167,
+      "not_graded": 5,
+      "not_immutable_locked_prediction": 144,
+      "frozen_vector_fingerprint_mismatch": 8,
+      "superseded_invalid_duplicate": 32
+    },
+    "trainingStatus": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
+    "recordCount": 0,
+    "dataQuality": {
+      "recordCount": 0,
+      "averageFundamentalsCompletenessPct": 0.0,
+      "rowsWithAtLeast75PctFundamentals": 0,
+      "priceCoveragePct": 0.0,
+      "modelScope": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS"
+    },
+    "split": {
+      "ok": false,
+      "version": "MLB-ML-WALK-FORWARD-v1-train-validation-untouched-test",
+      "reason": "insufficient_clean_rows_for_three_way_chronological_split",
+      "rowCount": 0,
+      "required": 140,
+      "minimums": {
+        "train": 80,
+        "validation": 30,
+        "test": 30
+      }
+    },
+    "validation": null,
+    "untouchedTest": null,
+    "promotionGate": {
+      "ok": true,
+      "version": "MLB-ML-CHAMPION-CHALLENGER-v1.1-separate-direction-playability-gates",
+      "evaluatedAtUtc": "2026-07-11T22:38:59.976019+00:00",
+      "automaticPromotionEnabled": false,
+      "promotionEligible": false,
+      "directionPromotionEligible": false,
+      "playabilityPromotionEligible": false,
+      "promotionDecision": "RETAIN_CURRENT_CHAMPION",
+      "directionAuthorityEnabled": false,
+      "playabilityAuthorityEnabled": false,
+      "directionChecks": {
+        "cleanOfficialCount": 0,
+        "minimumCleanOfficial": 500,
+        "untouchedTestCount": 0,
+        "minimumUntouchedTest": 100,
+        "testWasUntouched": null,
+        "validationProtocol": "threshold_selected_on_validation_only_test_untouched",
+        "modelScope": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS",
+        "averageFundamentalsCompletenessPct": 0.0,
+        "outcomeAccuracyLiftPctPoints": null,
+        "minimumAccuracyLiftPctPoints": 1.0,
+        "outcomeBrierSkillPct": null,
+        "minimumBrierSkillPct": 0.1,
+        "outcomeLogLoss": null,
+        "marketLogLoss": null,
+        "outcomeCalibrationError": null,
+        "maximumCalibrationError": 0.08
+      },
+      "playabilityChecks": {
+        "cleanOfficialCount": 0,
+        "minimumCleanOfficial": 500,
+        "untouchedTestCount": 0,
+        "minimumUntouchedTest": 100,
+        "testWasUntouched": null,
+        "validationProtocol": "threshold_selected_on_validation_only_test_untouched",
+        "modelScope": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS",
+        "averageFundamentalsCompletenessPct": 0.0,
+        "selectedReliabilityTestCount": 0,
+        "minimumSelectedReliabilityTest": 50,
+        "selectedAccuracyPct": null,
+        "minimumSelectedAccuracyPct": 60.0,
+        "selectedPriceCoveragePct": null,
+        "minimumSelectedPriceCoveragePct": 90.0,
+        "selectedFlatUnitRoiPct": null,
+        "minimumSelectedFlatUnitRoiPct": "> 0.0",
+        "selectedCalibrationError": null,
+        "maximumSelectedCalibrationError": 0.1
+      },
+      "directionBlockers": [
+        {
+          "code": "CHALLENGER_NOT_TRAINED",
+          "actual": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
+          "required": "trained dual model"
+        },
+        {
+          "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
+          "actual": 0,
+          "required": 500
+        },
+        {
+          "code": "INSUFFICIENT_UNTOUCHED_TEST",
+          "actual": 0,
+          "required": 100
+        },
+        {
+          "code": "TEST_NOT_PROVEN_UNTOUCHED",
+          "actual": null,
+          "required": true
+        },
+        {
+          "code": "DOES_NOT_BEAT_MARKET_ACCURACY",
+          "actual": null,
+          "required": 1.0
+        },
+        {
+          "code": "NO_POSITIVE_BRIER_SKILL",
+          "actual": null,
+          "required": 0.1
+        },
+        {
+          "code": "LOG_LOSS_NOT_BETTER_THAN_MARKET",
+          "actual": null,
+          "required": "less than None"
+        },
+        {
+          "code": "CALIBRATION_ERROR_TOO_HIGH",
+          "actual": null,
+          "required": 0.08
+        }
+      ],
+      "playabilityBlockers": [
+        {
+          "code": "CHALLENGER_NOT_TRAINED",
+          "actual": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
+          "required": "trained dual model"
+        },
+        {
+          "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
+          "actual": 0,
+          "required": 500
+        },
+        {
+          "code": "INSUFFICIENT_UNTOUCHED_TEST",
+          "actual": 0,
+          "required": 100
+        },
+        {
+          "code": "TEST_NOT_PROVEN_UNTOUCHED",
+          "actual": null,
+          "required": true
+        },
+        {
+          "code": "INSUFFICIENT_SELECTED_RELIABILITY_TEST_ROWS",
+          "actual": 0,
+          "required": 50
+        },
+        {
+          "code": "SELECTED_ACCURACY_TOO_LOW",
+          "actual": null,
+          "required": 60.0
+        },
+        {
+          "code": "SELECTED_PRICE_COVERAGE_TOO_LOW",
+          "actual": null,
+          "required": 90.0
+        },
+        {
+          "code": "SELECTED_ROI_NOT_POSITIVE",
+          "actual": null,
+          "required": "> 0.0"
+        },
+        {
+          "code": "RELIABILITY_CALIBRATION_ERROR_TOO_HIGH",
+          "actual": null,
+          "required": 0.1
+        }
+      ],
+      "blockers": [
+        {
+          "code": "CHALLENGER_NOT_TRAINED",
+          "actual": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
+          "required": "trained dual model"
+        },
+        {
+          "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
+          "actual": 0,
+          "required": 500
+        },
+        {
+          "code": "INSUFFICIENT_UNTOUCHED_TEST",
+          "actual": 0,
+          "required": 100
+        },
+        {
+          "code": "TEST_NOT_PROVEN_UNTOUCHED",
+          "actual": null,
+          "required": true
+        },
+        {
+          "code": "DOES_NOT_BEAT_MARKET_ACCURACY",
+          "actual": null,
+          "required": 1.0
+        },
+        {
+          "code": "NO_POSITIVE_BRIER_SKILL",
+          "actual": null,
+          "required": 0.1
+        },
+        {
+          "code": "LOG_LOSS_NOT_BETTER_THAN_MARKET",
+          "actual": null,
+          "required": "less than None"
+        },
+        {
+          "code": "CALIBRATION_ERROR_TOO_HIGH",
+          "actual": null,
+          "required": 0.08
+        },
+        {
+          "code": "INSUFFICIENT_SELECTED_RELIABILITY_TEST_ROWS",
+          "actual": 0,
+          "required": 50
+        },
+        {
+          "code": "SELECTED_ACCURACY_TOO_LOW",
+          "actual": null,
+          "required": 60.0
+        },
+        {
+          "code": "SELECTED_PRICE_COVERAGE_TOO_LOW",
+          "actual": null,
+          "required": 90.0
+        },
+        {
+          "code": "SELECTED_ROI_NOT_POSITIVE",
+          "actual": null,
+          "required": "> 0.0"
+        },
+        {
+          "code": "RELIABILITY_CALIBRATION_ERROR_TOO_HIGH",
+          "actual": null,
+          "required": 0.1
+        }
+      ],
+      "publicPlayableClaim": {
+        "eligible": false,
+        "actualSettledPlayableRecommendations": 8,
+        "required": 200,
+        "policy": "Two hundred settled production playable recommendations are required for a credible public playable-performance claim, but this is not a circular prerequisite for an initially validated playability champion."
+      },
+      "policy": "Direction and playability earn authority independently. Direction must beat the market on untouched chronological data. Playability must meet untouched selected-sample accuracy, calibration, price coverage, and positive ROI gates."
+    },
+    "outcomeModelVersion": null,
+    "reliabilityModelVersion": null,
+    "testWasUntouched": null,
+    "legacyTrainerAuthorityDisabled": true,
+    "automaticPromotionSupported": false,
+    "stored": {
+      "ok": true,
+      "latestPk": "MLB_ML_OPTIMIZATION#V3",
+      "latestSk": "CHALLENGER#LATEST",
+      "runSk": "CHALLENGER#2026-07-11T22:38:54.484308+00:00"
+    },
+    "promotion": {
+      "ok": true,
+      "promoted": false,
+      "reason": "automatic_promotion_permanently_disabled_manual_review_required",
+      "directionPromotionEligible": false,
+      "playabilityPromotionEligible": false,
+      "manualPromotionFunction": "promote_reviewed_latest",
+      "manualPromotionWorkflow": "mlb-ml-promote-champion.yml",
+      "version": "MLB-ML-MANUAL-PROMOTION-ONLY-v1"
+    }
+  },
+  "mlTrainingAuthority": {
+    "authoritative": "mlOptimizationV3_clean_dual_model_only",
+    "legacyArtifactRole": "diagnostic_only",
+    "automaticWeightMutation": false,
+    "automaticChampionPromotion": false,
+    "productionAuthoritySource": "reviewed_DynamoDB_champion_bundle_only"
   }
 }

@@ -1,0 +1,281 @@
+{
+  "ok": true,
+  "version": "MLB-ML-OPTIMIZATION-v3.1-clean-dual-manual-champion-promotion",
+  "createdAtUtc": "2026-07-11T22:38:54.484308+00:00",
+  "cleanRowCount": 0,
+  "quarantinedRowCount": 191,
+  "quarantineReasonCounts": {
+    "feature_vector_not_proven_immutable": 183,
+    "feature_vector_source_not_lock_time_prediction": 183,
+    "frozen_vector_features_missing": 183,
+    "frozen_vector_game_identity_mismatch": 187,
+    "frozen_vector_source_after_or_missing_lock": 183,
+    "incomplete_or_unproven_slate_coverage": 183,
+    "legacy_probability_semantics": 174,
+    "missing_exact_stored_lock_time_feature_vector": 183,
+    "pre_clean_cohort_cutoff": 28,
+    "wrong_frozen_feature_vector_version": 183,
+    "late_row_protection_not_proven": 5,
+    "missing_lock_timestamp": 144,
+    "missing_outcome_label": 5,
+    "missing_source_pull_timestamp": 148,
+    "missing_team_win_probability": 167,
+    "not_graded": 5,
+    "not_immutable_locked_prediction": 144,
+    "frozen_vector_fingerprint_mismatch": 8,
+    "superseded_invalid_duplicate": 32
+  },
+  "trainingStatus": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
+  "recordCount": 0,
+  "dataQuality": {
+    "recordCount": 0,
+    "averageFundamentalsCompletenessPct": 0.0,
+    "rowsWithAtLeast75PctFundamentals": 0,
+    "priceCoveragePct": 0.0,
+    "modelScope": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS"
+  },
+  "split": {
+    "ok": false,
+    "version": "MLB-ML-WALK-FORWARD-v1-train-validation-untouched-test",
+    "reason": "insufficient_clean_rows_for_three_way_chronological_split",
+    "rowCount": 0,
+    "required": 140,
+    "minimums": {
+      "train": 80,
+      "validation": 30,
+      "test": 30
+    }
+  },
+  "validation": null,
+  "untouchedTest": null,
+  "promotionGate": {
+    "ok": true,
+    "version": "MLB-ML-CHAMPION-CHALLENGER-v1.1-separate-direction-playability-gates",
+    "evaluatedAtUtc": "2026-07-11T22:38:59.976019+00:00",
+    "automaticPromotionEnabled": false,
+    "promotionEligible": false,
+    "directionPromotionEligible": false,
+    "playabilityPromotionEligible": false,
+    "promotionDecision": "RETAIN_CURRENT_CHAMPION",
+    "directionAuthorityEnabled": false,
+    "playabilityAuthorityEnabled": false,
+    "directionChecks": {
+      "cleanOfficialCount": 0,
+      "minimumCleanOfficial": 500,
+      "untouchedTestCount": 0,
+      "minimumUntouchedTest": 100,
+      "testWasUntouched": null,
+      "validationProtocol": "threshold_selected_on_validation_only_test_untouched",
+      "modelScope": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS",
+      "averageFundamentalsCompletenessPct": 0.0,
+      "outcomeAccuracyLiftPctPoints": null,
+      "minimumAccuracyLiftPctPoints": 1.0,
+      "outcomeBrierSkillPct": null,
+      "minimumBrierSkillPct": 0.1,
+      "outcomeLogLoss": null,
+      "marketLogLoss": null,
+      "outcomeCalibrationError": null,
+      "maximumCalibrationError": 0.08
+    },
+    "playabilityChecks": {
+      "cleanOfficialCount": 0,
+      "minimumCleanOfficial": 500,
+      "untouchedTestCount": 0,
+      "minimumUntouchedTest": 100,
+      "testWasUntouched": null,
+      "validationProtocol": "threshold_selected_on_validation_only_test_untouched",
+      "modelScope": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS",
+      "averageFundamentalsCompletenessPct": 0.0,
+      "selectedReliabilityTestCount": 0,
+      "minimumSelectedReliabilityTest": 50,
+      "selectedAccuracyPct": null,
+      "minimumSelectedAccuracyPct": 60.0,
+      "selectedPriceCoveragePct": null,
+      "minimumSelectedPriceCoveragePct": 90.0,
+      "selectedFlatUnitRoiPct": null,
+      "minimumSelectedFlatUnitRoiPct": "> 0.0",
+      "selectedCalibrationError": null,
+      "maximumSelectedCalibrationError": 0.1
+    },
+    "directionBlockers": [
+      {
+        "code": "CHALLENGER_NOT_TRAINED",
+        "actual": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
+        "required": "trained dual model"
+      },
+      {
+        "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
+        "actual": 0,
+        "required": 500
+      },
+      {
+        "code": "INSUFFICIENT_UNTOUCHED_TEST",
+        "actual": 0,
+        "required": 100
+      },
+      {
+        "code": "TEST_NOT_PROVEN_UNTOUCHED",
+        "actual": null,
+        "required": true
+      },
+      {
+        "code": "DOES_NOT_BEAT_MARKET_ACCURACY",
+        "actual": null,
+        "required": 1.0
+      },
+      {
+        "code": "NO_POSITIVE_BRIER_SKILL",
+        "actual": null,
+        "required": 0.1
+      },
+      {
+        "code": "LOG_LOSS_NOT_BETTER_THAN_MARKET",
+        "actual": null,
+        "required": "less than None"
+      },
+      {
+        "code": "CALIBRATION_ERROR_TOO_HIGH",
+        "actual": null,
+        "required": 0.08
+      }
+    ],
+    "playabilityBlockers": [
+      {
+        "code": "CHALLENGER_NOT_TRAINED",
+        "actual": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
+        "required": "trained dual model"
+      },
+      {
+        "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
+        "actual": 0,
+        "required": 500
+      },
+      {
+        "code": "INSUFFICIENT_UNTOUCHED_TEST",
+        "actual": 0,
+        "required": 100
+      },
+      {
+        "code": "TEST_NOT_PROVEN_UNTOUCHED",
+        "actual": null,
+        "required": true
+      },
+      {
+        "code": "INSUFFICIENT_SELECTED_RELIABILITY_TEST_ROWS",
+        "actual": 0,
+        "required": 50
+      },
+      {
+        "code": "SELECTED_ACCURACY_TOO_LOW",
+        "actual": null,
+        "required": 60.0
+      },
+      {
+        "code": "SELECTED_PRICE_COVERAGE_TOO_LOW",
+        "actual": null,
+        "required": 90.0
+      },
+      {
+        "code": "SELECTED_ROI_NOT_POSITIVE",
+        "actual": null,
+        "required": "> 0.0"
+      },
+      {
+        "code": "RELIABILITY_CALIBRATION_ERROR_TOO_HIGH",
+        "actual": null,
+        "required": 0.1
+      }
+    ],
+    "blockers": [
+      {
+        "code": "CHALLENGER_NOT_TRAINED",
+        "actual": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
+        "required": "trained dual model"
+      },
+      {
+        "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
+        "actual": 0,
+        "required": 500
+      },
+      {
+        "code": "INSUFFICIENT_UNTOUCHED_TEST",
+        "actual": 0,
+        "required": 100
+      },
+      {
+        "code": "TEST_NOT_PROVEN_UNTOUCHED",
+        "actual": null,
+        "required": true
+      },
+      {
+        "code": "DOES_NOT_BEAT_MARKET_ACCURACY",
+        "actual": null,
+        "required": 1.0
+      },
+      {
+        "code": "NO_POSITIVE_BRIER_SKILL",
+        "actual": null,
+        "required": 0.1
+      },
+      {
+        "code": "LOG_LOSS_NOT_BETTER_THAN_MARKET",
+        "actual": null,
+        "required": "less than None"
+      },
+      {
+        "code": "CALIBRATION_ERROR_TOO_HIGH",
+        "actual": null,
+        "required": 0.08
+      },
+      {
+        "code": "INSUFFICIENT_SELECTED_RELIABILITY_TEST_ROWS",
+        "actual": 0,
+        "required": 50
+      },
+      {
+        "code": "SELECTED_ACCURACY_TOO_LOW",
+        "actual": null,
+        "required": 60.0
+      },
+      {
+        "code": "SELECTED_PRICE_COVERAGE_TOO_LOW",
+        "actual": null,
+        "required": 90.0
+      },
+      {
+        "code": "SELECTED_ROI_NOT_POSITIVE",
+        "actual": null,
+        "required": "> 0.0"
+      },
+      {
+        "code": "RELIABILITY_CALIBRATION_ERROR_TOO_HIGH",
+        "actual": null,
+        "required": 0.1
+      }
+    ],
+    "publicPlayableClaim": {
+      "eligible": false,
+      "actualSettledPlayableRecommendations": 8,
+      "required": 200,
+      "policy": "Two hundred settled production playable recommendations are required for a credible public playable-performance claim, but this is not a circular prerequisite for an initially validated playability champion."
+    },
+    "policy": "Direction and playability earn authority independently. Direction must beat the market on untouched chronological data. Playability must meet untouched selected-sample accuracy, calibration, price coverage, and positive ROI gates."
+  },
+  "automaticPromotionSupported": false,
+  "stored": {
+    "ok": true,
+    "latestPk": "MLB_ML_OPTIMIZATION#V3",
+    "latestSk": "CHALLENGER#LATEST",
+    "runSk": "CHALLENGER#2026-07-11T22:38:54.484308+00:00"
+  },
+  "promotion": {
+    "ok": true,
+    "promoted": false,
+    "reason": "automatic_promotion_permanently_disabled_manual_review_required",
+    "directionPromotionEligible": false,
+    "playabilityPromotionEligible": false,
+    "manualPromotionFunction": "promote_reviewed_latest",
+    "manualPromotionWorkflow": "mlb-ml-promote-champion.yml",
+    "version": "MLB-ML-MANUAL-PROMOTION-ONLY-v1"
+  }
+}
