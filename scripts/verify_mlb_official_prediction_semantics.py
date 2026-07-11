@@ -138,31 +138,54 @@ def main() -> int:
     legacy = accuracy._normalize_audit_row(
         {
             "status": "GRADED",
-            "id": "legacy-official-not-proven-playable",
+            "id": "legacy-flipped-official-not-proven-playable",
             "slateDateEt": "2026-07-10",
             "commenceTime": "2026-07-10T20:00:00Z",
-            "homeTeam": "Baltimore Orioles",
-            "awayTeam": "Kansas City Royals",
-            "winner": "Baltimore Orioles",
-            "predictedWinner": "Baltimore Orioles",
-            "predictedSide": "home",
-            "correct": True,
+            "homeTeam": "Texas Rangers",
+            "awayTeam": "Houston Astros",
+            "winner": "Texas Rangers",
+            "predictedWinner": "Houston Astros",
+            "predictedSide": "away",
+            "correct": False,
             "officialPick": True,
             "actionablePick": True,
             "accuracyTargetEligible": True,
             "actionability": "OPTIMIZED_GAME_WINNER_PICK",
             "tags": ["SLATE_LOCKED", "FAVORITE"],
-            "winProbabilityPct": 9.43,
-            "americanOdds": -156,
-            "homeSignal": {"probLatest": 0.587345, "americanOdds": -156},
-            "awaySignal": {"probLatest": 0.412655, "americanOdds": 132},
+            "winProbabilityPct": 6.66,
+            "americanOdds": 120,
+            "homeSignal": {"probLatest": 0.442592, "americanOdds": 120},
+            "awaySignal": {"probLatest": 0.557408, "americanOdds": -142},
         }
     )
     assert legacy["officialPrediction"] is True
     assert legacy["playable"] is False
-    assert legacy["teamWinProbabilityPct"] == 58.73
+    assert legacy["teamWinProbabilityPct"] == 55.74
+    assert legacy["lockedAmericanOdds"] == -142.0
 
-    print("MLB official/playable, legacy probability, and real-world accuracy metrics verified")
+    old_ledger_row = {
+        "id": "old-ledger-no-status",
+        "slateDateEt": "2026-07-10",
+        "commenceTime": "2026-07-10T21:00:00Z",
+        "homeTeam": "Baltimore Orioles",
+        "awayTeam": "Kansas City Royals",
+        "winner": "Baltimore Orioles",
+        "predictedWinner": "Baltimore Orioles",
+        "predictedSide": "home",
+        "correct": True,
+        "officialPrediction": True,
+        "officialPick": True,
+        "tags": ["SLATE_LOCKED"],
+        "homeSignal": {"probLatest": 0.587345, "americanOdds": -156},
+        "awaySignal": {"probLatest": 0.412655, "americanOdds": 132},
+    }
+    normalized_ledger = accuracy._normalize_audit_row(old_ledger_row)
+    stored_ledger = accuracy._ledger_row(normalized_ledger)
+    assert normalized_ledger["status"] == "GRADED"
+    assert stored_ledger["status"] == "GRADED"
+    assert accuracy._dedupe([normalized_ledger])
+
+    print("MLB official/playable, immutable-ledger, selected-odds, and real-world accuracy metrics verified")
     return 0
 
 
