@@ -16,6 +16,23 @@ import mlb_ml_clean_cohort_v1 as cohort
 import mlb_ml_dual_model_v1 as dual
 
 
+def source_honest_context():
+    return {
+        "version": "TEST-CONTEXT-v1",
+        "confirmed_probable_pitchers": {"source_status": "PARTIAL", "home_probable_pitcher": "Home Starter", "away_probable_pitcher": "Away Starter"},
+        "fip_xfip": {"source_status": "NOT_CONNECTED_SOURCE_REQUIRED"},
+        "wrc_plus": {"source_status": "NOT_CONNECTED_SOURCE_REQUIRED"},
+        "starter_handedness_splits": {"source_status": "NOT_CONNECTED_SOURCE_REQUIRED"},
+        "bullpen_fatigue": {"source_status": "NOT_CONNECTED_SOURCE_REQUIRED"},
+        "confirmed_lineups": {"source_status": "NOT_CONNECTED_SOURCE_REQUIRED"},
+        "weather_wind_roof": {"source_status": "NOT_CONNECTED_SOURCE_REQUIRED"},
+        "ballpark_factors": {"source_status": "NOT_CONNECTED_SOURCE_REQUIRED"},
+        "injuries_late_scratches_news": {"source_status": "NOT_CONNECTED_SOURCE_REQUIRED"},
+        "public_betting_handle": {"source_status": "NOT_CONNECTED_SOURCE_REQUIRED"},
+        "closing_line_value": {"source_status": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"},
+    }
+
+
 def row(index: int, modern: bool = True):
     home_probability = 0.42 + (index % 17) * 0.01
     home_probability = min(0.68, home_probability)
@@ -46,6 +63,7 @@ def row(index: int, modern: bool = True):
         "teamWinProbabilityPct": round(max(home_probability, 1.0 - home_probability) * 100.0, 2) if modern else 7.5,
         "winProbabilityMeaning": "estimated_probability_selected_team_wins_game" if modern else "legacy_reliability",
         "score": 50 + (home_probability - 0.5) * 100,
+        "advanced_context": source_honest_context(),
         "lockedCardAudit": {
             "lockedFlag": True,
             "lockAtUtc": lock_at,
