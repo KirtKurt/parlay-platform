@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-11T22:49:01.595745+00:00",
+  "createdAt": "2026-07-11T22:50:13.706274+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -3117,7 +3117,7 @@
       "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
       "fundamentalsSnapshot": {
         "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
-        "createdAtUtc": "2026-07-11T22:49:14.669788+00:00",
+        "createdAtUtc": "2026-07-11T22:50:25.129685+00:00",
         "asOfUtc": null,
         "gameId": "b11bed54d0340b0a1865d2f8d41bb050",
         "sourceStatuses": {
@@ -4751,7 +4751,7 @@
       "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
       "fundamentalsSnapshot": {
         "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
-        "createdAtUtc": "2026-07-11T22:49:14.669878+00:00",
+        "createdAtUtc": "2026-07-11T22:50:25.129772+00:00",
         "asOfUtc": null,
         "gameId": "76ab48541c0690199e815574c469d162",
         "sourceStatuses": {
@@ -5087,7 +5087,7 @@
       "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
       "fundamentalsSnapshot": {
         "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
-        "createdAtUtc": "2026-07-11T22:49:14.670019+00:00",
+        "createdAtUtc": "2026-07-11T22:50:25.129830+00:00",
         "asOfUtc": null,
         "gameId": "583d3f0f064fd76fdea2bc583f0eb548",
         "sourceStatuses": {
@@ -6067,7 +6067,7 @@
       "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
       "fundamentalsSnapshot": {
         "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
-        "createdAtUtc": "2026-07-11T22:49:14.670063+00:00",
+        "createdAtUtc": "2026-07-11T22:50:25.129877+00:00",
         "asOfUtc": null,
         "gameId": "250b0373676b10f51ed1c59c93714245",
         "sourceStatuses": {
@@ -9959,11 +9959,12 @@
     "ledgerReadbackPolicy": "Immutable ledger rows without an older status field are treated as GRADED when final winner and correctness are stored.",
     "mlCriticalFixStatus": {
       "ok": true,
-      "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v6-canonical-manual-promotion-v1",
+      "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v7-runtime-installer-executed",
       "applied": [
         "legacy_local_reliability_runtime_disabled",
-        "immutable_lock_feature_freeze",
-        "automatic_champion_promotion_permanently_disabled"
+        "immutable_exact_lock_feature_freeze",
+        "automatic_champion_promotion_permanently_disabled",
+        "single_authority_runtime_installed"
       ],
       "errors": [],
       "authoritativeTrainer": "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger",
@@ -9972,7 +9973,23 @@
       "duplicateOutcomeRuntimeAuthorityDisabled": true,
       "automaticPromotionDisabled": true,
       "manualPromotionModule": "MLB-ML-MANUAL-PROMOTION-ONLY-v1",
-      "manualPromotionWorkflow": "mlb-ml-promote-champion.yml"
+      "manualPromotionWorkflow": "mlb-ml-promote-champion.yml",
+      "runtimeInstallation": {
+        "applied": true,
+        "version": "MLB-ML-RUNTIME-INSTALL-v3.2-single-authority-exact-lock-vector",
+        "steps": {
+          "legacyReliabilityOverlaySafety": true,
+          "sourceHonestFundamentals": true,
+          "singleDdbChampionAuthority": true,
+          "officialSemanticsFinalized": true,
+          "exactCleanCohortVectorPatch": true,
+          "officialFreezeBridge": true,
+          "immutableFeatureFreeze": true
+        },
+        "errors": [],
+        "ok": true,
+        "policy": "The reviewed DynamoDB champion is the only model allowed to change direction or playability. Every new locked game stores the exact immutable clean-cohort vector before final labels exist."
+      }
     },
     "mlTrainingPolicy": "Only immutable lock-time feature vectors with current semantics and complete slate coverage may train the dual-model ML v3 system."
   },
@@ -9992,7 +10009,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-11T22:49:01.595745+00:00"
+    "runSk": "AUDIT#2026-07-11T22:50:13.706274+00:00"
   },
   "mlOptimizationV3": {
     "applied": true,
@@ -10047,7 +10064,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.1-separate-direction-playability-gates",
-      "evaluatedAtUtc": "2026-07-11T22:49:16.637045+00:00",
+      "evaluatedAtUtc": "2026-07-11T22:50:26.496733+00:00",
       "automaticPromotionEnabled": false,
       "promotionEligible": false,
       "directionPromotionEligible": false,
@@ -10266,7 +10283,7 @@
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-11T22:49:10.476422+00:00"
+      "runSk": "CHALLENGER#2026-07-11T22:50:21.413916+00:00"
     },
     "promotion": {
       "ok": true,
