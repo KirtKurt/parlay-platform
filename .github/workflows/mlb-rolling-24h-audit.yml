@@ -28,6 +28,7 @@ on:
       - 'hello_world/mlb_ml_walk_forward_v1.py'
       - 'hello_world/mlb_fundamentals_snapshot_v1.py'
       - 'hello_world/mlb_ml_champion_challenger_v1.py'
+      - 'hello_world/mlb_ml_manual_promotion_only_v1.py'
       - 'hello_world/mlb_ml_manual_promotion_only_patch.py'
       - 'hello_world/mlb_ml_champion_runtime_v1.py'
       - 'hello_world/mlb_ml_runtime_install_v3.py'
@@ -39,6 +40,7 @@ on:
       - 'scripts/verify_mlb_complete_slate_coverage.py'
       - 'scripts/verify_mlb_ml_optimization_v3.py'
       - 'scripts/run_mlb_ml_v3_validation_report.py'
+      - 'scripts/run_mlb_ml_v3_audit_report.py'
       - 'scripts/promote_mlb_ml_champion.py'
       - '.github/workflows/mlb-ml-promote-champion.yml'
   schedule:
@@ -74,8 +76,7 @@ jobs:
         run: |
           python - <<'PY'
           import json
-          path = 'runtime_reports/mlb_ml_v3_validation_latest.json'
-          report = json.load(open(path, encoding='utf-8'))
+          report = json.load(open('runtime_reports/mlb_ml_v3_validation_latest.json', encoding='utf-8'))
           if report.get('ok') is not True:
               failed = [item for item in report.get('results') or [] if item.get('ok') is not True]
               raise SystemExit('MLB ML v3 validation failed: ' + json.dumps(failed, default=str))
@@ -88,54 +89,22 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Run rolling 24h MLB audit and train clean dual challenger
+      - name: Generate persistent AWS-backed MLB audit report
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           SNAPSHOTS_TABLE: parlay_platform_snapshots
           INQSI_MLB_ML_AUTO_PROMOTE: 'false'
           INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: python scripts/run_mlb_ml_v3_audit_report.py
+
+      - name: Enforce AWS-backed MLB audit report
         run: |
-          set -euo pipefail
-          mkdir -p runtime_reports
-          export PYTHONPATH="$GITHUB_WORKSPACE/hello_world:${PYTHONPATH:-}"
           python - <<'PY'
           import json
-          import mlb_rolling_24h_audit
-          report = mlb_rolling_24h_audit.build(store=True, write_file=True)
-          accuracy = report.get('realWorldAccuracy') or {}
-          windows = accuracy.get('windows') or {}
-          optimization = report.get('mlOptimizationV3') or {}
-          authority = report.get('mlTrainingAuthority') or {}
-          critical = accuracy.get('mlCriticalFixStatus') or {}
-          print(json.dumps({
-              'ok': report.get('ok'),
-              'summary': report.get('summary'),
-              'realWorldAccuracyVersion': accuracy.get('version'),
-              'current24h': windows.get('current24h'),
-              'evidenceProgress': accuracy.get('evidenceProgress'),
-              'accuracyLedger': report.get('accuracyLedger'),
-              'mlCriticalFixStatus': critical,
-              'mlOptimizationV3': optimization,
-              'mlTrainingAuthority': authority,
-              'stored': report.get('stored'),
-              'storeError': report.get('storeError'),
-          }, indent=2, default=str))
-          if accuracy.get('applied') is not True:
-              raise SystemExit('real-world accuracy scorecard was not applied')
-          if report.get('accuracyLedger', {}).get('immutable') is not True:
-              raise SystemExit('immutable settled-game accuracy ledger was not enabled')
-          if critical.get('ok') is not True:
-              raise SystemExit('critical ML blocker installation failed: ' + json.dumps(critical, default=str))
-          if optimization.get('applied') is not True:
-              raise SystemExit('ML optimization v3 was not applied')
-          if authority.get('authoritative') != 'mlOptimizationV3_clean_dual_model_only':
-              raise SystemExit('legacy ML trainer still has production authority')
-          if authority.get('automaticChampionPromotion') is not False:
-              raise SystemExit('automatic champion promotion must remain disabled')
-          if authority.get('productionAuthoritySource') != 'reviewed_DynamoDB_champion_bundle_only':
-              raise SystemExit('DynamoDB reviewed champion is not the sole production authority')
-          if optimization.get('automaticPromotionSupported') is not False:
-              raise SystemExit('optimization output incorrectly allows automatic promotion')
+          report = json.load(open('runtime_reports/mlb_ml_v3_audit_execution_latest.json', encoding='utf-8'))
+          if report.get('ok') is not True:
+              raise SystemExit('AWS-backed MLB ML v3 audit failed: ' + json.dumps(report, default=str))
           PY
 
       - name: Commit rolling audit proof and ML artifacts
@@ -144,6 +113,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add runtime_reports/mlb_ml_v3_validation_latest.json || true
+          git add runtime_reports/mlb_ml_v3_audit_execution_latest.json || true
           git add runtime_reports/mlb_rolling_24h_audit_latest.json || true
           git add runtime_reports/mlb_ml_training_dataset_latest.csv || true
           git add runtime_reports/mlb_ml_model_latest.json || true
