@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-11T20:17:48.448201+00:00",
+  "createdAt": "2026-07-11T20:18:17.919760+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -58,7 +58,7 @@
     "officialFlatUnitRoiPct": -53.97,
     "playableFlatUnitRoiPct": null,
     "seasonOfficialPredictionCount": 70,
-    "seasonPlayablePredictionCount": 6,
+    "seasonPlayablePredictionCount": 1,
     "accuracyClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.1-legacy-safe-playability-and-probability",
     "officialCardPolicy": "Every immutable locked winner is graded as an official prediction, regardless of playability."
   },
@@ -5170,8 +5170,8 @@
           "coverageOfGradedPct": 52.94,
           "probabilityScoring": {
             "pricedProbabilityCount": 45,
-            "brierScore": 0.255001,
-            "logLoss": 0.710025
+            "brierScore": 0.250446,
+            "logLoss": 0.694509
           },
           "calibration": [
             {
@@ -5183,10 +5183,10 @@
             },
             {
               "bucket": "55-59.99%",
-              "count": 7,
-              "averagePredictedProbabilityPct": 56.75,
-              "actualAccuracyPct": 57.14,
-              "calibrationGapPct": 0.4
+              "count": 10,
+              "averagePredictedProbabilityPct": 56.95,
+              "actualAccuracyPct": 50.0,
+              "calibrationGapPct": -6.95
             },
             {
               "bucket": "60-64.99%",
@@ -5201,13 +5201,6 @@
               "averagePredictedProbabilityPct": 65.42,
               "actualAccuracyPct": 0.0,
               "calibrationGapPct": -65.42
-            },
-            {
-              "bucket": "70%+",
-              "count": 1,
-              "averagePredictedProbabilityPct": 74.03,
-              "actualAccuracyPct": 0.0,
-              "calibrationGapPct": -74.03
             }
           ],
           "roi": {
@@ -5219,19 +5212,19 @@
           }
         },
         "playableRecommendations": {
-          "count": 6,
-          "correct": 1,
-          "wrong": 5,
-          "accuracyPct": 16.67,
+          "count": 1,
+          "correct": 0,
+          "wrong": 1,
+          "accuracyPct": 0.0,
           "confidenceInterval95Pct": {
-            "lowPct": 3.01,
-            "highPct": 56.35
+            "lowPct": 0.0,
+            "highPct": 79.35
           },
-          "coverageOfOfficialPct": 13.33,
+          "coverageOfOfficialPct": 2.22,
           "probabilityScoring": {
-            "pricedProbabilityCount": 6,
-            "brierScore": 0.30823,
-            "logLoss": 0.859549
+            "pricedProbabilityCount": 1,
+            "brierScore": 0.425626,
+            "logLoss": 1.056703
           },
           "calibration": [
             {
@@ -5240,21 +5233,14 @@
               "averagePredictedProbabilityPct": 65.24,
               "actualAccuracyPct": 0.0,
               "calibrationGapPct": -65.24
-            },
-            {
-              "bucket": "70%+",
-              "count": 1,
-              "averagePredictedProbabilityPct": 74.03,
-              "actualAccuracyPct": 0.0,
-              "calibrationGapPct": -74.03
             }
           ],
           "roi": {
-            "pricedPickCount": 5,
+            "pricedPickCount": 0,
             "unpricedPickCount": 1,
-            "flatUnitProfit": -3.359,
-            "flatUnitRoiPct": -67.18,
-            "averageAmericanOdds": 9.6
+            "flatUnitProfit": null,
+            "flatUnitRoiPct": null,
+            "averageAmericanOdds": null
           }
         },
         "marketFavoriteBaseline": {
@@ -5284,7 +5270,7 @@
           "sameGameModelAccuracyPct": 40.0,
           "marketFavoriteAccuracyPct": 57.78,
           "modelAccuracyLiftVsMarketPct": -17.78,
-          "brierSkillVsMarketPct": -0.39,
+          "brierSkillVsMarketPct": 1.4,
           "lowerBrierIsBetter": true,
           "lowerLogLossIsBetter": true
         }
@@ -5303,8 +5289,8 @@
           "coverageOfGradedPct": 41.42,
           "probabilityScoring": {
             "pricedProbabilityCount": 70,
-            "brierScore": 0.257379,
-            "logLoss": 0.726438
+            "brierScore": 0.254451,
+            "logLoss": 0.716463
           },
           "calibration": [
             {
@@ -5316,10 +5302,10 @@
             },
             {
               "bucket": "55-59.99%",
-              "count": 8,
-              "averagePredictedProbabilityPct": 56.58,
-              "actualAccuracyPct": 50.0,
-              "calibrationGapPct": -6.58
+              "count": 11,
+              "averagePredictedProbabilityPct": 56.81,
+              "actualAccuracyPct": 45.45,
+              "calibrationGapPct": -11.35
             },
             {
               "bucket": "60-64.99%",
@@ -5337,10 +5323,10 @@
             },
             {
               "bucket": "70%+",
-              "count": 14,
-              "averagePredictedProbabilityPct": 87.64,
-              "actualAccuracyPct": 57.14,
-              "calibrationGapPct": -30.49
+              "count": 13,
+              "averagePredictedProbabilityPct": 88.68,
+              "actualAccuracyPct": 61.54,
+              "calibrationGapPct": -27.14
             }
           ],
           "roi": {
@@ -5352,19 +5338,19 @@
           }
         },
         "playableRecommendations": {
-          "count": 6,
-          "correct": 1,
-          "wrong": 5,
-          "accuracyPct": 16.67,
+          "count": 1,
+          "correct": 0,
+          "wrong": 1,
+          "accuracyPct": 0.0,
           "confidenceInterval95Pct": {
-            "lowPct": 3.01,
-            "highPct": 56.35
+            "lowPct": 0.0,
+            "highPct": 79.35
           },
-          "coverageOfOfficialPct": 8.57,
+          "coverageOfOfficialPct": 1.43,
           "probabilityScoring": {
-            "pricedProbabilityCount": 6,
-            "brierScore": 0.30823,
-            "logLoss": 0.859549
+            "pricedProbabilityCount": 1,
+            "brierScore": 0.425626,
+            "logLoss": 1.056703
           },
           "calibration": [
             {
@@ -5373,21 +5359,14 @@
               "averagePredictedProbabilityPct": 65.24,
               "actualAccuracyPct": 0.0,
               "calibrationGapPct": -65.24
-            },
-            {
-              "bucket": "70%+",
-              "count": 1,
-              "averagePredictedProbabilityPct": 74.03,
-              "actualAccuracyPct": 0.0,
-              "calibrationGapPct": -74.03
             }
           ],
           "roi": {
-            "pricedPickCount": 5,
+            "pricedPickCount": 0,
             "unpricedPickCount": 1,
-            "flatUnitProfit": -3.359,
-            "flatUnitRoiPct": -67.18,
-            "averageAmericanOdds": 9.6
+            "flatUnitProfit": null,
+            "flatUnitRoiPct": null,
+            "averageAmericanOdds": null
           }
         },
         "marketFavoriteBaseline": {
@@ -5417,7 +5396,7 @@
           "sameGameModelAccuracyPct": 47.14,
           "marketFavoriteAccuracyPct": 57.14,
           "modelAccuracyLiftVsMarketPct": -10.0,
-          "brierSkillVsMarketPct": -0.25,
+          "brierSkillVsMarketPct": 0.89,
           "lowerBrierIsBetter": true,
           "lowerLogLossIsBetter": true
         }
@@ -5436,8 +5415,8 @@
           "coverageOfGradedPct": 41.42,
           "probabilityScoring": {
             "pricedProbabilityCount": 70,
-            "brierScore": 0.257379,
-            "logLoss": 0.726438
+            "brierScore": 0.254451,
+            "logLoss": 0.716463
           },
           "calibration": [
             {
@@ -5449,10 +5428,10 @@
             },
             {
               "bucket": "55-59.99%",
-              "count": 8,
-              "averagePredictedProbabilityPct": 56.58,
-              "actualAccuracyPct": 50.0,
-              "calibrationGapPct": -6.58
+              "count": 11,
+              "averagePredictedProbabilityPct": 56.81,
+              "actualAccuracyPct": 45.45,
+              "calibrationGapPct": -11.35
             },
             {
               "bucket": "60-64.99%",
@@ -5470,10 +5449,10 @@
             },
             {
               "bucket": "70%+",
-              "count": 14,
-              "averagePredictedProbabilityPct": 87.64,
-              "actualAccuracyPct": 57.14,
-              "calibrationGapPct": -30.49
+              "count": 13,
+              "averagePredictedProbabilityPct": 88.68,
+              "actualAccuracyPct": 61.54,
+              "calibrationGapPct": -27.14
             }
           ],
           "roi": {
@@ -5485,19 +5464,19 @@
           }
         },
         "playableRecommendations": {
-          "count": 6,
-          "correct": 1,
-          "wrong": 5,
-          "accuracyPct": 16.67,
+          "count": 1,
+          "correct": 0,
+          "wrong": 1,
+          "accuracyPct": 0.0,
           "confidenceInterval95Pct": {
-            "lowPct": 3.01,
-            "highPct": 56.35
+            "lowPct": 0.0,
+            "highPct": 79.35
           },
-          "coverageOfOfficialPct": 8.57,
+          "coverageOfOfficialPct": 1.43,
           "probabilityScoring": {
-            "pricedProbabilityCount": 6,
-            "brierScore": 0.30823,
-            "logLoss": 0.859549
+            "pricedProbabilityCount": 1,
+            "brierScore": 0.425626,
+            "logLoss": 1.056703
           },
           "calibration": [
             {
@@ -5506,21 +5485,14 @@
               "averagePredictedProbabilityPct": 65.24,
               "actualAccuracyPct": 0.0,
               "calibrationGapPct": -65.24
-            },
-            {
-              "bucket": "70%+",
-              "count": 1,
-              "averagePredictedProbabilityPct": 74.03,
-              "actualAccuracyPct": 0.0,
-              "calibrationGapPct": -74.03
             }
           ],
           "roi": {
-            "pricedPickCount": 5,
+            "pricedPickCount": 0,
             "unpricedPickCount": 1,
-            "flatUnitProfit": -3.359,
-            "flatUnitRoiPct": -67.18,
-            "averageAmericanOdds": 9.6
+            "flatUnitProfit": null,
+            "flatUnitRoiPct": null,
+            "averageAmericanOdds": null
           }
         },
         "marketFavoriteBaseline": {
@@ -5550,7 +5522,7 @@
           "sameGameModelAccuracyPct": 47.14,
           "marketFavoriteAccuracyPct": 57.14,
           "modelAccuracyLiftVsMarketPct": -10.0,
-          "brierSkillVsMarketPct": -0.25,
+          "brierSkillVsMarketPct": 0.89,
           "lowerBrierIsBetter": true,
           "lowerLogLossIsBetter": true
         }
@@ -5559,7 +5531,7 @@
     "evidenceProgress": {
       "stage": "ACCUMULATING_EVIDENCE",
       "officialSettledPredictions": 70,
-      "playableSettledRecommendations": 6,
+      "playableSettledRecommendations": 1,
       "targets": {
         "earlyDiagnosticOfficial": 100,
         "provisionalOfficial": 300,
@@ -5570,7 +5542,7 @@
         "toEarlyDiagnosticOfficial": 30,
         "toProvisionalOfficial": 230,
         "toCredibleOfficial": 430,
-        "toCrediblePlayable": 194
+        "toCrediblePlayable": 199
       },
       "automaticCollectionEnabled": true,
       "weightsMayChangeAutomatically": false
@@ -5610,6 +5582,6 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-11T20:17:48.448201+00:00"
+    "runSk": "AUDIT#2026-07-11T20:18:17.919760+00:00"
   }
 }
