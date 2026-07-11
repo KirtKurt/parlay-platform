@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-VERSION = "MLB-ML-RUNTIME-INSTALL-v3.1-single-authority-exact-lock-vector"
+VERSION = "MLB-ML-RUNTIME-INSTALL-v3.2-single-authority-exact-lock-vector"
 
 
 def install() -> Dict[str, Any]:
@@ -36,11 +36,16 @@ def install() -> Dict[str, Any]:
             if not hasattr(engine, attr):
                 patch.apply(engine)
 
+        exact_vector = getattr(mlb_ml_frozen_features, "_INQSI_MLB_EXACT_LOCK_VECTOR_PATCH_APPLIED", False)
+        official_bridge = getattr(mlb_official_prediction_semantics, "_INQSI_MLB_OFFICIAL_FREEZE_BRIDGE_APPLIED_V2", False)
         status["steps"]["sourceHonestFundamentals"] = hasattr(engine, "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED")
         status["steps"]["singleDdbChampionAuthority"] = hasattr(engine, "_INQSI_MLB_ML_CHAMPION_RUNTIME_V1_APPLIED")
         status["steps"]["officialSemanticsFinalized"] = hasattr(engine, "_INQSI_MLB_OFFICIAL_PREDICTION_SEMANTICS_APPLIED")
-        status["steps"]["exactCleanCohortVectorPatch"] = getattr(mlb_ml_frozen_features, "_INQSI_MLB_EXACT_LOCK_VECTOR_PATCH_APPLIED", False)
-        status["steps"]["officialFreezeBridge"] = getattr(mlb_official_prediction_semantics, "_INQSI_MLB_OFFICIAL_FREEZE_BRIDGE_APPLIED_V2", False)
+        status["steps"]["exactCleanCohortVectorPatch"] = exact_vector
+        status["steps"]["officialFreezeBridge"] = official_bridge
+        # Compatibility name used by the existing AWS deploy smoke test. It now
+        # means the stronger exact clean-cohort vector path is installed.
+        status["steps"]["immutableFeatureFreeze"] = bool(exact_vector and official_bridge)
         engine.MLB_ML_RUNTIME_INSTALL_V3 = status
     except Exception as exc:
         status["steps"]["engineRuntime"] = False
