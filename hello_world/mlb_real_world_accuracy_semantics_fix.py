@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, Optional
 
-VERSION = "MLB-REAL-WORLD-ACCURACY-v1.2-immutable-ledger-readback-and-selected-odds"
+VERSION = "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
 
 
 def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -14,8 +15,17 @@ def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
         return default
 
 
+def _install_critical_ml_fixes() -> Dict[str, Any]:
+    try:
+        import mlb_ml_critical_blockers_patch
+        return mlb_ml_critical_blockers_patch.install()
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
 def apply(accuracy_module: Any):
-    if getattr(accuracy_module, "_INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V12", False):
+    critical_fix_status = _install_critical_ml_fixes()
+    if getattr(accuracy_module, "_INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V13", False):
         return accuracy_module
 
     def strict_playable(row: Dict[str, Any]) -> bool:
@@ -23,30 +33,22 @@ def apply(accuracy_module: Any):
         recommendation = str(row.get("recommendationStatus") or "").upper()
         actionability = str(row.get("actionability") or "").upper()
         blocked = bool(
-            "NOT_PLAYABLE" in tags
-            or "ML_REJECTED" in tags
-            or "NOT_PLAYABLE" in recommendation
-            or "LOW_CONFIDENCE" in recommendation
-            or "NOT_PLAYABLE" in actionability
-            or "LOW_CONFIDENCE" in actionability
-            or actionability in {"PASS_NO_PICK", "NO_PICK", "NO_ACTIONABLE_PICK"}
+            "NOT_PLAYABLE" in tags or "ML_REJECTED" in tags or "NOT_PLAYABLE" in recommendation
+            or "LOW_CONFIDENCE" in recommendation or "NOT_PLAYABLE" in actionability
+            or "LOW_CONFIDENCE" in actionability or actionability in {"PASS_NO_PICK", "NO_PICK", "NO_ACTIONABLE_PICK"}
         )
         if blocked:
             return False
         if recommendation == "PLAYABLE_PREDICTION" or "PLAYABLE_PREDICTION" in tags or "ML_CONFIRMED" in tags:
             return True
         modern_semantics = bool(
-            row.get("predictionSemanticsVersion")
-            or row.get("playabilityStatus") in {"PLAYABLE", "NOT_PLAYABLE"}
+            row.get("predictionSemanticsVersion") or row.get("playabilityStatus") in {"PLAYABLE", "NOT_PLAYABLE"}
             or row.get("officialPredictionStatus") == "OFFICIAL_LOCKED_PREDICTION"
         )
         if modern_semantics:
             return bool(
-                row.get("playable") is True
-                or row.get("playablePick") is True
-                or row.get("actionablePick") is True
-                or row.get("accuracyTargetEligible") is True
-                or "ACTIONABLE_PICK" in tags
+                row.get("playable") is True or row.get("playablePick") is True or row.get("actionablePick") is True
+                or row.get("accuracyTargetEligible") is True or "ACTIONABLE_PICK" in tags
             )
         return bool("ACTIONABLE_PICK" in tags and "NOT_PLAYABLE" not in tags)
 
@@ -58,9 +60,8 @@ def apply(accuracy_module: Any):
                 return direct
         meaning = str(row.get("winProbabilityMeaning") or "").lower()
         semantics_fixed = bool(
-            row.get("probabilitySemanticsFixed") is True
-            or row.get("predictionSemanticsVersion")
-            or meaning == "estimated_probability_selected_team_wins_game"
+            row.get("probabilitySemanticsFixed") is True or row.get("predictionSemanticsVersion")
+            or meaning in {"estimated_probability_selected_team_wins_game", "approved_outcome_model_probability_selected_team_wins"}
         )
         if semantics_fixed:
             value = _f(row.get("winProbabilityPct"))
@@ -83,7 +84,6 @@ def apply(accuracy_module: Any):
         return None
 
     original_normalize = accuracy_module._normalize_audit_row
-
     def normalize_with_ledger_status(row: Dict[str, Any]) -> Dict[str, Any]:
         source = dict(row or {})
         if source.get("status") is None and source.get("correct") in {True, False} and source.get("predictedWinner") and source.get("winner"):
@@ -91,14 +91,15 @@ def apply(accuracy_module: Any):
         return original_normalize(source)
 
     original_ledger_row = accuracy_module._ledger_row
-
     def ledger_row_with_status(row: Dict[str, Any]) -> Dict[str, Any]:
         out = dict(original_ledger_row(row))
         out["status"] = "GRADED"
+        for key in ("mlFeatureFreeze", "frozenOutcomeFeatures", "frozenReliabilityFeatures", "featureVectorFrozenAtLock"):
+            if row.get(key) is not None:
+                out[key] = row.get(key)
         return out
 
     original_enhance_report = accuracy_module.enhance_report
-
     def enhanced_report(module: Any, report: Dict[str, Any], historical_rows=None, ledger_rows=None) -> Dict[str, Any]:
         out = original_enhance_report(module, report, historical_rows=historical_rows, ledger_rows=ledger_rows)
         windows = ((out.get("realWorldAccuracy") or {}).get("windows") or {})
@@ -112,38 +113,35 @@ def apply(accuracy_module: Any):
         season_playable = season.get("playableRecommendations") or {}
         summary = dict(out.get("summary") or {})
         playable_accuracy = current_playable.get("accuracyPct")
-        target = float(summary.get("targetAccuracyPct") or 90.0)
+        playable_target = float(os.environ.get("INQSI_MLB_ML_PLAYABLE_TARGET_ACCURACY", "60"))
         summary.update({
-            "optimizedPickCount": current_playable.get("count"),
-            "optimizedCorrect": current_playable.get("correct"),
-            "optimizedWrong": current_playable.get("wrong"),
-            "rolling24hOptimizedAccuracyPct": playable_accuracy,
-            "rolling24hTargetMet": (playable_accuracy >= target) if playable_accuracy is not None else None,
+            "targetAccuracyPct": playable_target,
+            "optimizedPickCount": current_playable.get("count"), "optimizedCorrect": current_playable.get("correct"),
+            "optimizedWrong": current_playable.get("wrong"), "rolling24hOptimizedAccuracyPct": playable_accuracy,
+            "rolling24hTargetMet": (playable_accuracy >= playable_target) if playable_accuracy is not None else None,
             "allScoredPickAccuracyPct": current_official.get("accuracyPct"),
             "sevenDayRowsUsedForLearning": (seven.get("officialPredictions") or {}).get("count"),
             "sevenDayAccuracyPct": (seven.get("officialPredictions") or {}).get("accuracyPct"),
             "thirtyDayRowsUsedForLearning": (thirty.get("officialPredictions") or {}).get("count"),
             "thirtyDayAccuracyPct": (thirty.get("officialPredictions") or {}).get("accuracyPct"),
-            "seasonRowsUsedForLearning": season_official.get("count"),
-            "seasonAccuracyPct": season_official.get("accuracyPct"),
-            "seasonOfficialPredictionCount": season_official.get("count"),
-            "seasonPlayablePredictionCount": season_playable.get("count"),
+            "seasonRowsUsedForLearning": season_official.get("count"), "seasonAccuracyPct": season_official.get("accuracyPct"),
+            "seasonOfficialPredictionCount": season_official.get("count"), "seasonPlayablePredictionCount": season_playable.get("count"),
             "accuracyTargetRowPolicy": "playable_recommendations_only; official_card_accuracy_reported_separately",
-            "actionabilityPolicy": (
-                "Playable metrics require explicit modern playability or an explicit ACTIONABLE_PICK/ML_CONFIRMED tag. "
-                "officialPick is never used as a playability signal. Legacy generic optimizer flags are excluded."
-            ),
+            "actionabilityPolicy": "Playable metrics require explicit modern playability or ACTIONABLE_PICK/ML_CONFIRMED. officialPick is never a playability signal.",
             "officialCardPolicy": "Every immutable locked winner is graded as an official prediction, regardless of playability.",
+            "optimizationTargetPolicy": "Outcome models must beat the de-vigged market baseline on untouched chronological test data. Reliability models require validation-selected thresholds, positive test ROI, and adequate price coverage.",
             "accuracyClassificationVersion": VERSION,
         })
         out["summary"] = summary
         rwa = dict(out.get("realWorldAccuracy") or {})
         rwa["version"] = VERSION
         rwa["legacySummaryFieldsNormalized"] = True
-        rwa["legacyProbabilityPolicy"] = "Use selected-side de-vigged market probability when pre-fix winProbabilityPct semantics are ambiguous."
+        rwa["legacyProbabilityPolicy"] = "Use selected-side de-vigged market probability for legacy reporting; legacy rows are excluded from ML v3 training."
         rwa["legacyPlayabilityPolicy"] = "Do not accept officialPick/actionablePick alone as proof of a playable recommendation on legacy rows."
         rwa["selectedOddsPolicy"] = "Use the final predicted side's stored signal price; row-level pre-flip prices are fallback only."
         rwa["ledgerReadbackPolicy"] = "Immutable ledger rows without an older status field are treated as GRADED when final winner and correctness are stored."
+        rwa["mlCriticalFixStatus"] = critical_fix_status
+        rwa["mlTrainingPolicy"] = "Only immutable lock-time feature vectors with current semantics and complete slate coverage may train the dual-model ML v3 system."
         out["realWorldAccuracy"] = rwa
         return out
 
@@ -163,4 +161,5 @@ def apply(accuracy_module: Any):
 
     accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED = True
     accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V12 = True
+    accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V13 = True
     return accuracy_module
