@@ -1,5 +1,5 @@
 {
-  "ok": false,
+  "ok": true,
   "sports": [
     "mlb",
     "wnba",
@@ -11,1923 +11,1228 @@
     "soccer",
     "tennis"
   ],
-  "builtSports": [],
-  "mlbBuilt": false,
+  "builtSports": [
+    "mlb"
+  ],
+  "mlbBuilt": true,
   "mlbLatestBuild": {
-    "freezeMinutesBeforeGame": "120",
-    "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
-    "leanCount": "0",
-    "gameHistoryStored": "15",
-    "strongCount": "0",
-    "buildStatus": "NO_BUILD",
-    "slate_date": "2026-07-11",
-    "engine": "MLB-B1.0",
-    "audit": {
-      "tracks": [
-        "top1",
-        "top3",
-        "top5"
-      ],
-      "status": "PENDING_RESULTS"
-    },
-    "candidateFilterPolicy": "Candidates are the post-score subset where frozen=true and selected grade is MLB_STRONG or MLB_LEAN. This full board shows the pre-filter scoring pass for every MLB game.",
-    "buildDeadline": {
-      "deadlineHoursBeforeFirstEvent": "2",
-      "firstEventAtUtc": "2026-07-11T18:11:00+00:00",
-      "deadlinePassed": false,
-      "buildDeadlineUtc": "2026-07-11T16:11:00+00:00",
-      "firstEventAtEt": "2026-07-11T14:11:00-04:00",
-      "currentEt": "2026-07-11T00:26:13.664977-04:00",
-      "ok": true,
-      "currentUtc": "2026-07-11T04:26:13.664977+00:00",
-      "buildDeadlineEt": "2026-07-11T12:11:00-04:00"
-    },
-    "ok": true,
-    "candidateCount": "0",
-    "pullCount": "2",
-    "minimumGameHistoryPoints": "4",
-    "gameCount": "15",
-    "slateTimezone": "America/New_York",
-    "structureGate": {
-      "reason": "STRICT_OR_NO_BUILD_UNCHANGED",
-      "applied": true,
-      "rejected": false,
-      "structure": "ANCHOR_LEAN_CONTROLLED_VARIABLE"
-    },
-    "thresholdVersion": "MLB-B1.0-2026-06",
-    "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG. Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy.",
-    "storedAt": "2026-07-11T04:26:14.720903+00:00",
-    "candidates": [],
-    "storeMode": "mlb_b10_or_strict_auto_after_live_pull_with_12_snapshot_baseline",
-    "pullCoverage": {
-      "expectedStartAtUtc": "2026-07-11T05:00:00+00:00",
-      "firstPullAtUtc": "2026-07-11T04:00:26.084911+00:00",
-      "actualPullCount": "2",
-      "intervalMinutes": "15",
-      "firstPullAtEt": "2026-07-11T00:00:26.084911-04:00",
-      "latestPullAtEt": "2026-07-11T00:15:26.043704-04:00",
-      "startHourEt": "1",
-      "latestPullAtUtc": "2026-07-11T04:15:26.043704+00:00",
-      "actualPullCountSinceStart": "0",
-      "expectedPullCountSinceStart": "0",
-      "missingPullCountSinceStart": "0",
-      "overnightCoverageComplete": false,
-      "expectedStartAtEt": "2026-07-11T01:00:00-04:00",
-      "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes."
-    },
-    "scoredGameCount": "0",
-    "sport": "mlb",
-    "allScoredGamesCount": "15",
-    "allScoredGames": [
+    "pullCount": "12",
+    "reason": "BUILT_FROM_TOP_AVAILABLE_SIGNALS_AFTER_12_SNAPSHOTS",
+    "selectedStrongCount": "2",
+    "rankedCombos": [
       {
-        "gameId": "8ec769ee362e5e0e25ac93ee886cdfd4",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Athletics",
-        "cutoffTime": "2026-07-11T16:11:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-11T18:11:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.5098839234276298",
-            "bookCount": "10",
-            "bookDivergence": "0.008751714388940957",
-            "bookAgreement": "0.99125",
-            "homeRunLinePrice": "-165.1",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "138.8",
-            "home": "0.4901160765723702",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5098839234276298",
-            "bookCount": "10",
-            "bookDivergence": "0.008751714388940957",
-            "bookAgreement": "0.99125",
-            "homeRunLinePrice": "-165.1",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "138.8",
-            "home": "0.4901160765723702",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "Chicago White Sox",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Chicago White Sox",
+        "top3": true,
         "rank": "1",
-        "gameKey": "mlb|2026-07-11|athletics|chicago white sox",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "39a35ef6ca846e78caf1d3d4063cba8b",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Los Angeles Angels",
-        "cutoffTime": "2026-07-11T16:11:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-11T18:11:00Z",
-        "tags": [],
-        "points": [
+        "score": "72.8",
+        "legs": [
           {
-            "away": "0.3801265716542475",
-            "bookCount": "10",
-            "bookDivergence": "0.022999780328300745",
-            "bookAgreement": "0.977",
-            "homeRunLinePrice": "111.6",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "-132.8",
-            "home": "0.6198734283457525",
-            "homeRunLinePoint": "-1.5"
+            "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+            "score": "84",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T16:06:00Z",
+            "tags": [
+              "ACCELERATION",
+              "RESISTANCE"
+            ]
           },
           {
-            "away": "0.37909012934317665",
-            "bookCount": "10",
-            "bookDivergence": "0.022999780328300745",
-            "bookAgreement": "0.977",
-            "homeRunLinePrice": "109.6",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "-130.6",
-            "home": "0.6209098706568233",
-            "homeRunLinePoint": "-1.5"
+            "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+            "score": "84",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T20:06:00Z",
+            "tags": [
+              "ACCELERATION",
+              "RESISTANCE"
+            ]
+          },
+          {
+            "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+            "score": "50.4",
+            "side": "away",
+            "selection": "Chicago Cubs",
+            "awayTeam": "Chicago Cubs",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Cincinnati Reds",
+            "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+            "commenceTime": "2026-07-11T23:11:00Z",
+            "tags": []
           }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "Minnesota Twins",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Minnesota Twins",
+        ]
+      },
+      {
+        "top3": true,
         "rank": "2",
-        "gameKey": "mlb|2026-07-11|los angeles angels|minnesota twins",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "93986de15fc102a4875daaf7e6250f9e",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "New York Yankees",
-        "cutoffTime": "2026-07-11T18:05:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-11T20:05:00Z",
-        "tags": [],
-        "points": [
+        "score": "72.8",
+        "legs": [
           {
-            "away": "0.6345069380432018",
-            "bookCount": "11",
-            "bookDivergence": "0.0089639390930486",
-            "bookAgreement": "0.99104",
-            "homeRunLinePrice": "63.18181818181818",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "-119.18181818181819",
-            "home": "0.36549306195679826",
-            "homeRunLinePoint": "1.5"
+            "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+            "score": "84",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "SOLID",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T16:06:00Z",
+            "tags": [
+              "DECELERATION",
+              "MOMENTUM",
+              "STEAM"
+            ]
           },
           {
-            "away": "0.6345069380432018",
-            "bookCount": "11",
-            "bookDivergence": "0.0089639390930486",
-            "bookAgreement": "0.99104",
-            "homeRunLinePrice": "63.27272727272727",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "-119.18181818181819",
-            "home": "0.36549306195679826",
-            "homeRunLinePoint": "1.5"
+            "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+            "score": "84",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T20:06:00Z",
+            "tags": [
+              "ACCELERATION",
+              "RESISTANCE"
+            ]
+          },
+          {
+            "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+            "score": "50.4",
+            "side": "away",
+            "selection": "Chicago Cubs",
+            "awayTeam": "Chicago Cubs",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Cincinnati Reds",
+            "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+            "commenceTime": "2026-07-11T23:11:00Z",
+            "tags": []
           }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "Washington Nationals",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Washington Nationals",
+        ]
+      },
+      {
+        "top3": true,
         "rank": "3",
-        "gameKey": "mlb|2026-07-11|new york yankees|washington nationals",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "def5adac76d2258bb7ff1a427e09f8a8",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Colorado Rockies",
-        "cutoffTime": "2026-07-11T18:06:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-11T20:06:00Z",
-        "tags": [],
-        "points": [
+        "score": "72.8",
+        "legs": [
           {
-            "away": "0.4194112175859014",
-            "bookCount": "10",
-            "bookDivergence": "0.01349907869095679",
-            "bookAgreement": "0.9865",
-            "homeRunLinePrice": "140",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "-167.3",
-            "home": "0.5805887824140987",
-            "homeRunLinePoint": "-1.5"
+            "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+            "score": "84",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T16:06:00Z",
+            "tags": [
+              "ACCELERATION",
+              "RESISTANCE"
+            ]
           },
           {
-            "away": "0.4194112175859014",
-            "bookCount": "10",
-            "bookDivergence": "0.01349907869095679",
-            "bookAgreement": "0.9865",
-            "homeRunLinePrice": "140.3",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "-167.6",
-            "home": "0.5805887824140987",
-            "homeRunLinePoint": "-1.5"
+            "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+            "score": "84",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "SOLID",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T20:06:00Z",
+            "tags": [
+              "DECELERATION",
+              "MOMENTUM",
+              "STEAM"
+            ]
+          },
+          {
+            "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+            "score": "50.4",
+            "side": "away",
+            "selection": "Chicago Cubs",
+            "awayTeam": "Chicago Cubs",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Cincinnati Reds",
+            "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+            "commenceTime": "2026-07-11T23:11:00Z",
+            "tags": []
           }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "San Francisco Giants",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "San Francisco Giants",
+        ]
+      },
+      {
+        "top3": false,
         "rank": "4",
-        "gameKey": "mlb|2026-07-11|colorado rockies|san francisco giants",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "score": "72.8",
+        "legs": [
+          {
+            "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+            "score": "84",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "SOLID",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T16:06:00Z",
+            "tags": [
+              "DECELERATION",
+              "MOMENTUM",
+              "STEAM"
+            ]
+          },
+          {
+            "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+            "score": "84",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "SOLID",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T20:06:00Z",
+            "tags": [
+              "DECELERATION",
+              "MOMENTUM",
+              "STEAM"
+            ]
+          },
+          {
+            "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+            "score": "50.4",
+            "side": "away",
+            "selection": "Chicago Cubs",
+            "awayTeam": "Chicago Cubs",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Cincinnati Reds",
+            "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+            "commenceTime": "2026-07-11T23:11:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": false,
+        "rank": "5",
+        "score": "69.15",
+        "legs": [
+          {
+            "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+            "score": "84",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T16:06:00Z",
+            "tags": [
+              "ACCELERATION",
+              "RESISTANCE"
+            ]
+          },
+          {
+            "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+            "score": "84",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T20:06:00Z",
+            "tags": [
+              "ACCELERATION",
+              "RESISTANCE"
+            ]
+          },
+          {
+            "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+            "score": "39.44",
+            "side": "home",
+            "selection": "Cincinnati Reds",
+            "awayTeam": "Chicago Cubs",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Cincinnati Reds",
+            "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+            "commenceTime": "2026-07-11T23:11:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": false,
+        "rank": "6",
+        "score": "69.15",
+        "legs": [
+          {
+            "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+            "score": "84",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "SOLID",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T16:06:00Z",
+            "tags": [
+              "DECELERATION",
+              "MOMENTUM",
+              "STEAM"
+            ]
+          },
+          {
+            "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+            "score": "84",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T20:06:00Z",
+            "tags": [
+              "ACCELERATION",
+              "RESISTANCE"
+            ]
+          },
+          {
+            "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+            "score": "39.44",
+            "side": "home",
+            "selection": "Cincinnati Reds",
+            "awayTeam": "Chicago Cubs",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Cincinnati Reds",
+            "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+            "commenceTime": "2026-07-11T23:11:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": false,
+        "rank": "7",
+        "score": "69.15",
+        "legs": [
+          {
+            "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+            "score": "84",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T16:06:00Z",
+            "tags": [
+              "ACCELERATION",
+              "RESISTANCE"
+            ]
+          },
+          {
+            "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+            "score": "84",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "SOLID",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T20:06:00Z",
+            "tags": [
+              "DECELERATION",
+              "MOMENTUM",
+              "STEAM"
+            ]
+          },
+          {
+            "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+            "score": "39.44",
+            "side": "home",
+            "selection": "Cincinnati Reds",
+            "awayTeam": "Chicago Cubs",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Cincinnati Reds",
+            "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+            "commenceTime": "2026-07-11T23:11:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": false,
+        "rank": "8",
+        "score": "69.15",
+        "legs": [
+          {
+            "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+            "score": "84",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "SOLID",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T16:06:00Z",
+            "tags": [
+              "DECELERATION",
+              "MOMENTUM",
+              "STEAM"
+            ]
+          },
+          {
+            "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+            "score": "84",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "SOLID",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-11T20:06:00Z",
+            "tags": [
+              "DECELERATION",
+              "MOMENTUM",
+              "STEAM"
+            ]
+          },
+          {
+            "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+            "score": "39.44",
+            "side": "home",
+            "selection": "Cincinnati Reds",
+            "awayTeam": "Chicago Cubs",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Cincinnati Reds",
+            "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+            "commenceTime": "2026-07-11T23:11:00Z",
+            "tags": []
+          }
+        ]
+      }
+    ],
+    "fallbackApplied": true,
+    "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
+    "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
+    "buildStatus": "BUILT",
+    "storedAt": "2026-07-11T06:57:24.657557+00:00",
+    "slate_date": "2026-07-11",
+    "previousNoBuildReason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
+    "storeMode": "mlb_b10_or_strict_auto_after_live_pull_with_12_snapshot_baseline",
+    "buildQuality": "QUALIFIED",
+    "officialStrength": "STRONG",
+    "legs": [
+      {
+        "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+        "providerSportKey": "baseball_mlb",
+        "gender": "men",
+        "awayTeam": "Milwaukee Brewers",
+        "level": "pro",
+        "commenceTime": "2026-07-11T16:06:00Z",
+        "tags": [
+          "DECELERATION",
+          "MOMENTUM",
+          "STEAM"
+        ],
+        "score": "84",
+        "selection": "Pittsburgh Pirates",
+        "homeSignal": {
+          "pullCount": "12",
+          "reversals": "0",
+          "probStart": "0.46411",
+          "probLatest": "0.53039",
+          "side": "home",
+          "scoreGuardApplied": true,
+          "bookCount": "3",
+          "delta": "0.06628",
+          "latestGap": "0.06078",
+          "rawScoreBeforeGuard": "94.26",
+          "velocityPpHr": "2.41",
+          "tags": [
+            "DECELERATION",
+            "MOMENTUM",
+            "STEAM"
+          ],
+          "acceleration": "-0.01567",
+          "durationMinutes": "165",
+          "score": "84",
+          "bookDivergence": "0.01522",
+          "grade": "SOLID"
+        },
+        "grade": "SOLID",
+        "awaySignal": {
+          "pullCount": "12",
+          "reversals": "0",
+          "probStart": "0.53589",
+          "probLatest": "0.46961",
+          "side": "away",
+          "scoreGuardApplied": true,
+          "bookCount": "3",
+          "delta": "-0.06628",
+          "latestGap": "0.06078",
+          "rawScoreBeforeGuard": "0",
+          "velocityPpHr": "-2.41",
+          "tags": [
+            "ACCELERATION",
+            "RESISTANCE"
+          ],
+          "acceleration": "0.01567",
+          "durationMinutes": "165",
+          "score": "0",
+          "bookDivergence": "0.01522",
+          "grade": "COIN_FLIP"
+        },
+        "homeTeam": "Pittsburgh Pirates",
+        "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+        "sport": "mlb",
+        "selectedSide": "home"
       },
       {
         "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
         "providerSportKey": "baseball_mlb",
+        "gender": "men",
         "awayTeam": "Milwaukee Brewers",
-        "cutoffTime": "2026-07-11T18:06:00+00:00",
-        "frozen": false,
+        "level": "pro",
         "commenceTime": "2026-07-11T20:06:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.5358917103937597",
-            "bookCount": "8",
-            "bookDivergence": "0.01238459881435966",
-            "bookAgreement": "0.98762",
-            "homeRunLinePrice": "-155.125",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "131.5",
-            "home": "0.4641082896062403",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5358917103937597",
-            "bookCount": "8",
-            "bookDivergence": "0.01238459881435966",
-            "bookAgreement": "0.98762",
-            "homeRunLinePrice": "-155.125",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "131.5",
-            "home": "0.4641082896062403",
-            "homeRunLinePoint": "1.5"
-          }
+        "tags": [
+          "DECELERATION",
+          "MOMENTUM",
+          "STEAM"
         ],
-        "score": "0",
-        "pointCount": "2",
+        "score": "84",
         "selection": "Pittsburgh Pirates",
         "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
+          "pullCount": "12",
+          "reversals": "0",
+          "probStart": "0.46411",
+          "probLatest": "0.53039",
           "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
+          "scoreGuardApplied": true,
+          "bookCount": "3",
+          "delta": "0.06628",
+          "latestGap": "0.06078",
+          "rawScoreBeforeGuard": "94.26",
+          "velocityPpHr": "2.41",
+          "tags": [
+            "DECELERATION",
+            "MOMENTUM",
+            "STEAM"
+          ],
+          "acceleration": "-0.01567",
+          "durationMinutes": "165",
+          "score": "84",
+          "bookDivergence": "0.01522",
+          "grade": "SOLID"
         },
-        "grade": "NO_PLAY",
+        "grade": "SOLID",
         "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
+          "pullCount": "12",
+          "reversals": "0",
+          "probStart": "0.53589",
+          "probLatest": "0.46961",
           "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
+          "scoreGuardApplied": true,
+          "bookCount": "3",
+          "delta": "-0.06628",
+          "latestGap": "0.06078",
+          "rawScoreBeforeGuard": "0",
+          "velocityPpHr": "-2.41",
+          "tags": [
+            "ACCELERATION",
+            "RESISTANCE"
+          ],
+          "acceleration": "0.01567",
+          "durationMinutes": "165",
+          "score": "0",
+          "bookDivergence": "0.01522",
+          "grade": "COIN_FLIP"
         },
         "homeTeam": "Pittsburgh Pirates",
-        "rank": "5",
         "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "ff676cfabd491a806f9fad9a93924adb",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Boston Red Sox",
-        "cutoffTime": "2026-07-11T18:11:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-11T20:11:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.4134591156364275",
-            "bookCount": "3",
-            "bookDivergence": "0.007930483374510966",
-            "bookAgreement": "0.99207",
-            "homeRunLinePrice": "130.66666666666666",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "-160",
-            "home": "0.5865408843635725",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.4134591156364275",
-            "bookCount": "3",
-            "bookDivergence": "0.007930483374510966",
-            "bookAgreement": "0.99207",
-            "homeRunLinePrice": "130.66666666666666",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "-160",
-            "home": "0.5865408843635725",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "New York Mets",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "New York Mets",
-        "rank": "6",
-        "gameKey": "mlb|2026-07-11|boston red sox|new york mets",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "b552ecd25e0e2e615532c65ff294144f",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Cleveland Guardians",
-        "cutoffTime": "2026-07-11T18:11:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-11T20:11:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.4260706385912723",
-            "bookCount": "11",
-            "bookDivergence": "0.019500577554543153",
-            "bookAgreement": "0.9805",
-            "homeRunLinePrice": "143.27272727272728",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "-170.27272727272728",
-            "home": "0.5739293614087276",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.4260706385912723",
-            "bookCount": "11",
-            "bookDivergence": "0.019500577554543153",
-            "bookAgreement": "0.9805",
-            "homeRunLinePrice": "143.45454545454547",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "-170.54545454545453",
-            "home": "0.5739293614087276",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "Miami Marlins",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Miami Marlins",
-        "rank": "7",
-        "gameKey": "mlb|2026-07-11|cleveland guardians|miami marlins",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "93a5e6119186fda8b8ae5e4ec2abd550",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Seattle Mariners",
-        "cutoffTime": "2026-07-11T18:11:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-11T20:11:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.49069463626685256",
-            "bookCount": "11",
-            "bookDivergence": "0.02054478729387821",
-            "bookAgreement": "0.97946",
-            "homeRunLinePrice": "-59.72727272727273",
-            "awayRunLinePoint": "-0.4090909090909091",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "26.363636363636363",
-            "home": "0.5093053637331475",
-            "homeRunLinePoint": "0.4090909090909091"
-          },
-          {
-            "away": "0.49168264429404296",
-            "bookCount": "11",
-            "bookDivergence": "0.014808568554352308",
-            "bookAgreement": "0.98519",
-            "homeRunLinePrice": "-58.27272727272727",
-            "awayRunLinePoint": "-0.4090909090909091",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "24.90909090909091",
-            "home": "0.508317355705957",
-            "homeRunLinePoint": "0.4090909090909091"
-          }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "Tampa Bay Rays",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Tampa Bay Rays",
-        "rank": "8",
-        "gameKey": "mlb|2026-07-11|seattle mariners|tampa bay rays",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "ba8bc57255560c92ff44bf4ac63a4fd9",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Philadelphia Phillies",
-        "cutoffTime": "2026-07-11T20:11:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-11T22:11:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.5606228112956292",
-            "bookCount": "11",
-            "bookDivergence": "0.007114984009623571",
-            "bookAgreement": "0.99289",
-            "homeRunLinePrice": "-148.27272727272728",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "125",
-            "home": "0.43937718870437087",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5607935068532284",
-            "bookCount": "11",
-            "bookDivergence": "0.007114984009623571",
-            "bookAgreement": "0.99289",
-            "homeRunLinePrice": "-148.0909090909091",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "125.27272727272727",
-            "home": "0.4392064931467716",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "Detroit Tigers",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Detroit Tigers",
-        "rank": "9",
-        "gameKey": "mlb|2026-07-11|philadelphia phillies|detroit tigers",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "09d58ac97a07ac9cc6bc658cf72f08a3",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Kansas City Royals",
-        "cutoffTime": "2026-07-11T21:06:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-11T23:06:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.411586061832206",
-            "bookCount": "11",
-            "bookDivergence": "0.011032636624783598",
-            "bookAgreement": "0.98897",
-            "homeRunLinePrice": "125.9090909090909",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "-149.54545454545453",
-            "home": "0.5884139381677941",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.411586061832206",
-            "bookCount": "11",
-            "bookDivergence": "0.011032636624783598",
-            "bookAgreement": "0.98897",
-            "homeRunLinePrice": "125.9090909090909",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "-149.54545454545453",
-            "home": "0.5884139381677941",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "Baltimore Orioles",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Baltimore Orioles",
-        "rank": "10",
-        "gameKey": "mlb|2026-07-11|kansas city royals|baltimore orioles",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "3e2ce9905fcaa6c74169c61fcb777080",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Houston Astros",
-        "cutoffTime": "2026-07-11T21:06:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-11T23:06:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.477315323883089",
-            "bookCount": "11",
-            "bookDivergence": "0.013737402850699687",
-            "bookAgreement": "0.98626",
-            "homeRunLinePrice": "51.7",
-            "awayRunLinePoint": "0.6",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "-86.3",
-            "home": "0.5226846761169109",
-            "homeRunLinePoint": "-0.6"
-          },
-          {
-            "away": "0.47830553893575645",
-            "bookCount": "11",
-            "bookDivergence": "0.013432628791329893",
-            "bookAgreement": "0.98657",
-            "homeRunLinePrice": "-19.7",
-            "awayRunLinePoint": "0",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "-14.9",
-            "home": "0.5216944610642433",
-            "homeRunLinePoint": "0"
-          }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "Texas Rangers",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Texas Rangers",
-        "rank": "11",
-        "gameKey": "mlb|2026-07-11|houston astros|texas rangers",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "sport": "mlb",
+        "selectedSide": "home"
       },
       {
         "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
         "providerSportKey": "baseball_mlb",
+        "gender": "men",
         "awayTeam": "Chicago Cubs",
-        "cutoffTime": "2026-07-11T21:11:00+00:00",
-        "frozen": false,
+        "level": "pro",
         "commenceTime": "2026-07-11T23:11:00Z",
         "tags": [],
-        "points": [
-          {
-            "away": "0.5265737625332336",
-            "bookCount": "11",
-            "bookDivergence": "0.019437974160898763",
-            "bookAgreement": "0.98056",
-            "homeRunLinePrice": "-147.8181818181818",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "124.54545454545455",
-            "home": "0.4734262374667665",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5287408860451767",
-            "bookCount": "11",
-            "bookDivergence": "0.015010983080770313",
-            "bookAgreement": "0.98499",
-            "homeRunLinePrice": "-147.27272727272728",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "124.27272727272727",
-            "home": "0.47125911395482345",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "Cincinnati Reds",
+        "score": "50.4",
+        "selection": "Chicago Cubs",
         "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
+          "pullCount": "12",
+          "reversals": "0",
+          "probStart": "0.47343",
+          "probLatest": "0.46912",
           "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
+          "scoreGuardApplied": true,
+          "bookCount": "11",
+          "delta": "-0.00431",
+          "latestGap": "0.06176",
+          "rawScoreBeforeGuard": "39.44",
+          "velocityPpHr": "-0.157",
+          "tags": [],
+          "acceleration": "0.00015",
+          "durationMinutes": "165",
+          "score": "39.44",
+          "bookDivergence": "0.01693",
+          "grade": "COIN_FLIP"
         },
-        "grade": "NO_PLAY",
+        "grade": "COIN_FLIP",
         "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
+          "pullCount": "12",
+          "reversals": "0",
+          "probStart": "0.52657",
+          "probLatest": "0.53088",
           "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
+          "scoreGuardApplied": true,
+          "bookCount": "11",
+          "delta": "0.00431",
+          "latestGap": "0.06176",
+          "rawScoreBeforeGuard": "50.4",
+          "velocityPpHr": "0.157",
+          "tags": [],
+          "acceleration": "-0.00015",
+          "durationMinutes": "165",
+          "score": "50.4",
+          "bookDivergence": "0.01693",
+          "grade": "COIN_FLIP"
         },
         "homeTeam": "Cincinnati Reds",
-        "rank": "12",
         "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "a2501dff8c71ab28b0051fafeed81903",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Atlanta Braves",
-        "cutoffTime": "2026-07-11T21:15:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-11T23:15:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.5210488963559297",
-            "bookCount": "11",
-            "bookDivergence": "0.013399014052197511",
-            "bookAgreement": "0.9866",
-            "homeRunLinePrice": "-166.72727272727272",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "140.8181818181818",
-            "home": "0.47895110364407034",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5210488963559297",
-            "bookCount": "11",
-            "bookDivergence": "0.013399014052197511",
-            "bookAgreement": "0.9866",
-            "homeRunLinePrice": "-166.72727272727272",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "140.8181818181818",
-            "home": "0.47895110364407034",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "St. Louis Cardinals",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "St. Louis Cardinals",
-        "rank": "13",
-        "gameKey": "mlb|2026-07-11|atlanta braves|st. louis cardinals",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "db5e5f99da28e0ea52c06c7694fb5ad1",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Toronto Blue Jays",
-        "cutoffTime": "2026-07-11T22:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T00:41:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.47644475796519364",
-            "bookCount": "11",
-            "bookDivergence": "0.02392234981425334",
-            "bookAgreement": "0.97608",
-            "homeRunLinePrice": "30.545454545454547",
-            "awayRunLinePoint": "0.4090909090909091",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "-63.27272727272727",
-            "home": "0.5235552420348063",
-            "homeRunLinePoint": "-0.4090909090909091"
-          },
-          {
-            "away": "0.47644475796519364",
-            "bookCount": "11",
-            "bookDivergence": "0.02392234981425334",
-            "bookAgreement": "0.97608",
-            "homeRunLinePrice": "31",
-            "awayRunLinePoint": "0.4090909090909091",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "-63.72727272727273",
-            "home": "0.5235552420348063",
-            "homeRunLinePoint": "-0.4090909090909091"
-          }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "San Diego Padres",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "San Diego Padres",
-        "rank": "14",
-        "gameKey": "mlb|2026-07-11|toronto blue jays|san diego padres",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "6b6370ec220748ce5deae40b503bb29c",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Arizona Diamondbacks",
-        "cutoffTime": "2026-07-11T23:10:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T01:10:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.2945910326297114",
-            "bookCount": "10",
-            "bookDivergence": "0.021605878409693635",
-            "bookAgreement": "0.97839",
-            "homeRunLinePrice": "-126.8",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-            "awayRunLinePrice": "106.1",
-            "home": "0.7054089673702886",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.2945910326297114",
-            "bookCount": "10",
-            "bookDivergence": "0.021605878409693635",
-            "bookAgreement": "0.97839",
-            "homeRunLinePrice": "-126.5",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-            "awayRunLinePrice": "105.8",
-            "home": "0.7054089673702886",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "0",
-        "pointCount": "2",
-        "selection": "Los Angeles Dodgers",
-        "homeSignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "home",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "grade": "NO_PLAY",
-        "awaySignal": {
-          "score": "0",
-          "reason": "incomplete_game_history",
-          "side": "away",
-          "pointCount": "2",
-          "grade": "NO_PLAY"
-        },
-        "homeTeam": "Los Angeles Dodgers",
-        "rank": "15",
-        "gameKey": "mlb|2026-07-11|arizona diamondbacks|los angeles dodgers",
-        "slateDate": "2026-07-11",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "sport": "mlb",
+        "selectedSide": "away"
       }
     ],
-    "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default"
+    "ok": true,
+    "sport": "mlb",
+    "minimumParlayPulls": "12"
   },
   "result": {
     "ok": true,
     "autoBuild": true,
-    "builtCount": 0,
+    "builtCount": 1,
     "results": [
       {
         "ok": true,
         "sport": "mlb",
         "slate_date": "2026-07-11",
-        "slateTimezone": "America/New_York",
-        "engine": "MLB-B1.0",
-        "thresholdVersion": "MLB-B1.0-2026-06",
-        "pullCount": 2,
-        "pullCoverage": {
-          "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
-          "startHourEt": 1,
-          "intervalMinutes": 15,
-          "expectedStartAtUtc": "2026-07-11T05:00:00+00:00",
-          "expectedStartAtEt": "2026-07-11T01:00:00-04:00",
-          "firstPullAtUtc": "2026-07-11T04:00:26.084911+00:00",
-          "firstPullAtEt": "2026-07-11T00:00:26.084911-04:00",
-          "latestPullAtUtc": "2026-07-11T04:15:26.043704+00:00",
-          "latestPullAtEt": "2026-07-11T00:15:26.043704-04:00",
-          "actualPullCount": 2,
-          "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
-          "overnightCoverageComplete": false
-        },
-        "buildDeadline": {
-          "ok": true,
-          "firstEventAtUtc": "2026-07-11T18:11:00+00:00",
-          "firstEventAtEt": "2026-07-11T14:11:00-04:00",
-          "buildDeadlineUtc": "2026-07-11T16:11:00+00:00",
-          "buildDeadlineEt": "2026-07-11T12:11:00-04:00",
-          "deadlineHoursBeforeFirstEvent": 2.0,
-          "deadlinePassed": false,
-          "currentUtc": "2026-07-11T04:26:13.664977+00:00",
-          "currentEt": "2026-07-11T00:26:13.664977-04:00"
-        },
-        "gameCount": 15,
-        "gameHistoryStored": 15,
-        "candidateCount": 0,
-        "strongCount": 0,
-        "leanCount": 0,
-        "scoredGameCount": 0,
-        "freezeMinutesBeforeGame": 120,
-        "minimumGameHistoryPoints": 4,
-        "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default",
-        "audit": {
-          "status": "PENDING_RESULTS",
-          "tracks": [
-            "top1",
-            "top3",
-            "top5"
-          ]
-        },
-        "buildStatus": "NO_BUILD",
-        "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
-        "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG. Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy.",
-        "candidates": [],
-        "structureGate": {
-          "applied": true,
-          "structure": "ANCHOR_LEAN_CONTROLLED_VARIABLE",
-          "rejected": false,
-          "reason": "STRICT_OR_NO_BUILD_UNCHANGED"
-        },
-        "allScoredGamesCount": 15,
-        "allScoredGames": [
+        "pullCount": 12,
+        "minimumParlayPulls": 12,
+        "buildStatus": "BUILT",
+        "buildQuality": "QUALIFIED",
+        "reason": "BUILT_FROM_TOP_AVAILABLE_SIGNALS_AFTER_12_SNAPSHOTS",
+        "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
+        "officialStrength": "STRONG",
+        "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
+        "selectedStrongCount": 2,
+        "legs": [
           {
-            "gameId": "8ec769ee362e5e0e25ac93ee886cdfd4",
-            "gameKey": "mlb|2026-07-11|athletics|chicago white sox",
-            "homeTeam": "Chicago White Sox",
-            "awayTeam": "Athletics",
-            "commenceTime": "2026-07-11T18:11:00Z",
-            "slateDate": "2026-07-11",
+            "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+            "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "sport": "mlb",
+            "homeTeam": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "commenceTime": "2026-07-11T16:06:00Z",
+            "level": "pro",
+            "gender": "men",
             "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T16:11:00+00:00",
-            "pointCount": 2,
+            "selection": "Pittsburgh Pirates",
             "selectedSide": "home",
-            "selection": "Chicago White Sox",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
+            "grade": "SOLID",
+            "score": 84.0,
+            "tags": [
+              "DECELERATION",
+              "MOMENTUM",
+              "STEAM"
+            ],
             "homeSignal": {
               "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
+              "probStart": 0.46411,
+              "probLatest": 0.53039,
+              "delta": 0.06628,
+              "velocityPpHr": 2.41,
+              "acceleration": -0.01567,
+              "pullCount": 12,
+              "durationMinutes": 165.0,
+              "latestGap": 0.06078,
+              "bookCount": 3,
+              "bookDivergence": 0.01522,
+              "reversals": 0,
+              "tags": [
+                "DECELERATION",
+                "MOMENTUM",
+                "STEAM"
+              ],
+              "grade": "SOLID",
+              "score": 84.0,
+              "rawScoreBeforeGuard": 94.26,
+              "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.4901160765723702,
-                "away": 0.5098839234276298,
-                "bookCount": 10,
-                "bookDivergence": 0.008751714388940957,
-                "bookAgreement": 0.99125,
-                "homeRunLinePrice": -165.1,
-                "awayRunLinePrice": 138.8,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.4901160765723702,
-                "away": 0.5098839234276298,
-                "bookCount": 10,
-                "bookDivergence": 0.008751714388940957,
-                "bookAgreement": 0.99125,
-                "homeRunLinePrice": -165.1,
-                "awayRunLinePrice": 138.8,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 1
-          },
-          {
-            "gameId": "39a35ef6ca846e78caf1d3d4063cba8b",
-            "gameKey": "mlb|2026-07-11|los angeles angels|minnesota twins",
-            "homeTeam": "Minnesota Twins",
-            "awayTeam": "Los Angeles Angels",
-            "commenceTime": "2026-07-11T18:11:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T16:11:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "Minnesota Twins",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.6198734283457525,
-                "away": 0.3801265716542475,
-                "bookCount": 10,
-                "bookDivergence": 0.022999780328300745,
-                "bookAgreement": 0.977,
-                "homeRunLinePrice": 111.6,
-                "awayRunLinePrice": -132.8,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.6209098706568233,
-                "away": 0.37909012934317665,
-                "bookCount": 10,
-                "bookDivergence": 0.022999780328300745,
-                "bookAgreement": 0.977,
-                "homeRunLinePrice": 109.6,
-                "awayRunLinePrice": -130.6,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 2
-          },
-          {
-            "gameId": "93986de15fc102a4875daaf7e6250f9e",
-            "gameKey": "mlb|2026-07-11|new york yankees|washington nationals",
-            "homeTeam": "Washington Nationals",
-            "awayTeam": "New York Yankees",
-            "commenceTime": "2026-07-11T20:05:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T18:05:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "Washington Nationals",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.36549306195679826,
-                "away": 0.6345069380432018,
-                "bookCount": 11,
-                "bookDivergence": 0.0089639390930486,
-                "bookAgreement": 0.99104,
-                "homeRunLinePrice": 63.18181818181818,
-                "awayRunLinePrice": -119.18181818181819,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.36549306195679826,
-                "away": 0.6345069380432018,
-                "bookCount": 11,
-                "bookDivergence": 0.0089639390930486,
-                "bookAgreement": 0.99104,
-                "homeRunLinePrice": 63.27272727272727,
-                "awayRunLinePrice": -119.18181818181819,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 3
-          },
-          {
-            "gameId": "def5adac76d2258bb7ff1a427e09f8a8",
-            "gameKey": "mlb|2026-07-11|colorado rockies|san francisco giants",
-            "homeTeam": "San Francisco Giants",
-            "awayTeam": "Colorado Rockies",
-            "commenceTime": "2026-07-11T20:06:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T18:06:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "San Francisco Giants",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.5805887824140987,
-                "away": 0.4194112175859014,
-                "bookCount": 10,
-                "bookDivergence": 0.01349907869095679,
-                "bookAgreement": 0.9865,
-                "homeRunLinePrice": 140.0,
-                "awayRunLinePrice": -167.3,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.5805887824140987,
-                "away": 0.4194112175859014,
-                "bookCount": 10,
-                "bookDivergence": 0.01349907869095679,
-                "bookAgreement": 0.9865,
-                "homeRunLinePrice": 140.3,
-                "awayRunLinePrice": -167.6,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 4
+              "probStart": 0.53589,
+              "probLatest": 0.46961,
+              "delta": -0.06628,
+              "velocityPpHr": -2.41,
+              "acceleration": 0.01567,
+              "pullCount": 12,
+              "durationMinutes": 165.0,
+              "latestGap": 0.06078,
+              "bookCount": 3,
+              "bookDivergence": 0.01522,
+              "reversals": 0,
+              "tags": [
+                "ACCELERATION",
+                "RESISTANCE"
+              ],
+              "grade": "COIN_FLIP",
+              "score": 0.0,
+              "rawScoreBeforeGuard": 0,
+              "scoreGuardApplied": true
+            }
           },
           {
             "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
             "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+            "sport": "mlb",
             "homeTeam": "Pittsburgh Pirates",
             "awayTeam": "Milwaukee Brewers",
             "commenceTime": "2026-07-11T20:06:00Z",
-            "slateDate": "2026-07-11",
+            "level": "pro",
+            "gender": "men",
             "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T18:06:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
             "selection": "Pittsburgh Pirates",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.4641082896062403,
-                "away": 0.5358917103937597,
-                "bookCount": 8,
-                "bookDivergence": 0.01238459881435966,
-                "bookAgreement": 0.98762,
-                "homeRunLinePrice": -155.125,
-                "awayRunLinePrice": 131.5,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.4641082896062403,
-                "away": 0.5358917103937597,
-                "bookCount": 8,
-                "bookDivergence": 0.01238459881435966,
-                "bookAgreement": 0.98762,
-                "homeRunLinePrice": -155.125,
-                "awayRunLinePrice": 131.5,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 5
-          },
-          {
-            "gameId": "ff676cfabd491a806f9fad9a93924adb",
-            "gameKey": "mlb|2026-07-11|boston red sox|new york mets",
-            "homeTeam": "New York Mets",
-            "awayTeam": "Boston Red Sox",
-            "commenceTime": "2026-07-11T20:11:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T18:11:00+00:00",
-            "pointCount": 2,
             "selectedSide": "home",
-            "selection": "New York Mets",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
+            "grade": "SOLID",
+            "score": 84.0,
+            "tags": [
+              "DECELERATION",
+              "MOMENTUM",
+              "STEAM"
+            ],
             "homeSignal": {
               "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
+              "probStart": 0.46411,
+              "probLatest": 0.53039,
+              "delta": 0.06628,
+              "velocityPpHr": 2.41,
+              "acceleration": -0.01567,
+              "pullCount": 12,
+              "durationMinutes": 165.0,
+              "latestGap": 0.06078,
+              "bookCount": 3,
+              "bookDivergence": 0.01522,
+              "reversals": 0,
+              "tags": [
+                "DECELERATION",
+                "MOMENTUM",
+                "STEAM"
+              ],
+              "grade": "SOLID",
+              "score": 84.0,
+              "rawScoreBeforeGuard": 94.26,
+              "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.5865408843635725,
-                "away": 0.4134591156364275,
-                "bookCount": 3,
-                "bookDivergence": 0.007930483374510966,
-                "bookAgreement": 0.99207,
-                "homeRunLinePrice": 130.66666666666666,
-                "awayRunLinePrice": -160.0,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.5865408843635725,
-                "away": 0.4134591156364275,
-                "bookCount": 3,
-                "bookDivergence": 0.007930483374510966,
-                "bookAgreement": 0.99207,
-                "homeRunLinePrice": 130.66666666666666,
-                "awayRunLinePrice": -160.0,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 6
-          },
-          {
-            "gameId": "b552ecd25e0e2e615532c65ff294144f",
-            "gameKey": "mlb|2026-07-11|cleveland guardians|miami marlins",
-            "homeTeam": "Miami Marlins",
-            "awayTeam": "Cleveland Guardians",
-            "commenceTime": "2026-07-11T20:11:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T18:11:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "Miami Marlins",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.5739293614087276,
-                "away": 0.4260706385912723,
-                "bookCount": 11,
-                "bookDivergence": 0.019500577554543153,
-                "bookAgreement": 0.9805,
-                "homeRunLinePrice": 143.27272727272728,
-                "awayRunLinePrice": -170.27272727272728,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.5739293614087276,
-                "away": 0.4260706385912723,
-                "bookCount": 11,
-                "bookDivergence": 0.019500577554543153,
-                "bookAgreement": 0.9805,
-                "homeRunLinePrice": 143.45454545454547,
-                "awayRunLinePrice": -170.54545454545453,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 7
-          },
-          {
-            "gameId": "93a5e6119186fda8b8ae5e4ec2abd550",
-            "gameKey": "mlb|2026-07-11|seattle mariners|tampa bay rays",
-            "homeTeam": "Tampa Bay Rays",
-            "awayTeam": "Seattle Mariners",
-            "commenceTime": "2026-07-11T20:11:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T18:11:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "Tampa Bay Rays",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.5093053637331475,
-                "away": 0.49069463626685256,
-                "bookCount": 11,
-                "bookDivergence": 0.02054478729387821,
-                "bookAgreement": 0.97946,
-                "homeRunLinePrice": -59.72727272727273,
-                "awayRunLinePrice": 26.363636363636363,
-                "homeRunLinePoint": 0.4090909090909091,
-                "awayRunLinePoint": -0.4090909090909091
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.508317355705957,
-                "away": 0.49168264429404296,
-                "bookCount": 11,
-                "bookDivergence": 0.014808568554352308,
-                "bookAgreement": 0.98519,
-                "homeRunLinePrice": -58.27272727272727,
-                "awayRunLinePrice": 24.90909090909091,
-                "homeRunLinePoint": 0.4090909090909091,
-                "awayRunLinePoint": -0.4090909090909091
-              }
-            ],
-            "rank": 8
-          },
-          {
-            "gameId": "ba8bc57255560c92ff44bf4ac63a4fd9",
-            "gameKey": "mlb|2026-07-11|philadelphia phillies|detroit tigers",
-            "homeTeam": "Detroit Tigers",
-            "awayTeam": "Philadelphia Phillies",
-            "commenceTime": "2026-07-11T22:11:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T20:11:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "Detroit Tigers",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.43937718870437087,
-                "away": 0.5606228112956292,
-                "bookCount": 11,
-                "bookDivergence": 0.007114984009623571,
-                "bookAgreement": 0.99289,
-                "homeRunLinePrice": -148.27272727272728,
-                "awayRunLinePrice": 125.0,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.4392064931467716,
-                "away": 0.5607935068532284,
-                "bookCount": 11,
-                "bookDivergence": 0.007114984009623571,
-                "bookAgreement": 0.99289,
-                "homeRunLinePrice": -148.0909090909091,
-                "awayRunLinePrice": 125.27272727272727,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 9
-          },
-          {
-            "gameId": "09d58ac97a07ac9cc6bc658cf72f08a3",
-            "gameKey": "mlb|2026-07-11|kansas city royals|baltimore orioles",
-            "homeTeam": "Baltimore Orioles",
-            "awayTeam": "Kansas City Royals",
-            "commenceTime": "2026-07-11T23:06:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T21:06:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "Baltimore Orioles",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.5884139381677941,
-                "away": 0.411586061832206,
-                "bookCount": 11,
-                "bookDivergence": 0.011032636624783598,
-                "bookAgreement": 0.98897,
-                "homeRunLinePrice": 125.9090909090909,
-                "awayRunLinePrice": -149.54545454545453,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.5884139381677941,
-                "away": 0.411586061832206,
-                "bookCount": 11,
-                "bookDivergence": 0.011032636624783598,
-                "bookAgreement": 0.98897,
-                "homeRunLinePrice": 125.9090909090909,
-                "awayRunLinePrice": -149.54545454545453,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 10
-          },
-          {
-            "gameId": "3e2ce9905fcaa6c74169c61fcb777080",
-            "gameKey": "mlb|2026-07-11|houston astros|texas rangers",
-            "homeTeam": "Texas Rangers",
-            "awayTeam": "Houston Astros",
-            "commenceTime": "2026-07-11T23:06:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T21:06:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "Texas Rangers",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.5226846761169109,
-                "away": 0.477315323883089,
-                "bookCount": 11,
-                "bookDivergence": 0.013737402850699687,
-                "bookAgreement": 0.98626,
-                "homeRunLinePrice": 51.7,
-                "awayRunLinePrice": -86.3,
-                "homeRunLinePoint": -0.6,
-                "awayRunLinePoint": 0.6
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.5216944610642433,
-                "away": 0.47830553893575645,
-                "bookCount": 11,
-                "bookDivergence": 0.013432628791329893,
-                "bookAgreement": 0.98657,
-                "homeRunLinePrice": -19.7,
-                "awayRunLinePrice": -14.9,
-                "homeRunLinePoint": 0.0,
-                "awayRunLinePoint": 0.0
-              }
-            ],
-            "rank": 11
+              "probStart": 0.53589,
+              "probLatest": 0.46961,
+              "delta": -0.06628,
+              "velocityPpHr": -2.41,
+              "acceleration": 0.01567,
+              "pullCount": 12,
+              "durationMinutes": 165.0,
+              "latestGap": 0.06078,
+              "bookCount": 3,
+              "bookDivergence": 0.01522,
+              "reversals": 0,
+              "tags": [
+                "ACCELERATION",
+                "RESISTANCE"
+              ],
+              "grade": "COIN_FLIP",
+              "score": 0.0,
+              "rawScoreBeforeGuard": 0,
+              "scoreGuardApplied": true
+            }
           },
           {
             "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
             "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+            "sport": "mlb",
             "homeTeam": "Cincinnati Reds",
             "awayTeam": "Chicago Cubs",
             "commenceTime": "2026-07-11T23:11:00Z",
-            "slateDate": "2026-07-11",
+            "level": "pro",
+            "gender": "men",
             "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T21:11:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "Cincinnati Reds",
-            "grade": "NO_PLAY",
-            "score": 0,
+            "selection": "Chicago Cubs",
+            "selectedSide": "away",
+            "grade": "COIN_FLIP",
+            "score": 50.4,
             "tags": [],
             "homeSignal": {
               "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
+              "probStart": 0.47343,
+              "probLatest": 0.46912,
+              "delta": -0.00431,
+              "velocityPpHr": -0.157,
+              "acceleration": 0.00015,
+              "pullCount": 12,
+              "durationMinutes": 165.0,
+              "latestGap": 0.06176,
+              "bookCount": 11,
+              "bookDivergence": 0.01693,
+              "reversals": 0,
+              "tags": [],
+              "grade": "COIN_FLIP",
+              "score": 39.44,
+              "rawScoreBeforeGuard": 39.44,
+              "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.4734262374667665,
-                "away": 0.5265737625332336,
-                "bookCount": 11,
-                "bookDivergence": 0.019437974160898763,
-                "bookAgreement": 0.98056,
-                "homeRunLinePrice": -147.8181818181818,
-                "awayRunLinePrice": 124.54545454545455,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.47125911395482345,
-                "away": 0.5287408860451767,
-                "bookCount": 11,
-                "bookDivergence": 0.015010983080770313,
-                "bookAgreement": 0.98499,
-                "homeRunLinePrice": -147.27272727272728,
-                "awayRunLinePrice": 124.27272727272727,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 12
-          },
-          {
-            "gameId": "a2501dff8c71ab28b0051fafeed81903",
-            "gameKey": "mlb|2026-07-11|atlanta braves|st. louis cardinals",
-            "homeTeam": "St. Louis Cardinals",
-            "awayTeam": "Atlanta Braves",
-            "commenceTime": "2026-07-11T23:15:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T21:15:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "St. Louis Cardinals",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.47895110364407034,
-                "away": 0.5210488963559297,
-                "bookCount": 11,
-                "bookDivergence": 0.013399014052197511,
-                "bookAgreement": 0.9866,
-                "homeRunLinePrice": -166.72727272727272,
-                "awayRunLinePrice": 140.8181818181818,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.47895110364407034,
-                "away": 0.5210488963559297,
-                "bookCount": 11,
-                "bookDivergence": 0.013399014052197511,
-                "bookAgreement": 0.9866,
-                "homeRunLinePrice": -166.72727272727272,
-                "awayRunLinePrice": 140.8181818181818,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 13
-          },
-          {
-            "gameId": "db5e5f99da28e0ea52c06c7694fb5ad1",
-            "gameKey": "mlb|2026-07-11|toronto blue jays|san diego padres",
-            "homeTeam": "San Diego Padres",
-            "awayTeam": "Toronto Blue Jays",
-            "commenceTime": "2026-07-12T00:41:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T22:41:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "San Diego Padres",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.5235552420348063,
-                "away": 0.47644475796519364,
-                "bookCount": 11,
-                "bookDivergence": 0.02392234981425334,
-                "bookAgreement": 0.97608,
-                "homeRunLinePrice": 30.545454545454547,
-                "awayRunLinePrice": -63.27272727272727,
-                "homeRunLinePoint": -0.4090909090909091,
-                "awayRunLinePoint": 0.4090909090909091
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.5235552420348063,
-                "away": 0.47644475796519364,
-                "bookCount": 11,
-                "bookDivergence": 0.02392234981425334,
-                "bookAgreement": 0.97608,
-                "homeRunLinePrice": 31.0,
-                "awayRunLinePrice": -63.72727272727273,
-                "homeRunLinePoint": -0.4090909090909091,
-                "awayRunLinePoint": 0.4090909090909091
-              }
-            ],
-            "rank": 14
-          },
-          {
-            "gameId": "6b6370ec220748ce5deae40b503bb29c",
-            "gameKey": "mlb|2026-07-11|arizona diamondbacks|los angeles dodgers",
-            "homeTeam": "Los Angeles Dodgers",
-            "awayTeam": "Arizona Diamondbacks",
-            "commenceTime": "2026-07-12T01:10:00Z",
-            "slateDate": "2026-07-11",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-11T23:10:00+00:00",
-            "pointCount": 2,
-            "selectedSide": "home",
-            "selection": "Los Angeles Dodgers",
-            "grade": "NO_PLAY",
-            "score": 0,
-            "tags": [],
-            "homeSignal": {
-              "side": "home",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "NO_PLAY",
-              "score": 0,
-              "reason": "incomplete_game_history",
-              "pointCount": 2
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-11T04:00:26.084911+00:00",
-                "home": 0.7054089673702886,
-                "away": 0.2945910326297114,
-                "bookCount": 10,
-                "bookDivergence": 0.021605878409693635,
-                "bookAgreement": 0.97839,
-                "homeRunLinePrice": -126.8,
-                "awayRunLinePrice": 106.1,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-11T04:15:26.043704+00:00",
-                "home": 0.7054089673702886,
-                "away": 0.2945910326297114,
-                "bookCount": 10,
-                "bookDivergence": 0.021605878409693635,
-                "bookAgreement": 0.97839,
-                "homeRunLinePrice": -126.5,
-                "awayRunLinePrice": 105.8,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 15
+              "probStart": 0.52657,
+              "probLatest": 0.53088,
+              "delta": 0.00431,
+              "velocityPpHr": 0.157,
+              "acceleration": -0.00015,
+              "pullCount": 12,
+              "durationMinutes": 165.0,
+              "latestGap": 0.06176,
+              "bookCount": 11,
+              "bookDivergence": 0.01693,
+              "reversals": 0,
+              "tags": [],
+              "grade": "COIN_FLIP",
+              "score": 50.4,
+              "rawScoreBeforeGuard": 50.4,
+              "scoreGuardApplied": true
+            }
           }
         ],
-        "candidateFilterPolicy": "Candidates are the post-score subset where frozen=true and selected grade is MLB_STRONG or MLB_LEAN. This full board shows the pre-filter scoring pass for every MLB game.",
+        "rankedCombos": [
+          {
+            "rank": 1,
+            "score": 72.8,
+            "legs": [
+              {
+                "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 84.0,
+                "tags": [
+                  "ACCELERATION",
+                  "RESISTANCE"
+                ],
+                "commenceTime": "2026-07-11T16:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 84.0,
+                "tags": [
+                  "ACCELERATION",
+                  "RESISTANCE"
+                ],
+                "commenceTime": "2026-07-11T20:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+                "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+                "selection": "Chicago Cubs",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 50.4,
+                "tags": [],
+                "commenceTime": "2026-07-11T23:11:00Z",
+                "homeTeam": "Cincinnati Reds",
+                "awayTeam": "Chicago Cubs"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 2,
+            "score": 72.8,
+            "legs": [
+              {
+                "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 84.0,
+                "tags": [
+                  "DECELERATION",
+                  "MOMENTUM",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-11T16:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 84.0,
+                "tags": [
+                  "ACCELERATION",
+                  "RESISTANCE"
+                ],
+                "commenceTime": "2026-07-11T20:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+                "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+                "selection": "Chicago Cubs",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 50.4,
+                "tags": [],
+                "commenceTime": "2026-07-11T23:11:00Z",
+                "homeTeam": "Cincinnati Reds",
+                "awayTeam": "Chicago Cubs"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 3,
+            "score": 72.8,
+            "legs": [
+              {
+                "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 84.0,
+                "tags": [
+                  "ACCELERATION",
+                  "RESISTANCE"
+                ],
+                "commenceTime": "2026-07-11T16:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 84.0,
+                "tags": [
+                  "DECELERATION",
+                  "MOMENTUM",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-11T20:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+                "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+                "selection": "Chicago Cubs",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 50.4,
+                "tags": [],
+                "commenceTime": "2026-07-11T23:11:00Z",
+                "homeTeam": "Cincinnati Reds",
+                "awayTeam": "Chicago Cubs"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 4,
+            "score": 72.8,
+            "legs": [
+              {
+                "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 84.0,
+                "tags": [
+                  "DECELERATION",
+                  "MOMENTUM",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-11T16:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 84.0,
+                "tags": [
+                  "DECELERATION",
+                  "MOMENTUM",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-11T20:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+                "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+                "selection": "Chicago Cubs",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 50.4,
+                "tags": [],
+                "commenceTime": "2026-07-11T23:11:00Z",
+                "homeTeam": "Cincinnati Reds",
+                "awayTeam": "Chicago Cubs"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 5,
+            "score": 69.15,
+            "legs": [
+              {
+                "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 84.0,
+                "tags": [
+                  "ACCELERATION",
+                  "RESISTANCE"
+                ],
+                "commenceTime": "2026-07-11T16:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 84.0,
+                "tags": [
+                  "ACCELERATION",
+                  "RESISTANCE"
+                ],
+                "commenceTime": "2026-07-11T20:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+                "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+                "selection": "Cincinnati Reds",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 39.44,
+                "tags": [],
+                "commenceTime": "2026-07-11T23:11:00Z",
+                "homeTeam": "Cincinnati Reds",
+                "awayTeam": "Chicago Cubs"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 6,
+            "score": 69.15,
+            "legs": [
+              {
+                "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 84.0,
+                "tags": [
+                  "DECELERATION",
+                  "MOMENTUM",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-11T16:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 84.0,
+                "tags": [
+                  "ACCELERATION",
+                  "RESISTANCE"
+                ],
+                "commenceTime": "2026-07-11T20:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+                "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+                "selection": "Cincinnati Reds",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 39.44,
+                "tags": [],
+                "commenceTime": "2026-07-11T23:11:00Z",
+                "homeTeam": "Cincinnati Reds",
+                "awayTeam": "Chicago Cubs"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 7,
+            "score": 69.15,
+            "legs": [
+              {
+                "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 84.0,
+                "tags": [
+                  "ACCELERATION",
+                  "RESISTANCE"
+                ],
+                "commenceTime": "2026-07-11T16:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 84.0,
+                "tags": [
+                  "DECELERATION",
+                  "MOMENTUM",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-11T20:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+                "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+                "selection": "Cincinnati Reds",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 39.44,
+                "tags": [],
+                "commenceTime": "2026-07-11T23:11:00Z",
+                "homeTeam": "Cincinnati Reds",
+                "awayTeam": "Chicago Cubs"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 8,
+            "score": 69.15,
+            "legs": [
+              {
+                "gameId": "1ff6b7060ccd99869ddc9396d067920c",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 84.0,
+                "tags": [
+                  "DECELERATION",
+                  "MOMENTUM",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-11T16:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
+                "gameKey": "mlb|2026-07-11|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 84.0,
+                "tags": [
+                  "DECELERATION",
+                  "MOMENTUM",
+                  "STEAM"
+                ],
+                "commenceTime": "2026-07-11T20:06:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              },
+              {
+                "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+                "gameKey": "mlb|2026-07-11|chicago cubs|cincinnati reds",
+                "selection": "Cincinnati Reds",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 39.44,
+                "tags": [],
+                "commenceTime": "2026-07-11T23:11:00Z",
+                "homeTeam": "Cincinnati Reds",
+                "awayTeam": "Chicago Cubs"
+              }
+            ],
+            "top3": false
+          }
+        ],
+        "previousNoBuildReason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
+        "fallbackApplied": true,
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#mlb#2026-07-11",
-          "sk": "BUILD#2026-07-11T04:26:14.720903+00:00",
+          "sk": "BUILD#2026-07-11T06:57:24.657557+00:00",
           "latestPk": "PARLAY_BUILDS#mlb#2026-07-11#LATEST",
           "latestSk": "LATEST"
         }
@@ -1951,9 +1256,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -1974,7 +1279,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#wnba#2026-07-11",
-          "sk": "BUILD#2026-07-11T04:26:15.028613+00:00",
+          "sk": "BUILD#2026-07-11T06:57:24.724149+00:00",
           "latestPk": "PARLAY_BUILDS#wnba#2026-07-11#LATEST",
           "latestSk": "LATEST"
         }
@@ -1998,9 +1303,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -2021,7 +1326,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nfl#2026-07-11",
-          "sk": "BUILD#2026-07-11T04:26:15.316220+00:00",
+          "sk": "BUILD#2026-07-11T06:57:24.777330+00:00",
           "latestPk": "PARLAY_BUILDS#nfl#2026-07-11#LATEST",
           "latestSk": "LATEST"
         }
@@ -2045,9 +1350,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -2068,7 +1373,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#cfb#2026-07-11",
-          "sk": "BUILD#2026-07-11T04:26:15.603247+00:00",
+          "sk": "BUILD#2026-07-11T06:57:24.824164+00:00",
           "latestPk": "PARLAY_BUILDS#cfb#2026-07-11#LATEST",
           "latestSk": "LATEST"
         }
@@ -2092,9 +1397,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -2115,7 +1420,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nba#2026-07-11",
-          "sk": "BUILD#2026-07-11T04:26:15.889540+00:00",
+          "sk": "BUILD#2026-07-11T06:57:24.870199+00:00",
           "latestPk": "PARLAY_BUILDS#nba#2026-07-11#LATEST",
           "latestSk": "LATEST"
         }
@@ -2139,9 +1444,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -2162,7 +1467,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#ncaam#2026-07-11",
-          "sk": "BUILD#2026-07-11T04:26:16.178609+00:00",
+          "sk": "BUILD#2026-07-11T06:57:24.917800+00:00",
           "latestPk": "PARLAY_BUILDS#ncaam#2026-07-11#LATEST",
           "latestSk": "LATEST"
         }
@@ -2186,9 +1491,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -2209,7 +1514,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nhl#2026-07-11",
-          "sk": "BUILD#2026-07-11T04:26:16.490827+00:00",
+          "sk": "BUILD#2026-07-11T06:57:24.968040+00:00",
           "latestPk": "PARLAY_BUILDS#nhl#2026-07-11#LATEST",
           "latestSk": "LATEST"
         }
@@ -2233,9 +1538,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -2256,7 +1561,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#soccer#2026-07-11",
-          "sk": "BUILD#2026-07-11T04:26:16.775973+00:00",
+          "sk": "BUILD#2026-07-11T06:57:25.012874+00:00",
           "latestPk": "PARLAY_BUILDS#soccer#2026-07-11#LATEST",
           "latestSk": "LATEST"
         }
@@ -2280,9 +1585,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -2303,7 +1608,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#tennis#2026-07-11",
-          "sk": "BUILD#2026-07-11T04:26:17.060570+00:00",
+          "sk": "BUILD#2026-07-11T06:57:25.061517+00:00",
           "latestPk": "PARLAY_BUILDS#tennis#2026-07-11#LATEST",
           "latestSk": "LATEST"
         }
@@ -2313,7 +1618,7 @@
   "pullDiagnostics": {
     "ok": true,
     "source": "diagnostic_provider_probe_no_snapshot_storage",
-    "createdAt": "2026-07-11T04:26:20.872972+00:00",
+    "createdAt": "2026-07-11T06:57:26.759340+00:00",
     "sportsRequested": [
       "mlb",
       "wnba",
@@ -2402,9 +1707,9 @@
       {
         "ok": true,
         "appSport": "mlb",
-        "rawGamesReturned": 19,
-        "rawGamesInWindow": 19,
-        "gamesConvertible": 19,
+        "rawGamesReturned": 16,
+        "rawGamesInWindow": 16,
+        "gamesConvertible": 16,
         "gamesStored": null,
         "diagnosticOnlyNoSnapshotStored": true,
         "activeStorageFailure": false,
@@ -2413,14 +1718,14 @@
             "ok": true,
             "appSport": "mlb",
             "providerSportKey": "baseball_mlb",
-            "rawGamesReturned": 19,
-            "rawGamesInWindow": 19,
-            "gamesConvertible": 19,
+            "rawGamesReturned": 16,
+            "rawGamesInWindow": 16,
+            "gamesConvertible": 16,
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:17.659458+00:00",
-            "activeWindowEnd": "2026-07-13T04:26:17.659458+00:00",
+            "activeWindowStart": "2026-07-11T00:57:25.220014+00:00",
+            "activeWindowEnd": "2026-07-13T06:57:25.220014+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -2446,8 +1751,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:17.947363+00:00",
-            "activeWindowEnd": "2026-07-13T04:26:17.947363+00:00",
+            "activeWindowStart": "2026-07-11T00:57:25.309154+00:00",
+            "activeWindowEnd": "2026-07-13T06:57:25.309154+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -2473,8 +1778,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:18.335958+00:00",
-            "activeWindowEnd": "2026-07-18T04:26:18.335958+00:00",
+            "activeWindowStart": "2026-07-11T00:57:25.470438+00:00",
+            "activeWindowEnd": "2026-07-18T06:57:25.470438+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -2500,8 +1805,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:18.835140+00:00",
-            "activeWindowEnd": "2026-07-18T04:26:18.835140+00:00",
+            "activeWindowStart": "2026-07-11T00:57:25.733143+00:00",
+            "activeWindowEnd": "2026-07-18T06:57:25.733143+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -2527,8 +1832,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:19.066560+00:00",
-            "activeWindowEnd": "2026-07-13T04:26:19.066560+00:00",
+            "activeWindowStart": "2026-07-11T00:57:25.924945+00:00",
+            "activeWindowEnd": "2026-07-13T06:57:25.924945+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -2554,8 +1859,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:19.200400+00:00",
-            "activeWindowEnd": "2026-07-13T04:26:19.200400+00:00",
+            "activeWindowStart": "2026-07-11T00:57:26.009188+00:00",
+            "activeWindowEnd": "2026-07-13T06:57:26.009188+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -2581,8 +1886,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:19.445200+00:00",
-            "activeWindowEnd": "2026-07-13T04:26:19.445200+00:00",
+            "activeWindowStart": "2026-07-11T00:57:26.112483+00:00",
+            "activeWindowEnd": "2026-07-13T06:57:26.112483+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -2608,8 +1913,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:19.754227+00:00",
-            "activeWindowEnd": "2026-07-25T04:26:19.754227+00:00",
+            "activeWindowStart": "2026-07-11T00:57:26.222693+00:00",
+            "activeWindowEnd": "2026-07-25T06:57:26.222693+00:00",
             "slateWindowDays": 14,
             "error": null
           },
@@ -2623,8 +1928,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:20.089741+00:00",
-            "activeWindowEnd": "2026-07-25T04:26:20.089741+00:00",
+            "activeWindowStart": "2026-07-11T00:57:26.311155+00:00",
+            "activeWindowEnd": "2026-07-25T06:57:26.311155+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           },
@@ -2638,8 +1943,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:20.366173+00:00",
-            "activeWindowEnd": "2026-07-25T04:26:20.366173+00:00",
+            "activeWindowStart": "2026-07-11T00:57:26.479048+00:00",
+            "activeWindowEnd": "2026-07-25T06:57:26.479048+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           }
@@ -2665,8 +1970,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:20.750307+00:00",
-            "activeWindowEnd": "2026-07-18T04:26:20.750307+00:00",
+            "activeWindowStart": "2026-07-11T00:57:26.640933+00:00",
+            "activeWindowEnd": "2026-07-18T06:57:26.640933+00:00",
             "slateWindowDays": 7,
             "error": null
           },
@@ -2680,8 +1985,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-10T22:26:20.872916+00:00",
-            "activeWindowEnd": "2026-07-18T04:26:20.872916+00:00",
+            "activeWindowStart": "2026-07-11T00:57:26.759281+00:00",
+            "activeWindowEnd": "2026-07-18T06:57:26.759281+00:00",
             "slateWindowDays": 7,
             "error": null
           }
