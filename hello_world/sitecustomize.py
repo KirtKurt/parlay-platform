@@ -55,6 +55,13 @@ except Exception:
     pass
 
 try:
+    import mlb_rolling_24h_audit as _mlb_rolling_24h_audit_for_real_world_accuracy
+    import mlb_real_world_accuracy_patch
+    mlb_real_world_accuracy_patch.apply(_mlb_rolling_24h_audit_for_real_world_accuracy)
+except Exception:
+    pass
+
+try:
     import api as _api_for_sportsdataio
     import sportsdataio_api_patch
     sportsdataio_api_patch.apply(_api_for_sportsdataio)
