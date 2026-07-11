@@ -57,7 +57,9 @@ except Exception:
 try:
     import mlb_rolling_24h_audit as _mlb_rolling_24h_audit_for_real_world_accuracy
     import mlb_real_world_accuracy_patch
+    import mlb_real_world_accuracy_semantics_fix
     mlb_real_world_accuracy_patch.apply(_mlb_rolling_24h_audit_for_real_world_accuracy)
+    mlb_real_world_accuracy_semantics_fix.apply(mlb_real_world_accuracy_patch)
 except Exception:
     pass
 
