@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v4-single-authority-standard-manual-promotion"
+VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v5-canonical-manual-promotion"
 AUTHORITATIVE_TRAINER = "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger"
 _INSTALLED = False
 
@@ -28,8 +28,8 @@ def install() -> dict:
         errors.append(f"freeze_bridge:{exc}")
     try:
         import mlb_ml_champion_challenger_v1
-        import mlb_ml_manual_promotion_only_v1
-        mlb_ml_manual_promotion_only_v1.apply(mlb_ml_champion_challenger_v1)
+        import mlb_ml_manual_promotion_only_patch
+        mlb_ml_manual_promotion_only_patch.apply(mlb_ml_champion_challenger_v1)
         applied.append("automatic_champion_promotion_permanently_disabled")
     except Exception as exc:
         errors.append(f"promotion_safety:{exc}")
@@ -44,6 +44,6 @@ def install() -> dict:
         "duplicateTrainerAuthorityDisabled": True,
         "duplicateOutcomeRuntimeAuthorityDisabled": True,
         "automaticPromotionDisabled": True,
-        "manualPromotionModule": "MLB-ML-MANUAL-PROMOTION-ONLY-v1",
+        "manualPromotionModule": "MLB-ML-PROMOTION-SAFETY-v1-manual-review-only",
         "manualPromotionWorkflow": "mlb-ml-promote-champion.yml",
     }
