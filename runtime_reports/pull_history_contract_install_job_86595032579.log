@@ -1,0 +1,284 @@
+﻿2026-07-11T23:28:02.8699658Z Current runner version: '2.335.1'
+2026-07-11T23:28:02.8724720Z ##[group]Runner Image Provisioner
+2026-07-11T23:28:02.8725657Z Hosted Compute Agent
+2026-07-11T23:28:02.8726248Z Version: 20260624.560
+2026-07-11T23:28:02.8726912Z Commit: 925d229a51159bc391ae97e54a2dd1fe20af789d
+2026-07-11T23:28:02.8727675Z Build Date: 2026-06-24T18:26:47Z
+2026-07-11T23:28:02.8728351Z Worker ID: {7795386e-21f7-43a5-afb0-ee6e395c6abd}
+2026-07-11T23:28:02.8729100Z Azure Region: eastus
+2026-07-11T23:28:02.8729660Z ##[endgroup]
+2026-07-11T23:28:02.8731073Z ##[group]Operating System
+2026-07-11T23:28:02.8732299Z Ubuntu
+2026-07-11T23:28:02.8732826Z 24.04.4
+2026-07-11T23:28:02.8733794Z LTS
+2026-07-11T23:28:02.8734347Z ##[endgroup]
+2026-07-11T23:28:02.8734929Z ##[group]Runner Image
+2026-07-11T23:28:02.8735633Z Image: ubuntu-24.04
+2026-07-11T23:28:02.8736196Z Version: 20260705.232.1
+2026-07-11T23:28:02.8737501Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260705.232/images/ubuntu/Ubuntu2404-Readme.md
+2026-07-11T23:28:02.8739042Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260705.232
+2026-07-11T23:28:02.8740055Z ##[endgroup]
+2026-07-11T23:28:02.8741106Z ##[group]GITHUB_TOKEN Permissions
+2026-07-11T23:28:02.8743636Z Contents: write
+2026-07-11T23:28:02.8744249Z Metadata: read
+2026-07-11T23:28:02.8745265Z ##[endgroup]
+2026-07-11T23:28:02.8747609Z Secret source: Actions
+2026-07-11T23:28:02.8748767Z Prepare workflow directory
+2026-07-11T23:28:02.9072406Z Prepare all required actions
+2026-07-11T23:28:02.9109646Z Getting action download info
+2026-07-11T23:28:03.1171060Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2026-07-11T23:28:03.1917788Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-07-11T23:28:03.3738302Z Complete job name: install
+2026-07-11T23:28:03.4476785Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-11T23:28:03.4485730Z ##[group]Run actions/checkout@v4
+2026-07-11T23:28:03.4486473Z with:
+2026-07-11T23:28:03.4486940Z   repository: KirtKurt/parlay-platform
+2026-07-11T23:28:03.4490931Z   token: ***
+2026-07-11T23:28:03.4491354Z   ssh-strict: true
+2026-07-11T23:28:03.4491791Z   ssh-user: git
+2026-07-11T23:28:03.4492227Z   persist-credentials: true
+2026-07-11T23:28:03.4492713Z   clean: true
+2026-07-11T23:28:03.4493372Z   sparse-checkout-cone-mode: true
+2026-07-11T23:28:03.4493909Z   fetch-depth: 1
+2026-07-11T23:28:03.4494342Z   fetch-tags: false
+2026-07-11T23:28:03.4494786Z   show-progress: true
+2026-07-11T23:28:03.4495232Z   lfs: false
+2026-07-11T23:28:03.4495676Z   submodules: false
+2026-07-11T23:28:03.4496134Z   set-safe-directory: true
+2026-07-11T23:28:03.4496868Z ##[endgroup]
+2026-07-11T23:28:03.5500789Z Syncing repository: KirtKurt/parlay-platform
+2026-07-11T23:28:03.5503603Z ##[group]Getting Git version info
+2026-07-11T23:28:03.5504898Z Working directory is '/home/runner/work/parlay-platform/parlay-platform'
+2026-07-11T23:28:03.5506696Z [command]/usr/bin/git version
+2026-07-11T23:28:03.5554723Z git version 2.54.0
+2026-07-11T23:28:03.5585473Z ##[endgroup]
+2026-07-11T23:28:03.5591374Z Temporarily overriding HOME='/home/runner/work/_temp/6be1900b-b899-4e4e-b546-bedcbd75d765' before making global git config changes
+2026-07-11T23:28:03.5593910Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-11T23:28:03.5596671Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-11T23:28:03.5654527Z Deleting the contents of '/home/runner/work/parlay-platform/parlay-platform'
+2026-07-11T23:28:03.5658637Z ##[group]Initializing the repository
+2026-07-11T23:28:03.5664237Z [command]/usr/bin/git init /home/runner/work/parlay-platform/parlay-platform
+2026-07-11T23:28:03.5770330Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-07-11T23:28:03.5772197Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-07-11T23:28:03.5773957Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-07-11T23:28:03.5775410Z hint: call:
+2026-07-11T23:28:03.5776020Z hint:
+2026-07-11T23:28:03.5776862Z hint: 	git config --global init.defaultBranch <name>
+2026-07-11T23:28:03.5777928Z hint:
+2026-07-11T23:28:03.5778869Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-07-11T23:28:03.5780357Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-07-11T23:28:03.5781531Z hint:
+2026-07-11T23:28:03.5782185Z hint: 	git branch -m <name>
+2026-07-11T23:28:03.5783216Z hint:
+2026-07-11T23:28:03.5784271Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-07-11T23:28:03.5786075Z Initialized empty Git repository in /home/runner/work/parlay-platform/parlay-platform/.git/
+2026-07-11T23:28:03.5788910Z [command]/usr/bin/git remote add origin https://github.com/KirtKurt/parlay-platform
+2026-07-11T23:28:03.5835081Z ##[endgroup]
+2026-07-11T23:28:03.5836402Z ##[group]Disabling automatic garbage collection
+2026-07-11T23:28:03.5839027Z [command]/usr/bin/git config --local gc.auto 0
+2026-07-11T23:28:03.5871133Z ##[endgroup]
+2026-07-11T23:28:03.5872234Z ##[group]Setting up auth
+2026-07-11T23:28:03.5878104Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-11T23:28:03.5913511Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-11T23:28:03.6307652Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-11T23:28:03.6345520Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-11T23:28:03.6584339Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-11T23:28:03.6621555Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-11T23:28:03.6841469Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-07-11T23:28:03.6879709Z ##[endgroup]
+2026-07-11T23:28:03.6889238Z ##[group]Fetching the repository
+2026-07-11T23:28:03.6890819Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +d08ad165edce0d7ca776ae299fce626e071302b3:refs/remotes/origin/main
+2026-07-11T23:28:04.2375305Z From https://github.com/KirtKurt/parlay-platform
+2026-07-11T23:28:04.2377747Z  * [new ref]         d08ad165edce0d7ca776ae299fce626e071302b3 -> origin/main
+2026-07-11T23:28:04.2410510Z ##[endgroup]
+2026-07-11T23:28:04.2412050Z ##[group]Determining the checkout info
+2026-07-11T23:28:04.2414474Z ##[endgroup]
+2026-07-11T23:28:04.2418785Z [command]/usr/bin/git sparse-checkout disable
+2026-07-11T23:28:04.2467867Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-07-11T23:28:04.2500278Z ##[group]Checking out the ref
+2026-07-11T23:28:04.2504971Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-07-11T23:28:04.3032150Z Switched to a new branch 'main'
+2026-07-11T23:28:04.3035440Z branch 'main' set up to track 'origin/main'.
+2026-07-11T23:28:04.3046849Z ##[endgroup]
+2026-07-11T23:28:04.3091416Z [command]/usr/bin/git log -1 --format=%H
+2026-07-11T23:28:04.3118594Z d08ad165edce0d7ca776ae299fce626e071302b3
+2026-07-11T23:28:04.3490568Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-11T23:28:04.3496827Z ##[group]Run actions/setup-python@v5
+2026-07-11T23:28:04.3498019Z with:
+2026-07-11T23:28:04.3498894Z   python-version: 3.11
+2026-07-11T23:28:04.3499882Z   check-latest: false
+2026-07-11T23:28:04.3510965Z   token: ***
+2026-07-11T23:28:04.3511891Z   update-environment: true
+2026-07-11T23:28:04.3513099Z   allow-prereleases: false
+2026-07-11T23:28:04.3514169Z   freethreaded: false
+2026-07-11T23:28:04.3515164Z ##[endgroup]
+2026-07-11T23:28:04.4877007Z ##[group]Installed versions
+2026-07-11T23:28:04.4972652Z (node:2295) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-11T23:28:04.4977265Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-11T23:28:04.4980214Z Successfully set up CPython (3.11.15)
+2026-07-11T23:28:04.4983787Z ##[endgroup]
+2026-07-11T23:28:04.5175018Z ##[group]Run set -euo pipefail
+2026-07-11T23:28:04.5176604Z [36;1mset -euo pipefail[0m
+2026-07-11T23:28:04.5177668Z [36;1m[0m
+2026-07-11T23:28:04.5179756Z [36;1mif ! grep -q '^from inqsi_pull_history_routes import handle_pull_history_route$' hello_world/inqsi_pull_history.py; then[0m
+2026-07-11T23:28:04.5184416Z [36;1m  printf '\n\n# Backward-compatible API route contract used by inqsi_api.\nfrom inqsi_pull_history_routes import handle_pull_history_route\n' >> hello_world/inqsi_pull_history.py[0m
+2026-07-11T23:28:04.5187599Z [36;1mfi[0m
+2026-07-11T23:28:04.5188440Z [36;1m[0m
+2026-07-11T23:28:04.5189625Z [36;1mcat > scripts/verify_api_function_mlb_v3_import.py <<'PY'[0m
+2026-07-11T23:28:04.5191166Z [36;1m#!/usr/bin/env python3[0m
+2026-07-11T23:28:04.5192338Z [36;1mfrom __future__ import annotations[0m
+2026-07-11T23:28:04.5193822Z [36;1m[0m
+2026-07-11T23:28:04.5194667Z [36;1mimport json[0m
+2026-07-11T23:28:04.5195621Z [36;1mimport os[0m
+2026-07-11T23:28:04.5196644Z [36;1mimport subprocess[0m
+2026-07-11T23:28:04.5197727Z [36;1mimport sys[0m
+2026-07-11T23:28:04.5198729Z [36;1mfrom pathlib import Path[0m
+2026-07-11T23:28:04.5199840Z [36;1m[0m
+2026-07-11T23:28:04.5200836Z [36;1mROOT = Path(__file__).resolve().parents[1][0m
+2026-07-11T23:28:04.5202243Z [36;1mHELLO_WORLD = ROOT / "hello_world"[0m
+2026-07-11T23:28:04.5203675Z [36;1m[0m
+2026-07-11T23:28:04.5204494Z [36;1m[0m
+2026-07-11T23:28:04.5205347Z [36;1mdef main() -> int:[0m
+2026-07-11T23:28:04.5206434Z [36;1m    env = dict(os.environ)[0m
+2026-07-11T23:28:04.5207569Z [36;1m    env.update([0m
+2026-07-11T23:28:04.5208563Z [36;1m        {[0m
+2026-07-11T23:28:04.5209982Z [36;1m            "AWS_DEFAULT_REGION": env.get("AWS_DEFAULT_REGION") or "us-east-1",[0m
+2026-07-11T23:28:04.5212002Z [36;1m            "AWS_REGION": env.get("AWS_REGION") or "us-east-1",[0m
+2026-07-11T23:28:04.5214178Z [36;1m            "AWS_EC2_METADATA_DISABLED": "true",[0m
+2026-07-11T23:28:04.5215638Z [36;1m            "SNAPSHOTS_TABLE": "",[0m
+2026-07-11T23:28:04.5217447Z [36;1m            "INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION": "false",[0m
+2026-07-11T23:28:04.5220023Z [36;1m            "INQSI_MLB_ML_AUTO_PROMOTE": "false",[0m
+2026-07-11T23:28:04.5222301Z [36;1m            "PYTHONPATH": str(HELLO_WORLD),[0m
+2026-07-11T23:28:04.5223879Z [36;1m        }[0m
+2026-07-11T23:28:04.5224970Z [36;1m    )[0m
+2026-07-11T23:28:04.5226086Z [36;1m    code = r'''[0m
+2026-07-11T23:28:04.5227106Z [36;1mimport json[0m
+2026-07-11T23:28:04.5228399Z [36;1mimport frontend_app[0m
+2026-07-11T23:28:04.5229598Z [36;1mimport inqsi_pull_history[0m
+2026-07-11T23:28:04.5230878Z [36;1mimport mlb_game_winner_engine as engine[0m
+2026-07-11T23:28:04.5232152Z [36;1m[0m
+2026-07-11T23:28:04.5234692Z [36;1massert callable(inqsi_pull_history.handle_pull_history_route)[0m
+2026-07-11T23:28:04.5237885Z [36;1mevent = {[0m
+2026-07-11T23:28:04.5239459Z [36;1m    "resource": "/{proxy+}",[0m
+2026-07-11T23:28:04.5241933Z [36;1m    "path": "/v1/mlb/model/version",[0m
+2026-07-11T23:28:04.5244364Z [36;1m    "rawPath": "/v1/mlb/model/version",[0m
+2026-07-11T23:28:04.5247006Z [36;1m    "httpMethod": "GET",[0m
+2026-07-11T23:28:04.5249466Z [36;1m    "headers": {},[0m
+2026-07-11T23:28:04.5342534Z [36;1m    "queryStringParameters": None,[0m
+2026-07-11T23:28:04.5345368Z [36;1m    "pathParameters": {"proxy": "v1/mlb/model/version"},[0m
+2026-07-11T23:28:04.5348179Z [36;1m    "requestContext": {"stage": "Prod", "httpMethod": "GET"},[0m
+2026-07-11T23:28:04.5350770Z [36;1m    "body": None,[0m
+2026-07-11T23:28:04.5352545Z [36;1m    "isBase64Encoded": False,[0m
+2026-07-11T23:28:04.5354706Z [36;1m}[0m
+2026-07-11T23:28:04.5356587Z [36;1mresponse = frontend_app.lambda_handler(event, None)[0m
+2026-07-11T23:28:04.5359457Z [36;1massert response.get("statusCode") == 200, response[0m
+2026-07-11T23:28:04.5361534Z [36;1mbody = json.loads(response.get("body") or "{}")[0m
+2026-07-11T23:28:04.5363433Z [36;1massert body.get("ok") is True, body[0m
+2026-07-11T23:28:04.5365367Z [36;1massert body.get("engine_import_ok") is True, body[0m
+2026-07-11T23:28:04.5367339Z [36;1massert str(body.get("model_version") or "").startswith("INQSI-MLB-v3.0"), body[0m
+2026-07-11T23:28:04.5369916Z [36;1massert str(body.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"), body[0m
+2026-07-11T23:28:04.5372110Z [36;1mruntime = body.get("ml_runtime_install") or {}[0m
+2026-07-11T23:28:04.5373869Z [36;1massert runtime.get("ok") is True, runtime[0m
+2026-07-11T23:28:04.5375173Z [36;1mrequired = {[0m
+2026-07-11T23:28:04.5376260Z [36;1m    "legacyReliabilityOverlaySafety",[0m
+2026-07-11T23:28:04.5377620Z [36;1m    "singleDdbChampionAuthority",[0m
+2026-07-11T23:28:04.5378946Z [36;1m    "officialSemanticsFinalized",[0m
+2026-07-11T23:28:04.5380209Z [36;1m    "immutableFeatureFreeze",[0m
+2026-07-11T23:28:04.5381476Z [36;1m    "exactCleanCohortVectorPatch",[0m
+2026-07-11T23:28:04.5382763Z [36;1m    "officialFreezeBridge",[0m
+2026-07-11T23:28:04.5384121Z [36;1m}[0m
+2026-07-11T23:28:04.5385798Z [36;1mmissing = sorted(name for name in required if (runtime.get("steps") or {}).get(name) is not True)[0m
+2026-07-11T23:28:04.5388474Z [36;1massert not missing, {"missingRuntimeSteps": missing, "runtime": runtime}[0m
+2026-07-11T23:28:04.5390215Z [36;1mprint(json.dumps({[0m
+2026-07-11T23:28:04.5391240Z [36;1m    "ok": True,[0m
+2026-07-11T23:28:04.5392397Z [36;1m    "modelVersion": body.get("model_version"),[0m
+2026-07-11T23:28:04.5394387Z [36;1m    "optimizationVersion": body.get("ml_optimization_version"),[0m
+2026-07-11T23:28:04.5396126Z [36;1m    "runtimeVersion": runtime.get("version"),[0m
+2026-07-11T23:28:04.5397566Z [36;1m    "runtimeSteps": runtime.get("steps"),[0m
+2026-07-11T23:28:04.5398834Z [36;1m}, indent=2))[0m
+2026-07-11T23:28:04.5399782Z [36;1m'''[0m
+2026-07-11T23:28:04.5400682Z [36;1m    result = subprocess.run([0m
+2026-07-11T23:28:04.5401907Z [36;1m        [sys.executable, "-c", code],[0m
+2026-07-11T23:28:04.5403405Z [36;1m        cwd=str(ROOT),[0m
+2026-07-11T23:28:04.5404484Z [36;1m        env=env,[0m
+2026-07-11T23:28:04.5405476Z [36;1m        text=True,[0m
+2026-07-11T23:28:04.5406524Z [36;1m        capture_output=True,[0m
+2026-07-11T23:28:04.5407658Z [36;1m        timeout=90,[0m
+2026-07-11T23:28:04.5408673Z [36;1m    )[0m
+2026-07-11T23:28:04.5409608Z [36;1m    if result.returncode != 0:[0m
+2026-07-11T23:28:04.5410882Z [36;1m        sys.stderr.write(result.stdout)[0m
+2026-07-11T23:28:04.5412243Z [36;1m        sys.stderr.write(result.stderr)[0m
+2026-07-11T23:28:04.5413831Z [36;1m        return result.returncode[0m
+2026-07-11T23:28:04.5415102Z [36;1m    print(result.stdout.strip())[0m
+2026-07-11T23:28:04.5416775Z [36;1m    print("ApiFunction MLB v3 cold import and route contract verified")[0m
+2026-07-11T23:28:04.5418421Z [36;1m    return 0[0m
+2026-07-11T23:28:04.5419340Z [36;1m[0m
+2026-07-11T23:28:04.5420141Z [36;1m[0m
+2026-07-11T23:28:04.5420985Z [36;1mif __name__ == "__main__":[0m
+2026-07-11T23:28:04.5422332Z [36;1m    raise SystemExit(main())[0m
+2026-07-11T23:28:04.5423735Z [36;1mPY[0m
+2026-07-11T23:28:04.5424889Z [36;1mchmod +x scripts/verify_api_function_mlb_v3_import.py[0m
+2026-07-11T23:28:04.5426302Z [36;1m[0m
+2026-07-11T23:28:04.5427144Z [36;1mpython - <<'PY'[0m
+2026-07-11T23:28:04.5428187Z [36;1mfrom pathlib import Path[0m
+2026-07-11T23:28:04.5429271Z [36;1m[0m
+2026-07-11T23:28:04.5430620Z [36;1mpath = Path('scripts/verify_mlb_schedule_invariants.py')[0m
+2026-07-11T23:28:04.5432327Z [36;1mtext = path.read_text()[0m
+2026-07-11T23:28:04.5434467Z [36;1mvariable = "MLB_API_FUNCTION_IMPORT_VERIFY = Path('scripts/verify_api_function_mlb_v3_import.py')"[0m
+2026-07-11T23:28:04.5436527Z [36;1mif variable not in text:[0m
+2026-07-11T23:28:04.5438353Z [36;1m    marker = "ML_INSTALLATION_1_5_VERIFY = Path('scripts/verify_mlb_ml_installation_1_5.py')"[0m
+2026-07-11T23:28:04.5440290Z [36;1m    if marker not in text:[0m
+2026-07-11T23:28:04.5441934Z [36;1m        raise SystemExit('installation verifier marker missing')[0m
+2026-07-11T23:28:04.5443900Z [36;1m    text = text.replace(marker, marker + "\n" + variable, 1)[0m
+2026-07-11T23:28:04.5445614Z [36;1mif "    MLB_API_FUNCTION_IMPORT_VERIFY,\n" not in text:[0m
+2026-07-11T23:28:04.5447189Z [36;1m    marker = "    ML_INSTALLATION_1_5_VERIFY,\n]"[0m
+2026-07-11T23:28:04.5448544Z [36;1m    if marker not in text:[0m
+2026-07-11T23:28:04.5449953Z [36;1m        raise SystemExit('required-path list marker missing')[0m
+2026-07-11T23:28:04.5452304Z [36;1m    text = text.replace(marker, "    ML_INSTALLATION_1_5_VERIFY,\n    MLB_API_FUNCTION_IMPORT_VERIFY,\n]", 1)[0m
+2026-07-11T23:28:04.5455272Z [36;1mrun_line = "subprocess.run([sys.executable, str(MLB_API_FUNCTION_IMPORT_VERIFY)], check=True)"[0m
+2026-07-11T23:28:04.5457256Z [36;1mif run_line not in text:[0m
+2026-07-11T23:28:04.5459065Z [36;1m    marker = "subprocess.run([sys.executable, str(ML_INSTALLATION_1_5_VERIFY)], check=True)"[0m
+2026-07-11T23:28:04.5461015Z [36;1m    if marker not in text:[0m
+2026-07-11T23:28:04.5462598Z [36;1m        raise SystemExit('installation verifier invocation marker missing')[0m
+2026-07-11T23:28:04.5464690Z [36;1m    text = text.replace(marker, marker + "\n" + run_line, 1)[0m
+2026-07-11T23:28:04.5466164Z [36;1mpath.write_text(text)[0m
+2026-07-11T23:28:04.5467188Z [36;1mPY[0m
+2026-07-11T23:28:04.5658243Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:28:04.5659303Z env:
+2026-07-11T23:28:04.5660373Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:28:04.5662175Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:28:04.5664239Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:28:04.5665824Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:28:04.5667432Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:28:04.5669053Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:28:04.5670458Z ##[endgroup]
+2026-07-11T23:28:04.6405312Z ##[group]Run python scripts/verify_mlb_schedule_invariants.py
+2026-07-11T23:28:04.6407003Z [36;1mpython scripts/verify_mlb_schedule_invariants.py[0m
+2026-07-11T23:28:04.6441481Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:28:04.6442489Z env:
+2026-07-11T23:28:04.6443792Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:28:04.6445515Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:28:04.6447246Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:28:04.6448790Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:28:04.6450362Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:28:04.6451952Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:28:04.6453415Z ##[endgroup]
+2026-07-11T23:28:04.6831836Z MLB production invariant failure: unsafe days_ahead=1 exists in template; legacy/duplicate MLB schedule still exists: MLBBasePull; legacy/duplicate MLB schedule still exists: MLBT2; legacy/duplicate MLB schedule still exists: MLBT3; legacy/duplicate MLB schedule still exists: MLBT4; MLBHotEvery15Min is not quarter-hour cron; same-day days_ahead=0 input missing; daily lock function missing; daily lock one-minute scheduler missing; AWS production verifier function missing; 5-minute AWS production verifier schedule missing; daily ingest verification schedule missing; daily lock verification schedule missing; lock T-minus env missing; manual lock route missing; lock status route missing; lock today route missing; minimum pull-depth lock guardrail missing; stale snapshot lock guardrail missing
+2026-07-11T23:28:04.6874677Z ##[error]Process completed with exit code 1.
+2026-07-11T23:28:04.7149896Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-11T23:28:04.7154716Z Post job cleanup.
+2026-07-11T23:28:04.8047797Z [command]/usr/bin/git version
+2026-07-11T23:28:04.8089672Z git version 2.54.0
+2026-07-11T23:28:04.8149929Z Temporarily overriding HOME='/home/runner/work/_temp/1a7118f1-bf14-4f41-ae1b-10da1949077a' before making global git config changes
+2026-07-11T23:28:04.8155290Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-11T23:28:04.8159737Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-11T23:28:04.8177576Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-11T23:28:04.8216789Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-11T23:28:04.8536070Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-11T23:28:04.8567354Z http.https://github.com/.extraheader
+2026-07-11T23:28:04.8594701Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-11T23:28:04.8646112Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-11T23:28:04.8967005Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-11T23:28:04.9018142Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-11T23:28:04.9417351Z Cleaning up orphan processes
+2026-07-11T23:28:04.9819732Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
