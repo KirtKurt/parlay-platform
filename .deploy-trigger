@@ -1,6 +1,7 @@
 Deploy trigger for current main.
-Purpose: deploy MLB complete-slate, doubleheader-safe lock coverage and non-backfillable daily lock.
-Timestamp UTC: 2026-07-11T21:50:00Z
-Required live proof: manifest game count = prediction count = stored count; coverageComplete=true; operationalDefect=false.
-Required daily lock policy: use all pre-lock pulls, preserve doubleheaders by provider id/start time, and never create a full-slate lock after the first game starts.
-Supersedes the prior latest-pull-only daily lock and matchup-only audit identity.
+Purpose: deploy MLB ML critical-blocker fixes and optimization installation items 1 through 5.
+Timestamp UTC: 2026-07-11T22:52:42Z
+Required live model proof: ml_runtime_install.ok=true with singleDdbChampionAuthority, officialSemanticsFinalized, immutableFeatureFreeze, exactCleanCohortVectorPatch, and officialFreezeBridge all true.
+Required locked-row proof: every locked prediction preserves official status and contains a fingerprinted frozenFeatureVector created from the pregame source at or before lock.
+Required ML policy: outcome and reliability models remain separate, challenger remains shadow-only, and champion promotion remains manual and DynamoDB-reviewed.
+Required cohort behavior: historical legacy rows remain quarantined; new post-deployment locked rows enter the clean cohort only after final labels are joined without altering features.
