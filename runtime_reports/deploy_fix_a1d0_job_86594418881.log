@@ -1,0 +1,1254 @@
+﻿2026-07-11T23:18:59.4737661Z Current runner version: '2.335.1'
+2026-07-11T23:18:59.4763174Z ##[group]Runner Image Provisioner
+2026-07-11T23:18:59.4764066Z Hosted Compute Agent
+2026-07-11T23:18:59.4764923Z Version: 20260624.560
+2026-07-11T23:18:59.4765647Z Commit: 925d229a51159bc391ae97e54a2dd1fe20af789d
+2026-07-11T23:18:59.4766539Z Build Date: 2026-06-24T18:26:47Z
+2026-07-11T23:18:59.4767523Z Worker ID: {aed76223-ed54-4aa1-a0cd-d53c3ea21eb3}
+2026-07-11T23:18:59.4768360Z Azure Region: centralus
+2026-07-11T23:18:59.4769065Z ##[endgroup]
+2026-07-11T23:18:59.4770526Z ##[group]Operating System
+2026-07-11T23:18:59.4771305Z Ubuntu
+2026-07-11T23:18:59.4771893Z 24.04.4
+2026-07-11T23:18:59.4772610Z LTS
+2026-07-11T23:18:59.4773204Z ##[endgroup]
+2026-07-11T23:18:59.4773893Z ##[group]Runner Image
+2026-07-11T23:18:59.4774592Z Image: ubuntu-24.04
+2026-07-11T23:18:59.4775226Z Version: 20260705.232.1
+2026-07-11T23:18:59.4776650Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260705.232/images/ubuntu/Ubuntu2404-Readme.md
+2026-07-11T23:18:59.4778558Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260705.232
+2026-07-11T23:18:59.4779602Z ##[endgroup]
+2026-07-11T23:18:59.4780999Z ##[group]GITHUB_TOKEN Permissions
+2026-07-11T23:18:59.4782987Z Contents: read
+2026-07-11T23:18:59.4783725Z Metadata: read
+2026-07-11T23:18:59.4784373Z Packages: read
+2026-07-11T23:18:59.4785008Z ##[endgroup]
+2026-07-11T23:18:59.4787446Z Secret source: Actions
+2026-07-11T23:18:59.4788251Z Prepare workflow directory
+2026-07-11T23:18:59.5206674Z Prepare all required actions
+2026-07-11T23:18:59.5260919Z Getting action download info
+2026-07-11T23:18:59.7487963Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
+2026-07-11T23:18:59.8531528Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
+2026-07-11T23:18:59.9652227Z Download action repository 'aws-actions/configure-aws-credentials@v4' (SHA:7474bc4690e29a8392af63c5b98e7449536d5c3a)
+2026-07-11T23:19:00.3208776Z Download action repository 'aws-actions/setup-sam@v2' (SHA:f84ec7d548307efafe33230528756de3c5841a17)
+2026-07-11T23:19:00.7844175Z Complete job name: deploy
+2026-07-11T23:19:00.8893971Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-11T23:19:00.8904535Z ##[group]Run actions/checkout@v4
+2026-07-11T23:19:00.8905510Z with:
+2026-07-11T23:19:00.8906105Z   repository: KirtKurt/parlay-platform
+2026-07-11T23:19:00.8914306Z   token: ***
+2026-07-11T23:19:00.8914867Z   ssh-strict: true
+2026-07-11T23:19:00.8915453Z   ssh-user: git
+2026-07-11T23:19:00.8916042Z   persist-credentials: true
+2026-07-11T23:19:00.8916705Z   clean: true
+2026-07-11T23:19:00.8917426Z   sparse-checkout-cone-mode: true
+2026-07-11T23:19:00.8918168Z   fetch-depth: 1
+2026-07-11T23:19:00.8918760Z   fetch-tags: false
+2026-07-11T23:19:00.8919354Z   show-progress: true
+2026-07-11T23:19:00.8919962Z   lfs: false
+2026-07-11T23:19:00.8920562Z   submodules: false
+2026-07-11T23:19:00.8921167Z   set-safe-directory: true
+2026-07-11T23:19:00.8922458Z ##[endgroup]
+2026-07-11T23:19:00.9969784Z Syncing repository: KirtKurt/parlay-platform
+2026-07-11T23:19:00.9972650Z ##[group]Getting Git version info
+2026-07-11T23:19:00.9974162Z Working directory is '/home/runner/work/parlay-platform/parlay-platform'
+2026-07-11T23:19:00.9976278Z [command]/usr/bin/git version
+2026-07-11T23:19:01.0013958Z git version 2.54.0
+2026-07-11T23:19:01.0037152Z ##[endgroup]
+2026-07-11T23:19:01.0053945Z Temporarily overriding HOME='/home/runner/work/_temp/2e337d47-abd8-4b49-b255-627a355df8af' before making global git config changes
+2026-07-11T23:19:01.0058199Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-11T23:19:01.0061765Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-11T23:19:01.0117481Z Deleting the contents of '/home/runner/work/parlay-platform/parlay-platform'
+2026-07-11T23:19:01.0120890Z ##[group]Initializing the repository
+2026-07-11T23:19:01.0126128Z [command]/usr/bin/git init /home/runner/work/parlay-platform/parlay-platform
+2026-07-11T23:19:01.0206084Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-07-11T23:19:01.0208753Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-07-11T23:19:01.0211054Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-07-11T23:19:01.0212330Z hint: call:
+2026-07-11T23:19:01.0212843Z hint:
+2026-07-11T23:19:01.0213787Z hint: 	git config --global init.defaultBranch <name>
+2026-07-11T23:19:01.0215011Z hint:
+2026-07-11T23:19:01.0215857Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-07-11T23:19:01.0217975Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-07-11T23:19:01.0219349Z hint:
+2026-07-11T23:19:01.0219886Z hint: 	git branch -m <name>
+2026-07-11T23:19:01.0220565Z hint:
+2026-07-11T23:19:01.0221877Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-07-11T23:19:01.0224558Z Initialized empty Git repository in /home/runner/work/parlay-platform/parlay-platform/.git/
+2026-07-11T23:19:01.0228956Z [command]/usr/bin/git remote add origin https://github.com/KirtKurt/parlay-platform
+2026-07-11T23:19:01.0259722Z ##[endgroup]
+2026-07-11T23:19:01.0260805Z ##[group]Disabling automatic garbage collection
+2026-07-11T23:19:01.0263803Z [command]/usr/bin/git config --local gc.auto 0
+2026-07-11T23:19:01.0299397Z ##[endgroup]
+2026-07-11T23:19:01.0307433Z ##[group]Setting up auth
+2026-07-11T23:19:01.0308581Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-11T23:19:01.0348699Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-11T23:19:01.0716715Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-11T23:19:01.0757482Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-11T23:19:01.1013448Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-11T23:19:01.1052498Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-11T23:19:01.1295849Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-07-11T23:19:01.1336714Z ##[endgroup]
+2026-07-11T23:19:01.1338601Z ##[group]Fetching the repository
+2026-07-11T23:19:01.1349296Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +a1d0c9914614de6dac0d2f2326bddfd655ec10da:refs/remotes/origin/main
+2026-07-11T23:19:01.9278496Z From https://github.com/KirtKurt/parlay-platform
+2026-07-11T23:19:01.9281461Z  * [new ref]         a1d0c9914614de6dac0d2f2326bddfd655ec10da -> origin/main
+2026-07-11T23:19:01.9314099Z ##[endgroup]
+2026-07-11T23:19:01.9316210Z ##[group]Determining the checkout info
+2026-07-11T23:19:01.9318750Z ##[endgroup]
+2026-07-11T23:19:01.9322437Z [command]/usr/bin/git sparse-checkout disable
+2026-07-11T23:19:01.9376259Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-07-11T23:19:01.9419236Z ##[group]Checking out the ref
+2026-07-11T23:19:01.9428888Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
+2026-07-11T23:19:01.9966210Z Switched to a new branch 'main'
+2026-07-11T23:19:01.9969035Z branch 'main' set up to track 'origin/main'.
+2026-07-11T23:19:01.9982858Z ##[endgroup]
+2026-07-11T23:19:02.0033732Z [command]/usr/bin/git log -1 --format=%H
+2026-07-11T23:19:02.0063631Z a1d0c9914614de6dac0d2f2326bddfd655ec10da
+2026-07-11T23:19:02.0379630Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-11T23:19:02.0382695Z ##[group]Run actions/setup-python@v5
+2026-07-11T23:19:02.0383627Z with:
+2026-07-11T23:19:02.0384479Z   python-version: 3.11
+2026-07-11T23:19:02.0385369Z   check-latest: false
+2026-07-11T23:19:02.0389065Z   token: ***
+2026-07-11T23:19:02.0389937Z   update-environment: true
+2026-07-11T23:19:02.0390876Z   allow-prereleases: false
+2026-07-11T23:19:02.0391788Z   freethreaded: false
+2026-07-11T23:19:02.0392658Z ##[endgroup]
+2026-07-11T23:19:02.1735901Z ##[group]Installed versions
+2026-07-11T23:19:02.2708389Z (node:2276) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-11T23:19:02.2711092Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-11T23:19:02.2712374Z Successfully set up CPython (3.11.15)
+2026-07-11T23:19:02.2714039Z ##[endgroup]
+2026-07-11T23:19:02.3012883Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-11T23:19:02.3017472Z ##[group]Run aws-actions/configure-aws-credentials@v4
+2026-07-11T23:19:02.3018960Z with:
+2026-07-11T23:19:02.3020198Z   aws-access-key-id: ***
+2026-07-11T23:19:02.3021245Z   aws-secret-access-key: ***
+2026-07-11T23:19:02.3022176Z   aws-region: ***
+2026-07-11T23:19:02.3023055Z   audience: sts.amazonaws.com
+2026-07-11T23:19:02.3024016Z   output-env-credentials: true
+2026-07-11T23:19:02.3024933Z env:
+2026-07-11T23:19:02.3025879Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:02.3027292Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:02.3028607Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:02.3029791Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:02.3030959Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:02.3032080Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:02.3033087Z ##[endgroup]
+2026-07-11T23:19:02.5668025Z Proceeding with IAM user credentials
+2026-07-11T23:19:02.5801556Z ##[group]Run aws sts get-caller-identity
+2026-07-11T23:19:02.5802738Z [36;1maws sts get-caller-identity[0m
+2026-07-11T23:19:02.5990963Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:02.5991949Z env:
+2026-07-11T23:19:02.5992953Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:02.5994156Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:02.5995367Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:02.5996493Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:02.5997860Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:02.5998994Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:02.6000244Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:02.6001197Z   AWS_REGION: ***
+2026-07-11T23:19:02.6002102Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:02.6003160Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:02.6004168Z ##[endgroup]
+2026-07-11T23:19:09.7457615Z {
+2026-07-11T23:19:09.7458112Z     "UserId": "AIDA2WS447Q5R6R7TI4UA",
+2026-07-11T23:19:09.7458540Z     "Account": "735707987003",
+2026-07-11T23:19:09.7459093Z     "Arn": "arn:aws:iam::735707987003:user/github-parlay-platform-deploy"
+2026-07-11T23:19:09.7459927Z }
+2026-07-11T23:19:09.8416455Z ##[group]Run if [ -z "${ODDS_API_KEY_VALUE:-}" ]; then
+2026-07-11T23:19:09.8417237Z [36;1mif [ -z "${ODDS_API_KEY_VALUE:-}" ]; then[0m
+2026-07-11T23:19:09.8417842Z [36;1m  echo "::error::Missing ODDS_API_KEY GitHub secret. MLB production pulls must use The Odds API only."[0m
+2026-07-11T23:19:09.8418336Z [36;1m  exit 1[0m
+2026-07-11T23:19:09.8418569Z [36;1mfi[0m
+2026-07-11T23:19:09.8418825Z [36;1mecho "ODDS_API_KEY secret is present."[0m
+2026-07-11T23:19:09.8454454Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:09.8454739Z env:
+2026-07-11T23:19:09.8455032Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8455493Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:09.8455941Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8456347Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8456939Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8457498Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:09.8458126Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:09.8458419Z   AWS_REGION: ***
+2026-07-11T23:19:09.8458736Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:09.8459090Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:09.8459400Z   ODDS_API_KEY_VALUE: ***
+2026-07-11T23:19:09.8459657Z ##[endgroup]
+2026-07-11T23:19:09.8518420Z ODDS_API_KEY secret is present.
+2026-07-11T23:19:09.8545586Z ##[group]Run if [ -z "${INQSI_ADMIN_API_TOKEN_VALUE:-}" ]; then
+2026-07-11T23:19:09.8546042Z [36;1mif [ -z "${INQSI_ADMIN_API_TOKEN_VALUE:-}" ]; then[0m
+2026-07-11T23:19:09.8546592Z [36;1m  echo "::error::Missing INQSI_ADMIN_API_TOKEN GitHub secret. MLB ingest/lock write routes require it."[0m
+2026-07-11T23:19:09.8547423Z [36;1m  exit 1[0m
+2026-07-11T23:19:09.8547693Z [36;1mfi[0m
+2026-07-11T23:19:09.8547971Z [36;1mecho "INQSI_ADMIN_API_TOKEN secret is present."[0m
+2026-07-11T23:19:09.8580472Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:09.8580746Z env:
+2026-07-11T23:19:09.8581048Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8581505Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:09.8581943Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8582344Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8582777Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8583169Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:09.8583618Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:09.8583900Z   AWS_REGION: ***
+2026-07-11T23:19:09.8584160Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:09.8584502Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:09.8584789Z   INQSI_ADMIN_API_TOKEN_VALUE: ***
+2026-07-11T23:19:09.8585064Z ##[endgroup]
+2026-07-11T23:19:09.8643937Z INQSI_ADMIN_API_TOKEN secret is present.
+2026-07-11T23:19:09.8688382Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-11T23:19:09.8689623Z ##[group]Run aws-actions/setup-sam@v2
+2026-07-11T23:19:09.8689906Z with:
+2026-07-11T23:19:09.8690138Z   use-installer: false
+2026-07-11T23:19:09.8690368Z env:
+2026-07-11T23:19:09.8690642Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8691098Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:09.8691530Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8691929Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8692322Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:09.8692759Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:09.8693407Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:09.8693684Z   AWS_REGION: ***
+2026-07-11T23:19:09.8693941Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:09.8694301Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:09.8694555Z ##[endgroup]
+2026-07-11T23:19:09.9958528Z [command]/opt/hostedtoolcache/Python/3.11.15/x64/bin/python3 --version
+2026-07-11T23:19:10.1557222Z Python 3.11.15
+2026-07-11T23:19:10.1578858Z [command]/opt/hostedtoolcache/Python/3.11.15/x64/bin/python3 -m venv /home/runner/work/_temp/setup-sam-e4LWbT/.venv
+2026-07-11T23:19:15.3801360Z [command]/home/runner/work/_temp/setup-sam-e4LWbT/.venv/bin/python -m pip install --upgrade pip
+2026-07-11T23:19:16.1853189Z Requirement already satisfied: pip in /home/runner/work/_temp/setup-sam-e4LWbT/.venv/lib/python3.11/site-packages (24.0)
+2026-07-11T23:19:16.3167930Z Collecting pip
+2026-07-11T23:19:16.3931636Z   Downloading pip-26.1.2-py3-none-any.whl.metadata (4.6 kB)
+2026-07-11T23:19:16.4135267Z Downloading pip-26.1.2-py3-none-any.whl (1.8 MB)
+2026-07-11T23:19:16.5344625Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 15.6 MB/s eta 0:00:00
+2026-07-11T23:19:16.5772918Z Installing collected packages: pip
+2026-07-11T23:19:16.5773512Z   Attempting uninstall: pip
+2026-07-11T23:19:16.5794717Z     Found existing installation: pip 24.0
+2026-07-11T23:19:16.6149961Z     Uninstalling pip-24.0:
+2026-07-11T23:19:16.6210696Z       Successfully uninstalled pip-24.0
+2026-07-11T23:19:17.4421148Z Successfully installed pip-26.1.2
+2026-07-11T23:19:18.1207554Z [command]/home/runner/work/_temp/setup-sam-e4LWbT/.venv/bin/python -m pip install --upgrade setuptools wheel
+2026-07-11T23:19:18.5019849Z Requirement already satisfied: setuptools in /home/runner/work/_temp/setup-sam-e4LWbT/.venv/lib/python3.11/site-packages (79.0.1)
+2026-07-11T23:19:18.7142454Z Collecting setuptools
+2026-07-11T23:19:18.7912265Z   Downloading setuptools-83.0.0-py3-none-any.whl.metadata (6.6 kB)
+2026-07-11T23:19:18.8276613Z Collecting wheel
+2026-07-11T23:19:18.8422228Z   Downloading wheel-0.47.0-py3-none-any.whl.metadata (2.3 kB)
+2026-07-11T23:19:18.8713861Z Collecting packaging>=24.0 (from wheel)
+2026-07-11T23:19:18.8848076Z   Downloading packaging-26.2-py3-none-any.whl.metadata (3.5 kB)
+2026-07-11T23:19:18.9038517Z Downloading setuptools-83.0.0-py3-none-any.whl (1.0 MB)
+2026-07-11T23:19:18.9784593Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.0/1.0 MB 20.1 MB/s  0:00:00
+2026-07-11T23:19:18.9921156Z Downloading wheel-0.47.0-py3-none-any.whl (32 kB)
+2026-07-11T23:19:19.0076132Z Downloading packaging-26.2-py3-none-any.whl (100 kB)
+2026-07-11T23:19:19.0715900Z Installing collected packages: setuptools, packaging, wheel
+2026-07-11T23:19:19.0719862Z   Attempting uninstall: setuptools
+2026-07-11T23:19:19.0736143Z     Found existing installation: setuptools 79.0.1
+2026-07-11T23:19:19.1034472Z     Uninstalling setuptools-79.0.1:
+2026-07-11T23:19:19.1172779Z       Successfully uninstalled setuptools-79.0.1
+2026-07-11T23:19:19.7817564Z 
+2026-07-11T23:19:19.7835536Z Successfully installed packaging-26.2 setuptools-83.0.0 wheel-0.47.0
+2026-07-11T23:19:19.8458047Z [command]/home/runner/work/_temp/setup-sam-e4LWbT/.venv/bin/python -m pip install cython<3.0.0 pyyaml==5.4.1 --no-build-isolation
+2026-07-11T23:19:20.4778051Z Collecting cython<3.0.0
+2026-07-11T23:19:20.5698433Z   Downloading Cython-0.29.37-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl.metadata (3.1 kB)
+2026-07-11T23:19:20.6215424Z Collecting pyyaml==5.4.1
+2026-07-11T23:19:20.6402507Z   Downloading PyYAML-5.4.1.tar.gz (175 kB)
+2026-07-11T23:19:20.8056439Z   Preparing metadata (pyproject.toml): started
+2026-07-11T23:19:21.0586126Z   Preparing metadata (pyproject.toml): finished with status 'done'
+2026-07-11T23:19:21.0781744Z Downloading Cython-0.29.37-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl (1.9 MB)
+2026-07-11T23:19:21.2969495Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.9/1.9 MB 9.4 MB/s  0:00:00
+2026-07-11T23:19:21.3048596Z Building wheels for collected packages: pyyaml
+2026-07-11T23:19:21.3056010Z   Building wheel for pyyaml (pyproject.toml): started
+2026-07-11T23:19:21.5553331Z   Building wheel for pyyaml (pyproject.toml): finished with status 'done'
+2026-07-11T23:19:21.5558754Z   Created wheel for pyyaml: filename=pyyaml-5.4.1-cp311-cp311-linux_x86_64.whl size=45753 sha256=a2ba9a0161d3e85914779fb44632d142cead770c9cd53f716b9a411a59d34e48
+2026-07-11T23:19:21.5560473Z   Stored in directory: /home/runner/.cache/pip/wheels/2f/2f/af/a062a8f866dc44812a825da11175d50d7f255900f3b38c79b5
+2026-07-11T23:19:21.5577955Z Successfully built pyyaml
+2026-07-11T23:19:21.5672783Z Installing collected packages: pyyaml, cython
+2026-07-11T23:19:22.1616680Z 
+2026-07-11T23:19:22.1625690Z Successfully installed cython-0.29.37 pyyaml-5.4.1
+2026-07-11T23:19:22.2400571Z [command]/home/runner/work/_temp/setup-sam-e4LWbT/.venv/bin/python -m pip install --upgrade aws-sam-cli==1.*
+2026-07-11T23:19:22.6787827Z Collecting aws-sam-cli==1.*
+2026-07-11T23:19:22.7660156Z   Downloading aws_sam_cli-1.163.0-py3-none-any.whl.metadata (12 kB)
+2026-07-11T23:19:22.7955716Z Collecting chevron~=0.12 (from aws-sam-cli==1.*)
+2026-07-11T23:19:22.8150320Z   Downloading chevron-0.14.0-py3-none-any.whl.metadata (4.9 kB)
+2026-07-11T23:19:22.8438273Z Collecting click==8.1.8 (from aws-sam-cli==1.*)
+2026-07-11T23:19:22.8602077Z   Downloading click-8.1.8-py3-none-any.whl.metadata (2.3 kB)
+2026-07-11T23:19:22.8888840Z Collecting Flask<3.2 (from aws-sam-cli==1.*)
+2026-07-11T23:19:22.9051190Z   Downloading flask-3.1.3-py3-none-any.whl.metadata (3.2 kB)
+2026-07-11T23:19:23.1502261Z Collecting boto3==1.43.38 (from boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-11T23:19:23.1703294Z   Downloading boto3-1.43.38-py3-none-any.whl.metadata (6.6 kB)
+2026-07-11T23:19:23.1945406Z Collecting jmespath~=1.1.0 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.2120097Z   Downloading jmespath-1.1.0-py3-none-any.whl.metadata (7.6 kB)
+2026-07-11T23:19:23.3489339Z Collecting ruamel_yaml~=0.19.1 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.3653898Z   Downloading ruamel_yaml-0.19.1-py3-none-any.whl.metadata (16 kB)
+2026-07-11T23:19:23.4115518Z Collecting PyYAML~=6.0 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.4284514Z   Downloading pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+2026-07-11T23:19:23.4546192Z Collecting cookiecutter<2.8,>=2.6 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.4741744Z   Downloading cookiecutter-2.7.1-py3-none-any.whl.metadata (7.3 kB)
+2026-07-11T23:19:23.5070286Z Collecting aws-sam-translator==1.111.0 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.5253494Z   Downloading aws_sam_translator-1.111.0-py3-none-any.whl.metadata (8.6 kB)
+2026-07-11T23:19:23.5544700Z Collecting docker~=7.1.0 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.5716619Z   Downloading docker-7.1.0-py3-none-any.whl.metadata (3.8 kB)
+2026-07-11T23:19:23.5967207Z Collecting dateparser~=1.3 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.6148775Z   Downloading dateparser-1.4.1-py3-none-any.whl.metadata (22 kB)
+2026-07-11T23:19:23.6526451Z Collecting requests<2.35.0,>=2.32.5 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.6690592Z   Downloading requests-2.34.2-py3-none-any.whl.metadata (4.8 kB)
+2026-07-11T23:19:23.7226634Z Collecting aws_lambda_builders==1.65.0 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.7406085Z   Downloading aws_lambda_builders-1.65.0-py3-none-any.whl.metadata (3.3 kB)
+2026-07-11T23:19:23.7675759Z Collecting tomlkit==0.15.0 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.7836471Z   Downloading tomlkit-0.15.0-py3-none-any.whl.metadata (2.8 kB)
+2026-07-11T23:19:23.8376243Z Collecting watchdog==4.0.2 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.8558348Z   Downloading watchdog-4.0.2-py3-none-manylinux2014_x86_64.whl.metadata (38 kB)
+2026-07-11T23:19:23.9050764Z Collecting rich<15.1.0,>=14.3.3 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.9218693Z   Downloading rich-15.0.0-py3-none-any.whl.metadata (18 kB)
+2026-07-11T23:19:23.9500719Z Collecting pyopenssl<26.3,>=25.3 (from aws-sam-cli==1.*)
+2026-07-11T23:19:23.9674690Z   Downloading pyopenssl-26.2.0-py3-none-any.whl.metadata (19 kB)
+2026-07-11T23:19:24.0027058Z Collecting jsonschema<4.27 (from aws-sam-cli==1.*)
+2026-07-11T23:19:24.0192924Z   Downloading jsonschema-4.26.0-py3-none-any.whl.metadata (7.6 kB)
+2026-07-11T23:19:24.0477449Z Collecting typing_extensions<5,>=4.4.0 (from aws-sam-cli==1.*)
+2026-07-11T23:19:24.0650503Z   Downloading typing_extensions-4.16.0-py3-none-any.whl.metadata (3.3 kB)
+2026-07-11T23:19:24.4695933Z Collecting regex!=2021.10.8 (from aws-sam-cli==1.*)
+2026-07-11T23:19:24.4871468Z   Downloading regex-2026.7.10-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (40 kB)
+2026-07-11T23:19:24.5154190Z Collecting tzlocal==5.3.1 (from aws-sam-cli==1.*)
+2026-07-11T23:19:24.5328460Z   Downloading tzlocal-5.3.1-py3-none-any.whl.metadata (7.6 kB)
+2026-07-11T23:19:24.5929769Z Collecting cfn-lint<1.53,>=1.51.3 (from aws-sam-cli==1.*)
+2026-07-11T23:19:24.6112487Z   Downloading cfn_lint-1.52.1-py3-none-any.whl.metadata (24 kB)
+2026-07-11T23:19:24.7744510Z Collecting boto3-stubs>=1.41.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:24.7950853Z   Downloading boto3_stubs-1.43.46-py3-none-any.whl.metadata (156 kB)
+2026-07-11T23:19:25.2518789Z Collecting python-dotenv<1.3,>=1.0 (from aws-sam-cli==1.*)
+2026-07-11T23:19:25.2684566Z   Downloading python_dotenv-1.2.2-py3-none-any.whl.metadata (27 kB)
+2026-07-11T23:19:25.2744190Z Requirement already satisfied: setuptools in /home/runner/work/_temp/setup-sam-e4LWbT/.venv/lib/python3.11/site-packages (from aws_lambda_builders==1.65.0->aws-sam-cli==1.*) (83.0.0)
+2026-07-11T23:19:25.2747864Z Requirement already satisfied: wheel in /home/runner/work/_temp/setup-sam-e4LWbT/.venv/lib/python3.11/site-packages (from aws_lambda_builders==1.65.0->aws-sam-cli==1.*) (0.47.0)
+2026-07-11T23:19:25.4321443Z Collecting pydantic~=2.13.3 (from aws-sam-translator==1.111.0->aws-sam-cli==1.*)
+2026-07-11T23:19:25.4484288Z   Downloading pydantic-2.13.4-py3-none-any.whl.metadata (109 kB)
+2026-07-11T23:19:25.6706383Z Collecting botocore<1.44.0,>=1.43.38 (from boto3==1.43.38->boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-11T23:19:25.6869414Z   Downloading botocore-1.43.46-py3-none-any.whl.metadata (5.6 kB)
+2026-07-11T23:19:25.7141654Z Collecting s3transfer<0.20.0,>=0.19.0 (from boto3==1.43.38->boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-11T23:19:25.7306667Z   Downloading s3transfer-0.19.1-py3-none-any.whl.metadata (1.7 kB)
+2026-07-11T23:19:25.7766010Z Collecting python-dateutil<3.0.0,>=2.1 (from botocore<1.44.0,>=1.43.38->boto3==1.43.38->boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-11T23:19:25.7931643Z   Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+2026-07-11T23:19:25.8243670Z Collecting urllib3!=2.2.0,<3,>=1.25.4 (from botocore<1.44.0,>=1.43.38->boto3==1.43.38->boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-11T23:19:25.8409672Z   Downloading urllib3-2.7.0-py3-none-any.whl.metadata (6.9 kB)
+2026-07-11T23:19:26.2074937Z Collecting awscrt==0.32.2 (from botocore[crt]<2.0a0,>=1.21.0; extra == "crt"->boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-11T23:19:26.2247221Z   Downloading awscrt-0.32.2-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (10 kB)
+2026-07-11T23:19:26.2536488Z Collecting jsonpatch (from cfn-lint<1.53,>=1.51.3->aws-sam-cli==1.*)
+2026-07-11T23:19:26.2698440Z   Downloading jsonpatch-1.33-py2.py3-none-any.whl.metadata (3.0 kB)
+2026-07-11T23:19:26.3029438Z Collecting networkx<4,>=2.4 (from cfn-lint<1.53,>=1.51.3->aws-sam-cli==1.*)
+2026-07-11T23:19:26.3193355Z   Downloading networkx-3.6.1-py3-none-any.whl.metadata (6.8 kB)
+2026-07-11T23:19:26.3475261Z Collecting sympy>=1.14.0 (from cfn-lint<1.53,>=1.51.3->aws-sam-cli==1.*)
+2026-07-11T23:19:26.3635304Z   Downloading sympy-1.14.0-py3-none-any.whl.metadata (12 kB)
+2026-07-11T23:19:26.3894663Z Collecting binaryornot>=0.4.4 (from cookiecutter<2.8,>=2.6->aws-sam-cli==1.*)
+2026-07-11T23:19:26.4083585Z   Downloading binaryornot-0.6.0-py3-none-any.whl.metadata (2.9 kB)
+2026-07-11T23:19:26.4343428Z Collecting Jinja2<4.0.0,>=2.7 (from cookiecutter<2.8,>=2.6->aws-sam-cli==1.*)
+2026-07-11T23:19:26.4503510Z   Downloading jinja2-3.1.6-py3-none-any.whl.metadata (2.9 kB)
+2026-07-11T23:19:26.4754735Z Collecting python-slugify>=4.0.0 (from cookiecutter<2.8,>=2.6->aws-sam-cli==1.*)
+2026-07-11T23:19:26.4916128Z   Downloading python_slugify-8.0.4-py2.py3-none-any.whl.metadata (8.5 kB)
+2026-07-11T23:19:26.5209350Z Collecting arrow (from cookiecutter<2.8,>=2.6->aws-sam-cli==1.*)
+2026-07-11T23:19:26.5376530Z   Downloading arrow-1.4.0-py3-none-any.whl.metadata (7.7 kB)
+2026-07-11T23:19:26.5840615Z Collecting pytz>=2024.2 (from dateparser~=1.3->aws-sam-cli==1.*)
+2026-07-11T23:19:26.6007312Z   Downloading pytz-2026.2-py2.py3-none-any.whl.metadata (22 kB)
+2026-07-11T23:19:26.6330469Z Collecting blinker>=1.9.0 (from Flask<3.2->aws-sam-cli==1.*)
+2026-07-11T23:19:26.6499359Z   Downloading blinker-1.9.0-py3-none-any.whl.metadata (1.6 kB)
+2026-07-11T23:19:26.6745842Z Collecting itsdangerous>=2.2.0 (from Flask<3.2->aws-sam-cli==1.*)
+2026-07-11T23:19:26.6909042Z   Downloading itsdangerous-2.2.0-py3-none-any.whl.metadata (1.9 kB)
+2026-07-11T23:19:26.7472277Z Collecting markupsafe>=2.1.1 (from Flask<3.2->aws-sam-cli==1.*)
+2026-07-11T23:19:26.7644742Z   Downloading markupsafe-3.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.7 kB)
+2026-07-11T23:19:26.7934698Z Collecting werkzeug>=3.1.0 (from Flask<3.2->aws-sam-cli==1.*)
+2026-07-11T23:19:26.8099237Z   Downloading werkzeug-3.1.8-py3-none-any.whl.metadata (4.0 kB)
+2026-07-11T23:19:26.8383906Z Collecting attrs>=22.2.0 (from jsonschema<4.27->aws-sam-cli==1.*)
+2026-07-11T23:19:26.8566150Z   Downloading attrs-26.1.0-py3-none-any.whl.metadata (8.8 kB)
+2026-07-11T23:19:26.8841970Z Collecting jsonschema-specifications>=2023.03.6 (from jsonschema<4.27->aws-sam-cli==1.*)
+2026-07-11T23:19:26.9008057Z   Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl.metadata (2.9 kB)
+2026-07-11T23:19:26.9314813Z Collecting referencing>=0.28.4 (from jsonschema<4.27->aws-sam-cli==1.*)
+2026-07-11T23:19:26.9485741Z   Downloading referencing-0.37.0-py3-none-any.whl.metadata (2.8 kB)
+2026-07-11T23:19:27.2450551Z Collecting rpds-py>=0.25.0 (from jsonschema<4.27->aws-sam-cli==1.*)
+2026-07-11T23:19:27.2614920Z   Downloading rpds_py-2026.6.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (4.1 kB)
+2026-07-11T23:19:27.2851442Z Collecting annotated-types>=0.6.0 (from pydantic~=2.13.3->aws-sam-translator==1.111.0->aws-sam-cli==1.*)
+2026-07-11T23:19:27.3015298Z   Downloading annotated_types-0.7.0-py3-none-any.whl.metadata (15 kB)
+2026-07-11T23:19:27.9478964Z Collecting pydantic-core==2.46.4 (from pydantic~=2.13.3->aws-sam-translator==1.111.0->aws-sam-cli==1.*)
+2026-07-11T23:19:27.9646414Z   Downloading pydantic_core-2.46.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (6.6 kB)
+2026-07-11T23:19:27.9884059Z Collecting typing-inspection>=0.4.2 (from pydantic~=2.13.3->aws-sam-translator==1.111.0->aws-sam-cli==1.*)
+2026-07-11T23:19:28.0059255Z   Downloading typing_inspection-0.4.2-py3-none-any.whl.metadata (2.6 kB)
+2026-07-11T23:19:28.2319742Z Collecting cryptography<49,>=46.0.0 (from pyopenssl<26.3,>=25.3->aws-sam-cli==1.*)
+2026-07-11T23:19:28.2484105Z   Downloading cryptography-48.0.1-cp311-abi3-manylinux_2_34_x86_64.whl.metadata (4.3 kB)
+2026-07-11T23:19:28.3474259Z Collecting cffi>=2.0.0 (from cryptography<49,>=46.0.0->pyopenssl<26.3,>=25.3->aws-sam-cli==1.*)
+2026-07-11T23:19:28.3645264Z   Downloading cffi-2.1.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (2.5 kB)
+2026-07-11T23:19:28.3900092Z Collecting six>=1.5 (from python-dateutil<3.0.0,>=2.1->botocore<1.44.0,>=1.43.38->boto3==1.43.38->boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-11T23:19:28.4067515Z   Downloading six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+2026-07-11T23:19:28.5068039Z Collecting charset_normalizer<4,>=2 (from requests<2.35.0,>=2.32.5->aws-sam-cli==1.*)
+2026-07-11T23:19:28.5233461Z   Downloading charset_normalizer-3.4.9-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (41 kB)
+2026-07-11T23:19:28.5509236Z Collecting idna<4,>=2.5 (from requests<2.35.0,>=2.32.5->aws-sam-cli==1.*)
+2026-07-11T23:19:28.5676406Z   Downloading idna-3.18-py3-none-any.whl.metadata (6.1 kB)
+2026-07-11T23:19:28.5956720Z Collecting certifi>=2023.5.7 (from requests<2.35.0,>=2.32.5->aws-sam-cli==1.*)
+2026-07-11T23:19:28.6121025Z   Downloading certifi-2026.6.17-py3-none-any.whl.metadata (2.5 kB)
+2026-07-11T23:19:28.6398180Z Collecting markdown-it-py>=2.2.0 (from rich<15.1.0,>=14.3.3->aws-sam-cli==1.*)
+2026-07-11T23:19:28.6559022Z   Downloading markdown_it_py-4.2.0-py3-none-any.whl.metadata (7.4 kB)
+2026-07-11T23:19:28.6851442Z Collecting pygments<3.0.0,>=2.13.0 (from rich<15.1.0,>=14.3.3->aws-sam-cli==1.*)
+2026-07-11T23:19:28.7012009Z   Downloading pygments-2.20.0-py3-none-any.whl.metadata (2.5 kB)
+2026-07-11T23:19:28.8314573Z Collecting botocore-stubs (from boto3-stubs>=1.41.0->boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:28.8567602Z   Downloading botocore_stubs-1.43.14-py3-none-any.whl.metadata (3.4 kB)
+2026-07-11T23:19:28.8826940Z Collecting types-s3transfer (from boto3-stubs>=1.41.0->boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:28.8994929Z   Downloading types_s3transfer-0.16.0-py3-none-any.whl.metadata (3.7 kB)
+2026-07-11T23:19:29.0158713Z Collecting mypy-boto3-apigateway<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:29.0334310Z   Downloading mypy_boto3_apigateway-1.43.0-py3-none-any.whl.metadata (16 kB)
+2026-07-11T23:19:29.1905983Z Collecting mypy-boto3-cloudformation<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:29.2087664Z   Downloading mypy_boto3_cloudformation-1.43.38-py3-none-any.whl.metadata (22 kB)
+2026-07-11T23:19:29.2768998Z Collecting mypy-boto3-ecr<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:29.2946926Z   Downloading mypy_boto3_ecr-1.43.0-py3-none-any.whl.metadata (16 kB)
+2026-07-11T23:19:29.3619336Z Collecting mypy-boto3-iam<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:29.3803019Z   Downloading mypy_boto3_iam-1.43.29-py3-none-any.whl.metadata (24 kB)
+2026-07-11T23:19:29.4442116Z Collecting mypy-boto3-kinesis<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:29.4731344Z   Downloading mypy_boto3_kinesis-1.43.0-py3-none-any.whl.metadata (15 kB)
+2026-07-11T23:19:29.5392830Z Collecting mypy-boto3-lambda<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:29.5592946Z   Downloading mypy_boto3_lambda-1.43.46-py3-none-any.whl.metadata (18 kB)
+2026-07-11T23:19:29.6343534Z Collecting mypy-boto3-s3<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:29.6532831Z   Downloading mypy_boto3_s3-1.43.31-py3-none-any.whl.metadata (19 kB)
+2026-07-11T23:19:29.7130568Z Collecting mypy-boto3-schemas<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:29.7311111Z   Downloading mypy_boto3_schemas-1.43.0-py3-none-any.whl.metadata (15 kB)
+2026-07-11T23:19:29.7948488Z Collecting mypy-boto3-secretsmanager<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:29.8122452Z   Downloading mypy_boto3_secretsmanager-1.43.0-py3-none-any.whl.metadata (14 kB)
+2026-07-11T23:19:29.9750545Z Collecting mypy-boto3-signer<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:29.9929893Z   Downloading mypy_boto3_signer-1.43.0-py3-none-any.whl.metadata (15 kB)
+2026-07-11T23:19:30.0577456Z Collecting mypy-boto3-sqs<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:30.0802111Z   Downloading mypy_boto3_sqs-1.43.0-py3-none-any.whl.metadata (16 kB)
+2026-07-11T23:19:30.1468922Z Collecting mypy-boto3-stepfunctions<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:30.1648378Z   Downloading mypy_boto3_stepfunctions-1.43.7-py3-none-any.whl.metadata (15 kB)
+2026-07-11T23:19:30.2274488Z Collecting mypy-boto3-sts<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:30.2450649Z   Downloading mypy_boto3_sts-1.43.0-py3-none-any.whl.metadata (13 kB)
+2026-07-11T23:19:30.3096019Z Collecting mypy-boto3-xray<1.44.0,>=1.43.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:30.3274709Z   Downloading mypy_boto3_xray-1.43.0-py3-none-any.whl.metadata (15 kB)
+2026-07-11T23:19:30.3648722Z Collecting pycparser (from cffi>=2.0.0->cryptography<49,>=46.0.0->pyopenssl<26.3,>=25.3->aws-sam-cli==1.*)
+2026-07-11T23:19:30.3814637Z   Downloading pycparser-3.0-py3-none-any.whl.metadata (8.2 kB)
+2026-07-11T23:19:30.4082453Z Collecting mdurl~=0.1 (from markdown-it-py>=2.2.0->rich<15.1.0,>=14.3.3->aws-sam-cli==1.*)
+2026-07-11T23:19:30.4244265Z   Downloading mdurl-0.1.2-py3-none-any.whl.metadata (1.6 kB)
+2026-07-11T23:19:30.4512915Z Collecting text-unidecode>=1.3 (from python-slugify>=4.0.0->cookiecutter<2.8,>=2.6->aws-sam-cli==1.*)
+2026-07-11T23:19:30.4682546Z   Downloading text_unidecode-1.3-py2.py3-none-any.whl.metadata (2.4 kB)
+2026-07-11T23:19:30.4986261Z Collecting mpmath<1.4,>=1.1.0 (from sympy>=1.14.0->cfn-lint<1.53,>=1.51.3->aws-sam-cli==1.*)
+2026-07-11T23:19:30.5154341Z   Downloading mpmath-1.3.0-py3-none-any.whl.metadata (8.6 kB)
+2026-07-11T23:19:30.5466538Z Collecting tzdata (from arrow->cookiecutter<2.8,>=2.6->aws-sam-cli==1.*)
+2026-07-11T23:19:30.5633289Z   Downloading tzdata-2026.3-py2.py3-none-any.whl.metadata (1.4 kB)
+2026-07-11T23:19:30.6177120Z Collecting types-awscrt (from botocore-stubs->boto3-stubs>=1.41.0->boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-11T23:19:30.6359465Z   Downloading types_awscrt-0.34.1-py3-none-any.whl.metadata (4.9 kB)
+2026-07-11T23:19:30.6623083Z Collecting jsonpointer>=1.9 (from jsonpatch->cfn-lint<1.53,>=1.51.3->aws-sam-cli==1.*)
+2026-07-11T23:19:30.6789120Z   Downloading jsonpointer-3.1.1-py3-none-any.whl.metadata (2.4 kB)
+2026-07-11T23:19:30.6898955Z Requirement already satisfied: packaging>=24.0 in /home/runner/work/_temp/setup-sam-e4LWbT/.venv/lib/python3.11/site-packages (from wheel->aws_lambda_builders==1.65.0->aws-sam-cli==1.*) (26.2)
+2026-07-11T23:19:30.7120566Z Downloading aws_sam_cli-1.163.0-py3-none-any.whl (8.1 MB)
+2026-07-11T23:19:30.8397569Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 8.1/8.1 MB 71.7 MB/s  0:00:00
+2026-07-11T23:19:30.8593849Z Downloading aws_lambda_builders-1.65.0-py3-none-any.whl (149 kB)
+2026-07-11T23:19:30.8863671Z Downloading aws_sam_translator-1.111.0-py3-none-any.whl (440 kB)
+2026-07-11T23:19:30.9130041Z Downloading boto3-1.43.38-py3-none-any.whl (140 kB)
+2026-07-11T23:19:30.9321521Z Downloading click-8.1.8-py3-none-any.whl (98 kB)
+2026-07-11T23:19:30.9504445Z Downloading tomlkit-0.15.0-py3-none-any.whl (41 kB)
+2026-07-11T23:19:30.9685812Z Downloading tzlocal-5.3.1-py3-none-any.whl (18 kB)
+2026-07-11T23:19:30.9932204Z Downloading watchdog-4.0.2-py3-none-manylinux2014_x86_64.whl (82 kB)
+2026-07-11T23:19:31.0118895Z Downloading botocore-1.43.46-py3-none-any.whl (15.4 MB)
+2026-07-11T23:19:31.0802496Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 15.4/15.4 MB 229.8 MB/s  0:00:00
+2026-07-11T23:19:31.0970373Z Downloading awscrt-0.32.2-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (4.2 MB)
+2026-07-11T23:19:31.1190415Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.2/4.2 MB 211.4 MB/s  0:00:00
+2026-07-11T23:19:31.1350792Z Downloading cfn_lint-1.52.1-py3-none-any.whl (5.0 MB)
+2026-07-11T23:19:31.1544977Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 5.0/5.0 MB 279.9 MB/s  0:00:00
+2026-07-11T23:19:31.1724634Z Downloading chevron-0.14.0-py3-none-any.whl (11 kB)
+2026-07-11T23:19:31.1917406Z Downloading cookiecutter-2.7.1-py3-none-any.whl (41 kB)
+2026-07-11T23:19:31.2098045Z Downloading dateparser-1.4.1-py3-none-any.whl (300 kB)
+2026-07-11T23:19:31.2298767Z Downloading docker-7.1.0-py3-none-any.whl (147 kB)
+2026-07-11T23:19:31.2484867Z Downloading flask-3.1.3-py3-none-any.whl (103 kB)
+2026-07-11T23:19:31.2691490Z Downloading jinja2-3.1.6-py3-none-any.whl (134 kB)
+2026-07-11T23:19:31.2863132Z Downloading jmespath-1.1.0-py3-none-any.whl (20 kB)
+2026-07-11T23:19:31.3054890Z Downloading jsonschema-4.26.0-py3-none-any.whl (90 kB)
+2026-07-11T23:19:31.3248194Z Downloading networkx-3.6.1-py3-none-any.whl (2.1 MB)
+2026-07-11T23:19:31.3342870Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 261.3 MB/s  0:00:00
+2026-07-11T23:19:31.3529953Z Downloading pydantic-2.13.4-py3-none-any.whl (472 kB)
+2026-07-11T23:19:31.3750836Z Downloading pydantic_core-2.46.4-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (2.1 MB)
+2026-07-11T23:19:31.3943024Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 2.1/2.1 MB 158.0 MB/s  0:00:00
+2026-07-11T23:19:31.4112530Z Downloading pyopenssl-26.2.0-py3-none-any.whl (55 kB)
+2026-07-11T23:19:31.4305232Z Downloading cryptography-48.0.1-cp311-abi3-manylinux_2_34_x86_64.whl (4.7 MB)
+2026-07-11T23:19:31.4476309Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 4.7/4.7 MB 304.3 MB/s  0:00:00
+2026-07-11T23:19:31.4640911Z Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+2026-07-11T23:19:31.4837785Z Downloading python_dotenv-1.2.2-py3-none-any.whl (22 kB)
+2026-07-11T23:19:31.5024078Z Downloading pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (806 kB)
+2026-07-11T23:19:31.5082866Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 806.6/806.6 kB 162.1 MB/s  0:00:00
+2026-07-11T23:19:31.5246064Z Downloading requests-2.34.2-py3-none-any.whl (73 kB)
+2026-07-11T23:19:31.5433503Z Downloading charset_normalizer-3.4.9-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (221 kB)
+2026-07-11T23:19:31.5620163Z Downloading idna-3.18-py3-none-any.whl (65 kB)
+2026-07-11T23:19:31.5802614Z Downloading rich-15.0.0-py3-none-any.whl (310 kB)
+2026-07-11T23:19:31.5999834Z Downloading pygments-2.20.0-py3-none-any.whl (1.2 MB)
+2026-07-11T23:19:31.6067963Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.2/1.2 MB 215.9 MB/s  0:00:00
+2026-07-11T23:19:31.6232184Z Downloading ruamel_yaml-0.19.1-py3-none-any.whl (118 kB)
+2026-07-11T23:19:31.6424228Z Downloading s3transfer-0.19.1-py3-none-any.whl (90 kB)
+2026-07-11T23:19:31.6637695Z Downloading typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+2026-07-11T23:19:31.6824086Z Downloading urllib3-2.7.0-py3-none-any.whl (131 kB)
+2026-07-11T23:19:31.7009465Z Downloading annotated_types-0.7.0-py3-none-any.whl (13 kB)
+2026-07-11T23:19:31.7200333Z Downloading attrs-26.1.0-py3-none-any.whl (67 kB)
+2026-07-11T23:19:31.7386602Z Downloading binaryornot-0.6.0-py3-none-any.whl (14 kB)
+2026-07-11T23:19:31.7571085Z Downloading blinker-1.9.0-py3-none-any.whl (8.5 kB)
+2026-07-11T23:19:31.7765574Z Downloading boto3_stubs-1.43.46-py3-none-any.whl (70 kB)
+2026-07-11T23:19:31.7962967Z Downloading mypy_boto3_apigateway-1.43.0-py3-none-any.whl (51 kB)
+2026-07-11T23:19:31.8165501Z Downloading mypy_boto3_cloudformation-1.43.38-py3-none-any.whl (72 kB)
+2026-07-11T23:19:31.8368507Z Downloading mypy_boto3_ecr-1.43.0-py3-none-any.whl (43 kB)
+2026-07-11T23:19:31.8599361Z Downloading mypy_boto3_iam-1.43.29-py3-none-any.whl (95 kB)
+2026-07-11T23:19:31.8798294Z Downloading mypy_boto3_kinesis-1.43.0-py3-none-any.whl (33 kB)
+2026-07-11T23:19:31.9006591Z Downloading mypy_boto3_lambda-1.43.46-py3-none-any.whl (61 kB)
+2026-07-11T23:19:31.9188039Z Downloading mypy_boto3_s3-1.43.31-py3-none-any.whl (86 kB)
+2026-07-11T23:19:31.9403611Z Downloading mypy_boto3_schemas-1.43.0-py3-none-any.whl (28 kB)
+2026-07-11T23:19:31.9622891Z Downloading mypy_boto3_secretsmanager-1.43.0-py3-none-any.whl (27 kB)
+2026-07-11T23:19:31.9819248Z Downloading mypy_boto3_signer-1.43.0-py3-none-any.whl (28 kB)
+2026-07-11T23:19:32.0012216Z Downloading mypy_boto3_sqs-1.43.0-py3-none-any.whl (33 kB)
+2026-07-11T23:19:32.0204914Z Downloading mypy_boto3_stepfunctions-1.43.7-py3-none-any.whl (36 kB)
+2026-07-11T23:19:32.0403324Z Downloading mypy_boto3_sts-1.43.0-py3-none-any.whl (20 kB)
+2026-07-11T23:19:32.0623660Z Downloading mypy_boto3_xray-1.43.0-py3-none-any.whl (36 kB)
+2026-07-11T23:19:32.0811144Z Downloading certifi-2026.6.17-py3-none-any.whl (133 kB)
+2026-07-11T23:19:32.0996009Z Downloading cffi-2.1.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (217 kB)
+2026-07-11T23:19:32.1182774Z Downloading itsdangerous-2.2.0-py3-none-any.whl (16 kB)
+2026-07-11T23:19:32.1361687Z Downloading jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+2026-07-11T23:19:32.1540973Z Downloading markdown_it_py-4.2.0-py3-none-any.whl (91 kB)
+2026-07-11T23:19:32.1726572Z Downloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+2026-07-11T23:19:32.1906145Z Downloading markupsafe-3.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+2026-07-11T23:19:32.2086165Z Downloading python_slugify-8.0.4-py2.py3-none-any.whl (10 kB)
+2026-07-11T23:19:32.2266375Z Downloading pytz-2026.2-py2.py3-none-any.whl (510 kB)
+2026-07-11T23:19:32.2459876Z Downloading referencing-0.37.0-py3-none-any.whl (26 kB)
+2026-07-11T23:19:32.2652078Z Downloading regex-2026.7.10-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (799 kB)
+2026-07-11T23:19:32.2723647Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 799.9/799.9 kB 109.5 MB/s  0:00:00
+2026-07-11T23:19:32.2889232Z Downloading rpds_py-2026.6.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (371 kB)
+2026-07-11T23:19:32.3086399Z Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
+2026-07-11T23:19:32.3268707Z Downloading sympy-1.14.0-py3-none-any.whl (6.3 MB)
+2026-07-11T23:19:32.3511831Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 6.3/6.3 MB 275.2 MB/s  0:00:00
+2026-07-11T23:19:32.3685313Z Downloading mpmath-1.3.0-py3-none-any.whl (536 kB)
+2026-07-11T23:19:32.3732609Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 536.2/536.2 kB 106.8 MB/s  0:00:00
+2026-07-11T23:19:32.3902304Z Downloading text_unidecode-1.3-py2.py3-none-any.whl (78 kB)
+2026-07-11T23:19:32.4086452Z Downloading typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+2026-07-11T23:19:32.4268293Z Downloading werkzeug-3.1.8-py3-none-any.whl (226 kB)
+2026-07-11T23:19:32.4461246Z Downloading arrow-1.4.0-py3-none-any.whl (68 kB)
+2026-07-11T23:19:32.4664222Z Downloading botocore_stubs-1.43.14-py3-none-any.whl (67 kB)
+2026-07-11T23:19:32.4846298Z Downloading jsonpatch-1.33-py2.py3-none-any.whl (12 kB)
+2026-07-11T23:19:32.5024443Z Downloading jsonpointer-3.1.1-py3-none-any.whl (7.7 kB)
+2026-07-11T23:19:32.5207547Z Downloading pycparser-3.0-py3-none-any.whl (48 kB)
+2026-07-11T23:19:32.5396205Z Downloading types_awscrt-0.34.1-py3-none-any.whl (45 kB)
+2026-07-11T23:19:32.5581733Z Downloading types_s3transfer-0.16.0-py3-none-any.whl (19 kB)
+2026-07-11T23:19:32.5766581Z Downloading tzdata-2026.3-py2.py3-none-any.whl (348 kB)
+2026-07-11T23:19:32.8542439Z Installing collected packages: text-unidecode, pytz, mpmath, chevron, watchdog, urllib3, tzlocal, tzdata, typing_extensions, types-s3transfer, types-awscrt, tomlkit, sympy, six, ruamel_yaml, rpds-py, regex, PyYAML, python-slugify, python-dotenv, pygments, pycparser, networkx, mdurl, markupsafe, jsonpointer, jmespath, itsdangerous, idna, click, charset_normalizer, certifi, blinker, binaryornot, awscrt, attrs, annotated-types, werkzeug, typing-inspection, requests, referencing, python-dateutil, pydantic-core, mypy-boto3-xray, mypy-boto3-sts, mypy-boto3-stepfunctions, mypy-boto3-sqs, mypy-boto3-signer, mypy-boto3-secretsmanager, mypy-boto3-schemas, mypy-boto3-s3, mypy-boto3-lambda, mypy-boto3-kinesis, mypy-boto3-iam, mypy-boto3-ecr, mypy-boto3-cloudformation, mypy-boto3-apigateway, markdown-it-py, jsonpatch, Jinja2, cffi, botocore-stubs, aws_lambda_builders, rich, pydantic, jsonschema-specifications, Flask, docker, dateparser, cryptography, botocore, boto3-stubs, arrow, s3transfer, pyopenssl, jsonschema, cookiecutter, boto3, aws-sam-translator, cfn-lint, aws-sam-cli
+2026-07-11T23:19:39.0234955Z   Attempting uninstall: PyYAML
+2026-07-11T23:19:39.0251032Z     Found existing installation: PyYAML 5.4.1
+2026-07-11T23:19:39.0280173Z     Uninstalling PyYAML-5.4.1:
+2026-07-11T23:19:39.0290676Z       Successfully uninstalled PyYAML-5.4.1
+2026-07-11T23:19:45.4261314Z 
+2026-07-11T23:19:45.4297580Z Successfully installed Flask-3.1.3 Jinja2-3.1.6 PyYAML-6.0.3 annotated-types-0.7.0 arrow-1.4.0 attrs-26.1.0 aws-sam-cli-1.163.0 aws-sam-translator-1.111.0 aws_lambda_builders-1.65.0 awscrt-0.32.2 binaryornot-0.6.0 blinker-1.9.0 boto3-1.43.38 boto3-stubs-1.43.46 botocore-1.43.46 botocore-stubs-1.43.14 certifi-2026.6.17 cffi-2.1.0 cfn-lint-1.52.1 charset_normalizer-3.4.9 chevron-0.14.0 click-8.1.8 cookiecutter-2.7.1 cryptography-48.0.1 dateparser-1.4.1 docker-7.1.0 idna-3.18 itsdangerous-2.2.0 jmespath-1.1.0 jsonpatch-1.33 jsonpointer-3.1.1 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 markdown-it-py-4.2.0 markupsafe-3.0.3 mdurl-0.1.2 mpmath-1.3.0 mypy-boto3-apigateway-1.43.0 mypy-boto3-cloudformation-1.43.38 mypy-boto3-ecr-1.43.0 mypy-boto3-iam-1.43.29 mypy-boto3-kinesis-1.43.0 mypy-boto3-lambda-1.43.46 mypy-boto3-s3-1.43.31 mypy-boto3-schemas-1.43.0 mypy-boto3-secretsmanager-1.43.0 mypy-boto3-signer-1.43.0 mypy-boto3-sqs-1.43.0 mypy-boto3-stepfunctions-1.43.7 mypy-boto3-sts-1.43.0 mypy-boto3-xray-1.43.0 networkx-3.6.1 pycparser-3.0 pydantic-2.13.4 pydantic-core-2.46.4 pygments-2.20.0 pyopenssl-26.2.0 python-dateutil-2.9.0.post0 python-dotenv-1.2.2 python-slugify-8.0.4 pytz-2026.2 referencing-0.37.0 regex-2026.7.10 requests-2.34.2 rich-15.0.0 rpds-py-2026.6.3 ruamel_yaml-0.19.1 s3transfer-0.19.1 six-1.17.0 sympy-1.14.0 text-unidecode-1.3 tomlkit-0.15.0 types-awscrt-0.34.1 types-s3transfer-0.16.0 typing-inspection-0.4.2 typing_extensions-4.16.0 tzdata-2026.3 tzlocal-5.3.1 urllib3-2.7.0 watchdog-4.0.2 werkzeug-3.1.8
+2026-07-11T23:19:46.1356138Z ##[group]Run python scripts/patch_template_mlb_v1.py
+2026-07-11T23:19:46.1356569Z [36;1mpython scripts/patch_template_mlb_v1.py[0m
+2026-07-11T23:19:46.1392685Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:46.1392953Z env:
+2026-07-11T23:19:46.1393241Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.1393732Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:46.1394167Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.1394568Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.1394970Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.1395357Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:46.1395962Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:46.1396230Z   AWS_REGION: ***
+2026-07-11T23:19:46.1396492Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:46.1397033Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:46.1397333Z ##[endgroup]
+2026-07-11T23:19:46.1692286Z Patched template.yaml: MLB uses stable proxy routes, quarter-hour MLB HOT schedule, and daily lock.
+2026-07-11T23:19:46.1754796Z ##[group]Run python scripts/patch_template_mlb_security.py
+2026-07-11T23:19:46.1755246Z [36;1mpython scripts/patch_template_mlb_security.py[0m
+2026-07-11T23:19:46.1790231Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:46.1790510Z env:
+2026-07-11T23:19:46.1790801Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.1791259Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:46.1791707Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.1792096Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.1792489Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.1792875Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:46.1793337Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:46.1793614Z   AWS_REGION: ***
+2026-07-11T23:19:46.1793867Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:46.1794374Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:46.1794632Z ##[endgroup]
+2026-07-11T23:19:46.2082559Z Patched template.yaml to protect MLB writes, route MLB reads through the live v3 ApiFunction, and schedule AWS production verification checks.
+2026-07-11T23:19:46.2147672Z ##[group]Run python scripts/patch_template_mlb_results_routes.py
+2026-07-11T23:19:46.2148171Z [36;1mpython scripts/patch_template_mlb_results_routes.py[0m
+2026-07-11T23:19:46.2182979Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:46.2183272Z env:
+2026-07-11T23:19:46.2183565Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.2184017Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:46.2184456Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.2184843Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.2185229Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.2185618Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:46.2186084Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:46.2186350Z   AWS_REGION: ***
+2026-07-11T23:19:46.2186604Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:46.2187115Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:46.2187367Z ##[endgroup]
+2026-07-11T23:19:46.2474005Z Patched MLB results routes and routed final deploy smoke check through main API.
+2026-07-11T23:19:46.2542931Z ##[group]Run python scripts/verify_mlb_schedule_invariants.py
+2026-07-11T23:19:46.2543566Z [36;1mpython scripts/verify_mlb_schedule_invariants.py[0m
+2026-07-11T23:19:46.2578994Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:46.2579269Z env:
+2026-07-11T23:19:46.2579559Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.2580010Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:46.2580455Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.2580845Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.2581229Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:46.2581620Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:46.2582047Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:46.2582324Z   AWS_REGION: ***
+2026-07-11T23:19:46.2582575Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:46.2582978Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:46.2583230Z ##[endgroup]
+2026-07-11T23:19:49.5540105Z MLB complete-slate coverage, AWS daily lock, no-backfill policy, and doubleheader-safe audit verified
+2026-07-11T23:19:50.1785041Z MLB ML optimization v3 verified: immutable pregame features, final-label join, dual models, untouched priced ROI, independent gates, and shadow-only runtime
+2026-07-11T23:19:50.2134757Z MLB ML promotion safety verified: automatic promotion is impossible; reviewed DynamoDB promotion is required
+2026-07-11T23:19:50.2496227Z MLB frozen feature integrity verified: fingerprint, game identity, and lock timestamp are enforced
+2026-07-11T23:19:50.2939909Z {
+2026-07-11T23:19:50.2940332Z   "ok": true,
+2026-07-11T23:19:50.2940747Z   "proofType": "MLB_ML_INSTALLATION_1_5",
+2026-07-11T23:19:50.2941251Z   "version": "MLB-ML-INSTALLATION-1-5-v1",
+2026-07-11T23:19:50.2941678Z   "checks": {
+2026-07-11T23:19:50.2942006Z     "1_cleanPostFixCohort": {
+2026-07-11T23:19:50.2942393Z       "installed": true,
+2026-07-11T23:19:50.2943006Z       "exactVectorVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
+2026-07-11T23:19:50.2943697Z       "fingerprintVerified": true,
+2026-07-11T23:19:50.2944110Z       "outcomeLabelsAbsentAtLock": true
+2026-07-11T23:19:50.2944499Z     },
+2026-07-11T23:19:50.2944859Z     "2_separateOutcomeAndReliabilityModels": {
+2026-07-11T23:19:50.2945307Z       "installed": true,
+2026-07-11T23:19:50.2945840Z       "outcomeModelVersion": "MLB-OUTCOME-MODEL-v1-home-win-probability",
+2026-07-11T23:19:50.2946987Z       "reliabilityModelVersion": "MLB-RELIABILITY-MODEL-v1.2-selected-pick-correctness-priced",
+2026-07-11T23:19:50.2947863Z       "probabilitiesInterchangeable": false
+2026-07-11T23:19:50.2948334Z     },
+2026-07-11T23:19:50.2948675Z     "3_chronologicalValidation": {
+2026-07-11T23:19:50.2949105Z       "installed": true,
+2026-07-11T23:19:50.2949491Z       "trainMinimum": 80,
+2026-07-11T23:19:50.2949881Z       "validationMinimum": 30,
+2026-07-11T23:19:50.2950308Z       "untouchedTestMinimum": 30,
+2026-07-11T23:19:50.2950775Z       "thresholdSelection": "validation_only"
+2026-07-11T23:19:50.2951235Z     },
+2026-07-11T23:19:50.2951560Z     "4_baseballFundamentals": {
+2026-07-11T23:19:50.2951963Z       "installed": true,
+2026-07-11T23:19:50.2952573Z       "snapshotVersion": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
+2026-07-11T23:19:50.2953293Z       "connectedGroups": [
+2026-07-11T23:19:50.2953690Z         "confirmed_probable_pitchers"
+2026-07-11T23:19:50.2954086Z       ],
+2026-07-11T23:19:50.2954361Z       "missingGroups": [
+2026-07-11T23:19:50.2954689Z         "fip_xfip",
+2026-07-11T23:19:50.2954995Z         "wrc_plus",
+2026-07-11T23:19:50.2955343Z         "starter_handedness_splits",
+2026-07-11T23:19:50.2955778Z         "bullpen_fatigue",
+2026-07-11T23:19:50.2956152Z         "confirmed_lineups",
+2026-07-11T23:19:50.2956528Z         "weather_wind_roof",
+2026-07-11T23:19:50.2957106Z         "ballpark_factors",
+2026-07-11T23:19:50.2957502Z         "injuries_late_scratches_news",
+2026-07-11T23:19:50.2958357Z         "public_betting_handle",
+2026-07-11T23:19:50.2958965Z         "closing_line_value"
+2026-07-11T23:19:50.2959342Z       ],
+2026-07-11T23:19:50.2959699Z       "missingInputsFabricated": false,
+2026-07-11T23:19:50.2960383Z       "modelScopeUntilFeedsConnected": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS"
+2026-07-11T23:19:50.2961037Z     },
+2026-07-11T23:19:50.2961403Z     "5_acceptanceAndPromotionGates": {
+2026-07-11T23:19:50.2961861Z       "installed": true,
+2026-07-11T23:19:50.2962307Z       "directionAndPlayabilityIndependent": true,
+2026-07-11T23:19:50.2962833Z       "automaticPromotion": false,
+2026-07-11T23:19:50.2963372Z       "manualReviewedDynamoDbPromotionRequired": true,
+2026-07-11T23:19:50.2963902Z       "minimumCleanOfficial": 500,
+2026-07-11T23:19:50.2964340Z       "minimumUntouchedTest": 100
+2026-07-11T23:19:50.2964697Z     }
+2026-07-11T23:19:50.2964949Z   },
+2026-07-11T23:19:50.2965260Z   "cleanSettlementJoinVerified": true,
+2026-07-11T23:19:50.2966397Z   "policy": "All five optimization components are installed. Production ML remains shadow-only until clean evidence and reviewed promotion gates pass."
+2026-07-11T23:19:50.2967597Z }
+2026-07-11T23:19:50.3006621Z MLB production invariants PASS: complete-slate coverage, exact clean-cohort lock vectors, final-label joins, separate outcome/reliability models, untouched validation with priced ROI, source-honest fundamentals, independent promotion gates, manual-only DDB champion promotion, and single runtime authority are installed.
+2026-07-11T23:19:50.3088505Z ##[group]Run python scripts/verify_mlb_official_prediction_semantics.py
+2026-07-11T23:19:50.3089044Z [36;1mpython scripts/verify_mlb_official_prediction_semantics.py[0m
+2026-07-11T23:19:50.3124691Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:50.3124968Z env:
+2026-07-11T23:19:50.3125256Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:50.3125710Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:50.3126143Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:50.3126640Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:50.3127246Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:50.3127632Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:50.3128067Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:50.3128339Z   AWS_REGION: ***
+2026-07-11T23:19:50.3128589Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:50.3128959Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:50.3129219Z ##[endgroup]
+2026-07-11T23:19:50.3755230Z MLB official/playable, immutable-ledger, selected-odds, and real-world accuracy metrics verified
+2026-07-11T23:19:50.3860131Z ##[group]Run sam validate
+2026-07-11T23:19:50.3860447Z [36;1msam validate[0m
+2026-07-11T23:19:50.3895522Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:50.3895804Z env:
+2026-07-11T23:19:50.3896097Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:50.3896554Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:50.3897198Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:50.3897594Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:50.3897983Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:50.3898379Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:50.3898793Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:50.3899068Z   AWS_REGION: ***
+2026-07-11T23:19:50.3899321Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:50.3899661Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:50.3899916Z ##[endgroup]
+2026-07-11T23:19:50.9995978Z 
+2026-07-11T23:19:50.9996698Z 	SAM CLI now collects telemetry to better understand customer needs.
+2026-07-11T23:19:50.9997425Z 
+2026-07-11T23:19:50.9997719Z 	You can OPT OUT and disable telemetry collection by setting the
+2026-07-11T23:19:50.9998498Z 	environment variable SAM_CLI_TELEMETRY=0 in your shell.
+2026-07-11T23:19:50.9999019Z 	Thanks for your help!
+2026-07-11T23:19:50.9999559Z 
+2026-07-11T23:19:51.0000252Z 	Learn More: https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-sam-telemetry.html
+2026-07-11T23:19:51.0001036Z 
+2026-07-11T23:19:51.9335570Z /home/runner/work/parlay-platform/parlay-platform/template.yaml is a valid SAM Template. This is according to basic SAM Validation, for additional validation, please run with "--lint" option
+2026-07-11T23:19:52.4610473Z ##[group]Run rm -rf .aws-sam
+2026-07-11T23:19:52.4610828Z [36;1mrm -rf .aws-sam[0m
+2026-07-11T23:19:52.4611094Z [36;1msam build --no-cached[0m
+2026-07-11T23:19:52.4646971Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:52.4647239Z env:
+2026-07-11T23:19:52.4647532Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:52.4647998Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:52.4648437Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:52.4648834Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:52.4649256Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:52.4649641Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:52.4650076Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:52.4650346Z   AWS_REGION: ***
+2026-07-11T23:19:52.4650604Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:52.4650988Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:52.4651245Z ##[endgroup]
+2026-07-11T23:19:53.4507227Z Building codeuri: /home/runner/work/parlay-platform/parlay-platform/backend/src runtime: python3.11 architecture: x86_64 functions: InqsiBackendApiFunction
+2026-07-11T23:19:53.4515188Z Building codeuri: /home/runner/work/parlay-platform/parlay-platform/hello_world runtime: python3.11 architecture: x86_64 functions: ApiFunction, MLBAuditedPullFunction, MLBSignalApiFunction, MLBDailyPickLockFunction, MLBProductionVerifierFunction, MLBResultsSchedulerFunction, SoccerSchedulerFunction, SoccerSignalApiFunction, SoccerResultsAuditFunction, SoccerAppApiFunction, InqsiAutopsySchedulerFunction
+2026-07-11T23:19:53.4770397Z  Running PythonPipBuilder:ResolveDependencies
+2026-07-11T23:19:53.4771094Z  Running PythonPipBuilder:ResolveDependencies
+2026-07-11T23:19:53.5136608Z  Running PythonPipBuilder:CopySource
+2026-07-11T23:19:54.3287061Z  Running PythonPipBuilder:CopySource
+2026-07-11T23:19:54.6201831Z 
+2026-07-11T23:19:54.6202365Z Build Succeeded
+2026-07-11T23:19:54.6202652Z 
+2026-07-11T23:19:54.6202822Z Built Artifacts  : .aws-sam/build
+2026-07-11T23:19:54.6203172Z Built Template   : .aws-sam/build/template.yaml
+2026-07-11T23:19:54.6203408Z 
+2026-07-11T23:19:54.6203525Z Commands you can use next
+2026-07-11T23:19:54.6203780Z =========================
+2026-07-11T23:19:54.6204051Z [*] Validate SAM template: sam validate
+2026-07-11T23:19:54.6204364Z [*] Invoke Function: sam local invoke
+2026-07-11T23:19:54.6204793Z [*] Test Function in the Cloud: sam sync --stack-name {{stack-name}} --watch
+2026-07-11T23:19:54.6205199Z [*] Deploy: sam deploy --guided
+2026-07-11T23:19:55.0283444Z ##[group]Run for i in $(seq 1 60); do
+2026-07-11T23:19:55.0283814Z [36;1mfor i in $(seq 1 60); do[0m
+2026-07-11T23:19:55.0284152Z [36;1m  STATUS=$(aws cloudformation describe-stacks \[0m
+2026-07-11T23:19:55.0284538Z [36;1m    --stack-name parlay-platform-dev \[0m
+2026-07-11T23:19:55.0284940Z [36;1m    --region *** \[0m
+2026-07-11T23:19:55.0285248Z [36;1m    --query "Stacks[0].StackStatus" \[0m
+2026-07-11T23:19:55.0285623Z [36;1m    --output text 2>/dev/null || echo "STACK_MISSING")[0m
+2026-07-11T23:19:55.0286014Z [36;1m  echo "CloudFormation status: ${STATUS}"[0m
+2026-07-11T23:19:55.0286334Z [36;1m  case "${STATUS}" in[0m
+2026-07-11T23:19:55.0287021Z [36;1m    CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE|STACK_MISSING)[0m
+2026-07-11T23:19:55.0287510Z [36;1m      exit 0[0m
+2026-07-11T23:19:55.0287738Z [36;1m      ;;[0m
+2026-07-11T23:19:55.0287963Z [36;1m    *IN_PROGRESS)[0m
+2026-07-11T23:19:55.0288222Z [36;1m      sleep 30[0m
+2026-07-11T23:19:55.0288680Z [36;1m      ;;[0m
+2026-07-11T23:19:55.0288892Z [36;1m    *)[0m
+2026-07-11T23:19:55.0289185Z [36;1m      echo "Stack status is not safe for update: ${STATUS}"[0m
+2026-07-11T23:19:55.0289536Z [36;1m      exit 1[0m
+2026-07-11T23:19:55.0289757Z [36;1m      ;;[0m
+2026-07-11T23:19:55.0289965Z [36;1m  esac[0m
+2026-07-11T23:19:55.0290176Z [36;1mdone[0m
+2026-07-11T23:19:55.0290507Z [36;1mecho "Timed out waiting for CloudFormation stack to be updateable."[0m
+2026-07-11T23:19:55.0290890Z [36;1mexit 1[0m
+2026-07-11T23:19:55.0326056Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:55.0326327Z env:
+2026-07-11T23:19:55.0326612Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:55.0327275Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:55.0327721Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:55.0328117Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:55.0328515Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:55.0328910Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:55.0329326Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:55.0329605Z   AWS_REGION: ***
+2026-07-11T23:19:55.0329860Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:55.0330202Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:55.0330452Z ##[endgroup]
+2026-07-11T23:19:56.0187677Z CloudFormation status: UPDATE_COMPLETE
+2026-07-11T23:19:56.0229671Z ##[group]Run sam deploy \
+2026-07-11T23:19:56.0230164Z [36;1msam deploy \[0m
+2026-07-11T23:19:56.0230589Z [36;1m  --template-file template.yaml \[0m
+2026-07-11T23:19:56.0231127Z [36;1m  --stack-name parlay-platform-dev \[0m
+2026-07-11T23:19:56.0231684Z [36;1m  --region *** \[0m
+2026-07-11T23:19:56.0232118Z [36;1m  --capabilities CAPABILITY_IAM \[0m
+2026-07-11T23:19:56.0232564Z [36;1m  --resolve-s3 \[0m
+2026-07-11T23:19:56.0232934Z [36;1m  --force-upload \[0m
+2026-07-11T23:19:56.0233368Z [36;1m  --no-confirm-changeset \[0m
+2026-07-11T23:19:56.0233815Z [36;1m  --no-fail-on-empty-changeset \[0m
+2026-07-11T23:19:56.0234282Z [36;1m  --parameter-overrides \[0m
+2026-07-11T23:19:56.0234775Z [36;1m    OddsApiKey="${ODDS_API_KEY_VALUE}" \[0m
+2026-07-11T23:19:56.0235386Z [36;1m    InqsiAdminApiToken="${INQSI_ADMIN_API_TOKEN_VALUE:-}"[0m
+2026-07-11T23:19:56.0284288Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:19:56.0284709Z env:
+2026-07-11T23:19:56.0285242Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:56.0285945Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:19:56.0286641Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:56.0287548Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:56.0288143Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:19:56.0288750Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:19:56.0289359Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:19:56.0289770Z   AWS_REGION: ***
+2026-07-11T23:19:56.0290151Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:19:56.0290662Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:19:56.0291139Z   ODDS_API_KEY_VALUE: ***
+2026-07-11T23:19:56.0291559Z   INQSI_ADMIN_API_TOKEN_VALUE: ***
+2026-07-11T23:19:56.0291972Z ##[endgroup]
+2026-07-11T23:19:57.4925219Z 
+2026-07-11T23:19:57.4926043Z 	Managed S3 bucket: aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr
+2026-07-11T23:19:57.4927224Z 	Auto resolution of buckets can be turned off by setting resolve_s3=False
+2026-07-11T23:19:57.4927717Z 	To use a specific S3 bucket, set --s3-bucket=<bucket_name>
+2026-07-11T23:19:57.4928110Z 	Above settings can be stored in samconfig.toml
+2026-07-11T23:19:58.1632173Z 
+2026-07-11T23:19:58.1638528Z 	Uploading to parlay-platform-dev/86cd3c671fb865b4a74f7aebe18d6c87  44020 / 44020  (100.00%)
+2026-07-11T23:19:58.2701819Z 
+2026-07-11T23:19:58.2702580Z 	Uploading to parlay-platform-dev/f61db47d1bb6ab7b989f0cdb842d3ac4  605016 / 605016  (100.00%)
+2026-07-11T23:19:58.5445961Z 
+2026-07-11T23:19:58.5447001Z 	Uploading to parlay-platform-dev/f61db47d1bb6ab7b989f0cdb842d3ac4  605016 / 605016  (100.00%)
+2026-07-11T23:19:58.7190091Z 
+2026-07-11T23:19:58.7190911Z 	Uploading to parlay-platform-dev/f61db47d1bb6ab7b989f0cdb842d3ac4  605016 / 605016  (100.00%)
+2026-07-11T23:19:58.9003197Z 
+2026-07-11T23:19:58.9004030Z 	Uploading to parlay-platform-dev/f61db47d1bb6ab7b989f0cdb842d3ac4  605016 / 605016  (100.00%)
+2026-07-11T23:19:59.1042370Z 
+2026-07-11T23:19:59.1043160Z 	Uploading to parlay-platform-dev/f61db47d1bb6ab7b989f0cdb842d3ac4  605016 / 605016  (100.00%)
+2026-07-11T23:19:59.3256338Z 
+2026-07-11T23:19:59.3257676Z 	Uploading to parlay-platform-dev/f61db47d1bb6ab7b989f0cdb842d3ac4  605016 / 605016  (100.00%)
+2026-07-11T23:19:59.5183191Z 
+2026-07-11T23:19:59.5183794Z 	Uploading to parlay-platform-dev/f61db47d1bb6ab7b989f0cdb842d3ac4  605016 / 605016  (100.00%)
+2026-07-11T23:19:59.6998893Z 
+2026-07-11T23:19:59.6999652Z 	Uploading to parlay-platform-dev/f61db47d1bb6ab7b989f0cdb842d3ac4  605016 / 605016  (100.00%)
+2026-07-11T23:19:59.8972978Z 
+2026-07-11T23:19:59.8973868Z 	Uploading to parlay-platform-dev/f61db47d1bb6ab7b989f0cdb842d3ac4  605016 / 605016  (100.00%)
+2026-07-11T23:20:00.0791717Z 
+2026-07-11T23:20:00.0792440Z 	Uploading to parlay-platform-dev/f61db47d1bb6ab7b989f0cdb842d3ac4  605016 / 605016  (100.00%)
+2026-07-11T23:20:00.2949903Z 
+2026-07-11T23:20:00.2951515Z 	Uploading to parlay-platform-dev/f61db47d1bb6ab7b989f0cdb842d3ac4  605016 / 605016  (100.00%)
+2026-07-11T23:20:00.4638971Z 
+2026-07-11T23:20:00.4639578Z 	Deploying with following values
+2026-07-11T23:20:00.4640077Z 	===============================
+2026-07-11T23:20:00.4640569Z 	Stack name                   : parlay-platform-dev
+2026-07-11T23:20:00.4641175Z 	Region                       : ***
+2026-07-11T23:20:00.4641475Z 	Confirm changeset            : False
+2026-07-11T23:20:00.4641762Z 	Disable rollback             : False
+2026-07-11T23:20:00.4642212Z 	Deployment s3 bucket         : aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr
+2026-07-11T23:20:00.4642755Z 	Capabilities                 : ["CAPABILITY_IAM"]
+2026-07-11T23:20:00.4643189Z 	Parameter overrides          : {"OddsApiKey": "*****", "InqsiAdminApiToken": "*****"}
+2026-07-11T23:20:00.4643612Z 	Signing Profiles             : {}
+2026-07-11T23:20:00.4643794Z 
+2026-07-11T23:20:00.4643899Z Initiating deployment
+2026-07-11T23:20:00.4644132Z =====================
+2026-07-11T23:20:00.4644276Z 
+2026-07-11T23:20:01.4110257Z 
+2026-07-11T23:20:01.4111183Z 	Uploading to parlay-platform-dev/f1b5abda15ffe55f4741199d8e92b60e.template  28146 / 28146  (100.00%)
+2026-07-11T23:20:01.8357400Z 
+2026-07-11T23:20:01.8357418Z 
+2026-07-11T23:20:01.8357963Z Waiting for changeset to be created..
+2026-07-11T23:20:01.8358237Z 
+2026-07-11T23:20:22.4788774Z CloudFormation stack changeset
+2026-07-11T23:20:22.4789299Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:20:22.4789954Z Operation                LogicalResourceId        ResourceType             Replacement            
+2026-07-11T23:20:22.4790497Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:20:22.7181501Z + Add                    ServerlessRestApiDeplo   AWS::ApiGateway::Deplo   N/A                    
+2026-07-11T23:20:22.7182347Z                          yment1c861a0076          yment                                           
+2026-07-11T23:20:22.7183056Z * Modify                 ApiFunction              AWS::Lambda::Function    False                  
+2026-07-11T23:20:22.7183874Z * Modify                 InqsiAutopsySchedulerF   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:20:22.7184627Z                          unctionInqsiNightlyAut   n                                               
+2026-07-11T23:20:22.7185256Z                          opsyAt1AMPermission                                                      
+2026-07-11T23:20:22.7186586Z * Modify                 InqsiAutopsySchedulerF   AWS::Events::Rule        False                  
+2026-07-11T23:20:22.7187491Z                          unctionInqsiNightlyAut                                                   
+2026-07-11T23:20:22.7188153Z                          opsyAt1AM                                                                
+2026-07-11T23:20:22.7188829Z * Modify                 InqsiAutopsySchedulerF   AWS::Lambda::Function    False                  
+2026-07-11T23:20:22.7189439Z                          unction                                                                  
+2026-07-11T23:20:22.7190213Z * Modify                 MLBAuditedPullFunction   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:20:22.7190984Z                          MLBHotEvery15MinPermis   n                                               
+2026-07-11T23:20:22.7191574Z                          sion                                                                     
+2026-07-11T23:20:22.7192211Z * Modify                 MLBAuditedPullFunction   AWS::Events::Rule        False                  
+2026-07-11T23:20:22.7192975Z                          MLBHotEvery15Min                                                         
+2026-07-11T23:20:22.7193660Z * Modify                 MLBAuditedPullFunction   AWS::Lambda::Function    False                  
+2026-07-11T23:20:22.7194753Z * Modify                 MLBDailyPickLockFuncti   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:20:22.7195548Z                          onMLBDailyPickLockEver   n                                               
+2026-07-11T23:20:22.7196160Z                          yMinutePermission                                                        
+2026-07-11T23:20:22.7197020Z * Modify                 MLBDailyPickLockFuncti   AWS::Events::Rule        False                  
+2026-07-11T23:20:22.7197606Z                          onMLBDailyPickLockEver                                                   
+2026-07-11T23:20:22.7198057Z                          yMinute                                                                  
+2026-07-11T23:20:22.7198549Z * Modify                 MLBDailyPickLockFuncti   AWS::Lambda::Function    False                  
+2026-07-11T23:20:22.7199013Z                          on                                                                       
+2026-07-11T23:20:22.7199487Z * Modify                 MLBProductionVerifierF   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:20:22.7200002Z                          unctionMLBProductionIn   n                                               
+2026-07-11T23:20:22.7200487Z                          gestVerifyDaily435EtPe                                                   
+2026-07-11T23:20:22.7200934Z                          rmission                                                                 
+2026-07-11T23:20:22.7201411Z * Modify                 MLBProductionVerifierF   AWS::Events::Rule        False                  
+2026-07-11T23:20:22.7201926Z                          unctionMLBProductionIn                                                   
+2026-07-11T23:20:22.7202401Z                          gestVerifyDaily435Et                                                     
+2026-07-11T23:20:22.7202913Z * Modify                 MLBProductionVerifierF   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:20:22.7203442Z                          unctionMLBProductionLo   n                                               
+2026-07-11T23:20:22.7203941Z                          ckVerifyDaily556EtPerm                                                   
+2026-07-11T23:20:22.7204392Z                          ission                                                                   
+2026-07-11T23:20:22.7204865Z * Modify                 MLBProductionVerifierF   AWS::Events::Rule        False                  
+2026-07-11T23:20:22.7205375Z                          unctionMLBProductionLo                                                   
+2026-07-11T23:20:22.7206375Z                          ckVerifyDaily556Et                                                       
+2026-07-11T23:20:22.7207239Z * Modify                 MLBProductionVerifierF   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:20:22.7208014Z                          unctionMLBProductionVe   n                                               
+2026-07-11T23:20:22.7208721Z                          rifierEvery5MinPermiss                                                   
+2026-07-11T23:20:22.7209346Z                          ion                                                                      
+2026-07-11T23:20:22.7210071Z * Modify                 MLBProductionVerifierF   AWS::Events::Rule        False                  
+2026-07-11T23:20:22.7210828Z                          unctionMLBProductionVe                                                   
+2026-07-11T23:20:22.7211496Z                          rifierEvery5Min                                                          
+2026-07-11T23:20:22.7212269Z * Modify                 MLBProductionVerifierF   AWS::Lambda::Function    False                  
+2026-07-11T23:20:22.7212999Z                          unction                                                                  
+2026-07-11T23:20:22.7213781Z * Modify                 MLBResultsSchedulerFun   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:20:22.7214889Z                          ctionMLBResultsEvery6H   n                                               
+2026-07-11T23:20:22.7215659Z                          oursPermission                                                           
+2026-07-11T23:20:22.7216488Z * Modify                 MLBResultsSchedulerFun   AWS::Events::Rule        False                  
+2026-07-11T23:20:22.7217528Z                          ctionMLBResultsEvery6H                                                   
+2026-07-11T23:20:22.7218253Z                          ours                                                                     
+2026-07-11T23:20:22.7219051Z * Modify                 MLBResultsSchedulerFun   AWS::Lambda::Function    False                  
+2026-07-11T23:20:22.7219838Z                          ction                                                                    
+2026-07-11T23:20:22.7220572Z * Modify                 MLBSignalApiFunction     AWS::Lambda::Function    False                  
+2026-07-11T23:20:22.7221458Z * Modify                 ServerlessRestApiProdS   AWS::ApiGateway::Stage   False                  
+2026-07-11T23:20:22.7222245Z                          tage                                                                     
+2026-07-11T23:20:22.7223059Z * Modify                 ServerlessRestApi        AWS::ApiGateway::RestA   False                  
+2026-07-11T23:20:22.7223840Z                                                   pi                                              
+2026-07-11T23:20:22.7224609Z * Modify                 SoccerAppApiFunction     AWS::Lambda::Function    False                  
+2026-07-11T23:20:22.7225629Z * Modify                 SoccerResultsAuditFunc   AWS::Lambda::Function    False                  
+2026-07-11T23:20:22.7226416Z                          tion                                                                     
+2026-07-11T23:20:22.7227466Z * Modify                 SoccerSchedulerFunctio   AWS::Lambda::Permissio   Conditional            
+2026-07-11T23:20:22.7228364Z                          nSoccerHotEvery15MinPe   n                                               
+2026-07-11T23:20:22.7229080Z                          rmission                                                                 
+2026-07-11T23:20:22.7229836Z * Modify                 SoccerSchedulerFunctio   AWS::Events::Rule        False                  
+2026-07-11T23:20:22.7230638Z                          nSoccerHotEvery15Min                                                     
+2026-07-11T23:20:22.7231455Z * Modify                 SoccerSchedulerFunctio   AWS::Lambda::Function    False                  
+2026-07-11T23:20:22.7232471Z                          n                                                                        
+2026-07-11T23:20:22.7233173Z * Modify                 SoccerSignalApiFunctio   AWS::Lambda::Function    False                  
+2026-07-11T23:20:22.7233868Z                          n                                                                        
+2026-07-11T23:20:22.7234644Z - Delete                 InqsiBackendApiFunctio   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:20:22.7235458Z                          nInqsiMlbGameWinnersPe   n                                               
+2026-07-11T23:20:22.7236175Z                          rmissionProd                                                             
+2026-07-11T23:20:22.7237202Z - Delete                 InqsiBackendApiFunctio   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:20:22.7238066Z                          nInqsiMlbGamesPermissi   n                                               
+2026-07-11T23:20:22.7238831Z                          onProd                                                                   
+2026-07-11T23:20:22.7239621Z - Delete                 InqsiBackendApiFunctio   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:20:22.7240511Z                          nInqsiMlbModelVersionP   n                                               
+2026-07-11T23:20:22.7241532Z                          ermissionProd                                                            
+2026-07-11T23:20:22.7242366Z - Delete                 InqsiBackendApiFunctio   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:20:22.7243247Z                          nInqsiMlbPredictionsPe   n                                               
+2026-07-11T23:20:22.7244022Z                          rmissionProd                                                             
+2026-07-11T23:20:22.7244821Z - Delete                 InqsiBackendApiFunctio   AWS::Lambda::Permissio   N/A                    
+2026-07-11T23:20:22.7245709Z                          nInqsiMlbTodayPermissi   n                                               
+2026-07-11T23:20:22.7246422Z                          onProd                                                                   
+2026-07-11T23:20:22.7247439Z - Delete                 ServerlessRestApiDeplo   AWS::ApiGateway::Deplo   N/A                    
+2026-07-11T23:20:22.7248273Z                          ymentcfb3ef3666          yment                                           
+2026-07-11T23:20:22.7249064Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:20:22.7249536Z 
+2026-07-11T23:20:22.7249544Z 
+2026-07-11T23:20:22.7250380Z Changeset created successfully. arn:aws:cloudformation:***:735707987003:changeSet/samcli-deploy1783812001/2c48d22f-4a14-414b-9db9-fcdb10e2f811
+2026-07-11T23:20:22.7251225Z 
+2026-07-11T23:20:23.2851564Z 
+2026-07-11T23:20:23.2852337Z 2026-07-11 23:20:23 - Waiting for stack create/update to complete
+2026-07-11T23:20:23.2852868Z 
+2026-07-11T23:20:23.2853099Z CloudFormation events from stack operations (refresh every 5.0 seconds)
+2026-07-11T23:20:23.2853624Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:20:23.2854211Z ResourceStatus           ResourceType             LogicalResourceId        ResourceStatusReason   
+2026-07-11T23:20:23.2854782Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:20:28.5090739Z UPDATE_IN_PROGRESS       AWS::CloudFormation::S   parlay-platform-dev      User Initiated         
+2026-07-11T23:20:28.5091648Z                          tack                                                                     
+2026-07-11T23:20:28.5092478Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    SoccerAppApiFunction     -                      
+2026-07-11T23:20:28.5093434Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    ApiFunction              -                      
+2026-07-11T23:20:28.5094926Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    SoccerSignalApiFunctio   -                      
+2026-07-11T23:20:28.5095706Z                                                   n                                               
+2026-07-11T23:20:28.5096505Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    MLBProductionVerifierF   -                      
+2026-07-11T23:20:28.5097483Z                                                   unction                                         
+2026-07-11T23:20:28.5098240Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    MLBDailyPickLockFuncti   -                      
+2026-07-11T23:20:28.5098743Z                                                   on                                              
+2026-07-11T23:20:28.5099260Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    MLBSignalApiFunction     -                      
+2026-07-11T23:20:28.5099836Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    InqsiAutopsySchedulerF   -                      
+2026-07-11T23:20:28.5100325Z                                                   unction                                         
+2026-07-11T23:20:28.5100801Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    SoccerResultsAuditFunc   -                      
+2026-07-11T23:20:28.5101263Z                                                   tion                                            
+2026-07-11T23:20:28.5101940Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    MLBResultsSchedulerFun   -                      
+2026-07-11T23:20:28.5102446Z                                                   ction                                           
+2026-07-11T23:20:28.5102925Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    SoccerSchedulerFunctio   -                      
+2026-07-11T23:20:28.5103402Z                                                   n                                               
+2026-07-11T23:20:28.5103879Z UPDATE_IN_PROGRESS       AWS::Lambda::Function    MLBAuditedPullFunction   -                      
+2026-07-11T23:20:38.9532912Z UPDATE_COMPLETE          AWS::Lambda::Function    SoccerAppApiFunction     -                      
+2026-07-11T23:20:38.9533690Z UPDATE_COMPLETE          AWS::Lambda::Function    MLBProductionVerifierF   -                      
+2026-07-11T23:20:38.9534207Z                                                   unction                                         
+2026-07-11T23:20:38.9536211Z UPDATE_COMPLETE          AWS::Lambda::Function    SoccerSignalApiFunctio   -                      
+2026-07-11T23:20:38.9536940Z                                                   n                                               
+2026-07-11T23:20:38.9537522Z UPDATE_COMPLETE          AWS::Lambda::Function    MLBResultsSchedulerFun   -                      
+2026-07-11T23:20:38.9538011Z                                                   ction                                           
+2026-07-11T23:20:38.9538486Z UPDATE_COMPLETE          AWS::Lambda::Function    ApiFunction              -                      
+2026-07-11T23:20:38.9539058Z UPDATE_COMPLETE          AWS::Lambda::Function    SoccerResultsAuditFunc   -                      
+2026-07-11T23:20:38.9539522Z                                                   tion                                            
+2026-07-11T23:20:38.9539992Z UPDATE_COMPLETE          AWS::Lambda::Function    MLBAuditedPullFunction   -                      
+2026-07-11T23:20:38.9540546Z UPDATE_COMPLETE          AWS::Lambda::Function    MLBSignalApiFunction     -                      
+2026-07-11T23:20:38.9541099Z UPDATE_COMPLETE          AWS::Lambda::Function    MLBDailyPickLockFuncti   -                      
+2026-07-11T23:20:38.9541560Z                                                   on                                              
+2026-07-11T23:20:38.9542086Z UPDATE_COMPLETE          AWS::Lambda::Function    InqsiAutopsySchedulerF   -                      
+2026-07-11T23:20:38.9542567Z                                                   unction                                         
+2026-07-11T23:20:38.9543444Z UPDATE_COMPLETE          AWS::Lambda::Function    SoccerSchedulerFunctio   -                      
+2026-07-11T23:20:38.9543913Z                                                   n                                               
+2026-07-11T23:20:38.9544410Z UPDATE_IN_PROGRESS       AWS::ApiGateway::RestA   ServerlessRestApi        -                      
+2026-07-11T23:20:38.9544900Z                          pi                                                                       
+2026-07-11T23:20:44.1807816Z UPDATE_COMPLETE          AWS::ApiGateway::RestA   ServerlessRestApi        -                      
+2026-07-11T23:20:44.1808710Z                          pi                                                                       
+2026-07-11T23:20:44.1809334Z CREATE_IN_PROGRESS       AWS::ApiGateway::Deplo   ServerlessRestApiDeplo   -                      
+2026-07-11T23:20:44.1809879Z                          yment                    yment1c861a0076                                 
+2026-07-11T23:20:44.1810557Z CREATE_IN_PROGRESS       AWS::ApiGateway::Deplo   ServerlessRestApiDeplo   Resource creation      
+2026-07-11T23:20:44.1811453Z                          yment                    yment1c861a0076          Initiated              
+2026-07-11T23:20:44.1812248Z CREATE_COMPLETE          AWS::ApiGateway::Deplo   ServerlessRestApiDeplo   -                      
+2026-07-11T23:20:44.1813329Z                          yment                    yment1c861a0076                                 
+2026-07-11T23:20:49.4060610Z UPDATE_IN_PROGRESS       AWS::ApiGateway::Stage   ServerlessRestApiProdS   -                      
+2026-07-11T23:20:49.4061651Z                                                   tage                                            
+2026-07-11T23:20:49.4062423Z UPDATE_COMPLETE          AWS::ApiGateway::Stage   ServerlessRestApiProdS   -                      
+2026-07-11T23:20:49.4063161Z                                                   tage                                            
+2026-07-11T23:20:49.4063914Z UPDATE_COMPLETE_CLEANU   AWS::CloudFormation::S   parlay-platform-dev      -                      
+2026-07-11T23:20:49.4064682Z P_IN_PROGRESS            tack                                                                     
+2026-07-11T23:20:49.4065340Z DELETE_IN_PROGRESS       AWS::Lambda::Permissio   InqsiBackendApiFunctio   -                      
+2026-07-11T23:20:49.4065858Z                          n                        nInqsiMlbModelVersionP                          
+2026-07-11T23:20:49.4066267Z                                                   ermissionProd                                   
+2026-07-11T23:20:49.4067013Z DELETE_IN_PROGRESS       AWS::ApiGateway::Deplo   ServerlessRestApiDeplo   -                      
+2026-07-11T23:20:49.4067562Z                          yment                    ymentcfb3ef3666                                 
+2026-07-11T23:20:49.4068081Z DELETE_IN_PROGRESS       AWS::Lambda::Permissio   InqsiBackendApiFunctio   -                      
+2026-07-11T23:20:49.4068609Z                          n                        nInqsiMlbTodayPermissi                          
+2026-07-11T23:20:49.4069020Z                                                   onProd                                          
+2026-07-11T23:20:49.4069523Z DELETE_IN_PROGRESS       AWS::Lambda::Permissio   InqsiBackendApiFunctio   -                      
+2026-07-11T23:20:49.4070024Z                          n                        nInqsiMlbPredictionsPe                          
+2026-07-11T23:20:49.4070434Z                                                   rmissionProd                                    
+2026-07-11T23:20:49.4070914Z DELETE_IN_PROGRESS       AWS::Lambda::Permissio   InqsiBackendApiFunctio   -                      
+2026-07-11T23:20:49.4071397Z                          n                        nInqsiMlbGameWinnersPe                          
+2026-07-11T23:20:49.4071830Z                                                   rmissionProd                                    
+2026-07-11T23:20:49.4072734Z DELETE_IN_PROGRESS       AWS::Lambda::Permissio   InqsiBackendApiFunctio   -                      
+2026-07-11T23:20:49.4073236Z                          n                        nInqsiMlbGamesPermissi                          
+2026-07-11T23:20:49.4073640Z                                                   onProd                                          
+2026-07-11T23:20:54.6214147Z DELETE_COMPLETE          AWS::Lambda::Permissio   InqsiBackendApiFunctio   -                      
+2026-07-11T23:20:54.6215106Z                          n                        nInqsiMlbModelVersionP                          
+2026-07-11T23:20:54.6215814Z                                                   ermissionProd                                   
+2026-07-11T23:20:54.6216613Z DELETE_COMPLETE          AWS::Lambda::Permissio   InqsiBackendApiFunctio   -                      
+2026-07-11T23:20:54.6217629Z                          n                        nInqsiMlbTodayPermissi                          
+2026-07-11T23:20:54.6218323Z                                                   onProd                                          
+2026-07-11T23:20:54.6219098Z DELETE_COMPLETE          AWS::Lambda::Permissio   InqsiBackendApiFunctio   -                      
+2026-07-11T23:20:54.6219848Z                          n                        nInqsiMlbGameWinnersPe                          
+2026-07-11T23:20:54.6220724Z                                                   rmissionProd                                    
+2026-07-11T23:20:54.6221260Z DELETE_COMPLETE          AWS::Lambda::Permissio   InqsiBackendApiFunctio   -                      
+2026-07-11T23:20:54.6221777Z                          n                        nInqsiMlbGamesPermissi                          
+2026-07-11T23:20:54.6222193Z                                                   onProd                                          
+2026-07-11T23:20:54.6222688Z DELETE_COMPLETE          AWS::ApiGateway::Deplo   ServerlessRestApiDeplo   -                      
+2026-07-11T23:20:54.6223193Z                          yment                    ymentcfb3ef3666                                 
+2026-07-11T23:20:54.6223740Z DELETE_COMPLETE          AWS::Lambda::Permissio   InqsiBackendApiFunctio   -                      
+2026-07-11T23:20:54.6224264Z                          n                        nInqsiMlbPredictionsPe                          
+2026-07-11T23:20:54.6224680Z                                                   rmissionProd                                    
+2026-07-11T23:20:54.6225185Z UPDATE_COMPLETE          AWS::CloudFormation::S   parlay-platform-dev      -                      
+2026-07-11T23:20:54.6225668Z                          tack                                                                     
+2026-07-11T23:20:54.6226111Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:20:54.6226421Z 
+2026-07-11T23:20:54.7358008Z CloudFormation outputs from deployed stack
+2026-07-11T23:20:54.7358737Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:20:54.7359454Z Outputs                                                                                         
+2026-07-11T23:20:54.7359922Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:20:54.7360402Z Key                 ApiUrl                                                                      
+2026-07-11T23:20:54.7360926Z Description         API Gateway endpoint base URL                                               
+2026-07-11T23:20:54.7368053Z Value               https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/                
+2026-07-11T23:20:54.7377541Z 
+2026-07-11T23:20:54.7377970Z Key                 InqsiBackendApiFunctionArn                                                  
+2026-07-11T23:20:54.7378912Z Description         InQsi backend member/slip/social/admin Lambda function ARN                  
+2026-07-11T23:20:54.7380340Z Value               arn:aws:lambda:***:735707987003:function:parlay-platform-dev-         
+2026-07-11T23:20:54.7381253Z InqsiBackendApiFunction-6o4yiFnCS4Hm                                                            
+2026-07-11T23:20:54.7382007Z -------------------------------------------------------------------------------------------------
+2026-07-11T23:20:54.7382324Z 
+2026-07-11T23:20:54.7382329Z 
+2026-07-11T23:20:54.7382577Z Successfully created/updated stack - parlay-platform-dev in ***
+2026-07-11T23:20:54.7382880Z 
+2026-07-11T23:20:55.2986240Z ##[group]Run ROLE_NAME=$(aws cloudformation describe-stack-resource \
+2026-07-11T23:20:55.2987101Z [36;1mROLE_NAME=$(aws cloudformation describe-stack-resource \[0m
+2026-07-11T23:20:55.2987571Z [36;1m  --stack-name parlay-platform-dev \[0m
+2026-07-11T23:20:55.2987938Z [36;1m  --region *** \[0m
+2026-07-11T23:20:55.2988250Z [36;1m  --logical-resource-id ApiFunctionRole \[0m
+2026-07-11T23:20:55.2988644Z [36;1m  --query "StackResourceDetail.PhysicalResourceId" \[0m
+2026-07-11T23:20:55.2989034Z [36;1m  --output text)[0m
+2026-07-11T23:20:55.2989291Z [36;1mtest -n "$ROLE_NAME"[0m
+2026-07-11T23:20:55.2989553Z [36;1maws iam put-role-policy \[0m
+2026-07-11T23:20:55.2989834Z [36;1m  --role-name "$ROLE_NAME" \[0m
+2026-07-11T23:20:55.2990203Z [36;1m  --policy-name InqsiImageModerationRekognitionAccess \[0m
+2026-07-11T23:20:55.2991000Z [36;1m  --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["rekognition:DetectModerationLabels","rekognition:DetectText"],"Resource":"*"}]}'[0m
+2026-07-11T23:20:55.3027229Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:20:55.3027494Z env:
+2026-07-11T23:20:55.3027777Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:55.3028224Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:20:55.3028654Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:55.3029036Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:55.3029438Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:55.3029815Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:20:55.3030189Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:20:55.3030452Z   AWS_REGION: ***
+2026-07-11T23:20:55.3030696Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:20:55.3031036Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:20:55.3031284Z ##[endgroup]
+2026-07-11T23:20:57.0222117Z ##[group]Run API_URL=$(aws cloudformation describe-stacks \
+2026-07-11T23:20:57.0222859Z [36;1mAPI_URL=$(aws cloudformation describe-stacks \[0m
+2026-07-11T23:20:57.0223445Z [36;1m  --stack-name parlay-platform-dev \[0m
+2026-07-11T23:20:57.0224009Z [36;1m  --region *** \[0m
+2026-07-11T23:20:57.0224574Z [36;1m  --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \[0m
+2026-07-11T23:20:57.0225207Z [36;1m  --output text)[0m
+2026-07-11T23:20:57.0225672Z [36;1mecho "api_url=$API_URL" >> "$GITHUB_OUTPUT"[0m
+2026-07-11T23:20:57.0226208Z [36;1mecho "API_URL=$API_URL"[0m
+2026-07-11T23:20:57.0272845Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:20:57.0273128Z env:
+2026-07-11T23:20:57.0273432Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:57.0273912Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:20:57.0274358Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:57.0274784Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:57.0275183Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:57.0275576Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:20:57.0275963Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:20:57.0276232Z   AWS_REGION: ***
+2026-07-11T23:20:57.0276489Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:20:57.0277045Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:20:57.0277296Z ##[endgroup]
+2026-07-11T23:20:57.8483956Z API_URL=https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/
+2026-07-11T23:20:57.8534981Z ##[group]Run bash scripts/configure_api_protection.sh "https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/" "***"
+2026-07-11T23:20:57.8535935Z [36;1mbash scripts/configure_api_protection.sh "https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/" "***"[0m
+2026-07-11T23:20:57.8571613Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:20:57.8571887Z env:
+2026-07-11T23:20:57.8572194Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:57.8572651Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:20:57.8573084Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:57.8573483Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:57.8573878Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:57.8574272Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:20:57.8574648Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:20:57.8574955Z   AWS_REGION: ***
+2026-07-11T23:20:57.8575224Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:20:57.8575569Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:20:57.8575822Z ##[endgroup]
+2026-07-11T23:20:58.6228138Z 
+2026-07-11T23:20:58.6230079Z aws: [ERROR]: An error occurred (AccessDeniedException) when calling the ListWebACLs operation: User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: wafv2:ListWebACLs on resource: arn:aws:wafv2:***:735707987003:regional/webacl/*/* because no identity-based policy allows the wafv2:ListWebACLs action
+2026-07-11T23:20:58.7112438Z ##[error]Process completed with exit code 254.
+2026-07-11T23:20:58.7157631Z ##[group]Run bash scripts/configure_security_alarms.sh "parlay-platform-dev" "***" "100"
+2026-07-11T23:20:58.7158343Z [36;1mbash scripts/configure_security_alarms.sh "parlay-platform-dev" "***" "100"[0m
+2026-07-11T23:20:58.7194083Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:20:58.7194350Z env:
+2026-07-11T23:20:58.7194629Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:58.7195099Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:20:58.7195533Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:58.7195915Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:58.7196300Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:20:58.7196680Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:20:58.7197237Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:20:58.7197502Z   AWS_REGION: ***
+2026-07-11T23:20:58.7197782Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:20:58.7198116Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:20:58.7198370Z ##[endgroup]
+2026-07-11T23:21:02.0322241Z Configured alarm: inqsi-api-5xx-spike
+2026-07-11T23:21:02.8976743Z Configured alarm: inqsi-api-4xx-spike
+2026-07-11T23:21:03.6681493Z Configured alarm: inqsi-api-request-volume-spike
+2026-07-11T23:21:04.4273218Z Configured alarm: inqsi-lambda-errors
+2026-07-11T23:21:05.1915448Z Configured alarm: inqsi-lambda-throttles
+2026-07-11T23:21:05.9786301Z Configured alarm: inqsi-ddb-throttles-parlay_platform_snapshots
+2026-07-11T23:21:06.7705246Z Configured alarm: inqsi-ddb-throttles-parlay_platform_signals
+2026-07-11T23:21:07.5578432Z Configured alarm: inqsi-ddb-throttles-parlay_platform_predictions
+2026-07-11T23:21:08.3630270Z Configured alarm: inqsi-ddb-throttles-parlay_platform_outcomes
+2026-07-11T23:21:09.2310521Z Budget guardrail skipped: deploy IAM user likely needs budgets:CreateBudget.
+2026-07-11T23:21:09.2319278Z 
+2026-07-11T23:21:09.2320749Z aws: [ERROR]: An error occurred (AccessDeniedException) when calling the CreateBudget operation: User: arn:aws:iam::735707987003:user/github-parlay-platform-deploy is not authorized to perform: budgets:ModifyBudget on resource: arn:aws:budgets::735707987003:budget/inqsi-monthly-cost-guardrail because no identity-based policy allows the budgets:ModifyBudget action
+2026-07-11T23:21:09.2323210Z Security alarms configuration attempted. Missing permissions are non-fatal.
+2026-07-11T23:21:09.2355372Z ##[group]Run API_URL="https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/"
+2026-07-11T23:21:09.2356007Z [36;1mAPI_URL="https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/"[0m
+2026-07-11T23:21:09.2356414Z [36;1mtest -n "$API_URL"[0m
+2026-07-11T23:21:09.2357029Z [36;1mcurl --fail --silent --show-error "${API_URL}v1/health"[0m
+2026-07-11T23:21:09.2392427Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:21:09.2392698Z env:
+2026-07-11T23:21:09.2392985Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:21:09.2393433Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:21:09.2393870Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:21:09.2394255Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:21:09.2394637Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:21:09.2395022Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:21:09.2395448Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:21:09.2395712Z   AWS_REGION: ***
+2026-07-11T23:21:09.2395964Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:21:09.2396294Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:21:09.2396542Z ##[endgroup]
+2026-07-11T23:21:09.3960245Z {"ok": true, "service": "inqsi-backend-api", "time": "2026-07-11T23:21:09.368866Z", "storage": "dynamodb", "maxSlipLegs": 3, "paymentProviderMode": "NONE", "scannerReadyWithoutOddsApi": true, "oddsApiDependentItemsSkipped": ["odds ingestion", "multi-book normalization", "scheduled T snapshots"], "socialProviders": ["facebook", "instagram", "reddit", "x", "tiktok", "youtube", "discord", "linkedin", "twitch", "snapchat", "other"], "routes": [{"method": "GET", "path": "/v1/members/me", "auth_required": true, "owner_only": false, "description": "Return authenticated member profile", "storage_required": ["members", "subscriptions", "social_accounts"], "live_data_required": true}, {"method": "PATCH", "path": "/v1/members/me", "auth_required": true, "owner_only": false, "description": "Update member profile and privacy settings", "storage_required": ["members", "admin_audit_logs"], "live_data_required": true}, {"method": "POST", "path": "/v1/members/social/connect/start", "auth_required": true, "owner_only": false, "description": "Begin provider OAuth connection", "storage_required": ["social_accounts", "admin_audit_logs"], "live_data_required": false}, {"method": "GET", "path": "/v1/members/social/callback", "auth_required": false, "owner_only": false, "description": "Complete provider OAuth callback", "storage_required": ["social_accounts", "admin_audit_logs"], "live_data_required": false}, {"method": "DELETE", "path": "/v1/members/social/{connectionId}", "auth_required": true, "owner_only": false, "description": "Revoke connected social account", "storage_required": ["social_accounts", "admin_audit_logs"], "live_data_required": true}, {"method": "POST", "path": "/v1/slips", "auth_required": true, "owner_only": false, "description": "Save a member slip with max-three-leg enforcement", "storage_required": ["saved_slips", "members", "admin_audit_logs"], "live_data_required": true}, {"method": "GET", "path": "/v1/slips", "auth_required": true, "owner_only": false, "description": "List member saved slips", "storage_required": ["saved_slips"], "live_data_required": true}, {"method": "GET", "path": "/v1/slips/{slipId}", "auth_required": true, "owner_only": false, "description": "Read one saved slip", "storage_required": ["saved_slips", "score_history"], "live_data_required": true}, {"method": "POST", "path": "/v1/slips/{slipId}/grade", "auth_required": true, "owner_only": true, "description": "Grade completed slip and write score history", "storage_required": ["saved_slips", "score_history", "admin_audit_logs"], "live_data_required": true}, {"method": "GET", "path": "/v1/scores/me", "auth_required": true, "owner_only": false, "description": "Return private member score windows", "storage_required": ["score_history"], "live_data_required": true}, {"method": "GET", "path": "/v1/public/u/{handle}", "auth_required": false, "owner_only": false, "description": "Return opt-in public member score card", "storage_required": ["members", "score_history"], "live_data_required": true}, {"method": "POST", "path": "/v1/attribution/visit", "auth_required": false, "owner_only": false, "description": "Record anonymous creator/referral visit", "storage_required": ["creator_attribution"], "live_data_required": false}, {"method": "POST", "path": "/v1/attribution/convert", "auth_required": true, "owner_only": false, "description": "Attach attribution to member signup", "storage_required": ["creator_attribution", "members"], "live_data_required": true}, {"method": "POST", "path": "/v1/subscriptions/checkout", "auth_required": true, "owner_only": false, "description": "Create payment-provider checkout/session", "storage_required": ["subscriptions", "members"], "live_data_required": false}, {"method": "POST", "path": "/v1/subscriptions/webhook", "auth_required": false, "owner_only": false, "description": "Process payment-provider subscription webhook", "storage_required": ["subscriptions", "members", "admin_audit_logs"], "live_data_required": false}, {"method": "GET", "path": "/v1/admin/dashboard", "auth_required": true, "owner_only": true, "description": "Owner/admin dashboard aggregate", "storage_required": ["members", "saved_slips", "score_history", "creator_attribution", "subscriptions", "support_notes", "feature_flags"], "live_data_required": true}, {"method": "GET", "path": "/v1/admin/members", "auth_required": true, "owner_only": true, "description": "Owner/admin member management list", "storage_required": ["members", "subscriptions", "creator_attribution", "social_accounts"], "live_data_required": true}, {"method": "GET", "path": "/v1/admin/social-accounts", "auth_required": true, "owner_only": true, "description": "Owner/admin social connection overview without exposing raw tokens", "storage_required": ["social_accounts", "members"], "live_data_required": true}, {"method": "GET", "path": "/v1/admin/audit", "auth_required": true, "owner_only": true, "description": "Owner/admin audit log search", "storage_required": ["admin_audit_logs"], "live_data_required": true}, {"method": "PATCH", "path": "/v1/admin/feature-flags/{flagKey}", "auth_required": true, "owner_only": true, "description": "Owner/admin feature flag update", "storage_required": ["feature_flags", "admin_audit_logs"], "live_data_required": true}], "productRoutes": ["/v1/scanner/scan", "/v1/slips/{slipId}/scan", "/v1/slips/{slipId}/scan-history", "/v1/parlays/build", "/v1/subscriptions/access", "/v1/results/grade", "/v1/monitoring/data-quality"]}
+2026-07-11T23:21:09.4005972Z ##[group]Run python - <<'PY'
+2026-07-11T23:21:09.4006315Z [36;1mpython - <<'PY'[0m
+2026-07-11T23:21:09.4006561Z [36;1mimport json[0m
+2026-07-11T23:21:09.4007095Z [36;1mimport os[0m
+2026-07-11T23:21:09.4007349Z [36;1mimport urllib.request[0m
+2026-07-11T23:21:09.4007602Z [36;1m[0m
+2026-07-11T23:21:09.4008046Z [36;1mwith urllib.request.urlopen(os.environ["API_URL"] + "v1/mlb/model/version", timeout=45) as resp:[0m
+2026-07-11T23:21:09.4008585Z [36;1m    payload = json.loads(resp.read().decode("utf-8"))[0m
+2026-07-11T23:21:09.4009008Z [36;1mprint(json.dumps(payload, indent=2, default=str))[0m
+2026-07-11T23:21:09.4009486Z [36;1mif payload.get("ok") is not True or payload.get("engine_import_ok") is not True:[0m
+2026-07-11T23:21:09.4010027Z [36;1m    raise SystemExit("MLB v3 engine did not import in live AWS Lambda")[0m
+2026-07-11T23:21:09.4010550Z [36;1mif not str(payload.get("model_version") or "").startswith("INQSI-MLB-v3.0"):[0m
+2026-07-11T23:21:09.4011077Z [36;1m    raise SystemExit("live model version is not MLB v3")[0m
+2026-07-11T23:21:09.4011625Z [36;1mif not str(payload.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"):[0m
+2026-07-11T23:21:09.4012207Z [36;1m    raise SystemExit("live ML optimization v3 orchestrator is missing")[0m
+2026-07-11T23:21:09.4012658Z [36;1mruntime = payload.get("ml_runtime_install") or {}[0m
+2026-07-11T23:21:09.4013210Z [36;1mif runtime.get("ok") is not True:[0m
+2026-07-11T23:21:09.4013611Z [36;1m    raise SystemExit(f"live MLB ML runtime install failed: {runtime}")[0m
+2026-07-11T23:21:09.4014014Z [36;1msteps = runtime.get("steps") or {}[0m
+2026-07-11T23:21:09.4014657Z [36;1mrequired = ["legacyReliabilityOverlaySafety", "singleDdbChampionAuthority", "officialSemanticsFinalized", "immutableFeatureFreeze"][0m
+2026-07-11T23:21:09.4015386Z [36;1mmissing = [name for name in required if steps.get(name) is not True][0m
+2026-07-11T23:21:09.4016113Z [36;1mif missing:[0m
+2026-07-11T23:21:09.4016467Z [36;1m    raise SystemExit(f"live MLB ML runtime steps missing: {missing}")[0m
+2026-07-11T23:21:09.4016961Z [36;1mPY[0m
+2026-07-11T23:21:09.4067999Z shell: /usr/bin/bash -e {0}
+2026-07-11T23:21:09.4068378Z env:
+2026-07-11T23:21:09.4068774Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:21:09.4069247Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-11T23:21:09.4069704Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:21:09.4070106Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:21:09.4070499Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-11T23:21:09.4070879Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-11T23:21:09.4071276Z   AWS_DEFAULT_REGION: ***
+2026-07-11T23:21:09.4071541Z   AWS_REGION: ***
+2026-07-11T23:21:09.4071786Z   AWS_ACCESS_KEY_ID: ***
+2026-07-11T23:21:09.4072119Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-11T23:21:09.4072513Z   API_URL: https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/
+2026-07-11T23:21:09.4072887Z ##[endgroup]
+2026-07-11T23:21:09.5921503Z Traceback (most recent call last):
+2026-07-11T23:21:09.5929192Z   File "<stdin>", line 5, in <module>
+2026-07-11T23:21:09.5929826Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 216, in urlopen
+2026-07-11T23:21:09.6157217Z     return opener.open(url, data, timeout)
+2026-07-11T23:21:09.6157722Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-07-11T23:21:09.6158560Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 525, in open
+2026-07-11T23:21:09.6199767Z     response = meth(req, response)
+2026-07-11T23:21:09.6200233Z                ^^^^^^^^^^^^^^^^^^^
+2026-07-11T23:21:09.6200827Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 634, in http_response
+2026-07-11T23:21:09.6201645Z     response = self.parent.error(
+2026-07-11T23:21:09.6201947Z                ^^^^^^^^^^^^^^^^^^
+2026-07-11T23:21:09.6202899Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 563, in error
+2026-07-11T23:21:09.6203605Z     return self._call_chain(*args)
+2026-07-11T23:21:09.6203871Z            ^^^^^^^^^^^^^^^^^^^^^^^
+2026-07-11T23:21:09.6204359Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 496, in _call_chain
+2026-07-11T23:21:09.6205169Z     result = func(*args)
+2026-07-11T23:21:09.6205450Z              ^^^^^^^^^^^
+2026-07-11T23:21:09.6205965Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 643, in http_error_default
+2026-07-11T23:21:09.6206702Z     raise HTTPError(req.full_url, code, msg, hdrs, fp)
+2026-07-11T23:21:09.6207731Z urllib.error.HTTPError: HTTP Error 500: Internal Server Error
+2026-07-11T23:21:09.6308833Z ##[error]Process completed with exit code 1.
+2026-07-11T23:21:09.6418228Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-11T23:21:09.6419431Z Post job cleanup.
+2026-07-11T23:21:09.7592969Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-11T23:21:09.7595185Z Post job cleanup.
+2026-07-11T23:21:09.8558046Z [command]/usr/bin/git version
+2026-07-11T23:21:09.8624620Z git version 2.54.0
+2026-07-11T23:21:09.8664814Z Temporarily overriding HOME='/home/runner/work/_temp/8e262552-c7f7-4ceb-b537-07e648e6190a' before making global git config changes
+2026-07-11T23:21:09.8666113Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-11T23:21:09.8670941Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-11T23:21:09.8712734Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-11T23:21:09.8771811Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-11T23:21:09.9038638Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-11T23:21:09.9066327Z http.https://github.com/.extraheader
+2026-07-11T23:21:09.9078891Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-11T23:21:09.9127477Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-11T23:21:09.9394013Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-11T23:21:09.9433826Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-11T23:21:09.9841645Z Cleaning up orphan processes
+2026-07-11T23:21:10.0124290Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5, aws-actions/configure-aws-credentials@v4, aws-actions/setup-sam@v2. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
