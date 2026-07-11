@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-VERSION = "MLB-REAL-WORLD-ACCURACY-v1.1-legacy-safe-playability-and-probability"
+VERSION = "MLB-REAL-WORLD-ACCURACY-v1.2-immutable-ledger-readback-and-selected-odds"
 
 
 def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -15,7 +15,7 @@ def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
 
 
 def apply(accuracy_module: Any):
-    if getattr(accuracy_module, "_INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED", False):
+    if getattr(accuracy_module, "_INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V12", False):
         return accuracy_module
 
     def strict_playable(row: Dict[str, Any]) -> bool:
@@ -70,6 +70,33 @@ def apply(accuracy_module: Any):
                     return value
         return accuracy_module._market_probability(accuracy_module._selected_signal(row))
 
+    def selected_side_odds(row: Dict[str, Any]) -> Optional[float]:
+        signal = accuracy_module._selected_signal(row)
+        for key in ("americanOdds", "moneyline", "selectedMoneyline", "price"):
+            odds = accuracy_module._american_odds(signal.get(key))
+            if odds is not None:
+                return odds
+        for key in ("selectedAmericanOdds", "americanOdds", "moneyline", "selectedMoneyline", "lockedAmericanOdds"):
+            odds = accuracy_module._american_odds(row.get(key))
+            if odds is not None:
+                return odds
+        return None
+
+    original_normalize = accuracy_module._normalize_audit_row
+
+    def normalize_with_ledger_status(row: Dict[str, Any]) -> Dict[str, Any]:
+        source = dict(row or {})
+        if source.get("status") is None and source.get("correct") in {True, False} and source.get("predictedWinner") and source.get("winner"):
+            source["status"] = "GRADED"
+        return original_normalize(source)
+
+    original_ledger_row = accuracy_module._ledger_row
+
+    def ledger_row_with_status(row: Dict[str, Any]) -> Dict[str, Any]:
+        out = dict(original_ledger_row(row))
+        out["status"] = "GRADED"
+        return out
+
     original_enhance_report = accuracy_module.enhance_report
 
     def enhanced_report(module: Any, report: Dict[str, Any], historical_rows=None, ledger_rows=None) -> Dict[str, Any]:
@@ -81,6 +108,8 @@ def apply(accuracy_module: Any):
         season = windows.get("season") or {}
         current_official = current.get("officialPredictions") or {}
         current_playable = current.get("playableRecommendations") or {}
+        season_official = season.get("officialPredictions") or {}
+        season_playable = season.get("playableRecommendations") or {}
         summary = dict(out.get("summary") or {})
         playable_accuracy = current_playable.get("accuracyPct")
         target = float(summary.get("targetAccuracyPct") or 90.0)
@@ -95,8 +124,10 @@ def apply(accuracy_module: Any):
             "sevenDayAccuracyPct": (seven.get("officialPredictions") or {}).get("accuracyPct"),
             "thirtyDayRowsUsedForLearning": (thirty.get("officialPredictions") or {}).get("count"),
             "thirtyDayAccuracyPct": (thirty.get("officialPredictions") or {}).get("accuracyPct"),
-            "seasonRowsUsedForLearning": (season.get("officialPredictions") or {}).get("count"),
-            "seasonAccuracyPct": (season.get("officialPredictions") or {}).get("accuracyPct"),
+            "seasonRowsUsedForLearning": season_official.get("count"),
+            "seasonAccuracyPct": season_official.get("accuracyPct"),
+            "seasonOfficialPredictionCount": season_official.get("count"),
+            "seasonPlayablePredictionCount": season_playable.get("count"),
             "accuracyTargetRowPolicy": "playable_recommendations_only; official_card_accuracy_reported_separately",
             "actionabilityPolicy": (
                 "Playable metrics require explicit modern playability or an explicit ACTIONABLE_PICK/ML_CONFIRMED tag. "
@@ -111,11 +142,16 @@ def apply(accuracy_module: Any):
         rwa["legacySummaryFieldsNormalized"] = True
         rwa["legacyProbabilityPolicy"] = "Use selected-side de-vigged market probability when pre-fix winProbabilityPct semantics are ambiguous."
         rwa["legacyPlayabilityPolicy"] = "Do not accept officialPick/actionablePick alone as proof of a playable recommendation on legacy rows."
+        rwa["selectedOddsPolicy"] = "Use the final predicted side's stored signal price; row-level pre-flip prices are fallback only."
+        rwa["ledgerReadbackPolicy"] = "Immutable ledger rows without an older status field are treated as GRADED when final winner and correctness are stored."
         out["realWorldAccuracy"] = rwa
         return out
 
     accuracy_module._is_playable = strict_playable
     accuracy_module._team_probability = true_team_probability
+    accuracy_module._selected_odds = selected_side_odds
+    accuracy_module._normalize_audit_row = normalize_with_ledger_status
+    accuracy_module._ledger_row = ledger_row_with_status
     accuracy_module.enhance_report = enhanced_report
     accuracy_module.VERSION = VERSION
 
@@ -126,4 +162,5 @@ def apply(accuracy_module: Any):
         pass
 
     accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED = True
+    accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V12 = True
     return accuracy_module
