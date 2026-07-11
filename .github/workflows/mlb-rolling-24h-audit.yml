@@ -10,12 +10,14 @@ on:
       - 'hello_world/mlb_audit_actionability_patch.py'
       - 'hello_world/mlb_learning_signal_filter_patch.py'
       - 'hello_world/mlb_locked_card_audit_v1.py'
+      - 'hello_world/mlb_real_world_accuracy_patch.py'
       - 'hello_world/mlb_ml_signal_layers.py'
       - 'hello_world/mlb_ml_feature_vector.py'
       - 'hello_world/mlb_ml_candidate_policy.py'
       - 'hello_world/mlb_ml_runtime_overlay.py'
       - 'hello_world/sitecustomize.py'
       - 'hello_world/all_sports_live_scheduler.py'
+      - 'scripts/verify_mlb_official_prediction_semantics.py'
   schedule:
     - cron: '20 * * * *'
   workflow_dispatch:
@@ -38,6 +40,9 @@ jobs:
       - name: Install runtime dependencies
         run: python -m pip install --upgrade boto3
 
+      - name: Validate official/playable accuracy semantics
+        run: python scripts/verify_mlb_official_prediction_semantics.py
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -57,13 +62,23 @@ jobs:
           import json
           import mlb_rolling_24h_audit
           report = mlb_rolling_24h_audit.build(store=True, write_file=True)
+          accuracy = report.get('realWorldAccuracy') or {}
+          windows = accuracy.get('windows') or {}
           print(json.dumps({
               'ok': report.get('ok'),
               'summary': report.get('summary'),
+              'realWorldAccuracyVersion': accuracy.get('version'),
+              'current24h': windows.get('current24h'),
+              'evidenceProgress': accuracy.get('evidenceProgress'),
+              'accuracyLedger': report.get('accuracyLedger'),
               'mlTraining': report.get('mlTraining'),
               'stored': report.get('stored'),
               'storeError': report.get('storeError'),
           }, indent=2, default=str))
+          if accuracy.get('applied') is not True:
+              raise SystemExit('real-world accuracy scorecard was not applied')
+          if report.get('accuracyLedger', {}).get('immutable') is not True:
+              raise SystemExit('immutable settled-game accuracy ledger was not enabled')
           PY
 
       - name: Commit rolling audit proof and ML artifacts
