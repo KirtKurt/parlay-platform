@@ -70,6 +70,9 @@ jobs:
       - name: Validate MLB production invariants
         run: python scripts/verify_mlb_schedule_invariants.py
 
+      - name: Validate MLB official prediction semantics
+        run: python scripts/verify_mlb_official_prediction_semantics.py
+
       - name: Validate SAM template
         run: sam validate
 
@@ -224,6 +227,41 @@ jobs:
         run: |
           API_URL="${{ steps.stack_outputs.outputs.api_url }}"
           curl --fail --silent --show-error "${API_URL}v1/mlb/game-winners?store=false"
+
+      - name: Verify live official prediction/playability separation
+        env:
+          API_URL: ${{ steps.stack_outputs.outputs.api_url }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          with urllib.request.urlopen(os.environ["API_URL"] + "v1/mlb/game-winners?store=false", timeout=45) as resp:
+              payload = json.loads(resp.read().decode("utf-8"))
+          rows = payload.get("predictions") or payload.get("winner_predictions") or []
+          locked = bool((payload.get("slatePredictionLock") or {}).get("locked"))
+          semantics = payload.get("predictionSemantics") or {}
+          if semantics.get("applied") is not True:
+              raise SystemExit("official prediction semantics guard was not applied")
+          if locked and rows:
+              if not all(row.get("officialPrediction") is True and row.get("officialPick") is True for row in rows):
+                  raise SystemExit("locked winner rows were not preserved as official predictions")
+              official_count = int(payload.get("officialPredictionCount") or 0)
+              if official_count != len(rows):
+                  raise SystemExit(f"official prediction count {official_count} != locked row count {len(rows)}")
+              playable_count = sum(row.get("playable") is True for row in rows)
+              if playable_count != int(payload.get("playablePredictionCount") or 0):
+                  raise SystemExit("playable prediction count is inconsistent")
+          print(json.dumps({
+              "locked": locked,
+              "rows": len(rows),
+              "officialPredictionCount": payload.get("officialPredictionCount"),
+              "playablePredictionCount": payload.get("playablePredictionCount"),
+              "nonPlayableOfficialPredictionCount": payload.get("nonPlayableOfficialPredictionCount"),
+              "semanticsVersion": semantics.get("version"),
+          }, indent=2))
+          PY
 
       - name: Smoke test MLB signal learning endpoint
         run: |
