@@ -9,7 +9,7 @@ import mlb_fundamentals_snapshot_v1 as fundamentals
 import mlb_ml_champion_challenger_v1 as champion
 import mlb_ml_clean_cohort_v1 as cohort
 import mlb_ml_dual_model_v1 as dual_model
-import mlb_ml_manual_promotion_only_v1 as manual_promotion
+import mlb_ml_manual_promotion_only_patch as manual_promotion
 
 manual_promotion.apply(champion)
 
