@@ -82,7 +82,9 @@ def frozen_row(index: int, modern: bool = True):
 
 
 def main() -> int:
-    legacy = frozen_row(1, modern=False); modern = frozen_row(2, modern=True)
+    # Use a unique legacy game identity so cohort deduplication does not remove a
+    # valid modern synthetic row before the quarantine assertion is evaluated.
+    legacy = frozen_row(180, modern=False); modern = frozen_row(2, modern=True)
     ok, reasons = cohort.eligibility(legacy)
     assert ok is False and "legacy_probability_semantics" in reasons
     ok, reasons = cohort.eligibility(modern)
