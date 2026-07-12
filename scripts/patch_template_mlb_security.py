@@ -31,6 +31,37 @@ def remove_child_event(current: str, name: str) -> str:
     return "".join(out)
 
 
+def ensure_function_env(current: str, resource_name: str, key: str, value: str) -> str:
+    """Add one function-specific environment variable without disturbing other resources."""
+    lines = current.splitlines(keepends=True)
+    start = next((i for i, line in enumerate(lines) if line.startswith(f"  {resource_name}:")), None)
+    if start is None:
+        raise RuntimeError(f"Function resource missing: {resource_name}")
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if lines[i].startswith("  ") and not lines[i].startswith("    "):
+            end = i
+            break
+    block = lines[start:end]
+    if any(line.startswith(f"          {key}:") for line in block):
+        return current
+
+    variables_index = next((i for i, line in enumerate(block) if line.startswith("        Variables:")), None)
+    if variables_index is not None:
+        block.insert(variables_index + 1, f"          {key}: {value}\n")
+    else:
+        properties_index = next((i for i, line in enumerate(block) if line.startswith("    Properties:")), None)
+        if properties_index is None:
+            raise RuntimeError(f"Properties block missing: {resource_name}")
+        block[properties_index + 1:properties_index + 1] = [
+            "      Environment:\n",
+            "        Variables:\n",
+            f"          {key}: {value}\n",
+        ]
+    lines[start:end] = block
+    return "".join(lines)
+
+
 admin_env = "        INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken\n"
 if admin_env not in text:
     marker = "        ODDS_API_KEY: !Ref OddsApiKey\n"
@@ -47,6 +78,8 @@ for name in [
 
 text = text.replace("Handler: mlb_manual_pull.lambda_handler", "Handler: mlb_manual_pull_protected.lambda_handler", 1)
 text = text.replace("Handler: mlb_daily_pick_lock.lambda_handler", "Handler: mlb_daily_pick_lock_protected.lambda_handler", 1)
+text = ensure_function_env(text, "MLBAuditedPullFunction", "INQSI_ADMIN_API_TOKEN", "!Ref InqsiAdminApiToken")
+text = ensure_function_env(text, "MLBDailyPickLockFunction", "INQSI_ADMIN_API_TOKEN", "!Ref InqsiAdminApiToken")
 
 # Resource entries must be indented exactly two spaces beneath Resources:.
 dedicated = """
@@ -124,6 +157,20 @@ verifier = """
 """
 text = insert_once(text, "  MLBResultsSchedulerFunction:\n", verifier, "  MLBProductionVerifierFunction:\n")
 
+
+def resource_block(current: str, resource_name: str) -> str:
+    lines = current.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith(f"  {resource_name}:")), None)
+    if start is None:
+        return ""
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if lines[i].startswith("  ") and not lines[i].startswith("    "):
+            end = i
+            break
+    return "\n".join(lines[start:end])
+
+
 required = [
     "Handler: inqsi_backend_api_wrapper.lambda_handler",
     "  MLBV3ReadFunction:", "Handler: mlb_v3_read_api.lambda_handler",
@@ -134,13 +181,20 @@ required = [
 ]
 missing = [value for value in required if value not in text]
 invalid_top_level = [name for name in ("MLBV3ReadFunction", "MLBProductionVerifierFunction") if f"\n{name}:\n" in text]
-if missing or invalid_top_level:
+missing_function_tokens = [
+    resource_name
+    for resource_name in ("MLBAuditedPullFunction", "MLBDailyPickLockFunction")
+    if "          INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken" not in resource_block(text, resource_name)
+]
+if missing or invalid_top_level or missing_function_tokens:
     details = []
     if missing:
         details.append("missing: " + ", ".join(missing))
     if invalid_top_level:
         details.append("resource indentation invalid: " + ", ".join(invalid_top_level))
+    if missing_function_tokens:
+        details.append("function-specific admin token missing: " + ", ".join(missing_function_tokens))
     raise RuntimeError("MLB dedicated v3 route patch failed; " + "; ".join(details))
 
 TEMPLATE.write_text(text)
-print("Patched template.yaml with correctly indented dedicated MLB v3 read Lambda and production verifier resources.")
+print("Patched template.yaml with dedicated MLB v3 reads, explicit pull/lock admin tokens, and production verifier resources.")
