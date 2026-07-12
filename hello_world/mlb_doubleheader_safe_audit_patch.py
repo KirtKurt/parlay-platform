@@ -193,7 +193,7 @@ def apply(module: Any):
         for provider_id in final_provider_ids:
             pred = (index.get("provider") or {}).get(provider_id)
             if pred:
-                return pred, "provider_game_id_alias", {"matchedProviderId": provider_id}
+                return pred, "provider_game_id", {"matchedProviderId": provider_id, "providerAliasAware": True}
 
         timed_key = _time_key(final)
         pred = (index.get("timed") or {}).get(timed_key)
