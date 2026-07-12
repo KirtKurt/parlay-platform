@@ -1,5 +1,4 @@
 name: MLB Rolling 24h Audit
-# Post-deploy clean-cohort verification trigger: 2026-07-12T00:21Z
 
 on:
   push:
@@ -13,6 +12,7 @@ on:
       - 'hello_world/mlb_locked_card_audit_v1.py'
       - 'hello_world/mlb_doubleheader_safe_audit_patch.py'
       - 'hello_world/mlb_slate_coverage_patch.py'
+      - 'hello_world/mlb_production_verifier.py'
       - 'hello_world/mlb_real_world_accuracy_patch.py'
       - 'hello_world/mlb_real_world_accuracy_semantics_fix.py'
       - 'hello_world/mlb_ml_critical_blockers_patch.py'
@@ -40,6 +40,7 @@ on:
       - 'hello_world/all_sports_live_scheduler.py'
       - 'scripts/verify_mlb_official_prediction_semantics.py'
       - 'scripts/verify_mlb_complete_slate_coverage.py'
+      - 'scripts/verify_mlb_settlement_matching_v3.py'
       - 'scripts/verify_mlb_ml_optimization_v3.py'
       - 'scripts/verify_mlb_ml_installation_1_5.py'
       - 'scripts/run_mlb_ml_v3_validation_report.py'
@@ -47,7 +48,7 @@ on:
       - 'scripts/promote_mlb_ml_champion.py'
       - '.github/workflows/mlb-ml-promote-champion.yml'
   schedule:
-    - cron: '20 * * * *'
+    - cron: '20,50 * * * *'
   workflow_dispatch:
 
 concurrency:
@@ -71,6 +72,9 @@ jobs:
 
       - name: Install runtime dependencies
         run: python -m pip install --upgrade boto3
+
+      - name: Verify settlement matching before AWS audit
+        run: python scripts/verify_mlb_settlement_matching_v3.py
 
       - name: Generate persistent ML v3 validation report
         run: python scripts/run_mlb_ml_v3_validation_report.py
@@ -104,13 +108,35 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/hello_world
         run: python scripts/run_mlb_ml_v3_audit_report.py
 
-      - name: Enforce AWS-backed MLB audit report
+      - name: Enforce AWS-backed MLB audit and freshness
         run: |
           python - <<'PY'
           import json
-          report = json.load(open('runtime_reports/mlb_ml_v3_audit_execution_latest.json', encoding='utf-8'))
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          path = Path('runtime_reports/mlb_ml_v3_audit_execution_latest.json')
+          report = json.loads(path.read_text(encoding='utf-8'))
           if report.get('ok') is not True:
               raise SystemExit('AWS-backed MLB ML v3 audit failed: ' + json.dumps(report, default=str))
+          created = datetime.fromisoformat(str(report.get('createdAtUtc')).replace('Z', '+00:00')).astimezone(timezone.utc)
+          age_minutes = (datetime.now(timezone.utc) - created).total_seconds() / 60.0
+          freshness = {
+              'ok': 0 <= age_minutes <= 15,
+              'checkedAtUtc': datetime.now(timezone.utc).isoformat(),
+              'auditCreatedAtUtc': created.isoformat(),
+              'auditAgeMinutes': round(age_minutes, 2),
+              'maximumAllowedAgeMinutes': 15,
+              'schedule': 'primary_at_minute_20_backup_at_minute_50',
+              'reportOk': report.get('ok'),
+              'cleanRowCount': ((report.get('mlOptimizationV3') or {}).get('cleanRowCount')),
+              'completedFinalGames': ((report.get('summary') or {}).get('completedFinalGames')),
+              'gradedPredictionCount': ((report.get('summary') or {}).get('gradedPredictionCount')),
+              'missingPredictionCount': ((report.get('summary') or {}).get('missingPredictionCount')),
+          }
+          Path('runtime_reports/mlb_audit_freshness_latest.json').write_text(json.dumps(freshness, indent=2) + '\n', encoding='utf-8')
+          if freshness['ok'] is not True:
+              raise SystemExit('MLB audit freshness failed: ' + json.dumps(freshness, default=str))
           PY
 
       - name: Commit rolling audit proof and ML artifacts
@@ -122,6 +148,7 @@ jobs:
           git add runtime_reports/mlb_ml_installation_1_5_latest.json || true
           git add runtime_reports/mlb_ml_v3_audit_execution_latest.json || true
           git add runtime_reports/mlb_rolling_24h_audit_latest.json || true
+          git add runtime_reports/mlb_audit_freshness_latest.json || true
           git add runtime_reports/mlb_ml_training_dataset_latest.csv || true
           git add runtime_reports/mlb_ml_model_latest.json || true
           git add runtime_reports/mlb_ml_clean_cohort_latest.json || true
