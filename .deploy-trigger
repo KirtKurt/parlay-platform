@@ -1,9 +1,9 @@
 Deploy trigger for current main.
-Purpose: deploy the dedicated MLB v3 read Lambda plus optimization installation items 1 through 5.
-Timestamp UTC: 2026-07-11T23:46:00Z
-Required route proof: MLBV3ReadFunction owns /v1/mlb/model/version, /today, /game-winners, /predictions, and /games.
-Required live model proof: model_version starts INQSI-MLB-v3.0 and ml_runtime_install.ok=true with legacyReliabilityOverlaySafety, singleDdbChampionAuthority, officialSemanticsFinalized, immutableFeatureFreeze, exactCleanCohortVectorPatch, and officialFreezeBridge all true.
-Required live data proof: The Odds API pull and canonical DynamoDB storage succeed without fallback.
-Required locked-row proof: every locked prediction preserves official status and contains a fingerprinted frozenFeatureVector created from the pregame source at or before lock.
-Required ML policy: outcome and reliability models remain separate, challenger remains shadow-only, and champion promotion remains manual and DynamoDB-reviewed.
-Required cohort behavior: historical legacy rows remain quarantined; new post-deployment locked rows enter the clean cohort only after final labels are joined without altering features.
+Purpose: deploy the fail-closed MLB daily-lock ML vector preservation repair.
+Timestamp UTC: 2026-07-12T23:35:00Z
+Required route proof: MLBDailyPickLockFunction uses mlb_daily_pick_lock_protected.lambda_handler.
+Required storage proof: every write-once daily locked pick preserves frozenFeatureVector, frozenFeatureVectorVersion, featureVectorFrozenAtLock, mlFeatureFreeze, slate coverage, modern probability semantics, selected-side locked odds and source, lock timestamp, and source-pull timestamp.
+Required integrity proof: fingerprint recalculation passes, vector game identity matches the row, source time is at or before lock time, and homeWon/pickCorrect remain null inside the pregame vector.
+Required fail-closed behavior: the daily card is not written when the exact vector is missing, mutated, mislabeled, unpriced, or not proven immutable.
+Required historical policy: July 12 and earlier invalid rows remain quarantined and are not reconstructed after outcomes are known.
+Required ML policy: outcome and reliability models remain separate, recommendation reliability threshold remains 60%, rolling 24-hour all-games audit target remains 90%, and champion promotion remains manual and DynamoDB-reviewed.
