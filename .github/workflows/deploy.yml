@@ -228,12 +228,16 @@ jobs:
               raise SystemExit("MLB live pull did not use The Odds API successfully")
           if payload.get("fallback_used"):
               raise SystemExit("MLB live pull used fallback/cached data during deploy smoke")
+          count = int(payload.get("count") or 0)
           canonical = payload.get("canonical_pull_history") or []
-          if not canonical or not any(row.get("ok") and int(row.get("games") or 0) > 0 for row in canonical):
-              raise SystemExit("MLB live pull did not store canonical pull history with games")
           winners = payload.get("game_winner_predictions") or []
-          if not winners or not any(row.get("ok") for row in winners):
-              raise SystemExit("MLB live pull did not run game-winner predictions")
+          if count == 0:
+              print("MLB provider call succeeded with no active/upcoming games; canonical game storage and winner generation are not applicable in this off-slate window.")
+          else:
+              if not canonical or not any(row.get("ok") and int(row.get("games") or 0) > 0 for row in canonical):
+                  raise SystemExit("MLB live pull returned games but did not store canonical pull history with games")
+              if not winners or not any(row.get("ok") for row in winners):
+                  raise SystemExit("MLB live pull returned games but did not run game-winner predictions")
           PY
 
       - name: Smoke test MLB v1 today endpoint
