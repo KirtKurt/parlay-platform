@@ -8,6 +8,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: write
 
 jobs:
@@ -15,73 +16,59 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Invoke live pull and capture sanitized response
+      - name: Read final deployment
         env:
-          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: 308754468de72c0eec319f54dafddc92b9762cbd
         run: |
           set -euo pipefail
-          export API_URL=$(aws cloudformation describe-stacks \
-            --stack-name parlay-platform-dev \
-            --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue | [0]' \
-            --output text)
+          mkdir -p runtime_reports
+          run_id=""
+          for i in $(seq 1 60); do
+            run_id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy.yml/runs?head_sha=${TARGET_SHA}&event=push&per_page=20" --jq '.workflow_runs[0].id // empty')
+            if [ -n "$run_id" ]; then break; fi
+            sleep 10
+          done
+          test -n "$run_id"
+          for i in $(seq 1 120); do
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > /tmp/run.json
+            status=$(jq -r '.status' /tmp/run.json)
+            if [ "$status" = "completed" ]; then break; fi
+            sleep 15
+          done
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" > /tmp/jobs.json
           python - <<'PY'
-          import json, os, urllib.error, urllib.request
-          from pathlib import Path
+          import json
           from datetime import datetime, timezone
-
-          api_url=os.environ['API_URL']
-          token=os.environ['INQSI_ADMIN_API_TOKEN_VALUE']
-          body=json.dumps({"t":"HOT","run":"diagnose_post_vector_deploy","days_ahead":0,"force":True}).encode()
-          req=urllib.request.Request(
-              api_url+'v1/pull/mlb', data=body,
-              headers={'content-type':'application/json','x-inqsi-admin-token':token}, method='POST')
-          status=None
-          raw=''
-          try:
-              with urllib.request.urlopen(req, timeout=60) as resp:
-                  status=resp.status
-                  raw=resp.read().decode()
-          except urllib.error.HTTPError as exc:
-              status=exc.code
-              raw=exc.read().decode()
-          try:
-              payload=json.loads(raw)
-          except Exception:
-              payload={'raw':raw[:2000]}
-          summary={
-              'ok': bool(status==200 and isinstance(payload,dict)),
-              'proofType':'MLB_LIVE_PULL_SMOKE_DIAGNOSTIC',
+          from pathlib import Path
+          run=json.load(open('/tmp/run.json'))
+          jobs=json.load(open('/tmp/jobs.json'))
+          result={
+              'ok': run.get('conclusion') == 'success',
+              'proofType':'MLB_FINAL_DEPLOYMENT_STATUS',
               'createdAtUtc':datetime.now(timezone.utc).isoformat(),
-              'httpStatus':status,
-              'response':{
-                  'ok':payload.get('ok') if isinstance(payload,dict) else None,
-                  'live_pull_ok':payload.get('live_pull_ok') if isinstance(payload,dict) else None,
-                  'fallback_used':payload.get('fallback_used') if isinstance(payload,dict) else None,
-                  'count':payload.get('count') if isinstance(payload,dict) else None,
-                  'game_dates_et':payload.get('game_dates_et') if isinstance(payload,dict) else None,
-                  'canonical_pull_history':payload.get('canonical_pull_history') if isinstance(payload,dict) else None,
-                  'game_winner_predictions':payload.get('game_winner_predictions') if isinstance(payload,dict) else None,
-                  'error':payload.get('error') if isinstance(payload,dict) else None,
-                  'message':payload.get('message') if isinstance(payload,dict) else None,
-              },
+              'targetSha':'308754468de72c0eec319f54dafddc92b9762cbd',
+              'runId':run.get('id'),
+              'status':run.get('status'),
+              'conclusion':run.get('conclusion'),
+              'jobs':[{
+                  'name':job.get('name'),
+                  'status':job.get('status'),
+                  'conclusion':job.get('conclusion'),
+                  'failedSteps':[step.get('name') for step in job.get('steps',[]) if step.get('conclusion')=='failure'],
+              } for job in jobs.get('jobs',[])],
           }
-          Path('runtime_reports').mkdir(exist_ok=True)
-          Path('runtime_reports/mlb_live_pull_smoke_diagnostic_latest.json').write_text(json.dumps(summary,indent=2,default=str)+'\n')
-          print(json.dumps(summary,indent=2,default=str))
+          Path('runtime_reports/mlb_final_deployment_status_latest.json').write_text(json.dumps(result,indent=2,default=str)+'\n')
+          print(json.dumps(result,indent=2,default=str))
           PY
-
-      - name: Commit diagnostic
+      - name: Commit status
         if: always()
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add runtime_reports/mlb_live_pull_smoke_diagnostic_latest.json || true
-          git commit -m "Persist MLB live pull smoke diagnostic" || true
+          git add runtime_reports/mlb_final_deployment_status_latest.json || true
+          git commit -m "Persist final MLB deployment status" || true
           git pull --rebase --autostash origin main || true
           git push || true
+
+# final status check 2026-07-13T00:10Z
