@@ -1,7 +1,7 @@
 {
   "ok": false,
   "proofType": "MLB_ML_V3_AND_DEPLOY_INVARIANT_VALIDATION",
-  "createdAtUtc": "2026-07-12T03:53:57.250975+00:00",
+  "createdAtUtc": "2026-07-12T03:55:47.629910+00:00",
   "results": [
     {
       "command": [
@@ -50,8 +50,8 @@
       ],
       "returnCode": 1,
       "ok": false,
-      "stdout": "MLB complete-slate coverage, AWS daily lock, no-backfill policy, and doubleheader-safe audit verified\n",
-      "stderr": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_ml_optimization_v3.py\", line 141, in <module>\n    raise SystemExit(main())\n                     ^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_ml_optimization_v3.py\", line 91, in main\n    assert ok is True, reasons\n           ^^^^^^^^^^\nAssertionError: ['selected_side_odds_source_not_proven']\nTraceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_schedule_invariants.py\", line 122, in <module>\n    subprocess.run([sys.executable, str(ML_OPTIMIZATION_VERIFY)], check=True)\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/subprocess.py\", line 571, in run\n    raise CalledProcessError(retcode, process.args,\nsubprocess.CalledProcessError: Command '['/opt/hostedtoolcache/Python/3.11.15/x64/bin/python', 'scripts/verify_mlb_ml_optimization_v3.py']' returned non-zero exit status 1.\n"
+      "stdout": "MLB complete-slate coverage, AWS daily lock, no-backfill policy, and doubleheader-safe audit verified\nMLB ML optimization v3 verified: immutable pregame features, final-label join, dual models, untouched priced ROI, independent gates, and shadow-only runtime\nMLB ML promotion safety verified: automatic promotion is impossible; reviewed DynamoDB promotion is required\n",
+      "stderr": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_ml_feature_integrity.py\", line 62, in <module>\n    raise SystemExit(main())\n                     ^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_ml_feature_integrity.py\", line 44, in main\n    assert ok is True, reasons\n           ^^^^^^^^^^\nAssertionError: ['selected_side_odds_source_not_proven']\nTraceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/verify_mlb_schedule_invariants.py\", line 124, in <module>\n    subprocess.run([sys.executable, str(ML_FEATURE_INTEGRITY_VERIFY)], check=True)\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/subprocess.py\", line 571, in run\n    raise CalledProcessError(retcode, process.args,\nsubprocess.CalledProcessError: Command '['/opt/hostedtoolcache/Python/3.11.15/x64/bin/python', 'scripts/verify_mlb_ml_feature_integrity.py']' returned non-zero exit status 1.\n"
     }
   ],
   "templatePatchOrderMirrorsDeploy": true,
