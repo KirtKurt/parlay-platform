@@ -52,10 +52,25 @@ def _auth_error(event: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return _resp(401, {"ok": False, "sport": "mlb", "error": "ADMIN_TOKEN_REQUIRED"})
 
 
+def _attach_preservation_status(response: Any) -> Any:
+    if not isinstance(response, dict):
+        return response
+    out = dict(response)
+    body = out.get("body")
+    try:
+        payload = json.loads(body) if isinstance(body, str) else dict(body or {})
+    except Exception:
+        payload = {"rawBody": body}
+    if isinstance(payload, dict):
+        payload["mlLockVectorPreservation"] = ML_VECTOR_PRESERVATION_STATUS
+        out["body"] = json.dumps(payload)
+    return out
+
+
 def lambda_handler(event, context):
     event = event or {}
     if (event.get("httpMethod") or "").upper() == "OPTIONS":
-        return _resp(200, {"ok": True})
+        return _resp(200, {"ok": True, "mlLockVectorPreservation": ML_VECTOR_PRESERVATION_STATUS})
     if ML_VECTOR_PRESERVATION_STATUS.get("ok") is not True:
         return _resp(
             500,
@@ -69,4 +84,4 @@ def lambda_handler(event, context):
     auth_error = _auth_error(event)
     if auth_error is not None:
         return auth_error
-    return mlb_daily_pick_lock.lambda_handler(event, context)
+    return _attach_preservation_status(mlb_daily_pick_lock.lambda_handler(event, context))
