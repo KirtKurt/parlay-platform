@@ -58,13 +58,16 @@ def row(index: int, modern: bool = True):
         "predictionSemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1" if modern else None,
         "teamWinProbabilityPct": round(max(home_probability, 1.0 - home_probability) * 100.0, 2) if modern else 7.5,
         "winProbabilityMeaning": "estimated_probability_selected_team_wins_game" if modern else "legacy_reliability",
-        "score": 50 + (home_probability - 0.5) * 100, "lockedAmericanOdds": selected_price,
+        "score": 50 + (home_probability - 0.5) * 100,
+        "lockedAmericanOdds": selected_price,
+        "priceBook": "fanduel",
+        "priceSource": "real_book",
         "advanced_context": source_honest_context(),
         "slateCoverage": {"coverageComplete": True, "manifestGameCount": 1, "predictionGameCount": 1, "storedPredictionCount": 1},
         "slatePredictionLock": {"locked": True, "finalLocked": True, "phase": "SLATE_LOCKED", "lockAtUtc": lock_at, "latestScoringPullAt": source_at},
-        "lockedCardAudit": {"lockedFlag": True, "lockAtUtc": lock_at, "explicitSourceAtUtc": source_at, "preventsLateRows": True, "version": "MLB-LOCKED-CARD-AUDIT-v2-doubleheader-safe-provider-time-match"},
-        "homeSignal": {"marketConsensusProbability": home_probability, "probLatest": home_probability, "delta": (index % 7 - 3) / 1000.0, "bookDivergence": 0.01 + (index % 4) / 1000.0, "reversalCount": index % 3, "runLineMovement": index % 5, "americanOdds": -110 if home_probability >= 0.5 else 120, "tags": ["BOOK_AGREEMENT"] + (["STEAM"] if index % 4 == 0 else [])},
-        "awaySignal": {"marketConsensusProbability": 1.0 - home_probability, "probLatest": 1.0 - home_probability, "delta": -(index % 7 - 3) / 1000.0, "bookDivergence": 0.01 + (index % 4) / 1000.0, "reversalCount": (index + 1) % 3, "runLineMovement": -(index % 5), "americanOdds": 100 if home_probability >= 0.5 else -120, "tags": ["BOOK_AGREEMENT"]},
+        "lockedCardAudit": {"lockedFlag": True, "lockAtUtc": lock_at, "explicitSourceAtUtc": source_at, "preventsLateRows": True, "version": "MLB-LOCKED-CARD-AUDIT-v3-provider-alias-nearest-time-doubleheader-safe"},
+        "homeSignal": {"marketConsensusProbability": home_probability, "probLatest": home_probability, "delta": (index % 7 - 3) / 1000.0, "bookDivergence": 0.01 + (index % 4) / 1000.0, "reversalCount": index % 3, "runLineMovement": index % 5, "americanOdds": -110 if home_probability >= 0.5 else 120, "priceBook": "fanduel", "priceSource": "real_book", "tags": ["BOOK_AGREEMENT"] + (["STEAM"] if index % 4 == 0 else [])},
+        "awaySignal": {"marketConsensusProbability": 1.0 - home_probability, "probLatest": 1.0 - home_probability, "delta": -(index % 7 - 3) / 1000.0, "bookDivergence": 0.01 + (index % 4) / 1000.0, "reversalCount": (index + 1) % 3, "runLineMovement": -(index % 5), "americanOdds": 100 if home_probability >= 0.5 else -120, "priceBook": "fanduel", "priceSource": "real_book", "tags": ["BOOK_AGREEMENT"]},
     }
 
 
@@ -82,8 +85,6 @@ def frozen_row(index: int, modern: bool = True):
 
 
 def main() -> int:
-    # Use a unique legacy game identity so cohort deduplication does not remove a
-    # valid modern synthetic row before the quarantine assertion is evaluated.
     legacy = frozen_row(180, modern=False); modern = frozen_row(2, modern=True)
     ok, reasons = cohort.eligibility(legacy)
     assert ok is False and "legacy_probability_semantics" in reasons
@@ -105,6 +106,9 @@ def main() -> int:
     built = cohort.build([legacy, *rows])
     assert built["cleanRowCount"] == 180 and built["quarantinedRowCount"] == 1, built
     assert built["completeSlateCoverageRequired"] is True and built["immutableFrozenFeatureVectorRequired"] is True
+    assert built["selectedSideLockedOddsRequired"] is True
+    assert built["selectedSideOddsBookOrRealSourceRequired"] is True
+    assert built["frozenVectorOutcomeLabelsMustRemainBlank"] is True
     trained = dual.train(built["cleanRows"])
     assert trained["ok"] is True, trained
     assert trained["featureLabelPolicy"] == "immutable_pregame_features_plus_final_settlement_labels"
