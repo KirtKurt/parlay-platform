@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "diagnostic_provider_probe_no_snapshot_storage",
-  "createdAt": "2026-07-12T18:42:31.538736+00:00",
+  "createdAt": "2026-07-12T19:57:42.750883+00:00",
   "sportsRequested": [
     "mlb",
     "wnba",
@@ -16,18 +16,18 @@
   "sportsWithConvertibleMarkets": [
     "mlb",
     "wnba",
-    "soccer",
-    "tennis"
+    "soccer"
   ],
   "sportsWithZeroConvertibleMarkets": [
     "nfl",
     "cfb",
     "nba",
     "ncaam",
-    "nhl"
+    "nhl",
+    "tennis"
   ],
   "sportsFailedActiveConversion": [],
-  "providerErrorCount": 7,
+  "providerErrorCount": 9,
   "providerErrors": [
     {
       "appSport": "nfl",
@@ -84,15 +84,37 @@
       "rawGamesInWindow": 0,
       "gamesConvertible": 0,
       "error": "active_slate_window_empty"
+    },
+    {
+      "appSport": "tennis",
+      "providerSportKey": "tennis_atp_singles",
+      "rawGamesReturned": null,
+      "rawGamesInWindow": null,
+      "gamesConvertible": null,
+      "error": {
+        "type": "HTTPError",
+        "message": "HTTP Error 404: Not Found"
+      }
+    },
+    {
+      "appSport": "tennis",
+      "providerSportKey": "tennis_wta_singles",
+      "rawGamesReturned": null,
+      "rawGamesInWindow": null,
+      "gamesConvertible": null,
+      "error": {
+        "type": "HTTPError",
+        "message": "HTTP Error 404: Not Found"
+      }
     }
   ],
   "results": [
     {
       "ok": true,
       "appSport": "mlb",
-      "rawGamesReturned": 15,
-      "rawGamesInWindow": 15,
-      "gamesConvertible": 15,
+      "rawGamesReturned": 14,
+      "rawGamesInWindow": 14,
+      "gamesConvertible": 14,
       "gamesStored": null,
       "diagnosticOnlyNoSnapshotStored": true,
       "activeStorageFailure": false,
@@ -101,14 +123,14 @@
           "ok": true,
           "appSport": "mlb",
           "providerSportKey": "baseball_mlb",
-          "rawGamesReturned": 15,
-          "rawGamesInWindow": 15,
-          "gamesConvertible": 15,
+          "rawGamesReturned": 14,
+          "rawGamesInWindow": 14,
+          "gamesConvertible": 14,
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T12:42:30.250456+00:00",
-          "activeWindowEnd": "2026-07-14T18:42:30.250456+00:00",
+          "activeWindowStart": "2026-07-12T13:57:40.898889+00:00",
+          "activeWindowEnd": "2026-07-14T19:57:40.898889+00:00",
           "slateWindowDays": 2,
           "error": null
         }
@@ -134,8 +156,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T12:42:30.344074+00:00",
-          "activeWindowEnd": "2026-07-14T18:42:30.344074+00:00",
+          "activeWindowStart": "2026-07-12T13:57:41.019299+00:00",
+          "activeWindowEnd": "2026-07-14T19:57:41.019299+00:00",
           "slateWindowDays": 2,
           "error": null
         }
@@ -161,8 +183,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T12:42:30.499824+00:00",
-          "activeWindowEnd": "2026-07-19T18:42:30.499824+00:00",
+          "activeWindowStart": "2026-07-12T13:57:41.258015+00:00",
+          "activeWindowEnd": "2026-07-19T19:57:41.258015+00:00",
           "slateWindowDays": 7,
           "error": "active_slate_window_empty"
         }
@@ -188,8 +210,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T12:42:30.680278+00:00",
-          "activeWindowEnd": "2026-07-19T18:42:30.680278+00:00",
+          "activeWindowStart": "2026-07-12T13:57:41.554043+00:00",
+          "activeWindowEnd": "2026-07-19T19:57:41.554043+00:00",
           "slateWindowDays": 7,
           "error": "active_slate_window_empty"
         }
@@ -215,8 +237,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T12:42:30.749411+00:00",
-          "activeWindowEnd": "2026-07-14T18:42:30.749411+00:00",
+          "activeWindowStart": "2026-07-12T13:57:41.737765+00:00",
+          "activeWindowEnd": "2026-07-14T19:57:41.737765+00:00",
           "slateWindowDays": 2,
           "error": "active_slate_window_empty"
         }
@@ -242,8 +264,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T12:42:30.846032+00:00",
-          "activeWindowEnd": "2026-07-14T18:42:30.846032+00:00",
+          "activeWindowStart": "2026-07-12T13:57:41.870936+00:00",
+          "activeWindowEnd": "2026-07-14T19:57:41.870936+00:00",
           "slateWindowDays": 2,
           "error": "active_slate_window_empty"
         }
@@ -269,8 +291,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T12:42:30.933331+00:00",
-          "activeWindowEnd": "2026-07-14T18:42:30.933331+00:00",
+          "activeWindowStart": "2026-07-12T13:57:42.016008+00:00",
+          "activeWindowEnd": "2026-07-14T19:57:42.016008+00:00",
           "slateWindowDays": 2,
           "error": "active_slate_window_empty"
         }
@@ -296,8 +318,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T12:42:31.143367+00:00",
-          "activeWindowEnd": "2026-07-26T18:42:31.143367+00:00",
+          "activeWindowStart": "2026-07-12T13:57:42.149281+00:00",
+          "activeWindowEnd": "2026-07-26T19:57:42.149281+00:00",
           "slateWindowDays": 14,
           "error": null
         },
@@ -311,8 +333,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T12:42:31.266118+00:00",
-          "activeWindowEnd": "2026-07-26T18:42:31.266118+00:00",
+          "activeWindowStart": "2026-07-12T13:57:42.279802+00:00",
+          "activeWindowEnd": "2026-07-26T19:57:42.279802+00:00",
           "slateWindowDays": 14,
           "error": "active_slate_window_empty"
         },
@@ -326,37 +348,42 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T12:42:31.342171+00:00",
-          "activeWindowEnd": "2026-07-26T18:42:31.342171+00:00",
+          "activeWindowStart": "2026-07-12T13:57:42.430931+00:00",
+          "activeWindowEnd": "2026-07-26T19:57:42.430931+00:00",
           "slateWindowDays": 14,
           "error": "active_slate_window_empty"
         }
       ]
     },
     {
-      "ok": true,
+      "ok": false,
       "appSport": "tennis",
-      "rawGamesReturned": 1,
-      "rawGamesInWindow": 1,
-      "gamesConvertible": 1,
+      "rawGamesReturned": 0,
+      "rawGamesInWindow": 0,
+      "gamesConvertible": 0,
       "gamesStored": null,
       "diagnosticOnlyNoSnapshotStored": true,
       "activeStorageFailure": false,
       "providerPulls": [
         {
-          "ok": true,
+          "ok": false,
           "appSport": "tennis",
-          "providerSportKey": "tennis_atp_wimbledon",
-          "rawGamesReturned": 1,
-          "rawGamesInWindow": 1,
-          "gamesConvertible": 1,
-          "gamesDroppedDuringConversion": 0,
+          "providerSportKey": "tennis_atp_singles",
           "gamesStored": 0,
-          "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T12:42:31.538684+00:00",
-          "activeWindowEnd": "2026-07-19T18:42:31.538684+00:00",
-          "slateWindowDays": 7,
-          "error": null
+          "error": {
+            "type": "HTTPError",
+            "message": "HTTP Error 404: Not Found"
+          }
+        },
+        {
+          "ok": false,
+          "appSport": "tennis",
+          "providerSportKey": "tennis_wta_singles",
+          "gamesStored": 0,
+          "error": {
+            "type": "HTTPError",
+            "message": "HTTP Error 404: Not Found"
+          }
         }
       ]
     }
