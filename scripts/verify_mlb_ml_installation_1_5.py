@@ -56,6 +56,9 @@ def _locked_result():
         "winProbabilityPct": 55.0,
         "winProbabilityMeaning": "estimated_probability_selected_team_wins_game",
         "probabilitySemanticsFixed": True,
+        "lockedAmericanOdds": -120,
+        "priceBook": "fanduel",
+        "priceSource": "real_book",
         "tags": ["BOOK_AGREEMENT", "FINAL_LOCKED", "SLATE_LOCKED"],
         "slatePredictionLock": {
             "locked": True,
@@ -75,6 +78,8 @@ def _locked_result():
             "reversalCount": 0,
             "runLineMovement": -0.5,
             "americanOdds": -120,
+            "priceBook": "fanduel",
+            "priceSource": "real_book",
             "tags": ["BOOK_AGREEMENT", "STEAM"],
         },
         "awaySignal": {
@@ -87,6 +92,8 @@ def _locked_result():
             "reversalCount": 0,
             "runLineMovement": 0.5,
             "americanOdds": 110,
+            "priceBook": "fanduel",
+            "priceSource": "real_book",
             "tags": ["BOOK_AGREEMENT"],
         },
         "advanced_context": {
@@ -126,7 +133,6 @@ def _locked_result():
 def main() -> int:
     checks = {}
 
-    # Install the exact production freeze path around official semantics.
     exact_patch.apply(frozen_features)
     freeze_bridge.apply(semantics)
     result = semantics.enhance_result(_locked_result())
@@ -143,6 +149,7 @@ def main() -> int:
         "exactVectorVersion": vector.get("version"),
         "fingerprintVerified": True,
         "outcomeLabelsAbsentAtLock": True,
+        "selectedSideOddsAndSourcePresent": True,
     }
 
     settled = copy.deepcopy(row)
@@ -154,6 +161,8 @@ def main() -> int:
             "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
             "lockedPrediction": True,
             "lockedAmericanOdds": -120,
+            "priceBook": "fanduel",
+            "priceSource": "real_book",
             "slateCoverage": result.get("slateCoverage"),
             "lockedCardAudit": {
                 "lockedFlag": True,
@@ -223,7 +232,7 @@ def main() -> int:
     report = {
         "ok": all(item.get("installed") for item in checks.values()),
         "proofType": "MLB_ML_INSTALLATION_1_5",
-        "version": "MLB-ML-INSTALLATION-1-5-v1",
+        "version": "MLB-ML-INSTALLATION-1-5-v1.1-priced-postgreen",
         "checks": checks,
         "cleanSettlementJoinVerified": clean.get("cleanRowCount") == 1,
         "policy": "All five optimization components are installed. Production ML remains shadow-only until clean evidence and reviewed promotion gates pass.",
