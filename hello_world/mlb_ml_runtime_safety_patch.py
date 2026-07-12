@@ -4,12 +4,21 @@ import json
 import os
 from typing import Any, Dict
 
-VERSION = "MLB-ML-RUNTIME-SAFETY-v2-ddb-champion-single-authority"
+VERSION = "MLB-ML-RUNTIME-SAFETY-v3-ddb-champion-90pct-floor"
 REQUIRED_VALIDATION_PROTOCOL = "chronological_train_validation_test_v1"
+MIN_ACCURACY_TARGET_PCT = 90.0
+
+
+def _accuracy_floor(value: Any = None) -> float:
+    try:
+        requested = float(value) if value not in {None, ""} else MIN_ACCURACY_TARGET_PCT
+    except Exception:
+        requested = MIN_ACCURACY_TARGET_PCT
+    return max(MIN_ACCURACY_TARGET_PCT, requested)
 
 
 def apply(overlay_module: Any):
-    if getattr(overlay_module, "_INQSI_MLB_RUNTIME_SAFETY_APPLIED_V2", False):
+    if getattr(overlay_module, "_INQSI_MLB_RUNTIME_SAFETY_APPLIED_V3", False):
         return overlay_module
 
     def strict_load_model() -> Dict[str, Any] | None:
@@ -45,7 +54,11 @@ def apply(overlay_module: Any):
         accuracy = float(metrics.get("selectedAccuracyPct") or 0.0)
         roi = metrics.get("selectedFlatUnitRoiPct")
         price_coverage = float(metrics.get("priceCoveragePct") or 0.0)
-        required_accuracy = float(model.get("promotionTargetAccuracyPct") or 60.0)
+        required_accuracy = max(
+            _accuracy_floor(os.environ.get("INQSI_MLB_ML_TARGET_ACCURACY", "90")),
+            _accuracy_floor(model.get("promotionTargetAccuracyPct")),
+            _accuracy_floor(target),
+        )
         return bool(
             selected >= int(os.environ.get("INQSI_MLB_ML_MIN_PRODUCTION_SELECTED_TEST_ROWS", "50"))
             and accuracy >= required_accuracy
@@ -57,8 +70,12 @@ def apply(overlay_module: Any):
     overlay_module._validated = strict_validated
     overlay_module.RUNTIME_SAFETY_VERSION = VERSION
     overlay_module.LOCAL_FILE_CHAMPION_DISABLED_BY_DEFAULT = True
+    overlay_module.MIN_ACCURACY_TARGET_PCT = MIN_ACCURACY_TARGET_PCT
     os.environ.setdefault("INQSI_MLB_ML_MIN_GUARDED_PROMOTIONS", "0")
-    os.environ.setdefault("INQSI_MLB_ML_TARGET_ACCURACY", "60")
+    os.environ["INQSI_MLB_ML_TARGET_ACCURACY"] = str(_accuracy_floor(os.environ.get("INQSI_MLB_ML_TARGET_ACCURACY", "90")))
+    os.environ["INQSI_MLB_ML_PLAYABLE_TARGET_ACCURACY"] = str(_accuracy_floor(os.environ.get("INQSI_MLB_ML_PLAYABLE_TARGET_ACCURACY", "90")))
+    os.environ["INQSI_MLB_ML_MIN_SELECTED_RELIABILITY_ACCURACY"] = str(_accuracy_floor(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_RELIABILITY_ACCURACY", "90")))
     overlay_module._INQSI_MLB_RUNTIME_SAFETY_APPLIED = True
     overlay_module._INQSI_MLB_RUNTIME_SAFETY_APPLIED_V2 = True
+    overlay_module._INQSI_MLB_RUNTIME_SAFETY_APPLIED_V3 = True
     return overlay_module
