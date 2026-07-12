@@ -5,7 +5,7 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-VERSION = "MLB-ML-CHAMPION-CHALLENGER-v1.1-separate-direction-playability-gates"
+VERSION = "MLB-ML-CHAMPION-CHALLENGER-v1.2-separate-direction-90pct-playability-gates"
 MIN_CLEAN_OFFICIAL = int(os.environ.get("INQSI_MLB_ML_MIN_CLEAN_OFFICIAL_FOR_PROMOTION", "500"))
 MIN_UNTOUCHED_TEST = int(os.environ.get("INQSI_MLB_ML_MIN_UNTOUCHED_TEST_FOR_PROMOTION", "100"))
 MIN_PUBLIC_PLAYABLE_EVIDENCE = int(os.environ.get("INQSI_MLB_ML_MIN_PLAYABLE_EVIDENCE_FOR_PUBLIC_CLAIM", "200"))
@@ -13,7 +13,7 @@ MIN_TEST_ACCURACY_LIFT_PCT = float(os.environ.get("INQSI_MLB_ML_MIN_TEST_ACCURAC
 MIN_BRIER_SKILL_PCT = float(os.environ.get("INQSI_MLB_ML_MIN_BRIER_SKILL_PCT", "0.1"))
 MAX_CALIBRATION_ERROR = float(os.environ.get("INQSI_MLB_ML_MAX_TEST_CALIBRATION_ERROR", "0.08"))
 MIN_SELECTED_RELIABILITY_TEST = int(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_RELIABILITY_TEST", "50"))
-MIN_SELECTED_RELIABILITY_ACCURACY = float(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_RELIABILITY_ACCURACY", "60"))
+MIN_SELECTED_RELIABILITY_ACCURACY = max(90.0, float(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_RELIABILITY_ACCURACY", "90")))
 MIN_SELECTED_PRICE_COVERAGE = float(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_PRICE_COVERAGE", "90"))
 MIN_SELECTED_ROI_PCT = float(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_ROI_PCT", "0"))
 MAX_RELIABILITY_CALIBRATION_ERROR = float(os.environ.get("INQSI_MLB_ML_MAX_RELIABILITY_CALIBRATION_ERROR", "0.10"))
@@ -139,7 +139,7 @@ def evaluate(dual_model: Dict[str, Any], clean_count: int, playable_evidence_cou
             "required": MIN_PUBLIC_PLAYABLE_EVIDENCE,
             "policy": "Two hundred settled production playable recommendations are required for a credible public playable-performance claim, but this is not a circular prerequisite for an initially validated playability champion.",
         },
-        "policy": "Direction and playability earn authority independently. Direction must beat the market on untouched chronological data. Playability must meet untouched selected-sample accuracy, calibration, price coverage, and positive ROI gates.",
+        "policy": "Direction and playability earn authority independently. Direction must beat the market on untouched chronological data. Playability must reach at least 90% accuracy on the untouched selected sample and also satisfy calibration, price coverage, and positive ROI gates.",
     }
 
 
