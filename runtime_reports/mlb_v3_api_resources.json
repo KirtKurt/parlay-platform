@@ -1,0 +1,1277 @@
+{
+    "items": [
+        {
+            "id": "05zjae",
+            "parentId": "ucp1a1",
+            "pathPart": "public",
+            "path": "/v1/public"
+        },
+        {
+            "id": "0p3xza",
+            "parentId": "760dfe",
+            "pathPart": "deltas",
+            "path": "/v1/signals/soccer/deltas",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerSignalApiFunction-pHW0WnQmQI7M/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "8k66uh",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "27m34t",
+            "parentId": "r73xig",
+            "pathPart": "cards",
+            "path": "/v1/app/soccer/cards",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerAppApiFunction-QH98PB9OrBAL/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "izjl0a",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "2g0enh",
+            "parentId": "nwxn4d",
+            "pathPart": "matches",
+            "path": "/v1/soccer/matches"
+        },
+        {
+            "id": "32sisn",
+            "parentId": "nwxn4d",
+            "pathPart": "movement",
+            "path": "/v1/soccer/movement",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerSignalApiFunction-pHW0WnQmQI7M/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "20kydm",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "3669mc",
+            "parentId": "giw2wvziha",
+            "pathPart": "{proxy+}",
+            "path": "/{proxy+}",
+            "resourceMethods": {
+                "ANY": {
+                    "httpMethod": "ANY",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "requestParameters": {
+                        "method.request.path.proxy": true
+                    },
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-ApiFunction-yKIowwxiQIBX/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "uc6p7b",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "37z46l",
+            "parentId": "3k1pki",
+            "pathPart": "status",
+            "path": "/v1/results/mlb/status",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBSignalApiFunction-GWh2wekdY5xG/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "dwpvi7",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "39azz0",
+            "parentId": "3k1pki",
+            "pathPart": "proof",
+            "path": "/v1/results/mlb/proof",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBResultsSchedulerFunction-EsmNd16RYLmT/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "rciuaj",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "3k1pki",
+            "parentId": "3trf1m",
+            "pathPart": "mlb",
+            "path": "/v1/results/mlb"
+        },
+        {
+            "id": "3trf1m",
+            "parentId": "ucp1a1",
+            "pathPart": "results",
+            "path": "/v1/results"
+        },
+        {
+            "id": "41586u",
+            "parentId": "b6z2ab",
+            "pathPart": "games",
+            "path": "/v1/mlb/games",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBV3ReadFunction-QnN5BEYDgbli/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "sadc05",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "4bkxpw",
+            "parentId": "b6z2ab",
+            "pathPart": "model",
+            "path": "/v1/mlb/model"
+        },
+        {
+            "id": "4dqewp",
+            "parentId": "7p4o2i",
+            "pathPart": "soccer",
+            "path": "/v1/sources/soccer"
+        },
+        {
+            "id": "52hsgn",
+            "parentId": "3trf1m",
+            "pathPart": "soccer",
+            "path": "/v1/results/soccer"
+        },
+        {
+            "id": "540s8j",
+            "parentId": "m4t5hj",
+            "pathPart": "mlb",
+            "path": "/v1/pull/mlb",
+            "resourceMethods": {
+                "POST": {
+                    "httpMethod": "POST",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBAuditedPullFunction-xYdYJJKZMe4M/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "il0xmj",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "573v2s",
+            "parentId": "4bkxpw",
+            "pathPart": "version",
+            "path": "/v1/mlb/model/version",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBV3ReadFunction-QnN5BEYDgbli/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "9wco97",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "68ukm2",
+            "parentId": "9tp57t",
+            "pathPart": "mlb",
+            "path": "/v1/predictions/mlb"
+        },
+        {
+            "id": "6ni3j1",
+            "parentId": "ucp1a1",
+            "pathPart": "health",
+            "path": "/v1/health",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-InqsiBackendApiFunction-6o4yiFnCS4Hm/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "5imt8e",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "749usi",
+            "parentId": "ew44z2",
+            "pathPart": "cards",
+            "path": "/v1/soccer/app/cards",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerAppApiFunction-QH98PB9OrBAL/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "wq7ot3",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "760dfe",
+            "parentId": "d53k7d",
+            "pathPart": "soccer",
+            "path": "/v1/signals/soccer"
+        },
+        {
+            "id": "7p4o2i",
+            "parentId": "ucp1a1",
+            "pathPart": "sources",
+            "path": "/v1/sources"
+        },
+        {
+            "id": "8c7nwm",
+            "parentId": "s7sp35",
+            "pathPart": "hot-sides",
+            "path": "/v1/predictions/soccer/hot-sides",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerSignalApiFunction-pHW0WnQmQI7M/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "wqkpjd",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "8qd95s",
+            "parentId": "52hsgn",
+            "pathPart": "status",
+            "path": "/v1/results/soccer/status",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerSignalApiFunction-pHW0WnQmQI7M/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "81zbks",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "8qfv71",
+            "parentId": "fgblak",
+            "pathPart": "deltas",
+            "path": "/v1/signals/mlb/deltas",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBSignalApiFunction-GWh2wekdY5xG/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "99txtt",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "90jq8x",
+            "parentId": "05zjae",
+            "pathPart": "{proxy+}",
+            "path": "/v1/public/{proxy+}",
+            "resourceMethods": {
+                "ANY": {
+                    "httpMethod": "ANY",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "requestParameters": {
+                        "method.request.path.proxy": true
+                    },
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-InqsiBackendApiFunction-6o4yiFnCS4Hm/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "evaeja",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "9a6w8e",
+            "parentId": "zn4aw5",
+            "pathPart": "{proxy+}",
+            "path": "/v1/slips/{proxy+}",
+            "resourceMethods": {
+                "ANY": {
+                    "httpMethod": "ANY",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "requestParameters": {
+                        "method.request.path.proxy": true
+                    },
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-InqsiBackendApiFunction-6o4yiFnCS4Hm/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "q68x21",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "9fjtu7",
+            "parentId": "f3y1cd",
+            "pathPart": "{proxy+}",
+            "path": "/v1/subscriptions/{proxy+}",
+            "resourceMethods": {
+                "ANY": {
+                    "httpMethod": "ANY",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "requestParameters": {
+                        "method.request.path.proxy": true
+                    },
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-InqsiBackendApiFunction-6o4yiFnCS4Hm/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "a2sc35",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "9tp57t",
+            "parentId": "ucp1a1",
+            "pathPart": "predictions",
+            "path": "/v1/predictions"
+        },
+        {
+            "id": "9zr4p8",
+            "parentId": "ucp1a1",
+            "pathPart": "audit",
+            "path": "/v1/audit"
+        },
+        {
+            "id": "b5019g",
+            "parentId": "bbs129",
+            "pathPart": "register",
+            "path": "/v1/members/register",
+            "resourceMethods": {
+                "POST": {
+                    "httpMethod": "POST",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-InqsiBackendApiFunction-6o4yiFnCS4Hm/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "n8rjkp",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "b6z2ab",
+            "parentId": "ucp1a1",
+            "pathPart": "mlb",
+            "path": "/v1/mlb"
+        },
+        {
+            "id": "bbs129",
+            "parentId": "ucp1a1",
+            "pathPart": "members",
+            "path": "/v1/members"
+        },
+        {
+            "id": "bf28uf",
+            "parentId": "3k1pki",
+            "pathPart": "settlement",
+            "path": "/v1/results/mlb/settlement",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBResultsSchedulerFunction-EsmNd16RYLmT/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "29ome2",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "bshm4r",
+            "parentId": "b6z2ab",
+            "pathPart": "today",
+            "path": "/v1/mlb/today",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBV3ReadFunction-QnN5BEYDgbli/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "vjlexc",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "c5x21h",
+            "parentId": "b6z2ab",
+            "pathPart": "game-winners",
+            "path": "/v1/mlb/game-winners",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBV3ReadFunction-QnN5BEYDgbli/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "pgee3i",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "c6w9fz",
+            "parentId": "3k1pki",
+            "pathPart": "signal-learning",
+            "path": "/v1/results/mlb/signal-learning",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBResultsSchedulerFunction-EsmNd16RYLmT/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "01rlhf",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "cssjx8",
+            "parentId": "ucp1a1",
+            "pathPart": "admin",
+            "path": "/v1/admin"
+        },
+        {
+            "id": "d53k7d",
+            "parentId": "ucp1a1",
+            "pathPart": "signals",
+            "path": "/v1/signals"
+        },
+        {
+            "id": "dunbpe",
+            "parentId": "68ukm2",
+            "pathPart": "hot-sides",
+            "path": "/v1/predictions/mlb/hot-sides",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBSignalApiFunction-GWh2wekdY5xG/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "kq1clh",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "eqqs0r",
+            "parentId": "9zr4p8",
+            "pathPart": "soccer",
+            "path": "/v1/audit/soccer"
+        },
+        {
+            "id": "ew44z2",
+            "parentId": "nwxn4d",
+            "pathPart": "app",
+            "path": "/v1/soccer/app"
+        },
+        {
+            "id": "f3y1cd",
+            "parentId": "ucp1a1",
+            "pathPart": "subscriptions",
+            "path": "/v1/subscriptions"
+        },
+        {
+            "id": "f9h2ar",
+            "parentId": "7p4o2i",
+            "pathPart": "mlb",
+            "path": "/v1/sources/mlb"
+        },
+        {
+            "id": "fgblak",
+            "parentId": "d53k7d",
+            "pathPart": "mlb",
+            "path": "/v1/signals/mlb"
+        },
+        {
+            "id": "g3egst",
+            "parentId": "b6z2ab",
+            "pathPart": "predictions",
+            "path": "/v1/mlb/predictions",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBV3ReadFunction-QnN5BEYDgbli/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "cup5c8",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "ge8s9d",
+            "parentId": "4dqewp",
+            "pathPart": "status",
+            "path": "/v1/sources/soccer/status",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerSignalApiFunction-pHW0WnQmQI7M/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "z4m2ak",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "giw2wvziha",
+            "path": "/",
+            "resourceMethods": {
+                "ANY": {
+                    "httpMethod": "ANY",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-ApiFunction-yKIowwxiQIBX/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "wz38pkbsl1",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "hoqpyt",
+            "parentId": "iyrpqc",
+            "pathPart": "snapshots",
+            "path": "/v1/audit/mlb/snapshots",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBSignalApiFunction-GWh2wekdY5xG/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "wxzosk",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "iftlza",
+            "parentId": "nwxn4d",
+            "pathPart": "hot-sides",
+            "path": "/v1/soccer/hot-sides",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerSignalApiFunction-pHW0WnQmQI7M/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "47e66x",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "inc2b3",
+            "parentId": "l59uys",
+            "pathPart": "today",
+            "path": "/v1/mlb/locks/today",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "33916q",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "iyrpqc",
+            "parentId": "9zr4p8",
+            "pathPart": "mlb",
+            "path": "/v1/audit/mlb"
+        },
+        {
+            "id": "kpi1de",
+            "parentId": "l59uys",
+            "pathPart": "status",
+            "path": "/v1/mlb/locks/status",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "vzh886",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "l59uys",
+            "parentId": "b6z2ab",
+            "pathPart": "locks",
+            "path": "/v1/mlb/locks"
+        },
+        {
+            "id": "l5urns",
+            "parentId": "2g0enh",
+            "pathPart": "signals",
+            "path": "/v1/soccer/matches/signals",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerSignalApiFunction-pHW0WnQmQI7M/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "wo81px",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "m4t5hj",
+            "parentId": "ucp1a1",
+            "pathPart": "pull",
+            "path": "/v1/pull"
+        },
+        {
+            "id": "nhu1tw",
+            "parentId": "ucp1a1",
+            "pathPart": "attribution",
+            "path": "/v1/attribution"
+        },
+        {
+            "id": "nwxn4d",
+            "parentId": "ucp1a1",
+            "pathPart": "soccer",
+            "path": "/v1/soccer"
+        },
+        {
+            "id": "o6jg6h",
+            "parentId": "m4t5hj",
+            "pathPart": "soccer",
+            "path": "/v1/pull/soccer",
+            "resourceMethods": {
+                "POST": {
+                    "httpMethod": "POST",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerSchedulerFunction-xwqyvPSylA6r/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "wd2kko",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "psz3xf",
+            "parentId": "bbs129",
+            "pathPart": "{proxy+}",
+            "path": "/v1/members/{proxy+}",
+            "resourceMethods": {
+                "ANY": {
+                    "httpMethod": "ANY",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "requestParameters": {
+                        "method.request.path.proxy": true
+                    },
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-InqsiBackendApiFunction-6o4yiFnCS4Hm/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "q0gsbk",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "q17erq",
+            "parentId": "iyrpqc",
+            "pathPart": "game",
+            "path": "/v1/audit/mlb/game",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBSignalApiFunction-GWh2wekdY5xG/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "x37t7y",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "qbdx7g",
+            "parentId": "nhu1tw",
+            "pathPart": "{proxy+}",
+            "path": "/v1/attribution/{proxy+}",
+            "resourceMethods": {
+                "ANY": {
+                    "httpMethod": "ANY",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "requestParameters": {
+                        "method.request.path.proxy": true
+                    },
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-InqsiBackendApiFunction-6o4yiFnCS4Hm/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "hmlp07",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "qr16nf",
+            "parentId": "nwxn4d",
+            "pathPart": "parlays",
+            "path": "/v1/soccer/parlays",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerSignalApiFunction-pHW0WnQmQI7M/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "6vjqbm",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "r73xig",
+            "parentId": "v8sqam",
+            "pathPart": "soccer",
+            "path": "/v1/app/soccer"
+        },
+        {
+            "id": "rotc75",
+            "parentId": "3k1pki",
+            "pathPart": "final-scores",
+            "path": "/v1/results/mlb/final-scores",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBResultsSchedulerFunction-EsmNd16RYLmT/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "yhkmnh",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "s7sp35",
+            "parentId": "9tp57t",
+            "pathPart": "soccer",
+            "path": "/v1/predictions/soccer"
+        },
+        {
+            "id": "s91y04",
+            "parentId": "eqqs0r",
+            "pathPart": "snapshots",
+            "path": "/v1/audit/soccer/snapshots",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerSignalApiFunction-pHW0WnQmQI7M/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "h6qooj",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "sca5be",
+            "parentId": "3k1pki",
+            "pathPart": "result-signals",
+            "path": "/v1/results/mlb/result-signals",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBResultsSchedulerFunction-EsmNd16RYLmT/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "m3dbr5",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                },
+                "POST": {
+                    "httpMethod": "POST",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBResultsSchedulerFunction-EsmNd16RYLmT/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "m3dbr5",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "syaces",
+            "parentId": "f9h2ar",
+            "pathPart": "status",
+            "path": "/v1/sources/mlb/status",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBSignalApiFunction-GWh2wekdY5xG/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "j9sxgl",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "ucp1a1",
+            "parentId": "giw2wvziha",
+            "pathPart": "v1",
+            "path": "/v1"
+        },
+        {
+            "id": "v2olve",
+            "parentId": "ucp1a1",
+            "pathPart": "scores",
+            "path": "/v1/scores"
+        },
+        {
+            "id": "v8sqam",
+            "parentId": "ucp1a1",
+            "pathPart": "app",
+            "path": "/v1/app"
+        },
+        {
+            "id": "w9yzqr",
+            "parentId": "cssjx8",
+            "pathPart": "{proxy+}",
+            "path": "/v1/admin/{proxy+}",
+            "resourceMethods": {
+                "ANY": {
+                    "httpMethod": "ANY",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "requestParameters": {
+                        "method.request.path.proxy": true
+                    },
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-InqsiBackendApiFunction-6o4yiFnCS4Hm/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "bona2t",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "wqv1w9",
+            "parentId": "l59uys",
+            "pathPart": "run",
+            "path": "/v1/mlb/locks/run",
+            "resourceMethods": {
+                "POST": {
+                    "httpMethod": "POST",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "xhr715",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "zn4aw5",
+            "parentId": "ucp1a1",
+            "pathPart": "slips",
+            "path": "/v1/slips",
+            "resourceMethods": {
+                "ANY": {
+                    "httpMethod": "ANY",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-InqsiBackendApiFunction-6o4yiFnCS4Hm/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "xij799",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "zpffqw",
+            "parentId": "52hsgn",
+            "pathPart": "audit",
+            "path": "/v1/results/soccer/audit",
+            "resourceMethods": {
+                "GET": {
+                    "httpMethod": "GET",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerResultsAuditFunction-bd4QgeTiN9gU/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "k4kr3t",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                },
+                "POST": {
+                    "httpMethod": "POST",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-SoccerResultsAuditFunction-bd4QgeTiN9gU/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "k4kr3t",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        },
+        {
+            "id": "zwbb19",
+            "parentId": "v2olve",
+            "pathPart": "{proxy+}",
+            "path": "/v1/scores/{proxy+}",
+            "resourceMethods": {
+                "ANY": {
+                    "httpMethod": "ANY",
+                    "authorizationType": "NONE",
+                    "apiKeyRequired": false,
+                    "requestParameters": {
+                        "method.request.path.proxy": true
+                    },
+                    "methodIntegration": {
+                        "type": "AWS_PROXY",
+                        "httpMethod": "POST",
+                        "uri": "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-dev-InqsiBackendApiFunction-6o4yiFnCS4Hm/invocations",
+                        "passthroughBehavior": "WHEN_NO_MATCH",
+                        "timeoutInMillis": 29000,
+                        "cacheNamespace": "ybzcii",
+                        "cacheKeyParameters": [],
+                        "responseTransferMode": "BUFFERED"
+                    }
+                }
+            }
+        }
+    ]
+}
