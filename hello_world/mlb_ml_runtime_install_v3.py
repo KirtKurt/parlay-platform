@@ -2,11 +2,23 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-VERSION = "MLB-ML-RUNTIME-INSTALL-v3.2-single-authority-exact-lock-vector"
+VERSION = "MLB-ML-RUNTIME-INSTALL-v3.3-separated-accuracy-targets"
 
 
 def install() -> Dict[str, Any]:
     status: Dict[str, Any] = {"applied": True, "version": VERSION, "steps": {}, "errors": []}
+
+    try:
+        import mlb_accuracy_target_policy_v1
+        policy = mlb_accuracy_target_policy_v1.install()
+        status["steps"]["accuracyTargetsSeparated"] = policy.get("ok") is True
+        status["accuracyTargetPolicy"] = policy
+        if policy.get("ok") is not True:
+            status["errors"].append(str(policy.get("errors") or policy))
+    except Exception as exc:
+        status["steps"]["accuracyTargetsSeparated"] = False
+        status["errors"].append(str(exc))
+
     try:
         import mlb_ml_runtime_overlay
         import mlb_ml_runtime_safety_patch
@@ -54,6 +66,7 @@ def install() -> Dict[str, Any]:
     status["ok"] = not status["errors"] and all(status["steps"].values())
     status["policy"] = (
         "The reviewed DynamoDB champion is the only model allowed to change direction or playability. "
+        "The rolling 24-hour all-games audit target is 90%, while recommendation reliability uses 60%. "
         "Every new locked game stores the exact immutable clean-cohort vector before final labels exist."
     )
     return status
