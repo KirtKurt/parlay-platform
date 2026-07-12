@@ -7,8 +7,6 @@
   "cleanRowCount": 0,
   "quarantinedRowCount": 213,
   "quarantineReasonCounts": {
-    "frozen_vector_fingerprint_mismatch": 22,
-    "pre_clean_cohort_cutoff": 59,
     "feature_vector_not_proven_immutable": 191,
     "feature_vector_source_not_lock_time_prediction": 191,
     "frozen_vector_features_missing": 191,
@@ -17,7 +15,9 @@
     "incomplete_or_unproven_slate_coverage": 191,
     "legacy_probability_semantics": 183,
     "missing_exact_stored_lock_time_feature_vector": 191,
+    "pre_clean_cohort_cutoff": 59,
     "wrong_frozen_feature_vector_version": 191,
+    "frozen_vector_fingerprint_mismatch": 22,
     "missing_team_win_probability": 162,
     "selected_side_odds_source_not_proven": 155,
     "missing_selected_side_locked_odds": 151,
@@ -28,14 +28,6 @@
   },
   "cleanRows": [],
   "quarantinedRows": [
-    {
-      "gameId": "a2501dff8c71ab28b0051fafeed81903",
-      "slateDateEt": "2026-07-11",
-      "reasons": [
-        "frozen_vector_fingerprint_mismatch",
-        "pre_clean_cohort_cutoff"
-      ]
-    },
     {
       "gameId": "db5e5f99da28e0ea52c06c7694fb5ad1",
       "slateDateEt": "2026-07-11",
@@ -283,6 +275,14 @@
         "legacy_probability_semantics",
         "missing_exact_stored_lock_time_feature_vector",
         "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a2501dff8c71ab28b0051fafeed81903",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch",
+        "pre_clean_cohort_cutoff"
       ]
     },
     {
