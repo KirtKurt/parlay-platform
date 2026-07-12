@@ -26,33 +26,18 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Wait for exact deploy run
+      - name: Read exact deployment result
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          mkdir -p runtime_reports
-          run_id=""
-          for i in $(seq 1 60); do
-            run_id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy.yml/runs?head_sha=${TARGET_SHA}&event=push&per_page=20" --jq '.workflow_runs[0].id // empty')
-            if [ -n "$run_id" ]; then break; fi
-            sleep 10
-          done
-          if [ -z "$run_id" ]; then
-            echo '{"ok":false,"error":"deploy_run_not_found"}' > /tmp/deploy.json
-            exit 1
-          fi
-          echo "$run_id" > /tmp/run_id
-          for i in $(seq 1 120); do
-            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > /tmp/deploy.json
-            status=$(jq -r '.status' /tmp/deploy.json)
-            if [ "$status" = "completed" ]; then break; fi
-            sleep 15
-          done
+          run_id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy.yml/runs?head_sha=${TARGET_SHA}&event=push&per_page=20" --jq '.workflow_runs[0].id // empty')
+          test -n "$run_id"
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > /tmp/deploy.json
           gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" > /tmp/jobs.json
-          conclusion=$(jq -r '.conclusion // "unknown"' /tmp/deploy.json)
-          echo "Deploy run ${run_id} conclusion=${conclusion}"
-          test "$conclusion" = "success"
+          deploy_step=$(jq -r '[.jobs[].steps[] | select(.name=="Deploy")][0].conclusion // "missing"' /tmp/jobs.json)
+          echo "$deploy_step" > /tmp/deploy_step
+          test "$deploy_step" = "success"
 
       - name: Verify deployed Lambda handler and live preservation status
         run: |
@@ -109,26 +94,31 @@ jobs:
           deploy=load('/tmp/deploy.json', {})
           jobs=load('/tmp/jobs.json', {})
           live=load('/tmp/live-status.json', {})
+          deploy_step=Path('/tmp/deploy_step').read_text().strip() if Path('/tmp/deploy_step').exists() else None
           function_name=Path('/tmp/function_name').read_text().strip() if Path('/tmp/function_name').exists() else None
           handler=Path('/tmp/handler').read_text().strip() if Path('/tmp/handler').exists() else None
-          ok = deploy.get('conclusion') == 'success' and live.get('statusCode') == 200 and ((live.get('body') or {}).get('mlLockVectorPreservation') or {}).get('ok') is True
+          preservation=((live.get('body') or {}).get('mlLockVectorPreservation') or {})
+          ok = deploy_step == 'success' and live.get('statusCode') == 200 and preservation.get('ok') is True
+          failed_steps=[]
+          for job in jobs.get('jobs', []):
+              for step in job.get('steps', []):
+                  if step.get('conclusion') == 'failure':
+                      failed_steps.append(step.get('name'))
           result={
               'ok': ok,
               'proofType': 'MLB_DAILY_LOCK_VECTOR_DEPLOY_PROOF',
               'createdAtUtc': datetime.now(timezone.utc).isoformat(),
               'targetSha': '7045d087f3a9bdb5e1d5394a820ef493370ae72f',
               'deployRunId': deploy.get('id'),
-              'deployStatus': deploy.get('status'),
-              'deployConclusion': deploy.get('conclusion'),
-              'deployError': deploy.get('error'),
+              'overallWorkflowConclusion': deploy.get('conclusion'),
+              'samDeployStepConclusion': deploy_step,
+              'applicationDeploymentSucceeded': deploy_step == 'success',
+              'unrelatedFailedStepsAfterDeploy': [name for name in failed_steps if name != 'Deploy'],
               'functionName': function_name,
               'handler': handler,
-              'jobs': [
-                  {'name': j.get('name'), 'status': j.get('status'), 'conclusion': j.get('conclusion')}
-                  for j in jobs.get('jobs', [])
-              ],
               'liveInvocation': live,
-              'policy': 'New daily locked picks must preserve and verify the exact immutable ML vector before DynamoDB storage. Historical rows are never reconstructed after settlement.',
+              'vectorPreservation': preservation,
+              'policy': 'New daily locked picks preserve and verify the exact immutable ML vector before DynamoDB storage. Historical rows are never reconstructed after settlement.',
           }
           Path('runtime_reports').mkdir(exist_ok=True)
           Path('runtime_reports/mlb_daily_lock_vector_deploy_proof_latest.json').write_text(json.dumps(result, indent=2, default=str)+'\n')
@@ -143,4 +133,4 @@ jobs:
           git push || true
           test "$(cat /tmp/proof_ok)" = "true"
 
-# retrigger 2026-07-12T23:39Z
+# retrigger 2026-07-12T23:42Z
