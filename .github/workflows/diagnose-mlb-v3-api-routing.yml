@@ -44,6 +44,8 @@ jobs:
             --query 'StackResourceDetail.PhysicalResourceId' \
             --output text)
 
+          export API_ID FUNCTION_NAME
+
           aws apigateway get-resources \
             --rest-api-id "$API_ID" \
             --embed methods \
@@ -95,6 +97,7 @@ jobs:
 
           API_URL="https://${API_ID}.execute-api.${AWS_REGION_VALUE}.amazonaws.com/Prod/"
           HTTP_CODE=$(curl -sS -o runtime_reports/mlb_v3_public_response.txt -w '%{http_code}' "${API_URL}v1/mlb/model/version" || true)
+          export HTTP_CODE
 
           python - <<'PY'
           import json, os
@@ -120,10 +123,6 @@ jobs:
           }
           Path('runtime_reports/mlb_v3_api_routing_diagnostic.json').write_text(json.dumps(summary, indent=2, default=str)+'\n')
           PY
-        env:
-          API_ID: ${{ env.API_ID }}
-          FUNCTION_NAME: ${{ env.FUNCTION_NAME }}
-          HTTP_CODE: ${{ env.HTTP_CODE }}
 
       - name: Commit routing diagnostic
         if: always()
