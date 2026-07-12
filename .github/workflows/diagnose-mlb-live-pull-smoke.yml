@@ -1,0 +1,90 @@
+name: Diagnose MLB Live Pull Smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-live-pull-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke live pull and capture sanitized response
+        env:
+          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue | [0]' \
+            --output text)
+          python - <<'PY'
+          import json, os, urllib.error, urllib.request
+          from pathlib import Path
+          from datetime import datetime, timezone
+
+          api_url=os.environ['API_URL']
+          token=os.environ['INQSI_ADMIN_API_TOKEN_VALUE']
+          body=json.dumps({"t":"HOT","run":"diagnose_post_vector_deploy","days_ahead":0,"force":True}).encode()
+          req=urllib.request.Request(
+              api_url+'v1/pull/mlb', data=body,
+              headers={'content-type':'application/json','x-inqsi-admin-token':token}, method='POST')
+          status=None
+          raw=''
+          try:
+              with urllib.request.urlopen(req, timeout=60) as resp:
+                  status=resp.status
+                  raw=resp.read().decode()
+          except urllib.error.HTTPError as exc:
+              status=exc.code
+              raw=exc.read().decode()
+          try:
+              payload=json.loads(raw)
+          except Exception:
+              payload={'raw':raw[:2000]}
+          summary={
+              'ok': bool(status==200 and isinstance(payload,dict)),
+              'proofType':'MLB_LIVE_PULL_SMOKE_DIAGNOSTIC',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'httpStatus':status,
+              'response':{
+                  'ok':payload.get('ok') if isinstance(payload,dict) else None,
+                  'live_pull_ok':payload.get('live_pull_ok') if isinstance(payload,dict) else None,
+                  'fallback_used':payload.get('fallback_used') if isinstance(payload,dict) else None,
+                  'count':payload.get('count') if isinstance(payload,dict) else None,
+                  'game_dates_et':payload.get('game_dates_et') if isinstance(payload,dict) else None,
+                  'canonical_pull_history':payload.get('canonical_pull_history') if isinstance(payload,dict) else None,
+                  'game_winner_predictions':payload.get('game_winner_predictions') if isinstance(payload,dict) else None,
+                  'error':payload.get('error') if isinstance(payload,dict) else None,
+                  'message':payload.get('message') if isinstance(payload,dict) else None,
+              },
+          }
+          Path('runtime_reports').mkdir(exist_ok=True)
+          Path('runtime_reports/mlb_live_pull_smoke_diagnostic_latest.json').write_text(json.dumps(summary,indent=2,default=str)+'\n')
+          print(json.dumps(summary,indent=2,default=str))
+          PY
+        env:
+          API_URL: ${{ env.API_URL }}
+          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+
+      - name: Commit diagnostic
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/mlb_live_pull_smoke_diagnostic_latest.json || true
+          git commit -m "Persist MLB live pull smoke diagnostic" || true
+          git pull --rebase --autostash origin main || true
+          git push || true
