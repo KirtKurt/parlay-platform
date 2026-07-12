@@ -1,0 +1,34 @@
+{
+  "ok": false,
+  "proofType": "MLB_MISSING_SETTLEMENT_DIAGNOSTICS",
+  "createdAtUtc": "2026-07-12T04:03:29.714812+00:00",
+  "auditCreatedAt": "2026-07-12T04:02:48.508556+00:00",
+  "completedFinalGames": 16,
+  "gradedPredictionCount": 15,
+  "missingPredictionCount": 1,
+  "missingRows": [
+    {
+      "status": "MISSING_LOCKED_PREDICTION",
+      "id": "db5e5f99da28e0ea52c06c7694fb5ad1",
+      "gameId": null,
+      "provider_game_id": null,
+      "slateDateEt": "2026-07-11",
+      "matchup": "Toronto Blue Jays at San Diego Padres",
+      "awayTeam": "Toronto Blue Jays",
+      "homeTeam": "San Diego Padres",
+      "commenceTime": "2026-07-12T00:41:00Z",
+      "winner": "San Diego Padres",
+      "homeScore": 8,
+      "awayScore": 7,
+      "missingReason": "no_unambiguous_locked_prediction_match",
+      "finalProviderIds": [
+        "db5e5f99da28e0ea52c06c7694fb5ad1"
+      ],
+      "finalCommenceTime": "2026-07-12T00:41:00+00:00",
+      "matchupCandidateCount": 0,
+      "candidateDiagnostics": [],
+      "selectionPolicy": "provider_alias_then_exact_time_then_safe_nearest_time_then_unique_matchup",
+      "auditVersion": "MLB-LOCKED-CARD-AUDIT-v3-provider-alias-nearest-time-doubleheader-safe"
+    }
+  ]
+}
