@@ -26,7 +26,7 @@ jobs:
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
           set -euo pipefail
-          API_URL=$(aws cloudformation describe-stacks \
+          export API_URL=$(aws cloudformation describe-stacks \
             --stack-name parlay-platform-dev \
             --query 'Stacks[0].Outputs[?OutputKey==`ApiUrl`].OutputValue | [0]' \
             --output text)
@@ -75,9 +75,6 @@ jobs:
           Path('runtime_reports/mlb_live_pull_smoke_diagnostic_latest.json').write_text(json.dumps(summary,indent=2,default=str)+'\n')
           print(json.dumps(summary,indent=2,default=str))
           PY
-        env:
-          API_URL: ${{ env.API_URL }}
-          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
 
       - name: Commit diagnostic
         if: always()
