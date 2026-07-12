@@ -29,11 +29,14 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           text=Path('/tmp/deploy-1212.log').read_text(errors='replace').splitlines()
-          start=0
-          for i,line in enumerate(text):
-              if 'Smoke test live MLB Odds API pull and storage' in line:
-                  start=i
-          end=min(len(text), start+260)
+          needles=['deploy_live_odds_smoke','live_pull_ok','fallback_used','MLB live pull','canonical_pull_history','game_winner_predictions']
+          matches=[i for i,line in enumerate(text) if any(n in line for n in needles)]
+          if matches:
+              start=max(0,min(matches)-45)
+              end=min(len(text),max(matches)+90)
+          else:
+              start=max(0,len(text)-320)
+              end=len(text)
           block='\n'.join(text[start:end])+'\n'
           Path('runtime_reports/deploy_1212_odds_smoke_failure.txt').write_text(block)
           PY
@@ -44,6 +47,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add runtime_reports/deploy_1212_odds_smoke_failure.txt || true
-          git commit -m "Persist deploy 1212 odds smoke failure" || true
+          git commit -m "Persist narrowed deploy 1212 odds smoke failure" || true
           git pull --rebase --autostash origin main || true
           git push || true
