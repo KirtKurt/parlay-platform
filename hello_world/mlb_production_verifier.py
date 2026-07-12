@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 from datetime import datetime, timezone
@@ -8,10 +9,12 @@ from typing import Any, Dict, List, Optional
 from zoneinfo import ZoneInfo
 
 import boto3
+from boto3.dynamodb.conditions import Key
 
 import inqsi_pull_history as history
 import mlb_daily_pick_lock
 import mlb_game_winner_engine
+import mlb_ml_clean_cohort_v1
 
 EASTERN = ZoneInfo("America/New_York")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -80,17 +83,172 @@ def _payload(event: Dict[str, Any]) -> Dict[str, Any]:
     return out
 
 
+def _row_game_id(row: Dict[str, Any]) -> str:
+    return str(
+        row.get("id")
+        or row.get("gameId")
+        or row.get("game_id")
+        or row.get("providerGameId")
+        or row.get("provider_game_id")
+        or (row.get("lockedCardAudit") or {}).get("providerGameId")
+        or ""
+    )
+
+
+def _row_lock_at(row: Dict[str, Any]) -> Optional[datetime]:
+    audit = row.get("lockedCardAudit") or {}
+    for value in (
+        audit.get("lockAtUtc"),
+        (row.get("slatePredictionLock") or {}).get("lockAtUtc"),
+        (row.get("lastPossiblePredictionGate") or {}).get("lockAtUtc"),
+        row.get("lockedAtUtc"),
+    ):
+        parsed = _parse_dt(value)
+        if parsed:
+            return parsed
+    return None
+
+
+def _is_locked_prediction(row: Dict[str, Any]) -> bool:
+    tags = {str(value) for value in (row.get("tags") or [])}
+    audit = row.get("lockedCardAudit") or {}
+    return bool(
+        row.get("lockedPrediction") is True
+        or row.get("officialPredictionStatus") == "OFFICIAL_LOCKED_PREDICTION"
+        or row.get("officialPrediction") is True
+        or audit.get("lockedFlag") is True
+        or "SLATE_LOCKED" in tags
+        or "FINAL_LOCKED" in tags
+        or "OFFICIAL_LOCKED_PREDICTION" in tags
+    )
+
+
+def _expected_fingerprint(vector: Dict[str, Any]) -> str:
+    source = json.dumps(
+        {
+            "gameId": vector.get("gameId"),
+            "lockAtUtc": vector.get("lockAtUtc"),
+            "features": vector.get("features") or {},
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def _query_stored_predictions(slate_date: str) -> List[Dict[str, Any]]:
+    if TABLE is None:
+        return []
+    rows: List[Dict[str, Any]] = []
+    start_key = None
+    while True:
+        args: Dict[str, Any] = {
+            "KeyConditionExpression": Key("PK").eq(f"GAME_WINNERS#mlb#{slate_date}"),
+            "ConsistentRead": True,
+        }
+        if start_key:
+            args["ExclusiveStartKey"] = start_key
+        response = TABLE.query(**args)
+        for item in response.get("Items") or []:
+            data = item.get("data") if isinstance(item.get("data"), dict) else item
+            if isinstance(data, dict):
+                rows.append(data)
+        start_key = response.get("LastEvaluatedKey")
+        if not start_key:
+            return rows
+
+
+def _vector_validation(row: Dict[str, Any]) -> Dict[str, Any]:
+    vector = row.get("frozenFeatureVector") or {}
+    game_id = _row_game_id(row)
+    row_lock = _row_lock_at(row)
+    vector_lock = _parse_dt(vector.get("lockAtUtc"))
+    source_at = _parse_dt(vector.get("sourcePullAtUtc"))
+    fingerprint = str(vector.get("fingerprint") or "")
+    reasons: List[str] = []
+    if not _is_locked_prediction(row):
+        reasons.append("not_locked_prediction")
+    if not game_id:
+        reasons.append("missing_game_id")
+    if not isinstance(vector, dict) or not vector:
+        reasons.append("missing_frozen_feature_vector")
+    if str(vector.get("version") or "") != mlb_ml_clean_cohort_v1.FEATURE_SNAPSHOT_VERSION:
+        reasons.append("wrong_frozen_feature_vector_version")
+    if str(vector.get("gameId") or "") != game_id:
+        reasons.append("frozen_vector_game_identity_mismatch")
+    if not isinstance(vector.get("features"), dict) or not vector.get("features"):
+        reasons.append("frozen_vector_features_missing")
+    if not fingerprint:
+        reasons.append("missing_fingerprint")
+    elif fingerprint != _expected_fingerprint(vector):
+        reasons.append("fingerprint_mismatch")
+    if not row_lock or not vector_lock or row_lock != vector_lock:
+        reasons.append("lock_timestamp_mismatch")
+    if not source_at or not vector_lock or source_at > vector_lock:
+        reasons.append("source_after_or_missing_lock")
+    return {
+        "ok": not reasons,
+        "gameId": game_id,
+        "fingerprint": fingerprint or None,
+        "version": vector.get("version"),
+        "rowLockAtUtc": row_lock.isoformat() if row_lock else None,
+        "vectorLockAtUtc": vector_lock.isoformat() if vector_lock else None,
+        "sourcePullAtUtc": source_at.isoformat() if source_at else None,
+        "reasons": sorted(set(reasons)),
+    }
+
+
+def _locked_row_integrity(slate_date: str, expected_count: int, locked: bool) -> Dict[str, Any]:
+    stored = _query_stored_predictions(slate_date)
+    grouped: Dict[str, List[Dict[str, Any]]] = {}
+    for row in stored:
+        game_id = _row_game_id(row)
+        if game_id:
+            grouped.setdefault(game_id, []).append(row)
+
+    selected: List[Dict[str, Any]] = []
+    for candidates in grouped.values():
+        evaluated = [(row, _vector_validation(row)) for row in candidates]
+        valid = [pair for pair in evaluated if pair[1].get("ok")]
+        if valid:
+            selected.append(max(valid, key=lambda pair: str(pair[0].get("createdAt") or pair[0].get("created_at") or ""))[0])
+        else:
+            selected.append(max(evaluated, key=lambda pair: str(pair[0].get("createdAt") or pair[0].get("created_at") or ""))[0])
+
+    checks = [_vector_validation(row) for row in selected]
+    valid = [check for check in checks if check.get("ok")]
+    invalid = [check for check in checks if not check.get("ok")]
+    complete = bool(locked and expected_count > 0 and len(selected) == expected_count and len(valid) == expected_count)
+    return {
+        "evaluated": bool(locked),
+        "requiredFeatureVectorVersion": mlb_ml_clean_cohort_v1.FEATURE_SNAPSHOT_VERSION,
+        "expectedGameCount": expected_count,
+        "rawStoredRowCount": len(stored),
+        "deduplicatedStoredGameCount": len(selected),
+        "validFingerprintCount": len(valid),
+        "invalidFingerprintCount": len(invalid),
+        "coverageComplete": complete,
+        "invalidRows": invalid,
+        "checks": checks,
+        "policy": "Every locked manifest game must have one stored immutable vector whose fingerprint, game identity, lock timestamp, and pre-lock source timestamp recompute successfully.",
+    }
+
+
 def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any]:
     pulls = history.query_pulls("mlb", slate_date, 500)
     latest_pull = pulls[-1] if pulls else {}
     latest_age = _age_minutes(latest_pull.get("pulled_at")) if latest_pull else None
     predictions = mlb_game_winner_engine.predict_all(slate_date, store=False, limit=500)
-    lock_status = mlb_daily_pick_lock._status_payload(slate_date)  # internal status read; no writes and no Odds API call
+    lock_status = mlb_daily_pick_lock._status_payload(slate_date)
 
     blockers: List[str] = []
     game_count = int(predictions.get("gameCount") or 0)
     prediction_count = int(predictions.get("count") or 0)
     pull_count = len(pulls)
+    lock_data = lock_status.get("lock") or {}
+    expected_locked_count = int(lock_data.get("gameCount") or lock_data.get("predictionCount") or game_count or 0)
+    locked = bool(lock_status.get("locked"))
+    integrity = _locked_row_integrity(slate_date, expected_locked_count, locked)
 
     if mode in {"continuous", "ingest"}:
         if pull_count == 0:
@@ -104,9 +262,11 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
         if game_count > 0 and prediction_count < game_count:
             blockers.append("INCOMPLETE_SINGLE_GAME_CARD")
 
-    if mode == "lock":
-        if bool(lock_status.get("lockDue")) and game_count > 0 and not bool(lock_status.get("locked")):
+    if mode in {"continuous", "lock"}:
+        if bool(lock_status.get("lockDue")) and game_count > 0 and not locked:
             blockers.append("LOCK_DUE_BUT_NOT_LOCKED")
+        if locked and not integrity.get("coverageComplete"):
+            blockers.append("LOCKED_ROWS_MISSING_VALID_FROZEN_FINGERPRINTS")
 
     ok = not blockers
     return {
@@ -125,11 +285,13 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
         "promotedCount": predictions.get("promotedCount"),
         "allGamesPredicted": predictions.get("allGamesPredicted"),
         "lock": {
-            "locked": lock_status.get("locked"),
+            "locked": locked,
             "lockDue": lock_status.get("lockDue"),
             "lockTimeEt": lock_status.get("lockTimeEt"),
             "minutesUntilLock": lock_status.get("minutesUntilLock"),
+            "expectedLockedGameCount": expected_locked_count,
         },
+        "lockedRowIntegrity": integrity,
         "blockers": blockers,
     }
 
