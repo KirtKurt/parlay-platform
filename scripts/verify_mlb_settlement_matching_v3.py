@@ -83,7 +83,6 @@ FINALS = [
 
 
 def main():
-    # Reset flags so this test proves the current implementation.
     for name in ("_INQSI_MLB_DOUBLEHEADER_SAFE_AUDIT_APPLIED", "_INQSI_MLB_DOUBLEHEADER_SAFE_AUDIT_V3_APPLIED"):
         if hasattr(DummyAudit, name):
             delattr(DummyAudit, name)
@@ -93,7 +92,8 @@ def main():
     assert all(row.get("status") == "GRADED" for row in rows), rows
     assert all(row.get("correct") is True for row in rows), rows
     methods = [row.get("lockedCardAudit", {}).get("matchMethod") for row in rows]
-    assert methods[0] == "provider_game_id_alias", methods
+    assert methods[0] == "provider_game_id", methods
+    assert rows[0].get("lockedCardAudit", {}).get("providerAliasAware") is True, rows[0]
     assert methods[1] == "teams_and_nearest_commence_time", methods
     assert methods[2] == "teams_and_nearest_commence_time", methods
     assert methods[3] == "teams_and_nearest_commence_time", methods
