@@ -6,6 +6,7 @@ TEMPLATE = Path('template.yaml')
 ENGINE = Path('hello_world/mlb_game_winner_engine.py')
 COVERAGE_VERIFY = Path('scripts/verify_mlb_complete_slate_coverage.py')
 IMMUTABLE_LOCKED_STORAGE_VERIFY = Path('scripts/verify_mlb_immutable_locked_storage.py')
+ACCURACY_TARGET_SEPARATION_VERIFY = Path('scripts/verify_mlb_accuracy_target_separation.py')
 ML_OPTIMIZATION_VERIFY = Path('scripts/verify_mlb_ml_optimization_v3.py')
 ML_PROMOTION_VERIFY = Path('scripts/verify_mlb_ml_promotion_safety.py')
 ML_FEATURE_INTEGRITY_VERIFY = Path('scripts/verify_mlb_ml_feature_integrity.py')
@@ -89,6 +90,7 @@ for required_path in [
     Path('hello_world/mlb_doubleheader_safe_audit_patch.py'),
     Path('hello_world/mlb_all_games_coverage_patch.py'),
     Path('hello_world/mlb_immutable_locked_storage_patch.py'),
+    Path('hello_world/mlb_accuracy_target_policy_v1.py'),
     Path('hello_world/mlb_ml_frozen_features.py'),
     Path('hello_world/mlb_ml_exact_lock_vector_patch.py'),
     Path('hello_world/mlb_official_freeze_bridge.py'),
@@ -108,6 +110,7 @@ for required_path in [
     Path('.github/workflows/mlb-ml-promote-champion.yml'),
     COVERAGE_VERIFY,
     IMMUTABLE_LOCKED_STORAGE_VERIFY,
+    ACCURACY_TARGET_SEPARATION_VERIFY,
     ML_OPTIMIZATION_VERIFY,
     ML_PROMOTION_VERIFY,
     ML_FEATURE_INTEGRITY_VERIFY,
@@ -123,10 +126,11 @@ if violations:
 _ensure_validation_dependencies()
 subprocess.run([sys.executable, str(COVERAGE_VERIFY)], check=True)
 subprocess.run([sys.executable, str(IMMUTABLE_LOCKED_STORAGE_VERIFY)], check=True)
+subprocess.run([sys.executable, str(ACCURACY_TARGET_SEPARATION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_OPTIMIZATION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_PROMOTION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_FEATURE_INTEGRITY_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_INSTALLATION_1_5_VERIFY)], check=True)
 subprocess.run([sys.executable, str(MLB_API_FUNCTION_IMPORT_VERIFY)], check=True)
 
-print('MLB production invariants PASS: complete-slate coverage, immutable write-once locked storage, exact clean-cohort lock vectors, final-label joins, separate outcome/reliability models, untouched validation with priced ROI, source-honest fundamentals, independent promotion gates, manual-only DDB champion promotion, and single runtime authority are installed.')
+print('MLB production invariants PASS: complete-slate coverage, immutable write-once locked storage, 90% rolling all-games audit separated from the 60% recommendation threshold, exact clean-cohort lock vectors, final-label joins, separate outcome/reliability models, untouched validation with priced ROI, source-honest fundamentals, independent promotion gates, manual-only DDB champion promotion, and single runtime authority are installed.')
