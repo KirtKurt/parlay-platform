@@ -15,6 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 AUDIT = ROOT / "runtime_reports" / "mlb_rolling_24h_audit_latest.json"
 OUTPUT = ROOT / "runtime_reports" / "mlb_missing_settlement_diagnostics_latest.json"
 TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "parlay_platform_snapshots")
+QUERY_ERRORS: Dict[str, str] = {}
 
 
 def safe(value: Any) -> Any:
@@ -60,25 +61,30 @@ def norm(value: Any) -> str:
 
 def query_partition(slate_date: str) -> List[Dict[str, Any]]:
     if not TABLE_NAME:
+        QUERY_ERRORS[slate_date] = "SNAPSHOTS_TABLE_NOT_CONFIGURED"
         return []
-    table = boto3.resource("dynamodb").Table(TABLE_NAME)
-    rows: List[Dict[str, Any]] = []
-    start_key = None
-    while True:
-        args: Dict[str, Any] = {
-            "KeyConditionExpression": Key("PK").eq(f"GAME_WINNERS#mlb#{slate_date}"),
-            "ConsistentRead": True,
-        }
-        if start_key:
-            args["ExclusiveStartKey"] = start_key
-        response = table.query(**args)
-        for item in response.get("Items") or []:
-            data = item.get("data") if isinstance(item.get("data"), dict) else item
-            if isinstance(data, dict):
-                rows.append(safe(data))
-        start_key = response.get("LastEvaluatedKey")
-        if not start_key:
-            return rows
+    try:
+        table = boto3.resource("dynamodb").Table(TABLE_NAME)
+        rows: List[Dict[str, Any]] = []
+        start_key = None
+        while True:
+            args: Dict[str, Any] = {
+                "KeyConditionExpression": Key("PK").eq(f"GAME_WINNERS#mlb#{slate_date}"),
+                "ConsistentRead": True,
+            }
+            if start_key:
+                args["ExclusiveStartKey"] = start_key
+            response = table.query(**args)
+            for item in response.get("Items") or []:
+                data = item.get("data") if isinstance(item.get("data"), dict) else item
+                if isinstance(data, dict):
+                    rows.append(safe(data))
+            start_key = response.get("LastEvaluatedKey")
+            if not start_key:
+                return rows
+    except Exception as exc:
+        QUERY_ERRORS[slate_date] = f"{type(exc).__name__}: {exc}"
+        return []
 
 
 def summary(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -146,6 +152,7 @@ def main() -> int:
             "selectionPolicy": audit.get("selectionPolicy"),
             "auditVersion": audit.get("version"),
             "ddbPartition": f"GAME_WINNERS#mlb#{slate}",
+            "ddbQueryError": QUERY_ERRORS.get(slate),
             "ddbPartitionRowCount": len(partition),
             "ddbProviderIdMatchCount": len(id_matches),
             "ddbMatchupMatchCount": len(matchup_matches),
@@ -159,6 +166,7 @@ def main() -> int:
         "createdAtUtc": datetime.now(timezone.utc).isoformat(),
         "auditCreatedAt": report.get("createdAt"),
         "snapshotsTableConfigured": bool(TABLE_NAME),
+        "ddbQueryErrors": QUERY_ERRORS,
         "completedFinalGames": (report.get("summary") or {}).get("completedFinalGames"),
         "gradedPredictionCount": (report.get("summary") or {}).get("gradedPredictionCount"),
         "missingPredictionCount": len(missing),
