@@ -42,6 +42,7 @@ on:
       - 'scripts/verify_mlb_complete_slate_coverage.py'
       - 'scripts/verify_mlb_settlement_matching_v3.py'
       - 'scripts/verify_mlb_postdeploy_settlement_integrity.py'
+      - 'scripts/verify_mlb_selected_side_odds_coverage.py'
       - 'scripts/verify_mlb_ml_optimization_v3.py'
       - 'scripts/verify_mlb_ml_installation_1_5.py'
       - 'scripts/run_mlb_ml_v3_validation_report.py'
@@ -115,6 +116,11 @@ jobs:
           INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-12T00:20:17+00:00'
         run: python scripts/verify_mlb_postdeploy_settlement_integrity.py
 
+      - name: Verify selected-side odds coverage
+        env:
+          INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-12T00:20:17+00:00'
+        run: python scripts/verify_mlb_selected_side_odds_coverage.py
+
       - name: Enforce AWS-backed MLB audit and freshness
         run: |
           python - <<'PY'
@@ -157,6 +163,7 @@ jobs:
           git add runtime_reports/mlb_rolling_24h_audit_latest.json || true
           git add runtime_reports/mlb_audit_freshness_latest.json || true
           git add runtime_reports/mlb_postdeploy_settlement_integrity_latest.json || true
+          git add runtime_reports/mlb_selected_side_odds_coverage_latest.json || true
           git add runtime_reports/mlb_ml_training_dataset_latest.csv || true
           git add runtime_reports/mlb_ml_model_latest.json || true
           git add runtime_reports/mlb_ml_clean_cohort_latest.json || true
