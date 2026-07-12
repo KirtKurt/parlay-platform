@@ -1,0 +1,113 @@
+name: Monitor Final MLB Vector Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/monitor-final-mlb-vector-deploy.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    env:
+      TARGET_SHA: 308754468de72c0eec319f54dafddc92b9762cbd
+      STACK_NAME: parlay-platform-dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Wait for final deploy run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          run_id=""
+          for i in $(seq 1 90); do
+            run_id=$(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/deploy.yml/runs?head_sha=${TARGET_SHA}&event=push&per_page=20" --jq '.workflow_runs[0].id // empty')
+            if [ -n "$run_id" ]; then break; fi
+            sleep 10
+          done
+          test -n "$run_id"
+          for i in $(seq 1 120); do
+            gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > /tmp/deploy.json
+            status=$(jq -r '.status' /tmp/deploy.json)
+            if [ "$status" = "completed" ]; then break; fi
+            sleep 15
+          done
+          gh api "repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" > /tmp/jobs.json
+          test "$(jq -r '.conclusion' /tmp/deploy.json)" = "success"
+
+      - name: Verify live lock preservation
+        run: |
+          set -euo pipefail
+          function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK_NAME" \
+            --logical-resource-id MLBDailyPickLockFunction \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          handler=$(aws lambda get-function-configuration --function-name "$function_name" --query 'Handler' --output text)
+          test "$handler" = "mlb_daily_pick_lock_protected.lambda_handler"
+          payload='{"httpMethod":"GET","path":"/v1/mlb/locks/status","queryStringParameters":{"slate_date":"2026-07-13"},"requestContext":{"stage":"Prod"}}'
+          aws lambda invoke --function-name "$function_name" --cli-binary-format raw-in-base64-out --payload "$payload" /tmp/lambda-response.json >/tmp/invoke-meta.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          response=json.load(open('/tmp/lambda-response.json'))
+          body=json.loads(response.get('body') or '{}')
+          status=body.get('mlLockVectorPreservation') or {}
+          assert int(response.get('statusCode') or 0) == 200, response
+          assert status.get('ok') is True, status
+          assert status.get('version') == 'MLB-DAILY-LOCK-ML-VECTOR-PRESERVATION-v1-fail-closed', status
+          assert status.get('failClosed') is True, status
+          assert status.get('outcomeLabelsForbiddenAtLock') is True, status
+          Path('/tmp/live.json').write_text(json.dumps({'statusCode':response.get('statusCode'),'body':body},indent=2,default=str)+'\n')
+          PY
+          echo "$function_name" > /tmp/function_name
+          echo "$handler" > /tmp/handler
+
+      - name: Persist final proof
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          def load(path, default):
+              try: return json.load(open(path))
+              except Exception: return default
+          deploy=load('/tmp/deploy.json',{})
+          jobs=load('/tmp/jobs.json',{})
+          live=load('/tmp/live.json',{})
+          result={
+              'ok': deploy.get('conclusion')=='success' and live.get('statusCode')==200 and ((live.get('body') or {}).get('mlLockVectorPreservation') or {}).get('ok') is True,
+              'proofType':'MLB_FINAL_VECTOR_DEPLOYMENT_PROOF',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'targetSha':'308754468de72c0eec319f54dafddc92b9762cbd',
+              'deployRunId':deploy.get('id'),
+              'deployConclusion':deploy.get('conclusion'),
+              'jobs':[{'name':j.get('name'),'status':j.get('status'),'conclusion':j.get('conclusion'),'failedSteps':[s.get('name') for s in j.get('steps',[]) if s.get('conclusion')=='failure']} for j in jobs.get('jobs',[])],
+              'functionName':Path('/tmp/function_name').read_text().strip() if Path('/tmp/function_name').exists() else None,
+              'handler':Path('/tmp/handler').read_text().strip() if Path('/tmp/handler').exists() else None,
+              'liveInvocation':live,
+          }
+          Path('runtime_reports').mkdir(exist_ok=True)
+          Path('runtime_reports/mlb_final_vector_deployment_proof_latest.json').write_text(json.dumps(result,indent=2,default=str)+'\n')
+          Path('/tmp/ok').write_text('true' if result['ok'] else 'false')
+          print(json.dumps(result,indent=2,default=str))
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/mlb_final_vector_deployment_proof_latest.json
+          git commit -m "Persist final MLB vector deployment proof" || true
+          git pull --rebase --autostash origin main || true
+          git push || true
+          test "$(cat /tmp/ok)" = "true"
