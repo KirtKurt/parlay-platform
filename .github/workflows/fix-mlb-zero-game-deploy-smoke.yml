@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Make live pull smoke off-slate safe
+      - name: Generate off-slate-safe deploy workflow copy
         run: |
           python - <<'PY'
           from pathlib import Path
@@ -43,16 +43,18 @@ jobs:
 '''
           if old not in text:
               raise SystemExit('target live-pull smoke block not found or already changed')
-          path.write_text(text.replace(old,new,1))
+          patched=text.replace(old,new,1)
+          Path('runtime_reports').mkdir(exist_ok=True)
+          Path('runtime_reports/deploy_offslate_patched.yml').write_text(patched)
           PY
 
-      - name: Commit smoke correction
+      - name: Commit reviewed patched copy
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add .github/workflows/deploy.yml
-          git commit -m "Allow valid zero-game MLB off-slate deploy smoke" || true
+          git add runtime_reports/deploy_offslate_patched.yml
+          git commit -m "Persist reviewed off-slate-safe deploy workflow copy" || true
           git pull --rebase --autostash origin main
           git push
 
-# retrigger 2026-07-12T23:45Z
+# retrigger 2026-07-12T23:48Z
