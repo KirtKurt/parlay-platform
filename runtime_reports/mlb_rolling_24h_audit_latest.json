@@ -1,24 +1,24 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-12T00:12:00.291374+00:00",
+  "createdAt": "2026-07-12T00:22:58.922334+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
     "windowHours": 24,
     "targetAccuracyPct": 60.0,
-    "completedFinalGames": 14,
+    "completedFinalGames": 13,
     "gradedPredictionCount": 11,
-    "missingPredictionCount": 3,
+    "missingPredictionCount": 2,
     "optimizedPickCount": 0,
     "optimizedCorrect": 0,
     "optimizedWrong": 0,
     "rolling24hOptimizedAccuracyPct": null,
     "rolling24hTargetMet": null,
-    "winnerOptimizerAppliedCount": 1,
+    "winnerOptimizerAppliedCount": 2,
     "winnerOptimizerFlipCount": 0,
-    "allScoredPickAccuracyPct": 63.64,
-    "historicalRowsUsedForLearning": 190,
+    "allScoredPickAccuracyPct": 54.55,
+    "historicalRowsUsedForLearning": 191,
     "sevenDayRowsUsedForLearning": 67,
     "sevenDayAccuracyPct": 46.27,
     "thirtyDayRowsUsedForLearning": 92,
@@ -36,26 +36,26 @@
     "actionableWrong": 0,
     "rolling24hActionableAccuracyPct": null,
     "accuracyTargetRowPolicy": "playable_recommendations_only; official_card_accuracy_reported_separately",
-    "excludedNoPickOptimizedRows": 10,
+    "excludedNoPickOptimizedRows": 9,
     "actionabilityPolicy": "Playable metrics require explicit modern playability or ACTIONABLE_PICK/ML_CONFIRMED. officialPick is never a playability signal.",
     "officialPredictionCount": 11,
-    "officialCorrect": 7,
-    "officialWrong": 4,
-    "rolling24hOfficialAccuracyPct": 63.64,
+    "officialCorrect": 6,
+    "officialWrong": 5,
+    "rolling24hOfficialAccuracyPct": 54.55,
     "officialAccuracyConfidenceInterval95Pct": {
-      "lowPct": 35.38,
-      "highPct": 84.83
+      "lowPct": 28.01,
+      "highPct": 78.73
     },
     "playablePredictionCount": 0,
     "playableCorrect": 0,
     "playableWrong": 0,
     "rolling24hPlayableAccuracyPct": null,
     "playableCoveragePct": 0.0,
-    "marketFavoriteBaselineAccuracyPct": 72.73,
+    "marketFavoriteBaselineAccuracyPct": 63.64,
     "modelAccuracyLiftVsMarketPct": -9.09,
-    "officialBrierScore": 0.236818,
-    "officialLogLoss": 0.666908,
-    "officialFlatUnitRoiPct": 13.3,
+    "officialBrierScore": 0.246014,
+    "officialLogLoss": 0.685373,
+    "officialFlatUnitRoiPct": -3.91,
     "playableFlatUnitRoiPct": null,
     "seasonOfficialPredictionCount": 92,
     "seasonPlayablePredictionCount": 8,
@@ -67,83 +67,18 @@
     "multiWindowStats": {
       "current24h": {
         "rowCount": 11,
-        "correct": 7,
-        "wrong": 4,
-        "accuracyPct": 63.64,
+        "correct": 6,
+        "wrong": 5,
+        "accuracyPct": 54.55,
         "tagStats": {
-          "DIRECTIONAL_SCORE_V2": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
-          },
-          "LOW_CONFIDENCE_PREDICTION": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
-          },
-          "NOT_PLAYABLE": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
-          },
-          "OFFICIAL_LOCKED_PREDICTION": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
-          },
-          "OFFICIAL_PREDICTION": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
-          },
-          "OFFICIAL_PREDICTION_NOT_PLAYABLE": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
-          },
-          "PASS__FORCED_PREDICTION": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
-          },
-          "PICKEM": {
-            "count": 4,
-            "correct": 3,
-            "accuracyPct": 75.0
-          },
-          "PLATFORM_PICK": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
+          "BOOK_AGREEMENT": {
+            "count": 11,
+            "correct": 6,
+            "accuracyPct": 54.55
           },
           "POSITIVE_MOVE": {
             "count": 5,
-            "correct": 4,
-            "accuracyPct": 80.0
-          },
-          "PREDICTION_REMAINS_AVAILABLE": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
-          },
-          "REQUIRED_GAME_WINNER_PREDICTION": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
-          },
-          "SHOW_AT_SLATE_LOCK": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
-          },
-          "SIGNAL_POLICY_V13_SCORE_ONLY": {
-            "count": 10,
-            "correct": 7,
-            "accuracyPct": 70.0
-          },
-          "BOOK_AGREEMENT": {
-            "count": 10,
-            "correct": 6,
+            "correct": 3,
             "accuracyPct": 60.0
           },
           "REVERSAL": {
@@ -156,18 +91,83 @@
             "correct": 2,
             "accuracyPct": 40.0
           },
-          "FAVORITE": {
-            "count": 2,
+          "DIRECTIONAL_SCORE_V2": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "LOW_CONFIDENCE_PREDICTION": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "NOT_PLAYABLE": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "OFFICIAL_LOCKED_PREDICTION": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "OFFICIAL_PREDICTION": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "OFFICIAL_PREDICTION_NOT_PLAYABLE": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "PASS__FORCED_PREDICTION": {
+            "count": 9,
+            "correct": 6,
+            "accuracyPct": 66.67
+          },
+          "PLATFORM_PICK": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "PREDICTION_REMAINS_AVAILABLE": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "REQUIRED_GAME_WINNER_PREDICTION": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "SHOW_AT_SLATE_LOCK": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "SIGNAL_POLICY_V13_SCORE_ONLY": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "PICKEM": {
+            "count": 3,
             "correct": 2,
-            "accuracyPct": 100.0
+            "accuracyPct": 66.67
+          },
+          "FAVORITE": {
+            "count": 3,
+            "correct": 2,
+            "accuracyPct": 66.67
+          },
+          "COIN_FLIP_PREDICTION": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
           }
         },
         "tagComboStats": {
-          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
           "BOOK_AGREEMENT+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
             "count": 1,
             "correct": 0,
@@ -198,6 +198,11 @@
             "correct": 2,
             "accuracyPct": 100.0
           },
+          "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
+          },
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
             "count": 1,
             "correct": 0,
@@ -205,11 +210,6 @@
           }
         },
         "confidenceStats": {
-          "Solid": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
           "Lean": {
             "count": 2,
             "correct": 1,
@@ -219,13 +219,18 @@
             "count": 8,
             "correct": 5,
             "accuracyPct": 62.5
+          },
+          "Coin Flip": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
           }
         },
         "optimizerFlipStats": {
           "NOT_FLIPPED": {
             "count": 11,
-            "correct": 7,
-            "accuracyPct": 63.64
+            "correct": 6,
+            "accuracyPct": 54.55
           }
         }
       },
@@ -235,6 +240,26 @@
         "wrong": 47,
         "accuracyPct": 53.92,
         "tagStats": {
+          "BOOK_AGREEMENT": {
+            "count": 76,
+            "correct": 41,
+            "accuracyPct": 53.95
+          },
+          "POSITIVE_MOVE": {
+            "count": 20,
+            "correct": 9,
+            "accuracyPct": 45.0
+          },
+          "REVERSAL": {
+            "count": 90,
+            "correct": 48,
+            "accuracyPct": 53.33
+          },
+          "UNDERDOG": {
+            "count": 11,
+            "correct": 3,
+            "accuracyPct": 27.27
+          },
           "DIRECTIONAL_SCORE_V2": {
             "count": 24,
             "correct": 14,
@@ -266,24 +291,14 @@
             "accuracyPct": 58.33
           },
           "PASS__FORCED_PREDICTION": {
-            "count": 23,
+            "count": 22,
             "correct": 13,
-            "accuracyPct": 56.52
-          },
-          "PICKEM": {
-            "count": 11,
-            "correct": 7,
-            "accuracyPct": 63.64
+            "accuracyPct": 59.09
           },
           "PLATFORM_PICK": {
             "count": 24,
             "correct": 14,
             "accuracyPct": 58.33
-          },
-          "POSITIVE_MOVE": {
-            "count": 20,
-            "correct": 9,
-            "accuracyPct": 45.0
           },
           "PREDICTION_REMAINS_AVAILABLE": {
             "count": 24,
@@ -305,25 +320,20 @@
             "correct": 14,
             "accuracyPct": 58.33
           },
-          "BOOK_AGREEMENT": {
-            "count": 76,
-            "correct": 41,
-            "accuracyPct": 53.95
-          },
-          "REVERSAL": {
-            "count": 90,
-            "correct": 48,
-            "accuracyPct": 53.33
-          },
-          "UNDERDOG": {
+          "PICKEM": {
             "count": 11,
-            "correct": 3,
-            "accuracyPct": 27.27
+            "correct": 7,
+            "accuracyPct": 63.64
           },
           "FAVORITE": {
             "count": 14,
             "correct": 6,
             "accuracyPct": 42.86
+          },
+          "COIN_FLIP_PREDICTION": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
           },
           "LEAN_PREDICTION": {
             "count": 1,
@@ -382,11 +392,6 @@
           }
         },
         "tagComboStats": {
-          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
           "BOOK_AGREEMENT+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
             "count": 1,
             "correct": 0,
@@ -417,10 +422,20 @@
             "correct": 2,
             "accuracyPct": 66.67
           },
+          "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
+          },
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
             "count": 2,
             "correct": 0,
             "accuracyPct": 0.0
+          },
+          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
+            "count": 1,
+            "correct": 1,
+            "accuracyPct": 100.0
           },
           "BOOK_AGREEMENT+FAVORITE+POSITIVE_MOVE+REVERSAL": {
             "count": 1,
@@ -428,11 +443,6 @@
             "accuracyPct": 0.0
           },
           "BOOK_AGREEMENT+FAVORITE+REVERSAL": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
-          "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
             "count": 1,
             "correct": 0,
             "accuracyPct": 0.0
@@ -669,30 +679,30 @@
           }
         },
         "confidenceStats": {
-          "Solid": {
-            "count": 3,
-            "correct": 2,
-            "accuracyPct": 66.67
-          },
           "Lean": {
             "count": 11,
             "correct": 7,
             "accuracyPct": 63.64
           },
           "Pass": {
-            "count": 58,
+            "count": 57,
             "correct": 21,
-            "accuracyPct": 36.21
+            "accuracyPct": 36.84
+          },
+          "Coin Flip": {
+            "count": 10,
+            "correct": 6,
+            "accuracyPct": 60.0
+          },
+          "Solid": {
+            "count": 3,
+            "correct": 2,
+            "accuracyPct": 66.67
           },
           "Premium": {
             "count": 21,
             "correct": 19,
             "accuracyPct": 90.48
-          },
-          "Coin Flip": {
-            "count": 9,
-            "correct": 6,
-            "accuracyPct": 66.67
           }
         },
         "optimizerFlipStats": {
@@ -714,6 +724,26 @@
         "wrong": 80,
         "accuracyPct": 58.12,
         "tagStats": {
+          "BOOK_AGREEMENT": {
+            "count": 130,
+            "correct": 79,
+            "accuracyPct": 60.77
+          },
+          "POSITIVE_MOVE": {
+            "count": 20,
+            "correct": 9,
+            "accuracyPct": 45.0
+          },
+          "REVERSAL": {
+            "count": 153,
+            "correct": 83,
+            "accuracyPct": 54.25
+          },
+          "UNDERDOG": {
+            "count": 11,
+            "correct": 3,
+            "accuracyPct": 27.27
+          },
           "DIRECTIONAL_SCORE_V2": {
             "count": 24,
             "correct": 14,
@@ -745,24 +775,14 @@
             "accuracyPct": 58.33
           },
           "PASS__FORCED_PREDICTION": {
-            "count": 23,
+            "count": 22,
             "correct": 13,
-            "accuracyPct": 56.52
-          },
-          "PICKEM": {
-            "count": 11,
-            "correct": 7,
-            "accuracyPct": 63.64
+            "accuracyPct": 59.09
           },
           "PLATFORM_PICK": {
             "count": 24,
             "correct": 14,
             "accuracyPct": 58.33
-          },
-          "POSITIVE_MOVE": {
-            "count": 20,
-            "correct": 9,
-            "accuracyPct": 45.0
           },
           "PREDICTION_REMAINS_AVAILABLE": {
             "count": 24,
@@ -784,25 +804,20 @@
             "correct": 14,
             "accuracyPct": 58.33
           },
-          "BOOK_AGREEMENT": {
-            "count": 130,
-            "correct": 79,
-            "accuracyPct": 60.77
-          },
-          "REVERSAL": {
-            "count": 153,
-            "correct": 83,
-            "accuracyPct": 54.25
-          },
-          "UNDERDOG": {
+          "PICKEM": {
             "count": 11,
-            "correct": 3,
-            "accuracyPct": 27.27
+            "correct": 7,
+            "accuracyPct": 63.64
           },
           "FAVORITE": {
             "count": 14,
             "correct": 6,
             "accuracyPct": 42.86
+          },
+          "COIN_FLIP_PREDICTION": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
           },
           "LEAN_PREDICTION": {
             "count": 1,
@@ -871,11 +886,6 @@
           }
         },
         "tagComboStats": {
-          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
           "BOOK_AGREEMENT+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
             "count": 1,
             "correct": 0,
@@ -906,10 +916,20 @@
             "correct": 2,
             "accuracyPct": 66.67
           },
+          "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
+          },
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
             "count": 2,
             "correct": 0,
             "accuracyPct": 0.0
+          },
+          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
+            "count": 1,
+            "correct": 1,
+            "accuracyPct": 100.0
           },
           "BOOK_AGREEMENT+FAVORITE+POSITIVE_MOVE+REVERSAL": {
             "count": 1,
@@ -917,11 +937,6 @@
             "accuracyPct": 0.0
           },
           "BOOK_AGREEMENT+FAVORITE+REVERSAL": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
-          "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
             "count": 1,
             "correct": 0,
             "accuracyPct": 0.0
@@ -1288,30 +1303,30 @@
           }
         },
         "confidenceStats": {
-          "Solid": {
-            "count": 9,
-            "correct": 8,
-            "accuracyPct": 88.89
-          },
           "Lean": {
             "count": 21,
             "correct": 14,
             "accuracyPct": 66.67
           },
           "Pass": {
-            "count": 87,
+            "count": 86,
             "correct": 33,
-            "accuracyPct": 37.93
+            "accuracyPct": 38.37
+          },
+          "Coin Flip": {
+            "count": 22,
+            "correct": 14,
+            "accuracyPct": 63.64
+          },
+          "Solid": {
+            "count": 9,
+            "correct": 8,
+            "accuracyPct": 88.89
           },
           "Premium": {
             "count": 42,
             "correct": 35,
             "accuracyPct": 83.33
-          },
-          "Coin Flip": {
-            "count": 21,
-            "correct": 14,
-            "accuracyPct": 66.67
           },
           "Baseline": {
             "count": 11,
@@ -1338,6 +1353,26 @@
         "wrong": 80,
         "accuracyPct": 58.12,
         "tagStats": {
+          "BOOK_AGREEMENT": {
+            "count": 130,
+            "correct": 79,
+            "accuracyPct": 60.77
+          },
+          "POSITIVE_MOVE": {
+            "count": 20,
+            "correct": 9,
+            "accuracyPct": 45.0
+          },
+          "REVERSAL": {
+            "count": 153,
+            "correct": 83,
+            "accuracyPct": 54.25
+          },
+          "UNDERDOG": {
+            "count": 11,
+            "correct": 3,
+            "accuracyPct": 27.27
+          },
           "DIRECTIONAL_SCORE_V2": {
             "count": 24,
             "correct": 14,
@@ -1369,24 +1404,14 @@
             "accuracyPct": 58.33
           },
           "PASS__FORCED_PREDICTION": {
-            "count": 23,
+            "count": 22,
             "correct": 13,
-            "accuracyPct": 56.52
-          },
-          "PICKEM": {
-            "count": 11,
-            "correct": 7,
-            "accuracyPct": 63.64
+            "accuracyPct": 59.09
           },
           "PLATFORM_PICK": {
             "count": 24,
             "correct": 14,
             "accuracyPct": 58.33
-          },
-          "POSITIVE_MOVE": {
-            "count": 20,
-            "correct": 9,
-            "accuracyPct": 45.0
           },
           "PREDICTION_REMAINS_AVAILABLE": {
             "count": 24,
@@ -1408,25 +1433,20 @@
             "correct": 14,
             "accuracyPct": 58.33
           },
-          "BOOK_AGREEMENT": {
-            "count": 130,
-            "correct": 79,
-            "accuracyPct": 60.77
-          },
-          "REVERSAL": {
-            "count": 153,
-            "correct": 83,
-            "accuracyPct": 54.25
-          },
-          "UNDERDOG": {
+          "PICKEM": {
             "count": 11,
-            "correct": 3,
-            "accuracyPct": 27.27
+            "correct": 7,
+            "accuracyPct": 63.64
           },
           "FAVORITE": {
             "count": 14,
             "correct": 6,
             "accuracyPct": 42.86
+          },
+          "COIN_FLIP_PREDICTION": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
           },
           "LEAN_PREDICTION": {
             "count": 1,
@@ -1495,11 +1515,6 @@
           }
         },
         "tagComboStats": {
-          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
-            "count": 1,
-            "correct": 1,
-            "accuracyPct": 100.0
-          },
           "BOOK_AGREEMENT+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
             "count": 1,
             "correct": 0,
@@ -1530,10 +1545,20 @@
             "correct": 2,
             "accuracyPct": 66.67
           },
+          "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
+            "count": 1,
+            "correct": 0,
+            "accuracyPct": 0.0
+          },
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
             "count": 2,
             "correct": 0,
             "accuracyPct": 0.0
+          },
+          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
+            "count": 1,
+            "correct": 1,
+            "accuracyPct": 100.0
           },
           "BOOK_AGREEMENT+FAVORITE+POSITIVE_MOVE+REVERSAL": {
             "count": 1,
@@ -1541,11 +1566,6 @@
             "accuracyPct": 0.0
           },
           "BOOK_AGREEMENT+FAVORITE+REVERSAL": {
-            "count": 1,
-            "correct": 0,
-            "accuracyPct": 0.0
-          },
-          "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
             "count": 1,
             "correct": 0,
             "accuracyPct": 0.0
@@ -1912,30 +1932,30 @@
           }
         },
         "confidenceStats": {
-          "Solid": {
-            "count": 9,
-            "correct": 8,
-            "accuracyPct": 88.89
-          },
           "Lean": {
             "count": 21,
             "correct": 14,
             "accuracyPct": 66.67
           },
           "Pass": {
-            "count": 87,
+            "count": 86,
             "correct": 33,
-            "accuracyPct": 37.93
+            "accuracyPct": 38.37
+          },
+          "Coin Flip": {
+            "count": 22,
+            "correct": 14,
+            "accuracyPct": 63.64
+          },
+          "Solid": {
+            "count": 9,
+            "correct": 8,
+            "accuracyPct": 88.89
           },
           "Premium": {
             "count": 42,
             "correct": 35,
             "accuracyPct": 83.33
-          },
-          "Coin Flip": {
-            "count": 21,
-            "correct": 14,
-            "accuracyPct": 66.67
           },
           "Baseline": {
             "count": 11,
@@ -1960,56 +1980,58 @@
     "windowAdjustments": {
       "current24h": {
         "tagScoreAdjustments": {
-          "DIRECTIONAL_SCORE_V2": 1.11,
-          "LOW_CONFIDENCE_PREDICTION": 1.11,
-          "NOT_PLAYABLE": 1.11,
-          "OFFICIAL_LOCKED_PREDICTION": 1.11,
-          "OFFICIAL_PREDICTION": 1.11,
-          "OFFICIAL_PREDICTION_NOT_PLAYABLE": 1.11,
-          "PASS__FORCED_PREDICTION": 1.11,
-          "PICKEM": 1.39,
-          "PLATFORM_PICK": 1.11,
-          "POSITIVE_MOVE": 1.67,
-          "PREDICTION_REMAINS_AVAILABLE": 1.11,
-          "REQUIRED_GAME_WINNER_PREDICTION": 1.11,
-          "SHOW_AT_SLATE_LOCK": 1.11,
-          "SIGNAL_POLICY_V13_SCORE_ONLY": 1.11,
-          "BOOK_AGREEMENT": 0.56,
+          "BOOK_AGREEMENT": 0.25,
+          "POSITIVE_MOVE": 0.56,
           "REVERSAL": 0.31,
           "UNDERDOG": -0.56,
-          "FAVORITE": 2.78
+          "DIRECTIONAL_SCORE_V2": 0.56,
+          "LOW_CONFIDENCE_PREDICTION": 0.56,
+          "NOT_PLAYABLE": 0.56,
+          "OFFICIAL_LOCKED_PREDICTION": 0.56,
+          "OFFICIAL_PREDICTION": 0.56,
+          "OFFICIAL_PREDICTION_NOT_PLAYABLE": 0.56,
+          "PASS__FORCED_PREDICTION": 0.93,
+          "PLATFORM_PICK": 0.56,
+          "PREDICTION_REMAINS_AVAILABLE": 0.56,
+          "REQUIRED_GAME_WINNER_PREDICTION": 0.56,
+          "SHOW_AT_SLATE_LOCK": 0.56,
+          "SIGNAL_POLICY_V13_SCORE_ONLY": 0.56,
+          "PICKEM": 0.93,
+          "FAVORITE": 0.93,
+          "COIN_FLIP_PREDICTION": -0.75
         },
         "tagComboScoreAdjustments": {
-          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+POSITIVE_MOVE+REVERSAL+UNDERDOG": -0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY+UNDERDOG": -1.39,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY+UNDERDOG": 0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 4.17,
+          "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -0.75
         }
       },
       "sevenDay": {
         "tagScoreAdjustments": {
+          "BOOK_AGREEMENT": 0.22,
+          "POSITIVE_MOVE": -0.28,
+          "REVERSAL": 0.18,
+          "UNDERDOG": -1.26,
           "DIRECTIONAL_SCORE_V2": 0.46,
           "LOW_CONFIDENCE_PREDICTION": 0.46,
           "NOT_PLAYABLE": 0.46,
           "OFFICIAL_LOCKED_PREDICTION": 0.46,
           "OFFICIAL_PREDICTION": 0.46,
           "OFFICIAL_PREDICTION_NOT_PLAYABLE": 0.46,
-          "PASS__FORCED_PREDICTION": 0.36,
-          "PICKEM": 0.76,
+          "PASS__FORCED_PREDICTION": 0.51,
           "PLATFORM_PICK": 0.46,
-          "POSITIVE_MOVE": -0.28,
           "PREDICTION_REMAINS_AVAILABLE": 0.46,
           "REQUIRED_GAME_WINNER_PREDICTION": 0.46,
           "SHOW_AT_SLATE_LOCK": 0.46,
           "SIGNAL_POLICY_V13_SCORE_ONLY": 0.46,
-          "BOOK_AGREEMENT": 0.22,
-          "REVERSAL": 0.18,
-          "UNDERDOG": -1.26,
+          "PICKEM": 0.76,
           "FAVORITE": -0.4,
+          "COIN_FLIP_PREDICTION": -0.75,
           "LEAN_PREDICTION": 0.75,
           "ML_OVERLAY_EVALUATED": 0.69,
           "ML_REJECTED": 0.69,
@@ -2023,17 +2045,17 @@
           "RESISTANCE": -0.75
         },
         "tagComboScoreAdjustments": {
-          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+POSITIVE_MOVE+REVERSAL+UNDERDOG": -0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY+UNDERDOG": -1.39,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 4.17,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY+UNDERDOG": 0.0,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 1.39,
+          "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -4.17,
+          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+FAVORITE+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+FAVORITE+REVERSAL": -0.75,
-          "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -0.75,
           "FAVORITE+POSITIVE_MOVE+REVERSAL": 0.75,
           "BOOK_AGREEMENT+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LEAN_PREDICTION+LOW_CONFIDENCE_PREDICTION+ML_OVERLAY_EVALUATED+ML_REJECTED+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
@@ -2084,24 +2106,25 @@
       },
       "thirtyDay": {
         "tagScoreAdjustments": {
+          "BOOK_AGREEMENT": 0.6,
+          "POSITIVE_MOVE": -0.28,
+          "REVERSAL": 0.24,
+          "UNDERDOG": -1.26,
           "DIRECTIONAL_SCORE_V2": 0.46,
           "LOW_CONFIDENCE_PREDICTION": 0.46,
           "NOT_PLAYABLE": 0.46,
           "OFFICIAL_LOCKED_PREDICTION": 0.46,
           "OFFICIAL_PREDICTION": 0.46,
           "OFFICIAL_PREDICTION_NOT_PLAYABLE": 0.46,
-          "PASS__FORCED_PREDICTION": 0.36,
-          "PICKEM": 0.76,
+          "PASS__FORCED_PREDICTION": 0.51,
           "PLATFORM_PICK": 0.46,
-          "POSITIVE_MOVE": -0.28,
           "PREDICTION_REMAINS_AVAILABLE": 0.46,
           "REQUIRED_GAME_WINNER_PREDICTION": 0.46,
           "SHOW_AT_SLATE_LOCK": 0.46,
           "SIGNAL_POLICY_V13_SCORE_ONLY": 0.46,
-          "BOOK_AGREEMENT": 0.6,
-          "REVERSAL": 0.24,
-          "UNDERDOG": -1.26,
+          "PICKEM": 0.76,
           "FAVORITE": -0.4,
+          "COIN_FLIP_PREDICTION": -0.75,
           "LEAN_PREDICTION": 0.75,
           "ML_OVERLAY_EVALUATED": 0.69,
           "ML_REJECTED": 0.69,
@@ -2117,17 +2140,17 @@
           "LOW_PULL_DEPTH": 0.76
         },
         "tagComboScoreAdjustments": {
-          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+POSITIVE_MOVE+REVERSAL+UNDERDOG": -0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY+UNDERDOG": -1.39,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 4.17,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY+UNDERDOG": 0.0,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 1.39,
+          "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -4.17,
+          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+FAVORITE+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+FAVORITE+REVERSAL": -0.75,
-          "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -0.75,
           "FAVORITE+POSITIVE_MOVE+REVERSAL": 0.75,
           "BOOK_AGREEMENT+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LEAN_PREDICTION+LOW_CONFIDENCE_PREDICTION+ML_OVERLAY_EVALUATED+ML_REJECTED+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
@@ -2204,24 +2227,25 @@
       },
       "season": {
         "tagScoreAdjustments": {
+          "BOOK_AGREEMENT": 0.6,
+          "POSITIVE_MOVE": -0.28,
+          "REVERSAL": 0.24,
+          "UNDERDOG": -1.26,
           "DIRECTIONAL_SCORE_V2": 0.46,
           "LOW_CONFIDENCE_PREDICTION": 0.46,
           "NOT_PLAYABLE": 0.46,
           "OFFICIAL_LOCKED_PREDICTION": 0.46,
           "OFFICIAL_PREDICTION": 0.46,
           "OFFICIAL_PREDICTION_NOT_PLAYABLE": 0.46,
-          "PASS__FORCED_PREDICTION": 0.36,
-          "PICKEM": 0.76,
+          "PASS__FORCED_PREDICTION": 0.51,
           "PLATFORM_PICK": 0.46,
-          "POSITIVE_MOVE": -0.28,
           "PREDICTION_REMAINS_AVAILABLE": 0.46,
           "REQUIRED_GAME_WINNER_PREDICTION": 0.46,
           "SHOW_AT_SLATE_LOCK": 0.46,
           "SIGNAL_POLICY_V13_SCORE_ONLY": 0.46,
-          "BOOK_AGREEMENT": 0.6,
-          "REVERSAL": 0.24,
-          "UNDERDOG": -1.26,
+          "PICKEM": 0.76,
           "FAVORITE": -0.4,
+          "COIN_FLIP_PREDICTION": -0.75,
           "LEAN_PREDICTION": 0.75,
           "ML_OVERLAY_EVALUATED": 0.69,
           "ML_REJECTED": 0.69,
@@ -2237,17 +2261,17 @@
           "LOW_PULL_DEPTH": 0.76
         },
         "tagComboScoreAdjustments": {
-          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+POSITIVE_MOVE+REVERSAL+UNDERDOG": -0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY+UNDERDOG": -1.39,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 4.17,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY+UNDERDOG": 0.0,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 1.39,
+          "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -4.17,
+          "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
           "BOOK_AGREEMENT+FAVORITE+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+FAVORITE+REVERSAL": -0.75,
-          "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -0.75,
           "FAVORITE+POSITIVE_MOVE+REVERSAL": 0.75,
           "BOOK_AGREEMENT+PICKEM+POSITIVE_MOVE+REVERSAL": -0.75,
           "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LEAN_PREDICTION+LOW_CONFIDENCE_PREDICTION+ML_OVERLAY_EVALUATED+ML_REJECTED+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
@@ -2325,83 +2349,18 @@
     },
     "currentWindowStats": {
       "rowCount": 11,
-      "correct": 7,
-      "wrong": 4,
-      "accuracyPct": 63.64,
+      "correct": 6,
+      "wrong": 5,
+      "accuracyPct": 54.55,
       "tagStats": {
-        "DIRECTIONAL_SCORE_V2": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
-        },
-        "LOW_CONFIDENCE_PREDICTION": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
-        },
-        "NOT_PLAYABLE": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
-        },
-        "OFFICIAL_LOCKED_PREDICTION": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
-        },
-        "OFFICIAL_PREDICTION": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
-        },
-        "OFFICIAL_PREDICTION_NOT_PLAYABLE": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
-        },
-        "PASS__FORCED_PREDICTION": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
-        },
-        "PICKEM": {
-          "count": 4,
-          "correct": 3,
-          "accuracyPct": 75.0
-        },
-        "PLATFORM_PICK": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
+        "BOOK_AGREEMENT": {
+          "count": 11,
+          "correct": 6,
+          "accuracyPct": 54.55
         },
         "POSITIVE_MOVE": {
           "count": 5,
-          "correct": 4,
-          "accuracyPct": 80.0
-        },
-        "PREDICTION_REMAINS_AVAILABLE": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
-        },
-        "REQUIRED_GAME_WINNER_PREDICTION": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
-        },
-        "SHOW_AT_SLATE_LOCK": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
-        },
-        "SIGNAL_POLICY_V13_SCORE_ONLY": {
-          "count": 10,
-          "correct": 7,
-          "accuracyPct": 70.0
-        },
-        "BOOK_AGREEMENT": {
-          "count": 10,
-          "correct": 6,
+          "correct": 3,
           "accuracyPct": 60.0
         },
         "REVERSAL": {
@@ -2414,18 +2373,83 @@
           "correct": 2,
           "accuracyPct": 40.0
         },
-        "FAVORITE": {
-          "count": 2,
+        "DIRECTIONAL_SCORE_V2": {
+          "count": 10,
+          "correct": 6,
+          "accuracyPct": 60.0
+        },
+        "LOW_CONFIDENCE_PREDICTION": {
+          "count": 10,
+          "correct": 6,
+          "accuracyPct": 60.0
+        },
+        "NOT_PLAYABLE": {
+          "count": 10,
+          "correct": 6,
+          "accuracyPct": 60.0
+        },
+        "OFFICIAL_LOCKED_PREDICTION": {
+          "count": 10,
+          "correct": 6,
+          "accuracyPct": 60.0
+        },
+        "OFFICIAL_PREDICTION": {
+          "count": 10,
+          "correct": 6,
+          "accuracyPct": 60.0
+        },
+        "OFFICIAL_PREDICTION_NOT_PLAYABLE": {
+          "count": 10,
+          "correct": 6,
+          "accuracyPct": 60.0
+        },
+        "PASS__FORCED_PREDICTION": {
+          "count": 9,
+          "correct": 6,
+          "accuracyPct": 66.67
+        },
+        "PLATFORM_PICK": {
+          "count": 10,
+          "correct": 6,
+          "accuracyPct": 60.0
+        },
+        "PREDICTION_REMAINS_AVAILABLE": {
+          "count": 10,
+          "correct": 6,
+          "accuracyPct": 60.0
+        },
+        "REQUIRED_GAME_WINNER_PREDICTION": {
+          "count": 10,
+          "correct": 6,
+          "accuracyPct": 60.0
+        },
+        "SHOW_AT_SLATE_LOCK": {
+          "count": 10,
+          "correct": 6,
+          "accuracyPct": 60.0
+        },
+        "SIGNAL_POLICY_V13_SCORE_ONLY": {
+          "count": 10,
+          "correct": 6,
+          "accuracyPct": 60.0
+        },
+        "PICKEM": {
+          "count": 3,
           "correct": 2,
-          "accuracyPct": 100.0
+          "accuracyPct": 66.67
+        },
+        "FAVORITE": {
+          "count": 3,
+          "correct": 2,
+          "accuracyPct": 66.67
+        },
+        "COIN_FLIP_PREDICTION": {
+          "count": 1,
+          "correct": 0,
+          "accuracyPct": 0.0
         }
       },
       "tagComboStats": {
-        "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
-          "count": 1,
-          "correct": 1,
-          "accuracyPct": 100.0
-        },
         "BOOK_AGREEMENT+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
           "count": 1,
           "correct": 0,
@@ -2456,6 +2480,11 @@
           "correct": 2,
           "accuracyPct": 100.0
         },
+        "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
+          "count": 1,
+          "correct": 0,
+          "accuracyPct": 0.0
+        },
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
           "count": 1,
           "correct": 0,
@@ -2463,11 +2492,6 @@
         }
       },
       "confidenceStats": {
-        "Solid": {
-          "count": 1,
-          "correct": 1,
-          "accuracyPct": 100.0
-        },
         "Lean": {
           "count": 2,
           "correct": 1,
@@ -2477,125 +2501,66 @@
           "count": 8,
           "correct": 5,
           "accuracyPct": 62.5
+        },
+        "Coin Flip": {
+          "count": 1,
+          "correct": 0,
+          "accuracyPct": 0.0
         }
       },
       "optimizerFlipStats": {
         "NOT_FLIPPED": {
           "count": 11,
-          "correct": 7,
-          "accuracyPct": 63.64
+          "correct": 6,
+          "accuracyPct": 54.55
         }
       },
       "tagScoreAdjustments": {
-        "DIRECTIONAL_SCORE_V2": 1.11,
-        "LOW_CONFIDENCE_PREDICTION": 1.11,
-        "NOT_PLAYABLE": 1.11,
-        "OFFICIAL_LOCKED_PREDICTION": 1.11,
-        "OFFICIAL_PREDICTION": 1.11,
-        "OFFICIAL_PREDICTION_NOT_PLAYABLE": 1.11,
-        "PASS__FORCED_PREDICTION": 1.11,
-        "PICKEM": 1.39,
-        "PLATFORM_PICK": 1.11,
-        "POSITIVE_MOVE": 1.67,
-        "PREDICTION_REMAINS_AVAILABLE": 1.11,
-        "REQUIRED_GAME_WINNER_PREDICTION": 1.11,
-        "SHOW_AT_SLATE_LOCK": 1.11,
-        "SIGNAL_POLICY_V13_SCORE_ONLY": 1.11,
-        "BOOK_AGREEMENT": 0.56,
+        "BOOK_AGREEMENT": 0.25,
+        "POSITIVE_MOVE": 0.56,
         "REVERSAL": 0.31,
         "UNDERDOG": -0.56,
-        "FAVORITE": 2.78
+        "DIRECTIONAL_SCORE_V2": 0.56,
+        "LOW_CONFIDENCE_PREDICTION": 0.56,
+        "NOT_PLAYABLE": 0.56,
+        "OFFICIAL_LOCKED_PREDICTION": 0.56,
+        "OFFICIAL_PREDICTION": 0.56,
+        "OFFICIAL_PREDICTION_NOT_PLAYABLE": 0.56,
+        "PASS__FORCED_PREDICTION": 0.93,
+        "PLATFORM_PICK": 0.56,
+        "PREDICTION_REMAINS_AVAILABLE": 0.56,
+        "REQUIRED_GAME_WINNER_PREDICTION": 0.56,
+        "SHOW_AT_SLATE_LOCK": 0.56,
+        "SIGNAL_POLICY_V13_SCORE_ONLY": 0.56,
+        "PICKEM": 0.93,
+        "FAVORITE": 0.93,
+        "COIN_FLIP_PREDICTION": -0.75
       },
       "tagComboScoreAdjustments": {
-        "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
         "BOOK_AGREEMENT+POSITIVE_MOVE+REVERSAL+UNDERDOG": -0.75,
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY+UNDERDOG": -1.39,
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY+UNDERDOG": 0.75,
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 4.17,
+        "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -0.75,
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -0.75
       }
     },
     "historicalStats": {
-      "historicalRowsUsed": 190,
+      "historicalRowsUsed": 191,
       "historicalRunLimit": 720,
       "minHistoricalSampleForBlend": 6
     },
     "tagStats": {
-      "DIRECTIONAL_SCORE_V2": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
-      },
-      "LOW_CONFIDENCE_PREDICTION": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
-      },
-      "NOT_PLAYABLE": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
-      },
-      "OFFICIAL_LOCKED_PREDICTION": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
-      },
-      "OFFICIAL_PREDICTION": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
-      },
-      "OFFICIAL_PREDICTION_NOT_PLAYABLE": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
-      },
-      "PASS__FORCED_PREDICTION": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
-      },
-      "PICKEM": {
-        "count": 4,
-        "correct": 3,
-        "accuracyPct": 75.0
-      },
-      "PLATFORM_PICK": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
+      "BOOK_AGREEMENT": {
+        "count": 11,
+        "correct": 6,
+        "accuracyPct": 54.55
       },
       "POSITIVE_MOVE": {
         "count": 5,
-        "correct": 4,
-        "accuracyPct": 80.0
-      },
-      "PREDICTION_REMAINS_AVAILABLE": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
-      },
-      "REQUIRED_GAME_WINNER_PREDICTION": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
-      },
-      "SHOW_AT_SLATE_LOCK": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
-      },
-      "SIGNAL_POLICY_V13_SCORE_ONLY": {
-        "count": 10,
-        "correct": 7,
-        "accuracyPct": 70.0
-      },
-      "BOOK_AGREEMENT": {
-        "count": 10,
-        "correct": 6,
+        "correct": 3,
         "accuracyPct": 60.0
       },
       "REVERSAL": {
@@ -2608,18 +2573,83 @@
         "correct": 2,
         "accuracyPct": 40.0
       },
-      "FAVORITE": {
-        "count": 2,
+      "DIRECTIONAL_SCORE_V2": {
+        "count": 10,
+        "correct": 6,
+        "accuracyPct": 60.0
+      },
+      "LOW_CONFIDENCE_PREDICTION": {
+        "count": 10,
+        "correct": 6,
+        "accuracyPct": 60.0
+      },
+      "NOT_PLAYABLE": {
+        "count": 10,
+        "correct": 6,
+        "accuracyPct": 60.0
+      },
+      "OFFICIAL_LOCKED_PREDICTION": {
+        "count": 10,
+        "correct": 6,
+        "accuracyPct": 60.0
+      },
+      "OFFICIAL_PREDICTION": {
+        "count": 10,
+        "correct": 6,
+        "accuracyPct": 60.0
+      },
+      "OFFICIAL_PREDICTION_NOT_PLAYABLE": {
+        "count": 10,
+        "correct": 6,
+        "accuracyPct": 60.0
+      },
+      "PASS__FORCED_PREDICTION": {
+        "count": 9,
+        "correct": 6,
+        "accuracyPct": 66.67
+      },
+      "PLATFORM_PICK": {
+        "count": 10,
+        "correct": 6,
+        "accuracyPct": 60.0
+      },
+      "PREDICTION_REMAINS_AVAILABLE": {
+        "count": 10,
+        "correct": 6,
+        "accuracyPct": 60.0
+      },
+      "REQUIRED_GAME_WINNER_PREDICTION": {
+        "count": 10,
+        "correct": 6,
+        "accuracyPct": 60.0
+      },
+      "SHOW_AT_SLATE_LOCK": {
+        "count": 10,
+        "correct": 6,
+        "accuracyPct": 60.0
+      },
+      "SIGNAL_POLICY_V13_SCORE_ONLY": {
+        "count": 10,
+        "correct": 6,
+        "accuracyPct": 60.0
+      },
+      "PICKEM": {
+        "count": 3,
         "correct": 2,
-        "accuracyPct": 100.0
+        "accuracyPct": 66.67
+      },
+      "FAVORITE": {
+        "count": 3,
+        "correct": 2,
+        "accuracyPct": 66.67
+      },
+      "COIN_FLIP_PREDICTION": {
+        "count": 1,
+        "correct": 0,
+        "accuracyPct": 0.0
       }
     },
     "tagComboStats": {
-      "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
-        "count": 1,
-        "correct": 1,
-        "accuracyPct": 100.0
-      },
       "BOOK_AGREEMENT+POSITIVE_MOVE+REVERSAL+UNDERDOG": {
         "count": 1,
         "correct": 0,
@@ -2650,6 +2680,11 @@
         "correct": 2,
         "accuracyPct": 100.0
       },
+      "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
+        "count": 1,
+        "correct": 0,
+        "accuracyPct": 0.0
+      },
       "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": {
         "count": 1,
         "correct": 0,
@@ -2657,11 +2692,6 @@
       }
     },
     "confidenceStats": {
-      "Solid": {
-        "count": 1,
-        "correct": 1,
-        "accuracyPct": 100.0
-      },
       "Lean": {
         "count": 2,
         "correct": 1,
@@ -2671,51 +2701,58 @@
         "count": 8,
         "correct": 5,
         "accuracyPct": 62.5
+      },
+      "Coin Flip": {
+        "count": 1,
+        "correct": 0,
+        "accuracyPct": 0.0
       }
     },
     "optimizerFlipStats": {
       "NOT_FLIPPED": {
         "count": 11,
-        "correct": 7,
-        "accuracyPct": 63.64
+        "correct": 6,
+        "accuracyPct": 54.55
       }
     },
     "adjustments": {
       "tagScoreAdjustments": {
-        "BOOK_AGREEMENT": 0.49,
+        "BOOK_AGREEMENT": 0.33,
         "BOOK_DIVERGENCE": 1.57,
+        "COIN_FLIP_PREDICTION": -0.75,
         "COMPRESSED_MARKET": -0.33,
-        "DIRECTIONAL_SCORE_V2": 0.79,
-        "FAVORITE": 1.19,
+        "DIRECTIONAL_SCORE_V2": 0.51,
+        "FAVORITE": 0.27,
         "LEAN_PREDICTION": 0.0,
-        "LOW_CONFIDENCE_PREDICTION": 0.79,
+        "LOW_CONFIDENCE_PREDICTION": 0.51,
         "LOW_PULL_DEPTH": 0.76,
         "MISSING_FUNDAMENTALS": -0.44,
         "ML_OVERLAY_EVALUATED": 0.69,
         "ML_REJECTED": 0.69,
         "NEGATIVE_MOVE": 0.0,
-        "NOT_PLAYABLE": 0.79,
-        "OFFICIAL_LOCKED_PREDICTION": 0.79,
-        "OFFICIAL_PREDICTION": 0.79,
-        "OFFICIAL_PREDICTION_NOT_PLAYABLE": 0.79,
-        "PASS__FORCED_PREDICTION": 0.74,
-        "PICKEM": 1.07,
-        "PLATFORM_PICK": 0.79,
-        "POSITIVE_MOVE": 0.69,
-        "PREDICTION_REMAINS_AVAILABLE": 0.79,
-        "REQUIRED_GAME_WINNER_PREDICTION": 0.79,
+        "NOT_PLAYABLE": 0.51,
+        "OFFICIAL_LOCKED_PREDICTION": 0.51,
+        "OFFICIAL_PREDICTION": 0.51,
+        "OFFICIAL_PREDICTION_NOT_PLAYABLE": 0.51,
+        "PASS__FORCED_PREDICTION": 0.72,
+        "PICKEM": 0.84,
+        "PLATFORM_PICK": 0.51,
+        "POSITIVE_MOVE": 0.14,
+        "PREDICTION_REMAINS_AVAILABLE": 0.51,
+        "REQUIRED_GAME_WINNER_PREDICTION": 0.51,
         "RESISTANCE": 0.0,
         "REVERSAL": 0.26,
         "RUN_LINE_CONFIRMATION": 0.4,
         "RUN_LINE_MOVEMENT": 0.79,
-        "SHOW_AT_SLATE_LOCK": 0.79,
-        "SIGNAL_POLICY_V13_SCORE_ONLY": 0.79,
+        "SHOW_AT_SLATE_LOCK": 0.51,
+        "SIGNAL_POLICY_V13_SCORE_ONLY": 0.51,
         "STEAM": 1.06,
         "UNCONFIRMED_RUN_LINE_MOVE": 1.27,
         "UNDERDOG": -0.91
       },
       "tagComboScoreAdjustments": {
         "BOOK_AGREEMENT": 0.0,
+        "BOOK_AGREEMENT+COIN_FLIP_PREDICTION+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": -0.75,
         "BOOK_AGREEMENT+COMPRESSED_MARKET+MISSING_FUNDAMENTALS+REVERSAL": 0.0,
         "BOOK_AGREEMENT+COMPRESSED_MARKET+MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT": 0.0,
         "BOOK_AGREEMENT+COMPRESSED_MARKET+MISSING_FUNDAMENTALS+REVERSAL+RUN_LINE_MOVEMENT+STEAM+UNCONFIRMED_RUN_LINE_MOVE": 0.0,
@@ -2731,7 +2768,6 @@
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+ML_OVERLAY_EVALUATED+ML_REJECTED+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.0,
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+ML_OVERLAY_EVALUATED+ML_REJECTED+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.0,
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+ML_OVERLAY_EVALUATED+ML_REJECTED+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.0,
-        "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.0,
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+FAVORITE+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 4.17,
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LEAN_PREDICTION+LOW_CONFIDENCE_PREDICTION+ML_OVERLAY_EVALUATED+ML_REJECTED+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.0,
         "BOOK_AGREEMENT+DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+ML_OVERLAY_EVALUATED+ML_REJECTED+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+REVERSAL+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.0,
@@ -2780,7 +2816,7 @@
         "COMPRESSED_MARKET+REVERSAL+RUN_LINE_CONFIRMATION+RUN_LINE_MOVEMENT": 0.0,
         "COMPRESSED_MARKET+REVERSAL+RUN_LINE_MOVEMENT+STEAM": 0.0,
         "COMPRESSED_MARKET+REVERSAL+RUN_LINE_MOVEMENT+STEAM+UNCONFIRMED_RUN_LINE_MOVE": 0.0,
-        "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.75,
+        "DIRECTIONAL_SCORE_V2+LOW_CONFIDENCE_PREDICTION+NOT_PLAYABLE+OFFICIAL_LOCKED_PREDICTION+OFFICIAL_PREDICTION+OFFICIAL_PREDICTION_NOT_PLAYABLE+PASS__FORCED_PREDICTION+PICKEM+PLATFORM_PICK+POSITIVE_MOVE+PREDICTION_REMAINS_AVAILABLE+REQUIRED_GAME_WINNER_PREDICTION+SHOW_AT_SLATE_LOCK+SIGNAL_POLICY_V13_SCORE_ONLY": 0.0,
         "FAVORITE+POSITIVE_MOVE+REVERSAL": 0.0,
         "MISSING_FUNDAMENTALS+PICKEM+POSITIVE_MOVE+REVERSAL": 0.0,
         "MISSING_FUNDAMENTALS+POSITIVE_MOVE+REVERSAL+UNDERDOG": 0.0,
@@ -2837,629 +2873,6 @@
     "operationalTagFilterPolicy": "Final-gate, provider, model-discipline, ML signal-layer, and status tags are kept on audit rows for proof, but removed from signal-learning inputs so the model only learns from predictive market/fundamentals signals."
   },
   "rows": [
-    {
-      "id": "2ac65fed3f431f0601c2e788aee18cab",
-      "gameKeyBase": "atlanta braves|st. louis cardinals",
-      "homeTeam": "St. Louis Cardinals",
-      "awayTeam": "Atlanta Braves",
-      "matchup": "Atlanta Braves at St. Louis Cardinals",
-      "commenceTime": "2026-07-11T00:16:05Z",
-      "slateDateEt": "2026-07-10",
-      "homeScore": 2,
-      "awayScore": 1,
-      "winner": "St. Louis Cardinals",
-      "margin": 1,
-      "totalRuns": 3,
-      "completed": true,
-      "status": "GRADED",
-      "predictedWinner": "St. Louis Cardinals",
-      "predictedSide": "home",
-      "score": "70.11",
-      "winProbabilityPct": "56.36",
-      "cappedWinProbabilityPct": "52",
-      "confidenceTier": "Solid",
-      "choiceQuality": "Pass / Forced Prediction",
-      "tags": [
-        "DIRECTIONAL_SCORE_V2",
-        "FINAL_LOCKED",
-        "LOW_CONFIDENCE_PREDICTION",
-        "ML_NO_PRIMARY_SIGNAL",
-        "ML_SIGNAL_LAYERS",
-        "NOT_PLAYABLE",
-        "OFFICIAL_LOCKED_PREDICTION",
-        "OFFICIAL_PREDICTION",
-        "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-        "PASS__FORCED_PREDICTION",
-        "PICKEM",
-        "PLATFORM_PICK",
-        "POSITIVE_MOVE",
-        "PREDICTION_REMAINS_AVAILABLE",
-        "REQUIRED_GAME_WINNER_PREDICTION",
-        "SHOW_AT_SLATE_LOCK",
-        "SIGNAL_POLICY_V13_SCORE_ONLY",
-        "SLATE_LOCKED",
-        "SLATE_WIDE_45_MIN_LOCK_POLICY"
-      ],
-      "winnerOptimizer": {
-        "homeOptimizedScore": "70.11",
-        "flipRequested": false,
-        "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v4-reversal-flip-gate",
-        "applied": true,
-        "flipBlockedReasons": [],
-        "latestLearningApplied": true,
-        "flippedPick": false,
-        "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
-        "flipAllowed": true,
-        "awayOptimizedScore": "8.13"
-      },
-      "winnerStackV2": {
-        "components": {
-          "market": {
-            "consensusProbability": "0.50506",
-            "score": "50.91",
-            "consensusEdge": "0.01012",
-            "source": "de_vigged_moneyline_consensus",
-            "opponentConsensusProbability": "0.49494"
-          },
-          "fundamentals": {
-            "mode": "SPORTSDATAIO_UNAVAILABLE",
-            "score": "50",
-            "source": "neutral_fundamentals_until_live_provider_enabled",
-            "applied": false
-          },
-          "movement": {
-            "score": "68.59",
-            "cleanRunLineConfirmation": false,
-            "cleanSteam": false,
-            "marketEdge": "0.01012",
-            "source": "line_movement_steam_resistance_reversal_runline_confirmation_risk_calibrated",
-            "reversalCount": "0",
-            "tags": [
-              "PICKEM",
-              "POSITIVE_MOVE"
-            ]
-          }
-        },
-        "ensembleScore": "56.21",
-        "applied": true,
-        "discipline": {
-          "reason": "coin_flip_pass_or_hard_weakness_present",
-          "actionability": "PASS_NO_PICK",
-          "actionablePick": false,
-          "riskReasons": [
-            "weak_market_edge"
-          ]
-        },
-        "weights": {
-          "market": "0.7",
-          "fundamentals": "0",
-          "movement": "0.3"
-        },
-        "version": "MLB-WINNER-STACK-v2.2-market-confirmed-actionable-lean",
-        "calibration": {
-          "calibratedProbability": "0.5589",
-          "shrinkageToward50": "0.035",
-          "method": "ensemble_probability_anchored_to_de_vigged_market_consensus_with_false_confirmation_shrinkage",
-          "marketAnchorProbability": "0.5051",
-          "rawProbability": "0.6266",
-          "riskReasons": [
-            "weak_market_edge"
-          ]
-        },
-        "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
-      },
-      "winnerOptimizerProtection": null,
-      "directionalScoreV1": {
-        "features": {
-          "netMove": "0.02611",
-          "reversals": "0",
-          "opponentFavored": false,
-          "decisiveMove": false,
-          "highReversalDirectional": false,
-          "probability": "0.505061",
-          "bookAgreement": false,
-          "missingFundamentals": false,
-          "tinyMove": false,
-          "movePerReversal": "0.02611",
-          "opponentProbability": "0.494939",
-          "runAligned": false,
-          "highReversalWeak": false,
-          "edge": "0.010122",
-          "cleanConfirmation": false,
-          "gap": "0.010122",
-          "strongMove": false,
-          "favoriteRisk": false,
-          "narrow": false,
-          "steamAligned": false,
-          "compressed": true,
-          "lowDepth": false,
-          "hardBlockTags": []
-        },
-        "components": [
-          {
-            "name": "solid",
-            "value": "1"
-          },
-          {
-            "name": "weak_edge",
-            "value": "-7"
-          },
-          {
-            "name": "zero_reversal",
-            "value": "4"
-          },
-          {
-            "name": "compressed",
-            "value": "-12"
-          }
-        ],
-        "officialGateReasons": [
-          "book_agreement_required",
-          "capped_probability_below_70",
-          "directional_risk_profile_block",
-          "directional_score_below_72",
-          "market_edge_below_20pts",
-          "market_probability_below_62pct",
-          "not_promoted_by_base_signal_gate",
-          "premium_tier_required"
-        ],
-        "probabilityCap": {
-          "raw": "84.24",
-          "score": "51.11",
-          "cap": "52",
-          "reasons": [
-            "compressed"
-          ],
-          "capped": "52"
-        },
-        "applied": true,
-        "blocksPrediction": false,
-        "adjustment": "-14",
-        "officialAllowed": false,
-        "version": "MLB-DIRECTIONAL-SCORE-v2-premium-clean-official-gate",
-        "officialPolicy": "premium_clean_market_only; validated ML may promote after this gate"
-      },
-      "mlOverlay": {
-        "runtimeVersion": "MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop",
-        "modelAvailable": false,
-        "applied": false,
-        "validatedAgainstTarget": false,
-        "enabled": true
-      },
-      "signalPolicyV13": {
-        "components": [
-          {
-            "name": "solid_bucket_boost",
-            "value": "3"
-          },
-          {
-            "name": "weak_market_edge_penalty",
-            "value": "-4"
-          },
-          {
-            "name": "low_reversal_boost",
-            "value": "2"
-          },
-          {
-            "name": "compressed_market_penalty",
-            "value": "-6"
-          }
-        ],
-        "applied": true,
-        "blocksPrediction": false,
-        "requiredMinutesBeforeGame": "45",
-        "scoreAdjustment": "-5",
-        "showOneWinnerForEveryGameAtSlateLock": true,
-        "version": "MLB-SIGNAL-POLICY-v1.6-official-prediction-playability-separated",
-        "scoreOnly": true
-      },
-      "officialPick": true,
-      "officialPrediction": true,
-      "actionablePick": false,
-      "accuracyTargetEligible": false,
-      "platformPick": true,
-      "customerVisibleWinnerPick": true,
-      "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-      "predictionVisibility": null,
-      "isOfficialDisplayPick": true,
-      "doNotUseAsWinnerPick": null,
-      "publicPick": null,
-      "displayWinner": null,
-      "optimizerFlippedPick": false,
-      "optimizerFlipRequested": false,
-      "optimizerFlipAllowed": true,
-      "optimizerFlipBlockedReasons": [],
-      "actionability": "LOW_CONFIDENCE_DIRECTIONAL_GATE_NOT_PLAYABLE",
-      "actionabilityReason": "directional_official_gate_failed_but_visible_prediction_preserved",
-      "actionabilityRiskReasons": [
-        "book_agreement_required",
-        "capped_probability_below_70",
-        "directional_risk_profile_block",
-        "directional_score_below_72",
-        "market_edge_below_20pts",
-        "market_probability_below_62pct",
-        "not_promoted_by_base_signal_gate",
-        "premium_tier_required"
-      ],
-      "homeSignal": {
-        "probStart": "0.478951",
-        "bookCount": "11",
-        "delta": "0.02611",
-        "promoted": false,
-        "promotionStatus": "NO_PLAY",
-        "score": "70.11",
-        "winProbability": "0.8424",
-        "priceBook": "fanduel",
-        "blockedReasons": [
-          "NEGATIVE_EV_GUARD"
-        ],
-        "optimizedWinnerScore": "70.11",
-        "rolling24hLearningAdjustment": "1.52",
-        "bookDivergence": "0.023488",
-        "probLatest": "0.505061",
-        "side": "home",
-        "americanOdds": "-112",
-        "marketSide": "pickem",
-        "winnerRuleAdjustment": "0",
-        "rawScoreBeforeWinnerOptimizer": "68.59",
-        "team": "St. Louis Cardinals",
-        "tags": [
-          "PICKEM",
-          "POSITIVE_MOVE"
-        ],
-        "edgeVsBookPct": "1.83",
-        "priceSource": "real_book",
-        "expectedValue": "-0.009395",
-        "edgeVsBook": "0.018277",
-        "fairProbabilityPct": "50.51",
-        "fairProbability": "0.505061",
-        "expectedValuePct": "-0.94",
-        "reversalCount": "0",
-        "winProbabilityPct": "84.24"
-      },
-      "awaySignal": {
-        "probStart": "0.521049",
-        "bookCount": "11",
-        "delta": "-0.02611",
-        "promoted": false,
-        "promotionStatus": "NO_PLAY",
-        "score": "8.13",
-        "winProbability": "0.05",
-        "priceBook": "fanduel",
-        "blockedReasons": [
-          "NEGATIVE_EV_GUARD"
-        ],
-        "optimizedWinnerScore": "8.13",
-        "rolling24hLearningAdjustment": "1.25",
-        "bookDivergence": "0.023488",
-        "probLatest": "0.494939",
-        "side": "away",
-        "americanOdds": "-104",
-        "marketSide": "pickem",
-        "winnerRuleAdjustment": "-3",
-        "rawScoreBeforeWinnerOptimizer": "9.88",
-        "team": "Atlanta Braves",
-        "tags": [
-          "NEGATIVE_MOVE",
-          "PICKEM"
-        ],
-        "edgeVsBookPct": "-1.83",
-        "priceSource": "real_book",
-        "expectedValue": "-0.065011",
-        "edgeVsBook": "-0.018277",
-        "fairProbabilityPct": "49.49",
-        "fairProbability": "0.494939",
-        "expectedValuePct": "-6.5",
-        "reversalCount": "0",
-        "winProbabilityPct": "5"
-      },
-      "finalGuardedStored": true,
-      "finalPipelineVersion": "MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop",
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v2-doubleheader-safe-provider-time-match",
-        "selectionPolicy": "provider_id_then_exact_commence_time_then_unique_matchup_only",
-        "lockedFlag": true,
-        "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "explicitSourceAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "rowCreatedAtUtc": "2026-07-11T23:07:49.014356+00:00",
-        "createdAtNotUsedAsScoringSource": true,
-        "preventsLateRows": true,
-        "finalPipelineState": {
-          "integrityApplied": false,
-          "directionalApplied": true,
-          "mlOverlayApplied": false,
-          "signalPolicyApplied": true,
-          "finalGuardedStored": true,
-          "officialPrediction": true,
-          "playable": false,
-          "explicitNonPlayable": true,
-          "pipelineDepth": 3,
-          "predictionVisibility": null,
-          "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
-        },
-        "matchMethod": "unique_matchup_fallback",
-        "providerGameId": "2ac65fed3f431f0601c2e788aee18cab",
-        "doubleheaderSafe": true
-      },
-      "predictionSemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1-locked-official-playable-separate",
-      "teamWinProbabilityPct": 56.36,
-      "winProbabilityMeaning": "estimated_probability_selected_team_wins_game",
-      "fundamentalsSnapshot": {
-        "gameId": "a2501dff8c71ab28b0051fafeed81903",
-        "venue": {
-          "venue_name": "Busch Stadium",
-          "source": "MLB Stats API schedule hydrate=venue",
-          "source_status": "CONNECTED",
-          "venue_id": "2889"
-        },
-        "missingGroups": [
-          "fip_xfip",
-          "wrc_plus",
-          "starter_handedness_splits",
-          "bullpen_fatigue",
-          "confirmed_lineups",
-          "weather_wind_roof",
-          "ballpark_factors",
-          "injuries_late_scratches_news",
-          "public_betting_handle",
-          "closing_line_value"
-        ],
-        "probablePitchers": {
-          "awayId": "625643",
-          "away": "Reynaldo L\u00f3pez",
-          "source": "MLB Stats API schedule hydrate=probablePitcher",
-          "homeId": "669461",
-          "home": "Matthew Liberatore"
-        },
-        "advancedEligible": false,
-        "rawContextVersion": "MLB-B1.0-advanced-context-v1",
-        "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
-        "completenessRatio": "0.0909",
-        "sourceStatuses": {
-          "fip_xfip": "NOT_CONNECTED_SOURCE_REQUIRED",
-          "wrc_plus": "NOT_CONNECTED_SOURCE_REQUIRED",
-          "starter_handedness_splits": "NOT_CONNECTED_SOURCE_REQUIRED",
-          "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
-          "bullpen_fatigue": "NOT_CONNECTED_SOURCE_REQUIRED",
-          "confirmed_probable_pitchers": "CONNECTED",
-          "confirmed_lineups": "NOT_CONNECTED_SOURCE_REQUIRED",
-          "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",
-          "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",
-          "public_betting_handle": "NOT_CONNECTED_SOURCE_REQUIRED",
-          "closing_line_value": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"
-        },
-        "connectedGroups": [
-          "confirmed_probable_pitchers"
-        ],
-        "numericValues": {
-          "awayStarterXfip": "0",
-          "parkFactorRuns": "1",
-          "windOutMph": "0",
-          "homeBullpenFatigue": "0",
-          "homeRestDays": "0",
-          "awayBullpenFatigue": "0",
-          "awayLineupStrengthDelta": "0",
-          "homeLineupStrengthDelta": "0",
-          "homeStarterXfip": "0",
-          "awayWrcPlus": "0",
-          "homeStarterFip": "0",
-          "awayStarterFip": "0",
-          "awayRestDays": "0",
-          "homeWrcPlus": "0"
-        },
-        "missingnessIsFeature": true,
-        "createdAtUtc": "2026-07-11T23:07:49.764391+00:00",
-        "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
-        "asOfUtc": "2026-07-11T15:15:25.909394+00:00",
-        "injuryFlags": {
-          "lateScratches": [],
-          "home": [],
-          "away": []
-        },
-        "partialGroups": [
-          "closing_line_value"
-        ]
-      },
-      "fundamentalsSnapshotVersion": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
-      "frozenFeatureVector": {
-        "gameId": "a2501dff8c71ab28b0051fafeed81903",
-        "awayTeam": "Atlanta Braves",
-        "immutableSource": "locked_prediction_row_pre_game_features",
-        "derivedOnceFromImmutableLockedRow": true,
-        "commenceTime": "2026-07-11T23:15:00Z",
-        "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "slateDateEt": "2026-07-11",
-        "version": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
-        "labels": {},
-        "features": {
-          "awayRunLineMove": "0",
-          "windOutMph": "0",
-          "awayResistance": "0",
-          "homeBullpenFatigue": "0",
-          "homeRestDays": "0",
-          "fundamentalsCompleteness": "0.0909",
-          "homeResistance": "0",
-          "selectedFavorite": "1",
-          "selectedMarketEdge": "0.010121999999999964",
-          "homeStarterXfip": "0",
-          "selectedDelta": "0.02611",
-          "awayWrcPlus": "0",
-          "awayDelta": "-0.02611",
-          "homeStarterFip": "0",
-          "awayPriceImpliedProb": "0.5098039215686274",
-          "selectedScore": "70.11",
-          "awayRestDays": "0",
-          "homeWrcPlus": "0",
-          "awaySteam": "0",
-          "homeMarketProb": "0.505061",
-          "awayStarterXfip": "0",
-          "parkFactorRuns": "1",
-          "marketGapHome": "0.010121999999999964",
-          "deltaGapHome": "0.05222",
-          "awayBookDivergence": "0.023488",
-          "homeRunLineMove": "0",
-          "homeDelta": "0.02611",
-          "homeSteam": "0",
-          "awayBullpenFatigue": "0",
-          "awayLineupStrengthDelta": "0",
-          "homeLineupStrengthDelta": "0",
-          "homeReversalCount": "0",
-          "homeBookAgreement": "0",
-          "awayReversalCount": "0",
-          "homePriceImpliedProb": "0.5283018867924528",
-          "selectedMarketProb": "0.505061",
-          "homeBookDivergence": "0.023488",
-          "awayStarterFip": "0",
-          "selectedBookDivergence": "0.023488",
-          "awayBookAgreement": "0",
-          "selectedReversalCount": "0",
-          "selectedHome": "1",
-          "awayMarketProb": "0.494939"
-        },
-        "predictedWinner": "St. Louis Cardinals",
-        "createdAtUtc": "2026-07-11T23:07:50.381113+00:00",
-        "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "fingerprint": "297a1ed73797e394f4847b8d4ee076828fabff392bf84535963cc5f2ef55a9a8",
-        "homeTeam": "St. Louis Cardinals",
-        "predictedSide": "home"
-      },
-      "frozenFeatureVectorVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
-      "frozenOutcomeFeatures": {
-        "marketProbDiff": "0.010121999999999964",
-        "deltaDiff": "0.05222",
-        "divergenceDiff": "0",
-        "fundamentalsApplied": "0",
-        "awayRunLineMovement": "0",
-        "awayResistance": "0",
-        "reversalDiff": "0",
-        "homeResistance": "0",
-        "awayDelta": "-0.02611",
-        "awayScore": "8.13",
-        "awayAmericanImpliedProb": "0.5098039215686274",
-        "awaySteam": "0",
-        "advancedInputCoveragePct": "0",
-        "homeMarketProb": "0.505061",
-        "homeRunLineMovement": "0",
-        "awayBookDivergence": "0.023488",
-        "homeScore": "70.11",
-        "homeDelta": "0.02611",
-        "scoreDiff": "61.98",
-        "homeSteam": "0",
-        "homeReversalCount": "0",
-        "homeAmericanImpliedProb": "0.5283018867924528",
-        "homeBookAgreement": "0",
-        "awayReversalCount": "0",
-        "awayLowPullDepth": "0",
-        "homeBookDivergence": "0.023488",
-        "americanImpliedDiff": "0.018497965223825408",
-        "runLineDiff": "0",
-        "awayBookAgreement": "0",
-        "awayMarketProb": "0.494939",
-        "homeLowPullDepth": "0"
-      },
-      "frozenReliabilityFeatures": {
-        "opponentDelta": "-0.02611",
-        "selectedUnderdog": "0",
-        "fundamentalsApplied": "0",
-        "bookAgreement": "0",
-        "selectedFavorite": "1",
-        "selectedTeamWinProbability": "0.5636",
-        "compressedMarket": "0",
-        "opponentMarketProb": "0.494939",
-        "selectedAmericanImpliedProb": "0.5283018867924528",
-        "selectedMarketEdge": "0.010121999999999964",
-        "resistance": "0",
-        "lowPullDepth": "0",
-        "selectedMarketProb": "0.505061",
-        "selectedDelta": "0.02611",
-        "selectedRunLineMovement": "0",
-        "selectedScore": "70.11",
-        "movementGap": "0.05222",
-        "opponentScore": "8.13",
-        "selectedBookDivergence": "0.023488",
-        "steam": "0",
-        "advancedInputCoveragePct": "0",
-        "scoreMargin": "61.98",
-        "selectedReversalCount": "0"
-      },
-      "mlFeatureFreeze": {
-        "providerGameId": "a2501dff8c71ab28b0051fafeed81903",
-        "exactVectorPatchVersion": "MLB-ML-EXACT-LOCK-VECTOR-PATCH-v1-clean-cohort-contract",
-        "applied": true,
-        "outcomeFeatureVersion": "MLB-OUTCOME-FEATURES-v1-home-away-lock-state",
-        "trainingExclusionReasons": [],
-        "exactVectorVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
-        "advancedInputs": {
-          "missing": [
-            "starting_pitcher_fip_xfip",
-            "offense_wrc_plus",
-            "confirmed_lineups",
-            "injuries_news",
-            "bullpen_availability",
-            "weather_roof",
-            "travel_rest",
-            "defense"
-          ],
-          "mode": "MARKET_ONLY_WITH_MISSINGNESS",
-          "coveragePct": "0",
-          "present": [],
-          "fundamentalsApplied": false
-        },
-        "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "exactVectorFingerprint": "297a1ed73797e394f4847b8d4ee076828fabff392bf84535963cc5f2ef55a9a8",
-        "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
-        "reliabilityFeatureVersion": "MLB-RELIABILITY-FEATURES-v1-selected-side-lock-state",
-        "immutable": true,
-        "frozenAtUtc": "2026-07-11T23:07:50.381092+00:00",
-        "sourceAtOrBeforeLock": true,
-        "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "outcomeLabelsJoinedOnlyAfterFinal": true,
-        "exactVectorApplied": true,
-        "completeSlateCoverage": true,
-        "trainingEligible": true,
-        "exactVectorCreated": true,
-        "probabilitySemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1-locked-official-playable-separate",
-        "policy": "Features are copied at lock and must never be regenerated from settled rows or later learning weights."
-      },
-      "mlOptimizationRuntime": {
-        "championAvailable": false,
-        "playabilityAuthorityEnabled": false,
-        "shadowOnly": true,
-        "applied": true,
-        "directionAuthorityEnabled": false,
-        "version": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
-        "modelAvailable": false
-      },
-      "mlAuditFeatureBridge": {
-        "applied": true,
-        "version": "MLB-ML-AUDIT-FEATURE-BRIDGE-v1-frozen-lock-vector",
-        "immutableFeatureVectorCopied": true
-      },
-      "modelVersion": "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production",
-      "engine": "MLB-SINGLE-GAME-ML-PROMOTION-v2.1",
-      "americanOdds": "-112",
-      "priceBook": "fanduel",
-      "priceSource": "real_book",
-      "fairProbabilityPct": "50.51",
-      "playable": false,
-      "playablePick": false,
-      "playabilityStatus": "NOT_PLAYABLE",
-      "correct": true,
-      "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
-      "mlPickReliabilityPct": null,
-      "lockedAmericanOdds": -112.0,
-      "unitProfit": 0.892857,
-      "marketBaselineAvailable": true,
-      "marketBaselineWinner": "St. Louis Cardinals",
-      "marketBaselineSide": "home",
-      "marketBaselineProbabilityPct": 50.51,
-      "marketBaselineAmericanOdds": -112.0,
-      "marketBaselineCorrect": true,
-      "marketBaselineUnitProfit": 0.892857,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
-    },
     {
       "id": "250b0373676b10f51ed1c59c93714245",
       "gameKeyBase": "new york yankees|washington nationals",
@@ -3717,7 +3130,7 @@
       "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
       "fundamentalsSnapshot": {
         "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
-        "createdAtUtc": "2026-07-12T00:12:21.382515+00:00",
+        "createdAtUtc": "2026-07-12T00:23:10.508771+00:00",
         "asOfUtc": null,
         "gameId": "250b0373676b10f51ed1c59c93714245",
         "sourceStatuses": {
@@ -3858,9 +3271,9 @@
       "status": "GRADED",
       "predictedWinner": "San Francisco Giants",
       "predictedSide": "home",
-      "score": "41.64",
+      "score": "42.37",
       "winProbabilityPct": "55.69",
-      "cappedWinProbabilityPct": "33.26",
+      "cappedWinProbabilityPct": "34.62",
       "confidenceTier": "Pass",
       "choiceQuality": "Pass / Forced Prediction",
       "tags": [
@@ -3886,7 +3299,7 @@
         "UNDERDOG"
       ],
       "winnerOptimizer": {
-        "homeOptimizedScore": "22.16",
+        "homeOptimizedScore": "25.74",
         "flipRequested": false,
         "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v4-reversal-flip-gate",
         "applied": true,
@@ -3895,7 +3308,7 @@
         "flippedPick": false,
         "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
         "flipAllowed": true,
-        "awayOptimizedScore": "41.64"
+        "awayOptimizedScore": "42.37"
       },
       "winnerStackV2": {
         "components": {
@@ -4010,14 +3423,14 @@
           "single_reversal_requires_clean_confirmation"
         ],
         "probabilityCap": {
-          "raw": "33.26",
-          "score": "2.64",
+          "raw": "34.62",
+          "score": "3.37",
           "cap": "48",
           "reasons": [
             "opponent_favored",
             "pass_or_baseline"
           ],
-          "capped": "33.26"
+          "capped": "34.62"
         },
         "applied": true,
         "blocksPrediction": false,
@@ -4091,14 +3504,14 @@
         "delta": "-0.005936",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "22.16",
-        "winProbability": "0.0895",
+        "score": "25.74",
+        "winProbability": "0.1169",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "22.16",
-        "rolling24hLearningAdjustment": "-1.64",
+        "optimizedWinnerScore": "25.74",
+        "rolling24hLearningAdjustment": "1.94",
         "bookDivergence": "0.019316",
         "probLatest": "0.574653",
         "side": "home",
@@ -4120,7 +3533,7 @@
         "fairProbability": "0.574653",
         "expectedValuePct": "-6.56",
         "reversalCount": "1",
-        "winProbabilityPct": "8.95"
+        "winProbabilityPct": "11.69"
       },
       "awaySignal": {
         "probStart": "0.419411",
@@ -4128,14 +3541,14 @@
         "delta": "0.005936",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "41.64",
-        "winProbability": "0.3326",
+        "score": "42.37",
+        "winProbability": "0.3462",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "41.64",
-        "rolling24hLearningAdjustment": "-0.89",
+        "optimizedWinnerScore": "42.37",
+        "rolling24hLearningAdjustment": "-0.16",
         "bookDivergence": "0.019316",
         "probLatest": "0.425347",
         "side": "away",
@@ -4157,7 +3570,7 @@
         "fairProbability": "0.425347",
         "expectedValuePct": "-1.66",
         "reversalCount": "1",
-        "winProbabilityPct": "33.26"
+        "winProbabilityPct": "34.62"
       },
       "finalGuardedStored": true,
       "finalPipelineVersion": "MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop",
@@ -4168,7 +3581,7 @@
         "lockedFlag": true,
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
         "explicitSourceAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "rowCreatedAtUtc": "2026-07-11T23:07:48.910551+00:00",
+        "rowCreatedAtUtc": "2026-07-12T00:15:09.621134+00:00",
         "createdAtNotUsedAsScoringSource": true,
         "preventsLateRows": true,
         "finalPipelineState": {
@@ -4256,7 +3669,7 @@
           "homeWrcPlus": "0"
         },
         "missingnessIsFeature": true,
-        "createdAtUtc": "2026-07-11T23:07:49.764640+00:00",
+        "createdAtUtc": "2026-07-12T00:15:12.328478+00:00",
         "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
         "asOfUtc": "2026-07-11T15:15:25.909394+00:00",
         "injuryFlags": {
@@ -4295,7 +3708,7 @@
           "awayDelta": "0.005936",
           "homeStarterFip": "0",
           "awayPriceImpliedProb": "0.43478260869565216",
-          "selectedScore": "41.64",
+          "selectedScore": "42.37",
           "awayRestDays": "0",
           "homeWrcPlus": "0",
           "awaySteam": "0",
@@ -4325,9 +3738,9 @@
           "awayMarketProb": "0.425347"
         },
         "predictedWinner": "San Francisco Giants",
-        "createdAtUtc": "2026-07-11T23:07:50.384009+00:00",
+        "createdAtUtc": "2026-07-12T00:15:13.922876+00:00",
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "fingerprint": "1e7a40dada9b5da4a276b1a91a49cf4fc5370ac67db5b2f90a198c082bcd3c8b",
+        "fingerprint": "6230bf46d05463d2decd0f4083630c23acc967cca5fad5052e32ca9f27ecad6e",
         "homeTeam": "San Francisco Giants",
         "predictedSide": "home"
       },
@@ -4342,16 +3755,16 @@
         "reversalDiff": "0",
         "homeResistance": "0",
         "awayDelta": "0.005936",
-        "awayScore": "41.64",
+        "awayScore": "42.37",
         "awayAmericanImpliedProb": "0.43478260869565216",
         "awaySteam": "0",
         "advancedInputCoveragePct": "0",
         "homeMarketProb": "0.574653",
         "homeRunLineMovement": "0",
         "awayBookDivergence": "0.019316",
-        "homeScore": "22.16",
+        "homeScore": "25.74",
         "homeDelta": "-0.005936",
-        "scoreDiff": "-19.48",
+        "scoreDiff": "-16.63",
         "homeSteam": "0",
         "homeReversalCount": "1",
         "homeAmericanImpliedProb": "0.6062992125984252",
@@ -4381,13 +3794,13 @@
         "selectedMarketProb": "0.574653",
         "selectedDelta": "-0.005936",
         "selectedRunLineMovement": "0",
-        "selectedScore": "22.16",
+        "selectedScore": "25.74",
         "movementGap": "-0.011872",
-        "opponentScore": "41.64",
+        "opponentScore": "42.37",
         "selectedBookDivergence": "0.019316",
         "steam": "0",
         "advancedInputCoveragePct": "0",
-        "scoreMargin": "-19.48",
+        "scoreMargin": "-16.63",
         "selectedReversalCount": "1"
       },
       "mlFeatureFreeze": {
@@ -4414,11 +3827,11 @@
           "fundamentalsApplied": false
         },
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "exactVectorFingerprint": "1e7a40dada9b5da4a276b1a91a49cf4fc5370ac67db5b2f90a198c082bcd3c8b",
+        "exactVectorFingerprint": "6230bf46d05463d2decd0f4083630c23acc967cca5fad5052e32ca9f27ecad6e",
         "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
         "reliabilityFeatureVersion": "MLB-RELIABILITY-FEATURES-v1-selected-side-lock-state",
         "immutable": true,
-        "frozenAtUtc": "2026-07-11T23:07:50.383978+00:00",
+        "frozenAtUtc": "2026-07-12T00:15:13.922858+00:00",
         "sourceAtOrBeforeLock": true,
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
         "outcomeLabelsJoinedOnlyAfterFinal": true,
@@ -4483,7 +3896,7 @@
       "status": "GRADED",
       "predictedWinner": "Pittsburgh Pirates",
       "predictedSide": "home",
-      "score": "11.27",
+      "score": "12.31",
       "winProbabilityPct": "56.39",
       "cappedWinProbabilityPct": "5",
       "confidenceTier": "Pass",
@@ -4521,7 +3934,7 @@
         "flippedPick": false,
         "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
         "flipAllowed": true,
-        "awayOptimizedScore": "11.27"
+        "awayOptimizedScore": "12.31"
       },
       "winnerStackV2": {
         "components": {
@@ -4736,7 +4149,7 @@
           "NEGATIVE_EV_GUARD"
         ],
         "optimizedWinnerScore": "0",
-        "rolling24hLearningAdjustment": "1.2",
+        "rolling24hLearningAdjustment": "1.82",
         "bookDivergence": "0.017409",
         "probLatest": "0.515488",
         "side": "home",
@@ -4767,14 +4180,14 @@
         "delta": "0.021473",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "11.27",
+        "score": "12.31",
         "winProbability": "0.05",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "11.27",
-        "rolling24hLearningAdjustment": "1.47",
+        "optimizedWinnerScore": "12.31",
+        "rolling24hLearningAdjustment": "2.51",
         "bookDivergence": "0.017409",
         "probLatest": "0.484512",
         "side": "away",
@@ -4808,7 +4221,7 @@
         "lockedFlag": true,
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
         "explicitSourceAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "rowCreatedAtUtc": "2026-07-11T23:07:48.858786+00:00",
+        "rowCreatedAtUtc": "2026-07-12T00:15:09.449949+00:00",
         "createdAtNotUsedAsScoringSource": true,
         "preventsLateRows": true,
         "finalPipelineState": {
@@ -4896,7 +4309,7 @@
           "homeWrcPlus": "0"
         },
         "missingnessIsFeature": true,
-        "createdAtUtc": "2026-07-11T23:07:49.764754+00:00",
+        "createdAtUtc": "2026-07-12T00:15:12.328572+00:00",
         "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
         "asOfUtc": "2026-07-11T15:15:25.909394+00:00",
         "injuryFlags": {
@@ -4935,7 +4348,7 @@
           "awayDelta": "0.021473",
           "homeStarterFip": "0",
           "awayPriceImpliedProb": "0.504950495049505",
-          "selectedScore": "11.27",
+          "selectedScore": "12.31",
           "awayRestDays": "0",
           "homeWrcPlus": "0",
           "awaySteam": "0",
@@ -4965,9 +4378,9 @@
           "awayMarketProb": "0.484512"
         },
         "predictedWinner": "Pittsburgh Pirates",
-        "createdAtUtc": "2026-07-11T23:07:50.385747+00:00",
+        "createdAtUtc": "2026-07-12T00:15:13.924338+00:00",
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "fingerprint": "928060ddc1eb942a362a102a715cc89483e93a295ae516dd2a7c9f80a170a2b5",
+        "fingerprint": "5005a1a9e3381822063c87804511923e854d3d995cf0782ceb4c08f03b713d16",
         "homeTeam": "Pittsburgh Pirates",
         "predictedSide": "home"
       },
@@ -4982,7 +4395,7 @@
         "reversalDiff": "0",
         "homeResistance": "0",
         "awayDelta": "0.021473",
-        "awayScore": "11.27",
+        "awayScore": "12.31",
         "awayAmericanImpliedProb": "0.504950495049505",
         "awaySteam": "0",
         "advancedInputCoveragePct": "0",
@@ -4991,7 +4404,7 @@
         "awayBookDivergence": "0.017409",
         "homeScore": "0",
         "homeDelta": "-0.021473",
-        "scoreDiff": "-11.27",
+        "scoreDiff": "-12.31",
         "homeSteam": "0",
         "homeReversalCount": "6",
         "homeAmericanImpliedProb": "0.5370370370370371",
@@ -5023,11 +4436,11 @@
         "selectedRunLineMovement": "0",
         "selectedScore": "0",
         "movementGap": "-0.042946",
-        "opponentScore": "11.27",
+        "opponentScore": "12.31",
         "selectedBookDivergence": "0.017409",
         "steam": "0",
         "advancedInputCoveragePct": "0",
-        "scoreMargin": "-11.27",
+        "scoreMargin": "-12.31",
         "selectedReversalCount": "6"
       },
       "mlFeatureFreeze": {
@@ -5054,11 +4467,11 @@
           "fundamentalsApplied": false
         },
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "exactVectorFingerprint": "928060ddc1eb942a362a102a715cc89483e93a295ae516dd2a7c9f80a170a2b5",
+        "exactVectorFingerprint": "5005a1a9e3381822063c87804511923e854d3d995cf0782ceb4c08f03b713d16",
         "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
         "reliabilityFeatureVersion": "MLB-RELIABILITY-FEATURES-v1-selected-side-lock-state",
         "immutable": true,
-        "frozenAtUtc": "2026-07-11T23:07:50.385725+00:00",
+        "frozenAtUtc": "2026-07-12T00:15:13.924320+00:00",
         "sourceAtOrBeforeLock": true,
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
         "outcomeLabelsJoinedOnlyAfterFinal": true,
@@ -5123,7 +4536,7 @@
       "status": "GRADED",
       "predictedWinner": "Chicago White Sox",
       "predictedSide": "home",
-      "score": "59.7",
+      "score": "60.3",
       "winProbabilityPct": "53.42",
       "cappedWinProbabilityPct": "52",
       "confidenceTier": "Lean",
@@ -5151,7 +4564,7 @@
         "SLATE_WIDE_45_MIN_LOCK_POLICY"
       ],
       "winnerOptimizer": {
-        "homeOptimizedScore": "59.7",
+        "homeOptimizedScore": "60.3",
         "flipRequested": false,
         "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v4-reversal-flip-gate",
         "applied": true,
@@ -5160,7 +4573,7 @@
         "flippedPick": false,
         "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
         "flipAllowed": true,
-        "awayOptimizedScore": "21.48"
+        "awayOptimizedScore": "21.66"
       },
       "winnerStackV2": {
         "components": {
@@ -5274,8 +4687,8 @@
           "premium_tier_required"
         ],
         "probabilityCap": {
-          "raw": "69.18",
-          "score": "28.7",
+          "raw": "70.23",
+          "score": "29.3",
           "cap": "52",
           "reasons": [
             "compressed"
@@ -5356,14 +4769,14 @@
         "delta": "0.015797",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "59.7",
-        "winProbability": "0.6918",
+        "score": "60.3",
+        "winProbability": "0.7023",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "59.7",
-        "rolling24hLearningAdjustment": "1.65",
+        "optimizedWinnerScore": "60.3",
+        "rolling24hLearningAdjustment": "2.25",
         "bookDivergence": "0.014015",
         "probLatest": "0.505913",
         "side": "home",
@@ -5385,7 +4798,7 @@
         "fairProbability": "0.505913",
         "expectedValuePct": "-2.14",
         "reversalCount": "0",
-        "winProbabilityPct": "69.18"
+        "winProbabilityPct": "70.23"
       },
       "awaySignal": {
         "probStart": "0.509884",
@@ -5393,14 +4806,14 @@
         "delta": "-0.015797",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "21.48",
-        "winProbability": "0.085",
+        "score": "21.66",
+        "winProbability": "0.0861",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "21.48",
-        "rolling24hLearningAdjustment": "1.38",
+        "optimizedWinnerScore": "21.66",
+        "rolling24hLearningAdjustment": "1.56",
         "bookDivergence": "0.014015",
         "probLatest": "0.494087",
         "side": "away",
@@ -5422,7 +4835,7 @@
         "fairProbability": "0.494087",
         "expectedValuePct": "-5.25",
         "reversalCount": "0",
-        "winProbabilityPct": "8.5"
+        "winProbabilityPct": "8.61"
       },
       "finalGuardedStored": true,
       "finalPipelineVersion": "MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop",
@@ -5433,7 +4846,7 @@
         "lockedFlag": true,
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
         "explicitSourceAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "rowCreatedAtUtc": "2026-07-11T23:07:48.871711+00:00",
+        "rowCreatedAtUtc": "2026-07-12T00:15:09.492681+00:00",
         "createdAtNotUsedAsScoringSource": true,
         "preventsLateRows": true,
         "finalPipelineState": {
@@ -5521,7 +4934,7 @@
           "homeWrcPlus": "0"
         },
         "missingnessIsFeature": true,
-        "createdAtUtc": "2026-07-11T23:07:49.764334+00:00",
+        "createdAtUtc": "2026-07-12T00:15:12.328229+00:00",
         "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
         "asOfUtc": "2026-07-11T15:15:25.909394+00:00",
         "injuryFlags": {
@@ -5560,7 +4973,7 @@
           "awayDelta": "-0.015797",
           "homeStarterFip": "0",
           "awayPriceImpliedProb": "0.5098039215686274",
-          "selectedScore": "59.7",
+          "selectedScore": "60.3",
           "awayRestDays": "0",
           "homeWrcPlus": "0",
           "awaySteam": "0",
@@ -5590,9 +5003,9 @@
           "awayMarketProb": "0.494087"
         },
         "predictedWinner": "Chicago White Sox",
-        "createdAtUtc": "2026-07-11T23:07:50.380567+00:00",
+        "createdAtUtc": "2026-07-12T00:15:13.919862+00:00",
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "fingerprint": "bfecbe62fd00e9dfa06de47a5f2e25fe5280b798148e5a4c914f04a4cba2fda7",
+        "fingerprint": "d84ebbccaf6ca0ccb181a245cf74b376129519c97258a8644a214861cadbe4e1",
         "homeTeam": "Chicago White Sox",
         "predictedSide": "home"
       },
@@ -5607,16 +5020,16 @@
         "reversalDiff": "0",
         "homeResistance": "0",
         "awayDelta": "-0.015797",
-        "awayScore": "21.48",
+        "awayScore": "21.66",
         "awayAmericanImpliedProb": "0.5098039215686274",
         "awaySteam": "0",
         "advancedInputCoveragePct": "0",
         "homeMarketProb": "0.505913",
         "homeRunLineMovement": "0",
         "awayBookDivergence": "0.014015",
-        "homeScore": "59.7",
+        "homeScore": "60.3",
         "homeDelta": "0.015797",
-        "scoreDiff": "38.22",
+        "scoreDiff": "38.64",
         "homeSteam": "0",
         "homeReversalCount": "0",
         "homeAmericanImpliedProb": "0.5283018867924528",
@@ -5646,13 +5059,13 @@
         "selectedMarketProb": "0.505913",
         "selectedDelta": "0.015797",
         "selectedRunLineMovement": "0",
-        "selectedScore": "59.7",
+        "selectedScore": "60.3",
         "movementGap": "0.031594",
-        "opponentScore": "21.48",
+        "opponentScore": "21.66",
         "selectedBookDivergence": "0.014015",
         "steam": "0",
         "advancedInputCoveragePct": "0",
-        "scoreMargin": "38.22",
+        "scoreMargin": "38.64",
         "selectedReversalCount": "0"
       },
       "mlFeatureFreeze": {
@@ -5679,11 +5092,11 @@
           "fundamentalsApplied": false
         },
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "exactVectorFingerprint": "bfecbe62fd00e9dfa06de47a5f2e25fe5280b798148e5a4c914f04a4cba2fda7",
+        "exactVectorFingerprint": "d84ebbccaf6ca0ccb181a245cf74b376129519c97258a8644a214861cadbe4e1",
         "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
         "reliabilityFeatureVersion": "MLB-RELIABILITY-FEATURES-v1-selected-side-lock-state",
         "immutable": true,
-        "frozenAtUtc": "2026-07-11T23:07:50.380545+00:00",
+        "frozenAtUtc": "2026-07-12T00:15:13.919842+00:00",
         "sourceAtOrBeforeLock": true,
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
         "outcomeLabelsJoinedOnlyAfterFinal": true,
@@ -5748,9 +5161,9 @@
       "status": "GRADED",
       "predictedWinner": "Minnesota Twins",
       "predictedSide": "home",
-      "score": "43.25",
+      "score": "44.4",
       "winProbabilityPct": "57.24",
-      "cappedWinProbabilityPct": "36.3",
+      "cappedWinProbabilityPct": "38.54",
       "confidenceTier": "Pass",
       "choiceQuality": "Pass / Forced Prediction",
       "tags": [
@@ -5777,7 +5190,7 @@
         "UNDERDOG"
       ],
       "winnerOptimizer": {
-        "homeOptimizedScore": "23.8",
+        "homeOptimizedScore": "26.63",
         "flipRequested": false,
         "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v4-reversal-flip-gate",
         "applied": true,
@@ -5786,7 +5199,7 @@
         "flippedPick": false,
         "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
         "flipAllowed": true,
-        "awayOptimizedScore": "43.25"
+        "awayOptimizedScore": "44.4"
       },
       "winnerStackV2": {
         "components": {
@@ -5902,14 +5315,14 @@
           "single_reversal_requires_clean_confirmation"
         ],
         "probabilityCap": {
-          "raw": "36.3",
-          "score": "4.25",
+          "raw": "38.54",
+          "score": "5.4",
           "cap": "48",
           "reasons": [
             "opponent_favored",
             "pass_or_baseline"
           ],
-          "capped": "36.3"
+          "capped": "38.54"
         },
         "applied": true,
         "blocksPrediction": false,
@@ -5983,14 +5396,14 @@
         "delta": "-0.006993",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "23.8",
-        "winProbability": "0.1013",
+        "score": "26.63",
+        "winProbability": "0.1248",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "23.8",
-        "rolling24hLearningAdjustment": "-0.89",
+        "optimizedWinnerScore": "26.63",
+        "rolling24hLearningAdjustment": "1.94",
         "bookDivergence": "0.01302",
         "probLatest": "0.612881",
         "side": "home",
@@ -6013,7 +5426,7 @@
         "fairProbability": "0.612881",
         "expectedValuePct": "-6.05",
         "reversalCount": "1",
-        "winProbabilityPct": "10.13"
+        "winProbabilityPct": "12.48"
       },
       "awaySignal": {
         "probStart": "0.380127",
@@ -6021,14 +5434,14 @@
         "delta": "0.006993",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "43.25",
-        "winProbability": "0.363",
+        "score": "44.4",
+        "winProbability": "0.3854",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "43.25",
-        "rolling24hLearningAdjustment": "-1.37",
+        "optimizedWinnerScore": "44.4",
+        "rolling24hLearningAdjustment": "-0.22",
         "bookDivergence": "0.01302",
         "probLatest": "0.387119",
         "side": "away",
@@ -6051,7 +5464,7 @@
         "fairProbability": "0.387119",
         "expectedValuePct": "-1.6",
         "reversalCount": "1",
-        "winProbabilityPct": "36.3"
+        "winProbabilityPct": "38.54"
       },
       "finalGuardedStored": true,
       "finalPipelineVersion": "MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop",
@@ -6062,7 +5475,7 @@
         "lockedFlag": true,
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
         "explicitSourceAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "rowCreatedAtUtc": "2026-07-11T23:07:48.887436+00:00",
+        "rowCreatedAtUtc": "2026-07-12T00:15:09.535288+00:00",
         "createdAtNotUsedAsScoringSource": true,
         "preventsLateRows": true,
         "finalPipelineState": {
@@ -6150,7 +5563,7 @@
           "homeWrcPlus": "0"
         },
         "missingnessIsFeature": true,
-        "createdAtUtc": "2026-07-11T23:07:49.764725+00:00",
+        "createdAtUtc": "2026-07-12T00:15:12.328547+00:00",
         "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
         "asOfUtc": "2026-07-11T15:15:25.909394+00:00",
         "injuryFlags": {
@@ -6189,7 +5602,7 @@
           "awayDelta": "0.006993",
           "homeStarterFip": "0",
           "awayPriceImpliedProb": "0.3968253968253968",
-          "selectedScore": "43.25",
+          "selectedScore": "44.4",
           "awayRestDays": "0",
           "homeWrcPlus": "0",
           "awaySteam": "0",
@@ -6219,9 +5632,9 @@
           "awayMarketProb": "0.387119"
         },
         "predictedWinner": "Minnesota Twins",
-        "createdAtUtc": "2026-07-11T23:07:50.385133+00:00",
+        "createdAtUtc": "2026-07-12T00:15:13.923826+00:00",
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "fingerprint": "c6d1ac49de923ce2b494ae3da683bcfe4347bfc6129cacd83d07e74e46f09f10",
+        "fingerprint": "c0231fa73e59317ab3da9471a16558391a7050b30fe30464cd397a3e7606be9c",
         "homeTeam": "Minnesota Twins",
         "predictedSide": "home"
       },
@@ -6236,16 +5649,16 @@
         "reversalDiff": "0",
         "homeResistance": "0",
         "awayDelta": "0.006993",
-        "awayScore": "43.25",
+        "awayScore": "44.4",
         "awayAmericanImpliedProb": "0.3968253968253968",
         "awaySteam": "0",
         "advancedInputCoveragePct": "0",
         "homeMarketProb": "0.612881",
         "homeRunLineMovement": "0",
         "awayBookDivergence": "0.01302",
-        "homeScore": "23.8",
+        "homeScore": "26.63",
         "homeDelta": "-0.006993",
-        "scoreDiff": "-19.45",
+        "scoreDiff": "-17.77",
         "homeSteam": "0",
         "homeReversalCount": "1",
         "homeAmericanImpliedProb": "0.6428571428571429",
@@ -6275,13 +5688,13 @@
         "selectedMarketProb": "0.612881",
         "selectedDelta": "-0.006993",
         "selectedRunLineMovement": "0",
-        "selectedScore": "23.8",
+        "selectedScore": "26.63",
         "movementGap": "-0.013986",
-        "opponentScore": "43.25",
+        "opponentScore": "44.4",
         "selectedBookDivergence": "0.01302",
         "steam": "0",
         "advancedInputCoveragePct": "0",
-        "scoreMargin": "-19.45",
+        "scoreMargin": "-17.77",
         "selectedReversalCount": "1"
       },
       "mlFeatureFreeze": {
@@ -6308,11 +5721,11 @@
           "fundamentalsApplied": false
         },
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "exactVectorFingerprint": "c6d1ac49de923ce2b494ae3da683bcfe4347bfc6129cacd83d07e74e46f09f10",
+        "exactVectorFingerprint": "c0231fa73e59317ab3da9471a16558391a7050b30fe30464cd397a3e7606be9c",
         "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
         "reliabilityFeatureVersion": "MLB-RELIABILITY-FEATURES-v1-selected-side-lock-state",
         "immutable": true,
-        "frozenAtUtc": "2026-07-11T23:07:50.385112+00:00",
+        "frozenAtUtc": "2026-07-12T00:15:13.923807+00:00",
         "sourceAtOrBeforeLock": true,
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
         "outcomeLabelsJoinedOnlyAfterFinal": true,
@@ -6377,9 +5790,9 @@
       "status": "GRADED",
       "predictedWinner": "New York Yankees",
       "predictedSide": "away",
-      "score": "26.1",
+      "score": "29.68",
       "winProbabilityPct": "52.06",
-      "cappedWinProbabilityPct": "12.01",
+      "cappedWinProbabilityPct": "15.53",
       "confidenceTier": "Pass",
       "choiceQuality": "Pass / Forced Prediction",
       "tags": [
@@ -6406,7 +5819,7 @@
         "SLATE_WIDE_45_MIN_LOCK_POLICY"
       ],
       "winnerOptimizer": {
-        "homeOptimizedScore": "24.45",
+        "homeOptimizedScore": "25.18",
         "flipRequested": false,
         "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v4-reversal-flip-gate",
         "applied": true,
@@ -6415,7 +5828,7 @@
         "flippedPick": false,
         "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
         "flipAllowed": true,
-        "awayOptimizedScore": "26.1"
+        "awayOptimizedScore": "29.68"
       },
       "winnerStackV2": {
         "components": {
@@ -6527,13 +5940,13 @@
           "single_reversal_requires_clean_confirmation"
         ],
         "probabilityCap": {
-          "raw": "12.01",
-          "score": "20.1",
+          "raw": "15.53",
+          "score": "23.68",
           "cap": "49",
           "reasons": [
             "pass_or_baseline"
           ],
-          "capped": "12.01"
+          "capped": "15.53"
         },
         "applied": true,
         "blocksPrediction": false,
@@ -6604,14 +6017,14 @@
         "delta": "-0.002191",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "24.45",
-        "winProbability": "0.1063",
+        "score": "25.18",
+        "winProbability": "0.1122",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "24.45",
-        "rolling24hLearningAdjustment": "-0.89",
+        "optimizedWinnerScore": "25.18",
+        "rolling24hLearningAdjustment": "-0.16",
         "bookDivergence": "0.015003",
         "probLatest": "0.363302",
         "side": "home",
@@ -6633,7 +6046,7 @@
         "fairProbability": "0.363302",
         "expectedValuePct": "-5.55",
         "reversalCount": "1",
-        "winProbabilityPct": "10.63"
+        "winProbabilityPct": "11.22"
       },
       "awaySignal": {
         "probStart": "0.634507",
@@ -6641,15 +6054,15 @@
         "delta": "0.002191",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "26.1",
-        "winProbability": "0.1201",
+        "score": "29.68",
+        "winProbability": "0.1553",
         "priceBook": "fanduel",
         "blockedReasons": [
           "HEAVY_FAVORITE_PRICE_GUARD",
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "26.1",
-        "rolling24hLearningAdjustment": "-1.64",
+        "optimizedWinnerScore": "29.68",
+        "rolling24hLearningAdjustment": "1.94",
         "bookDivergence": "0.015003",
         "probLatest": "0.636698",
         "side": "away",
@@ -6671,7 +6084,7 @@
         "fairProbability": "0.636698",
         "expectedValuePct": "-4.82",
         "reversalCount": "1",
-        "winProbabilityPct": "12.01"
+        "winProbabilityPct": "15.53"
       },
       "finalGuardedStored": true,
       "finalPipelineVersion": "MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop",
@@ -6682,7 +6095,7 @@
         "lockedFlag": true,
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
         "explicitSourceAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "rowCreatedAtUtc": "2026-07-11T23:07:48.898995+00:00",
+        "rowCreatedAtUtc": "2026-07-12T00:15:09.578285+00:00",
         "createdAtNotUsedAsScoringSource": true,
         "preventsLateRows": true,
         "finalPipelineState": {
@@ -6770,7 +6183,7 @@
           "homeWrcPlus": "0"
         },
         "missingnessIsFeature": true,
-        "createdAtUtc": "2026-07-11T23:07:49.764103+00:00",
+        "createdAtUtc": "2026-07-12T00:15:12.328074+00:00",
         "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
         "asOfUtc": "2026-07-11T15:15:25.909394+00:00",
         "injuryFlags": {
@@ -6809,7 +6222,7 @@
           "awayDelta": "0.002191",
           "homeStarterFip": "0",
           "awayPriceImpliedProb": "0.6621621621621622",
-          "selectedScore": "26.1",
+          "selectedScore": "29.68",
           "awayRestDays": "0",
           "homeWrcPlus": "0",
           "awaySteam": "0",
@@ -6839,9 +6252,9 @@
           "awayMarketProb": "0.636698"
         },
         "predictedWinner": "New York Yankees",
-        "createdAtUtc": "2026-07-11T23:07:50.378351+00:00",
+        "createdAtUtc": "2026-07-12T00:15:13.917909+00:00",
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "fingerprint": "eed48ba07fe82d58a9a7e47735d3897ac52cb6f5270470ca231fa0d1fd9e6c69",
+        "fingerprint": "8550287cc509d62c22d4426ff315721b9cd5db424b99c92917aad55e217bead4",
         "homeTeam": "Washington Nationals",
         "predictedSide": "away"
       },
@@ -6856,16 +6269,16 @@
         "reversalDiff": "0",
         "homeResistance": "0",
         "awayDelta": "0.002191",
-        "awayScore": "26.1",
+        "awayScore": "29.68",
         "awayAmericanImpliedProb": "0.6621621621621622",
         "awaySteam": "0",
         "advancedInputCoveragePct": "0",
         "homeMarketProb": "0.363302",
         "homeRunLineMovement": "0",
         "awayBookDivergence": "0.015003",
-        "homeScore": "24.45",
+        "homeScore": "25.18",
         "homeDelta": "-0.002191",
-        "scoreDiff": "-1.6500000000000021",
+        "scoreDiff": "-4.5",
         "homeSteam": "0",
         "homeReversalCount": "1",
         "homeAmericanImpliedProb": "0.3787878787878788",
@@ -6895,13 +6308,13 @@
         "selectedMarketProb": "0.636698",
         "selectedDelta": "0.002191",
         "selectedRunLineMovement": "0",
-        "selectedScore": "26.1",
+        "selectedScore": "29.68",
         "movementGap": "0.004382",
-        "opponentScore": "24.45",
+        "opponentScore": "25.18",
         "selectedBookDivergence": "0.015003",
         "steam": "0",
         "advancedInputCoveragePct": "0",
-        "scoreMargin": "1.6500000000000021",
+        "scoreMargin": "4.5",
         "selectedReversalCount": "1"
       },
       "mlFeatureFreeze": {
@@ -6928,11 +6341,11 @@
           "fundamentalsApplied": false
         },
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "exactVectorFingerprint": "eed48ba07fe82d58a9a7e47735d3897ac52cb6f5270470ca231fa0d1fd9e6c69",
+        "exactVectorFingerprint": "8550287cc509d62c22d4426ff315721b9cd5db424b99c92917aad55e217bead4",
         "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
         "reliabilityFeatureVersion": "MLB-RELIABILITY-FEATURES-v1-selected-side-lock-state",
         "immutable": true,
-        "frozenAtUtc": "2026-07-11T23:07:50.378328+00:00",
+        "frozenAtUtc": "2026-07-12T00:15:13.917889+00:00",
         "sourceAtOrBeforeLock": true,
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
         "outcomeLabelsJoinedOnlyAfterFinal": true,
@@ -6997,9 +6410,9 @@
       "status": "GRADED",
       "predictedWinner": "San Francisco Giants",
       "predictedSide": "home",
-      "score": "41.64",
+      "score": "42.37",
       "winProbabilityPct": "55.69",
-      "cappedWinProbabilityPct": "33.26",
+      "cappedWinProbabilityPct": "34.62",
       "confidenceTier": "Pass",
       "choiceQuality": "Pass / Forced Prediction",
       "tags": [
@@ -7025,7 +6438,7 @@
         "UNDERDOG"
       ],
       "winnerOptimizer": {
-        "homeOptimizedScore": "22.16",
+        "homeOptimizedScore": "25.74",
         "flipRequested": false,
         "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v4-reversal-flip-gate",
         "applied": true,
@@ -7034,7 +6447,7 @@
         "flippedPick": false,
         "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
         "flipAllowed": true,
-        "awayOptimizedScore": "41.64"
+        "awayOptimizedScore": "42.37"
       },
       "winnerStackV2": {
         "components": {
@@ -7149,14 +6562,14 @@
           "single_reversal_requires_clean_confirmation"
         ],
         "probabilityCap": {
-          "raw": "33.26",
-          "score": "2.64",
+          "raw": "34.62",
+          "score": "3.37",
           "cap": "48",
           "reasons": [
             "opponent_favored",
             "pass_or_baseline"
           ],
-          "capped": "33.26"
+          "capped": "34.62"
         },
         "applied": true,
         "blocksPrediction": false,
@@ -7230,14 +6643,14 @@
         "delta": "-0.005936",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "22.16",
-        "winProbability": "0.0895",
+        "score": "25.74",
+        "winProbability": "0.1169",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "22.16",
-        "rolling24hLearningAdjustment": "-1.64",
+        "optimizedWinnerScore": "25.74",
+        "rolling24hLearningAdjustment": "1.94",
         "bookDivergence": "0.019316",
         "probLatest": "0.574653",
         "side": "home",
@@ -7259,7 +6672,7 @@
         "fairProbability": "0.574653",
         "expectedValuePct": "-6.56",
         "reversalCount": "1",
-        "winProbabilityPct": "8.95"
+        "winProbabilityPct": "11.69"
       },
       "awaySignal": {
         "probStart": "0.419411",
@@ -7267,14 +6680,14 @@
         "delta": "0.005936",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "41.64",
-        "winProbability": "0.3326",
+        "score": "42.37",
+        "winProbability": "0.3462",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "41.64",
-        "rolling24hLearningAdjustment": "-0.89",
+        "optimizedWinnerScore": "42.37",
+        "rolling24hLearningAdjustment": "-0.16",
         "bookDivergence": "0.019316",
         "probLatest": "0.425347",
         "side": "away",
@@ -7296,7 +6709,7 @@
         "fairProbability": "0.425347",
         "expectedValuePct": "-1.66",
         "reversalCount": "1",
-        "winProbabilityPct": "33.26"
+        "winProbabilityPct": "34.62"
       },
       "finalGuardedStored": true,
       "finalPipelineVersion": "MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop",
@@ -7307,7 +6720,7 @@
         "lockedFlag": true,
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
         "explicitSourceAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "rowCreatedAtUtc": "2026-07-11T23:07:48.910551+00:00",
+        "rowCreatedAtUtc": "2026-07-12T00:15:09.621134+00:00",
         "createdAtNotUsedAsScoringSource": true,
         "preventsLateRows": true,
         "finalPipelineState": {
@@ -7395,7 +6808,7 @@
           "homeWrcPlus": "0"
         },
         "missingnessIsFeature": true,
-        "createdAtUtc": "2026-07-11T23:07:49.764640+00:00",
+        "createdAtUtc": "2026-07-12T00:15:12.328478+00:00",
         "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
         "asOfUtc": "2026-07-11T15:15:25.909394+00:00",
         "injuryFlags": {
@@ -7434,7 +6847,7 @@
           "awayDelta": "0.005936",
           "homeStarterFip": "0",
           "awayPriceImpliedProb": "0.43478260869565216",
-          "selectedScore": "41.64",
+          "selectedScore": "42.37",
           "awayRestDays": "0",
           "homeWrcPlus": "0",
           "awaySteam": "0",
@@ -7464,9 +6877,9 @@
           "awayMarketProb": "0.425347"
         },
         "predictedWinner": "San Francisco Giants",
-        "createdAtUtc": "2026-07-11T23:07:50.384009+00:00",
+        "createdAtUtc": "2026-07-12T00:15:13.922876+00:00",
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "fingerprint": "1e7a40dada9b5da4a276b1a91a49cf4fc5370ac67db5b2f90a198c082bcd3c8b",
+        "fingerprint": "6230bf46d05463d2decd0f4083630c23acc967cca5fad5052e32ca9f27ecad6e",
         "homeTeam": "San Francisco Giants",
         "predictedSide": "home"
       },
@@ -7481,16 +6894,16 @@
         "reversalDiff": "0",
         "homeResistance": "0",
         "awayDelta": "0.005936",
-        "awayScore": "41.64",
+        "awayScore": "42.37",
         "awayAmericanImpliedProb": "0.43478260869565216",
         "awaySteam": "0",
         "advancedInputCoveragePct": "0",
         "homeMarketProb": "0.574653",
         "homeRunLineMovement": "0",
         "awayBookDivergence": "0.019316",
-        "homeScore": "22.16",
+        "homeScore": "25.74",
         "homeDelta": "-0.005936",
-        "scoreDiff": "-19.48",
+        "scoreDiff": "-16.63",
         "homeSteam": "0",
         "homeReversalCount": "1",
         "homeAmericanImpliedProb": "0.6062992125984252",
@@ -7520,13 +6933,13 @@
         "selectedMarketProb": "0.574653",
         "selectedDelta": "-0.005936",
         "selectedRunLineMovement": "0",
-        "selectedScore": "22.16",
+        "selectedScore": "25.74",
         "movementGap": "-0.011872",
-        "opponentScore": "41.64",
+        "opponentScore": "42.37",
         "selectedBookDivergence": "0.019316",
         "steam": "0",
         "advancedInputCoveragePct": "0",
-        "scoreMargin": "-19.48",
+        "scoreMargin": "-16.63",
         "selectedReversalCount": "1"
       },
       "mlFeatureFreeze": {
@@ -7553,11 +6966,11 @@
           "fundamentalsApplied": false
         },
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "exactVectorFingerprint": "1e7a40dada9b5da4a276b1a91a49cf4fc5370ac67db5b2f90a198c082bcd3c8b",
+        "exactVectorFingerprint": "6230bf46d05463d2decd0f4083630c23acc967cca5fad5052e32ca9f27ecad6e",
         "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
         "reliabilityFeatureVersion": "MLB-RELIABILITY-FEATURES-v1-selected-side-lock-state",
         "immutable": true,
-        "frozenAtUtc": "2026-07-11T23:07:50.383978+00:00",
+        "frozenAtUtc": "2026-07-12T00:15:13.922858+00:00",
         "sourceAtOrBeforeLock": true,
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
         "outcomeLabelsJoinedOnlyAfterFinal": true,
@@ -7622,7 +7035,7 @@
       "status": "GRADED",
       "predictedWinner": "New York Mets",
       "predictedSide": "home",
-      "score": "2.4",
+      "score": "3.13",
       "winProbabilityPct": "61.26",
       "cappedWinProbabilityPct": "5",
       "confidenceTier": "Pass",
@@ -7659,7 +7072,7 @@
         "flippedPick": false,
         "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
         "flipAllowed": true,
-        "awayOptimizedScore": "2.4"
+        "awayOptimizedScore": "3.13"
       },
       "winnerStackV2": {
         "components": {
@@ -7868,7 +7281,7 @@
           "NEGATIVE_EV_GUARD"
         ],
         "optimizedWinnerScore": "0",
-        "rolling24hLearningAdjustment": "-1.64",
+        "rolling24hLearningAdjustment": "1.94",
         "bookDivergence": "0.013529",
         "probLatest": "0.582087",
         "side": "home",
@@ -7898,14 +7311,14 @@
         "delta": "0.004454",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "2.4",
+        "score": "3.13",
         "winProbability": "0.05",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "2.4",
-        "rolling24hLearningAdjustment": "-0.89",
+        "optimizedWinnerScore": "3.13",
+        "rolling24hLearningAdjustment": "-0.16",
         "bookDivergence": "0.013529",
         "probLatest": "0.417913",
         "side": "away",
@@ -7938,7 +7351,7 @@
         "lockedFlag": true,
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
         "explicitSourceAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "rowCreatedAtUtc": "2026-07-11T23:07:48.933413+00:00",
+        "rowCreatedAtUtc": "2026-07-12T00:15:09.705913+00:00",
         "createdAtNotUsedAsScoringSource": true,
         "preventsLateRows": true,
         "finalPipelineState": {
@@ -8026,7 +7439,7 @@
           "homeWrcPlus": "0"
         },
         "missingnessIsFeature": true,
-        "createdAtUtc": "2026-07-11T23:07:49.764796+00:00",
+        "createdAtUtc": "2026-07-12T00:15:12.328607+00:00",
         "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
         "asOfUtc": "2026-07-11T15:15:25.909394+00:00",
         "injuryFlags": {
@@ -8065,7 +7478,7 @@
           "awayDelta": "0.004454",
           "homeStarterFip": "0",
           "awayPriceImpliedProb": "0.42735042735042733",
-          "selectedScore": "2.4",
+          "selectedScore": "3.13",
           "awayRestDays": "0",
           "homeWrcPlus": "0",
           "awaySteam": "0",
@@ -8095,9 +7508,9 @@
           "awayMarketProb": "0.417913"
         },
         "predictedWinner": "New York Mets",
-        "createdAtUtc": "2026-07-11T23:07:50.386313+00:00",
+        "createdAtUtc": "2026-07-12T00:15:13.924827+00:00",
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "fingerprint": "a799e8a004d628655e8c57930d4f6439970f91db4d48fadb50b2dbe47764f082",
+        "fingerprint": "971d902b040ebfeb760da5a8730e37b312973431642a5e207d7ec2d99e1bb75c",
         "homeTeam": "New York Mets",
         "predictedSide": "home"
       },
@@ -8112,7 +7525,7 @@
         "reversalDiff": "0",
         "homeResistance": "0",
         "awayDelta": "0.004454",
-        "awayScore": "2.4",
+        "awayScore": "3.13",
         "awayAmericanImpliedProb": "0.42735042735042733",
         "awaySteam": "0",
         "advancedInputCoveragePct": "0",
@@ -8121,7 +7534,7 @@
         "awayBookDivergence": "0.013529",
         "homeScore": "0",
         "homeDelta": "-0.004454",
-        "scoreDiff": "-2.4",
+        "scoreDiff": "-3.13",
         "homeSteam": "0",
         "homeReversalCount": "4",
         "homeAmericanImpliedProb": "0.6124031007751938",
@@ -8153,11 +7566,11 @@
         "selectedRunLineMovement": "0",
         "selectedScore": "0",
         "movementGap": "-0.008908",
-        "opponentScore": "2.4",
+        "opponentScore": "3.13",
         "selectedBookDivergence": "0.013529",
         "steam": "0",
         "advancedInputCoveragePct": "0",
-        "scoreMargin": "-2.4",
+        "scoreMargin": "-3.13",
         "selectedReversalCount": "4"
       },
       "mlFeatureFreeze": {
@@ -8184,11 +7597,11 @@
           "fundamentalsApplied": false
         },
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "exactVectorFingerprint": "a799e8a004d628655e8c57930d4f6439970f91db4d48fadb50b2dbe47764f082",
+        "exactVectorFingerprint": "971d902b040ebfeb760da5a8730e37b312973431642a5e207d7ec2d99e1bb75c",
         "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
         "reliabilityFeatureVersion": "MLB-RELIABILITY-FEATURES-v1-selected-side-lock-state",
         "immutable": true,
-        "frozenAtUtc": "2026-07-11T23:07:50.386291+00:00",
+        "frozenAtUtc": "2026-07-12T00:15:13.924809+00:00",
         "sourceAtOrBeforeLock": true,
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
         "outcomeLabelsJoinedOnlyAfterFinal": true,
@@ -8250,15 +7663,596 @@
       "margin": 3,
       "totalRuns": 5,
       "completed": true,
-      "status": "MISSING_LOCKED_PREDICTION",
+      "status": "GRADED",
+      "predictedWinner": "Miami Marlins",
+      "predictedSide": "home",
+      "score": "50.46",
+      "winProbabilityPct": "54",
+      "cappedWinProbabilityPct": "50.96",
+      "confidenceTier": "Coin Flip",
+      "choiceQuality": "Coin Flip Prediction",
+      "tags": [
+        "BOOK_AGREEMENT",
+        "COIN_FLIP_PREDICTION",
+        "DIRECTIONAL_SCORE_V2",
+        "FAVORITE",
+        "FINAL_LOCKED",
+        "LOW_CONFIDENCE_PREDICTION",
+        "ML_SIGNAL_LAYERS",
+        "ML_WATCHLIST_SIGNAL",
+        "NOT_PLAYABLE",
+        "OFFICIAL_LOCKED_PREDICTION",
+        "OFFICIAL_PREDICTION",
+        "OFFICIAL_PREDICTION_NOT_PLAYABLE",
+        "PLATFORM_PICK",
+        "POSITIVE_MOVE",
+        "PREDICTION_REMAINS_AVAILABLE",
+        "REQUIRED_GAME_WINNER_PREDICTION",
+        "SHOW_AT_SLATE_LOCK",
+        "SIGNAL_POLICY_V13_SCORE_ONLY",
+        "SLATE_LOCKED",
+        "SLATE_WIDE_45_MIN_LOCK_POLICY"
+      ],
+      "winnerOptimizer": {
+        "homeOptimizedScore": "50.46",
+        "flipRequested": false,
+        "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v4-reversal-flip-gate",
+        "applied": true,
+        "flipBlockedReasons": [],
+        "latestLearningApplied": true,
+        "flippedPick": false,
+        "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
+        "flipAllowed": true,
+        "awayOptimizedScore": "29.86"
+      },
+      "winnerStackV2": {
+        "components": {
+          "market": {
+            "consensusProbability": "0.58027",
+            "score": "64.45",
+            "consensusEdge": "0.16054",
+            "source": "de_vigged_moneyline_consensus",
+            "opponentConsensusProbability": "0.41973"
+          },
+          "fundamentals": {
+            "mode": "SPORTSDATAIO_UNAVAILABLE",
+            "score": "50",
+            "source": "neutral_fundamentals_until_live_provider_enabled",
+            "applied": false
+          },
+          "movement": {
+            "score": "47.84",
+            "cleanRunLineConfirmation": false,
+            "cleanSteam": false,
+            "marketEdge": "0.16054",
+            "source": "line_movement_steam_resistance_reversal_runline_confirmation_risk_calibrated",
+            "reversalCount": "0",
+            "tags": [
+              "BOOK_AGREEMENT",
+              "FAVORITE",
+              "POSITIVE_MOVE"
+            ]
+          }
+        },
+        "ensembleScore": "59.47",
+        "applied": true,
+        "discipline": {
+          "reason": "lean_promoted_by_market_confirmation_with_low_risk_or_fundamental_support",
+          "actionability": "ACTIONABLE_MARKET_CONFIRMED_LEAN",
+          "actionablePick": true,
+          "riskReasons": []
+        },
+        "weights": {
+          "market": "0.7",
+          "fundamentals": "0",
+          "movement": "0.3"
+        },
+        "version": "MLB-WINNER-STACK-v2.2-market-confirmed-actionable-lean",
+        "calibration": {
+          "calibratedProbability": "0.6296",
+          "shrinkageToward50": "0",
+          "method": "ensemble_probability_anchored_to_de_vigged_market_consensus_with_false_confirmation_shrinkage",
+          "marketAnchorProbability": "0.5803",
+          "rawProbability": "0.6876",
+          "riskReasons": []
+        },
+        "policy": "Every game receives a locked prediction; only actionablePick=true rows are primary picks."
+      },
+      "winnerOptimizerProtection": null,
+      "directionalScoreV1": {
+        "features": {
+          "netMove": "0.00634",
+          "reversals": "0",
+          "opponentFavored": false,
+          "decisiveMove": false,
+          "highReversalDirectional": false,
+          "probability": "0.580269",
+          "bookAgreement": true,
+          "missingFundamentals": false,
+          "tinyMove": true,
+          "movePerReversal": "0.00634",
+          "opponentProbability": "0.419731",
+          "runAligned": false,
+          "highReversalWeak": false,
+          "edge": "0.160538",
+          "cleanConfirmation": true,
+          "gap": "0.160538",
+          "strongMove": false,
+          "favoriteRisk": false,
+          "narrow": false,
+          "steamAligned": false,
+          "compressed": false,
+          "lowDepth": false,
+          "hardBlockTags": []
+        },
+        "components": [
+          {
+            "name": "coin_flip",
+            "value": "-6"
+          },
+          {
+            "name": "usable_edge",
+            "value": "2"
+          },
+          {
+            "name": "tiny_move",
+            "value": "-5"
+          },
+          {
+            "name": "zero_reversal",
+            "value": "4"
+          }
+        ],
+        "officialGateReasons": [
+          "capped_probability_below_70",
+          "directional_score_below_72",
+          "market_edge_below_20pts",
+          "market_probability_below_62pct",
+          "not_promoted_by_base_signal_gate",
+          "premium_tier_required"
+        ],
+        "probabilityCap": {
+          "raw": "50.96",
+          "score": "47.46",
+          "cap": "95",
+          "reasons": [],
+          "capped": "50.96"
+        },
+        "applied": true,
+        "blocksPrediction": false,
+        "adjustment": "-5",
+        "officialAllowed": false,
+        "version": "MLB-DIRECTIONAL-SCORE-v2-premium-clean-official-gate",
+        "officialPolicy": "premium_clean_market_only; validated ML may promote after this gate"
+      },
+      "mlOverlay": {
+        "runtimeVersion": "MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop",
+        "modelAvailable": false,
+        "applied": false,
+        "validatedAgainstTarget": false,
+        "enabled": true
+      },
+      "signalPolicyV13": {
+        "components": [
+          {
+            "name": "low_reversal_boost",
+            "value": "2"
+          }
+        ],
+        "applied": true,
+        "blocksPrediction": false,
+        "requiredMinutesBeforeGame": "45",
+        "scoreAdjustment": "2",
+        "showOneWinnerForEveryGameAtSlateLock": true,
+        "version": "MLB-SIGNAL-POLICY-v1.6-official-prediction-playability-separated",
+        "scoreOnly": true
+      },
+      "officialPick": true,
+      "officialPrediction": true,
+      "actionablePick": false,
+      "accuracyTargetEligible": false,
+      "platformPick": true,
+      "customerVisibleWinnerPick": true,
+      "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
+      "predictionVisibility": null,
+      "isOfficialDisplayPick": true,
+      "doNotUseAsWinnerPick": null,
+      "publicPick": null,
+      "displayWinner": null,
+      "optimizerFlippedPick": false,
+      "optimizerFlipRequested": false,
+      "optimizerFlipAllowed": true,
+      "optimizerFlipBlockedReasons": [],
+      "actionability": "LOW_CONFIDENCE_DIRECTIONAL_GATE_NOT_PLAYABLE",
+      "actionabilityReason": "directional_official_gate_failed_but_visible_prediction_preserved",
+      "actionabilityRiskReasons": [
+        "capped_probability_below_70",
+        "directional_score_below_72",
+        "market_edge_below_20pts",
+        "market_probability_below_62pct",
+        "not_promoted_by_base_signal_gate",
+        "premium_tier_required"
+      ],
+      "homeSignal": {
+        "probStart": "0.573929",
+        "bookCount": "11",
+        "delta": "0.00634",
+        "promoted": false,
+        "promotionStatus": "NO_PLAY",
+        "score": "50.46",
+        "winProbability": "0.5096",
+        "priceBook": "fanduel",
+        "blockedReasons": [
+          "NEGATIVE_EV_GUARD"
+        ],
+        "optimizedWinnerScore": "50.46",
+        "rolling24hLearningAdjustment": "2.37",
+        "bookDivergence": "0.013329",
+        "probLatest": "0.580269",
+        "side": "home",
+        "americanOdds": "-154",
+        "marketSide": "favorite",
+        "winnerRuleAdjustment": "1.75",
+        "rawScoreBeforeWinnerOptimizer": "46.34",
+        "team": "Miami Marlins",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "FAVORITE",
+          "POSITIVE_MOVE"
+        ],
+        "edgeVsBookPct": "0.44",
+        "priceSource": "real_book",
+        "expectedValue": "-0.035613",
+        "edgeVsBook": "0.004438",
+        "fairProbabilityPct": "58.03",
+        "fairProbability": "0.580269",
+        "expectedValuePct": "-3.56",
+        "reversalCount": "0",
+        "winProbabilityPct": "50.96"
+      },
+      "awaySignal": {
+        "probStart": "0.426071",
+        "bookCount": "11",
+        "delta": "-0.00634",
+        "promoted": false,
+        "promotionStatus": "NO_PLAY",
+        "score": "29.86",
+        "winProbability": "0.1573",
+        "priceBook": "fanduel",
+        "blockedReasons": [
+          "NEGATIVE_EV_GUARD"
+        ],
+        "optimizedWinnerScore": "29.86",
+        "rolling24hLearningAdjustment": "-0.42",
+        "bookDivergence": "0.013329",
+        "probLatest": "0.419731",
+        "side": "away",
+        "americanOdds": "130",
+        "marketSide": "underdog",
+        "winnerRuleAdjustment": "-2.75",
+        "rawScoreBeforeWinnerOptimizer": "33.03",
+        "team": "Cleveland Guardians",
+        "tags": [
+          "BOOK_AGREEMENT",
+          "NEGATIVE_MOVE",
+          "UNDERDOG"
+        ],
+        "edgeVsBookPct": "-0.44",
+        "priceSource": "real_book",
+        "expectedValue": "-0.044826",
+        "edgeVsBook": "-0.004438",
+        "fairProbabilityPct": "41.97",
+        "fairProbability": "0.419731",
+        "expectedValuePct": "-4.48",
+        "reversalCount": "0",
+        "winProbabilityPct": "15.73"
+      },
+      "finalGuardedStored": true,
+      "finalPipelineVersion": "MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop",
       "lockedCardAudit": {
         "applied": true,
         "version": "MLB-LOCKED-CARD-AUDIT-v2-doubleheader-safe-provider-time-match",
         "selectionPolicy": "provider_id_then_exact_commence_time_then_unique_matchup_only",
-        "missingReason": "no_unambiguous_locked_prediction_match",
-        "matchupCandidateCount": 0,
+        "lockedFlag": true,
+        "lockAtUtc": "2026-07-11T15:22:00+00:00",
+        "explicitSourceAtUtc": "2026-07-11T15:15:25.909394+00:00",
+        "rowCreatedAtUtc": "2026-07-12T00:15:09.748566+00:00",
+        "createdAtNotUsedAsScoringSource": true,
+        "preventsLateRows": true,
+        "finalPipelineState": {
+          "integrityApplied": false,
+          "directionalApplied": true,
+          "mlOverlayApplied": false,
+          "signalPolicyApplied": true,
+          "finalGuardedStored": true,
+          "officialPrediction": true,
+          "playable": false,
+          "explicitNonPlayable": true,
+          "pipelineDepth": 3,
+          "predictionVisibility": null,
+          "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+        },
+        "matchMethod": "provider_game_id",
+        "providerGameId": "b552ecd25e0e2e615532c65ff294144f",
         "doubleheaderSafe": true
-      }
+      },
+      "predictionSemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1-locked-official-playable-separate",
+      "teamWinProbabilityPct": 54.0,
+      "winProbabilityMeaning": "estimated_probability_selected_team_wins_game",
+      "fundamentalsSnapshot": {
+        "gameId": "b552ecd25e0e2e615532c65ff294144f",
+        "venue": {
+          "venue_name": "loanDepot park",
+          "source": "MLB Stats API schedule hydrate=venue",
+          "source_status": "CONNECTED",
+          "venue_id": "4169"
+        },
+        "missingGroups": [
+          "fip_xfip",
+          "wrc_plus",
+          "starter_handedness_splits",
+          "bullpen_fatigue",
+          "confirmed_lineups",
+          "weather_wind_roof",
+          "ballpark_factors",
+          "injuries_late_scratches_news",
+          "public_betting_handle",
+          "closing_line_value"
+        ],
+        "probablePitchers": {
+          "awayId": "676440",
+          "away": "Tanner Bibee",
+          "source": "MLB Stats API schedule hydrate=probablePitcher",
+          "homeId": "691587",
+          "home": "Eury P\u00e9rez"
+        },
+        "advancedEligible": false,
+        "rawContextVersion": "MLB-B1.0-advanced-context-v1",
+        "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
+        "completenessRatio": "0.0909",
+        "sourceStatuses": {
+          "fip_xfip": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "wrc_plus": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "starter_handedness_splits": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "bullpen_fatigue": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "confirmed_probable_pitchers": "CONNECTED",
+          "confirmed_lineups": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "public_betting_handle": "NOT_CONNECTED_SOURCE_REQUIRED",
+          "closing_line_value": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"
+        },
+        "connectedGroups": [
+          "confirmed_probable_pitchers"
+        ],
+        "numericValues": {
+          "awayStarterXfip": "0",
+          "parkFactorRuns": "1",
+          "windOutMph": "0",
+          "homeBullpenFatigue": "0",
+          "homeRestDays": "0",
+          "awayBullpenFatigue": "0",
+          "awayLineupStrengthDelta": "0",
+          "homeLineupStrengthDelta": "0",
+          "homeStarterXfip": "0",
+          "awayWrcPlus": "0",
+          "homeStarterFip": "0",
+          "awayStarterFip": "0",
+          "awayRestDays": "0",
+          "homeWrcPlus": "0"
+        },
+        "missingnessIsFeature": true,
+        "createdAtUtc": "2026-07-12T00:15:12.328119+00:00",
+        "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
+        "asOfUtc": "2026-07-11T15:15:25.909394+00:00",
+        "injuryFlags": {
+          "lateScratches": [],
+          "home": [],
+          "away": []
+        },
+        "partialGroups": [
+          "closing_line_value"
+        ]
+      },
+      "fundamentalsSnapshotVersion": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
+      "frozenFeatureVector": {
+        "gameId": "b552ecd25e0e2e615532c65ff294144f",
+        "awayTeam": "Cleveland Guardians",
+        "immutableSource": "locked_prediction_row_pre_game_features",
+        "derivedOnceFromImmutableLockedRow": true,
+        "commenceTime": "2026-07-11T20:11:00Z",
+        "lockAtUtc": "2026-07-11T15:22:00+00:00",
+        "slateDateEt": "2026-07-11",
+        "version": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
+        "labels": {},
+        "features": {
+          "awayRunLineMove": "0",
+          "windOutMph": "0",
+          "awayResistance": "0",
+          "homeBullpenFatigue": "0",
+          "homeRestDays": "0",
+          "fundamentalsCompleteness": "0.0909",
+          "homeResistance": "0",
+          "selectedFavorite": "1",
+          "selectedMarketEdge": "0.16053800000000001",
+          "homeStarterXfip": "0",
+          "selectedDelta": "0.00634",
+          "awayWrcPlus": "0",
+          "awayDelta": "-0.00634",
+          "homeStarterFip": "0",
+          "awayPriceImpliedProb": "0.43478260869565216",
+          "selectedScore": "50.46",
+          "awayRestDays": "0",
+          "homeWrcPlus": "0",
+          "awaySteam": "0",
+          "homeMarketProb": "0.580269",
+          "awayStarterXfip": "0",
+          "parkFactorRuns": "1",
+          "marketGapHome": "0.16053800000000001",
+          "deltaGapHome": "0.01268",
+          "awayBookDivergence": "0.013329",
+          "homeRunLineMove": "0",
+          "homeDelta": "0.00634",
+          "homeSteam": "0",
+          "awayBullpenFatigue": "0",
+          "awayLineupStrengthDelta": "0",
+          "homeLineupStrengthDelta": "0",
+          "homeReversalCount": "0",
+          "homeBookAgreement": "1",
+          "awayReversalCount": "0",
+          "homePriceImpliedProb": "0.6062992125984252",
+          "selectedMarketProb": "0.580269",
+          "homeBookDivergence": "0.013329",
+          "awayStarterFip": "0",
+          "selectedBookDivergence": "0.013329",
+          "awayBookAgreement": "1",
+          "selectedReversalCount": "0",
+          "selectedHome": "1",
+          "awayMarketProb": "0.419731"
+        },
+        "predictedWinner": "Miami Marlins",
+        "createdAtUtc": "2026-07-12T00:15:13.918395+00:00",
+        "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
+        "fingerprint": "7ab92e761548d8416f3c62f333b14977a1cace3af1ffea6a54b923535309c938",
+        "homeTeam": "Miami Marlins",
+        "predictedSide": "home"
+      },
+      "frozenFeatureVectorVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
+      "frozenOutcomeFeatures": {
+        "marketProbDiff": "0.16053800000000001",
+        "deltaDiff": "0.01268",
+        "divergenceDiff": "0",
+        "fundamentalsApplied": "0",
+        "awayRunLineMovement": "0",
+        "awayResistance": "0",
+        "reversalDiff": "0",
+        "homeResistance": "0",
+        "awayDelta": "-0.00634",
+        "awayScore": "29.86",
+        "awayAmericanImpliedProb": "0.43478260869565216",
+        "awaySteam": "0",
+        "advancedInputCoveragePct": "0",
+        "homeMarketProb": "0.580269",
+        "homeRunLineMovement": "0",
+        "awayBookDivergence": "0.013329",
+        "homeScore": "50.46",
+        "homeDelta": "0.00634",
+        "scoreDiff": "20.6",
+        "homeSteam": "0",
+        "homeReversalCount": "0",
+        "homeAmericanImpliedProb": "0.6062992125984252",
+        "homeBookAgreement": "1",
+        "awayReversalCount": "0",
+        "awayLowPullDepth": "0",
+        "homeBookDivergence": "0.013329",
+        "americanImpliedDiff": "0.17151660390277307",
+        "runLineDiff": "0",
+        "awayBookAgreement": "1",
+        "awayMarketProb": "0.419731",
+        "homeLowPullDepth": "0"
+      },
+      "frozenReliabilityFeatures": {
+        "opponentDelta": "-0.00634",
+        "selectedUnderdog": "0",
+        "fundamentalsApplied": "0",
+        "bookAgreement": "1",
+        "selectedFavorite": "1",
+        "selectedTeamWinProbability": "0.54",
+        "compressedMarket": "0",
+        "opponentMarketProb": "0.419731",
+        "selectedAmericanImpliedProb": "0.6062992125984252",
+        "selectedMarketEdge": "0.16053800000000001",
+        "resistance": "0",
+        "lowPullDepth": "0",
+        "selectedMarketProb": "0.580269",
+        "selectedDelta": "0.00634",
+        "selectedRunLineMovement": "0",
+        "selectedScore": "50.46",
+        "movementGap": "0.01268",
+        "opponentScore": "29.86",
+        "selectedBookDivergence": "0.013329",
+        "steam": "0",
+        "advancedInputCoveragePct": "0",
+        "scoreMargin": "20.6",
+        "selectedReversalCount": "0"
+      },
+      "mlFeatureFreeze": {
+        "providerGameId": "b552ecd25e0e2e615532c65ff294144f",
+        "exactVectorPatchVersion": "MLB-ML-EXACT-LOCK-VECTOR-PATCH-v1-clean-cohort-contract",
+        "applied": true,
+        "outcomeFeatureVersion": "MLB-OUTCOME-FEATURES-v1-home-away-lock-state",
+        "trainingExclusionReasons": [],
+        "exactVectorVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
+        "advancedInputs": {
+          "missing": [
+            "starting_pitcher_fip_xfip",
+            "offense_wrc_plus",
+            "confirmed_lineups",
+            "injuries_news",
+            "bullpen_availability",
+            "weather_roof",
+            "travel_rest",
+            "defense"
+          ],
+          "mode": "MARKET_ONLY_WITH_MISSINGNESS",
+          "coveragePct": "0",
+          "present": [],
+          "fundamentalsApplied": false
+        },
+        "lockAtUtc": "2026-07-11T15:22:00+00:00",
+        "exactVectorFingerprint": "7ab92e761548d8416f3c62f333b14977a1cace3af1ffea6a54b923535309c938",
+        "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
+        "reliabilityFeatureVersion": "MLB-RELIABILITY-FEATURES-v1-selected-side-lock-state",
+        "immutable": true,
+        "frozenAtUtc": "2026-07-12T00:15:13.918376+00:00",
+        "sourceAtOrBeforeLock": true,
+        "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
+        "outcomeLabelsJoinedOnlyAfterFinal": true,
+        "exactVectorApplied": true,
+        "completeSlateCoverage": true,
+        "trainingEligible": true,
+        "exactVectorCreated": true,
+        "probabilitySemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1-locked-official-playable-separate",
+        "policy": "Features are copied at lock and must never be regenerated from settled rows or later learning weights."
+      },
+      "mlOptimizationRuntime": {
+        "championAvailable": false,
+        "playabilityAuthorityEnabled": false,
+        "shadowOnly": true,
+        "applied": true,
+        "directionAuthorityEnabled": false,
+        "version": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
+        "modelAvailable": false
+      },
+      "mlAuditFeatureBridge": {
+        "applied": true,
+        "version": "MLB-ML-AUDIT-FEATURE-BRIDGE-v1-frozen-lock-vector",
+        "immutableFeatureVectorCopied": true
+      },
+      "modelVersion": "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production",
+      "engine": "MLB-SINGLE-GAME-ML-PROMOTION-v2.1",
+      "americanOdds": "-154",
+      "priceBook": "fanduel",
+      "priceSource": "real_book",
+      "fairProbabilityPct": "58.03",
+      "playable": false,
+      "playablePick": false,
+      "playabilityStatus": "NOT_PLAYABLE",
+      "correct": false,
+      "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
+      "mlPickReliabilityPct": null,
+      "lockedAmericanOdds": -154.0,
+      "unitProfit": -1.0,
+      "marketBaselineAvailable": true,
+      "marketBaselineWinner": "Miami Marlins",
+      "marketBaselineSide": "home",
+      "marketBaselineProbabilityPct": 58.03,
+      "marketBaselineAmericanOdds": -154.0,
+      "marketBaselineCorrect": false,
+      "marketBaselineUnitProfit": -1.0,
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
     },
     {
       "id": "3e0030b3cd282b42e4c204a9e30ec8f4",
@@ -8277,9 +8271,9 @@
       "status": "GRADED",
       "predictedWinner": "Pittsburgh Pirates",
       "predictedSide": "home",
-      "score": "37.3",
+      "score": "40.88",
       "winProbabilityPct": "51.2",
-      "cappedWinProbabilityPct": "25.76",
+      "cappedWinProbabilityPct": "31.86",
       "confidenceTier": "Pass",
       "choiceQuality": "Pass / Forced Prediction",
       "tags": [
@@ -8305,7 +8299,7 @@
         "SLATE_WIDE_45_MIN_LOCK_POLICY"
       ],
       "winnerOptimizer": {
-        "homeOptimizedScore": "22.37",
+        "homeOptimizedScore": "23.1",
         "flipRequested": false,
         "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v4-reversal-flip-gate",
         "applied": true,
@@ -8314,7 +8308,7 @@
         "flippedPick": false,
         "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
         "flipAllowed": true,
-        "awayOptimizedScore": "37.3"
+        "awayOptimizedScore": "40.88"
       },
       "winnerStackV2": {
         "components": {
@@ -8428,14 +8422,14 @@
           "single_reversal_requires_clean_confirmation"
         ],
         "probabilityCap": {
-          "raw": "25.76",
-          "score": "3.3",
+          "raw": "31.86",
+          "score": "6.88",
           "cap": "49",
           "reasons": [
             "narrow",
             "pass_or_baseline"
           ],
-          "capped": "25.76"
+          "capped": "31.86"
         },
         "applied": true,
         "blocksPrediction": false,
@@ -8507,14 +8501,14 @@
         "delta": "-0.005182",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "22.37",
-        "winProbability": "0.0909",
+        "score": "23.1",
+        "winProbability": "0.0961",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "22.37",
-        "rolling24hLearningAdjustment": "-0.89",
+        "optimizedWinnerScore": "23.1",
+        "rolling24hLearningAdjustment": "-0.16",
         "bookDivergence": "0.016183",
         "probLatest": "0.458926",
         "side": "home",
@@ -8536,7 +8530,7 @@
         "fairProbability": "0.458926",
         "expectedValuePct": "-5.23",
         "reversalCount": "1",
-        "winProbabilityPct": "9.09"
+        "winProbabilityPct": "9.61"
       },
       "awaySignal": {
         "probStart": "0.535892",
@@ -8544,14 +8538,14 @@
         "delta": "0.005182",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "37.3",
-        "winProbability": "0.2576",
+        "score": "40.88",
+        "winProbability": "0.3186",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "37.3",
-        "rolling24hLearningAdjustment": "-1.64",
+        "optimizedWinnerScore": "40.88",
+        "rolling24hLearningAdjustment": "1.94",
         "bookDivergence": "0.016183",
         "probLatest": "0.541074",
         "side": "away",
@@ -8573,7 +8567,7 @@
         "fairProbability": "0.541074",
         "expectedValuePct": "-4.34",
         "reversalCount": "1",
-        "winProbabilityPct": "25.76"
+        "winProbabilityPct": "31.86"
       },
       "finalGuardedStored": true,
       "finalPipelineVersion": "MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop",
@@ -8584,7 +8578,7 @@
         "lockedFlag": true,
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
         "explicitSourceAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "rowCreatedAtUtc": "2026-07-11T23:07:48.922280+00:00",
+        "rowCreatedAtUtc": "2026-07-12T00:15:09.663749+00:00",
         "createdAtNotUsedAsScoringSource": true,
         "preventsLateRows": true,
         "finalPipelineState": {
@@ -8672,7 +8666,7 @@
           "homeWrcPlus": "0"
         },
         "missingnessIsFeature": true,
-        "createdAtUtc": "2026-07-11T23:07:49.764235+00:00",
+        "createdAtUtc": "2026-07-12T00:15:12.328148+00:00",
         "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
         "asOfUtc": "2026-07-11T15:15:25.909394+00:00",
         "injuryFlags": {
@@ -8711,7 +8705,7 @@
           "awayDelta": "0.005182",
           "homeStarterFip": "0",
           "awayPriceImpliedProb": "0.5652173913043478",
-          "selectedScore": "37.3",
+          "selectedScore": "40.88",
           "awayRestDays": "0",
           "homeWrcPlus": "0",
           "awaySteam": "0",
@@ -8741,9 +8735,9 @@
           "awayMarketProb": "0.541074"
         },
         "predictedWinner": "Pittsburgh Pirates",
-        "createdAtUtc": "2026-07-11T23:07:50.379471+00:00",
+        "createdAtUtc": "2026-07-12T00:15:13.918895+00:00",
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "fingerprint": "9f598de7fde3046a9a31183a0423ed621d717c1c9ca323b60fc275636816905e",
+        "fingerprint": "bd35682996e71550b985d42ecea909e21588bdd46df772c0095c7d3c8f753af3",
         "homeTeam": "Pittsburgh Pirates",
         "predictedSide": "home"
       },
@@ -8758,16 +8752,16 @@
         "reversalDiff": "0",
         "homeResistance": "0",
         "awayDelta": "0.005182",
-        "awayScore": "37.3",
+        "awayScore": "40.88",
         "awayAmericanImpliedProb": "0.5652173913043478",
         "awaySteam": "0",
         "advancedInputCoveragePct": "0",
         "homeMarketProb": "0.458926",
         "homeRunLineMovement": "0",
         "awayBookDivergence": "0.016183",
-        "homeScore": "22.37",
+        "homeScore": "23.1",
         "homeDelta": "-0.005182",
-        "scoreDiff": "-14.929999999999996",
+        "scoreDiff": "-17.78",
         "homeSteam": "0",
         "homeReversalCount": "1",
         "homeAmericanImpliedProb": "0.47619047619047616",
@@ -8797,13 +8791,13 @@
         "selectedMarketProb": "0.458926",
         "selectedDelta": "-0.005182",
         "selectedRunLineMovement": "0",
-        "selectedScore": "22.37",
+        "selectedScore": "23.1",
         "movementGap": "-0.010364",
-        "opponentScore": "37.3",
+        "opponentScore": "40.88",
         "selectedBookDivergence": "0.016183",
         "steam": "0",
         "advancedInputCoveragePct": "0",
-        "scoreMargin": "-14.929999999999996",
+        "scoreMargin": "-17.78",
         "selectedReversalCount": "1"
       },
       "mlFeatureFreeze": {
@@ -8830,11 +8824,11 @@
           "fundamentalsApplied": false
         },
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "exactVectorFingerprint": "9f598de7fde3046a9a31183a0423ed621d717c1c9ca323b60fc275636816905e",
+        "exactVectorFingerprint": "bd35682996e71550b985d42ecea909e21588bdd46df772c0095c7d3c8f753af3",
         "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
         "reliabilityFeatureVersion": "MLB-RELIABILITY-FEATURES-v1-selected-side-lock-state",
         "immutable": true,
-        "frozenAtUtc": "2026-07-11T23:07:50.379449+00:00",
+        "frozenAtUtc": "2026-07-12T00:15:13.918876+00:00",
         "sourceAtOrBeforeLock": true,
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
         "outcomeLabelsJoinedOnlyAfterFinal": true,
@@ -8899,9 +8893,9 @@
       "status": "GRADED",
       "predictedWinner": "Seattle Mariners",
       "predictedSide": "away",
-      "score": "28.01",
+      "score": "28.63",
       "winProbabilityPct": "54.79",
-      "cappedWinProbabilityPct": "13.79",
+      "cappedWinProbabilityPct": "14.42",
       "confidenceTier": "Pass",
       "choiceQuality": "Pass / Forced Prediction",
       "tags": [
@@ -8927,7 +8921,7 @@
         "SLATE_WIDE_45_MIN_LOCK_POLICY"
       ],
       "winnerOptimizer": {
-        "homeOptimizedScore": "28.01",
+        "homeOptimizedScore": "28.63",
         "flipRequested": false,
         "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v4-reversal-flip-gate",
         "applied": true,
@@ -8936,7 +8930,7 @@
         "flippedPick": false,
         "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
         "flipAllowed": true,
-        "awayOptimizedScore": "13.66"
+        "awayOptimizedScore": "14.28"
       },
       "winnerStackV2": {
         "components": {
@@ -9057,7 +9051,7 @@
           "premium_tier_required"
         ],
         "probabilityCap": {
-          "raw": "13.79",
+          "raw": "14.42",
           "score": "0",
           "cap": "49",
           "reasons": [
@@ -9065,7 +9059,7 @@
             "multiple_reversals",
             "pass_or_baseline"
           ],
-          "capped": "13.79"
+          "capped": "14.42"
         },
         "applied": true,
         "blocksPrediction": false,
@@ -9143,14 +9137,14 @@
         "delta": "0.002606",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "28.01",
-        "winProbability": "0.1379",
+        "score": "28.63",
+        "winProbability": "0.1442",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "28.01",
-        "rolling24hLearningAdjustment": "1.2",
+        "optimizedWinnerScore": "28.63",
+        "rolling24hLearningAdjustment": "1.82",
         "bookDivergence": "0.01283",
         "probLatest": "0.511911",
         "side": "home",
@@ -9172,7 +9166,7 @@
         "fairProbability": "0.511911",
         "expectedValuePct": "-4.27",
         "reversalCount": "2",
-        "winProbabilityPct": "13.79"
+        "winProbabilityPct": "14.42"
       },
       "awaySignal": {
         "probStart": "0.490695",
@@ -9180,14 +9174,14 @@
         "delta": "-0.002606",
         "promoted": false,
         "promotionStatus": "NO_PLAY",
-        "score": "13.66",
+        "score": "14.28",
         "winProbability": "0.05",
         "priceBook": "fanduel",
         "blockedReasons": [
           "NEGATIVE_EV_GUARD"
         ],
-        "optimizedWinnerScore": "13.66",
-        "rolling24hLearningAdjustment": "1.2",
+        "optimizedWinnerScore": "14.28",
+        "rolling24hLearningAdjustment": "1.82",
         "bookDivergence": "0.01283",
         "probLatest": "0.488089",
         "side": "away",
@@ -9220,7 +9214,7 @@
         "lockedFlag": true,
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
         "explicitSourceAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "rowCreatedAtUtc": "2026-07-11T23:07:48.956511+00:00",
+        "rowCreatedAtUtc": "2026-07-12T00:15:09.792661+00:00",
         "createdAtNotUsedAsScoringSource": true,
         "preventsLateRows": true,
         "finalPipelineState": {
@@ -9308,7 +9302,7 @@
           "homeWrcPlus": "0"
         },
         "missingnessIsFeature": true,
-        "createdAtUtc": "2026-07-11T23:07:49.764437+00:00",
+        "createdAtUtc": "2026-07-12T00:15:12.328314+00:00",
         "sourceHonestyPolicy": "Missing fundamentals remain explicitly missing and are never inferred from odds movement.",
         "asOfUtc": "2026-07-11T15:15:25.909394+00:00",
         "injuryFlags": {
@@ -9347,7 +9341,7 @@
           "awayDelta": "-0.002606",
           "homeStarterFip": "0",
           "awayPriceImpliedProb": "0.5098039215686274",
-          "selectedScore": "28.01",
+          "selectedScore": "28.63",
           "awayRestDays": "0",
           "homeWrcPlus": "0",
           "awaySteam": "0",
@@ -9377,9 +9371,9 @@
           "awayMarketProb": "0.488089"
         },
         "predictedWinner": "Seattle Mariners",
-        "createdAtUtc": "2026-07-11T23:07:50.381789+00:00",
+        "createdAtUtc": "2026-07-12T00:15:13.920924+00:00",
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
-        "fingerprint": "7c066eaaa93d1ee4e3d942f457287dd5ad7620a3d4c6cafbfd2aeb0702c40127",
+        "fingerprint": "c0d42d9a55c8a23fb0b663b5e9670fb2a0c49c5c002c2dcf3d53b79c360a2da2",
         "homeTeam": "Tampa Bay Rays",
         "predictedSide": "away"
       },
@@ -9394,16 +9388,16 @@
         "reversalDiff": "0",
         "homeResistance": "0",
         "awayDelta": "-0.002606",
-        "awayScore": "13.66",
+        "awayScore": "14.28",
         "awayAmericanImpliedProb": "0.5098039215686274",
         "awaySteam": "0",
         "advancedInputCoveragePct": "0",
         "homeMarketProb": "0.511911",
         "homeRunLineMovement": "0",
         "awayBookDivergence": "0.01283",
-        "homeScore": "28.01",
+        "homeScore": "28.63",
         "homeDelta": "0.002606",
-        "scoreDiff": "14.350000000000001",
+        "scoreDiff": "14.35",
         "homeSteam": "0",
         "homeReversalCount": "2",
         "homeAmericanImpliedProb": "0.5283018867924528",
@@ -9433,13 +9427,13 @@
         "selectedMarketProb": "0.488089",
         "selectedDelta": "-0.002606",
         "selectedRunLineMovement": "0",
-        "selectedScore": "13.66",
+        "selectedScore": "14.28",
         "movementGap": "-0.005212",
-        "opponentScore": "28.01",
+        "opponentScore": "28.63",
         "selectedBookDivergence": "0.01283",
         "steam": "0",
         "advancedInputCoveragePct": "0",
-        "scoreMargin": "-14.350000000000001",
+        "scoreMargin": "-14.35",
         "selectedReversalCount": "2"
       },
       "mlFeatureFreeze": {
@@ -9466,11 +9460,11 @@
           "fundamentalsApplied": false
         },
         "lockAtUtc": "2026-07-11T15:22:00+00:00",
-        "exactVectorFingerprint": "7c066eaaa93d1ee4e3d942f457287dd5ad7620a3d4c6cafbfd2aeb0702c40127",
+        "exactVectorFingerprint": "c0d42d9a55c8a23fb0b663b5e9670fb2a0c49c5c002c2dcf3d53b79c360a2da2",
         "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
         "reliabilityFeatureVersion": "MLB-RELIABILITY-FEATURES-v1-selected-side-lock-state",
         "immutable": true,
-        "frozenAtUtc": "2026-07-11T23:07:50.381768+00:00",
+        "frozenAtUtc": "2026-07-12T00:15:13.920905+00:00",
         "sourceAtOrBeforeLock": true,
         "sourcePullAtUtc": "2026-07-11T15:15:25.909394+00:00",
         "outcomeLabelsJoinedOnlyAfterFinal": true,
@@ -9528,7 +9522,7 @@
     "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v3-underdog-balanced-directional",
     "trainingSource": {
       "currentRows": 11,
-      "historicalRows": 190,
+      "historicalRows": 191,
       "dedupedTrainingRows": 191,
       "recordsWritten": 191,
       "lockedCardAuditRequired": true
@@ -9597,7 +9591,7 @@
       "modelPath": "runtime_reports/mlb_ml_model_latest.json",
       "trainingSource": {
         "currentRows": 11,
-        "historicalRows": 190,
+        "historicalRows": 191,
         "dedupedTrainingRows": 191,
         "recordsWritten": 191,
         "lockedCardAuditRequired": true
@@ -9616,33 +9610,33 @@
         "gradedCount": 11,
         "officialPredictions": {
           "count": 11,
-          "correct": 7,
-          "wrong": 4,
-          "accuracyPct": 63.64,
+          "correct": 6,
+          "wrong": 5,
+          "accuracyPct": 54.55,
           "confidenceInterval95Pct": {
-            "lowPct": 35.38,
-            "highPct": 84.83
+            "lowPct": 28.01,
+            "highPct": 78.73
           },
           "coverageOfGradedPct": 100.0,
           "probabilityScoring": {
             "pricedProbabilityCount": 11,
-            "brierScore": 0.236818,
-            "logLoss": 0.666908
+            "brierScore": 0.246014,
+            "logLoss": 0.685373
           },
           "calibration": [
             {
               "bucket": "50-54.99%",
-              "count": 4,
-              "averagePredictedProbabilityPct": 52.87,
-              "actualAccuracyPct": 75.0,
-              "calibrationGapPct": 22.13
+              "count": 5,
+              "averagePredictedProbabilityPct": 53.09,
+              "actualAccuracyPct": 60.0,
+              "calibrationGapPct": 6.91
             },
             {
               "bucket": "55-59.99%",
-              "count": 5,
-              "averagePredictedProbabilityPct": 56.27,
-              "actualAccuracyPct": 80.0,
-              "calibrationGapPct": 23.73
+              "count": 4,
+              "averagePredictedProbabilityPct": 56.25,
+              "actualAccuracyPct": 75.0,
+              "calibrationGapPct": 18.75
             },
             {
               "bucket": "60-64.99%",
@@ -9655,9 +9649,9 @@
           "roi": {
             "pricedPickCount": 11,
             "unpricedPickCount": 0,
-            "flatUnitProfit": 1.4629,
-            "flatUnitRoiPct": 13.3,
-            "averageAmericanOdds": -94.73
+            "flatUnitProfit": -0.43,
+            "flatUnitRoiPct": -3.91,
+            "averageAmericanOdds": -98.55
           }
         },
         "playableRecommendations": {
@@ -9686,32 +9680,32 @@
         },
         "marketFavoriteBaseline": {
           "count": 11,
-          "correct": 8,
-          "wrong": 3,
-          "accuracyPct": 72.73,
+          "correct": 7,
+          "wrong": 4,
+          "accuracyPct": 63.64,
           "confidenceInterval95Pct": {
-            "lowPct": 43.44,
-            "highPct": 90.25
+            "lowPct": 35.38,
+            "highPct": 84.83
           },
           "coverageOfOfficialPct": 100.0,
           "probabilityScoring": {
             "pricedProbabilityCount": 11,
-            "brierScore": 0.232846,
-            "logLoss": 0.658099
+            "brierScore": 0.241193,
+            "logLoss": 0.674937
           },
           "roi": {
             "pricedPickCount": 11,
             "unpricedPickCount": 0,
-            "flatUnitProfit": 2.8887,
-            "flatUnitRoiPct": 26.26,
-            "averageAmericanOdds": -143.82
+            "flatUnitProfit": 0.9958,
+            "flatUnitRoiPct": 9.05,
+            "averageAmericanOdds": -147.64
           }
         },
         "comparison": {
-          "sameGameModelAccuracyPct": 63.64,
-          "marketFavoriteAccuracyPct": 72.73,
+          "sameGameModelAccuracyPct": 54.55,
+          "marketFavoriteAccuracyPct": 63.64,
           "modelAccuracyLiftVsMarketPct": -9.09,
-          "brierSkillVsMarketPct": -1.71,
+          "brierSkillVsMarketPct": -2.0,
           "lowerBrierIsBetter": true,
           "lowerLogLossIsBetter": true
         }
@@ -10179,8 +10173,8 @@
   },
   "accuracyLedger": {
     "ok": true,
-    "inserted": 1,
-    "existing": 91,
+    "inserted": 0,
+    "existing": 92,
     "errors": [],
     "ledgerPk": "MLB_REAL_WORLD_ACCURACY#LEDGER",
     "queriedRowCount": 77,
@@ -10193,33 +10187,33 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-12T00:12:00.291374+00:00"
+    "runSk": "AUDIT#2026-07-12T00:22:58.922334+00:00"
   },
   "mlOptimizationV3": {
     "applied": true,
     "version": "MLB-ML-OPTIMIZATION-v3.1-clean-dual-manual-champion-promotion",
     "mode": "SHADOW_CHALLENGER",
     "cleanRowCount": 0,
-    "quarantinedRowCount": 194,
+    "quarantinedRowCount": 193,
     "quarantineReasonCounts": {
-      "frozen_vector_fingerprint_mismatch": 16,
-      "frozen_vector_game_identity_mismatch": 185,
-      "feature_vector_not_proven_immutable": 178,
-      "feature_vector_source_not_lock_time_prediction": 178,
-      "frozen_vector_features_missing": 178,
-      "frozen_vector_source_after_or_missing_lock": 178,
-      "incomplete_or_unproven_slate_coverage": 178,
-      "legacy_probability_semantics": 170,
-      "missing_exact_stored_lock_time_feature_vector": 178,
+      "feature_vector_not_proven_immutable": 177,
+      "feature_vector_source_not_lock_time_prediction": 177,
+      "frozen_vector_features_missing": 177,
+      "frozen_vector_game_identity_mismatch": 184,
+      "frozen_vector_source_after_or_missing_lock": 177,
+      "incomplete_or_unproven_slate_coverage": 177,
+      "legacy_probability_semantics": 169,
+      "missing_exact_stored_lock_time_feature_vector": 177,
       "pre_clean_cohort_cutoff": 28,
-      "wrong_frozen_feature_vector_version": 178,
-      "late_row_protection_not_proven": 3,
-      "missing_lock_timestamp": 142,
-      "missing_outcome_label": 3,
-      "missing_source_pull_timestamp": 146,
-      "missing_team_win_probability": 165,
-      "not_graded": 3,
-      "not_immutable_locked_prediction": 142,
+      "wrong_frozen_feature_vector_version": 177,
+      "late_row_protection_not_proven": 2,
+      "missing_lock_timestamp": 141,
+      "missing_outcome_label": 2,
+      "missing_source_pull_timestamp": 145,
+      "missing_team_win_probability": 164,
+      "not_graded": 2,
+      "not_immutable_locked_prediction": 141,
+      "frozen_vector_fingerprint_mismatch": 16,
       "superseded_invalid_duplicate": 32
     },
     "trainingStatus": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
@@ -10248,7 +10242,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.1-separate-direction-playability-gates",
-      "evaluatedAtUtc": "2026-07-12T00:12:23.319338+00:00",
+      "evaluatedAtUtc": "2026-07-12T00:23:11.770949+00:00",
       "automaticPromotionEnabled": false,
       "promotionEligible": false,
       "directionPromotionEligible": false,
@@ -10467,7 +10461,7 @@
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-12T00:12:15.500000+00:00"
+      "runSk": "CHALLENGER#2026-07-12T00:23:06.816197+00:00"
     },
     "promotion": {
       "ok": true,
