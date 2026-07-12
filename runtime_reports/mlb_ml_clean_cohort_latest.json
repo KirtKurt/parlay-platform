@@ -3,100 +3,32 @@
   "version": "MLB-ML-CLEAN-COHORT-v1-post-fix-immutable-feature-snapshot+MLB-ML-CLEAN-COHORT-HARDENING-v4-valid-candidate-wins-dedup",
   "featureSnapshotVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
   "minimumLockAtUtc": "2026-07-11T15:22:00+00:00",
-  "inputRows": 193,
+  "inputRows": 196,
   "cleanRowCount": 0,
-  "quarantinedRowCount": 193,
+  "quarantinedRowCount": 196,
   "quarantineReasonCounts": {
-    "feature_vector_not_proven_immutable": 177,
-    "feature_vector_source_not_lock_time_prediction": 177,
-    "frozen_vector_features_missing": 177,
-    "frozen_vector_game_identity_mismatch": 184,
-    "frozen_vector_source_after_or_missing_lock": 177,
-    "incomplete_or_unproven_slate_coverage": 177,
-    "legacy_probability_semantics": 169,
-    "missing_exact_stored_lock_time_feature_vector": 177,
+    "frozen_vector_fingerprint_mismatch": 17,
+    "feature_vector_not_proven_immutable": 179,
+    "feature_vector_source_not_lock_time_prediction": 179,
+    "frozen_vector_features_missing": 179,
+    "frozen_vector_game_identity_mismatch": 186,
+    "frozen_vector_source_after_or_missing_lock": 179,
+    "incomplete_or_unproven_slate_coverage": 179,
+    "late_row_protection_not_proven": 4,
+    "legacy_probability_semantics": 171,
+    "missing_exact_stored_lock_time_feature_vector": 179,
+    "missing_lock_timestamp": 143,
+    "missing_outcome_label": 4,
+    "missing_source_pull_timestamp": 147,
+    "missing_team_win_probability": 166,
+    "not_graded": 4,
+    "not_immutable_locked_prediction": 143,
+    "wrong_frozen_feature_vector_version": 179,
     "pre_clean_cohort_cutoff": 28,
-    "wrong_frozen_feature_vector_version": 177,
-    "late_row_protection_not_proven": 2,
-    "missing_lock_timestamp": 141,
-    "missing_outcome_label": 2,
-    "missing_source_pull_timestamp": 145,
-    "missing_team_win_probability": 164,
-    "not_graded": 2,
-    "not_immutable_locked_prediction": 141,
-    "frozen_vector_fingerprint_mismatch": 16,
     "superseded_invalid_duplicate": 32
   },
   "cleanRows": [],
   "quarantinedRows": [
-    {
-      "gameId": "250b0373676b10f51ed1c59c93714245",
-      "slateDateEt": "2026-07-10",
-      "reasons": [
-        "feature_vector_not_proven_immutable",
-        "feature_vector_source_not_lock_time_prediction",
-        "frozen_vector_features_missing",
-        "frozen_vector_game_identity_mismatch",
-        "frozen_vector_source_after_or_missing_lock",
-        "incomplete_or_unproven_slate_coverage",
-        "legacy_probability_semantics",
-        "missing_exact_stored_lock_time_feature_vector",
-        "pre_clean_cohort_cutoff",
-        "wrong_frozen_feature_vector_version"
-      ]
-    },
-    {
-      "gameId": "cc0b13e921789925a1c0502553d4ec9b",
-      "slateDateEt": "2026-07-10",
-      "reasons": [
-        "feature_vector_not_proven_immutable",
-        "feature_vector_source_not_lock_time_prediction",
-        "frozen_vector_features_missing",
-        "frozen_vector_game_identity_mismatch",
-        "frozen_vector_source_after_or_missing_lock",
-        "incomplete_or_unproven_slate_coverage",
-        "late_row_protection_not_proven",
-        "legacy_probability_semantics",
-        "missing_exact_stored_lock_time_feature_vector",
-        "missing_lock_timestamp",
-        "missing_outcome_label",
-        "missing_source_pull_timestamp",
-        "missing_team_win_probability",
-        "not_graded",
-        "not_immutable_locked_prediction",
-        "wrong_frozen_feature_vector_version"
-      ]
-    },
-    {
-      "gameId": "ca5e8cb9be664ff91b121c15379d7ce9",
-      "slateDateEt": "2026-07-10",
-      "reasons": [
-        "feature_vector_not_proven_immutable",
-        "feature_vector_source_not_lock_time_prediction",
-        "frozen_vector_features_missing",
-        "frozen_vector_game_identity_mismatch",
-        "frozen_vector_source_after_or_missing_lock",
-        "incomplete_or_unproven_slate_coverage",
-        "late_row_protection_not_proven",
-        "legacy_probability_semantics",
-        "missing_exact_stored_lock_time_feature_vector",
-        "missing_lock_timestamp",
-        "missing_outcome_label",
-        "missing_source_pull_timestamp",
-        "missing_team_win_probability",
-        "not_graded",
-        "not_immutable_locked_prediction",
-        "wrong_frozen_feature_vector_version"
-      ]
-    },
-    {
-      "gameId": "976819aa47554213e70bc968d9356fc4",
-      "slateDateEt": "2026-07-10",
-      "reasons": [
-        "frozen_vector_fingerprint_mismatch",
-        "frozen_vector_game_identity_mismatch"
-      ]
-    },
     {
       "gameId": "1ff6b7060ccd99869ddc9396d067920c",
       "slateDateEt": "2026-07-11",
@@ -158,6 +90,125 @@
       "slateDateEt": "2026-07-11",
       "reasons": [
         "frozen_vector_fingerprint_mismatch"
+      ]
+    },
+    {
+      "gameId": "ba8bc57255560c92ff44bf4ac63a4fd9",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "late_row_protection_not_proven",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_outcome_label",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_graded",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "09d58ac97a07ac9cc6bc658cf72f08a3",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "late_row_protection_not_proven",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_outcome_label",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_graded",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "3e2ce9905fcaa6c74169c61fcb777080",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "late_row_protection_not_proven",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_outcome_label",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_graded",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "late_row_protection_not_proven",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "missing_lock_timestamp",
+        "missing_outcome_label",
+        "missing_source_pull_timestamp",
+        "missing_team_win_probability",
+        "not_graded",
+        "not_immutable_locked_prediction",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "a2501dff8c71ab28b0051fafeed81903",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch"
+      ]
+    },
+    {
+      "gameId": "250b0373676b10f51ed1c59c93714245",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "pre_clean_cohort_cutoff",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "976819aa47554213e70bc968d9356fc4",
+      "slateDateEt": "2026-07-10",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch",
+        "frozen_vector_game_identity_mismatch"
       ]
     },
     {
@@ -3454,7 +3505,7 @@
     }
   ],
   "policy": "Only post-fix immutable locked rows with explicit modern probability semantics and pre-lock source timestamps may train ML.",
-  "deduplicatedIdentityCount": 161,
+  "deduplicatedIdentityCount": 164,
   "supersededValidDuplicateCount": 0,
   "validCandidateWinsDuplicateSelection": true,
   "hardeningVersion": "MLB-ML-CLEAN-COHORT-HARDENING-v4-valid-candidate-wins-dedup",
