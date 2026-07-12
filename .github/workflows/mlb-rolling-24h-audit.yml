@@ -11,6 +11,7 @@ on:
       - 'hello_world/mlb_learning_signal_filter_patch.py'
       - 'hello_world/mlb_locked_card_audit_v1.py'
       - 'hello_world/mlb_doubleheader_safe_audit_patch.py'
+      - 'hello_world/mlb_daily_lock_audit_fallback_patch.py'
       - 'hello_world/mlb_slate_coverage_patch.py'
       - 'hello_world/mlb_production_verifier.py'
       - 'hello_world/mlb_immutable_locked_storage_patch.py'
@@ -44,6 +45,7 @@ on:
       - 'scripts/verify_mlb_complete_slate_coverage.py'
       - 'scripts/verify_mlb_immutable_locked_storage.py'
       - 'scripts/verify_mlb_settlement_matching_v3.py'
+      - 'scripts/verify_mlb_daily_lock_audit_fallback.py'
       - 'scripts/verify_mlb_postdeploy_settlement_integrity.py'
       - 'scripts/verify_mlb_selected_side_odds_coverage.py'
       - 'scripts/verify_mlb_ml_optimization_v3.py'
@@ -82,6 +84,9 @@ jobs:
 
       - name: Verify settlement matching before AWS audit
         run: python scripts/verify_mlb_settlement_matching_v3.py
+
+      - name: Verify immutable daily lock settlement fallback
+        run: python scripts/verify_mlb_daily_lock_audit_fallback.py
 
       - name: Generate persistent ML v3 validation report
         run: python scripts/run_mlb_ml_v3_validation_report.py
