@@ -1,0 +1,92 @@
+name: Diagnose MLB Daily Lock Fallback
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-daily-lock-fallback.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Read immutable daily locked card
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          aws dynamodb get-item \
+            --table-name parlay_platform_snapshots \
+            --key '{"PK":{"S":"LOCKED_PICKS#mlb#2026-07-11"},"SK":{"S":"DAILY_LOCK#TMINUS45"}}' \
+            --consistent-read \
+            --output json > /tmp/daily-lock.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          from boto3.dynamodb.types import TypeDeserializer
+
+          raw=json.load(open('/tmp/daily-lock.json'))
+          item_raw=raw.get('Item') or {}
+          d=TypeDeserializer()
+          item={k:d.deserialize(v) for k,v in item_raw.items()}
+          data=item.get('data') if isinstance(item.get('data'),dict) else {}
+          picks=data.get('picks') if isinstance(data.get('picks'),list) else []
+          target='db5e5f99da28e0ea52c06c7694fb5ad1'
+          matches=[]
+          for pick in picks:
+              if not isinstance(pick,dict):
+                  continue
+              ids={str(pick.get(k) or '') for k in ('gameId','game_id','id','gameIdentity')}
+              matchup=(str(pick.get('awayTeam') or ''),str(pick.get('homeTeam') or ''))
+              if target in ids or matchup==('Toronto Blue Jays','San Diego Padres'):
+                  matches.append({
+                      'gameId':pick.get('gameId') or pick.get('game_id') or pick.get('id'),
+                      'gameIdentity':pick.get('gameIdentity'),
+                      'awayTeam':pick.get('awayTeam'),
+                      'homeTeam':pick.get('homeTeam'),
+                      'commenceTime':pick.get('commenceTime'),
+                      'predictedWinner':pick.get('predictedWinner'),
+                      'predictedSide':pick.get('predictedSide'),
+                      'americanOdds':pick.get('americanOdds'),
+                      'priceBook':pick.get('priceBook'),
+                      'priceSource':pick.get('priceSource'),
+                      'tags':pick.get('tags') or [],
+                  })
+          result={
+              'ok':bool(item) and item.get('locked') is True and len(matches)==1,
+              'proofType':'MLB_DAILY_LOCK_FALLBACK_DIAGNOSTIC',
+              'itemPresent':bool(item),
+              'pk':item.get('PK'),
+              'sk':item.get('SK'),
+              'locked':item.get('locked'),
+              'lockedAt':item.get('locked_at'),
+              'latestPullAt':item.get('latest_pull_at'),
+              'firstGameStartUtc':item.get('first_game_start_utc'),
+              'gameCount':item.get('game_count'),
+              'predictionCount':item.get('prediction_count'),
+              'allGamesPredicted':item.get('all_games_predicted'),
+              'pickCount':len(picks),
+              'targetMatchCount':len(matches),
+              'targetMatches':matches,
+          }
+          Path('runtime_reports/mlb_daily_lock_fallback_diagnostic_latest.json').write_text(json.dumps(result,indent=2,default=str)+'\n')
+          print(json.dumps(result,indent=2,default=str))
+          PY
+      - name: Commit diagnostic
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/mlb_daily_lock_fallback_diagnostic_latest.json || true
+          git commit -m "Persist MLB daily lock fallback diagnostic" || true
+          git pull --rebase --autostash origin main || true
+          git push || true
