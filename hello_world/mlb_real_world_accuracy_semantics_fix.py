@@ -3,7 +3,8 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Optional
 
-VERSION = "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+VERSION = "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
+MIN_PLAYABLE_TARGET_ACCURACY_PCT = 90.0
 
 
 def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -13,6 +14,11 @@ def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
         return float(value)
     except Exception:
         return default
+
+
+def _accuracy_floor(value: Any = None) -> float:
+    parsed = _f(value, MIN_PLAYABLE_TARGET_ACCURACY_PCT)
+    return max(MIN_PLAYABLE_TARGET_ACCURACY_PCT, float(parsed or MIN_PLAYABLE_TARGET_ACCURACY_PCT))
 
 
 def _install_critical_ml_fixes() -> Dict[str, Any]:
@@ -25,7 +31,7 @@ def _install_critical_ml_fixes() -> Dict[str, Any]:
 
 def apply(accuracy_module: Any):
     critical_fix_status = _install_critical_ml_fixes()
-    if getattr(accuracy_module, "_INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V13", False):
+    if getattr(accuracy_module, "_INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V14", False):
         return accuracy_module
 
     def strict_playable(row: Dict[str, Any]) -> bool:
@@ -113,7 +119,7 @@ def apply(accuracy_module: Any):
         season_playable = season.get("playableRecommendations") or {}
         summary = dict(out.get("summary") or {})
         playable_accuracy = current_playable.get("accuracyPct")
-        playable_target = float(os.environ.get("INQSI_MLB_ML_PLAYABLE_TARGET_ACCURACY", "60"))
+        playable_target = _accuracy_floor(os.environ.get("INQSI_MLB_ML_PLAYABLE_TARGET_ACCURACY", "90"))
         summary.update({
             "targetAccuracyPct": playable_target,
             "optimizedPickCount": current_playable.get("count"), "optimizedCorrect": current_playable.get("correct"),
@@ -129,7 +135,7 @@ def apply(accuracy_module: Any):
             "accuracyTargetRowPolicy": "playable_recommendations_only; official_card_accuracy_reported_separately",
             "actionabilityPolicy": "Playable metrics require explicit modern playability or ACTIONABLE_PICK/ML_CONFIRMED. officialPick is never a playability signal.",
             "officialCardPolicy": "Every immutable locked winner is graded as an official prediction, regardless of playability.",
-            "optimizationTargetPolicy": "Outcome models must beat the de-vigged market baseline on untouched chronological test data. Reliability models require validation-selected thresholds, positive test ROI, and adequate price coverage.",
+            "optimizationTargetPolicy": "Playable/reliability promotion requires at least 90% accuracy on untouched chronological test data, positive test ROI, adequate price coverage, and acceptable calibration. Outcome direction must independently beat the de-vigged market baseline.",
             "accuracyClassificationVersion": VERSION,
         })
         out["summary"] = summary
@@ -142,6 +148,7 @@ def apply(accuracy_module: Any):
         rwa["ledgerReadbackPolicy"] = "Immutable ledger rows without an older status field are treated as GRADED when final winner and correctness are stored."
         rwa["mlCriticalFixStatus"] = critical_fix_status
         rwa["mlTrainingPolicy"] = "Only immutable lock-time feature vectors with current semantics and complete slate coverage may train the dual-model ML v3 system."
+        rwa["playableAccuracyTargetPct"] = playable_target
         out["realWorldAccuracy"] = rwa
         return out
 
@@ -162,4 +169,5 @@ def apply(accuracy_module: Any):
     accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED = True
     accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V12 = True
     accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V13 = True
+    accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V14 = True
     return accuracy_module
