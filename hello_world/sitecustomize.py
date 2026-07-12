@@ -48,6 +48,13 @@ except Exception:
     pass
 
 try:
+    import mlb_game_winner_engine as _mlb_game_winner_engine_for_immutable_storage
+    import mlb_immutable_locked_storage_patch
+    mlb_immutable_locked_storage_patch.apply(_mlb_game_winner_engine_for_immutable_storage)
+except Exception:
+    pass
+
+try:
     import mlb_rolling_24h_audit as _mlb_rolling_24h_audit_for_signal_filter
     import mlb_learning_signal_filter_patch
     mlb_learning_signal_filter_patch.apply(_mlb_rolling_24h_audit_for_signal_filter)
