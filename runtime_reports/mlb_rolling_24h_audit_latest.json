@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-12T11:46:26.144262+00:00",
+  "createdAt": "2026-07-12T12:32:42.308193+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -11993,7 +11993,7 @@
       "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets",
       "fundamentalsSnapshot": {
         "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
-        "createdAtUtc": "2026-07-12T11:47:11.102545+00:00",
+        "createdAtUtc": "2026-07-12T12:32:59.094582+00:00",
         "asOfUtc": null,
         "gameId": "db5e5f99da28e0ea52c06c7694fb5ad1",
         "sourceStatuses": {
@@ -13339,8 +13339,9 @@
     "ledgerReadbackPolicy": "Immutable ledger rows without an older status field are treated as GRADED when final winner and correctness are stored.",
     "mlCriticalFixStatus": {
       "ok": true,
-      "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v8-single-runtime-install-call",
+      "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v9-separated-accuracy-targets",
       "applied": [
+        "90pct_all_games_audit_60pct_recommendation_policy",
         "legacy_local_reliability_runtime_disabled",
         "immutable_exact_lock_feature_freeze",
         "automatic_champion_promotion_permanently_disabled"
@@ -13348,12 +13349,14 @@
       "errors": [],
       "authoritativeTrainer": "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger",
       "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
-      "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.2-single-authority-exact-lock-vector",
+      "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.3-separated-accuracy-targets",
       "runtimeInstallerCallSite": "usercustomize.py_after_prediction_chain",
       "singleRuntimeInstallCall": true,
       "duplicateTrainerAuthorityDisabled": true,
       "duplicateOutcomeRuntimeAuthorityDisabled": true,
       "automaticPromotionDisabled": true,
+      "rolling24hAllGamesAuditTargetPct": 90.0,
+      "recommendationReliabilityThresholdPct": 60.0,
       "manualPromotionModule": "MLB-ML-MANUAL-PROMOTION-ONLY-v1",
       "manualPromotionWorkflow": "mlb-ml-promote-champion.yml"
     },
@@ -13376,7 +13379,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-12T11:46:26.144262+00:00"
+    "runSk": "AUDIT#2026-07-12T12:32:42.308193+00:00"
   },
   "mlOptimizationV3": {
     "applied": true,
@@ -13430,7 +13433,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.2-separate-direction-90pct-playability-gates",
-      "evaluatedAtUtc": "2026-07-12T11:47:13.153788+00:00",
+      "evaluatedAtUtc": "2026-07-12T12:33:00.262356+00:00",
       "automaticPromotionEnabled": false,
       "promotionEligible": false,
       "directionPromotionEligible": false,
@@ -13468,7 +13471,7 @@
         "selectedReliabilityTestCount": 0,
         "minimumSelectedReliabilityTest": 50,
         "selectedAccuracyPct": null,
-        "minimumSelectedAccuracyPct": 90.0,
+        "minimumSelectedAccuracyPct": 60.0,
         "selectedPriceCoveragePct": null,
         "minimumSelectedPriceCoveragePct": 90.0,
         "selectedFlatUnitRoiPct": null,
@@ -13547,7 +13550,7 @@
         {
           "code": "SELECTED_ACCURACY_TOO_LOW",
           "actual": null,
-          "required": 90.0
+          "required": 60.0
         },
         {
           "code": "SELECTED_PRICE_COVERAGE_TOO_LOW",
@@ -13614,7 +13617,7 @@
         {
           "code": "SELECTED_ACCURACY_TOO_LOW",
           "actual": null,
-          "required": 90.0
+          "required": 60.0
         },
         {
           "code": "SELECTED_PRICE_COVERAGE_TOO_LOW",
@@ -13649,7 +13652,7 @@
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-12T11:46:58.340771+00:00"
+      "runSk": "CHALLENGER#2026-07-12T12:32:53.600714+00:00"
     },
     "promotion": {
       "ok": true,
