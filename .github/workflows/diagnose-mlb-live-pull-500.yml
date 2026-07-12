@@ -1,0 +1,94 @@
+name: Diagnose MLB Live Pull 500
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-live-pull-500.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke production MLB pull Lambda directly
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          ADMIN_TOKEN: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBAuditedPullFunction \
+            --region "$AWS_REGION_VALUE" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          export FUNCTION_NAME
+
+          python - <<'PY'
+          import json, os
+          event={
+            'resource':'/v1/pull/mlb',
+            'path':'/v1/pull/mlb',
+            'httpMethod':'POST',
+            'headers':{'content-type':'application/json','x-inqsi-admin-token':os.environ['ADMIN_TOKEN']},
+            'queryStringParameters':None,
+            'pathParameters':None,
+            'requestContext':{'stage':'Prod','httpMethod':'POST'},
+            'body':json.dumps({'t':'HOT','run':'direct_live_pull_diagnostic','days_ahead':0,'force':True}),
+            'isBase64Encoded':False,
+          }
+          open('/tmp/mlb_pull_event.json','w').write(json.dumps(event))
+          PY
+
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --payload fileb:///tmp/mlb_pull_event.json \
+            --cli-binary-format raw-in-base64-out \
+            --region "$AWS_REGION_VALUE" \
+            runtime_reports/mlb_live_pull_direct_response.json \
+            > runtime_reports/mlb_live_pull_direct_meta.json || true
+
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          def load(path):
+              try:
+                  return json.load(open(path))
+              except Exception:
+                  return {'raw':Path(path).read_text(errors='replace') if Path(path).exists() else ''}
+          response=load('runtime_reports/mlb_live_pull_direct_response.json')
+          if isinstance(response,dict) and isinstance(response.get('body'),str):
+              try:
+                  response['parsedBody']=json.loads(response['body'])
+              except Exception:
+                  pass
+          summary={
+              'functionName':os.environ.get('FUNCTION_NAME'),
+              'meta':load('runtime_reports/mlb_live_pull_direct_meta.json'),
+              'response':response,
+          }
+          Path('runtime_reports/mlb_live_pull_500_diagnostic.json').write_text(json.dumps(summary,indent=2,default=str)+'\n')
+          PY
+
+      - name: Commit direct invocation diagnostic
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/mlb_live_pull_* || true
+          git commit -m "Persist MLB live pull 500 diagnostic" || true
+          git pull --rebase --autostash origin main || true
+          git push || true
