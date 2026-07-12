@@ -1,260 +1,131 @@
-﻿2026-07-12T00:12:47.1607808Z Current runner version: '2.335.1'
-2026-07-12T00:12:47.1635174Z ##[group]Runner Image Provisioner
-2026-07-12T00:12:47.1636136Z Hosted Compute Agent
-2026-07-12T00:12:47.1636796Z Version: 20260624.560
-2026-07-12T00:12:47.1637958Z Commit: 925d229a51159bc391ae97e54a2dd1fe20af789d
-2026-07-12T00:12:47.1638872Z Build Date: 2026-06-24T18:26:47Z
-2026-07-12T00:12:47.1639772Z Worker ID: {dd8cbf08-0e4f-433f-9eef-71061c35afdc}
-2026-07-12T00:12:47.1640653Z Azure Region: eastus2
-2026-07-12T00:12:47.1641378Z ##[endgroup]
-2026-07-12T00:12:47.1643157Z ##[group]Operating System
-2026-07-12T00:12:47.1643931Z Ubuntu
-2026-07-12T00:12:47.1644627Z 24.04.4
-2026-07-12T00:12:47.1645241Z LTS
-2026-07-12T00:12:47.1645924Z ##[endgroup]
-2026-07-12T00:12:47.1646581Z ##[group]Runner Image
-2026-07-12T00:12:47.1647600Z Image: ubuntu-24.04
-2026-07-12T00:12:47.1648269Z Version: 20260705.232.1
-2026-07-12T00:12:47.1649706Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260705.232/images/ubuntu/Ubuntu2404-Readme.md
-2026-07-12T00:12:47.1651457Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260705.232
-2026-07-12T00:12:47.1652645Z ##[endgroup]
-2026-07-12T00:12:47.1653971Z ##[group]GITHUB_TOKEN Permissions
-2026-07-12T00:12:47.1655970Z Contents: read
-2026-07-12T00:12:47.1656714Z Metadata: read
-2026-07-12T00:12:47.1657814Z Packages: read
-2026-07-12T00:12:47.1658455Z ##[endgroup]
-2026-07-12T00:12:47.1660603Z Secret source: Actions
-2026-07-12T00:12:47.1661518Z Prepare workflow directory
-2026-07-12T00:12:47.2112670Z Prepare all required actions
-2026-07-12T00:12:47.2165876Z Getting action download info
-2026-07-12T00:12:47.4492728Z Download action repository 'actions/checkout@v4' (SHA:34e114876b0b11c390a56381ad16ebd13914f8d5)
-2026-07-12T00:12:47.5229704Z Download action repository 'actions/setup-python@v5' (SHA:a26af69be951a213d495a4c3e4e4022e16d87065)
-2026-07-12T00:12:47.6016989Z Download action repository 'aws-actions/configure-aws-credentials@v4' (SHA:7474bc4690e29a8392af63c5b98e7449536d5c3a)
-2026-07-12T00:12:47.8011967Z Download action repository 'aws-actions/setup-sam@v2' (SHA:f84ec7d548307efafe33230528756de3c5841a17)
-2026-07-12T00:12:48.0617773Z Complete job name: deploy
-2026-07-12T00:12:48.1818113Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-2026-07-12T00:12:48.1832259Z ##[group]Run actions/checkout@v4
-2026-07-12T00:12:48.1833447Z with:
-2026-07-12T00:12:48.1834231Z   repository: KirtKurt/parlay-platform
-2026-07-12T00:12:48.1842022Z   token: ***
-2026-07-12T00:12:48.1842813Z   ssh-strict: true
-2026-07-12T00:12:48.1843562Z   ssh-user: git
-2026-07-12T00:12:48.1844325Z   persist-credentials: true
-2026-07-12T00:12:48.1845176Z   clean: true
-2026-07-12T00:12:48.1845934Z   sparse-checkout-cone-mode: true
-2026-07-12T00:12:48.1846832Z   fetch-depth: 1
-2026-07-12T00:12:48.1847831Z   fetch-tags: false
-2026-07-12T00:12:48.1848666Z   show-progress: true
-2026-07-12T00:12:48.1849440Z   lfs: false
-2026-07-12T00:12:48.1850217Z   submodules: false
-2026-07-12T00:12:48.1850994Z   set-safe-directory: true
-2026-07-12T00:12:48.1852211Z ##[endgroup]
-2026-07-12T00:12:48.2975841Z Syncing repository: KirtKurt/parlay-platform
-2026-07-12T00:12:48.2978740Z ##[group]Getting Git version info
-2026-07-12T00:12:48.2980016Z Working directory is '/home/runner/work/parlay-platform/parlay-platform'
-2026-07-12T00:12:48.2981968Z [command]/usr/bin/git version
-2026-07-12T00:12:48.4931738Z git version 2.54.0
-2026-07-12T00:12:48.4952362Z ##[endgroup]
-2026-07-12T00:12:48.4967952Z Temporarily overriding HOME='/home/runner/work/_temp/c65b8149-1d4f-45fa-8583-d2b13b41c76e' before making global git config changes
-2026-07-12T00:12:48.4970201Z Adding repository directory to the temporary git global config as a safe directory
-2026-07-12T00:12:48.4973913Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
-2026-07-12T00:12:48.5032748Z Deleting the contents of '/home/runner/work/parlay-platform/parlay-platform'
-2026-07-12T00:12:48.5037396Z ##[group]Initializing the repository
-2026-07-12T00:12:48.5042495Z [command]/usr/bin/git init /home/runner/work/parlay-platform/parlay-platform
-2026-07-12T00:12:48.5149853Z hint: Using 'master' as the name for the initial branch. This default branch name
-2026-07-12T00:12:48.5151075Z hint: will change to "main" in Git 3.0. To configure the initial branch name
-2026-07-12T00:12:48.5152116Z hint: to use in all of your new repositories, which will suppress this warning,
-2026-07-12T00:12:48.5152937Z hint: call:
-2026-07-12T00:12:48.5153476Z hint:
-2026-07-12T00:12:48.5154118Z hint: 	git config --global init.defaultBranch <name>
-2026-07-12T00:12:48.5154849Z hint:
-2026-07-12T00:12:48.5155743Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
-2026-07-12T00:12:48.5157475Z hint: 'development'. The just-created branch can be renamed via this command:
-2026-07-12T00:12:48.5159100Z hint:
-2026-07-12T00:12:48.5159927Z hint: 	git branch -m <name>
-2026-07-12T00:12:48.5160834Z hint:
-2026-07-12T00:12:48.5161946Z hint: Disable this message with "git config set advice.defaultBranchName false"
-2026-07-12T00:12:48.5163808Z Initialized empty Git repository in /home/runner/work/parlay-platform/parlay-platform/.git/
-2026-07-12T00:12:48.5169520Z [command]/usr/bin/git remote add origin https://github.com/KirtKurt/parlay-platform
-2026-07-12T00:12:48.5219370Z ##[endgroup]
-2026-07-12T00:12:48.5220669Z ##[group]Disabling automatic garbage collection
-2026-07-12T00:12:48.5223586Z [command]/usr/bin/git config --local gc.auto 0
-2026-07-12T00:12:48.5258634Z ##[endgroup]
-2026-07-12T00:12:48.5259864Z ##[group]Setting up auth
-2026-07-12T00:12:48.5265748Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
-2026-07-12T00:12:48.5305884Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
-2026-07-12T00:12:48.5655351Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
-2026-07-12T00:12:48.5691677Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
-2026-07-12T00:12:48.5931272Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
-2026-07-12T00:12:48.5968336Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
-2026-07-12T00:12:48.6209485Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
-2026-07-12T00:12:48.6250244Z ##[endgroup]
-2026-07-12T00:12:48.6251160Z ##[group]Fetching the repository
-2026-07-12T00:12:48.6260297Z [command]/usr/bin/git -c protocol.version=2 fetch --no-tags --prune --no-recurse-submodules --depth=1 origin +67ef918b8ee6d099529f808e947453efda4c08ae:refs/remotes/origin/main
-2026-07-12T00:12:49.2029510Z From https://github.com/KirtKurt/parlay-platform
-2026-07-12T00:12:49.2031844Z  * [new ref]         67ef918b8ee6d099529f808e947453efda4c08ae -> origin/main
-2026-07-12T00:12:49.2067875Z ##[endgroup]
-2026-07-12T00:12:49.2069792Z ##[group]Determining the checkout info
-2026-07-12T00:12:49.2071928Z ##[endgroup]
-2026-07-12T00:12:49.2077841Z [command]/usr/bin/git sparse-checkout disable
-2026-07-12T00:12:49.2131195Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
-2026-07-12T00:12:49.2165262Z ##[group]Checking out the ref
-2026-07-12T00:12:49.2169283Z [command]/usr/bin/git checkout --progress --force -B main refs/remotes/origin/main
-2026-07-12T00:12:49.2753294Z Switched to a new branch 'main'
-2026-07-12T00:12:49.2755117Z branch 'main' set up to track 'origin/main'.
-2026-07-12T00:12:49.2767976Z ##[endgroup]
-2026-07-12T00:12:49.2819398Z [command]/usr/bin/git log -1 --format=%H
-2026-07-12T00:12:49.2848678Z 67ef918b8ee6d099529f808e947453efda4c08ae
-2026-07-12T00:12:49.3227578Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-2026-07-12T00:12:49.3233652Z ##[group]Run actions/setup-python@v5
-2026-07-12T00:12:49.3234897Z with:
-2026-07-12T00:12:49.3235836Z   python-version: 3.11
-2026-07-12T00:12:49.3236926Z   check-latest: false
-2026-07-12T00:12:49.3247353Z   token: ***
-2026-07-12T00:12:49.3248378Z   update-environment: true
-2026-07-12T00:12:49.3249515Z   allow-prereleases: false
-2026-07-12T00:12:49.3250639Z   freethreaded: false
-2026-07-12T00:12:49.3251663Z ##[endgroup]
-2026-07-12T00:12:49.4584963Z ##[group]Installed versions
-2026-07-12T00:12:49.4674132Z (node:2284) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
-2026-07-12T00:12:49.4678430Z (Use `node --trace-deprecation ...` to show where the warning was created)
-2026-07-12T00:12:49.4680259Z Successfully set up CPython (3.11.15)
-2026-07-12T00:12:49.4682183Z ##[endgroup]
-2026-07-12T00:12:49.5084037Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-2026-07-12T00:12:49.5089213Z ##[group]Run aws-actions/configure-aws-credentials@v4
-2026-07-12T00:12:49.5090572Z with:
-2026-07-12T00:12:49.5091736Z   aws-access-key-id: ***
-2026-07-12T00:12:49.5093430Z   aws-secret-access-key: ***
-2026-07-12T00:12:49.5095028Z   aws-region: ***
-2026-07-12T00:12:49.5096614Z   audience: sts.amazonaws.com
-2026-07-12T00:12:49.5098132Z   output-env-credentials: true
-2026-07-12T00:12:49.5099245Z env:
-2026-07-12T00:12:49.5100378Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:49.5102184Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
-2026-07-12T00:12:49.5104073Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:49.5105720Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:49.5107594Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:49.5109286Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
-2026-07-12T00:12:49.5110736Z ##[endgroup]
-2026-07-12T00:12:49.7015929Z Proceeding with IAM user credentials
-2026-07-12T00:12:49.7349858Z ##[group]Run aws sts get-caller-identity
-2026-07-12T00:12:49.7353698Z [36;1maws sts get-caller-identity[0m
-2026-07-12T00:12:49.7533598Z shell: /usr/bin/bash -e {0}
-2026-07-12T00:12:49.7534671Z env:
-2026-07-12T00:12:49.7535799Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:49.7537767Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
-2026-07-12T00:12:49.7539514Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:49.7541083Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:49.7542647Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:49.7544246Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
-2026-07-12T00:12:49.7545813Z   AWS_DEFAULT_REGION: ***
-2026-07-12T00:12:49.7546868Z   AWS_REGION: ***
-2026-07-12T00:12:49.7547992Z   AWS_ACCESS_KEY_ID: ***
-2026-07-12T00:12:49.7549338Z   AWS_SECRET_ACCESS_KEY: ***
-2026-07-12T00:12:49.7550427Z ##[endgroup]
-2026-07-12T00:12:53.4237271Z {
-2026-07-12T00:12:53.4237810Z     "UserId": "AIDA2WS447Q5R6R7TI4UA",
-2026-07-12T00:12:53.4238318Z     "Account": "735707987003",
-2026-07-12T00:12:53.4239021Z     "Arn": "arn:aws:iam::735707987003:user/github-parlay-platform-deploy"
-2026-07-12T00:12:53.4240101Z }
-2026-07-12T00:12:53.5085726Z ##[group]Run if [ -z "${ODDS_API_KEY_VALUE:-}" ]; then
-2026-07-12T00:12:53.5086228Z [36;1mif [ -z "${ODDS_API_KEY_VALUE:-}" ]; then[0m
-2026-07-12T00:12:53.5086808Z [36;1m  echo "::error::Missing ODDS_API_KEY GitHub secret. MLB production pulls must use The Odds API only."[0m
-2026-07-12T00:12:53.5087646Z [36;1m  exit 1[0m
-2026-07-12T00:12:53.5087883Z [36;1mfi[0m
-2026-07-12T00:12:53.5088151Z [36;1mecho "ODDS_API_KEY secret is present."[0m
-2026-07-12T00:12:53.5124710Z shell: /usr/bin/bash -e {0}
-2026-07-12T00:12:53.5125010Z env:
-2026-07-12T00:12:53.5125316Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5125821Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
-2026-07-12T00:12:53.5126299Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5126710Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5127393Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5127816Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
-2026-07-12T00:12:53.5128468Z   AWS_DEFAULT_REGION: ***
-2026-07-12T00:12:53.5128746Z   AWS_REGION: ***
-2026-07-12T00:12:53.5129068Z   AWS_ACCESS_KEY_ID: ***
-2026-07-12T00:12:53.5129436Z   AWS_SECRET_ACCESS_KEY: ***
-2026-07-12T00:12:53.5129766Z   ODDS_API_KEY_VALUE: ***
-2026-07-12T00:12:53.5130031Z ##[endgroup]
-2026-07-12T00:12:53.5190055Z ODDS_API_KEY secret is present.
-2026-07-12T00:12:53.5217531Z ##[group]Run if [ -z "${INQSI_ADMIN_API_TOKEN_VALUE:-}" ]; then
-2026-07-12T00:12:53.5218032Z [36;1mif [ -z "${INQSI_ADMIN_API_TOKEN_VALUE:-}" ]; then[0m
-2026-07-12T00:12:53.5218605Z [36;1m  echo "::error::Missing INQSI_ADMIN_API_TOKEN GitHub secret. MLB ingest/lock write routes require it."[0m
-2026-07-12T00:12:53.5219148Z [36;1m  exit 1[0m
-2026-07-12T00:12:53.5219419Z [36;1mfi[0m
-2026-07-12T00:12:53.5219707Z [36;1mecho "INQSI_ADMIN_API_TOKEN secret is present."[0m
-2026-07-12T00:12:53.5252034Z shell: /usr/bin/bash -e {0}
-2026-07-12T00:12:53.5252310Z env:
-2026-07-12T00:12:53.5252613Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5253080Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
-2026-07-12T00:12:53.5253572Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5253971Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5254392Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5254783Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
-2026-07-12T00:12:53.5255238Z   AWS_DEFAULT_REGION: ***
-2026-07-12T00:12:53.5255511Z   AWS_REGION: ***
-2026-07-12T00:12:53.5255788Z   AWS_ACCESS_KEY_ID: ***
-2026-07-12T00:12:53.5256133Z   AWS_SECRET_ACCESS_KEY: ***
-2026-07-12T00:12:53.5256424Z   INQSI_ADMIN_API_TOKEN_VALUE: ***
-2026-07-12T00:12:53.5256709Z ##[endgroup]
-2026-07-12T00:12:53.5312538Z INQSI_ADMIN_API_TOKEN secret is present.
-2026-07-12T00:12:53.5357744Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
-2026-07-12T00:12:53.5359021Z ##[group]Run aws-actions/setup-sam@v2
-2026-07-12T00:12:53.5359307Z with:
-2026-07-12T00:12:53.5359534Z   use-installer: false
-2026-07-12T00:12:53.5359769Z env:
-2026-07-12T00:12:53.5360052Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5360520Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
-2026-07-12T00:12:53.5360963Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5361368Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5361758Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
-2026-07-12T00:12:53.5362190Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
-2026-07-12T00:12:53.5362802Z   AWS_DEFAULT_REGION: ***
-2026-07-12T00:12:53.5363083Z   AWS_REGION: ***
-2026-07-12T00:12:53.5363346Z   AWS_ACCESS_KEY_ID: ***
-2026-07-12T00:12:53.5363719Z   AWS_SECRET_ACCESS_KEY: ***
-2026-07-12T00:12:53.5363987Z ##[endgroup]
-2026-07-12T00:12:53.6595634Z [command]/opt/hostedtoolcache/Python/3.11.15/x64/bin/python3 --version
-2026-07-12T00:12:53.6732197Z Python 3.11.15
-2026-07-12T00:12:53.6751736Z [command]/opt/hostedtoolcache/Python/3.11.15/x64/bin/python3 -m venv /home/runner/work/_temp/setup-sam-rzn5Z4/.venv
-2026-07-12T00:12:57.9021238Z [command]/home/runner/work/_temp/setup-sam-rzn5Z4/.venv/bin/python -m pip install --upgrade pip
-2026-07-12T00:12:58.2230743Z Requirement already satisfied: pip in /home/runner/work/_temp/setup-sam-rzn5Z4/.venv/lib/python3.11/site-packages (24.0)
-2026-07-12T00:12:58.3335329Z Collecting pip
-2026-07-12T00:12:58.3865059Z   Downloading pip-26.1.2-py3-none-any.whl.metadata (4.6 kB)
-2026-07-12T00:12:58.4008356Z Downloading pip-26.1.2-py3-none-any.whl (1.8 MB)
-2026-07-12T00:12:58.5034986Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.8/1.8 MB 18.1 MB/s eta 0:00:00
-2026-07-12T00:12:58.5471320Z Installing collected packages: pip
-2026-07-12T00:12:58.5472155Z   Attempting uninstall: pip
-2026-07-12T00:12:58.5492650Z     Found existing installation: pip 24.0
-2026-07-12T00:12:58.5850517Z     Uninstalling pip-24.0:
-2026-07-12T00:12:58.5910620Z       Successfully uninstalled pip-24.0
-2026-07-12T00:12:59.4340639Z Successfully installed pip-26.1.2
-2026-07-12T00:12:59.5957613Z [command]/home/runner/work/_temp/setup-sam-rzn5Z4/.venv/bin/python -m pip install --upgrade setuptools wheel
-2026-07-12T00:12:59.8955560Z Requirement already satisfied: setuptools in /home/runner/work/_temp/setup-sam-rzn5Z4/.venv/lib/python3.11/site-packages (79.0.1)
-2026-07-12T00:13:00.0680889Z Collecting setuptools
-2026-07-12T00:13:00.1268043Z   Downloading setuptools-83.0.0-py3-none-any.whl.metadata (6.6 kB)
-2026-07-12T00:13:00.1529587Z Collecting wheel
-2026-07-12T00:13:00.1602994Z   Downloading wheel-0.47.0-py3-none-any.whl.metadata (2.3 kB)
-2026-07-12T00:13:00.1784578Z Collecting packaging>=24.0 (from wheel)
-2026-07-12T00:13:00.1864689Z   Downloading packaging-26.2-py3-none-any.whl.metadata (3.5 kB)
-2026-07-12T00:13:00.1989139Z Downloading setuptools-83.0.0-py3-none-any.whl (1.0 MB)
-2026-07-12T00:13:00.2679509Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.0/1.0 MB 18.0 MB/s  0:00:00
-2026-07-12T00:13:00.2753319Z Downloading wheel-0.47.0-py3-none-any.whl (32 kB)
-2026-07-12T00:13:00.2847245Z Downloading packaging-26.2-py3-none-any.whl (100 kB)
-2026-07-12T00:13:00.3127470Z Installing collected packages: setuptools, packaging, wheel
-2026-07-12T00:13:00.3131954Z   Attempting uninstall: setuptools
-2026-07-12T00:13:00.3147457Z     Found existing installation: setuptools 79.0.1
-2026-07-12T00:13:00.3445680Z     Uninstalling setuptools-79.0.1:
-2026-07-12T00:13:00.3584257Z       Successfully uninstalled setuptools-79.0.1
-2026-07-12T00:13:01.0365166Z 
-2026-07-12T00:13:01.0372430Z Successfully installed packaging-26.2 setuptools-83.0.0 wheel-0.47.0
-2026-07-12T00:13:01.0904287Z [command]/home/runner/work/_temp/setup-sam-rzn5Z4/.venv/bin/python -m pip install cython<3.0.0 pyyaml==5.4.1 --no-build-isolation
-2026-07-12T00:13:01.6591623Z Collecting cython<3.0.0
-2026-07-12T00:13:01.7377487Z   Downloading Cython-0.29.37-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl.metadata (3.1 kB)
-2026-07-12T00:13:01.7717401Z Collecting pyyaml==5.4.1
-2026-07-12T00:13:01.7797605Z   Downloading PyYAML-5.4.1.tar.gz (175 kB)
-2026-07-12T00:13:01.9349830Z   Preparing metadata (pyproject.toml): started
-2026-07-12T00:13:02.2528348Z   Preparing metadata (pyproject.toml): finished with status 'done'
-2026-07-12T00:13:02.2637563Z Downloading Cython-0.29.37-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.manylinux_2_24_x86_64.whl (1.9 MB)
-2026-07-12T00:13:02.3521987Z    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 1.9/1.9 MB 22.5 MB/s  0:00:00
+2026-07-12T00:14:40.3525416Z   API_URL: https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/
+2026-07-12T00:14:40.3525785Z ##[endgroup]
+2026-07-12T00:14:41.6382173Z {
+2026-07-12T00:14:41.6382596Z   "ok": true,
+2026-07-12T00:14:41.6382944Z   "sport": "mlb",
+2026-07-12T00:14:41.6383457Z   "model_version": "INQSI-MLB-v3.0-clean-dual-model-shadow-challenger",
+2026-07-12T00:14:41.6384023Z   "game_winner_model": "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production",
+2026-07-12T00:14:41.6384515Z   "game_winner_engine": "MLB-SINGLE-GAME-ML-PROMOTION-v2.1",
+2026-07-12T00:14:41.6385084Z   "ml_optimization_version": "MLB-ML-OPTIMIZATION-v3.1-clean-dual-manual-champion-promotion",
+2026-07-12T00:14:41.6385638Z   "ml_runtime_install": {
+2026-07-12T00:14:41.6385901Z     "applied": true,
+2026-07-12T00:14:41.6386294Z     "version": "MLB-ML-RUNTIME-INSTALL-v3.2-single-authority-exact-lock-vector",
+2026-07-12T00:14:41.6386726Z     "steps": {
+2026-07-12T00:14:41.6386976Z       "legacyReliabilityOverlaySafety": true,
+2026-07-12T00:14:41.6387994Z       "sourceHonestFundamentals": true,
+2026-07-12T00:14:41.6388308Z       "singleDdbChampionAuthority": true,
+2026-07-12T00:14:41.6388618Z       "officialSemanticsFinalized": true,
+2026-07-12T00:14:41.6388926Z       "exactCleanCohortVectorPatch": true,
+2026-07-12T00:14:41.6389226Z       "officialFreezeBridge": true,
+2026-07-12T00:14:41.6389513Z       "immutableFeatureFreeze": true
+2026-07-12T00:14:41.6389783Z     },
+2026-07-12T00:14:41.6389979Z     "errors": [],
+2026-07-12T00:14:41.6390196Z     "ok": true,
+2026-07-12T00:14:41.6390947Z     "policy": "The reviewed DynamoDB champion is the only model allowed to change direction or playability. Every new locked game stores the exact immutable clean-cohort vector before final labels exist."
+2026-07-12T00:14:41.6391715Z   },
+2026-07-12T00:14:41.6391920Z   "engine_import_ok": true,
+2026-07-12T00:14:41.6392189Z   "engine_import_error": null,
+2026-07-12T00:14:41.6392558Z   "apiRuntimeVersion": "MLB-V3-READ-API-v1-dedicated-runtime-owner",
+2026-07-12T00:14:41.6392970Z   "pick_type": "individual_game_moneyline",
+2026-07-12T00:14:41.6393440Z   "requiredWinnerPickPolicy": "one_official_locked_winner_prediction_for_every_mlb_game",
+2026-07-12T00:14:41.6394040Z   "playablePolicy": "playability_is_separate_and_may_be_false_for_an_official_prediction",
+2026-07-12T00:14:41.6394637Z   "mlDirectionPolicy": "outcome_model_is_shadow_only_until_reviewed_champion_promotion",
+2026-07-12T00:14:41.6395201Z   "mlReliabilityPolicy": "reliability_probability_is_never_team_win_probability",
+2026-07-12T00:14:41.6395724Z   "productionAuthoritySource": "reviewed_DynamoDB_champion_bundle_only",
+2026-07-12T00:14:41.6396129Z   "parlaysEnabled": false,
+2026-07-12T00:14:41.6396561Z   "sourcePolicy": "The Odds API pull history plus timestamped source-honest fundamentals snapshots."
+2026-07-12T00:14:41.6397008Z }
+2026-07-12T00:14:41.6504672Z ##[group]Run python - <<'PY'
+2026-07-12T00:14:41.6505030Z [36;1mpython - <<'PY'[0m
+2026-07-12T00:14:41.6505283Z [36;1mimport json[0m
+2026-07-12T00:14:41.6505513Z [36;1mimport os[0m
+2026-07-12T00:14:41.6505757Z [36;1mimport urllib.request[0m
+2026-07-12T00:14:41.6506013Z [36;1m[0m
+2026-07-12T00:14:41.6506266Z [36;1mapi_url = os.environ.get("API_URL", "")[0m
+2026-07-12T00:14:41.6506689Z [36;1madmin_token = os.environ.get("INQSI_ADMIN_API_TOKEN_VALUE", "")[0m
+2026-07-12T00:14:41.6507475Z [36;1mbody = json.dumps({"t":"HOT","run":"deploy_live_odds_smoke","days_ahead":0,"force":True}).encode("utf-8")[0m
+2026-07-12T00:14:41.6508000Z [36;1mreq = urllib.request.Request([0m
+2026-07-12T00:14:41.6508309Z [36;1m    api_url + "v1/pull/mlb",[0m
+2026-07-12T00:14:41.6508808Z [36;1m    data=body,[0m
+2026-07-12T00:14:41.6509226Z [36;1m    headers={"content-type":"application/json", "x-inqsi-admin-token": admin_token},[0m
+2026-07-12T00:14:41.6509704Z [36;1m    method="POST",[0m
+2026-07-12T00:14:41.6509957Z [36;1m)[0m
+2026-07-12T00:14:41.6510241Z [36;1mwith urllib.request.urlopen(req, timeout=45) as resp:[0m
+2026-07-12T00:14:41.6510651Z [36;1m    payload = json.loads(resp.read().decode("utf-8"))[0m
+2026-07-12T00:14:41.6510983Z [36;1mprint(json.dumps({[0m
+2026-07-12T00:14:41.6511246Z [36;1m    "ok": payload.get("ok"),[0m
+2026-07-12T00:14:41.6511576Z [36;1m    "live_pull_ok": payload.get("live_pull_ok"),[0m
+2026-07-12T00:14:41.6511942Z [36;1m    "fallback_used": payload.get("fallback_used"),[0m
+2026-07-12T00:14:41.6512296Z [36;1m    "count": payload.get("count"),[0m
+2026-07-12T00:14:41.6512630Z [36;1m    "game_dates_et": payload.get("game_dates_et"),[0m
+2026-07-12T00:14:41.6513055Z [36;1m    "canonical_pull_history": payload.get("canonical_pull_history"),[0m
+2026-07-12T00:14:41.6513577Z [36;1m    "game_winner_predictions": payload.get("game_winner_predictions"),[0m
+2026-07-12T00:14:41.6513968Z [36;1m}, indent=2))[0m
+2026-07-12T00:14:41.6514224Z [36;1mif not payload.get("ok"):[0m
+2026-07-12T00:14:41.6514610Z [36;1m    raise SystemExit("MLB live pull endpoint returned ok=false")[0m
+2026-07-12T00:14:41.6515027Z [36;1mif payload.get("live_pull_ok") is not True:[0m
+2026-07-12T00:14:41.6515459Z [36;1m    raise SystemExit("MLB live pull did not use The Odds API successfully")[0m
+2026-07-12T00:14:41.6515882Z [36;1mif payload.get("fallback_used"):[0m
+2026-07-12T00:14:41.6516306Z [36;1m    raise SystemExit("MLB live pull used fallback/cached data during deploy smoke")[0m
+2026-07-12T00:14:41.6516820Z [36;1mcanonical = payload.get("canonical_pull_history") or [][0m
+2026-07-12T00:14:41.6517482Z [36;1mif not canonical or not any(row.get("ok") and int(row.get("games") or 0) > 0 for row in canonical):[0m
+2026-07-12T00:14:41.6518095Z [36;1m    raise SystemExit("MLB live pull did not store canonical pull history with games")[0m
+2026-07-12T00:14:41.6518614Z [36;1mwinners = payload.get("game_winner_predictions") or [][0m
+2026-07-12T00:14:41.6519047Z [36;1mif not winners or not any(row.get("ok") for row in winners):[0m
+2026-07-12T00:14:41.6519525Z [36;1m    raise SystemExit("MLB live pull did not run game-winner predictions")[0m
+2026-07-12T00:14:41.6519915Z [36;1mPY[0m
+2026-07-12T00:14:41.6554700Z shell: /usr/bin/bash -e {0}
+2026-07-12T00:14:41.6554968Z env:
+2026-07-12T00:14:41.6555264Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-12T00:14:41.6555714Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-12T00:14:41.6556153Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-12T00:14:41.6556546Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-12T00:14:41.6556927Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-12T00:14:41.6557426Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-12T00:14:41.6557839Z   AWS_DEFAULT_REGION: ***
+2026-07-12T00:14:41.6558104Z   AWS_REGION: ***
+2026-07-12T00:14:41.6558362Z   AWS_ACCESS_KEY_ID: ***
+2026-07-12T00:14:41.6558899Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-12T00:14:41.6559311Z   API_URL: https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/
+2026-07-12T00:14:41.6559717Z   INQSI_ADMIN_API_TOKEN_VALUE: ***
+2026-07-12T00:14:41.6559995Z ##[endgroup]
+2026-07-12T00:14:43.3317717Z Traceback (most recent call last):
+2026-07-12T00:14:43.3325676Z   File "<stdin>", line 14, in <module>
+2026-07-12T00:14:43.3326319Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 216, in urlopen
+2026-07-12T00:14:43.3779335Z     return opener.open(url, data, timeout)
+2026-07-12T00:14:43.3779738Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+2026-07-12T00:14:43.3780568Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 525, in open
+2026-07-12T00:14:43.3829318Z     response = meth(req, response)
+2026-07-12T00:14:43.3830122Z                ^^^^^^^^^^^^^^^^^^^
+2026-07-12T00:14:43.3831204Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 634, in http_response
+2026-07-12T00:14:43.3832013Z     response = self.parent.error(
+2026-07-12T00:14:43.3832574Z                ^^^^^^^^^^^^^^^^^^
+2026-07-12T00:14:43.3833335Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 563, in error
+2026-07-12T00:14:43.3834053Z     return self._call_chain(*args)
+2026-07-12T00:14:43.3834615Z            ^^^^^^^^^^^^^^^^^^^^^^^
+2026-07-12T00:14:43.3835433Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 496, in _call_chain
+2026-07-12T00:14:43.3836185Z     result = func(*args)
+2026-07-12T00:14:43.3836820Z              ^^^^^^^^^^^
+2026-07-12T00:14:43.3838041Z   File "/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/urllib/request.py", line 643, in http_error_default
+2026-07-12T00:14:43.3838917Z     raise HTTPError(req.full_url, code, msg, hdrs, fp)
+2026-07-12T00:14:43.3848425Z urllib.error.HTTPError: HTTP Error 500: Internal Server Error
+2026-07-12T00:14:43.3976523Z ##[error]Process completed with exit code 1.
+2026-07-12T00:14:43.4111718Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-12T00:14:43.4112972Z Post job cleanup.
+2026-07-12T00:14:43.5378498Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-12T00:14:43.5380625Z Post job cleanup.
+2026-07-12T00:14:43.6323461Z [command]/usr/bin/git version
+2026-07-12T00:14:43.6374010Z git version 2.54.0
+2026-07-12T00:14:43.6412430Z Temporarily overriding HOME='/home/runner/work/_temp/3fd4f7a3-db23-44d3-975e-e1bb095ab529' before making global git config changes
+2026-07-12T00:14:43.6413911Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-12T00:14:43.6418783Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-12T00:14:43.6462610Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-12T00:14:43.6520444Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-12T00:14:43.6781881Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-12T00:14:43.6815898Z http.https://github.com/.extraheader
+2026-07-12T00:14:43.6828544Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-12T00:14:43.6864319Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-12T00:14:43.7149939Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-12T00:14:43.7216577Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-12T00:14:43.7916344Z Cleaning up orphan processes
+2026-07-12T00:14:43.8448637Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5, aws-actions/configure-aws-credentials@v4, aws-actions/setup-sam@v2. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
