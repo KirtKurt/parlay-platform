@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ML_V3_AWS_AUDIT_EXECUTION",
-  "createdAtUtc": "2026-07-12T05:33:02.532625+00:00",
+  "createdAtUtc": "2026-07-12T05:33:49.105994+00:00",
   "environment": {
     "snapshotsTableConfigured": true,
     "oddsApiKeyConfigured": true,
@@ -9,7 +9,7 @@
     "allowLocalFileChampion": "false"
   },
   "failures": [],
-  "reportCreatedAt": "2026-07-12T05:33:07.636508+00:00",
+  "reportCreatedAt": "2026-07-12T05:33:58.168211+00:00",
   "reportOk": true,
   "summary": {
     "windowHours": 24,
@@ -66,9 +66,9 @@
     "playableFlatUnitRoiPct": null,
     "seasonOfficialPredictionCount": 99,
     "seasonPlayablePredictionCount": 8,
-    "accuracyClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
+    "accuracyClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets",
     "officialCardPolicy": "Every immutable locked winner is graded as an official prediction, regardless of playability.",
-    "optimizationTargetPolicy": "Outcome models must beat the de-vigged market baseline on untouched chronological test data. Reliability models require validation-selected thresholds, positive test ROI, and adequate price coverage."
+    "optimizationTargetPolicy": "Playable/reliability promotion requires at least 90% accuracy on untouched chronological test data, positive test ROI, adequate price coverage, and acceptable calibration. Outcome direction must independently beat the de-vigged market baseline."
   },
   "accuracyLedger": {
     "ok": true,
@@ -79,7 +79,7 @@
     "queriedRowCount": 84,
     "immutable": true,
     "dedupeKey": "slate_date + provider_game_id_or_matchup",
-    "version": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+    "version": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
   },
   "mlCriticalFixStatus": {
     "ok": true,
@@ -153,7 +153,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.1-separate-direction-playability-gates",
-      "evaluatedAtUtc": "2026-07-12T05:33:24.724915+00:00",
+      "evaluatedAtUtc": "2026-07-12T05:34:28.606171+00:00",
       "automaticPromotionEnabled": false,
       "promotionEligible": false,
       "directionPromotionEligible": false,
@@ -372,7 +372,7 @@
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-12T05:33:18.592429+00:00"
+      "runSk": "CHALLENGER#2026-07-12T05:34:18.552926+00:00"
     },
     "promotion": {
       "ok": true,
@@ -401,7 +401,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-12T05:33:07.636508+00:00"
+    "runSk": "AUDIT#2026-07-12T05:33:58.168211+00:00"
   },
   "storeError": null
 }

@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-12T05:33:07.636508+00:00",
+  "createdAt": "2026-07-12T05:33:58.168211+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -59,9 +59,9 @@
     "playableFlatUnitRoiPct": null,
     "seasonOfficialPredictionCount": 99,
     "seasonPlayablePredictionCount": 8,
-    "accuracyClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
+    "accuracyClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets",
     "officialCardPolicy": "Every immutable locked winner is graded as an official prediction, regardless of playability.",
-    "optimizationTargetPolicy": "Outcome models must beat the de-vigged market baseline on untouched chronological test data. Reliability models require validation-selected thresholds, positive test ROI, and adequate price coverage."
+    "optimizationTargetPolicy": "Playable/reliability promotion requires at least 90% accuracy on untouched chronological test data, positive test ROI, adequate price coverage, and acceptable calibration. Outcome direction must independently beat the de-vigged market baseline."
   },
   "scoreLearning": {
     "multiWindowStats": {
@@ -3412,7 +3412,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "1ff6b7060ccd99869ddc9396d067920c",
@@ -3695,7 +3695,7 @@
       "marketBaselineAmericanOdds": -116.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.862069,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "8ec769ee362e5e0e25ac93ee886cdfd4",
@@ -4039,7 +4039,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "8ec769ee362e5e0e25ac93ee886cdfd4",
@@ -4322,7 +4322,7 @@
       "marketBaselineAmericanOdds": -112.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.892857,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "39a35ef6ca846e78caf1d3d4063cba8b",
@@ -4670,7 +4670,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "39a35ef6ca846e78caf1d3d4063cba8b",
@@ -4953,7 +4953,7 @@
       "marketBaselineAmericanOdds": -180.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.555556,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "93986de15fc102a4875daaf7e6250f9e",
@@ -5292,7 +5292,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "93986de15fc102a4875daaf7e6250f9e",
@@ -5575,7 +5575,7 @@
       "marketBaselineAmericanOdds": -196.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.510204,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "def5adac76d2258bb7ff1a427e09f8a8",
@@ -5919,7 +5919,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "def5adac76d2258bb7ff1a427e09f8a8",
@@ -6202,7 +6202,7 @@
       "marketBaselineAmericanOdds": -154.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.649351,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "ff676cfabd491a806f9fad9a93924adb",
@@ -6552,7 +6552,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "ff676cfabd491a806f9fad9a93924adb",
@@ -6835,7 +6835,7 @@
       "marketBaselineAmericanOdds": -158.0,
       "marketBaselineCorrect": false,
       "marketBaselineUnitProfit": -1.0,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "b552ecd25e0e2e615532c65ff294144f",
@@ -7165,7 +7165,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "b552ecd25e0e2e615532c65ff294144f",
@@ -7448,7 +7448,7 @@
       "marketBaselineAmericanOdds": -154.0,
       "marketBaselineCorrect": false,
       "marketBaselineUnitProfit": -1.0,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "3e0030b3cd282b42e4c204a9e30ec8f4",
@@ -7789,7 +7789,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "3e0030b3cd282b42e4c204a9e30ec8f4",
@@ -8072,7 +8072,7 @@
       "marketBaselineAmericanOdds": -130.0,
       "marketBaselineCorrect": false,
       "marketBaselineUnitProfit": -1.0,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "93a5e6119186fda8b8ae5e4ec2abd550",
@@ -8427,7 +8427,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "93a5e6119186fda8b8ae5e4ec2abd550",
@@ -8710,7 +8710,7 @@
       "marketBaselineAmericanOdds": -112.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.892857,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "ba8bc57255560c92ff44bf4ac63a4fd9",
@@ -9054,7 +9054,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "ba8bc57255560c92ff44bf4ac63a4fd9",
@@ -9337,7 +9337,7 @@
       "marketBaselineAmericanOdds": -142.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.704225,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "09d58ac97a07ac9cc6bc658cf72f08a3",
@@ -9675,7 +9675,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "09d58ac97a07ac9cc6bc658cf72f08a3",
@@ -9958,7 +9958,7 @@
       "marketBaselineAmericanOdds": -158.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.632911,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "3e2ce9905fcaa6c74169c61fcb777080",
@@ -10317,7 +10317,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "3e2ce9905fcaa6c74169c61fcb777080",
@@ -10600,7 +10600,7 @@
       "marketBaselineAmericanOdds": -118.0,
       "marketBaselineCorrect": false,
       "marketBaselineUnitProfit": -1.0,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "27168ae4cc8b352a2cb7e3f6dab8b610",
@@ -10946,7 +10946,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
@@ -11229,7 +11229,7 @@
       "marketBaselineAmericanOdds": -112.0,
       "marketBaselineCorrect": false,
       "marketBaselineUnitProfit": -1.0,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "a2501dff8c71ab28b0051fafeed81903",
@@ -11571,7 +11571,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "a2501dff8c71ab28b0051fafeed81903",
@@ -11854,7 +11854,7 @@
       "marketBaselineAmericanOdds": -112.0,
       "marketBaselineCorrect": true,
       "marketBaselineUnitProfit": 0.892857,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     },
     {
       "id": "db5e5f99da28e0ea52c06c7694fb5ad1",
@@ -11940,7 +11940,7 @@
           "pipelineDepth": 0,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "authoritySource": "immutable_daily_locked_card",
         "authorityVersion": "MLB-DAILY-LOCK-AUDIT-FALLBACK-v1.1-authoritative-write-once-card",
@@ -11990,10 +11990,10 @@
       "marketBaselineAmericanOdds": null,
       "marketBaselineCorrect": null,
       "marketBaselineUnitProfit": null,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets",
       "fundamentalsSnapshot": {
         "version": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
-        "createdAtUtc": "2026-07-12T05:33:23.569845+00:00",
+        "createdAtUtc": "2026-07-12T05:34:26.655756+00:00",
         "asOfUtc": null,
         "gameId": "db5e5f99da28e0ea52c06c7694fb5ad1",
         "sourceStatuses": {
@@ -12415,7 +12415,7 @@
           "pipelineDepth": 3,
           "predictionVisibility": null,
           "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+          "classificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
         },
         "matchMethod": "provider_game_id",
         "providerGameId": "6b6370ec220748ce5deae40b503bb29c",
@@ -12698,7 +12698,7 @@
       "marketBaselineAmericanOdds": -275.0,
       "marketBaselineCorrect": false,
       "marketBaselineUnitProfit": -1.0,
-      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+      "auditClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
     }
   ],
   "policy": "Audit every completed MLB game using the immutable locked prediction. Report official-card accuracy and playable-recommendation accuracy separately, with probability calibration, flat-unit ROI, and market-favorite baselines. Accumulate a permanent deduplicated settled-game ledger; never grade live games.",
@@ -12788,7 +12788,7 @@
   },
   "realWorldAccuracy": {
     "applied": true,
-    "version": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets",
+    "version": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets",
     "classification": {
       "officialPrediction": "immutable winner selected for a locked game",
       "playableRecommendation": "higher-confidence wagering recommendation; official status is excluded"
@@ -13357,7 +13357,8 @@
       "manualPromotionModule": "MLB-ML-MANUAL-PROMOTION-ONLY-v1",
       "manualPromotionWorkflow": "mlb-ml-promote-champion.yml"
     },
-    "mlTrainingPolicy": "Only immutable lock-time feature vectors with current semantics and complete slate coverage may train the dual-model ML v3 system."
+    "mlTrainingPolicy": "Only immutable lock-time feature vectors with current semantics and complete slate coverage may train the dual-model ML v3 system.",
+    "playableAccuracyTargetPct": 90.0
   },
   "accuracyLedger": {
     "ok": true,
@@ -13368,14 +13369,14 @@
     "queriedRowCount": 84,
     "immutable": true,
     "dedupeKey": "slate_date + provider_game_id_or_matchup",
-    "version": "MLB-REAL-WORLD-ACCURACY-v1.3-clean-ml-optimization-targets"
+    "version": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
   },
   "stored": {
     "ok": true,
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-12T05:33:07.636508+00:00"
+    "runSk": "AUDIT#2026-07-12T05:33:58.168211+00:00"
   },
   "mlOptimizationV3": {
     "applied": true,
@@ -13429,7 +13430,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.1-separate-direction-playability-gates",
-      "evaluatedAtUtc": "2026-07-12T05:33:24.724915+00:00",
+      "evaluatedAtUtc": "2026-07-12T05:34:28.606171+00:00",
       "automaticPromotionEnabled": false,
       "promotionEligible": false,
       "directionPromotionEligible": false,
@@ -13648,7 +13649,7 @@
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-12T05:33:18.592429+00:00"
+      "runSk": "CHALLENGER#2026-07-12T05:34:18.552926+00:00"
     },
     "promotion": {
       "ok": true,
