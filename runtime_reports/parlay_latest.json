@@ -1,5 +1,5 @@
 {
-  "ok": false,
+  "ok": true,
   "sports": [
     "mlb",
     "wnba",
@@ -11,3519 +11,1072 @@
     "soccer",
     "tennis"
   ],
-  "builtSports": [],
-  "mlbBuilt": false,
+  "builtSports": [
+    "mlb"
+  ],
+  "mlbBuilt": true,
   "mlbLatestBuild": {
-    "freezeMinutesBeforeGame": "120",
-    "reason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
-    "selectedStrongCount": "0",
-    "leanCount": "0",
-    "gameHistoryStored": "15",
-    "rankedCombos": [],
-    "strongCount": "0",
-    "buildStatus": "NO_BUILD",
-    "slate_date": "2026-07-12",
-    "selectedLeanCount": "0",
-    "engine": "MLB-B1.0",
-    "audit": {
-      "tracks": [
-        "top1",
-        "top3",
-        "top5"
-      ],
-      "status": "PENDING_RESULTS"
-    },
-    "officialStrength": "REFUSED_STRUCTURE_NOT_MET",
-    "legs": [],
-    "candidateFilterPolicy": "Candidates are the post-score subset where frozen=true and selected grade is MLB_STRONG or MLB_LEAN. This full board shows the pre-filter scoring pass for every MLB game.",
-    "buildDeadline": {
-      "deadlineHoursBeforeFirstEvent": "2",
-      "firstEventAtUtc": "2026-07-12T16:16:00+00:00",
-      "deadlinePassed": false,
-      "buildDeadlineUtc": "2026-07-12T14:16:00+00:00",
-      "firstEventAtEt": "2026-07-12T12:16:00-04:00",
-      "currentEt": "2026-07-12T00:13:05.124227-04:00",
-      "ok": true,
-      "currentUtc": "2026-07-12T04:13:05.124227+00:00",
-      "buildDeadlineEt": "2026-07-12T10:16:00-04:00"
-    },
-    "ok": true,
-    "candidateCount": "0",
-    "pullCount": "4",
-    "minimumGameHistoryPoints": "4",
-    "gameCount": "15",
-    "slateTimezone": "America/New_York",
-    "fallbackApplied": true,
-    "structureGate": {
-      "reason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
-      "structurePolicy": {
-        "leanMinScore": "55",
-        "bookAgreementAloneQualifies": false,
-        "anchorMinScore": "62",
-        "required": [
-          "ANCHOR",
-          "LEAN",
-          "CONTROLLED_VARIABLE"
-        ],
-        "controlledVariableMinScore": "52"
-      },
-      "message": "MLB build refused: structure requires 1 Anchor, 1 Lean, and 1 Controlled Variable. Controlled Variable must have a real movement/market signal, not BOOK_AGREEMENT alone.",
-      "applied": true,
-      "rejected": true,
-      "availableLegs": [
-        {
-          "gameId": "40ac03ae2d2b1dc11d41ced3f411f478",
-          "score": "57.94",
-          "selection": "Los Angeles Dodgers",
-          "grade": "FRAGILE",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ]
-        },
-        {
-          "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
-          "score": "51.15",
-          "selection": "Toronto Blue Jays",
-          "grade": "COIN_FLIP",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ]
-        },
-        {
-          "gameId": "9d71a179d7d4dd618d4fae5516f00d95",
-          "score": "50.97",
-          "selection": "San Francisco Giants",
-          "grade": "FRAGILE",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ]
-        }
-      ]
-    },
-    "thresholdVersion": "MLB-B1.0-2026-06",
-    "message": "MLB build refused: structure requires 1 Anchor, 1 Lean, and 1 Controlled Variable. Controlled Variable must have a real movement/market signal, not BOOK_AGREEMENT alone.",
-    "structure": "1_ANCHOR_1_LEAN_1_CONTROLLED_VARIABLE",
-    "storedAt": "2026-07-12T04:13:05.377893+00:00",
-    "previousNoBuildReason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
-    "candidates": [],
-    "storeMode": "mlb_b10_or_strict_auto_after_live_pull_with_12_snapshot_baseline",
-    "pullCoverage": {
-      "expectedStartAtUtc": "2026-07-12T05:00:00+00:00",
-      "firstPullAtUtc": "2026-07-12T04:00:25.964639+00:00",
-      "actualPullCount": "4",
-      "intervalMinutes": "15",
-      "firstPullAtEt": "2026-07-12T00:00:25.964639-04:00",
-      "latestPullAtEt": "2026-07-12T00:09:59.686583-04:00",
-      "startHourEt": "1",
-      "latestPullAtUtc": "2026-07-12T04:09:59.686583+00:00",
-      "actualPullCountSinceStart": "0",
-      "expectedPullCountSinceStart": "0",
-      "missingPullCountSinceStart": "0",
-      "overnightCoverageComplete": false,
-      "expectedStartAtEt": "2026-07-12T01:00:00-04:00",
-      "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes."
-    },
-    "scoredGameCount": "15",
-    "sport": "mlb",
-    "allScoredGamesCount": "15",
-    "allScoredGames": [
+    "pullCount": "18",
+    "reason": "BUILT_FROM_TOP_AVAILABLE_SIGNALS_AFTER_12_SNAPSHOTS",
+    "selectedStrongCount": "1",
+    "rankedCombos": [
       {
-        "gameId": "40ac03ae2d2b1dc11d41ced3f411f478",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Arizona Diamondbacks",
-        "cutoffTime": "2026-07-12T18:11:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T20:11:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.3444964195526612",
-            "bookCount": "9",
-            "bookDivergence": "0.019459265622198574",
-            "bookAgreement": "0.98054",
-            "homeRunLinePrice": "-105.33333333333333",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "-113.88888888888889",
-            "home": "0.6555035804473389",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.3444964195526612",
-            "bookCount": "9",
-            "bookDivergence": "0.019459265622198574",
-            "bookAgreement": "0.98054",
-            "homeRunLinePrice": "-105.33333333333333",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "-113.88888888888889",
-            "home": "0.6555035804473389",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.3425482535200226",
-            "bookCount": "9",
-            "bookDivergence": "0.019459265622198574",
-            "bookAgreement": "0.98054",
-            "homeRunLinePrice": "-107",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "-112.22222222222223",
-            "home": "0.6574517464799775",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.3425482535200226",
-            "bookCount": "9",
-            "bookDivergence": "0.019459265622198574",
-            "bookAgreement": "0.98054",
-            "homeRunLinePrice": "-107",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "-112.22222222222223",
-            "home": "0.6574517464799775",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "57.94",
-        "pointCount": "4",
-        "selection": "Los Angeles Dodgers",
-        "homeSignal": {
-          "probStart": "0.6555",
-          "probLatest": "0.65745",
-          "side": "home",
-          "bookAgreementAvg": "0.98054",
-          "delta": "0.00195",
-          "runLineMovement": "-1.667",
-          "velocityPpHr": "0.779",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "57.94",
-          "lateInstability": "0.00195",
-          "pointCount": "4",
-          "totalMovement": "0.00195",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01946"
-        },
-        "grade": "FRAGILE",
-        "awaySignal": {
-          "probStart": "0.3445",
-          "probLatest": "0.34255",
-          "side": "away",
-          "bookAgreementAvg": "0.98054",
-          "delta": "-0.00195",
-          "runLineMovement": "1.667",
-          "velocityPpHr": "-0.779",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "30.81",
-          "lateInstability": "0.00195",
-          "pointCount": "4",
-          "totalMovement": "0.00195",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01946"
-        },
-        "homeTeam": "Los Angeles Dodgers",
+        "top3": true,
         "rank": "1",
-        "gameKey": "mlb|2026-07-12|arizona diamondbacks|los angeles dodgers",
-        "slateDate": "2026-07-12",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "score": "52.82",
+        "legs": [
+          {
+            "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+            "score": "57.4",
+            "side": "home",
+            "selection": "Tampa Bay Rays",
+            "awayTeam": "Seattle Mariners",
+            "grade": "SOLID",
+            "homeTeam": "Tampa Bay Rays",
+            "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+            "commenceTime": "2026-07-12T17:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+            "score": "50.85",
+            "side": "away",
+            "selection": "Toronto Blue Jays",
+            "awayTeam": "Toronto Blue Jays",
+            "grade": "COIN_FLIP",
+            "homeTeam": "San Diego Padres",
+            "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+            "commenceTime": "2026-07-12T20:11:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+            "score": "50.22",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-12T16:16:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": true,
+        "rank": "2",
+        "score": "50.13",
+        "legs": [
+          {
+            "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+            "score": "57.4",
+            "side": "home",
+            "selection": "Tampa Bay Rays",
+            "awayTeam": "Seattle Mariners",
+            "grade": "SOLID",
+            "homeTeam": "Tampa Bay Rays",
+            "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+            "commenceTime": "2026-07-12T17:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+            "score": "42.78",
+            "side": "home",
+            "selection": "San Diego Padres",
+            "awayTeam": "Toronto Blue Jays",
+            "grade": "COIN_FLIP",
+            "homeTeam": "San Diego Padres",
+            "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+            "commenceTime": "2026-07-12T20:11:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+            "score": "50.22",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-12T16:16:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": true,
+        "rank": "3",
+        "score": "48.85",
+        "legs": [
+          {
+            "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+            "score": "57.4",
+            "side": "home",
+            "selection": "Tampa Bay Rays",
+            "awayTeam": "Seattle Mariners",
+            "grade": "SOLID",
+            "homeTeam": "Tampa Bay Rays",
+            "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+            "commenceTime": "2026-07-12T17:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+            "score": "50.85",
+            "side": "away",
+            "selection": "Toronto Blue Jays",
+            "awayTeam": "Toronto Blue Jays",
+            "grade": "COIN_FLIP",
+            "homeTeam": "San Diego Padres",
+            "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+            "commenceTime": "2026-07-12T20:11:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+            "score": "38.3",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-12T16:16:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": false,
+        "rank": "4",
+        "score": "46.16",
+        "legs": [
+          {
+            "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+            "score": "57.4",
+            "side": "home",
+            "selection": "Tampa Bay Rays",
+            "awayTeam": "Seattle Mariners",
+            "grade": "SOLID",
+            "homeTeam": "Tampa Bay Rays",
+            "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+            "commenceTime": "2026-07-12T17:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+            "score": "42.78",
+            "side": "home",
+            "selection": "San Diego Padres",
+            "awayTeam": "Toronto Blue Jays",
+            "grade": "COIN_FLIP",
+            "homeTeam": "San Diego Padres",
+            "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+            "commenceTime": "2026-07-12T20:11:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+            "score": "38.3",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-12T16:16:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": false,
+        "rank": "5",
+        "score": "45.92",
+        "legs": [
+          {
+            "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+            "score": "36.69",
+            "side": "away",
+            "selection": "Seattle Mariners",
+            "awayTeam": "Seattle Mariners",
+            "grade": "FRAGILE",
+            "homeTeam": "Tampa Bay Rays",
+            "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+            "commenceTime": "2026-07-12T17:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+            "score": "50.85",
+            "side": "away",
+            "selection": "Toronto Blue Jays",
+            "awayTeam": "Toronto Blue Jays",
+            "grade": "COIN_FLIP",
+            "homeTeam": "San Diego Padres",
+            "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+            "commenceTime": "2026-07-12T20:11:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+            "score": "50.22",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-12T16:16:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": false,
+        "rank": "6",
+        "score": "43.23",
+        "legs": [
+          {
+            "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+            "score": "36.69",
+            "side": "away",
+            "selection": "Seattle Mariners",
+            "awayTeam": "Seattle Mariners",
+            "grade": "FRAGILE",
+            "homeTeam": "Tampa Bay Rays",
+            "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+            "commenceTime": "2026-07-12T17:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+            "score": "42.78",
+            "side": "home",
+            "selection": "San Diego Padres",
+            "awayTeam": "Toronto Blue Jays",
+            "grade": "COIN_FLIP",
+            "homeTeam": "San Diego Padres",
+            "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+            "commenceTime": "2026-07-12T20:11:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+            "score": "50.22",
+            "side": "home",
+            "selection": "Pittsburgh Pirates",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-12T16:16:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": false,
+        "rank": "7",
+        "score": "41.95",
+        "legs": [
+          {
+            "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+            "score": "36.69",
+            "side": "away",
+            "selection": "Seattle Mariners",
+            "awayTeam": "Seattle Mariners",
+            "grade": "FRAGILE",
+            "homeTeam": "Tampa Bay Rays",
+            "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+            "commenceTime": "2026-07-12T17:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+            "score": "50.85",
+            "side": "away",
+            "selection": "Toronto Blue Jays",
+            "awayTeam": "Toronto Blue Jays",
+            "grade": "COIN_FLIP",
+            "homeTeam": "San Diego Padres",
+            "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+            "commenceTime": "2026-07-12T20:11:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+            "score": "38.3",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-12T16:16:00Z",
+            "tags": []
+          }
+        ]
+      },
+      {
+        "top3": false,
+        "rank": "8",
+        "score": "39.26",
+        "legs": [
+          {
+            "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+            "score": "36.69",
+            "side": "away",
+            "selection": "Seattle Mariners",
+            "awayTeam": "Seattle Mariners",
+            "grade": "FRAGILE",
+            "homeTeam": "Tampa Bay Rays",
+            "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+            "commenceTime": "2026-07-12T17:41:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+            "score": "42.78",
+            "side": "home",
+            "selection": "San Diego Padres",
+            "awayTeam": "Toronto Blue Jays",
+            "grade": "COIN_FLIP",
+            "homeTeam": "San Diego Padres",
+            "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+            "commenceTime": "2026-07-12T20:11:00Z",
+            "tags": []
+          },
+          {
+            "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+            "score": "38.3",
+            "side": "away",
+            "selection": "Milwaukee Brewers",
+            "awayTeam": "Milwaukee Brewers",
+            "grade": "COIN_FLIP",
+            "homeTeam": "Pittsburgh Pirates",
+            "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+            "commenceTime": "2026-07-12T16:16:00Z",
+            "tags": []
+          }
+        ]
+      }
+    ],
+    "fallbackApplied": true,
+    "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
+    "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
+    "buildStatus": "BUILT",
+    "storedAt": "2026-07-12T06:45:05.087798+00:00",
+    "slate_date": "2026-07-12",
+    "previousNoBuildReason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
+    "storeMode": "mlb_b10_or_strict_auto_after_live_pull_with_12_snapshot_baseline",
+    "buildQuality": "BASELINE_12_SNAPSHOT",
+    "officialStrength": "BASELINE_NOT_STRONG",
+    "legs": [
+      {
+        "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+        "providerSportKey": "baseball_mlb",
+        "gender": "men",
+        "awayTeam": "Seattle Mariners",
+        "level": "pro",
+        "commenceTime": "2026-07-12T17:41:00Z",
+        "tags": [],
+        "score": "57.4",
+        "selection": "Tampa Bay Rays",
+        "homeSignal": {
+          "pullCount": "18",
+          "reversals": "0",
+          "probStart": "0.53916",
+          "probLatest": "0.54841",
+          "side": "home",
+          "scoreGuardApplied": true,
+          "bookCount": "11",
+          "delta": "0.00925",
+          "latestGap": "0.09682",
+          "rawScoreBeforeGuard": "57.4",
+          "velocityPpHr": "0.37",
+          "tags": [],
+          "acceleration": "0.0001",
+          "durationMinutes": "150",
+          "score": "57.4",
+          "bookDivergence": "0.00985",
+          "grade": "SOLID"
+        },
+        "grade": "SOLID",
+        "awaySignal": {
+          "pullCount": "18",
+          "reversals": "0",
+          "probStart": "0.46084",
+          "probLatest": "0.45159",
+          "side": "away",
+          "scoreGuardApplied": true,
+          "bookCount": "11",
+          "delta": "-0.00925",
+          "latestGap": "0.09682",
+          "rawScoreBeforeGuard": "36.69",
+          "velocityPpHr": "-0.37",
+          "tags": [],
+          "acceleration": "-0.0001",
+          "durationMinutes": "150",
+          "score": "36.69",
+          "bookDivergence": "0.00985",
+          "grade": "FRAGILE"
+        },
+        "homeTeam": "Tampa Bay Rays",
+        "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+        "sport": "mlb",
+        "selectedSide": "home"
       },
       {
         "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
         "providerSportKey": "baseball_mlb",
+        "gender": "men",
         "awayTeam": "Toronto Blue Jays",
-        "cutoffTime": "2026-07-12T18:11:00+00:00",
-        "frozen": false,
+        "level": "pro",
         "commenceTime": "2026-07-12T20:11:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.5349853529381484",
-            "bookCount": "10",
-            "bookDivergence": "0.005357984307758079",
-            "bookAgreement": "0.99464",
-            "homeRunLinePrice": "-158.2",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "133.7",
-            "home": "0.4650146470618518",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5349853529381484",
-            "bookCount": "10",
-            "bookDivergence": "0.005357984307758079",
-            "bookAgreement": "0.99464",
-            "homeRunLinePrice": "-158.2",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "133.7",
-            "home": "0.4650146470618518",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5349853529381484",
-            "bookCount": "10",
-            "bookDivergence": "0.005357984307758079",
-            "bookAgreement": "0.99464",
-            "homeRunLinePrice": "-158.2",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "133.7",
-            "home": "0.4650146470618518",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5349853529381484",
-            "bookCount": "10",
-            "bookDivergence": "0.005357984307758079",
-            "bookAgreement": "0.99464",
-            "homeRunLinePrice": "-158.2",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "133.6",
-            "home": "0.4650146470618518",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "51.15",
-        "pointCount": "4",
+        "tags": [],
+        "score": "50.85",
         "selection": "Toronto Blue Jays",
         "homeSignal": {
+          "pullCount": "18",
+          "reversals": "0",
           "probStart": "0.46501",
-          "probLatest": "0.46501",
+          "probLatest": "0.46343",
           "side": "home",
-          "bookAgreementAvg": "0.99464",
-          "delta": "0",
-          "runLineMovement": "0",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "45.9",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.00536"
+          "scoreGuardApplied": true,
+          "bookCount": "11",
+          "delta": "-0.00158",
+          "latestGap": "0.07314",
+          "rawScoreBeforeGuard": "42.78",
+          "velocityPpHr": "-0.063",
+          "tags": [],
+          "acceleration": "0.00026",
+          "durationMinutes": "150",
+          "score": "42.78",
+          "bookDivergence": "0.01061",
+          "grade": "COIN_FLIP"
         },
         "grade": "COIN_FLIP",
         "awaySignal": {
+          "pullCount": "18",
+          "reversals": "0",
           "probStart": "0.53499",
-          "probLatest": "0.53499",
+          "probLatest": "0.53657",
           "side": "away",
-          "bookAgreementAvg": "0.99464",
-          "delta": "0",
-          "runLineMovement": "-0.1",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "51.15",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.00536"
+          "scoreGuardApplied": true,
+          "bookCount": "11",
+          "delta": "0.00158",
+          "latestGap": "0.07314",
+          "rawScoreBeforeGuard": "50.85",
+          "velocityPpHr": "0.063",
+          "tags": [],
+          "acceleration": "-0.00026",
+          "durationMinutes": "150",
+          "score": "50.85",
+          "bookDivergence": "0.01061",
+          "grade": "COIN_FLIP"
         },
         "homeTeam": "San Diego Padres",
-        "rank": "2",
         "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
-        "slateDate": "2026-07-12",
-        "selectedSide": "away",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "9d71a179d7d4dd618d4fae5516f00d95",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Colorado Rockies",
-        "cutoffTime": "2026-07-12T18:06:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T20:06:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.4248816481383944",
-            "bookCount": "10",
-            "bookDivergence": "0.016971013271990798",
-            "bookAgreement": "0.98303",
-            "homeRunLinePrice": "144.6",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "-171",
-            "home": "0.5751183518616056",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.4248816481383944",
-            "bookCount": "10",
-            "bookDivergence": "0.016971013271990798",
-            "bookAgreement": "0.98303",
-            "homeRunLinePrice": "144.6",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "-171",
-            "home": "0.5751183518616056",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.4248816481383944",
-            "bookCount": "10",
-            "bookDivergence": "0.016971013271990798",
-            "bookAgreement": "0.98303",
-            "homeRunLinePrice": "144.6",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "-171",
-            "home": "0.5751183518616056",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.4248816481383944",
-            "bookCount": "10",
-            "bookDivergence": "0.016971013271990798",
-            "bookAgreement": "0.98303",
-            "homeRunLinePrice": "144.8",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "-171.3",
-            "home": "0.5751183518616056",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "50.97",
-        "pointCount": "4",
-        "selection": "San Francisco Giants",
-        "homeSignal": {
-          "probStart": "0.57512",
-          "probLatest": "0.57512",
-          "side": "home",
-          "bookAgreementAvg": "0.98303",
-          "delta": "0",
-          "runLineMovement": "0.2",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "50.97",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01697"
-        },
-        "grade": "FRAGILE",
-        "awaySignal": {
-          "probStart": "0.42488",
-          "probLatest": "0.42488",
-          "side": "away",
-          "bookAgreementAvg": "0.98303",
-          "delta": "0",
-          "runLineMovement": "-0.3",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "39.7",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01697"
-        },
-        "homeTeam": "San Francisco Giants",
-        "rank": "3",
-        "gameKey": "mlb|2026-07-12|colorado rockies|san francisco giants",
-        "slateDate": "2026-07-12",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "b4977d853e9f601495f2a4a03c741589",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Los Angeles Angels",
-        "cutoffTime": "2026-07-12T16:11:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T18:11:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.44911163500853607",
-            "bookCount": "10",
-            "bookDivergence": "0.011202858082501543",
-            "bookAgreement": "0.9888",
-            "homeRunLinePrice": "153",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "-181.7",
-            "home": "0.550888364991464",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.44911163500853607",
-            "bookCount": "10",
-            "bookDivergence": "0.011202858082501543",
-            "bookAgreement": "0.9888",
-            "homeRunLinePrice": "153",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "-181.7",
-            "home": "0.550888364991464",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.44911163500853607",
-            "bookCount": "10",
-            "bookDivergence": "0.011202858082501543",
-            "bookAgreement": "0.9888",
-            "homeRunLinePrice": "153.9",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "-183.1",
-            "home": "0.550888364991464",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.44911163500853607",
-            "bookCount": "10",
-            "bookDivergence": "0.011202858082501543",
-            "bookAgreement": "0.9888",
-            "homeRunLinePrice": "153.8",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "-183.1",
-            "home": "0.550888364991464",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "50.74",
-        "pointCount": "4",
-        "selection": "Minnesota Twins",
-        "homeSignal": {
-          "probStart": "0.55089",
-          "probLatest": "0.55089",
-          "side": "home",
-          "bookAgreementAvg": "0.9888",
-          "delta": "0",
-          "runLineMovement": "0.8",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "50.74",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.0112"
-        },
-        "grade": "FRAGILE",
-        "awaySignal": {
-          "probStart": "0.44911",
-          "probLatest": "0.44911",
-          "side": "away",
-          "bookAgreementAvg": "0.9888",
-          "delta": "0",
-          "runLineMovement": "-1.4",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "43.1",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.0112"
-        },
-        "homeTeam": "Minnesota Twins",
-        "rank": "4",
-        "gameKey": "mlb|2026-07-12|los angeles angels|minnesota twins",
-        "slateDate": "2026-07-12",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "9cabe1742d3e487a116781a9b61b41ce",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Kansas City Royals",
-        "cutoffTime": "2026-07-12T15:36:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T17:36:00Z",
-        "tags": [],
-        "points": [
-          {
-            "away": "0.41642902216253763",
-            "bookCount": "10",
-            "bookDivergence": "0.0204500779962854",
-            "bookAgreement": "0.97955",
-            "homeRunLinePrice": "132.4",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "-158.1",
-            "home": "0.5835709778374624",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.41642902216253763",
-            "bookCount": "10",
-            "bookDivergence": "0.0204500779962854",
-            "bookAgreement": "0.97955",
-            "homeRunLinePrice": "132.4",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "-158.1",
-            "home": "0.5835709778374624",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.41642902216253763",
-            "bookCount": "10",
-            "bookDivergence": "0.0204500779962854",
-            "bookAgreement": "0.97955",
-            "homeRunLinePrice": "132.4",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "-158.1",
-            "home": "0.5835709778374624",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.41642902216253763",
-            "bookCount": "10",
-            "bookDivergence": "0.0204500779962854",
-            "bookAgreement": "0.97955",
-            "homeRunLinePrice": "132.5",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "-158.1",
-            "home": "0.5835709778374624",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "50.64",
-        "pointCount": "4",
-        "selection": "Baltimore Orioles",
-        "homeSignal": {
-          "probStart": "0.58357",
-          "probLatest": "0.58357",
-          "side": "home",
-          "bookAgreementAvg": "0.97955",
-          "delta": "0",
-          "runLineMovement": "0.1",
-          "velocityPpHr": "0",
-          "tags": [],
-          "score": "50.64",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.02045"
-        },
-        "grade": "FRAGILE",
-        "awaySignal": {
-          "probStart": "0.41643",
-          "probLatest": "0.41643",
-          "side": "away",
-          "bookAgreementAvg": "0.97955",
-          "delta": "0",
-          "runLineMovement": "0",
-          "velocityPpHr": "0",
-          "tags": [],
-          "score": "38.11",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.02045"
-        },
-        "homeTeam": "Baltimore Orioles",
-        "rank": "5",
-        "gameKey": "mlb|2026-07-12|kansas city royals|baltimore orioles",
-        "slateDate": "2026-07-12",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "07753111ee3b354abbe8fab4987bb817",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Chicago Cubs",
-        "cutoffTime": "2026-07-12T15:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T17:41:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.5411758779659404",
-            "bookCount": "10",
-            "bookDivergence": "0.009808373573929163",
-            "bookAgreement": "0.99019",
-            "homeRunLinePrice": "-145.3",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "122.7",
-            "home": "0.45882412203405964",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5411758779659404",
-            "bookCount": "10",
-            "bookDivergence": "0.009808373573929163",
-            "bookAgreement": "0.99019",
-            "homeRunLinePrice": "-145.3",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "122.7",
-            "home": "0.45882412203405964",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5411758779659404",
-            "bookCount": "10",
-            "bookDivergence": "0.009808373573929163",
-            "bookAgreement": "0.99019",
-            "homeRunLinePrice": "-145.3",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "122.7",
-            "home": "0.45882412203405964",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5411758779659404",
-            "bookCount": "10",
-            "bookDivergence": "0.009808373573929163",
-            "bookAgreement": "0.99019",
-            "homeRunLinePrice": "-145.1",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "122.5",
-            "home": "0.45882412203405964",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "50.39",
-        "pointCount": "4",
-        "selection": "Chicago Cubs",
-        "homeSignal": {
-          "probStart": "0.45882",
-          "probLatest": "0.45882",
-          "side": "home",
-          "bookAgreementAvg": "0.99019",
-          "delta": "0",
-          "runLineMovement": "0.2",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "44.21",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.00981"
-        },
-        "grade": "FRAGILE",
-        "awaySignal": {
-          "probStart": "0.54118",
-          "probLatest": "0.54118",
-          "side": "away",
-          "bookAgreementAvg": "0.99019",
-          "delta": "0",
-          "runLineMovement": "-0.2",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "50.39",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.00981"
-        },
-        "homeTeam": "Cincinnati Reds",
-        "rank": "6",
-        "gameKey": "mlb|2026-07-12|chicago cubs|cincinnati reds",
-        "slateDate": "2026-07-12",
-        "selectedSide": "away",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "180ee18000bc994ba8c23c2ebc9ef746",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Houston Astros",
-        "cutoffTime": "2026-07-12T16:36:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T18:36:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.45433857793199584",
-            "bookCount": "8",
-            "bookDivergence": "0.012530519365243298",
-            "bookAgreement": "0.98747",
-            "homeRunLinePrice": "155.25",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "-186.25",
-            "home": "0.5456614220680042",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.45433857793199584",
-            "bookCount": "8",
-            "bookDivergence": "0.012530519365243298",
-            "bookAgreement": "0.98747",
-            "homeRunLinePrice": "155.25",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "-186.25",
-            "home": "0.5456614220680042",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.45433857793199584",
-            "bookCount": "8",
-            "bookDivergence": "0.012530519365243298",
-            "bookAgreement": "0.98747",
-            "homeRunLinePrice": "155.25",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "-186.25",
-            "home": "0.5456614220680042",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.45433857793199584",
-            "bookCount": "8",
-            "bookDivergence": "0.012530519365243298",
-            "bookAgreement": "0.98747",
-            "homeRunLinePrice": "155.25",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "-186.25",
-            "home": "0.5456614220680042",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "49.98",
-        "pointCount": "4",
-        "selection": "Texas Rangers",
-        "homeSignal": {
-          "probStart": "0.54566",
-          "probLatest": "0.54566",
-          "side": "home",
-          "bookAgreementAvg": "0.98747",
-          "delta": "0",
-          "runLineMovement": "0",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "49.98",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01253"
-        },
-        "grade": "FRAGILE",
-        "awaySignal": {
-          "probStart": "0.45434",
-          "probLatest": "0.45434",
-          "side": "away",
-          "bookAgreementAvg": "0.98747",
-          "delta": "0",
-          "runLineMovement": "0",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "43.13",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01253"
-        },
-        "homeTeam": "Texas Rangers",
-        "rank": "7",
-        "gameKey": "mlb|2026-07-12|houston astros|texas rangers",
-        "slateDate": "2026-07-12",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "a154d97ebad5a9a06417fe7578e7402f",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Seattle Mariners",
-        "cutoffTime": "2026-07-12T15:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T17:41:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.46084448894564006",
-            "bookCount": "10",
-            "bookDivergence": "0.011143015199810202",
-            "bookAgreement": "0.98886",
-            "homeRunLinePrice": "162.2",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "-194.8",
-            "home": "0.5391555110543601",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.46084448894564006",
-            "bookCount": "10",
-            "bookDivergence": "0.011143015199810202",
-            "bookAgreement": "0.98886",
-            "homeRunLinePrice": "162.2",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "-194.8",
-            "home": "0.5391555110543601",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.46084448894564006",
-            "bookCount": "10",
-            "bookDivergence": "0.011143015199810202",
-            "bookAgreement": "0.98886",
-            "homeRunLinePrice": "162.2",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "-194.8",
-            "home": "0.5391555110543601",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.46084448894564006",
-            "bookCount": "10",
-            "bookDivergence": "0.011143015199810202",
-            "bookAgreement": "0.98886",
-            "homeRunLinePrice": "163.2",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "-196.3",
-            "home": "0.5391555110543601",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "49.87",
-        "pointCount": "4",
-        "selection": "Tampa Bay Rays",
-        "homeSignal": {
-          "probStart": "0.53916",
-          "probLatest": "0.53916",
-          "side": "home",
-          "bookAgreementAvg": "0.98886",
-          "delta": "0",
-          "runLineMovement": "1",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "49.87",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01114"
-        },
-        "grade": "FRAGILE",
-        "awaySignal": {
-          "probStart": "0.46084",
-          "probLatest": "0.46084",
-          "side": "away",
-          "bookAgreementAvg": "0.98886",
-          "delta": "0",
-          "runLineMovement": "-1.5",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "44",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01114"
-        },
-        "homeTeam": "Tampa Bay Rays",
-        "rank": "8",
-        "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
-        "slateDate": "2026-07-12",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "16afd7bc765cb79fe5e887e2e28e0b20",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Atlanta Braves",
-        "cutoffTime": "2026-07-12T16:16:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T18:16:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.45065112448602374",
-            "bookCount": "10",
-            "bookDivergence": "0.013993117835022106",
-            "bookAgreement": "0.98601",
-            "homeRunLinePrice": "151.77777777777777",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "-180.11111111111111",
-            "home": "0.5493488755139763",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.45065112448602374",
-            "bookCount": "10",
-            "bookDivergence": "0.013993117835022106",
-            "bookAgreement": "0.98601",
-            "homeRunLinePrice": "151.77777777777777",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "-180.11111111111111",
-            "home": "0.5493488755139763",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.45065112448602374",
-            "bookCount": "10",
-            "bookDivergence": "0.013993117835022106",
-            "bookAgreement": "0.98601",
-            "homeRunLinePrice": "151.77777777777777",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "-180.11111111111111",
-            "home": "0.5493488755139763",
-            "homeRunLinePoint": "-1.5"
-          },
-          {
-            "away": "0.45065112448602374",
-            "bookCount": "10",
-            "bookDivergence": "0.013993117835022106",
-            "bookAgreement": "0.98601",
-            "homeRunLinePrice": "151.66666666666666",
-            "awayRunLinePoint": "1.5",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "-180.11111111111111",
-            "home": "0.5493488755139763",
-            "homeRunLinePoint": "-1.5"
-          }
-        ],
-        "score": "49.85",
-        "pointCount": "4",
-        "selection": "St. Louis Cardinals",
-        "homeSignal": {
-          "probStart": "0.54935",
-          "probLatest": "0.54935",
-          "side": "home",
-          "bookAgreementAvg": "0.98601",
-          "delta": "0",
-          "runLineMovement": "-0.111",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "49.85",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01399"
-        },
-        "grade": "FRAGILE",
-        "awaySignal": {
-          "probStart": "0.45065",
-          "probLatest": "0.45065",
-          "side": "away",
-          "bookAgreementAvg": "0.98601",
-          "delta": "0",
-          "runLineMovement": "0",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "42.45",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01399"
-        },
-        "homeTeam": "St. Louis Cardinals",
-        "rank": "9",
-        "gameKey": "mlb|2026-07-12|atlanta braves|st. louis cardinals",
-        "slateDate": "2026-07-12",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "32eb2951f81d870c61eae4eb3afb7ea8",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "New York Yankees",
-        "cutoffTime": "2026-07-12T15:36:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T17:36:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.5102124080526105",
-            "bookCount": "9",
-            "bookDivergence": "0.004747758019328807",
-            "bookAgreement": "0.99525",
-            "homeRunLinePrice": "-164.44444444444446",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "137.88888888888889",
-            "home": "0.48978759194738963",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5102124080526105",
-            "bookCount": "9",
-            "bookDivergence": "0.004747758019328807",
-            "bookAgreement": "0.99525",
-            "homeRunLinePrice": "-164.44444444444446",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "137.88888888888889",
-            "home": "0.48978759194738963",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5102124080526105",
-            "bookCount": "9",
-            "bookDivergence": "0.004747758019328807",
-            "bookAgreement": "0.99525",
-            "homeRunLinePrice": "-164.44444444444446",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "137.88888888888889",
-            "home": "0.48978759194738963",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5102124080526105",
-            "bookCount": "9",
-            "bookDivergence": "0.004747758019328807",
-            "bookAgreement": "0.99525",
-            "homeRunLinePrice": "-164.33333333333334",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "137.88888888888889",
-            "home": "0.48978759194738963",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "49.46",
-        "pointCount": "4",
-        "selection": "New York Yankees",
-        "homeSignal": {
-          "probStart": "0.48979",
-          "probLatest": "0.48979",
-          "side": "home",
-          "bookAgreementAvg": "0.99525",
-          "delta": "0",
-          "runLineMovement": "0.111",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "47.93",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.00475"
-        },
-        "grade": "COIN_FLIP",
-        "awaySignal": {
-          "probStart": "0.51021",
-          "probLatest": "0.51021",
-          "side": "away",
-          "bookAgreementAvg": "0.99525",
-          "delta": "0",
-          "runLineMovement": "0",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "49.46",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.00475"
-        },
-        "homeTeam": "Washington Nationals",
-        "rank": "10",
-        "gameKey": "mlb|2026-07-12|new york yankees|washington nationals",
-        "slateDate": "2026-07-12",
-        "selectedSide": "away",
-        "status": "WAITING_FOR_FREEZE"
+        "sport": "mlb",
+        "selectedSide": "away"
       },
       {
         "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
         "providerSportKey": "baseball_mlb",
+        "gender": "men",
         "awayTeam": "Milwaukee Brewers",
-        "cutoffTime": "2026-07-12T14:16:00+00:00",
-        "frozen": false,
+        "level": "pro",
         "commenceTime": "2026-07-12T16:16:00Z",
-        "tags": [
-          "MOMENTUM",
-          "RUN_LINE_MOVEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.4689609334741569",
-            "bookCount": "9",
-            "bookDivergence": "0.026125618001641926",
-            "bookAgreement": "0.97387",
-            "homeRunLinePrice": "1.5555555555555556",
-            "awayRunLinePoint": "0.16666666666666666",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "-36.666666666666664",
-            "home": "0.5310390665258431",
-            "homeRunLinePoint": "-0.16666666666666666"
-          },
-          {
-            "away": "0.4666646312314467",
-            "bookCount": "9",
-            "bookDivergence": "0.026125618001641926",
-            "bookAgreement": "0.97387",
-            "homeRunLinePrice": "42.77777777777778",
-            "awayRunLinePoint": "0.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "-77.88888888888889",
-            "home": "0.5333353687685533",
-            "homeRunLinePoint": "-0.5"
-          },
-          {
-            "away": "0.46499594560111646",
-            "bookCount": "9",
-            "bookDivergence": "0.026125618001641926",
-            "bookAgreement": "0.97387",
-            "homeRunLinePrice": "85",
-            "awayRunLinePoint": "0.8333333333333334",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "-120.11111111111111",
-            "home": "0.5350040543988834",
-            "homeRunLinePoint": "-0.8333333333333334"
-          },
-          {
-            "away": "0.46499594560111646",
-            "bookCount": "9",
-            "bookDivergence": "0.026125618001641926",
-            "bookAgreement": "0.97387",
-            "homeRunLinePrice": "85",
-            "awayRunLinePoint": "0.8333333333333334",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "-120.11111111111111",
-            "home": "0.5350040543988834",
-            "homeRunLinePoint": "-0.8333333333333334"
-          }
-        ],
-        "score": "48.78",
-        "pointCount": "4",
+        "tags": [],
+        "score": "50.22",
         "selection": "Pittsburgh Pirates",
         "homeSignal": {
+          "pullCount": "18",
+          "reversals": "0",
           "probStart": "0.53104",
-          "probLatest": "0.535",
+          "probLatest": "0.5355",
           "side": "home",
-          "bookAgreementAvg": "0.97387",
-          "delta": "0.00396",
-          "runLineMovement": "83.444",
-          "velocityPpHr": "1.586",
-          "tags": [
-            "MOMENTUM",
-            "RUN_LINE_MOVEMENT"
-          ],
-          "score": "48.78",
-          "lateInstability": "0.00167",
-          "pointCount": "4",
-          "totalMovement": "0.00396",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.02613"
+          "scoreGuardApplied": true,
+          "bookCount": "9",
+          "delta": "0.00446",
+          "latestGap": "0.07099",
+          "rawScoreBeforeGuard": "50.22",
+          "velocityPpHr": "0.178",
+          "tags": [],
+          "acceleration": "0.00047",
+          "durationMinutes": "150",
+          "score": "50.22",
+          "bookDivergence": "0.01914",
+          "grade": "COIN_FLIP"
         },
-        "grade": "FRAGILE",
+        "grade": "COIN_FLIP",
         "awaySignal": {
+          "pullCount": "18",
+          "reversals": "0",
           "probStart": "0.46896",
-          "probLatest": "0.465",
+          "probLatest": "0.4645",
           "side": "away",
-          "bookAgreementAvg": "0.97387",
-          "delta": "-0.00396",
-          "runLineMovement": "-83.444",
-          "velocityPpHr": "-1.586",
-          "tags": [
-            "RUN_LINE_MOVEMENT"
-          ],
-          "score": "36.39",
-          "lateInstability": "0.00167",
-          "pointCount": "4",
-          "totalMovement": "0.00396",
-          "grade": "FRAGILE",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.02613"
+          "scoreGuardApplied": true,
+          "bookCount": "9",
+          "delta": "-0.00446",
+          "latestGap": "0.07099",
+          "rawScoreBeforeGuard": "38.3",
+          "velocityPpHr": "-0.178",
+          "tags": [],
+          "acceleration": "-0.00047",
+          "durationMinutes": "150",
+          "score": "38.3",
+          "bookDivergence": "0.01914",
+          "grade": "COIN_FLIP"
         },
         "homeTeam": "Pittsburgh Pirates",
-        "rank": "11",
         "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
-        "slateDate": "2026-07-12",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "fd0e4e074c09a0148b633ff72e4450d7",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Boston Red Sox",
-        "cutoffTime": "2026-07-12T15:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T17:41:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.5293994798442472",
-            "bookCount": "9",
-            "bookDivergence": "0.008787917650064536",
-            "bookAgreement": "0.99121",
-            "homeRunLinePrice": "-160.77777777777777",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "135",
-            "home": "0.47060052015575277",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5293994798442472",
-            "bookCount": "9",
-            "bookDivergence": "0.008787917650064536",
-            "bookAgreement": "0.99121",
-            "homeRunLinePrice": "-160.77777777777777",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "135",
-            "home": "0.47060052015575277",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5293994798442472",
-            "bookCount": "9",
-            "bookDivergence": "0.008787917650064536",
-            "bookAgreement": "0.99121",
-            "homeRunLinePrice": "-160.77777777777777",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "135",
-            "home": "0.47060052015575277",
-            "homeRunLinePoint": "1.5"
-          },
-          {
-            "away": "0.5284425127667451",
-            "bookCount": "9",
-            "bookDivergence": "0.008545169743765235",
-            "bookAgreement": "0.99145",
-            "homeRunLinePrice": "-160.66666666666666",
-            "awayRunLinePoint": "-1.5",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "134.88888888888889",
-            "home": "0.4715574872332549",
-            "homeRunLinePoint": "1.5"
-          }
-        ],
-        "score": "48.74",
-        "pointCount": "4",
-        "selection": "Boston Red Sox",
-        "homeSignal": {
-          "probStart": "0.4706",
-          "probLatest": "0.47156",
-          "side": "home",
-          "bookAgreementAvg": "0.99127",
-          "delta": "0.00096",
-          "runLineMovement": "0.111",
-          "velocityPpHr": "0.383",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "46.19",
-          "lateInstability": "0.00096",
-          "pointCount": "4",
-          "totalMovement": "0.00096",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.00873"
-        },
-        "grade": "COIN_FLIP",
-        "awaySignal": {
-          "probStart": "0.5294",
-          "probLatest": "0.52844",
-          "side": "away",
-          "bookAgreementAvg": "0.99127",
-          "delta": "-0.00096",
-          "runLineMovement": "-0.111",
-          "velocityPpHr": "-0.383",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "48.74",
-          "lateInstability": "0.00096",
-          "pointCount": "4",
-          "totalMovement": "0.00096",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.00873"
-        },
-        "homeTeam": "New York Mets",
-        "rank": "12",
-        "gameKey": "mlb|2026-07-12|boston red sox|new york mets",
-        "slateDate": "2026-07-12",
-        "selectedSide": "away",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "161be820330ad3e3e7e2ab5b0add2ff4",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Athletics",
-        "cutoffTime": "2026-07-12T16:11:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T18:11:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.4843876919330068",
-            "bookCount": "10",
-            "bookDivergence": "0.00911033888923063",
-            "bookAgreement": "0.99089",
-            "homeRunLinePrice": "-50.4",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "17",
-            "home": "0.5156123080669932",
-            "homeRunLinePoint": "0.3"
-          },
-          {
-            "away": "0.4843876919330068",
-            "bookCount": "10",
-            "bookDivergence": "0.00911033888923063",
-            "bookAgreement": "0.99089",
-            "homeRunLinePrice": "-50.4",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "17",
-            "home": "0.5156123080669932",
-            "homeRunLinePoint": "0.3"
-          },
-          {
-            "away": "0.4843876919330068",
-            "bookCount": "10",
-            "bookDivergence": "0.00911033888923063",
-            "bookAgreement": "0.99089",
-            "homeRunLinePrice": "-50.4",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "17",
-            "home": "0.5156123080669932",
-            "homeRunLinePoint": "0.3"
-          },
-          {
-            "away": "0.4843876919330068",
-            "bookCount": "10",
-            "bookDivergence": "0.00911033888923063",
-            "bookAgreement": "0.99089",
-            "homeRunLinePrice": "-49.6",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "16.5",
-            "home": "0.5156123080669932",
-            "homeRunLinePoint": "0.3"
-          }
-        ],
-        "score": "48.67",
-        "pointCount": "4",
-        "selection": "Chicago White Sox",
-        "homeSignal": {
-          "probStart": "0.51561",
-          "probLatest": "0.51561",
-          "side": "home",
-          "bookAgreementAvg": "0.99089",
-          "delta": "0",
-          "runLineMovement": "0.8",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "48.67",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.00911"
-        },
-        "grade": "COIN_FLIP",
-        "awaySignal": {
-          "probStart": "0.48439",
-          "probLatest": "0.48439",
-          "side": "away",
-          "bookAgreementAvg": "0.99089",
-          "delta": "0",
-          "runLineMovement": "-0.5",
-          "velocityPpHr": "0",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "46.32",
-          "lateInstability": "0",
-          "pointCount": "4",
-          "totalMovement": "0",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.00911"
-        },
-        "homeTeam": "Chicago White Sox",
-        "rank": "13",
-        "gameKey": "mlb|2026-07-12|athletics|chicago white sox",
-        "slateDate": "2026-07-12",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "44263373c8152cfeef60f3501f9f0cbc",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Philadelphia Phillies",
-        "cutoffTime": "2026-07-12T15:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T17:41:00Z",
-        "tags": [
-          "BOOK_AGREEMENT",
-          "MOMENTUM"
-        ],
-        "points": [
-          {
-            "away": "0.49224638064273607",
-            "bookCount": "10",
-            "bookDivergence": "0.010834236186348822",
-            "bookAgreement": "0.98917",
-            "homeRunLinePrice": "-50",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "12.9",
-            "home": "0.5077536193572639",
-            "homeRunLinePoint": "0.3"
-          },
-          {
-            "away": "0.49224638064273607",
-            "bookCount": "10",
-            "bookDivergence": "0.010834236186348822",
-            "bookAgreement": "0.98917",
-            "homeRunLinePrice": "-50",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "12.9",
-            "home": "0.5077536193572639",
-            "homeRunLinePoint": "0.3"
-          },
-          {
-            "away": "0.49224638064273607",
-            "bookCount": "10",
-            "bookDivergence": "0.010834236186348822",
-            "bookAgreement": "0.98917",
-            "homeRunLinePrice": "-50",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "12.9",
-            "home": "0.5077536193572639",
-            "homeRunLinePoint": "0.3"
-          },
-          {
-            "away": "0.49472411547163314",
-            "bookCount": "10",
-            "bookDivergence": "0.010834236186348822",
-            "bookAgreement": "0.98917",
-            "homeRunLinePrice": "-48.4",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "11.3",
-            "home": "0.5052758845283669",
-            "homeRunLinePoint": "0.3"
-          }
-        ],
-        "score": "48.51",
-        "pointCount": "4",
-        "selection": "Philadelphia Phillies",
-        "homeSignal": {
-          "probStart": "0.50775",
-          "probLatest": "0.50528",
-          "side": "home",
-          "bookAgreementAvg": "0.98917",
-          "delta": "-0.00248",
-          "runLineMovement": "1.6",
-          "velocityPpHr": "-0.991",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "44.84",
-          "lateInstability": "0.00248",
-          "pointCount": "4",
-          "totalMovement": "0.00248",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01083"
-        },
-        "grade": "COIN_FLIP",
-        "awaySignal": {
-          "probStart": "0.49225",
-          "probLatest": "0.49472",
-          "side": "away",
-          "bookAgreementAvg": "0.98917",
-          "delta": "0.00248",
-          "runLineMovement": "-1.6",
-          "velocityPpHr": "0.991",
-          "tags": [
-            "BOOK_AGREEMENT",
-            "MOMENTUM"
-          ],
-          "score": "48.51",
-          "lateInstability": "0.00248",
-          "pointCount": "4",
-          "totalMovement": "0.00248",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01083"
-        },
-        "homeTeam": "Detroit Tigers",
-        "rank": "14",
-        "gameKey": "mlb|2026-07-12|philadelphia phillies|detroit tigers",
-        "slateDate": "2026-07-12",
-        "selectedSide": "away",
-        "status": "WAITING_FOR_FREEZE"
-      },
-      {
-        "gameId": "fe2a389f5cf40c61156a794804ec0fff",
-        "providerSportKey": "baseball_mlb",
-        "awayTeam": "Cleveland Guardians",
-        "cutoffTime": "2026-07-12T15:41:00+00:00",
-        "frozen": false,
-        "commenceTime": "2026-07-12T17:41:00Z",
-        "tags": [
-          "BOOK_AGREEMENT"
-        ],
-        "points": [
-          {
-            "away": "0.4876107724071236",
-            "bookCount": "10",
-            "bookDivergence": "0.01604563751496768",
-            "bookAgreement": "0.98395",
-            "homeRunLinePrice": "-45.6",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-            "awayRunLinePrice": "11.1",
-            "home": "0.5123892275928764",
-            "homeRunLinePoint": "0.3"
-          },
-          {
-            "away": "0.4876107724071236",
-            "bookCount": "10",
-            "bookDivergence": "0.01604563751496768",
-            "bookAgreement": "0.98395",
-            "homeRunLinePrice": "-45.6",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-            "awayRunLinePrice": "11.1",
-            "home": "0.5123892275928764",
-            "homeRunLinePoint": "0.3"
-          },
-          {
-            "away": "0.487834383558807",
-            "bookCount": "10",
-            "bookDivergence": "0.013809525998133898",
-            "bookAgreement": "0.98619",
-            "homeRunLinePrice": "-45.6",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-            "awayRunLinePrice": "11.1",
-            "home": "0.512165616441193",
-            "homeRunLinePoint": "0.3"
-          },
-          {
-            "away": "0.487834383558807",
-            "bookCount": "10",
-            "bookDivergence": "0.013809525998133898",
-            "bookAgreement": "0.98619",
-            "homeRunLinePrice": "-45.5",
-            "awayRunLinePoint": "-0.3",
-            "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-            "awayRunLinePrice": "11",
-            "home": "0.512165616441193",
-            "homeRunLinePoint": "0.3"
-          }
-        ],
-        "score": "46.57",
-        "pointCount": "4",
-        "selection": "Miami Marlins",
-        "homeSignal": {
-          "probStart": "0.51239",
-          "probLatest": "0.51217",
-          "side": "home",
-          "bookAgreementAvg": "0.98507",
-          "delta": "-0.00022",
-          "runLineMovement": "0.1",
-          "velocityPpHr": "-0.089",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "46.57",
-          "lateInstability": "0.00022",
-          "pointCount": "4",
-          "totalMovement": "0.00022",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01493"
-        },
-        "grade": "COIN_FLIP",
-        "awaySignal": {
-          "probStart": "0.48761",
-          "probLatest": "0.48783",
-          "side": "away",
-          "bookAgreementAvg": "0.98507",
-          "delta": "0.00022",
-          "runLineMovement": "-0.1",
-          "velocityPpHr": "0.089",
-          "tags": [
-            "BOOK_AGREEMENT"
-          ],
-          "score": "45.15",
-          "lateInstability": "0.00022",
-          "pointCount": "4",
-          "totalMovement": "0.00022",
-          "grade": "COIN_FLIP",
-          "reversalCount": "0",
-          "bookDivergenceAvg": "0.01493"
-        },
-        "homeTeam": "Miami Marlins",
-        "rank": "15",
-        "gameKey": "mlb|2026-07-12|cleveland guardians|miami marlins",
-        "slateDate": "2026-07-12",
-        "selectedSide": "home",
-        "status": "WAITING_FOR_FREEZE"
+        "sport": "mlb",
+        "selectedSide": "home"
       }
     ],
-    "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default"
+    "ok": true,
+    "sport": "mlb",
+    "minimumParlayPulls": "12"
   },
   "result": {
     "ok": true,
     "autoBuild": true,
-    "builtCount": 0,
+    "builtCount": 1,
     "results": [
       {
         "ok": true,
         "sport": "mlb",
         "slate_date": "2026-07-12",
-        "slateTimezone": "America/New_York",
-        "engine": "MLB-B1.0",
-        "thresholdVersion": "MLB-B1.0-2026-06",
-        "pullCount": 4,
-        "pullCoverage": {
-          "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
-          "startHourEt": 1,
-          "intervalMinutes": 15,
-          "expectedStartAtUtc": "2026-07-12T05:00:00+00:00",
-          "expectedStartAtEt": "2026-07-12T01:00:00-04:00",
-          "firstPullAtUtc": "2026-07-12T04:00:25.964639+00:00",
-          "firstPullAtEt": "2026-07-12T00:00:25.964639-04:00",
-          "latestPullAtUtc": "2026-07-12T04:09:59.686583+00:00",
-          "latestPullAtEt": "2026-07-12T00:09:59.686583-04:00",
-          "actualPullCount": 4,
-          "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
-          "overnightCoverageComplete": false
-        },
-        "buildDeadline": {
-          "ok": true,
-          "firstEventAtUtc": "2026-07-12T16:16:00+00:00",
-          "firstEventAtEt": "2026-07-12T12:16:00-04:00",
-          "buildDeadlineUtc": "2026-07-12T14:16:00+00:00",
-          "buildDeadlineEt": "2026-07-12T10:16:00-04:00",
-          "deadlineHoursBeforeFirstEvent": 2.0,
-          "deadlinePassed": false,
-          "currentUtc": "2026-07-12T04:13:05.124227+00:00",
-          "currentEt": "2026-07-12T00:13:05.124227-04:00"
-        },
-        "gameCount": 15,
-        "gameHistoryStored": 15,
-        "candidateCount": 0,
-        "strongCount": 0,
-        "leanCount": 0,
-        "scoredGameCount": 15,
-        "freezeMinutesBeforeGame": 120,
-        "minimumGameHistoryPoints": 4,
-        "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default",
-        "audit": {
-          "status": "PENDING_RESULTS",
-          "tracks": [
-            "top1",
-            "top3",
-            "top5"
-          ]
-        },
-        "buildStatus": "NO_BUILD",
-        "buildQuality": null,
-        "officialStrength": "REFUSED_STRUCTURE_NOT_MET",
-        "reason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
-        "message": "MLB build refused: structure requires 1 Anchor, 1 Lean, and 1 Controlled Variable. Controlled Variable must have a real movement/market signal, not BOOK_AGREEMENT alone.",
-        "selectedStrongCount": 0,
-        "selectedLeanCount": 0,
-        "previousNoBuildReason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
-        "fallbackApplied": true,
-        "legs": [],
-        "rankedCombos": [],
-        "candidates": [],
-        "structure": "1_ANCHOR_1_LEAN_1_CONTROLLED_VARIABLE",
-        "structureGate": {
-          "applied": true,
-          "rejected": true,
-          "reason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
-          "message": "MLB build refused: structure requires 1 Anchor, 1 Lean, and 1 Controlled Variable. Controlled Variable must have a real movement/market signal, not BOOK_AGREEMENT alone.",
-          "structurePolicy": {
-            "required": [
-              "ANCHOR",
-              "LEAN",
-              "CONTROLLED_VARIABLE"
-            ],
-            "anchorMinScore": 62.0,
-            "leanMinScore": 55.0,
-            "controlledVariableMinScore": 52.0,
-            "bookAgreementAloneQualifies": false
-          },
-          "availableLegs": [
-            {
-              "gameId": "40ac03ae2d2b1dc11d41ced3f411f478",
-              "selection": "Los Angeles Dodgers",
-              "grade": "FRAGILE",
-              "score": 57.94,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "role": null
-            },
-            {
-              "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
-              "selection": "Toronto Blue Jays",
-              "grade": "COIN_FLIP",
-              "score": 51.15,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "role": null
-            },
-            {
-              "gameId": "9d71a179d7d4dd618d4fae5516f00d95",
-              "selection": "San Francisco Giants",
-              "grade": "FRAGILE",
-              "score": 50.97,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "role": null
-            }
-          ]
-        },
-        "allScoredGamesCount": 15,
-        "allScoredGames": [
+        "pullCount": 18,
+        "minimumParlayPulls": 12,
+        "buildStatus": "BUILT",
+        "buildQuality": "BASELINE_12_SNAPSHOT",
+        "reason": "BUILT_FROM_TOP_AVAILABLE_SIGNALS_AFTER_12_SNAPSHOTS",
+        "structure": "THREE_UNIQUE_GAMES_AFTER_12_SNAPSHOTS",
+        "officialStrength": "BASELINE_NOT_STRONG",
+        "message": "Built after 12 snapshots from top available ranked signals. Leg grades remain honest and are not promoted to strong.",
+        "selectedStrongCount": 1,
+        "legs": [
           {
-            "gameId": "40ac03ae2d2b1dc11d41ced3f411f478",
-            "gameKey": "mlb|2026-07-12|arizona diamondbacks|los angeles dodgers",
-            "homeTeam": "Los Angeles Dodgers",
-            "awayTeam": "Arizona Diamondbacks",
-            "commenceTime": "2026-07-12T20:11:00Z",
-            "slateDate": "2026-07-12",
+            "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+            "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+            "sport": "mlb",
+            "homeTeam": "Tampa Bay Rays",
+            "awayTeam": "Seattle Mariners",
+            "commenceTime": "2026-07-12T17:41:00Z",
+            "level": "pro",
+            "gender": "men",
             "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T18:11:00+00:00",
-            "pointCount": 4,
+            "selection": "Tampa Bay Rays",
             "selectedSide": "home",
-            "selection": "Los Angeles Dodgers",
-            "grade": "FRAGILE",
-            "score": 57.94,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
+            "grade": "SOLID",
+            "score": 57.4,
+            "tags": [],
             "homeSignal": {
               "side": "home",
-              "grade": "FRAGILE",
-              "score": 57.94,
-              "probStart": 0.6555,
-              "probLatest": 0.65745,
-              "delta": 0.00195,
-              "velocityPpHr": 0.779,
-              "bookDivergenceAvg": 0.01946,
-              "bookAgreementAvg": 0.98054,
-              "reversalCount": 0,
-              "lateInstability": 0.00195,
-              "totalMovement": 0.00195,
-              "runLineMovement": -1.667,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
+              "probStart": 0.53916,
+              "probLatest": 0.54841,
+              "delta": 0.00925,
+              "velocityPpHr": 0.37,
+              "acceleration": 0.0001,
+              "pullCount": 18,
+              "durationMinutes": 150.0,
+              "latestGap": 0.09682,
+              "bookCount": 11,
+              "bookDivergence": 0.00985,
+              "reversals": 0,
+              "tags": [],
+              "grade": "SOLID",
+              "score": 57.4,
+              "rawScoreBeforeGuard": 57.4,
+              "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
+              "probStart": 0.46084,
+              "probLatest": 0.45159,
+              "delta": -0.00925,
+              "velocityPpHr": -0.37,
+              "acceleration": -0.0001,
+              "pullCount": 18,
+              "durationMinutes": 150.0,
+              "latestGap": 0.09682,
+              "bookCount": 11,
+              "bookDivergence": 0.00985,
+              "reversals": 0,
+              "tags": [],
               "grade": "FRAGILE",
-              "score": 30.81,
-              "probStart": 0.3445,
-              "probLatest": 0.34255,
-              "delta": -0.00195,
-              "velocityPpHr": -0.779,
-              "bookDivergenceAvg": 0.01946,
-              "bookAgreementAvg": 0.98054,
-              "reversalCount": 0,
-              "lateInstability": 0.00195,
-              "totalMovement": 0.00195,
-              "runLineMovement": 1.667,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.6555035804473389,
-                "away": 0.3444964195526612,
-                "bookCount": 9,
-                "bookDivergence": 0.019459265622198574,
-                "bookAgreement": 0.98054,
-                "homeRunLinePrice": -105.33333333333333,
-                "awayRunLinePrice": -113.88888888888889,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.6555035804473389,
-                "away": 0.3444964195526612,
-                "bookCount": 9,
-                "bookDivergence": 0.019459265622198574,
-                "bookAgreement": 0.98054,
-                "homeRunLinePrice": -105.33333333333333,
-                "awayRunLinePrice": -113.88888888888889,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.6574517464799775,
-                "away": 0.3425482535200226,
-                "bookCount": 9,
-                "bookDivergence": 0.019459265622198574,
-                "bookAgreement": 0.98054,
-                "homeRunLinePrice": -107.0,
-                "awayRunLinePrice": -112.22222222222223,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.6574517464799775,
-                "away": 0.3425482535200226,
-                "bookCount": 9,
-                "bookDivergence": 0.019459265622198574,
-                "bookAgreement": 0.98054,
-                "homeRunLinePrice": -107.0,
-                "awayRunLinePrice": -112.22222222222223,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 1
+              "score": 36.69,
+              "rawScoreBeforeGuard": 36.69,
+              "scoreGuardApplied": true
+            }
           },
           {
             "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
             "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+            "sport": "mlb",
             "homeTeam": "San Diego Padres",
             "awayTeam": "Toronto Blue Jays",
             "commenceTime": "2026-07-12T20:11:00Z",
-            "slateDate": "2026-07-12",
+            "level": "pro",
+            "gender": "men",
             "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T18:11:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "away",
             "selection": "Toronto Blue Jays",
+            "selectedSide": "away",
             "grade": "COIN_FLIP",
-            "score": 51.15,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "grade": "COIN_FLIP",
-              "score": 45.9,
-              "probStart": 0.46501,
-              "probLatest": 0.46501,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.00536,
-              "bookAgreementAvg": 0.99464,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.0,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "COIN_FLIP",
-              "score": 51.15,
-              "probStart": 0.53499,
-              "probLatest": 0.53499,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.00536,
-              "bookAgreementAvg": 0.99464,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": -0.1,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.4650146470618518,
-                "away": 0.5349853529381484,
-                "bookCount": 10,
-                "bookDivergence": 0.005357984307758079,
-                "bookAgreement": 0.99464,
-                "homeRunLinePrice": -158.2,
-                "awayRunLinePrice": 133.7,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.4650146470618518,
-                "away": 0.5349853529381484,
-                "bookCount": 10,
-                "bookDivergence": 0.005357984307758079,
-                "bookAgreement": 0.99464,
-                "homeRunLinePrice": -158.2,
-                "awayRunLinePrice": 133.7,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.4650146470618518,
-                "away": 0.5349853529381484,
-                "bookCount": 10,
-                "bookDivergence": 0.005357984307758079,
-                "bookAgreement": 0.99464,
-                "homeRunLinePrice": -158.2,
-                "awayRunLinePrice": 133.7,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.4650146470618518,
-                "away": 0.5349853529381484,
-                "bookCount": 10,
-                "bookDivergence": 0.005357984307758079,
-                "bookAgreement": 0.99464,
-                "homeRunLinePrice": -158.2,
-                "awayRunLinePrice": 133.6,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 2
-          },
-          {
-            "gameId": "9d71a179d7d4dd618d4fae5516f00d95",
-            "gameKey": "mlb|2026-07-12|colorado rockies|san francisco giants",
-            "homeTeam": "San Francisco Giants",
-            "awayTeam": "Colorado Rockies",
-            "commenceTime": "2026-07-12T20:06:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T18:06:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "home",
-            "selection": "San Francisco Giants",
-            "grade": "FRAGILE",
-            "score": 50.97,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "grade": "FRAGILE",
-              "score": 50.97,
-              "probStart": 0.57512,
-              "probLatest": 0.57512,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.01697,
-              "bookAgreementAvg": 0.98303,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.2,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "FRAGILE",
-              "score": 39.7,
-              "probStart": 0.42488,
-              "probLatest": 0.42488,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.01697,
-              "bookAgreementAvg": 0.98303,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": -0.3,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.5751183518616056,
-                "away": 0.4248816481383944,
-                "bookCount": 10,
-                "bookDivergence": 0.016971013271990798,
-                "bookAgreement": 0.98303,
-                "homeRunLinePrice": 144.6,
-                "awayRunLinePrice": -171.0,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.5751183518616056,
-                "away": 0.4248816481383944,
-                "bookCount": 10,
-                "bookDivergence": 0.016971013271990798,
-                "bookAgreement": 0.98303,
-                "homeRunLinePrice": 144.6,
-                "awayRunLinePrice": -171.0,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.5751183518616056,
-                "away": 0.4248816481383944,
-                "bookCount": 10,
-                "bookDivergence": 0.016971013271990798,
-                "bookAgreement": 0.98303,
-                "homeRunLinePrice": 144.6,
-                "awayRunLinePrice": -171.0,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.5751183518616056,
-                "away": 0.4248816481383944,
-                "bookCount": 10,
-                "bookDivergence": 0.016971013271990798,
-                "bookAgreement": 0.98303,
-                "homeRunLinePrice": 144.8,
-                "awayRunLinePrice": -171.3,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 3
-          },
-          {
-            "gameId": "b4977d853e9f601495f2a4a03c741589",
-            "gameKey": "mlb|2026-07-12|los angeles angels|minnesota twins",
-            "homeTeam": "Minnesota Twins",
-            "awayTeam": "Los Angeles Angels",
-            "commenceTime": "2026-07-12T18:11:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T16:11:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "home",
-            "selection": "Minnesota Twins",
-            "grade": "FRAGILE",
-            "score": 50.74,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "grade": "FRAGILE",
-              "score": 50.74,
-              "probStart": 0.55089,
-              "probLatest": 0.55089,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.0112,
-              "bookAgreementAvg": 0.9888,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.8,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "FRAGILE",
-              "score": 43.1,
-              "probStart": 0.44911,
-              "probLatest": 0.44911,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.0112,
-              "bookAgreementAvg": 0.9888,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": -1.4,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.550888364991464,
-                "away": 0.44911163500853607,
-                "bookCount": 10,
-                "bookDivergence": 0.011202858082501543,
-                "bookAgreement": 0.9888,
-                "homeRunLinePrice": 153.0,
-                "awayRunLinePrice": -181.7,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.550888364991464,
-                "away": 0.44911163500853607,
-                "bookCount": 10,
-                "bookDivergence": 0.011202858082501543,
-                "bookAgreement": 0.9888,
-                "homeRunLinePrice": 153.0,
-                "awayRunLinePrice": -181.7,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.550888364991464,
-                "away": 0.44911163500853607,
-                "bookCount": 10,
-                "bookDivergence": 0.011202858082501543,
-                "bookAgreement": 0.9888,
-                "homeRunLinePrice": 153.9,
-                "awayRunLinePrice": -183.1,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.550888364991464,
-                "away": 0.44911163500853607,
-                "bookCount": 10,
-                "bookDivergence": 0.011202858082501543,
-                "bookAgreement": 0.9888,
-                "homeRunLinePrice": 153.8,
-                "awayRunLinePrice": -183.1,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 4
-          },
-          {
-            "gameId": "9cabe1742d3e487a116781a9b61b41ce",
-            "gameKey": "mlb|2026-07-12|kansas city royals|baltimore orioles",
-            "homeTeam": "Baltimore Orioles",
-            "awayTeam": "Kansas City Royals",
-            "commenceTime": "2026-07-12T17:36:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T15:36:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "home",
-            "selection": "Baltimore Orioles",
-            "grade": "FRAGILE",
-            "score": 50.64,
+            "score": 50.85,
             "tags": [],
             "homeSignal": {
               "side": "home",
-              "grade": "FRAGILE",
-              "score": 50.64,
-              "probStart": 0.58357,
-              "probLatest": 0.58357,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.02045,
-              "bookAgreementAvg": 0.97955,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.1,
+              "probStart": 0.46501,
+              "probLatest": 0.46343,
+              "delta": -0.00158,
+              "velocityPpHr": -0.063,
+              "acceleration": 0.00026,
+              "pullCount": 18,
+              "durationMinutes": 150.0,
+              "latestGap": 0.07314,
+              "bookCount": 11,
+              "bookDivergence": 0.01061,
+              "reversals": 0,
               "tags": [],
-              "pointCount": 4
+              "grade": "COIN_FLIP",
+              "score": 42.78,
+              "rawScoreBeforeGuard": 42.78,
+              "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
-              "grade": "FRAGILE",
-              "score": 38.11,
-              "probStart": 0.41643,
-              "probLatest": 0.41643,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.02045,
-              "bookAgreementAvg": 0.97955,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.0,
+              "probStart": 0.53499,
+              "probLatest": 0.53657,
+              "delta": 0.00158,
+              "velocityPpHr": 0.063,
+              "acceleration": -0.00026,
+              "pullCount": 18,
+              "durationMinutes": 150.0,
+              "latestGap": 0.07314,
+              "bookCount": 11,
+              "bookDivergence": 0.01061,
+              "reversals": 0,
               "tags": [],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.5835709778374624,
-                "away": 0.41642902216253763,
-                "bookCount": 10,
-                "bookDivergence": 0.0204500779962854,
-                "bookAgreement": 0.97955,
-                "homeRunLinePrice": 132.4,
-                "awayRunLinePrice": -158.1,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.5835709778374624,
-                "away": 0.41642902216253763,
-                "bookCount": 10,
-                "bookDivergence": 0.0204500779962854,
-                "bookAgreement": 0.97955,
-                "homeRunLinePrice": 132.4,
-                "awayRunLinePrice": -158.1,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.5835709778374624,
-                "away": 0.41642902216253763,
-                "bookCount": 10,
-                "bookDivergence": 0.0204500779962854,
-                "bookAgreement": 0.97955,
-                "homeRunLinePrice": 132.4,
-                "awayRunLinePrice": -158.1,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.5835709778374624,
-                "away": 0.41642902216253763,
-                "bookCount": 10,
-                "bookDivergence": 0.0204500779962854,
-                "bookAgreement": 0.97955,
-                "homeRunLinePrice": 132.5,
-                "awayRunLinePrice": -158.1,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 5
-          },
-          {
-            "gameId": "07753111ee3b354abbe8fab4987bb817",
-            "gameKey": "mlb|2026-07-12|chicago cubs|cincinnati reds",
-            "homeTeam": "Cincinnati Reds",
-            "awayTeam": "Chicago Cubs",
-            "commenceTime": "2026-07-12T17:41:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T15:41:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "away",
-            "selection": "Chicago Cubs",
-            "grade": "FRAGILE",
-            "score": 50.39,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "grade": "FRAGILE",
-              "score": 44.21,
-              "probStart": 0.45882,
-              "probLatest": 0.45882,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.00981,
-              "bookAgreementAvg": 0.99019,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.2,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "FRAGILE",
-              "score": 50.39,
-              "probStart": 0.54118,
-              "probLatest": 0.54118,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.00981,
-              "bookAgreementAvg": 0.99019,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": -0.2,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.45882412203405964,
-                "away": 0.5411758779659404,
-                "bookCount": 10,
-                "bookDivergence": 0.009808373573929163,
-                "bookAgreement": 0.99019,
-                "homeRunLinePrice": -145.3,
-                "awayRunLinePrice": 122.7,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.45882412203405964,
-                "away": 0.5411758779659404,
-                "bookCount": 10,
-                "bookDivergence": 0.009808373573929163,
-                "bookAgreement": 0.99019,
-                "homeRunLinePrice": -145.3,
-                "awayRunLinePrice": 122.7,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.45882412203405964,
-                "away": 0.5411758779659404,
-                "bookCount": 10,
-                "bookDivergence": 0.009808373573929163,
-                "bookAgreement": 0.99019,
-                "homeRunLinePrice": -145.3,
-                "awayRunLinePrice": 122.7,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.45882412203405964,
-                "away": 0.5411758779659404,
-                "bookCount": 10,
-                "bookDivergence": 0.009808373573929163,
-                "bookAgreement": 0.99019,
-                "homeRunLinePrice": -145.1,
-                "awayRunLinePrice": 122.5,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 6
-          },
-          {
-            "gameId": "180ee18000bc994ba8c23c2ebc9ef746",
-            "gameKey": "mlb|2026-07-12|houston astros|texas rangers",
-            "homeTeam": "Texas Rangers",
-            "awayTeam": "Houston Astros",
-            "commenceTime": "2026-07-12T18:36:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T16:36:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "home",
-            "selection": "Texas Rangers",
-            "grade": "FRAGILE",
-            "score": 49.98,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "grade": "FRAGILE",
-              "score": 49.98,
-              "probStart": 0.54566,
-              "probLatest": 0.54566,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.01253,
-              "bookAgreementAvg": 0.98747,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.0,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "FRAGILE",
-              "score": 43.13,
-              "probStart": 0.45434,
-              "probLatest": 0.45434,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.01253,
-              "bookAgreementAvg": 0.98747,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.0,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.5456614220680042,
-                "away": 0.45433857793199584,
-                "bookCount": 8,
-                "bookDivergence": 0.012530519365243298,
-                "bookAgreement": 0.98747,
-                "homeRunLinePrice": 155.25,
-                "awayRunLinePrice": -186.25,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.5456614220680042,
-                "away": 0.45433857793199584,
-                "bookCount": 8,
-                "bookDivergence": 0.012530519365243298,
-                "bookAgreement": 0.98747,
-                "homeRunLinePrice": 155.25,
-                "awayRunLinePrice": -186.25,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.5456614220680042,
-                "away": 0.45433857793199584,
-                "bookCount": 8,
-                "bookDivergence": 0.012530519365243298,
-                "bookAgreement": 0.98747,
-                "homeRunLinePrice": 155.25,
-                "awayRunLinePrice": -186.25,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.5456614220680042,
-                "away": 0.45433857793199584,
-                "bookCount": 8,
-                "bookDivergence": 0.012530519365243298,
-                "bookAgreement": 0.98747,
-                "homeRunLinePrice": 155.25,
-                "awayRunLinePrice": -186.25,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 7
-          },
-          {
-            "gameId": "a154d97ebad5a9a06417fe7578e7402f",
-            "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
-            "homeTeam": "Tampa Bay Rays",
-            "awayTeam": "Seattle Mariners",
-            "commenceTime": "2026-07-12T17:41:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T15:41:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "home",
-            "selection": "Tampa Bay Rays",
-            "grade": "FRAGILE",
-            "score": 49.87,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "grade": "FRAGILE",
-              "score": 49.87,
-              "probStart": 0.53916,
-              "probLatest": 0.53916,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.01114,
-              "bookAgreementAvg": 0.98886,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 1.0,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "FRAGILE",
-              "score": 44.0,
-              "probStart": 0.46084,
-              "probLatest": 0.46084,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.01114,
-              "bookAgreementAvg": 0.98886,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": -1.5,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.5391555110543601,
-                "away": 0.46084448894564006,
-                "bookCount": 10,
-                "bookDivergence": 0.011143015199810202,
-                "bookAgreement": 0.98886,
-                "homeRunLinePrice": 162.2,
-                "awayRunLinePrice": -194.8,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.5391555110543601,
-                "away": 0.46084448894564006,
-                "bookCount": 10,
-                "bookDivergence": 0.011143015199810202,
-                "bookAgreement": 0.98886,
-                "homeRunLinePrice": 162.2,
-                "awayRunLinePrice": -194.8,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.5391555110543601,
-                "away": 0.46084448894564006,
-                "bookCount": 10,
-                "bookDivergence": 0.011143015199810202,
-                "bookAgreement": 0.98886,
-                "homeRunLinePrice": 162.2,
-                "awayRunLinePrice": -194.8,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.5391555110543601,
-                "away": 0.46084448894564006,
-                "bookCount": 10,
-                "bookDivergence": 0.011143015199810202,
-                "bookAgreement": 0.98886,
-                "homeRunLinePrice": 163.2,
-                "awayRunLinePrice": -196.3,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 8
-          },
-          {
-            "gameId": "16afd7bc765cb79fe5e887e2e28e0b20",
-            "gameKey": "mlb|2026-07-12|atlanta braves|st. louis cardinals",
-            "homeTeam": "St. Louis Cardinals",
-            "awayTeam": "Atlanta Braves",
-            "commenceTime": "2026-07-12T18:16:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T16:16:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "home",
-            "selection": "St. Louis Cardinals",
-            "grade": "FRAGILE",
-            "score": 49.85,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "grade": "FRAGILE",
-              "score": 49.85,
-              "probStart": 0.54935,
-              "probLatest": 0.54935,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.01399,
-              "bookAgreementAvg": 0.98601,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": -0.111,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "FRAGILE",
-              "score": 42.45,
-              "probStart": 0.45065,
-              "probLatest": 0.45065,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.01399,
-              "bookAgreementAvg": 0.98601,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.0,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.5493488755139763,
-                "away": 0.45065112448602374,
-                "bookCount": 10,
-                "bookDivergence": 0.013993117835022106,
-                "bookAgreement": 0.98601,
-                "homeRunLinePrice": 151.77777777777777,
-                "awayRunLinePrice": -180.11111111111111,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.5493488755139763,
-                "away": 0.45065112448602374,
-                "bookCount": 10,
-                "bookDivergence": 0.013993117835022106,
-                "bookAgreement": 0.98601,
-                "homeRunLinePrice": 151.77777777777777,
-                "awayRunLinePrice": -180.11111111111111,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.5493488755139763,
-                "away": 0.45065112448602374,
-                "bookCount": 10,
-                "bookDivergence": 0.013993117835022106,
-                "bookAgreement": 0.98601,
-                "homeRunLinePrice": 151.77777777777777,
-                "awayRunLinePrice": -180.11111111111111,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.5493488755139763,
-                "away": 0.45065112448602374,
-                "bookCount": 10,
-                "bookDivergence": 0.013993117835022106,
-                "bookAgreement": 0.98601,
-                "homeRunLinePrice": 151.66666666666666,
-                "awayRunLinePrice": -180.11111111111111,
-                "homeRunLinePoint": -1.5,
-                "awayRunLinePoint": 1.5
-              }
-            ],
-            "rank": 9
-          },
-          {
-            "gameId": "32eb2951f81d870c61eae4eb3afb7ea8",
-            "gameKey": "mlb|2026-07-12|new york yankees|washington nationals",
-            "homeTeam": "Washington Nationals",
-            "awayTeam": "New York Yankees",
-            "commenceTime": "2026-07-12T17:36:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T15:36:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "away",
-            "selection": "New York Yankees",
-            "grade": "COIN_FLIP",
-            "score": 49.46,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
-            "homeSignal": {
-              "side": "home",
               "grade": "COIN_FLIP",
-              "score": 47.93,
-              "probStart": 0.48979,
-              "probLatest": 0.48979,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.00475,
-              "bookAgreementAvg": 0.99525,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.111,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "COIN_FLIP",
-              "score": 49.46,
-              "probStart": 0.51021,
-              "probLatest": 0.51021,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.00475,
-              "bookAgreementAvg": 0.99525,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.0,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.48978759194738963,
-                "away": 0.5102124080526105,
-                "bookCount": 9,
-                "bookDivergence": 0.004747758019328807,
-                "bookAgreement": 0.99525,
-                "homeRunLinePrice": -164.44444444444446,
-                "awayRunLinePrice": 137.88888888888889,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.48978759194738963,
-                "away": 0.5102124080526105,
-                "bookCount": 9,
-                "bookDivergence": 0.004747758019328807,
-                "bookAgreement": 0.99525,
-                "homeRunLinePrice": -164.44444444444446,
-                "awayRunLinePrice": 137.88888888888889,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.48978759194738963,
-                "away": 0.5102124080526105,
-                "bookCount": 9,
-                "bookDivergence": 0.004747758019328807,
-                "bookAgreement": 0.99525,
-                "homeRunLinePrice": -164.44444444444446,
-                "awayRunLinePrice": 137.88888888888889,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.48978759194738963,
-                "away": 0.5102124080526105,
-                "bookCount": 9,
-                "bookDivergence": 0.004747758019328807,
-                "bookAgreement": 0.99525,
-                "homeRunLinePrice": -164.33333333333334,
-                "awayRunLinePrice": 137.88888888888889,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 10
+              "score": 50.85,
+              "rawScoreBeforeGuard": 50.85,
+              "scoreGuardApplied": true
+            }
           },
           {
             "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
             "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+            "sport": "mlb",
             "homeTeam": "Pittsburgh Pirates",
             "awayTeam": "Milwaukee Brewers",
             "commenceTime": "2026-07-12T16:16:00Z",
-            "slateDate": "2026-07-12",
+            "level": "pro",
+            "gender": "men",
             "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T14:16:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "home",
             "selection": "Pittsburgh Pirates",
-            "grade": "FRAGILE",
-            "score": 48.78,
-            "tags": [
-              "MOMENTUM",
-              "RUN_LINE_MOVEMENT"
-            ],
+            "selectedSide": "home",
+            "grade": "COIN_FLIP",
+            "score": 50.22,
+            "tags": [],
             "homeSignal": {
               "side": "home",
-              "grade": "FRAGILE",
-              "score": 48.78,
               "probStart": 0.53104,
-              "probLatest": 0.535,
-              "delta": 0.00396,
-              "velocityPpHr": 1.586,
-              "bookDivergenceAvg": 0.02613,
-              "bookAgreementAvg": 0.97387,
-              "reversalCount": 0,
-              "lateInstability": 0.00167,
-              "totalMovement": 0.00396,
-              "runLineMovement": 83.444,
-              "tags": [
-                "MOMENTUM",
-                "RUN_LINE_MOVEMENT"
-              ],
-              "pointCount": 4
+              "probLatest": 0.5355,
+              "delta": 0.00446,
+              "velocityPpHr": 0.178,
+              "acceleration": 0.00047,
+              "pullCount": 18,
+              "durationMinutes": 150.0,
+              "latestGap": 0.07099,
+              "bookCount": 9,
+              "bookDivergence": 0.01914,
+              "reversals": 0,
+              "tags": [],
+              "grade": "COIN_FLIP",
+              "score": 50.22,
+              "rawScoreBeforeGuard": 50.22,
+              "scoreGuardApplied": true
             },
             "awaySignal": {
               "side": "away",
-              "grade": "FRAGILE",
-              "score": 36.39,
               "probStart": 0.46896,
-              "probLatest": 0.465,
-              "delta": -0.00396,
-              "velocityPpHr": -1.586,
-              "bookDivergenceAvg": 0.02613,
-              "bookAgreementAvg": 0.97387,
-              "reversalCount": 0,
-              "lateInstability": 0.00167,
-              "totalMovement": 0.00396,
-              "runLineMovement": -83.444,
-              "tags": [
-                "RUN_LINE_MOVEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.5310390665258431,
-                "away": 0.4689609334741569,
-                "bookCount": 9,
-                "bookDivergence": 0.026125618001641926,
-                "bookAgreement": 0.97387,
-                "homeRunLinePrice": 1.5555555555555556,
-                "awayRunLinePrice": -36.666666666666664,
-                "homeRunLinePoint": -0.16666666666666666,
-                "awayRunLinePoint": 0.16666666666666666
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.5333353687685533,
-                "away": 0.4666646312314467,
-                "bookCount": 9,
-                "bookDivergence": 0.026125618001641926,
-                "bookAgreement": 0.97387,
-                "homeRunLinePrice": 42.77777777777778,
-                "awayRunLinePrice": -77.88888888888889,
-                "homeRunLinePoint": -0.5,
-                "awayRunLinePoint": 0.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.5350040543988834,
-                "away": 0.46499594560111646,
-                "bookCount": 9,
-                "bookDivergence": 0.026125618001641926,
-                "bookAgreement": 0.97387,
-                "homeRunLinePrice": 85.0,
-                "awayRunLinePrice": -120.11111111111111,
-                "homeRunLinePoint": -0.8333333333333334,
-                "awayRunLinePoint": 0.8333333333333334
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.5350040543988834,
-                "away": 0.46499594560111646,
-                "bookCount": 9,
-                "bookDivergence": 0.026125618001641926,
-                "bookAgreement": 0.97387,
-                "homeRunLinePrice": 85.0,
-                "awayRunLinePrice": -120.11111111111111,
-                "homeRunLinePoint": -0.8333333333333334,
-                "awayRunLinePoint": 0.8333333333333334
-              }
-            ],
-            "rank": 11
-          },
-          {
-            "gameId": "fd0e4e074c09a0148b633ff72e4450d7",
-            "gameKey": "mlb|2026-07-12|boston red sox|new york mets",
-            "homeTeam": "New York Mets",
-            "awayTeam": "Boston Red Sox",
-            "commenceTime": "2026-07-12T17:41:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T15:41:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "away",
-            "selection": "Boston Red Sox",
-            "grade": "COIN_FLIP",
-            "score": 48.74,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
-            "homeSignal": {
-              "side": "home",
+              "probLatest": 0.4645,
+              "delta": -0.00446,
+              "velocityPpHr": -0.178,
+              "acceleration": -0.00047,
+              "pullCount": 18,
+              "durationMinutes": 150.0,
+              "latestGap": 0.07099,
+              "bookCount": 9,
+              "bookDivergence": 0.01914,
+              "reversals": 0,
+              "tags": [],
               "grade": "COIN_FLIP",
-              "score": 46.19,
-              "probStart": 0.4706,
-              "probLatest": 0.47156,
-              "delta": 0.00096,
-              "velocityPpHr": 0.383,
-              "bookDivergenceAvg": 0.00873,
-              "bookAgreementAvg": 0.99127,
-              "reversalCount": 0,
-              "lateInstability": 0.00096,
-              "totalMovement": 0.00096,
-              "runLineMovement": 0.111,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "COIN_FLIP",
-              "score": 48.74,
-              "probStart": 0.5294,
-              "probLatest": 0.52844,
-              "delta": -0.00096,
-              "velocityPpHr": -0.383,
-              "bookDivergenceAvg": 0.00873,
-              "bookAgreementAvg": 0.99127,
-              "reversalCount": 0,
-              "lateInstability": 0.00096,
-              "totalMovement": 0.00096,
-              "runLineMovement": -0.111,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.47060052015575277,
-                "away": 0.5293994798442472,
-                "bookCount": 9,
-                "bookDivergence": 0.008787917650064536,
-                "bookAgreement": 0.99121,
-                "homeRunLinePrice": -160.77777777777777,
-                "awayRunLinePrice": 135.0,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.47060052015575277,
-                "away": 0.5293994798442472,
-                "bookCount": 9,
-                "bookDivergence": 0.008787917650064536,
-                "bookAgreement": 0.99121,
-                "homeRunLinePrice": -160.77777777777777,
-                "awayRunLinePrice": 135.0,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.47060052015575277,
-                "away": 0.5293994798442472,
-                "bookCount": 9,
-                "bookDivergence": 0.008787917650064536,
-                "bookAgreement": 0.99121,
-                "homeRunLinePrice": -160.77777777777777,
-                "awayRunLinePrice": 135.0,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.4715574872332549,
-                "away": 0.5284425127667451,
-                "bookCount": 9,
-                "bookDivergence": 0.008545169743765235,
-                "bookAgreement": 0.99145,
-                "homeRunLinePrice": -160.66666666666666,
-                "awayRunLinePrice": 134.88888888888889,
-                "homeRunLinePoint": 1.5,
-                "awayRunLinePoint": -1.5
-              }
-            ],
-            "rank": 12
-          },
-          {
-            "gameId": "161be820330ad3e3e7e2ab5b0add2ff4",
-            "gameKey": "mlb|2026-07-12|athletics|chicago white sox",
-            "homeTeam": "Chicago White Sox",
-            "awayTeam": "Athletics",
-            "commenceTime": "2026-07-12T18:11:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T16:11:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "home",
-            "selection": "Chicago White Sox",
-            "grade": "COIN_FLIP",
-            "score": 48.67,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "grade": "COIN_FLIP",
-              "score": 48.67,
-              "probStart": 0.51561,
-              "probLatest": 0.51561,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.00911,
-              "bookAgreementAvg": 0.99089,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": 0.8,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "COIN_FLIP",
-              "score": 46.32,
-              "probStart": 0.48439,
-              "probLatest": 0.48439,
-              "delta": 0.0,
-              "velocityPpHr": 0.0,
-              "bookDivergenceAvg": 0.00911,
-              "bookAgreementAvg": 0.99089,
-              "reversalCount": 0,
-              "lateInstability": 0.0,
-              "totalMovement": 0.0,
-              "runLineMovement": -0.5,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.5156123080669932,
-                "away": 0.4843876919330068,
-                "bookCount": 10,
-                "bookDivergence": 0.00911033888923063,
-                "bookAgreement": 0.99089,
-                "homeRunLinePrice": -50.4,
-                "awayRunLinePrice": 17.0,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.5156123080669932,
-                "away": 0.4843876919330068,
-                "bookCount": 10,
-                "bookDivergence": 0.00911033888923063,
-                "bookAgreement": 0.99089,
-                "homeRunLinePrice": -50.4,
-                "awayRunLinePrice": 17.0,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.5156123080669932,
-                "away": 0.4843876919330068,
-                "bookCount": 10,
-                "bookDivergence": 0.00911033888923063,
-                "bookAgreement": 0.99089,
-                "homeRunLinePrice": -50.4,
-                "awayRunLinePrice": 17.0,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.5156123080669932,
-                "away": 0.4843876919330068,
-                "bookCount": 10,
-                "bookDivergence": 0.00911033888923063,
-                "bookAgreement": 0.99089,
-                "homeRunLinePrice": -49.6,
-                "awayRunLinePrice": 16.5,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              }
-            ],
-            "rank": 13
-          },
-          {
-            "gameId": "44263373c8152cfeef60f3501f9f0cbc",
-            "gameKey": "mlb|2026-07-12|philadelphia phillies|detroit tigers",
-            "homeTeam": "Detroit Tigers",
-            "awayTeam": "Philadelphia Phillies",
-            "commenceTime": "2026-07-12T17:41:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T15:41:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "away",
-            "selection": "Philadelphia Phillies",
-            "grade": "COIN_FLIP",
-            "score": 48.51,
-            "tags": [
-              "BOOK_AGREEMENT",
-              "MOMENTUM"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "grade": "COIN_FLIP",
-              "score": 44.84,
-              "probStart": 0.50775,
-              "probLatest": 0.50528,
-              "delta": -0.00248,
-              "velocityPpHr": -0.991,
-              "bookDivergenceAvg": 0.01083,
-              "bookAgreementAvg": 0.98917,
-              "reversalCount": 0,
-              "lateInstability": 0.00248,
-              "totalMovement": 0.00248,
-              "runLineMovement": 1.6,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "COIN_FLIP",
-              "score": 48.51,
-              "probStart": 0.49225,
-              "probLatest": 0.49472,
-              "delta": 0.00248,
-              "velocityPpHr": 0.991,
-              "bookDivergenceAvg": 0.01083,
-              "bookAgreementAvg": 0.98917,
-              "reversalCount": 0,
-              "lateInstability": 0.00248,
-              "totalMovement": 0.00248,
-              "runLineMovement": -1.6,
-              "tags": [
-                "BOOK_AGREEMENT",
-                "MOMENTUM"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.5077536193572639,
-                "away": 0.49224638064273607,
-                "bookCount": 10,
-                "bookDivergence": 0.010834236186348822,
-                "bookAgreement": 0.98917,
-                "homeRunLinePrice": -50.0,
-                "awayRunLinePrice": 12.9,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.5077536193572639,
-                "away": 0.49224638064273607,
-                "bookCount": 10,
-                "bookDivergence": 0.010834236186348822,
-                "bookAgreement": 0.98917,
-                "homeRunLinePrice": -50.0,
-                "awayRunLinePrice": 12.9,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.5077536193572639,
-                "away": 0.49224638064273607,
-                "bookCount": 10,
-                "bookDivergence": 0.010834236186348822,
-                "bookAgreement": 0.98917,
-                "homeRunLinePrice": -50.0,
-                "awayRunLinePrice": 12.9,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.5052758845283669,
-                "away": 0.49472411547163314,
-                "bookCount": 10,
-                "bookDivergence": 0.010834236186348822,
-                "bookAgreement": 0.98917,
-                "homeRunLinePrice": -48.4,
-                "awayRunLinePrice": 11.3,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              }
-            ],
-            "rank": 14
-          },
-          {
-            "gameId": "fe2a389f5cf40c61156a794804ec0fff",
-            "gameKey": "mlb|2026-07-12|cleveland guardians|miami marlins",
-            "homeTeam": "Miami Marlins",
-            "awayTeam": "Cleveland Guardians",
-            "commenceTime": "2026-07-12T17:41:00Z",
-            "slateDate": "2026-07-12",
-            "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
-            "cutoffTime": "2026-07-12T15:41:00+00:00",
-            "pointCount": 4,
-            "selectedSide": "home",
-            "selection": "Miami Marlins",
-            "grade": "COIN_FLIP",
-            "score": 46.57,
-            "tags": [
-              "BOOK_AGREEMENT"
-            ],
-            "homeSignal": {
-              "side": "home",
-              "grade": "COIN_FLIP",
-              "score": 46.57,
-              "probStart": 0.51239,
-              "probLatest": 0.51217,
-              "delta": -0.00022,
-              "velocityPpHr": -0.089,
-              "bookDivergenceAvg": 0.01493,
-              "bookAgreementAvg": 0.98507,
-              "reversalCount": 0,
-              "lateInstability": 0.00022,
-              "totalMovement": 0.00022,
-              "runLineMovement": 0.1,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "awaySignal": {
-              "side": "away",
-              "grade": "COIN_FLIP",
-              "score": 45.15,
-              "probStart": 0.48761,
-              "probLatest": 0.48783,
-              "delta": 0.00022,
-              "velocityPpHr": 0.089,
-              "bookDivergenceAvg": 0.01493,
-              "bookAgreementAvg": 0.98507,
-              "reversalCount": 0,
-              "lateInstability": 0.00022,
-              "totalMovement": 0.00022,
-              "runLineMovement": -0.1,
-              "tags": [
-                "BOOK_AGREEMENT"
-              ],
-              "pointCount": 4
-            },
-            "points": [
-              {
-                "pulledAt": "2026-07-12T04:00:25.964639+00:00",
-                "home": 0.5123892275928764,
-                "away": 0.4876107724071236,
-                "bookCount": 10,
-                "bookDivergence": 0.01604563751496768,
-                "bookAgreement": 0.98395,
-                "homeRunLinePrice": -45.6,
-                "awayRunLinePrice": 11.1,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              },
-              {
-                "pulledAt": "2026-07-12T04:00:50.952879+00:00",
-                "home": 0.5123892275928764,
-                "away": 0.4876107724071236,
-                "bookCount": 10,
-                "bookDivergence": 0.01604563751496768,
-                "bookAgreement": 0.98395,
-                "homeRunLinePrice": -45.6,
-                "awayRunLinePrice": 11.1,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              },
-              {
-                "pulledAt": "2026-07-12T04:04:00.730061+00:00",
-                "home": 0.512165616441193,
-                "away": 0.487834383558807,
-                "bookCount": 10,
-                "bookDivergence": 0.013809525998133898,
-                "bookAgreement": 0.98619,
-                "homeRunLinePrice": -45.6,
-                "awayRunLinePrice": 11.1,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              },
-              {
-                "pulledAt": "2026-07-12T04:09:59.686583+00:00",
-                "home": 0.512165616441193,
-                "away": 0.487834383558807,
-                "bookCount": 10,
-                "bookDivergence": 0.013809525998133898,
-                "bookAgreement": 0.98619,
-                "homeRunLinePrice": -45.5,
-                "awayRunLinePrice": 11.0,
-                "homeRunLinePoint": 0.3,
-                "awayRunLinePoint": -0.3
-              }
-            ],
-            "rank": 15
+              "score": 38.3,
+              "rawScoreBeforeGuard": 38.3,
+              "scoreGuardApplied": true
+            }
           }
         ],
-        "candidateFilterPolicy": "Candidates are the post-score subset where frozen=true and selected grade is MLB_STRONG or MLB_LEAN. This full board shows the pre-filter scoring pass for every MLB game.",
+        "rankedCombos": [
+          {
+            "rank": 1,
+            "score": 52.82,
+            "legs": [
+              {
+                "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+                "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+                "selection": "Tampa Bay Rays",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 57.4,
+                "tags": [],
+                "commenceTime": "2026-07-12T17:41:00Z",
+                "homeTeam": "Tampa Bay Rays",
+                "awayTeam": "Seattle Mariners"
+              },
+              {
+                "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+                "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+                "selection": "Toronto Blue Jays",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 50.85,
+                "tags": [],
+                "commenceTime": "2026-07-12T20:11:00Z",
+                "homeTeam": "San Diego Padres",
+                "awayTeam": "Toronto Blue Jays"
+              },
+              {
+                "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+                "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 50.22,
+                "tags": [],
+                "commenceTime": "2026-07-12T16:16:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 2,
+            "score": 50.13,
+            "legs": [
+              {
+                "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+                "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+                "selection": "Tampa Bay Rays",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 57.4,
+                "tags": [],
+                "commenceTime": "2026-07-12T17:41:00Z",
+                "homeTeam": "Tampa Bay Rays",
+                "awayTeam": "Seattle Mariners"
+              },
+              {
+                "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+                "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+                "selection": "San Diego Padres",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 42.78,
+                "tags": [],
+                "commenceTime": "2026-07-12T20:11:00Z",
+                "homeTeam": "San Diego Padres",
+                "awayTeam": "Toronto Blue Jays"
+              },
+              {
+                "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+                "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 50.22,
+                "tags": [],
+                "commenceTime": "2026-07-12T16:16:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 3,
+            "score": 48.85,
+            "legs": [
+              {
+                "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+                "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+                "selection": "Tampa Bay Rays",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 57.4,
+                "tags": [],
+                "commenceTime": "2026-07-12T17:41:00Z",
+                "homeTeam": "Tampa Bay Rays",
+                "awayTeam": "Seattle Mariners"
+              },
+              {
+                "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+                "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+                "selection": "Toronto Blue Jays",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 50.85,
+                "tags": [],
+                "commenceTime": "2026-07-12T20:11:00Z",
+                "homeTeam": "San Diego Padres",
+                "awayTeam": "Toronto Blue Jays"
+              },
+              {
+                "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+                "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 38.3,
+                "tags": [],
+                "commenceTime": "2026-07-12T16:16:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": true
+          },
+          {
+            "rank": 4,
+            "score": 46.16,
+            "legs": [
+              {
+                "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+                "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+                "selection": "Tampa Bay Rays",
+                "side": "home",
+                "grade": "SOLID",
+                "score": 57.4,
+                "tags": [],
+                "commenceTime": "2026-07-12T17:41:00Z",
+                "homeTeam": "Tampa Bay Rays",
+                "awayTeam": "Seattle Mariners"
+              },
+              {
+                "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+                "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+                "selection": "San Diego Padres",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 42.78,
+                "tags": [],
+                "commenceTime": "2026-07-12T20:11:00Z",
+                "homeTeam": "San Diego Padres",
+                "awayTeam": "Toronto Blue Jays"
+              },
+              {
+                "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+                "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 38.3,
+                "tags": [],
+                "commenceTime": "2026-07-12T16:16:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 5,
+            "score": 45.92,
+            "legs": [
+              {
+                "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+                "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+                "selection": "Seattle Mariners",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 36.69,
+                "tags": [],
+                "commenceTime": "2026-07-12T17:41:00Z",
+                "homeTeam": "Tampa Bay Rays",
+                "awayTeam": "Seattle Mariners"
+              },
+              {
+                "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+                "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+                "selection": "Toronto Blue Jays",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 50.85,
+                "tags": [],
+                "commenceTime": "2026-07-12T20:11:00Z",
+                "homeTeam": "San Diego Padres",
+                "awayTeam": "Toronto Blue Jays"
+              },
+              {
+                "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+                "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 50.22,
+                "tags": [],
+                "commenceTime": "2026-07-12T16:16:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 6,
+            "score": 43.23,
+            "legs": [
+              {
+                "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+                "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+                "selection": "Seattle Mariners",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 36.69,
+                "tags": [],
+                "commenceTime": "2026-07-12T17:41:00Z",
+                "homeTeam": "Tampa Bay Rays",
+                "awayTeam": "Seattle Mariners"
+              },
+              {
+                "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+                "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+                "selection": "San Diego Padres",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 42.78,
+                "tags": [],
+                "commenceTime": "2026-07-12T20:11:00Z",
+                "homeTeam": "San Diego Padres",
+                "awayTeam": "Toronto Blue Jays"
+              },
+              {
+                "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+                "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+                "selection": "Pittsburgh Pirates",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 50.22,
+                "tags": [],
+                "commenceTime": "2026-07-12T16:16:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 7,
+            "score": 41.95,
+            "legs": [
+              {
+                "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+                "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+                "selection": "Seattle Mariners",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 36.69,
+                "tags": [],
+                "commenceTime": "2026-07-12T17:41:00Z",
+                "homeTeam": "Tampa Bay Rays",
+                "awayTeam": "Seattle Mariners"
+              },
+              {
+                "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+                "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+                "selection": "Toronto Blue Jays",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 50.85,
+                "tags": [],
+                "commenceTime": "2026-07-12T20:11:00Z",
+                "homeTeam": "San Diego Padres",
+                "awayTeam": "Toronto Blue Jays"
+              },
+              {
+                "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+                "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 38.3,
+                "tags": [],
+                "commenceTime": "2026-07-12T16:16:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": false
+          },
+          {
+            "rank": 8,
+            "score": 39.26,
+            "legs": [
+              {
+                "gameId": "a154d97ebad5a9a06417fe7578e7402f",
+                "gameKey": "mlb|2026-07-12|seattle mariners|tampa bay rays",
+                "selection": "Seattle Mariners",
+                "side": "away",
+                "grade": "FRAGILE",
+                "score": 36.69,
+                "tags": [],
+                "commenceTime": "2026-07-12T17:41:00Z",
+                "homeTeam": "Tampa Bay Rays",
+                "awayTeam": "Seattle Mariners"
+              },
+              {
+                "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+                "gameKey": "mlb|2026-07-12|toronto blue jays|san diego padres",
+                "selection": "San Diego Padres",
+                "side": "home",
+                "grade": "COIN_FLIP",
+                "score": 42.78,
+                "tags": [],
+                "commenceTime": "2026-07-12T20:11:00Z",
+                "homeTeam": "San Diego Padres",
+                "awayTeam": "Toronto Blue Jays"
+              },
+              {
+                "gameId": "7446dc66dc13eb736b1b6a5a61b450e4",
+                "gameKey": "mlb|2026-07-12|milwaukee brewers|pittsburgh pirates",
+                "selection": "Milwaukee Brewers",
+                "side": "away",
+                "grade": "COIN_FLIP",
+                "score": 38.3,
+                "tags": [],
+                "commenceTime": "2026-07-12T16:16:00Z",
+                "homeTeam": "Pittsburgh Pirates",
+                "awayTeam": "Milwaukee Brewers"
+              }
+            ],
+            "top3": false
+          }
+        ],
+        "previousNoBuildReason": "NO_BUILD_ANCHOR_LEAN_VARIABLE_GATE",
+        "fallbackApplied": true,
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#mlb#2026-07-12",
-          "sk": "BUILD#2026-07-12T04:13:05.377893+00:00",
+          "sk": "BUILD#2026-07-12T06:45:05.087798+00:00",
           "latestPk": "PARLAY_BUILDS#mlb#2026-07-12#LATEST",
           "latestSk": "LATEST"
         }
@@ -3547,9 +1100,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -3570,7 +1123,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#wnba#2026-07-12",
-          "sk": "BUILD#2026-07-12T04:13:05.520678+00:00",
+          "sk": "BUILD#2026-07-12T06:45:05.332939+00:00",
           "latestPk": "PARLAY_BUILDS#wnba#2026-07-12#LATEST",
           "latestSk": "LATEST"
         }
@@ -3594,9 +1147,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -3617,7 +1170,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nfl#2026-07-12",
-          "sk": "BUILD#2026-07-12T04:13:05.553826+00:00",
+          "sk": "BUILD#2026-07-12T06:45:05.534637+00:00",
           "latestPk": "PARLAY_BUILDS#nfl#2026-07-12#LATEST",
           "latestSk": "LATEST"
         }
@@ -3641,9 +1194,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -3664,7 +1217,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#cfb#2026-07-12",
-          "sk": "BUILD#2026-07-12T04:13:05.588446+00:00",
+          "sk": "BUILD#2026-07-12T06:45:05.733296+00:00",
           "latestPk": "PARLAY_BUILDS#cfb#2026-07-12#LATEST",
           "latestSk": "LATEST"
         }
@@ -3688,9 +1241,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -3711,7 +1264,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nba#2026-07-12",
-          "sk": "BUILD#2026-07-12T04:13:05.625766+00:00",
+          "sk": "BUILD#2026-07-12T06:45:05.933380+00:00",
           "latestPk": "PARLAY_BUILDS#nba#2026-07-12#LATEST",
           "latestSk": "LATEST"
         }
@@ -3735,9 +1288,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -3758,7 +1311,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#ncaam#2026-07-12",
-          "sk": "BUILD#2026-07-12T04:13:05.657066+00:00",
+          "sk": "BUILD#2026-07-12T06:45:06.131130+00:00",
           "latestPk": "PARLAY_BUILDS#ncaam#2026-07-12#LATEST",
           "latestSk": "LATEST"
         }
@@ -3782,9 +1335,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -3805,7 +1358,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nhl#2026-07-12",
-          "sk": "BUILD#2026-07-12T04:13:05.690100+00:00",
+          "sk": "BUILD#2026-07-12T06:45:06.328458+00:00",
           "latestPk": "PARLAY_BUILDS#nhl#2026-07-12#LATEST",
           "latestSk": "LATEST"
         }
@@ -3829,9 +1382,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -3852,7 +1405,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#soccer#2026-07-12",
-          "sk": "BUILD#2026-07-12T04:13:05.723244+00:00",
+          "sk": "BUILD#2026-07-12T06:45:06.526551+00:00",
           "latestPk": "PARLAY_BUILDS#soccer#2026-07-12#LATEST",
           "latestSk": "LATEST"
         }
@@ -3876,9 +1429,9 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 0,
-          "missingPullCountSinceStart": 0,
-          "coverageRatio": null,
+          "expectedPullCountSinceStart": 8,
+          "missingPullCountSinceStart": 8,
+          "coverageRatio": 0.0,
           "coverageComplete": false
         },
         "buildDeadline": {
@@ -3899,7 +1452,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#tennis#2026-07-12",
-          "sk": "BUILD#2026-07-12T04:13:05.768720+00:00",
+          "sk": "BUILD#2026-07-12T06:45:06.729445+00:00",
           "latestPk": "PARLAY_BUILDS#tennis#2026-07-12#LATEST",
           "latestSk": "LATEST"
         }
@@ -3909,7 +1462,7 @@
   "pullDiagnostics": {
     "ok": true,
     "source": "diagnostic_provider_probe_no_snapshot_storage",
-    "createdAt": "2026-07-12T04:13:07.144385+00:00",
+    "createdAt": "2026-07-12T06:45:09.278213+00:00",
     "sportsRequested": [
       "mlb",
       "wnba",
@@ -4015,8 +1568,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-11T22:13:05.932134+00:00",
-            "activeWindowEnd": "2026-07-14T04:13:05.932134+00:00",
+            "activeWindowStart": "2026-07-12T00:45:07.087858+00:00",
+            "activeWindowEnd": "2026-07-14T06:45:07.087858+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -4042,8 +1595,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-11T22:13:06.076724+00:00",
-            "activeWindowEnd": "2026-07-14T04:13:06.076724+00:00",
+            "activeWindowStart": "2026-07-12T00:45:07.298974+00:00",
+            "activeWindowEnd": "2026-07-14T06:45:07.298974+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -4069,8 +1622,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-11T22:13:06.260784+00:00",
-            "activeWindowEnd": "2026-07-19T04:13:06.260784+00:00",
+            "activeWindowStart": "2026-07-12T00:45:07.570291+00:00",
+            "activeWindowEnd": "2026-07-19T06:45:07.570291+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -4096,8 +1649,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-11T22:13:06.524179+00:00",
-            "activeWindowEnd": "2026-07-19T04:13:06.524179+00:00",
+            "activeWindowStart": "2026-07-12T00:45:07.856679+00:00",
+            "activeWindowEnd": "2026-07-19T06:45:07.856679+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -4123,8 +1676,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-11T22:13:06.600291+00:00",
-            "activeWindowEnd": "2026-07-14T04:13:06.600291+00:00",
+            "activeWindowStart": "2026-07-12T00:45:08.023617+00:00",
+            "activeWindowEnd": "2026-07-14T06:45:08.023617+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -4150,8 +1703,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-11T22:13:06.683728+00:00",
-            "activeWindowEnd": "2026-07-14T04:13:06.683728+00:00",
+            "activeWindowStart": "2026-07-12T00:45:08.227651+00:00",
+            "activeWindowEnd": "2026-07-14T06:45:08.227651+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -4177,8 +1730,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-11T22:13:06.750139+00:00",
-            "activeWindowEnd": "2026-07-14T04:13:06.750139+00:00",
+            "activeWindowStart": "2026-07-12T00:45:08.384610+00:00",
+            "activeWindowEnd": "2026-07-14T06:45:08.384610+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -4204,8 +1757,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-11T22:13:06.838656+00:00",
-            "activeWindowEnd": "2026-07-26T04:13:06.838656+00:00",
+            "activeWindowStart": "2026-07-12T00:45:08.564575+00:00",
+            "activeWindowEnd": "2026-07-26T06:45:08.564575+00:00",
             "slateWindowDays": 14,
             "error": null
           },
@@ -4219,8 +1772,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-11T22:13:06.910768+00:00",
-            "activeWindowEnd": "2026-07-26T04:13:06.910768+00:00",
+            "activeWindowStart": "2026-07-12T00:45:08.862845+00:00",
+            "activeWindowEnd": "2026-07-26T06:45:08.862845+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           },
@@ -4234,8 +1787,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-11T22:13:06.981867+00:00",
-            "activeWindowEnd": "2026-07-26T04:13:06.981867+00:00",
+            "activeWindowStart": "2026-07-12T00:45:08.971011+00:00",
+            "activeWindowEnd": "2026-07-26T06:45:08.971011+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           }
@@ -4261,8 +1814,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-11T22:13:07.144303+00:00",
-            "activeWindowEnd": "2026-07-19T04:13:07.144303+00:00",
+            "activeWindowStart": "2026-07-12T00:45:09.278158+00:00",
+            "activeWindowEnd": "2026-07-19T06:45:09.278158+00:00",
             "slateWindowDays": 7,
             "error": null
           }
