@@ -24,11 +24,14 @@ def base_row():
         "probabilitySemanticsFixed": True,
         "predictionSemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1",
         "teamWinProbabilityPct": 58.0,
+        "lockedAmericanOdds": -135,
+        "priceBook": "fanduel",
+        "priceSource": "real_book",
         "slateCoverage": {"coverageComplete": True},
         "slatePredictionLock": {"locked": True, "lockAtUtc": "2026-07-12T18:00:00Z", "latestScoringPullAt": "2026-07-12T17:55:00Z"},
         "lockedCardAudit": {"lockedFlag": True, "lockAtUtc": "2026-07-12T18:00:00Z", "explicitSourceAtUtc": "2026-07-12T17:55:00Z", "preventsLateRows": True, "providerGameId": "integrity-game"},
-        "homeSignal": {"marketConsensusProbability": 0.58, "probLatest": 0.58, "americanOdds": -135, "tags": ["BOOK_AGREEMENT"]},
-        "awaySignal": {"marketConsensusProbability": 0.42, "probLatest": 0.42, "americanOdds": 120, "tags": ["BOOK_AGREEMENT"]},
+        "homeSignal": {"marketConsensusProbability": 0.58, "probLatest": 0.58, "americanOdds": -135, "priceBook": "fanduel", "priceSource": "real_book", "tags": ["BOOK_AGREEMENT"]},
+        "awaySignal": {"marketConsensusProbability": 0.42, "probLatest": 0.42, "americanOdds": 120, "priceBook": "fanduel", "priceSource": "real_book", "tags": ["BOOK_AGREEMENT"]},
         "fundamentalsSnapshot": {"completenessRatio": 0.0, "numericValues": {}},
     }
     pregame = copy.deepcopy(row); pregame.pop("winner"); pregame.pop("correct"); pregame.pop("status")
@@ -54,7 +57,15 @@ def main() -> int:
     ok, reasons = cohort.eligibility(wrong_game)
     assert ok is False and "frozen_vector_game_identity_mismatch" in reasons
 
-    print("MLB frozen feature integrity verified: fingerprint, game identity, and lock timestamp are enforced")
+    no_price_source = copy.deepcopy(clean)
+    no_price_source.pop("priceBook", None)
+    no_price_source.pop("priceSource", None)
+    no_price_source["homeSignal"].pop("priceBook", None)
+    no_price_source["homeSignal"].pop("priceSource", None)
+    ok, reasons = cohort.eligibility(no_price_source)
+    assert ok is False and "selected_side_odds_source_not_proven" in reasons
+
+    print("MLB frozen feature integrity verified: fingerprint, game identity, lock timestamp, and selected-side price source are enforced")
     return 0
 
 
