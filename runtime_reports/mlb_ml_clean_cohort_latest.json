@@ -3,21 +3,21 @@
   "version": "MLB-ML-CLEAN-COHORT-v1-post-fix-immutable-feature-snapshot+MLB-ML-CLEAN-COHORT-HARDENING-v5-postgreen-priced-label-safe",
   "featureSnapshotVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
   "minimumLockAtUtc": "2026-07-12T00:20:17+00:00",
-  "inputRows": 210,
+  "inputRows": 213,
   "cleanRowCount": 0,
-  "quarantinedRowCount": 210,
+  "quarantinedRowCount": 213,
   "quarantineReasonCounts": {
     "frozen_vector_fingerprint_mismatch": 22,
     "pre_clean_cohort_cutoff": 59,
-    "feature_vector_not_proven_immutable": 188,
-    "feature_vector_source_not_lock_time_prediction": 188,
-    "frozen_vector_features_missing": 188,
-    "frozen_vector_game_identity_mismatch": 195,
-    "frozen_vector_source_after_or_missing_lock": 188,
-    "incomplete_or_unproven_slate_coverage": 188,
-    "legacy_probability_semantics": 180,
-    "missing_exact_stored_lock_time_feature_vector": 188,
-    "wrong_frozen_feature_vector_version": 188,
+    "feature_vector_not_proven_immutable": 191,
+    "feature_vector_source_not_lock_time_prediction": 191,
+    "frozen_vector_features_missing": 191,
+    "frozen_vector_game_identity_mismatch": 198,
+    "frozen_vector_source_after_or_missing_lock": 191,
+    "incomplete_or_unproven_slate_coverage": 191,
+    "legacy_probability_semantics": 183,
+    "missing_exact_stored_lock_time_feature_vector": 191,
+    "wrong_frozen_feature_vector_version": 191,
     "missing_team_win_probability": 162,
     "selected_side_odds_source_not_proven": 155,
     "missing_selected_side_locked_odds": 151,
@@ -28,38 +28,6 @@
   },
   "cleanRows": [],
   "quarantinedRows": [
-    {
-      "gameId": "ba8bc57255560c92ff44bf4ac63a4fd9",
-      "slateDateEt": "2026-07-11",
-      "reasons": [
-        "frozen_vector_fingerprint_mismatch",
-        "pre_clean_cohort_cutoff"
-      ]
-    },
-    {
-      "gameId": "09d58ac97a07ac9cc6bc658cf72f08a3",
-      "slateDateEt": "2026-07-11",
-      "reasons": [
-        "frozen_vector_fingerprint_mismatch",
-        "pre_clean_cohort_cutoff"
-      ]
-    },
-    {
-      "gameId": "3e2ce9905fcaa6c74169c61fcb777080",
-      "slateDateEt": "2026-07-11",
-      "reasons": [
-        "frozen_vector_fingerprint_mismatch",
-        "pre_clean_cohort_cutoff"
-      ]
-    },
-    {
-      "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
-      "slateDateEt": "2026-07-11",
-      "reasons": [
-        "frozen_vector_fingerprint_mismatch",
-        "pre_clean_cohort_cutoff"
-      ]
-    },
     {
       "gameId": "a2501dff8c71ab28b0051fafeed81903",
       "slateDateEt": "2026-07-11",
@@ -270,6 +238,83 @@
         "legacy_probability_semantics",
         "missing_exact_stored_lock_time_feature_vector",
         "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "9d71a179d7d4dd618d4fae5516f00d95",
+      "slateDateEt": "2026-07-12",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "40ac03ae2d2b1dc11d41ced3f411f478",
+      "slateDateEt": "2026-07-12",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "f1d16b70bce98d0cea5eb7551dfbe37f",
+      "slateDateEt": "2026-07-12",
+      "reasons": [
+        "feature_vector_not_proven_immutable",
+        "feature_vector_source_not_lock_time_prediction",
+        "frozen_vector_features_missing",
+        "frozen_vector_game_identity_mismatch",
+        "frozen_vector_source_after_or_missing_lock",
+        "incomplete_or_unproven_slate_coverage",
+        "legacy_probability_semantics",
+        "missing_exact_stored_lock_time_feature_vector",
+        "wrong_frozen_feature_vector_version"
+      ]
+    },
+    {
+      "gameId": "ba8bc57255560c92ff44bf4ac63a4fd9",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch",
+        "pre_clean_cohort_cutoff"
+      ]
+    },
+    {
+      "gameId": "09d58ac97a07ac9cc6bc658cf72f08a3",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch",
+        "pre_clean_cohort_cutoff"
+      ]
+    },
+    {
+      "gameId": "3e2ce9905fcaa6c74169c61fcb777080",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch",
+        "pre_clean_cohort_cutoff"
+      ]
+    },
+    {
+      "gameId": "27168ae4cc8b352a2cb7e3f6dab8b610",
+      "slateDateEt": "2026-07-11",
+      "reasons": [
+        "frozen_vector_fingerprint_mismatch",
+        "pre_clean_cohort_cutoff"
       ]
     },
     {
@@ -3983,7 +4028,7 @@
     }
   ],
   "policy": "Only post-fix immutable locked rows with explicit modern probability semantics and pre-lock source timestamps may train ML.",
-  "deduplicatedIdentityCount": 178,
+  "deduplicatedIdentityCount": 181,
   "supersededValidDuplicateCount": 0,
   "validCandidateWinsDuplicateSelection": true,
   "hardeningVersion": "MLB-ML-CLEAN-COHORT-HARDENING-v5-postgreen-priced-label-safe",
