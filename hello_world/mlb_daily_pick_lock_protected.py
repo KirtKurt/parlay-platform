@@ -5,7 +5,9 @@ import os
 from typing import Any, Dict, Optional
 
 import mlb_daily_pick_lock
+import mlb_daily_lock_ml_vector_preservation_patch
 
+ML_VECTOR_PRESERVATION_STATUS = mlb_daily_lock_ml_vector_preservation_patch.apply(mlb_daily_pick_lock)
 ADMIN_TOKEN = os.environ.get("INQSI_ADMIN_API_TOKEN", "")
 
 
@@ -54,6 +56,16 @@ def lambda_handler(event, context):
     event = event or {}
     if (event.get("httpMethod") or "").upper() == "OPTIONS":
         return _resp(200, {"ok": True})
+    if ML_VECTOR_PRESERVATION_STATUS.get("ok") is not True:
+        return _resp(
+            500,
+            {
+                "ok": False,
+                "sport": "mlb",
+                "error": "MLB_DAILY_LOCK_ML_VECTOR_PRESERVATION_NOT_INSTALLED",
+                "status": ML_VECTOR_PRESERVATION_STATUS,
+            },
+        )
     auth_error = _auth_error(event)
     if auth_error is not None:
         return auth_error
