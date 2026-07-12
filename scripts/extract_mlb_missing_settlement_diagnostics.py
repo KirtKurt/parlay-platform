@@ -6,7 +6,7 @@ import os
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Set
+from typing import Any, Dict, Iterable, List, Set, Tuple
 
 import boto3
 from boto3.dynamodb.conditions import Key
@@ -59,12 +59,15 @@ def norm(value: Any) -> str:
     return " ".join(str(value or "").lower().replace(".", " ").replace("'", "").split())
 
 
-def query_partition(slate_date: str) -> List[Dict[str, Any]]:
+def _table():
     if not TABLE_NAME:
-        QUERY_ERRORS[slate_date] = "SNAPSHOTS_TABLE_NOT_CONFIGURED"
-        return []
+        raise RuntimeError("SNAPSHOTS_TABLE_NOT_CONFIGURED")
+    return boto3.resource("dynamodb").Table(TABLE_NAME)
+
+
+def query_partition(slate_date: str) -> List[Dict[str, Any]]:
     try:
-        table = boto3.resource("dynamodb").Table(TABLE_NAME)
+        table = _table()
         rows: List[Dict[str, Any]] = []
         start_key = None
         while True:
@@ -83,8 +86,21 @@ def query_partition(slate_date: str) -> List[Dict[str, Any]]:
             if not start_key:
                 return rows
     except Exception as exc:
-        QUERY_ERRORS[slate_date] = f"{type(exc).__name__}: {exc}"
+        QUERY_ERRORS[f"game_winners:{slate_date}"] = f"{type(exc).__name__}: {exc}"
         return []
+
+
+def read_daily_lock(slate_date: str) -> Tuple[Dict[str, Any] | None, str | None]:
+    try:
+        item = _table().get_item(
+            Key={"PK": f"LOCKED_PICKS#mlb#{slate_date}", "SK": "DAILY_LOCK#TMINUS45"},
+            ConsistentRead=True,
+        ).get("Item")
+        return safe(item) if isinstance(item, dict) else None, None
+    except Exception as exc:
+        error = f"{type(exc).__name__}: {exc}"
+        QUERY_ERRORS[f"daily_lock:{slate_date}"] = error
+        return None, error
 
 
 def summary(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -105,8 +121,59 @@ def summary(row: Dict[str, Any]) -> Dict[str, Any]:
         "tags": row.get("tags") or [],
         "hasFrozenFeatureVector": bool(row.get("frozenFeatureVector")),
         "lockedAmericanOdds": row.get("lockedAmericanOdds"),
+        "americanOdds": row.get("americanOdds"),
         "priceBook": row.get("priceBook"),
         "priceSource": row.get("priceSource"),
+    }
+
+
+def lock_summary(item: Dict[str, Any] | None, wanted_ids: Set[str], away: str, home: str) -> Dict[str, Any]:
+    if not item:
+        return {
+            "present": False,
+            "authoritative": False,
+            "matchingPickCount": 0,
+            "matchingPicks": [],
+        }
+    data = item.get("data") if isinstance(item.get("data"), dict) else {}
+    picks = data.get("picks") if isinstance(data.get("picks"), list) else []
+    matches = []
+    for pick in picks:
+        if not isinstance(pick, dict):
+            continue
+        id_match = bool(wanted_ids.intersection(provider_ids(pick)))
+        matchup_match = (
+            norm(pick.get("awayTeam") or pick.get("away_team")) == away
+            and norm(pick.get("homeTeam") or pick.get("home_team")) == home
+        )
+        if id_match or matchup_match:
+            matches.append(summary(pick))
+    locked_at = item.get("locked_at") or item.get("created_at")
+    latest_pull_at = item.get("latest_pull_at")
+    authoritative = bool(
+        item.get("locked") is True
+        and locked_at
+        and latest_pull_at
+        and int(item.get("prediction_count") or 0) == len(picks)
+        and int(item.get("game_count") or 0) == len(picks)
+        and item.get("all_games_predicted") is True
+    )
+    return {
+        "present": True,
+        "authoritative": authoritative,
+        "pk": item.get("PK"),
+        "sk": item.get("SK"),
+        "locked": item.get("locked"),
+        "lockedAt": locked_at,
+        "latestPullAt": latest_pull_at,
+        "firstGameStartUtc": item.get("first_game_start_utc"),
+        "firstGameStartEt": item.get("first_game_start_et"),
+        "gameCount": item.get("game_count"),
+        "predictionCount": item.get("prediction_count"),
+        "allGamesPredicted": item.get("all_games_predicted"),
+        "pickCount": len(picks),
+        "matchingPickCount": len(matches),
+        "matchingPicks": matches,
     }
 
 
@@ -115,6 +182,7 @@ def main() -> int:
     rows = list(report.get("rows") or [])
     missing = []
     partition_cache: Dict[str, List[Dict[str, Any]]] = {}
+    daily_lock_cache: Dict[str, Tuple[Dict[str, Any] | None, str | None]] = {}
 
     for row in rows:
         if row.get("status") not in {"MISSING_LOCKED_PREDICTION", "MISSING_PREDICTION"}:
@@ -122,6 +190,7 @@ def main() -> int:
         audit = row.get("lockedCardAudit") or {}
         slate = str(row.get("slateDateEt") or "")
         partition = partition_cache.setdefault(slate, query_partition(slate))
+        daily_lock_item, daily_lock_error = daily_lock_cache.setdefault(slate, read_daily_lock(slate))
         wanted_ids = provider_ids(row)
         away = norm(row.get("awayTeam"))
         home = norm(row.get("homeTeam"))
@@ -152,12 +221,14 @@ def main() -> int:
             "selectionPolicy": audit.get("selectionPolicy"),
             "auditVersion": audit.get("version"),
             "ddbPartition": f"GAME_WINNERS#mlb#{slate}",
-            "ddbQueryError": QUERY_ERRORS.get(slate),
+            "ddbQueryError": QUERY_ERRORS.get(f"game_winners:{slate}"),
             "ddbPartitionRowCount": len(partition),
             "ddbProviderIdMatchCount": len(id_matches),
             "ddbMatchupMatchCount": len(matchup_matches),
             "ddbProviderIdMatches": [summary(candidate) for candidate in id_matches],
             "ddbMatchupMatches": [summary(candidate) for candidate in matchup_matches],
+            "dailyLockQueryError": daily_lock_error,
+            "dailyLock": lock_summary(daily_lock_item, wanted_ids, away, home),
             "ddbAllStoredRows": [summary(candidate) for candidate in partition],
         })
     payload = {
