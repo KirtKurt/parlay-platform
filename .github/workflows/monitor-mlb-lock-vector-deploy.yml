@@ -111,14 +111,16 @@ jobs:
           live=load('/tmp/live-status.json', {})
           function_name=Path('/tmp/function_name').read_text().strip() if Path('/tmp/function_name').exists() else None
           handler=Path('/tmp/handler').read_text().strip() if Path('/tmp/handler').exists() else None
+          ok = deploy.get('conclusion') == 'success' and live.get('statusCode') == 200 and ((live.get('body') or {}).get('mlLockVectorPreservation') or {}).get('ok') is True
           result={
-              'ok': deploy.get('conclusion') == 'success' and live.get('statusCode') == 200 and ((live.get('body') or {}).get('mlLockVectorPreservation') or {}).get('ok') is True,
+              'ok': ok,
               'proofType': 'MLB_DAILY_LOCK_VECTOR_DEPLOY_PROOF',
               'createdAtUtc': datetime.now(timezone.utc).isoformat(),
               'targetSha': '7045d087f3a9bdb5e1d5394a820ef493370ae72f',
               'deployRunId': deploy.get('id'),
               'deployStatus': deploy.get('status'),
               'deployConclusion': deploy.get('conclusion'),
+              'deployError': deploy.get('error'),
               'functionName': function_name,
               'handler': handler,
               'jobs': [
@@ -130,9 +132,8 @@ jobs:
           }
           Path('runtime_reports').mkdir(exist_ok=True)
           Path('runtime_reports/mlb_daily_lock_vector_deploy_proof_latest.json').write_text(json.dumps(result, indent=2, default=str)+'\n')
+          Path('/tmp/proof_ok').write_text('true' if ok else 'false')
           print(json.dumps(result, indent=2, default=str))
-          if not result['ok']:
-              raise SystemExit(1)
           PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -140,3 +141,6 @@ jobs:
           git commit -m "Persist MLB daily lock vector deployment proof" || true
           git pull --rebase --autostash origin main || true
           git push || true
+          test "$(cat /tmp/proof_ok)" = "true"
+
+# retrigger 2026-07-12T23:39Z
