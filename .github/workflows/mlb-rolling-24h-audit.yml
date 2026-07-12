@@ -46,6 +46,7 @@ on:
       - 'scripts/verify_mlb_ml_optimization_v3.py'
       - 'scripts/verify_mlb_ml_feature_integrity.py'
       - 'scripts/verify_mlb_ml_installation_1_5.py'
+      - 'scripts/extract_mlb_missing_settlement_diagnostics.py'
       - 'scripts/run_mlb_ml_v3_validation_report.py'
       - 'scripts/run_mlb_ml_v3_audit_report.py'
       - 'scripts/promote_mlb_ml_champion.py'
@@ -112,6 +113,9 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/hello_world
         run: python scripts/run_mlb_ml_v3_audit_report.py
 
+      - name: Extract settlement mismatch diagnostics
+        run: python scripts/extract_mlb_missing_settlement_diagnostics.py
+
       - name: Verify post-deploy final-label joins
         env:
           INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-12T00:20:17+00:00'
@@ -162,6 +166,7 @@ jobs:
           git add runtime_reports/mlb_ml_installation_1_5_latest.json || true
           git add runtime_reports/mlb_ml_v3_audit_execution_latest.json || true
           git add runtime_reports/mlb_rolling_24h_audit_latest.json || true
+          git add runtime_reports/mlb_missing_settlement_diagnostics_latest.json || true
           git add runtime_reports/mlb_audit_freshness_latest.json || true
           git add runtime_reports/mlb_postdeploy_settlement_integrity_latest.json || true
           git add runtime_reports/mlb_selected_side_odds_coverage_latest.json || true
