@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import hashlib
 import json
-from typing import Any, Dict, List, Tuple
+import os
+from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "MLB-ML-CLEAN-COHORT-HARDENING-v4-valid-candidate-wins-dedup"
+VERSION = "MLB-ML-CLEAN-COHORT-HARDENING-v5-postgreen-priced-label-safe"
+GREEN_DEPLOYMENT_CUTOFF_UTC = os.environ.get("INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC", "2026-07-12T00:20:17+00:00")
 
 
 def _row_game_id(row: Dict[str, Any]) -> str:
@@ -12,6 +14,8 @@ def _row_game_id(row: Dict[str, Any]) -> str:
         row.get("id")
         or row.get("gameId")
         or row.get("game_id")
+        or row.get("providerGameId")
+        or row.get("provider_game_id")
         or (row.get("lockedCardAudit") or {}).get("providerGameId")
         or ""
     )
@@ -30,23 +34,55 @@ def _expected_fingerprint(vector: Dict[str, Any]) -> str:
     return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
+def _number(value: Any) -> Optional[float]:
+    try:
+        if value in (None, ""):
+            return None
+        parsed = float(value)
+        return parsed if parsed != 0 else None
+    except Exception:
+        return None
+
+
+def _selected_signal(row: Dict[str, Any]) -> Dict[str, Any]:
+    side = str(row.get("predictedSide") or "").lower()
+    value = row.get("homeSignal") if side == "home" else row.get("awaySignal") if side == "away" else None
+    return value if isinstance(value, dict) else {}
+
+
+def _selected_locked_price(row: Dict[str, Any]) -> Tuple[Optional[float], Optional[str], Optional[str]]:
+    signal = _selected_signal(row)
+    price = _number(row.get("lockedAmericanOdds"))
+    if price is None:
+        price = _number(row.get("americanOdds"))
+    if price is None:
+        price = _number(signal.get("americanOdds"))
+    book = row.get("priceBook") or signal.get("priceBook")
+    source = row.get("priceSource") or signal.get("priceSource")
+    return price, str(book) if book else None, str(source) if source else None
+
+
 def _candidate_rank(row: Dict[str, Any]) -> tuple:
     audit = row.get("lockedCardAudit") or {}
     pipeline = audit.get("finalPipelineState") or {}
     vector = row.get("frozenFeatureVector") or {}
+    price, book, source = _selected_locked_price(row)
     return (
         int(bool(row.get("finalGuardedStored"))),
         int(bool(row.get("featureVectorFrozenAtLock"))),
         int(bool(vector.get("fingerprint"))),
+        int(price is not None and bool(book or source)),
         int(pipeline.get("pipelineDepth") or 0),
         str(row.get("createdAt") or row.get("created_at") or audit.get("rowCreatedAtUtc") or ""),
     )
 
 
 def apply(cohort_module: Any):
-    if getattr(cohort_module, "_INQSI_MLB_CLEAN_COHORT_HARDENING_V4_APPLIED", False):
+    if getattr(cohort_module, "_INQSI_MLB_CLEAN_COHORT_HARDENING_V5_APPLIED", False):
         return cohort_module
 
+    # The clean evidence clock begins only after the fully green production deployment.
+    cohort_module.DEFAULT_MIN_LOCK_AT_UTC = GREEN_DEPLOYMENT_CUTOFF_UTC
     original_eligibility = cohort_module.eligibility
     original_build = cohort_module.build
 
@@ -92,6 +128,16 @@ def apply(cohort_module: Any):
         if not isinstance(frozen_vector.get("features"), dict) or not frozen_vector.get("features"):
             reasons.append("frozen_vector_features_missing")
 
+        labels = frozen_vector.get("labels") or {}
+        if labels.get("homeWon") is not None or labels.get("pickCorrect") is not None:
+            reasons.append("frozen_vector_labels_mutated_after_lock")
+
+        selected_price, price_book, price_source = _selected_locked_price(row)
+        if selected_price is None:
+            reasons.append("missing_selected_side_locked_odds")
+        if not price_book and str(price_source or "").lower() not in {"real_book", "locked_real_book"}:
+            reasons.append("selected_side_odds_source_not_proven")
+
         reasons = sorted(set(reasons))
         return not reasons, reasons
 
@@ -123,8 +169,6 @@ def apply(cohort_module: Any):
                             }
                         )
             else:
-                # Keep one representative invalid candidate so the base builder records
-                # the failure. Other invalid duplicates are preserved in diagnostics.
                 chosen_row, _, _ = max(evaluated, key=lambda item: _candidate_rank(item[0]))
                 selected_rows.append(chosen_row)
                 for row, _, reasons in evaluated:
@@ -153,10 +197,14 @@ def apply(cohort_module: Any):
         out["supersededValidDuplicateCount"] = superseded_valid_count
         out["validCandidateWinsDuplicateSelection"] = True
         out["hardeningVersion"] = VERSION
+        out["greenDeploymentCutoffUtc"] = GREEN_DEPLOYMENT_CUTOFF_UTC
         out["completeSlateCoverageRequired"] = True
         out["immutableFrozenFeatureVectorRequired"] = True
         out["fingerprintRecalculationRequired"] = True
         out["gameIdentityAndLockMustMatchAuditRow"] = True
+        out["frozenVectorOutcomeLabelsMustRemainBlank"] = True
+        out["selectedSideLockedOddsRequired"] = True
+        out["selectedSideOddsBookOrRealSourceRequired"] = True
         out["laterFeatureReconstructionAllowed"] = False
         out["requiredFeatureVectorVersion"] = cohort_module.FEATURE_SNAPSHOT_VERSION
         out["version"] = str(out.get("version") or "") + "+" + VERSION
@@ -168,4 +216,5 @@ def apply(cohort_module: Any):
     cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V2_APPLIED = True
     cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V3_APPLIED = True
     cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V4_APPLIED = True
+    cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V5_APPLIED = True
     return cohort_module
