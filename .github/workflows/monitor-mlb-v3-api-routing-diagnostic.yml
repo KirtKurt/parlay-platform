@@ -1,0 +1,71 @@
+name: Monitor MLB V3 API Routing Diagnostic
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/monitor-mlb-v3-api-routing-diagnostic.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Capture diagnostic workflow result
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TARGET_SHA: d43beb4e9664902537c4676984c6ed55972edd93
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          RUN_ID=""
+          for i in $(seq 1 40); do
+            RUN_ID=$(gh api "/repos/${REPO}/actions/runs?head_sha=${TARGET_SHA}&per_page=100" \
+              --jq '.workflow_runs[] | select(.path == ".github/workflows/diagnose-mlb-v3-api-routing.yml") | .id' | head -n1)
+            [ -n "${RUN_ID:-}" ] && break
+            sleep 5
+          done
+          if [ -z "${RUN_ID:-}" ]; then
+            echo '{"ok":false,"error":"routing diagnostic run not found"}' > runtime_reports/mlb_v3_api_routing_workflow_diagnostic.json
+            exit 0
+          fi
+          for i in $(seq 1 120); do
+            STATUS=$(gh api "/repos/${REPO}/actions/runs/${RUN_ID}" --jq '.status')
+            [ "$STATUS" = "completed" ] && break
+            sleep 5
+          done
+          gh api "/repos/${REPO}/actions/runs/${RUN_ID}" > runtime_reports/mlb_v3_api_routing_workflow_run.json
+          gh api "/repos/${REPO}/actions/runs/${RUN_ID}/jobs?per_page=100" > runtime_reports/mlb_v3_api_routing_workflow_jobs.json
+          python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          repo=os.environ['REPO']
+          run=json.load(open('runtime_reports/mlb_v3_api_routing_workflow_run.json'))
+          jobs=(json.load(open('runtime_reports/mlb_v3_api_routing_workflow_jobs.json')).get('jobs') or [])
+          out={'ok':run.get('conclusion')=='success','runId':run.get('id'),'status':run.get('status'),'conclusion':run.get('conclusion'),'jobs':[]}
+          for job in jobs:
+              entry={'id':job.get('id'),'name':job.get('name'),'conclusion':job.get('conclusion'),'steps':job.get('steps') or []}
+              out['jobs'].append(entry)
+              if job.get('conclusion')=='failure':
+                  p=Path(f"runtime_reports/mlb_v3_api_routing_workflow_job_{job['id']}.log")
+                  with p.open('wb') as fh:
+                      subprocess.run(['gh','api',f"/repos/{repo}/actions/jobs/{job['id']}/logs"],stdout=fh,stderr=subprocess.STDOUT,check=False)
+          Path('runtime_reports/mlb_v3_api_routing_workflow_diagnostic.json').write_text(json.dumps(out,indent=2)+'\n')
+          PY
+
+      - name: Commit monitor report
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/mlb_v3_api_routing_workflow_* || true
+          git commit -m "Persist MLB v3 routing diagnostic workflow result" || true
+          git pull --rebase --autostash origin main || true
+          git push || true
