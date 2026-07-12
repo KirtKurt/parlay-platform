@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ML_V3_AWS_AUDIT_EXECUTION",
-  "createdAtUtc": "2026-07-12T12:32:36.882881+00:00",
+  "createdAtUtc": "2026-07-12T12:34:18.531557+00:00",
   "environment": {
     "snapshotsTableConfigured": true,
     "oddsApiKeyConfigured": true,
@@ -9,7 +9,7 @@
     "allowLocalFileChampion": "false"
   },
   "failures": [],
-  "reportCreatedAt": "2026-07-12T12:32:42.308193+00:00",
+  "reportCreatedAt": "2026-07-12T12:34:26.357320+00:00",
   "reportOk": true,
   "summary": {
     "windowHours": 24,
@@ -21,7 +21,7 @@
     "optimizedCorrect": 0,
     "optimizedWrong": 0,
     "rolling24hOptimizedAccuracyPct": null,
-    "rolling24hTargetMet": null,
+    "rolling24hTargetMet": false,
     "winnerOptimizerAppliedCount": 3,
     "winnerOptimizerFlipCount": 0,
     "allScoredPickAccuracyPct": 56.25,
@@ -42,7 +42,7 @@
     "actionableCorrect": 0,
     "actionableWrong": 0,
     "rolling24hActionableAccuracyPct": null,
-    "accuracyTargetRowPolicy": "playable_recommendations_only; official_card_accuracy_reported_separately",
+    "accuracyTargetRowPolicy": "90pct_target_applies_only_to_all_official_games_in_the_rolling_24h_audit; recommendation_reliability_threshold_is_60pct",
     "excludedNoPickOptimizedRows": 12,
     "actionabilityPolicy": "Playable metrics require explicit modern playability or ACTIONABLE_PICK/ML_CONFIRMED. officialPick is never a playability signal.",
     "officialPredictionCount": 16,
@@ -66,9 +66,12 @@
     "playableFlatUnitRoiPct": null,
     "seasonOfficialPredictionCount": 99,
     "seasonPlayablePredictionCount": 8,
-    "accuracyClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets",
+    "accuracyClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.5-90pct-all-games-audit-60pct-recommendation",
+    "rolling24hAllGamesAccuracyPct": 56.25,
+    "playableRecommendationAccuracyThresholdPct": 60.0,
+    "rolling24hPlayableThresholdMet": null,
     "officialCardPolicy": "Every immutable locked winner is graded as an official prediction, regardless of playability.",
-    "optimizationTargetPolicy": "Playable/reliability promotion requires at least 90% accuracy on untouched chronological test data, positive test ROI, adequate price coverage, and acceptable calibration. Outcome direction must independently beat the de-vigged market baseline."
+    "optimizationTargetPolicy": "Reliability/recommendation validation uses a 60% selected-sample threshold plus positive ROI, adequate price coverage, and acceptable calibration. Outcome direction must independently beat the de-vigged market baseline. The 90% figure is reporting-only for the rolling 24-hour all-games audit."
   },
   "accuracyLedger": {
     "ok": true,
@@ -79,7 +82,7 @@
     "queriedRowCount": 84,
     "immutable": true,
     "dedupeKey": "slate_date + provider_game_id_or_matchup",
-    "version": "MLB-REAL-WORLD-ACCURACY-v1.4-clean-ml-90pct-optimization-targets"
+    "version": "MLB-REAL-WORLD-ACCURACY-v1.5-90pct-all-games-audit-60pct-recommendation"
   },
   "mlCriticalFixStatus": {
     "ok": true,
@@ -156,7 +159,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.2-separate-direction-90pct-playability-gates",
-      "evaluatedAtUtc": "2026-07-12T12:33:00.262356+00:00",
+      "evaluatedAtUtc": "2026-07-12T12:34:52.814034+00:00",
       "automaticPromotionEnabled": false,
       "promotionEligible": false,
       "directionPromotionEligible": false,
@@ -375,7 +378,7 @@
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-12T12:32:53.600714+00:00"
+      "runSk": "CHALLENGER#2026-07-12T12:34:44.075181+00:00"
     },
     "promotion": {
       "ok": true,
@@ -404,7 +407,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-12T12:32:42.308193+00:00"
+    "runSk": "AUDIT#2026-07-12T12:34:26.357320+00:00"
   },
   "storeError": null
 }
