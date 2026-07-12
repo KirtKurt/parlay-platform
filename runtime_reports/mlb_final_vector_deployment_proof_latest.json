@@ -1,0 +1,80 @@
+{
+  "ok": true,
+  "proofType": "MLB_FINAL_VECTOR_DEPLOYMENT_PROOF",
+  "createdAtUtc": "2026-07-12T23:53:28.100749+00:00",
+  "targetSha": "308754468de72c0eec319f54dafddc92b9762cbd",
+  "deployRunId": 29214135829,
+  "deployConclusion": "success",
+  "jobs": [
+    {
+      "name": "deploy",
+      "status": "completed",
+      "conclusion": "success",
+      "failedSteps": []
+    }
+  ],
+  "functionName": "parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP",
+  "handler": "mlb_daily_pick_lock_protected.lambda_handler",
+  "liveInvocation": {
+    "statusCode": 200,
+    "body": {
+      "ok": true,
+      "sport": "mlb",
+      "modelVersion": "INQSI-MLB-DAILY-LOCK-v2.1-single-game-ml",
+      "singleGameModelVersion": "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production",
+      "slateDateEt": "2026-07-13",
+      "lockPolicy": "first_mlb_game_minus_45_minutes",
+      "lockMinutesBeforeFirstGame": 45,
+      "minPullsPerGameForLock": 4,
+      "maxLatestPullAgeMinutesForLock": 20,
+      "locked": false,
+      "lock": null,
+      "pullCount": 0,
+      "gameCount": 0,
+      "latestPullAt": null,
+      "latestPullId": null,
+      "latestPullAgeMinutes": null,
+      "minObservedPullDepth": 0,
+      "firstGameStartEt": null,
+      "lockTimeEt": null,
+      "nowEt": "2026-07-12T19:53:27.921959-04:00",
+      "lockDue": false,
+      "minutesUntilLock": 0,
+      "mlLockVectorPreservation": {
+        "ok": true,
+        "version": "MLB-DAILY-LOCK-ML-VECTOR-PRESERVATION-v1-fail-closed",
+        "preservedFields": [
+          "slateDateEt",
+          "teamWinProbabilityPct",
+          "winProbabilityMeaning",
+          "probabilitySemanticsFixed",
+          "predictionSemanticsVersion",
+          "officialPredictionStatus",
+          "lockedPrediction",
+          "lockedAtUtc",
+          "predictionSourcePullAt",
+          "predictionSourcePullId",
+          "lockedAmericanOdds",
+          "slatePredictionLock",
+          "lastPossiblePredictionGate",
+          "lockedCardAudit",
+          "slateCoverage",
+          "mlFeatureFreeze",
+          "frozenFeatureVector",
+          "frozenFeatureVectorVersion",
+          "featureVectorFrozenAtLock",
+          "fundamentalsSnapshot",
+          "finalGuardedStored",
+          "finalGuardedStoreRequested",
+          "finalGateStored",
+          "fullDataFinalPick",
+          "finalPipelineVersion",
+          "createdAt",
+          "created_at"
+        ],
+        "failClosed": true,
+        "outcomeLabelsForbiddenAtLock": true
+      }
+    }
+  }
+}
