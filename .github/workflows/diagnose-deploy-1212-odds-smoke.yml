@@ -1,0 +1,49 @@
+name: Diagnose Deploy 1212 Odds Smoke
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-deploy-1212-odds-smoke.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract live odds smoke failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          JOB_ID: '86598017960'
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          gh api "/repos/${REPO}/actions/jobs/${JOB_ID}/logs" > /tmp/deploy-1212.log
+          python - <<'PY'
+          from pathlib import Path
+          text=Path('/tmp/deploy-1212.log').read_text(errors='replace').splitlines()
+          start=0
+          for i,line in enumerate(text):
+              if 'Smoke test live MLB Odds API pull and storage' in line:
+                  start=i
+          end=min(len(text), start+260)
+          block='\n'.join(text[start:end])+'\n'
+          Path('runtime_reports/deploy_1212_odds_smoke_failure.txt').write_text(block)
+          PY
+
+      - name: Commit diagnostic
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/deploy_1212_odds_smoke_failure.txt || true
+          git commit -m "Persist deploy 1212 odds smoke failure" || true
+          git pull --rebase --autostash origin main || true
+          git push || true
