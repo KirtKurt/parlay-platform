@@ -1,0 +1,136 @@
+name: Diagnose MLB V3 API Routing
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-v3-api-routing.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Inspect API Gateway and invoke dedicated Lambda
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+
+          STACK=parlay-platform-dev
+          API_ID=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK" \
+            --logical-resource-id ServerlessRestApi \
+            --region "$AWS_REGION_VALUE" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name "$STACK" \
+            --logical-resource-id MLBV3ReadFunction \
+            --region "$AWS_REGION_VALUE" \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+
+          aws apigateway get-resources \
+            --rest-api-id "$API_ID" \
+            --embed methods \
+            --region "$AWS_REGION_VALUE" \
+            > runtime_reports/mlb_v3_api_resources.json
+
+          MODEL_RESOURCE_ID=$(python - <<'PY'
+          import json
+          data=json.load(open('runtime_reports/mlb_v3_api_resources.json'))
+          for item in data.get('items',[]):
+              if item.get('path') == '/v1/mlb/model/version':
+                  print(item.get('id') or '')
+                  break
+          PY
+          )
+
+          if [ -n "$MODEL_RESOURCE_ID" ]; then
+            aws apigateway get-integration \
+              --rest-api-id "$API_ID" \
+              --resource-id "$MODEL_RESOURCE_ID" \
+              --http-method GET \
+              --region "$AWS_REGION_VALUE" \
+              > runtime_reports/mlb_v3_api_integration.json
+          else
+            echo '{"error":"model version resource missing"}' > runtime_reports/mlb_v3_api_integration.json
+          fi
+
+          cat > /tmp/mlb_v3_event.json <<'JSON'
+          {
+            "resource": "/v1/mlb/model/version",
+            "path": "/v1/mlb/model/version",
+            "httpMethod": "GET",
+            "headers": {},
+            "queryStringParameters": null,
+            "pathParameters": null,
+            "requestContext": {"stage": "Prod", "httpMethod": "GET"},
+            "body": null,
+            "isBase64Encoded": false
+          }
+          JSON
+
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --payload fileb:///tmp/mlb_v3_event.json \
+            --cli-binary-format raw-in-base64-out \
+            --region "$AWS_REGION_VALUE" \
+            runtime_reports/mlb_v3_direct_lambda_response.json \
+            > runtime_reports/mlb_v3_direct_lambda_meta.json
+
+          API_URL="https://${API_ID}.execute-api.${AWS_REGION_VALUE}.amazonaws.com/Prod/"
+          HTTP_CODE=$(curl -sS -o runtime_reports/mlb_v3_public_response.txt -w '%{http_code}' "${API_URL}v1/mlb/model/version" || true)
+
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          resources=json.load(open('runtime_reports/mlb_v3_api_resources.json'))
+          integration=json.load(open('runtime_reports/mlb_v3_api_integration.json'))
+          meta=json.load(open('runtime_reports/mlb_v3_direct_lambda_meta.json'))
+          try:
+              direct=json.load(open('runtime_reports/mlb_v3_direct_lambda_response.json'))
+          except Exception:
+              direct={'raw':Path('runtime_reports/mlb_v3_direct_lambda_response.json').read_text(errors='replace')}
+          summary={
+              'ok': True,
+              'apiId': os.environ.get('API_ID'),
+              'functionName': os.environ.get('FUNCTION_NAME'),
+              'modelRoutePresent': any(i.get('path')=='/v1/mlb/model/version' for i in resources.get('items',[])),
+              'modelRoute': next((i for i in resources.get('items',[]) if i.get('path')=='/v1/mlb/model/version'), None),
+              'integration': integration,
+              'directInvokeMeta': meta,
+              'directInvokeResponse': direct,
+              'publicHttpCode': os.environ.get('HTTP_CODE'),
+              'publicBody': Path('runtime_reports/mlb_v3_public_response.txt').read_text(errors='replace'),
+          }
+          Path('runtime_reports/mlb_v3_api_routing_diagnostic.json').write_text(json.dumps(summary, indent=2, default=str)+'\n')
+          PY
+        env:
+          API_ID: ${{ env.API_ID }}
+          FUNCTION_NAME: ${{ env.FUNCTION_NAME }}
+          HTTP_CODE: ${{ env.HTTP_CODE }}
+
+      - name: Commit routing diagnostic
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add runtime_reports/mlb_v3_api_* runtime_reports/mlb_v3_direct_lambda_* || true
+          git commit -m "Persist MLB v3 API routing diagnostic" || true
+          git pull --rebase --autostash origin main || true
+          git push || true
