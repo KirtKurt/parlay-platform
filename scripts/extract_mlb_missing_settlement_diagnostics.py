@@ -14,7 +14,7 @@ from boto3.dynamodb.conditions import Key
 ROOT = Path(__file__).resolve().parents[1]
 AUDIT = ROOT / "runtime_reports" / "mlb_rolling_24h_audit_latest.json"
 OUTPUT = ROOT / "runtime_reports" / "mlb_missing_settlement_diagnostics_latest.json"
-TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "")
+TABLE_NAME = os.environ.get("SNAPSHOTS_TABLE", "parlay_platform_snapshots")
 
 
 def safe(value: Any) -> Any:
