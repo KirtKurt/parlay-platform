@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v8-single-runtime-install-call"
+VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v9-separated-accuracy-targets"
 AUTHORITATIVE_TRAINER = "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger"
 _INSTALLED = False
 
@@ -23,6 +23,15 @@ def install() -> dict:
 
     applied = []
     errors = []
+
+    try:
+        import mlb_accuracy_target_policy_v1
+        accuracy_policy = mlb_accuracy_target_policy_v1.install()
+        if accuracy_policy.get("ok") is not True:
+            raise RuntimeError(str(accuracy_policy.get("errors") or accuracy_policy))
+        applied.append("90pct_all_games_audit_60pct_recommendation_policy")
+    except Exception as exc:
+        errors.append(f"accuracy_target_policy:{exc}")
 
     try:
         import mlb_ml_runtime_overlay
@@ -56,12 +65,14 @@ def install() -> dict:
         "errors": errors,
         "authoritativeTrainer": AUTHORITATIVE_TRAINER,
         "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
-        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.2-single-authority-exact-lock-vector",
+        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.3-separated-accuracy-targets",
         "runtimeInstallerCallSite": "usercustomize.py_after_prediction_chain",
         "singleRuntimeInstallCall": True,
         "duplicateTrainerAuthorityDisabled": True,
         "duplicateOutcomeRuntimeAuthorityDisabled": True,
         "automaticPromotionDisabled": True,
+        "rolling24hAllGamesAuditTargetPct": 90.0,
+        "recommendationReliabilityThresholdPct": 60.0,
         "manualPromotionModule": "MLB-ML-MANUAL-PROMOTION-ONLY-v1",
         "manualPromotionWorkflow": "mlb-ml-promote-champion.yml",
     }
