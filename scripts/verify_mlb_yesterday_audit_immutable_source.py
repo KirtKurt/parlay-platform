@@ -108,13 +108,13 @@ def locked_card(rows, *, per_game=False):
     return card
 
 
-def final(game_id, home, away, winner, home_score, away_score):
+def final(game_id, home, away, winner, home_score, away_score, *, commence_time=None):
     row = {
         "id": game_id,
         "homeTeam": home,
         "awayTeam": away,
         "matchup": f"{away} at {home}",
-        "commenceTime": f"2026-07-12T1{len(game_id)}:00:00+00:00",
+        "commenceTime": commence_time or f"2026-07-12T1{len(game_id)}:00:00+00:00",
         "homeScore": home_score,
         "awayScore": away_score,
         "winner": winner,
@@ -172,7 +172,17 @@ def verify_legacy_card_build_and_supersession():
         (previous_run["PK"], previous_run["SK"]): previous_run,
     })
     finals = [
-        final("g1", "Home One", "Away One", "Home One", 4, 2),
+        # Final providers may replace a scheduled start with actual first pitch.
+        # Exact provider ID + teams remain the immutable game identity.
+        final(
+            "g1",
+            "Home One",
+            "Away One",
+            "Home One",
+            4,
+            2,
+            commence_time="2026-07-12T12:03:00+00:00",
+        ),
         final("g22", "Home Two", "Away Two", "Home Two", 5, 1),
     ]
     old_table = audit.history.PULLS
@@ -213,6 +223,14 @@ def verify_legacy_card_build_and_supersession():
     assert report["rows"][0]["frozenFeatureVector"]["labels"] == {"homeWon": None, "pickCorrect": None}
     assert report["rows"][0]["outcomeJoin"]["pickCorrect"] is True
     assert report["rows"][0]["outcomeJoin"]["joinedOutsideFrozenFeatureVector"] is True
+    assert report["finalOutcomeIdentityJoin"]["identityContextFieldsVerified"] == [
+        "providerGameId",
+        "homeTeam",
+        "awayTeam",
+    ]
+    assert report["finalOutcomeIdentityJoin"]["commenceTimeIsMutableScheduleMetadata"] is True
+    assert report["finalOutcomeIdentityJoin"]["commenceTimeDifferenceCount"] == 1
+    assert report["finalOutcomeIdentityJoin"]["commenceTimeDifferences"][0]["differenceSeconds"] == 180
     assert report["supersedes"]["createdAt"] == previous_latest["created_at"]
     assert table.items[(previous_run["PK"], previous_run["SK"])] == previous_run
     run_puts = [call for call in table.put_calls if call[0][0] == f"MLB_DAILY_AUDIT#{SLATE}"]

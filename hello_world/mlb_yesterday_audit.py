@@ -14,7 +14,7 @@ import inqsi_pull_history as history
 SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 REPORT_PATH = "runtime_reports/mlb_yesterday_audit_latest.json"
-VERSION = "MLB-YESTERDAY-AUDIT-v2-immutable-lock-authority"
+VERSION = "MLB-YESTERDAY-AUDIT-v2.1-immutable-lock-identity"
 OFFICIAL_CARD_AUTHORITY_TARGET_PCT = 90.0
 DAILY_LOCK_SK = "DAILY_LOCK#TMINUS45"
 MLB_STATS_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
@@ -196,14 +196,26 @@ def validate_one_to_one_final_join(locked_rows: List[Dict[str, Any]], score_repo
     ):
         raise FinalOutcomeJoinUnavailable("LOCKED_AND_FINAL_GAME_IDENTITIES_NOT_ONE_TO_ONE")
     locked_by_id = {_game_id(row): row for row in locked_rows}
+    commence_time_differences: List[Dict[str, Any]] = []
     for game_id, locked in locked_by_id.items():
         outcome = by_id.get(game_id)
         if not isinstance(outcome, dict) or (
             normalize_team(locked.get("homeTeam")) != normalize_team(outcome.get("homeTeam"))
             or normalize_team(locked.get("awayTeam")) != normalize_team(outcome.get("awayTeam"))
-            or parse_dt(locked.get("commenceTime")) != parse_dt(outcome.get("commenceTime"))
         ):
             raise FinalOutcomeJoinUnavailable(f"LOCKED_AND_FINAL_GAME_CONTEXT_MISMATCH:{game_id}")
+        locked_commence = parse_dt(locked.get("commenceTime"))
+        final_commence = parse_dt(outcome.get("commenceTime"))
+        if not locked_commence or not final_commence:
+            raise FinalOutcomeJoinUnavailable(f"LOCKED_OR_FINAL_COMMENCE_TIME_INVALID:{game_id}")
+        if locked_commence != final_commence:
+            commence_time_differences.append({
+                "gameId": game_id,
+                "lockedCommenceTime": locked_commence.isoformat(),
+                "finalProviderCommenceTime": final_commence.isoformat(),
+                "differenceSeconds": int((final_commence - locked_commence).total_seconds()),
+                "acceptedBecauseExactProviderGameIdAndTeamsMatch": True,
+            })
     return {
         "ok": True,
         "lockedGameIds": locked_ids,
@@ -211,6 +223,10 @@ def validate_one_to_one_final_join(locked_rows: List[Dict[str, Any]], score_repo
         "uniqueLockedGameIds": True,
         "uniqueFinalGameIds": True,
         "oneToOneIdentityJoin": True,
+        "identityContextFieldsVerified": ["providerGameId", "homeTeam", "awayTeam"],
+        "commenceTimeIsMutableScheduleMetadata": True,
+        "commenceTimeDifferenceCount": len(commence_time_differences),
+        "commenceTimeDifferences": commence_time_differences,
     }
 
 
