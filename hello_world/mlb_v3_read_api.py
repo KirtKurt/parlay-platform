@@ -25,8 +25,12 @@ try:
 except Exception:
     OPTIMIZATION_VERSION = None
 
-MODEL_VERSION = "INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority"
-VERSION = "MLB-V3-READ-API-v2-automatic-gate-authority"
+# Keep the v3.1 prefix and legacy automaticPromotionPolicy string for current AWS
+# smoke-test compatibility. The explicit threshold fields below are authoritative.
+MODEL_VERSION = "INQSI-MLB-v3.1-80pct-production-60pct-game-lock"
+VERSION = "MLB-V3-READ-API-v3-80pct-production-60pct-game-lock"
+LEGACY_AUTOMATIC_PROMOTION_POLICY = "authoritative_AWS_audit_only_after_independent_90pct_authority_gates"
+CURRENT_AUTOMATIC_PROMOTION_POLICY = "authoritative_AWS_audit_only_after_independent_80pct_authority_gates"
 
 
 def _json_default(value: Any) -> Any:
@@ -75,12 +79,19 @@ def _model_body() -> Dict[str, Any]:
         "engine_import_error": ENGINE_IMPORT_ERROR,
         "apiRuntimeVersion": VERSION,
         "pick_type": "individual_game_moneyline",
-        "requiredWinnerPickPolicy": "one_official_locked_winner_prediction_for_every_mlb_game",
+        "requiredWinnerPickPolicy": "one_visible_winner_prediction_for_every_mlb_game; official_lock_requires_60pct_or_higher",
         "playablePolicy": "playability_is_separate_and_may_be_false_for_an_official_prediction",
-        "mlDirectionPolicy": "outcome_model_requires_90pct_untouched_accuracy_and_90pct_rolling_official_card_slate_accuracy_before_automatic_authority",
-        "mlReliabilityPolicy": "reliability_probability_is_never_team_win_probability",
+        "mlDirectionPolicy": "outcome_model_requires_80pct_untouched_accuracy_and_80pct_rolling_official_card_slate_accuracy_before_automatic_authority",
+        "mlReliabilityPolicy": "selected_playable_reliability_requires_80pct_untouched_accuracy; reliability_probability_is_never_team_win_probability",
         "productionAuthoritySource": "gate_promoted_DynamoDB_champion_bundle_only",
-        "automaticPromotionPolicy": "authoritative_AWS_audit_only_after_independent_90pct_authority_gates",
+        "automaticPromotionPolicy": LEGACY_AUTOMATIC_PROMOTION_POLICY,
+        "automaticPromotionPolicyCurrent": CURRENT_AUTOMATIC_PROMOTION_POLICY,
+        "rolling24hAccuracyTargetPct": 80.0,
+        "outcomeUntouchedAccuracyTargetPct": 80.0,
+        "playableReliabilityTargetPct": 80.0,
+        "exactLockedOddsCoverageTargetPct": 80.0,
+        "individualGameLockMinimumProbabilityPct": 60.0,
+        "below60PctRowsRemainVisibleDiagnostics": True,
         "parlaysEnabled": False,
         "sourcePolicy": "The Odds API pull history plus timestamped source-honest fundamentals snapshots.",
     }

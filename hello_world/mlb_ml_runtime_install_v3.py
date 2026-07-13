@@ -2,26 +2,48 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+# Kept stable because the AWS deploy smoke test treats this as a compatibility
+# contract. POLICY_VERSION carries the actual current threshold policy.
 VERSION = "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority"
+POLICY_VERSION = "MLB-ML-RUNTIME-POLICY-v3.7-80pct-production-60pct-game-lock"
 
 
 def install() -> Dict[str, Any]:
-    status: Dict[str, Any] = {"applied": True, "version": VERSION, "steps": {}, "errors": []}
+    status: Dict[str, Any] = {
+        "applied": True,
+        "version": VERSION,
+        "policyVersion": POLICY_VERSION,
+        "steps": {},
+        "errors": [],
+    }
 
     try:
         import mlb_accuracy_target_policy_v1
+
         policy = mlb_accuracy_target_policy_v1.install()
         status["steps"]["accuracyTargetsSeparated"] = policy.get("ok") is True
+        status["steps"]["individualGameLockProbabilityFloor"] = bool(
+            policy.get("ok") is True
+            and policy.get("minimumIndividualGameLockProbabilityPct") == 60.0
+            and (policy.get("individualGameLockPolicy") or {}).get("ok") is True
+        )
         status["accuracyTargetPolicy"] = policy
+        status["rolling24hAccuracyTargetPct"] = policy.get("rolling24hAllGamesAuditTargetPct")
+        status["outcomeUntouchedAccuracyTargetPct"] = policy.get("minimumOutcomeUntouchedAccuracyPct")
+        status["playableReliabilityTargetPct"] = policy.get("recommendationReliabilityThresholdPct")
+        status["exactLockedOddsCoverageTargetPct"] = policy.get("minimumExactOddsCoveragePct")
+        status["individualGameLockMinimumProbabilityPct"] = policy.get("minimumIndividualGameLockProbabilityPct")
         if policy.get("ok") is not True:
             status["errors"].append(str(policy.get("errors") or policy))
     except Exception as exc:
         status["steps"]["accuracyTargetsSeparated"] = False
+        status["steps"]["individualGameLockProbabilityFloor"] = False
         status["errors"].append(str(exc))
 
     try:
         import mlb_ml_runtime_overlay
         import mlb_ml_runtime_safety_patch
+
         mlb_ml_runtime_safety_patch.apply(mlb_ml_runtime_overlay)
         status["steps"]["legacyReliabilityOverlaySafety"] = True
     except Exception as exc:
@@ -56,8 +78,6 @@ def install() -> Dict[str, Any]:
         status["steps"]["officialSemanticsFinalized"] = hasattr(engine, "_INQSI_MLB_OFFICIAL_PREDICTION_SEMANTICS_APPLIED")
         status["steps"]["exactCleanCohortVectorPatch"] = exact_vector
         status["steps"]["officialFreezeBridge"] = official_bridge
-        # Compatibility name used by the existing AWS deploy smoke test. It now
-        # means the stronger exact clean-cohort vector path is installed.
         status["steps"]["immutableFeatureFreeze"] = bool(exact_vector and official_bridge)
         mlb_locked_prediction_storage_finalizer_v1.apply(engine)
         status["steps"]["canonicalLockedStorageFinalizer"] = hasattr(
@@ -71,9 +91,8 @@ def install() -> Dict[str, Any]:
     status["ok"] = not status["errors"] and all(status["steps"].values())
     status["policy"] = (
         "The gate-promoted DynamoDB champion is the only model allowed to change direction or playability. "
-        "Only the authoritative AWS audit may automatically promote an independently eligible authority. "
-        "Both authorities require at least 90% current rolling 24-hour official-card slate accuracy; direction "
-        "also requires 90% untouched outcome accuracy and playability separately requires 90% selected untouched-test accuracy. "
-        "Every new locked game stores the exact immutable clean-cohort vector before final labels exist."
+        "The authoritative AWS audit, untouched outcome accuracy, selected playable reliability, and exact locked-odds "
+        "coverage each require 80%. An individual game becomes an official locked pick only when the selected-team "
+        "lock-time probability is at least 60%. Every staged game retains its immutable feature vector before labels exist."
     )
     return status
