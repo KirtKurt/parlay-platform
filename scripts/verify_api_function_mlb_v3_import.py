@@ -36,11 +36,13 @@ assert response.get("statusCode") == 200, response
 body = json.loads(response.get("body") or "{}")
 assert body.get("ok") is True, body
 assert body.get("engine_import_ok") is True, body
-assert str(body.get("model_version") or "").startswith("INQSI-MLB-v3.0"), body
+assert str(body.get("model_version") or "").startswith("INQSI-MLB-v3.1"), body
+assert body.get("productionAuthoritySource") == "gate_promoted_DynamoDB_champion_bundle_only", body
+assert body.get("automaticPromotionPolicy") == "authoritative_AWS_audit_only_after_independent_90pct_authority_gates", body
 assert str(body.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"), body
 runtime = body.get("ml_runtime_install") or {}
 assert runtime.get("ok") is True, runtime
-assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.5-ddb-stable-vector-learning-readiness", runtime
+assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority", runtime
 required = {"legacyReliabilityOverlaySafety","singleDdbChampionAuthority","officialSemanticsFinalized","immutableFeatureFreeze","exactCleanCohortVectorPatch","officialFreezeBridge","canonicalLockedStorageFinalizer"}
 missing = sorted(name for name in required if (runtime.get("steps") or {}).get(name) is not True)
 assert not missing, {"missingRuntimeSteps": missing, "runtime": runtime}

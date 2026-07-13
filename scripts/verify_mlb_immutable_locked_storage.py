@@ -14,8 +14,8 @@ if str(HELLO) not in sys.path:
     sys.path.insert(0, str(HELLO))
 
 import mlb_immutable_locked_storage_patch as patch
-import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 import mlb_ml_clean_cohort_v1 as cohort
+from mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 
 class FakeTable:
@@ -79,28 +79,8 @@ def locked_row(base, *, game_id="provider-123", winner="Home Team"):
             "trainingEligible": True,
         },
     }
-    vector = {
-        "version": vector_contract.EXPECTED_VECTOR_VERSION,
-        "createdAtUtc": "2026-07-12T18:00:00+00:00",
-        "sourcePullAtUtc": "2026-07-12T17:55:00+00:00",
-        "lockAtUtc": "2026-07-12T18:00:00+00:00",
-        "gameId": game_id,
-        "slateDateEt": base["slate_date"],
-        "commenceTime": base["commenceTime"],
-        "homeTeam": "Home Team",
-        "awayTeam": "Away Team",
-        "predictedWinner": winner,
-        "predictedSide": row["predictedSide"],
-        "selectedAmericanOdds": -120,
-        "selectedPriceBook": "fanduel",
-        "selectedPriceSource": "real_book",
-        "features": {"homeMarketProb": 0.55, "awayMarketProb": 0.45},
-        "labels": {"homeWon": None, "pickCorrect": None},
-        "immutableSource": "locked_prediction_row_pre_game_features",
-        "derivedOnceFromImmutableLockedRow": True,
-        "fingerprintVersion": cohort.FINGERPRINT_VERSION,
-    }
-    vector["fingerprint"] = cohort.fingerprint_for_vector(vector)
+    attach_lock_safe_features(row)
+    vector = cohort.freeze_feature_snapshot(row)
     row["frozenFeatureVector"] = vector
     row["frozenFeatureVectorVersion"] = vector["version"]
     return row

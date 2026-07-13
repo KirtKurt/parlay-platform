@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+import importlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -164,6 +165,20 @@ def main() -> int:
     assert all((row.get("lockedCardAudit") or {}).get("matchMethod") == "provider_game_id" for row in audited)
     assert audited[0]["predictedWinner"] != audited[1]["predictedWinner"]
 
+    # When the full invariant suite starts with hello_world on PYTHONPATH,
+    # sitecustomize installs the production per-game staged lock on this module.
+    # This older verifier intentionally exercises the legacy complete-slate
+    # coverage wrapper in isolation; the per-game production path has its own
+    # stricter verifier (verify_mlb_per_game_lock.py). Reload the module after
+    # removing patch sentinels so this fixture cannot accidentally call the
+    # production stage reader/writer with its minimal FakeTable.
+    for sentinel in (
+        "_INQSI_MLB_DAILY_PER_GAME_LOCK_V1",
+        "_INQSI_MLB_DAILY_LOCK_COVERAGE_PATCH_APPLIED",
+    ):
+        if hasattr(daily_lock, sentinel):
+            delattr(daily_lock, sentinel)
+    importlib.reload(daily_lock)
     daily_lock_patch.apply(daily_lock)
 
     class FakeTable:

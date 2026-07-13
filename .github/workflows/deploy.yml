@@ -178,18 +178,31 @@ jobs:
           print(json.dumps(payload, indent=2, default=str))
           if payload.get("ok") is not True or payload.get("engine_import_ok") is not True:
               raise SystemExit("MLB v3 engine did not import in live AWS Lambda")
-          if not str(payload.get("model_version") or "").startswith("INQSI-MLB-v3.0"):
-              raise SystemExit("live model version is not MLB v3")
+          if not str(payload.get("model_version") or "").startswith("INQSI-MLB-v3.1"):
+              raise SystemExit("live model version is not MLB v3.1 automatic authority")
+          if payload.get("productionAuthoritySource") != "gate_promoted_DynamoDB_champion_bundle_only":
+              raise SystemExit("live MLB authority source is stale or not gate-promoted")
+          if payload.get("automaticPromotionPolicy") != "authoritative_AWS_audit_only_after_independent_90pct_authority_gates":
+              raise SystemExit("live MLB automatic promotion policy is stale")
           if not str(payload.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"):
               raise SystemExit("live ML optimization v3 orchestrator is missing")
           runtime = payload.get("ml_runtime_install") or {}
           if runtime.get("ok") is not True:
               raise SystemExit(f"live MLB ML runtime install failed: {runtime}")
-          expected_runtime = "MLB-ML-RUNTIME-INSTALL-v3.5-ddb-stable-vector-learning-readiness"
+          expected_runtime = "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority"
           if runtime.get("version") != expected_runtime:
               raise SystemExit(f"live MLB ML runtime is stale: expected {expected_runtime}, got {runtime.get('version')}")
           steps = runtime.get("steps") or {}
-          required = ["legacyReliabilityOverlaySafety", "singleDdbChampionAuthority", "officialSemanticsFinalized", "immutableFeatureFreeze", "canonicalLockedStorageFinalizer"]
+          required = [
+              "accuracyTargetsSeparated",
+              "legacyReliabilityOverlaySafety",
+              "singleDdbChampionAuthority",
+              "officialSemanticsFinalized",
+              "immutableFeatureFreeze",
+              "exactCleanCohortVectorPatch",
+              "officialFreezeBridge",
+              "canonicalLockedStorageFinalizer",
+          ]
           missing = [name for name in required if steps.get(name) is not True]
           if missing:
               raise SystemExit(f"live MLB ML runtime steps missing: {missing}")
@@ -249,9 +262,30 @@ jobs:
           curl --fail --silent --show-error "${API_URL}v1/mlb/today"
 
       - name: Smoke test MLB lock status endpoint
+        env:
+          API_URL: ${{ steps.stack_outputs.outputs.api_url }}
         run: |
-          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          curl --fail --silent --show-error "${API_URL}v1/mlb/locks/status"
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          with urllib.request.urlopen(os.environ["API_URL"] + "v1/mlb/locks/status", timeout=45) as resp:
+              payload = json.loads(resp.read().decode("utf-8"))
+          print(json.dumps(payload, indent=2, default=str))
+          preservation = payload.get("mlLockVectorPreservation") or {}
+          if preservation.get("ok") is not True or preservation.get("failClosed") is not True:
+              raise SystemExit(f"live exact-vector preservation is not fail-closed: {preservation}")
+          expected_vector = "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness"
+          if preservation.get("expectedVectorVersion") != expected_vector:
+              raise SystemExit(f"live lock vector version is stale: {preservation}")
+          per_game = payload.get("perGameLockInstallation") or {}
+          expected_lock = "INQSI-MLB-DAILY-LOCK-v4-per-game-tminus45-staged-write-once"
+          if per_game.get("ok") is not True or per_game.get("version") != expected_lock:
+              raise SystemExit(f"live per-game T-minus-45 lock is not installed: {per_game}")
+          if per_game.get("canonicalGameWriteAtOwnTMinus45") is not True or per_game.get("failClosed") is not True:
+              raise SystemExit(f"live per-game lock contract is incomplete: {per_game}")
+          PY
 
       - name: Smoke test MLB game-winner endpoint
         run: |

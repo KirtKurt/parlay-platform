@@ -22,7 +22,9 @@ except Exception:
 try:
     import mlb_daily_pick_lock as _inqsi_mlb_daily_pick_lock_for_coverage
     import mlb_daily_lock_coverage_patch as _inqsi_mlb_daily_lock_coverage_patch
+    import mlb_daily_per_game_lock_patch as _inqsi_mlb_daily_per_game_lock_patch
     _inqsi_mlb_daily_lock_coverage_patch.apply(_inqsi_mlb_daily_pick_lock_for_coverage)
+    _inqsi_mlb_daily_per_game_lock_patch.apply(_inqsi_mlb_daily_pick_lock_for_coverage)
 except Exception:
     pass
 

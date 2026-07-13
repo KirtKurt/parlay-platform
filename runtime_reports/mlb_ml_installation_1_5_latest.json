@@ -1,19 +1,19 @@
 {
   "ok": true,
   "proofType": "MLB_ML_INSTALLATION_1_5",
-  "version": "MLB-ML-INSTALLATION-1-5-v1.1-priced-postgreen",
+  "version": "MLB-ML-INSTALLATION-1-5-v1.2-90pct-automatic-gated",
   "checks": {
     "1_cleanPostFixCohort": {
       "installed": true,
-      "exactVectorVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
+      "exactVectorVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness",
       "fingerprintVerified": true,
       "outcomeLabelsAbsentAtLock": true,
       "selectedSideOddsAndSourcePresent": true
     },
     "2_separateOutcomeAndReliabilityModels": {
       "installed": true,
-      "outcomeModelVersion": "MLB-OUTCOME-MODEL-v1-home-win-probability",
-      "reliabilityModelVersion": "MLB-RELIABILITY-MODEL-v1.2-selected-pick-correctness-priced",
+      "outcomeModelVersion": "MLB-OUTCOME-MODEL-v2-temporal-home-win-probability",
+      "reliabilityModelVersion": "MLB-RELIABILITY-MODEL-v1.3-temporal-selected-pick-correctness",
       "probabilitiesInterchangeable": false
     },
     "3_chronologicalValidation": {
@@ -47,12 +47,15 @@
     "5_acceptanceAndPromotionGates": {
       "installed": true,
       "directionAndPlayabilityIndependent": true,
-      "automaticPromotion": false,
-      "manualReviewedDynamoDbPromotionRequired": true,
+      "automaticPromotion": true,
+      "automaticPromotionRequiresPassedApplicableGate": true,
+      "automaticPromotionBeforeGates": false,
       "minimumCleanOfficial": 500,
-      "minimumUntouchedTest": 100
+      "minimumUntouchedTest": 100,
+      "minimumSelectedUntouchedTest": 100,
+      "minimumRolling24hSlateAccuracyPct": 90.0
     }
   },
   "cleanSettlementJoinVerified": true,
-  "policy": "All five optimization components are installed. Production ML remains shadow-only until clean evidence and reviewed promotion gates pass."
+  "policy": "All five optimization components are installed. Production ML remains shadow-only until the 90% rolling official-card slate prerequisite and each authority's separate untouched-test gates pass; only the authoritative AWS audit may then promote automatically."
 }

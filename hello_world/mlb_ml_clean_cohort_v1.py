@@ -7,9 +7,12 @@ from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-VERSION = "MLB-ML-CLEAN-COHORT-v1-post-fix-immutable-feature-snapshot"
-FEATURE_SNAPSHOT_VERSION = "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome"
-FINGERPRINT_VERSION = "MLB-ML-FROZEN-FINGERPRINT-v2-ddb-canonical-bound-context"
+import mlb_ml_feature_missingness_v1 as feature_missingness
+import mlb_temporal_features_v1 as temporal_features
+
+VERSION = "MLB-ML-CLEAN-COHORT-v2-lock-safe-temporal-missingness"
+FEATURE_SNAPSHOT_VERSION = "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness"
+FINGERPRINT_VERSION = "MLB-ML-FROZEN-FINGERPRINT-v3-temporal-missingness-bound-context"
 LEGACY_FINGERPRINT_VERSION = "MLB-ML-FROZEN-FINGERPRINT-v1-game-lock-features"
 DEFAULT_MIN_LOCK_AT_UTC = os.environ.get("INQSI_MLB_ML_CLEAN_MIN_LOCK_AT_UTC", "2026-07-11T15:22:00+00:00")
 
@@ -102,6 +105,13 @@ def fingerprint_payload(vector: Dict[str, Any]) -> Dict[str, Any]:
         "selectedPriceSource": vector.get("selectedPriceSource"),
         "immutableSource": vector.get("immutableSource"),
         "derivedOnceFromImmutableLockedRow": vector.get("derivedOnceFromImmutableLockedRow"),
+        "temporalFeatureVersion": vector.get("temporalFeatureVersion"),
+        "temporalSourcePullAtUtc": vector.get("temporalSourcePullAtUtc"),
+        "temporalFeaturesAtOrBeforeLock": vector.get("temporalFeaturesAtOrBeforeLock"),
+        "missingnessFeatureVersion": vector.get("missingnessFeatureVersion"),
+        "fundamentalsSnapshotVersion": vector.get("fundamentalsSnapshotVersion"),
+        "fundamentalsSnapshotAsOfUtc": vector.get("fundamentalsSnapshotAsOfUtc"),
+        "fundamentalMasksAtOrBeforeLock": vector.get("fundamentalMasksAtOrBeforeLock"),
         "pregameLabelContract": {"homeWon": None, "pickCorrect": None},
         "features": _canonical_features(vector.get("features")),
     }
@@ -153,6 +163,41 @@ def _fundamental_value(snapshot: Dict[str, Any], key: str, default: float = 0.0)
     values = snapshot.get("numericValues") or {}
     value = _f(values.get(key), default)
     return float(value if value is not None else default)
+
+
+def _temporal_vector_features(
+    home_summary: Any,
+    away_summary: Any,
+    selected_side: str,
+    source_at: Any,
+    lock_at: Any,
+) -> Tuple[Dict[str, float], bool, Optional[datetime]]:
+    home_safe = temporal_features.provenance_is_lock_safe(home_summary, source_at, lock_at)
+    away_safe = temporal_features.provenance_is_lock_safe(away_summary, source_at, lock_at)
+    safe = bool(home_safe and away_safe)
+    home_flat = temporal_features.flatten(home_summary if home_safe else {}, "home")
+    away_flat = temporal_features.flatten(away_summary if away_safe else {}, "away")
+    values: Dict[str, float] = {**home_flat, **away_flat}
+    selected = home_flat if selected_side == "home" else away_flat
+    opponent = away_flat if selected_side == "home" else home_flat
+    for home_key, home_value in home_flat.items():
+        suffix = home_key[len("home"):]
+        away_key = f"away{suffix}"
+        if away_key not in away_flat:
+            continue
+        away_value = away_flat[away_key]
+        values[f"homeAway{suffix}Diff"] = home_value - away_value
+        selected_key = f"{selected_side}{suffix}"
+        opponent_key = f"{'away' if selected_side == 'home' else 'home'}{suffix}"
+        values[f"selected{suffix}"] = selected.get(selected_key, 0.0)
+        values[f"selectedOpponent{suffix}Diff"] = selected.get(selected_key, 0.0) - opponent.get(opponent_key, 0.0)
+    timestamps = [
+        temporal_features.parse_dt(summary.get("asOfUtc"))
+        for summary in (home_summary, away_summary)
+        if isinstance(summary, dict)
+    ]
+    timestamps = [value for value in timestamps if value]
+    return values, safe, max(timestamps) if safe and timestamps else None
 
 
 def _audit(row: Dict[str, Any]) -> Dict[str, Any]:
@@ -287,6 +332,19 @@ def freeze_feature_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
     )
     selected_price_book = row.get("priceBook") or selected_signal.get("priceBook")
     selected_price_source = row.get("priceSource") or selected_signal.get("priceSource")
+    source_at = _source_at(row)
+    lock_at = _lock_at(row)
+    temporal_values, temporal_safe, temporal_source = _temporal_vector_features(
+        home.get("temporalFeatures") or {},
+        away.get("temporalFeatures") or {},
+        selected_side,
+        source_at,
+        lock_at,
+    )
+    fundamental_masks_safe = feature_missingness.provenance_is_lock_safe(
+        fundamentals, source_at, lock_at, _parse_dt
+    )
+    missingness_values = feature_missingness.build_masks(fundamentals)
 
     features = {
         "homeMarketProb": home_prob,
@@ -297,18 +355,24 @@ def freeze_feature_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
         "deltaGapHome": float((_f(home.get("delta"), 0.0) or 0.0) - (_f(away.get("delta"), 0.0) or 0.0)),
         "homeBookDivergence": float(_f(home.get("bookDivergence"), 0.0) or 0.0),
         "awayBookDivergence": float(_f(away.get("bookDivergence"), 0.0) or 0.0),
+        "bookDivergenceGapHome": float((_f(home.get("bookDivergence"), 0.0) or 0.0) - (_f(away.get("bookDivergence"), 0.0) or 0.0)),
         "homeReversalCount": float(_f(home.get("reversalCount"), 0.0) or 0.0),
         "awayReversalCount": float(_f(away.get("reversalCount"), 0.0) or 0.0),
+        "reversalGapHome": float((_f(home.get("reversalCount"), 0.0) or 0.0) - (_f(away.get("reversalCount"), 0.0) or 0.0)),
         "homeRunLineMove": _run_line(home),
         "awayRunLineMove": _run_line(away),
+        "runLineGapHome": _run_line(home) - _run_line(away),
         "homeBookAgreement": _tag(home, "BOOK_AGREEMENT"),
         "awayBookAgreement": _tag(away, "BOOK_AGREEMENT"),
+        "bookAgreementGapHome": _tag(home, "BOOK_AGREEMENT") - _tag(away, "BOOK_AGREEMENT"),
         "homeSteam": _tag(home, "STEAM"),
         "awaySteam": _tag(away, "STEAM"),
+        "steamGapHome": _tag(home, "STEAM") - _tag(away, "STEAM"),
         "homeResistance": _tag(home, "RESISTANCE"),
         "awayResistance": _tag(away, "RESISTANCE"),
         "homePriceImpliedProb": float(_american_implied(home_price) or home_prob),
         "awayPriceImpliedProb": float(_american_implied(away_price) or away_prob),
+        "priceImpliedGapHome": float((_american_implied(home_price) or home_prob) - (_american_implied(away_price) or away_prob)),
         "selectedMarketProb": selected_prob,
         "selectedMarketEdge": selected_prob - opponent_prob,
         "selectedScore": float(_f(row.get("score"), 0.0) or 0.0),
@@ -332,12 +396,20 @@ def freeze_feature_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
         "windOutMph": _fundamental_value(fundamentals, "windOutMph"),
         "homeRestDays": _fundamental_value(fundamentals, "homeRestDays"),
         "awayRestDays": _fundamental_value(fundamentals, "awayRestDays"),
+        "starterFipGapHome": _fundamental_value(fundamentals, "homeStarterFip") - _fundamental_value(fundamentals, "awayStarterFip"),
+        "starterXfipGapHome": _fundamental_value(fundamentals, "homeStarterXfip") - _fundamental_value(fundamentals, "awayStarterXfip"),
+        "wrcPlusGapHome": _fundamental_value(fundamentals, "homeWrcPlus") - _fundamental_value(fundamentals, "awayWrcPlus"),
+        "bullpenFatigueGapHome": _fundamental_value(fundamentals, "homeBullpenFatigue") - _fundamental_value(fundamentals, "awayBullpenFatigue"),
+        "lineupStrengthGapHome": _fundamental_value(fundamentals, "homeLineupStrengthDelta") - _fundamental_value(fundamentals, "awayLineupStrengthDelta"),
+        "restDaysGapHome": _fundamental_value(fundamentals, "homeRestDays") - _fundamental_value(fundamentals, "awayRestDays"),
     }
+    features.update(temporal_values)
+    features.update(missingness_values)
     payload = {
         "version": FEATURE_SNAPSHOT_VERSION,
         "createdAtUtc": datetime.now(timezone.utc).isoformat(),
-        "sourcePullAtUtc": _source_at(row).isoformat() if _source_at(row) else None,
-        "lockAtUtc": _lock_at(row).isoformat() if _lock_at(row) else None,
+        "sourcePullAtUtc": source_at.isoformat() if source_at else None,
+        "lockAtUtc": lock_at.isoformat() if lock_at else None,
         "gameId": _game_id(row),
         "slateDateEt": row.get("slateDateEt") or row.get("slate_date"),
         "commenceTime": row.get("commenceTime") or row.get("commence_time"),
@@ -352,6 +424,13 @@ def freeze_feature_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
         "labels": {"homeWon": _home_won(row), "pickCorrect": _correct(row)},
         "immutableSource": "locked_prediction_row_pre_game_features",
         "derivedOnceFromImmutableLockedRow": True,
+        "temporalFeatureVersion": temporal_features.VERSION,
+        "temporalSourcePullAtUtc": temporal_source.isoformat() if temporal_source else None,
+        "temporalFeaturesAtOrBeforeLock": temporal_safe,
+        "missingnessFeatureVersion": feature_missingness.VERSION,
+        "fundamentalsSnapshotVersion": fundamentals.get("version") if isinstance(fundamentals, dict) else None,
+        "fundamentalsSnapshotAsOfUtc": fundamentals.get("asOfUtc") if isinstance(fundamentals, dict) else None,
+        "fundamentalMasksAtOrBeforeLock": fundamental_masks_safe,
         "fingerprintVersion": FINGERPRINT_VERSION,
     }
     payload["fingerprint"] = fingerprint_for_vector(payload)

@@ -56,12 +56,16 @@ def main() -> int:
             failures.append("ml_optimization_v3_not_applied")
         if authority.get("authoritative") != "mlOptimizationV3_clean_dual_model_only":
             failures.append("wrong_training_authority")
-        if authority.get("automaticChampionPromotion") is not False:
-            failures.append("automatic_champion_promotion_not_disabled")
-        if authority.get("productionAuthoritySource") != "reviewed_DynamoDB_champion_bundle_only":
+        if os.environ.get("INQSI_MLB_ML_AUTO_PROMOTE", "").lower() != "true":
+            failures.append("authoritative_aws_audit_auto_promotion_not_enabled")
+        if authority.get("automaticChampionPromotion") is not True:
+            failures.append("automatic_champion_promotion_not_enabled")
+        if authority.get("automaticPromotionGateRequired") is not True:
+            failures.append("automatic_champion_promotion_gate_not_required")
+        if authority.get("productionAuthoritySource") != "gate_promoted_DynamoDB_champion_bundle_only":
             failures.append("wrong_production_authority_source")
-        if optimization.get("automaticPromotionSupported") is not False:
-            failures.append("optimization_allows_automatic_promotion")
+        if optimization.get("automaticPromotionSupported") is not True or optimization.get("automaticPromotionEnabled") is not True:
+            failures.append("optimization_automatic_promotion_not_enabled")
 
         payload.update({
             "ok": not failures,

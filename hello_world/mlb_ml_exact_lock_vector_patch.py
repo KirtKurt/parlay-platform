@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-VERSION = "MLB-ML-EXACT-LOCK-VECTOR-PATCH-v1-clean-cohort-contract"
+VERSION = "MLB-ML-EXACT-LOCK-VECTOR-PATCH-v2-temporal-missingness-contract"
 
 
 def apply(frozen_module: Any):
@@ -39,6 +39,10 @@ def apply(frozen_module: Any):
                 and snapshot.get("sourcePullAtUtc")
                 and isinstance(snapshot.get("features"), dict)
                 and snapshot.get("features")
+                and snapshot.get("temporalFeaturesAtOrBeforeLock") is True
+                and snapshot.get("temporalSourcePullAtUtc")
+                and snapshot.get("fundamentalMasksAtOrBeforeLock") is True
+                and snapshot.get("fundamentalsSnapshotAsOfUtc")
             )
             freeze.update({
                 "exactVectorApplied": True,

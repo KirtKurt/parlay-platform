@@ -5,27 +5,40 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import mlb_ml_walk_forward_v1 as walk_forward
 
-VERSION = "MLB-ML-DUAL-MODEL-v1.2-immutable-features-final-label-join-priced-test"
-OUTCOME_MODEL_VERSION = "MLB-OUTCOME-MODEL-v1-home-win-probability"
-RELIABILITY_MODEL_VERSION = "MLB-RELIABILITY-MODEL-v1.2-selected-pick-correctness-priced"
+VERSION = "MLB-ML-DUAL-MODEL-v1.3-lock-safe-temporal-missingness-price-coverage-only"
+OUTCOME_MODEL_VERSION = "MLB-OUTCOME-MODEL-v2-temporal-home-win-probability"
+RELIABILITY_MODEL_VERSION = "MLB-RELIABILITY-MODEL-v1.3-temporal-selected-pick-correctness"
 VALIDATION_PROTOCOL = "chronological_train_validation_untouched_test"
+MAX_MODEL_FEATURES = 28
 
 OUTCOME_FEATURES = [
-    "homeMarketProb", "marketGapHome", "homeDelta", "awayDelta", "deltaGapHome",
-    "homeBookDivergence", "awayBookDivergence", "homeReversalCount", "awayReversalCount",
-    "homeRunLineMove", "awayRunLineMove", "homeBookAgreement", "awayBookAgreement",
-    "homeSteam", "awaySteam", "homeResistance", "awayResistance",
-    "homePriceImpliedProb", "awayPriceImpliedProb", "fundamentalsCompleteness",
-    "homeStarterFip", "awayStarterFip", "homeStarterXfip", "awayStarterXfip",
-    "homeWrcPlus", "awayWrcPlus", "homeBullpenFatigue", "awayBullpenFatigue",
-    "homeLineupStrengthDelta", "awayLineupStrengthDelta", "parkFactorRuns", "windOutMph",
-    "homeRestDays", "awayRestDays",
+    "homeMarketProb", "marketGapHome", "deltaGapHome", "bookDivergenceGapHome",
+    "reversalGapHome", "runLineGapHome", "bookAgreementGapHome", "steamGapHome",
+    "priceImpliedGapHome", "fundamentalsCompleteness", "starterFipGapHome",
+    "wrcPlusGapHome", "bullpenFatigueGapHome", "lineupStrengthGapHome",
+    "homeAwayVelocityPpHr60mDiff", "homeAwayVelocityPpHr180mDiff",
+    "homeAwayVelocityPpHrFullDiff", "homeAwayAcceleration60mPpHr2Diff",
+    "homeAwayAcceleration180mPpHr2Diff", "homeVolatilityPpPerPull180m",
+    "homeVolatilityPpPerPullFull", "homeReversalCountFull", "homePullCountFull",
+    "homeCoverageRatioFull", "fundamentalPitchingMissing",
+    "fundamentalOffenseLineupMissing", "fundamentalGameContextMissing",
 ]
 RELIABILITY_FEATURES = [
     "selectedMarketProb", "selectedMarketEdge", "selectedScore", "selectedReversalCount",
     "selectedBookDivergence", "selectedDelta", "selectedFavorite", "selectedHome",
-    "fundamentalsCompleteness",
+    "fundamentalsCompleteness", "selectedOpponentVelocityPpHr60mDiff",
+    "selectedOpponentVelocityPpHr180mDiff", "selectedOpponentVelocityPpHrFullDiff",
+    "selectedOpponentAcceleration60mPpHr2Diff", "selectedOpponentAcceleration180mPpHr2Diff",
+    "selectedVolatilityPpPerPull180m", "selectedVolatilityPpPerPullFull",
+    "selectedReversalCountFull", "selectedPullCountFull", "selectedCoverageRatioFull",
+    "fundamentalPitchingMissing", "fundamentalOffenseLineupMissing",
+    "fundamentalGameContextMissing",
 ]
+
+if len(OUTCOME_FEATURES) > MAX_MODEL_FEATURES or len(RELIABILITY_FEATURES) > MAX_MODEL_FEATURES:
+    raise RuntimeError("MLB shadow feature list exceeds the lock-safe small-sample dimensionality limit")
+if len(set(OUTCOME_FEATURES)) != len(OUTCOME_FEATURES) or len(set(RELIABILITY_FEATURES)) != len(RELIABILITY_FEATURES):
+    raise RuntimeError("MLB shadow feature lists contain duplicate fields")
 
 
 def _f(value: Any, default: float = 0.0) -> float:
@@ -135,21 +148,21 @@ def score(record: Dict[str, Any], model: Dict[str, Any]) -> float:
 
 def _selected_reliability_test(rows: Sequence[Dict[str, Any]], threshold: float) -> Dict[str, Any]:
     selected = [row for row in rows if walk_forward.clip_probability(row.get("reliabilityProbability")) >= threshold]
-    priced = []; profit = 0.0
+    exact_odds_rows = []
     for row in selected:
         decimal = _american_decimal(row.get("lockedAmericanOdds"))
         if decimal is None: continue
-        priced.append(row); profit += (decimal - 1.0) if int(row.get("pickCorrect") or 0) == 1 else -1.0
+        exact_odds_rows.append(row)
+    exact_coverage = round(len(exact_odds_rows) / len(selected) * 100.0, 2) if selected else 0.0
     return {"count": len(selected), "correct": sum(int(row.get("pickCorrect") or 0) for row in selected),
             "coveragePct": round(len(selected) / len(rows) * 100.0, 2) if rows else 0.0,
             "accuracyPct": walk_forward.accuracy(selected, "reliabilityProbability", "pickCorrect", threshold=threshold),
             "brierScore": walk_forward.brier(selected, "reliabilityProbability", "pickCorrect"),
             "logLoss": walk_forward.log_loss(selected, "reliabilityProbability", "pickCorrect"),
             "calibrationError": walk_forward.calibration_error(selected, "reliabilityProbability", "pickCorrect"),
-            "threshold": threshold, "pricedCount": len(priced), "unpricedCount": len(selected) - len(priced),
-            "priceCoveragePct": round(len(priced) / len(selected) * 100.0, 2) if selected else 0.0,
-            "flatUnitProfit": round(profit, 4) if priced else None,
-            "flatUnitRoiPct": round(profit / len(priced) * 100.0, 2) if priced else None}
+            "threshold": threshold, "pricedCount": len(exact_odds_rows),
+            "unpricedCount": len(selected) - len(exact_odds_rows),
+            "priceCoveragePct": exact_coverage, "exactOddsCoveragePct": exact_coverage}
 
 
 def _data_quality(records: Sequence[Dict[str, Any]]) -> Dict[str, Any]:
@@ -196,4 +209,4 @@ def train(clean_rows: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
             "testWasUntouchedDuringFitAndThresholdSelection": True,
             "status": "CHALLENGER_TRAINED_AWAITING_SEPARATE_PROMOTION_GATES", "dataQuality": _data_quality(records),
             "featureLabelPolicy": "immutable_pregame_features_plus_final_settlement_labels",
-            "policy": "Outcome predicts home-team win probability. Reliability predicts selected-pick correctness. Features are frozen before the game; labels are joined only after final settlement. Threshold selection uses validation only; accuracy, calibration, price coverage, and ROI use untouched test rows."}
+            "policy": "Outcome predicts home-team win probability. Reliability predicts selected-pick correctness. Features are frozen before the game; labels are joined only after final settlement. Threshold selection uses validation only; accuracy, calibration, and exact-odds coverage use untouched test rows."}

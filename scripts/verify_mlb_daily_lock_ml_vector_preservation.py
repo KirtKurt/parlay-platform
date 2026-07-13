@@ -16,6 +16,7 @@ if str(HELLO_WORLD) not in sys.path:
 import mlb_daily_lock_ml_vector_preservation_patch as patch
 import mlb_daily_lock_coverage_patch as coverage_patch
 import mlb_ml_clean_cohort_v1 as cohort
+from mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 
 def fingerprint(vector: dict) -> str:
@@ -34,29 +35,9 @@ def base_compact(row: dict) -> dict:
 
 
 def valid_row() -> dict:
-    vector = {
-        "version": patch.EXPECTED_VECTOR_VERSION,
-        "createdAtUtc": "2026-07-13T15:00:00+00:00",
-        "sourcePullAtUtc": "2026-07-13T14:59:00+00:00",
-        "lockAtUtc": "2026-07-13T15:00:00+00:00",
-        "gameId": "game-1",
-        "slateDateEt": "2026-07-13",
-        "commenceTime": "2026-07-13T18:00:00+00:00",
-        "homeTeam": "Home Club",
-        "awayTeam": "Away Club",
-        "predictedWinner": "Home Club",
-        "predictedSide": "home",
-        "selectedAmericanOdds": -115,
-        "selectedPriceBook": "FanDuel",
-        "selectedPriceSource": "real_book",
-        "features": {"homeMarketProb": 0.55, "awayMarketProb": 0.45},
-        "labels": {"homeWon": None, "pickCorrect": None},
-        "immutableSource": "locked_prediction_row_pre_game_features",
-        "derivedOnceFromImmutableLockedRow": True,
-        "fingerprintVersion": cohort.FINGERPRINT_VERSION,
-    }
-    vector["fingerprint"] = fingerprint(vector)
-    return {
+    source_at = "2026-07-13T14:59:00+00:00"
+    lock_at = "2026-07-13T15:00:00+00:00"
+    row = {
         "gameId": "game-1",
         "gameIdentity": "provider:game-1",
         "gameKey": "mlb|2026-07-13|away club|home club",
@@ -77,11 +58,14 @@ def valid_row() -> dict:
         "predictionSemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1-test",
         "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
         "lockedPrediction": True,
-        "lockedAtUtc": vector["lockAtUtc"],
-        "predictionSourcePullAt": vector["sourcePullAtUtc"],
+        "lockedAtUtc": lock_at,
+        "predictionSourcePullAt": source_at,
+        "slatePredictionLock": {
+            "locked": True,
+            "lockAtUtc": lock_at,
+            "latestScoringPullAt": source_at,
+        },
         "featureVectorFrozenAtLock": True,
-        "frozenFeatureVectorVersion": vector["version"],
-        "frozenFeatureVector": vector,
         "mlFeatureFreeze": {
             "exactVectorApplied": True,
             "exactVectorCreated": True,
@@ -94,6 +78,17 @@ def valid_row() -> dict:
         "correct": True,
         "success": True,
     }
+    pregame = copy.deepcopy(row)
+    for outcome in ("winner", "correct", "success"):
+        pregame.pop(outcome, None)
+    attach_lock_safe_features(pregame)
+    row["homeSignal"] = copy.deepcopy(pregame["homeSignal"])
+    row["awaySignal"] = copy.deepcopy(pregame["awaySignal"])
+    row["fundamentalsSnapshot"] = copy.deepcopy(pregame["fundamentalsSnapshot"])
+    vector = cohort.freeze_feature_snapshot(pregame)
+    row["frozenFeatureVectorVersion"] = vector["version"]
+    row["frozenFeatureVector"] = vector
+    return row
 
 
 class FakeTable:

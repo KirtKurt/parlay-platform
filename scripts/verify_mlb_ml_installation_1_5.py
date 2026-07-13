@@ -19,10 +19,10 @@ import mlb_ml_clean_cohort_v1 as cohort
 import mlb_ml_dual_model_v1 as dual
 import mlb_ml_exact_lock_vector_patch as exact_patch
 import mlb_ml_frozen_features as frozen_features
-import mlb_ml_manual_promotion_only_v1 as manual_only
 import mlb_ml_walk_forward_v1 as walk_forward
 import mlb_official_freeze_bridge as freeze_bridge
 import mlb_official_prediction_semantics as semantics
+from mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 
 def _fingerprint(vector):
@@ -104,6 +104,7 @@ def _locked_result():
             "closing_line_value": {"source_status": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"},
         },
     }
+    attach_lock_safe_features(row)
     return {
         "predictions": [row],
         "slatePredictionLock": {
@@ -200,32 +201,36 @@ def main() -> int:
         "modelScopeUntilFeedsConnected": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS",
     }
 
-    manual_only.apply(champion)
+    champion.AUTO_PROMOTE = True
     gate = champion.evaluate(
         {"ok": False, "status": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE", "split": {}, "untouchedTest": {}},
         clean_count=1,
         playable_evidence_count=0,
+        rolling_slate_accuracy_pct=90.0,
     )
-    automatic = champion.promote_if_allowed({"promotionGate": {"promotionDecision": "PROMOTE"}})
+    automatic = champion.promote_if_allowed({"promotionGate": gate})
     assert gate.get("directionPromotionEligible") is False
     assert gate.get("playabilityPromotionEligible") is False
     assert automatic.get("promoted") is False
     checks["5_acceptanceAndPromotionGates"] = {
         "installed": True,
         "directionAndPlayabilityIndependent": True,
-        "automaticPromotion": False,
-        "manualReviewedDynamoDbPromotionRequired": True,
+        "automaticPromotion": True,
+        "automaticPromotionRequiresPassedApplicableGate": True,
+        "automaticPromotionBeforeGates": False,
         "minimumCleanOfficial": champion.MIN_CLEAN_OFFICIAL,
         "minimumUntouchedTest": champion.MIN_UNTOUCHED_TEST,
+        "minimumSelectedUntouchedTest": champion.MIN_SELECTED_RELIABILITY_TEST,
+        "minimumRolling24hSlateAccuracyPct": champion.MIN_ROLLING_24H_SLATE_ACCURACY_PCT,
     }
 
     report = {
         "ok": all(item.get("installed") for item in checks.values()),
         "proofType": "MLB_ML_INSTALLATION_1_5",
-        "version": "MLB-ML-INSTALLATION-1-5-v1.1-priced-postgreen",
+        "version": "MLB-ML-INSTALLATION-1-5-v1.2-90pct-automatic-gated",
         "checks": checks,
         "cleanSettlementJoinVerified": clean.get("cleanRowCount") == 1,
-        "policy": "All five optimization components are installed. Production ML remains shadow-only until clean evidence and reviewed promotion gates pass.",
+        "policy": "All five optimization components are installed. Production ML remains shadow-only until the 90% rolling official-card slate prerequisite and each authority's separate untouched-test gates pass; only the authoritative AWS audit may then promote automatically.",
     }
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text(json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8")

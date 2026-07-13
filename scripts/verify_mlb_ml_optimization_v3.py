@@ -9,13 +9,13 @@ HELLO_WORLD = ROOT / "hello_world"
 if str(HELLO_WORLD) not in sys.path:
     sys.path.insert(0, str(HELLO_WORLD))
 
-import mlb_fundamentals_snapshot_v1 as fundamentals
 import mlb_ml_champion_challenger_v1 as champion
 import mlb_ml_champion_runtime_v1 as runtime
 import mlb_ml_clean_cohort_hardening_v1 as cohort_hardening
 import mlb_ml_clean_cohort_v1 as cohort
 import mlb_ml_dual_model_v1 as dual
 import mlb_ml_frozen_features as canonical_freeze
+from mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 cohort_hardening.apply(cohort)
 
@@ -74,7 +74,7 @@ def row(index: int, modern: bool = True):
 def frozen_row(index: int, modern: bool = True):
     base = row(index, modern=modern)
     final = {"status": base.pop("status"), "winner": base.pop("winner"), "correct": base.pop("correct")}
-    base["fundamentalsSnapshot"] = fundamentals.build(base)
+    attach_lock_safe_features(base)
     frozen = canonical_freeze.freeze_row(base, coverage_complete=True)
     frozen["frozenFeatureVector"] = cohort.freeze_feature_snapshot(frozen)
     frozen["frozenFeatureVectorVersion"] = frozen["frozenFeatureVector"].get("version")
@@ -117,7 +117,7 @@ def main() -> int:
     assert trained["reliabilityModel"]["thresholdSelectedOnValidationOnly"] is True
     assert trained["split"]["counts"]["test"] >= 30
     selected_test = trained["untouchedTest"]["selectedReliability"]
-    assert "priceCoveragePct" in selected_test and "flatUnitRoiPct" in selected_test
+    assert "priceCoveragePct" in selected_test and "exactOddsCoveragePct" in selected_test
     assert trained["dataQuality"]["modelScope"] == "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS"
 
     gate = champion.evaluate(trained, clean_count=180, playable_evidence_count=20)
@@ -137,7 +137,7 @@ def main() -> int:
     finally:
         runtime.champion_store.load_champion = original_loader
 
-    print("MLB ML optimization v3 verified: immutable pregame features, final-label join, dual models, untouched priced ROI, independent gates, and shadow-only runtime")
+    print("MLB ML optimization v3 verified: immutable pregame features, final-label join, dual models, exact-odds validation, independent 90% authority gates, and shadow-only behavior below target")
     return 0
 
 

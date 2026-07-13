@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "MLB-ML-CLEAN-COHORT-HARDENING-v6-ddb-stable-bound-vector"
+VERSION = "MLB-ML-CLEAN-COHORT-HARDENING-v7-lock-safe-temporal-missingness"
 GREEN_DEPLOYMENT_CUTOFF_UTC = os.environ.get("INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC", "2026-07-13T00:20:03+00:00")
 
 
@@ -63,7 +63,7 @@ def _candidate_rank(row: Dict[str, Any]) -> tuple:
 
 
 def apply(cohort_module: Any):
-    if getattr(cohort_module, "_INQSI_MLB_CLEAN_COHORT_HARDENING_V6_APPLIED", False):
+    if getattr(cohort_module, "_INQSI_MLB_CLEAN_COHORT_HARDENING_V7_APPLIED", False):
         return cohort_module
 
     # The clean evidence clock begins only after the fully green production deployment.
@@ -122,6 +122,27 @@ def apply(cohort_module: Any):
             reasons.append("frozen_vector_fingerprint_mismatch")
         if not isinstance(frozen_vector.get("features"), dict) or not frozen_vector.get("features"):
             reasons.append("frozen_vector_features_missing")
+        if frozen_vector.get("temporalFeatureVersion") != cohort_module.temporal_features.VERSION:
+            reasons.append("frozen_vector_temporal_feature_version_missing_or_wrong")
+        if frozen_vector.get("temporalFeaturesAtOrBeforeLock") is not True:
+            reasons.append("frozen_vector_temporal_features_not_lock_safe")
+        temporal_source = cohort_module._parse_dt(frozen_vector.get("temporalSourcePullAtUtc"))
+        if not temporal_source or not vector_source or not vector_lock or temporal_source > vector_source or temporal_source > vector_lock:
+            reasons.append("frozen_vector_temporal_source_after_or_missing_lock")
+        if frozen_vector.get("missingnessFeatureVersion") != cohort_module.feature_missingness.VERSION:
+            reasons.append("frozen_vector_missingness_feature_version_missing_or_wrong")
+        if frozen_vector.get("fundamentalsSnapshotVersion") != cohort_module.feature_missingness.FUNDAMENTALS_VERSION:
+            reasons.append("frozen_vector_fundamentals_snapshot_version_missing_or_wrong")
+        if frozen_vector.get("fundamentalMasksAtOrBeforeLock") is not True:
+            reasons.append("frozen_vector_fundamental_masks_not_lock_safe")
+        fundamental_source = cohort_module._parse_dt(frozen_vector.get("fundamentalsSnapshotAsOfUtc"))
+        if not fundamental_source or not vector_source or not vector_lock or fundamental_source > vector_source or fundamental_source > vector_lock:
+            reasons.append("frozen_vector_fundamental_source_after_or_missing_lock")
+        vector_features = frozen_vector.get("features") or {}
+        if _number(vector_features.get("homeTemporalAvailable")) != 1.0:
+            reasons.append("frozen_vector_home_temporal_history_missing")
+        if _number(vector_features.get("awayTemporalAvailable")) != 1.0:
+            reasons.append("frozen_vector_away_temporal_history_missing")
 
         labels = frozen_vector.get("labels")
         if not isinstance(labels, dict) or not {"homeWon", "pickCorrect"}.issubset(labels):
@@ -144,7 +165,7 @@ def apply(cohort_module: Any):
             if cohort_module._norm(frozen_vector.get(vector_key)) != cohort_module._norm(row_value):
                 reasons.append(f"frozen_vector_{vector_key.lower()}_mismatch")
 
-        # Only v2 vectors may enter the authoritative post-cutoff cohort. The
+        # Only current bound vectors may enter the authoritative post-cutoff cohort. The
         # legacy recalculator remains diagnostic-only for migration evidence.
         if fingerprint_version == str(cohort_module.FINGERPRINT_VERSION):
             vector_price = _number(frozen_vector.get("selectedAmericanOdds"))
@@ -236,4 +257,5 @@ def apply(cohort_module: Any):
     cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V4_APPLIED = True
     cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V5_APPLIED = True
     cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V6_APPLIED = True
+    cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V7_APPLIED = True
     return cohort_module

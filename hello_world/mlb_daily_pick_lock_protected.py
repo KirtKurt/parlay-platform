@@ -5,9 +5,20 @@ import os
 from typing import Any, Dict, Optional
 
 import mlb_daily_pick_lock
+import mlb_daily_lock_coverage_patch
 import mlb_daily_lock_ml_vector_preservation_patch
+import mlb_daily_per_game_lock_patch
 
+mlb_daily_lock_coverage_patch.apply(mlb_daily_pick_lock)
 ML_VECTOR_PRESERVATION_STATUS = mlb_daily_lock_ml_vector_preservation_patch.apply(mlb_daily_pick_lock)
+mlb_daily_per_game_lock_patch.apply(mlb_daily_pick_lock)
+PER_GAME_LOCK_STATUS = {
+    "ok": bool(getattr(mlb_daily_pick_lock, "_INQSI_MLB_DAILY_PER_GAME_LOCK_V1", False)),
+    "version": getattr(mlb_daily_pick_lock, "MLB_DAILY_PER_GAME_LOCK_VERSION", None),
+    "policy": getattr(mlb_daily_pick_lock, "LOCK_POLICY", None),
+    "failClosed": True,
+    "canonicalGameWriteAtOwnTMinus45": True,
+}
 ADMIN_TOKEN = os.environ.get("INQSI_ADMIN_API_TOKEN", "")
 
 
@@ -63,6 +74,7 @@ def _attach_preservation_status(response: Any) -> Any:
         payload = {"rawBody": body}
     if isinstance(payload, dict):
         payload["mlLockVectorPreservation"] = ML_VECTOR_PRESERVATION_STATUS
+        payload["perGameLockInstallation"] = PER_GAME_LOCK_STATUS
         out["body"] = json.dumps(payload)
     return out
 
@@ -70,7 +82,11 @@ def _attach_preservation_status(response: Any) -> Any:
 def lambda_handler(event, context):
     event = event or {}
     if (event.get("httpMethod") or "").upper() == "OPTIONS":
-        return _resp(200, {"ok": True, "mlLockVectorPreservation": ML_VECTOR_PRESERVATION_STATUS})
+        return _resp(200, {
+            "ok": True,
+            "mlLockVectorPreservation": ML_VECTOR_PRESERVATION_STATUS,
+            "perGameLockInstallation": PER_GAME_LOCK_STATUS,
+        })
     if ML_VECTOR_PRESERVATION_STATUS.get("ok") is not True:
         return _resp(
             500,
@@ -79,6 +95,16 @@ def lambda_handler(event, context):
                 "sport": "mlb",
                 "error": "MLB_DAILY_LOCK_ML_VECTOR_PRESERVATION_NOT_INSTALLED",
                 "status": ML_VECTOR_PRESERVATION_STATUS,
+            },
+        )
+    if PER_GAME_LOCK_STATUS.get("ok") is not True:
+        return _resp(
+            500,
+            {
+                "ok": False,
+                "sport": "mlb",
+                "error": "MLB_DAILY_PER_GAME_LOCK_NOT_INSTALLED",
+                "status": PER_GAME_LOCK_STATUS,
             },
         )
     auth_error = _auth_error(event)

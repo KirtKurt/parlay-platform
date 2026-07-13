@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-VERSION = "MLB-ML-RUNTIME-INSTALL-v3.5-ddb-stable-vector-learning-readiness"
+VERSION = "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority"
 
 
 def install() -> Dict[str, Any]:
@@ -70,8 +70,10 @@ def install() -> Dict[str, Any]:
 
     status["ok"] = not status["errors"] and all(status["steps"].values())
     status["policy"] = (
-        "The reviewed DynamoDB champion is the only model allowed to change direction or playability. "
-        "The rolling 24-hour all-games audit target is 90%, while recommendation reliability uses 60%. "
+        "The gate-promoted DynamoDB champion is the only model allowed to change direction or playability. "
+        "Only the authoritative AWS audit may automatically promote an independently eligible authority. "
+        "Both authorities require at least 90% current rolling 24-hour official-card slate accuracy; direction "
+        "also requires 90% untouched outcome accuracy and playability separately requires 90% selected untouched-test accuracy. "
         "Every new locked game stores the exact immutable clean-cohort vector before final labels exist."
     )
     return status

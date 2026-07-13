@@ -25,8 +25,8 @@ try:
 except Exception:
     OPTIMIZATION_VERSION = None
 
-MODEL_VERSION = "INQSI-MLB-v3.0-clean-dual-model-shadow-challenger"
-VERSION = "MLB-V3-READ-API-v1-dedicated-runtime-owner"
+MODEL_VERSION = "INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority"
+VERSION = "MLB-V3-READ-API-v2-automatic-gate-authority"
 
 
 def _json_default(value: Any) -> Any:
@@ -77,9 +77,10 @@ def _model_body() -> Dict[str, Any]:
         "pick_type": "individual_game_moneyline",
         "requiredWinnerPickPolicy": "one_official_locked_winner_prediction_for_every_mlb_game",
         "playablePolicy": "playability_is_separate_and_may_be_false_for_an_official_prediction",
-        "mlDirectionPolicy": "outcome_model_is_shadow_only_until_reviewed_champion_promotion",
+        "mlDirectionPolicy": "outcome_model_requires_90pct_untouched_accuracy_and_90pct_rolling_official_card_slate_accuracy_before_automatic_authority",
         "mlReliabilityPolicy": "reliability_probability_is_never_team_win_probability",
-        "productionAuthoritySource": "reviewed_DynamoDB_champion_bundle_only",
+        "productionAuthoritySource": "gate_promoted_DynamoDB_champion_bundle_only",
+        "automaticPromotionPolicy": "authoritative_AWS_audit_only_after_independent_90pct_authority_gates",
         "parlaysEnabled": False,
         "sourcePolicy": "The Odds API pull history plus timestamped source-honest fundamentals snapshots.",
     }

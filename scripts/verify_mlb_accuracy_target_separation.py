@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 HELLO_WORLD = ROOT / "hello_world"
@@ -13,11 +14,17 @@ if str(HELLO_WORLD) not in sys.path:
 import mlb_accuracy_target_policy_v1 as policy
 
 
-def _dual_model(selected_accuracy: float):
+def _dual_model(
+    selected_accuracy: float = 90.0,
+    selected_count: int = 100,
+    exact_odds_coverage: float = 90.0,
+    calibration_error: float = 0.10,
+    outcome_accuracy: float = 90.0,
+):
     selected_threshold = {
         "ok": True,
         "threshold": 0.7,
-        "selectedCount": 50,
+        "selectedCount": selected_count,
         "coveragePct": 50.0,
         "accuracyPct": selected_accuracy,
         "selectionSource": "validation_only",
@@ -43,6 +50,7 @@ def _dual_model(selected_accuracy: float):
         "untouchedTest": {
             "outcome": {
                 "count": 100,
+                "accuracyPct": outcome_accuracy,
                 "accuracyLiftPctPoints": 2.0,
                 "brierSkillPct": 1.0,
                 "logLoss": 0.60,
@@ -50,11 +58,10 @@ def _dual_model(selected_accuracy: float):
                 "baseline": {"logLoss": 0.70},
             },
             "selectedReliability": {
-                "count": 50,
+                "count": selected_count,
                 "accuracyPct": selected_accuracy,
-                "priceCoveragePct": 100.0,
-                "flatUnitRoiPct": 1.0,
-                "calibrationError": 0.05,
+                "exactOddsCoveragePct": exact_odds_coverage,
+                "calibrationError": calibration_error,
             },
         },
     }
@@ -64,33 +71,126 @@ def main() -> int:
     installed = policy.install()
     assert installed.get("ok") is True, installed
     assert installed.get("rolling24hAllGamesAuditTargetPct") == 90.0
-    assert installed.get("recommendationReliabilityThresholdPct") == 60.0
+    assert installed.get("recommendationReliabilityThresholdPct") == 90.0
+    assert installed.get("selectedUntouchedTestPlayabilityAccuracyTargetPct") == 90.0
+    assert installed.get("minimumCleanOfficial") == 500
+    assert installed.get("minimumUntouchedTest") == 100
+    assert installed.get("minimumSelectedUntouchedTest") == 100
+    assert installed.get("minimumExactOddsCoveragePct") == 90.0
+    assert installed.get("maximumReliabilityCalibrationError") == 0.10
+    assert installed.get("minimumRolling24hSlateAccuracyPct") == 90.0
+    assert installed.get("rolling24hSlateAccuracyProgressMilestonesPct") == [50.0, 60.0, 70.0, 80.0]
+    assert installed.get("rolling24hSlateAccuracyProgressMilestonesReportingOnly") is True
 
-    assert os.environ.get("INQSI_MLB_ML_TARGET_ACCURACY") == "60.0"
-    assert os.environ.get("INQSI_MLB_ML_PLAYABLE_TARGET_ACCURACY") == "60.0"
-    assert os.environ.get("INQSI_MLB_ML_MIN_SELECTED_RELIABILITY_ACCURACY") == "60.0"
+    assert os.environ.get("INQSI_MLB_ML_TARGET_ACCURACY") == "90.0"
+    assert os.environ.get("INQSI_MLB_ML_PLAYABLE_TARGET_ACCURACY") == "90.0"
+    assert os.environ.get("INQSI_MLB_ML_MIN_SELECTED_RELIABILITY_ACCURACY") == "90.0"
+    assert os.environ.get("INQSI_MLB_ML_MIN_SELECTED_RELIABILITY_TEST") == "100"
+    assert os.environ.get("INQSI_MLB_ML_MIN_PRODUCTION_SELECTED_TEST_ROWS") == "100"
     assert os.environ.get("INQSI_MLB_ROLLING_24H_ALL_GAMES_TARGET_ACCURACY") == "90.0"
 
     import mlb_ml_runtime_safety_patch as runtime_safety
     import mlb_ml_champion_challenger_v1 as champion
+    import mlb_ml_optimization_v3 as optimization
     import mlb_real_world_accuracy_semantics_fix as semantics
 
-    assert runtime_safety.MIN_ACCURACY_TARGET_PCT == 60.0
-    assert champion.MIN_SELECTED_RELIABILITY_ACCURACY == 60.0
+    assert runtime_safety.MIN_ACCURACY_TARGET_PCT == 90.0
+    assert runtime_safety.MIN_PRODUCTION_TEST_ROWS == 100
+    assert runtime_safety.MIN_PRODUCTION_SELECTED_TEST_ROWS == 100
+    assert runtime_safety.MIN_EXACT_ODDS_COVERAGE_PCT == 90.0
+    assert runtime_safety.MAX_RELIABILITY_CALIBRATION_ERROR == 0.10
+    assert champion.MIN_SELECTED_RELIABILITY_ACCURACY == 90.0
+    assert champion.MIN_SELECTED_RELIABILITY_TEST == 100
     assert champion.VERSION == policy.CHAMPION_GATE_VERSION
-    assert "v1.4" in champion.VERSION and "60pct" in champion.VERSION
+    assert "v1.5" in champion.VERSION and "90pct" in champion.VERSION
     assert semantics.ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT == 90.0
-    assert semantics.MIN_PLAYABLE_TARGET_ACCURACY_PCT == 60.0
+    assert semantics.MIN_PLAYABLE_TARGET_ACCURACY_PCT == 90.0
+    assert optimization._rolling_24h_slate_accuracy({
+        "summary": {"rolling24hOfficialCardSlateAccuracyPct": 90.0}
+    }) == 90.0
+    assert optimization._rolling_24h_slate_accuracy({}) is None
 
-    at_threshold = champion.evaluate(_dual_model(60.0), clean_count=500, playable_evidence_count=200)
+    overlay = SimpleNamespace()
+    runtime_safety.apply(overlay)
+    runtime_model = {
+        "productionApproved": True,
+        "promotionTargetAccuracyPct": 90.0,
+        "testMetrics": {
+            "testCount": 100,
+            "selectedCount": 100,
+            "selectedAccuracyPct": 90.0,
+            "exactOddsCoveragePct": 90.0,
+            "selectedCalibrationError": 0.10,
+            "rolling24hSlateAccuracyPct": 90.0,
+        },
+    }
+    assert overlay._validated(runtime_model, {}, 90.0) is True
+    no_rolling_metric = {**runtime_model, "testMetrics": {**runtime_model["testMetrics"], "rolling24hSlateAccuracyPct": None}}
+    assert overlay._validated(no_rolling_metric, {}, 90.0) is False
+
+    champion.AUTO_PROMOTE = True
+    at_threshold = champion.evaluate(
+        _dual_model(), clean_count=500, playable_evidence_count=200, rolling_slate_accuracy_pct=90.0
+    )
+    assert at_threshold.get("directionPromotionEligible") is True, at_threshold
     assert at_threshold.get("playabilityPromotionEligible") is True, at_threshold
-    assert at_threshold.get("recommendationReliabilityThresholdPct") == 60.0
+    assert at_threshold.get("promotionDecision") == "PROMOTE"
+    assert at_threshold.get("recommendationReliabilityThresholdPct") == 90.0
     assert at_threshold.get("rolling24hAllGamesAuditTargetPct") == 90.0
+    assert not any("roi" in str(key).lower() for key in at_threshold.get("playabilityChecks", {}))
+    assert not any("roi" in str(item.get("code", "")).lower() for item in at_threshold.get("blockers") or [])
 
-    below_threshold = champion.evaluate(_dual_model(59.99), clean_count=500, playable_evidence_count=200)
-    assert below_threshold.get("playabilityPromotionEligible") is False, below_threshold
-    codes = {item.get("code") for item in below_threshold.get("playabilityBlockers") or []}
-    assert "SELECTED_ACCURACY_TOO_LOW" in codes, below_threshold
+    # Rolling-slate progress milestones are shadow/reporting-only. Neither
+    # authority can activate at 50-80 or at 89.99.
+    for milestone in (50.0, 60.0, 70.0, 80.0, 89.99):
+        progress_only = champion.evaluate(
+            _dual_model(), clean_count=500, playable_evidence_count=200,
+            rolling_slate_accuracy_pct=milestone,
+        )
+        assert progress_only.get("directionPromotionEligible") is False, progress_only
+        assert progress_only.get("playabilityPromotionEligible") is False, progress_only
+        assert progress_only.get("promotionDecision") == "RETAIN_CURRENT_CHAMPION", progress_only
+        progress = progress_only.get("rolling24hSlateAccuracyProgress") or {}
+        assert progress.get("reportingOnly") is True and progress.get("affectsPromotionEligibility") is False
+
+    unavailable = champion.evaluate(_dual_model(), clean_count=500, playable_evidence_count=200)
+    assert unavailable.get("directionPromotionEligible") is False
+    assert unavailable.get("playabilityPromotionEligible") is False
+    assert "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE" in {item.get("code") for item in unavailable.get("blockers") or []}
+
+    selected_low = champion.evaluate(
+        _dual_model(selected_accuracy=89.99), clean_count=500, playable_evidence_count=200,
+        rolling_slate_accuracy_pct=90.0,
+    )
+    assert selected_low.get("directionPromotionEligible") is True
+    assert selected_low.get("playabilityPromotionEligible") is False
+    assert "SELECTED_ACCURACY_TOO_LOW" in {item.get("code") for item in selected_low.get("playabilityBlockers") or []}
+
+    selected_too_small = champion.evaluate(
+        _dual_model(selected_count=99), clean_count=500, playable_evidence_count=200,
+        rolling_slate_accuracy_pct=90.0,
+    )
+    assert "INSUFFICIENT_SELECTED_RELIABILITY_TEST_ROWS" in {item.get("code") for item in selected_too_small.get("playabilityBlockers") or []}
+
+    odds_low = champion.evaluate(
+        _dual_model(exact_odds_coverage=89.99), clean_count=500, playable_evidence_count=200,
+        rolling_slate_accuracy_pct=90.0,
+    )
+    assert "SELECTED_EXACT_ODDS_COVERAGE_TOO_LOW" in {item.get("code") for item in odds_low.get("playabilityBlockers") or []}
+
+    calibration_high = champion.evaluate(
+        _dual_model(calibration_error=0.1001), clean_count=500, playable_evidence_count=200,
+        rolling_slate_accuracy_pct=90.0,
+    )
+    assert "RELIABILITY_CALIBRATION_ERROR_TOO_HIGH" in {item.get("code") for item in calibration_high.get("playabilityBlockers") or []}
+
+    outcome_low = champion.evaluate(
+        _dual_model(outcome_accuracy=89.99), clean_count=500, playable_evidence_count=200,
+        rolling_slate_accuracy_pct=90.0,
+    )
+    assert outcome_low.get("directionPromotionEligible") is False
+    assert outcome_low.get("playabilityPromotionEligible") is True
+    assert "OUTCOME_UNTOUCHED_ACCURACY_BELOW_AUTHORITY_TARGET" in {item.get("code") for item in outcome_low.get("directionBlockers") or []}
 
     rolling_source = (HELLO_WORLD / "mlb_rolling_24h_audit.py").read_text(encoding="utf-8")
     assert "TARGET_ACCURACY_PCT = 90.0" in rolling_source
@@ -98,11 +198,17 @@ def main() -> int:
     semantics_source = (HELLO_WORLD / "mlb_real_world_accuracy_semantics_fix.py").read_text(encoding="utf-8")
     assert '"targetAccuracyPct": all_games_audit_target' in semantics_source
     assert '"playableRecommendationAccuracyThresholdPct": playable_threshold' in semantics_source
-    assert "auditTargetDoesNotSuppressRecommendations" in semantics_source
+    assert "auditTargetDoesNotSuppressOfficialPredictions" in semantics_source
+    assert "below90SuspendsModelAuthority" in semantics_source
+
+    champion_source = (HELLO_WORLD / "mlb_ml_champion_challenger_v1.py").read_text(encoding="utf-8")
+    assert 'INQSI_MLB_ML_AUTO_PROMOTE", "false"' in champion_source
+    audit_workflow = (ROOT / ".github/workflows/mlb-rolling-24h-audit.yml").read_text(encoding="utf-8")
+    assert "INQSI_MLB_ML_AUTO_PROMOTE: 'true'" in audit_workflow
 
     print(
-        "MLB accuracy targets verified: 90% applies only to the rolling 24-hour all-games audit; "
-        "60% applies to recommendation/reliability validation."
+        "MLB authority targets verified: the rolling 24-hour official-card slate average and the separate "
+        "untouched outcome/selected-playability populations must each reach 90%; 50-80 are reporting-only."
     )
     return 0
 

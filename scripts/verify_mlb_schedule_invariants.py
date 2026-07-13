@@ -11,6 +11,8 @@ ACCURACY_TARGET_SEPARATION_VERIFY = Path('scripts/verify_mlb_accuracy_target_sep
 ML_OPTIMIZATION_VERIFY = Path('scripts/verify_mlb_ml_optimization_v3.py')
 ML_PROMOTION_VERIFY = Path('scripts/verify_mlb_ml_promotion_safety.py')
 ML_FEATURE_INTEGRITY_VERIFY = Path('scripts/verify_mlb_ml_feature_integrity.py')
+ML_TEMPORAL_MISSINGNESS_VERIFY = Path('scripts/verify_mlb_temporal_missingness_features.py')
+PER_GAME_LOCK_VERIFY = Path('scripts/verify_mlb_per_game_lock.py')
 LOCKED_STORAGE_FINALIZER_VERIFY = Path('scripts/verify_mlb_locked_storage_finalizer.py')
 ML_INSTALLATION_1_5_VERIFY = Path('scripts/verify_mlb_ml_installation_1_5.py')
 MLB_API_FUNCTION_IMPORT_VERIFY = Path('scripts/verify_api_function_mlb_v3_import.py')
@@ -94,6 +96,7 @@ for required_path in [
     Path('hello_world/mlb_all_games_coverage_patch.py'),
     Path('hello_world/mlb_immutable_locked_storage_patch.py'),
     Path('hello_world/mlb_daily_lock_ml_vector_preservation_patch.py'),
+    Path('hello_world/mlb_daily_per_game_lock_patch.py'),
     Path('hello_world/mlb_daily_pick_lock_protected.py'),
     Path('hello_world/mlb_accuracy_target_policy_v1.py'),
     Path('hello_world/mlb_ml_frozen_features.py'),
@@ -103,17 +106,17 @@ for required_path in [
     Path('hello_world/mlb_ml_clean_cohort_v1.py'),
     Path('hello_world/mlb_ml_clean_cohort_hardening_v1.py'),
     Path('hello_world/mlb_ml_dual_model_v1.py'),
+    Path('hello_world/mlb_temporal_features_v1.py'),
+    Path('hello_world/mlb_ml_feature_missingness_v1.py'),
     Path('hello_world/mlb_ml_walk_forward_v1.py'),
     Path('hello_world/mlb_fundamentals_snapshot_v1.py'),
     Path('hello_world/mlb_ml_champion_challenger_v1.py'),
-    Path('hello_world/mlb_ml_manual_promotion_only_v1.py'),
     Path('hello_world/mlb_ml_champion_runtime_v1.py'),
     Path('hello_world/mlb_ml_runtime_safety_patch.py'),
     Path('hello_world/mlb_ml_runtime_install_v3.py'),
     Path('hello_world/mlb_locked_prediction_storage_finalizer_v1.py'),
     Path('hello_world/mlb_ml_optimization_v3.py'),
     Path('scripts/promote_mlb_ml_champion.py'),
-    Path('.github/workflows/mlb-ml-promote-champion.yml'),
     COVERAGE_VERIFY,
     IMMUTABLE_LOCKED_STORAGE_VERIFY,
     DAILY_LOCK_VECTOR_VERIFY,
@@ -121,6 +124,8 @@ for required_path in [
     ML_OPTIMIZATION_VERIFY,
     ML_PROMOTION_VERIFY,
     ML_FEATURE_INTEGRITY_VERIFY,
+    ML_TEMPORAL_MISSINGNESS_VERIFY,
+    PER_GAME_LOCK_VERIFY,
     LOCKED_STORAGE_FINALIZER_VERIFY,
     ML_INSTALLATION_1_5_VERIFY,
     MLB_API_FUNCTION_IMPORT_VERIFY,
@@ -140,9 +145,11 @@ subprocess.run([sys.executable, str(ACCURACY_TARGET_SEPARATION_VERIFY)], check=T
 subprocess.run([sys.executable, str(ML_OPTIMIZATION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_PROMOTION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_FEATURE_INTEGRITY_VERIFY)], check=True)
+subprocess.run([sys.executable, str(ML_TEMPORAL_MISSINGNESS_VERIFY)], check=True)
+subprocess.run([sys.executable, str(PER_GAME_LOCK_VERIFY)], check=True)
 subprocess.run([sys.executable, str(LOCKED_STORAGE_FINALIZER_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_INSTALLATION_1_5_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_TRAINING_READINESS_VERIFY)], check=True)
 subprocess.run([sys.executable, str(MLB_API_FUNCTION_IMPORT_VERIFY)], check=True)
 
-print('MLB production invariants PASS: complete-slate coverage, immutable write-once locked storage, exact ML lock vector survives daily-card compaction and invalid cards fail closed, 90% rolling all-games audit separated from the 60% recommendation threshold, exact clean-cohort lock vectors, final-label joins, separate outcome/reliability models, untouched validation with priced ROI, source-honest fundamentals, independent promotion gates, manual-only DDB champion promotion, and single runtime authority are installed.')
+print('MLB production invariants PASS: complete-slate coverage, immutable write-once locked storage, exact ML lock vector preservation, 90% rolling official-card slate authority target, separate 90% untouched outcome and selected-playability gates, exact-odds coverage, calibration, source-honest fundamentals, independent automatic DDB authority promotion, fail-closed suspension below the rolling target, and single runtime authority are installed.')

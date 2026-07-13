@@ -91,7 +91,7 @@ def split_chronological(
     # Fractions are targets, not additional admission gates. Always reserve the
     # declared validation and untouched-test minimums before growing the training
     # partition. This makes the stated minimum (80 + 30 + 30 by default) the real
-    # minimum instead of silently requiring extra rows to satisfy the 60% target.
+    # minimum instead of silently requiring extra rows to satisfy the 60% train-partition target.
     train_count = min(
         max(min_train, int(count * train_fraction)),
         count - min_validation - min_test,

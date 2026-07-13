@@ -6,18 +6,21 @@ import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-VERSION = "MLB-ML-CHAMPION-CHALLENGER-v1.4-independent-model-threshold-isolated-promotion"
-MIN_CLEAN_OFFICIAL = int(os.environ.get("INQSI_MLB_ML_MIN_CLEAN_OFFICIAL_FOR_PROMOTION", "500"))
-MIN_UNTOUCHED_TEST = int(os.environ.get("INQSI_MLB_ML_MIN_UNTOUCHED_TEST_FOR_PROMOTION", "100"))
+VERSION = "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion"
+MIN_CLEAN_OFFICIAL = max(500, int(os.environ.get("INQSI_MLB_ML_MIN_CLEAN_OFFICIAL_FOR_PROMOTION", "500")))
+MIN_UNTOUCHED_TEST = max(100, int(os.environ.get("INQSI_MLB_ML_MIN_UNTOUCHED_TEST_FOR_PROMOTION", "100")))
 MIN_PUBLIC_PLAYABLE_EVIDENCE = int(os.environ.get("INQSI_MLB_ML_MIN_PLAYABLE_EVIDENCE_FOR_PUBLIC_CLAIM", "200"))
 MIN_TEST_ACCURACY_LIFT_PCT = float(os.environ.get("INQSI_MLB_ML_MIN_TEST_ACCURACY_LIFT_PCT", "1.0"))
 MIN_BRIER_SKILL_PCT = float(os.environ.get("INQSI_MLB_ML_MIN_BRIER_SKILL_PCT", "0.1"))
-MAX_CALIBRATION_ERROR = float(os.environ.get("INQSI_MLB_ML_MAX_TEST_CALIBRATION_ERROR", "0.08"))
-MIN_SELECTED_RELIABILITY_TEST = int(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_RELIABILITY_TEST", "50"))
+MAX_CALIBRATION_ERROR = min(0.10, float(os.environ.get("INQSI_MLB_ML_MAX_TEST_CALIBRATION_ERROR", "0.08")))
+MIN_OUTCOME_UNTOUCHED_ACCURACY_PCT = 90.0
+MIN_SELECTED_RELIABILITY_TEST = max(100, int(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_RELIABILITY_TEST", "100")))
 MIN_SELECTED_RELIABILITY_ACCURACY = max(90.0, float(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_RELIABILITY_ACCURACY", "90")))
-MIN_SELECTED_PRICE_COVERAGE = float(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_PRICE_COVERAGE", "90"))
-MIN_SELECTED_ROI_PCT = float(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_ROI_PCT", "0"))
-MAX_RELIABILITY_CALIBRATION_ERROR = float(os.environ.get("INQSI_MLB_ML_MAX_RELIABILITY_CALIBRATION_ERROR", "0.10"))
+MIN_SELECTED_PRICE_COVERAGE = max(90.0, float(os.environ.get("INQSI_MLB_ML_MIN_SELECTED_PRICE_COVERAGE", "90")))
+MAX_RELIABILITY_CALIBRATION_ERROR = min(0.10, float(os.environ.get("INQSI_MLB_ML_MAX_RELIABILITY_CALIBRATION_ERROR", "0.10")))
+MIN_ROLLING_24H_SLATE_ACCURACY_PCT = 90.0
+RELIABILITY_PROGRESS_MILESTONES_PCT = (50.0, 60.0, 70.0, 80.0)
+# Fail-safe default: only the authoritative AWS audit explicitly enables writes.
 AUTO_PROMOTE = os.environ.get("INQSI_MLB_ML_AUTO_PROMOTE", "false").lower() in {"1", "true", "yes"}
 
 
@@ -76,7 +79,32 @@ def _block(bucket: List[Dict[str, Any]], code: str, actual: Any, required: Any) 
     bucket.append({"code": code, "actual": actual, "required": required})
 
 
-def evaluate(dual_model: Dict[str, Any], clean_count: int, playable_evidence_count: int) -> Dict[str, Any]:
+def _reliability_progress(rolling_slate_accuracy: Any) -> Dict[str, Any]:
+    """Expose rolling-slate progress bands without weakening the 90% gate."""
+    actual = _optional_f(rolling_slate_accuracy)
+    milestones = [
+        {"accuracyPct": milestone, "reached": bool(actual is not None and actual >= milestone)}
+        for milestone in RELIABILITY_PROGRESS_MILESTONES_PCT
+    ]
+    reached = [item["accuracyPct"] for item in milestones if item["reached"]]
+    pending = [item["accuracyPct"] for item in milestones if not item["reached"]]
+    return {
+        "reportingOnly": True,
+        "actualRolling24hSlateAccuracyPct": actual,
+        "milestones": milestones,
+        "highestReachedPct": max(reached) if reached else None,
+        "nextMilestonePct": min(pending) if pending else None,
+        "promotionTargetPct": MIN_ROLLING_24H_SLATE_ACCURACY_PCT,
+        "affectsPromotionEligibility": False,
+    }
+
+
+def evaluate(
+    dual_model: Dict[str, Any],
+    clean_count: int,
+    playable_evidence_count: int,
+    rolling_slate_accuracy_pct: Any = None,
+) -> Dict[str, Any]:
     direction_blockers: List[Dict[str, Any]] = []
     playability_blockers: List[Dict[str, Any]] = []
     untouched = dual_model.get("untouchedTest") or {}
@@ -93,6 +121,8 @@ def evaluate(dual_model: Dict[str, Any], clean_count: int, playable_evidence_cou
     reliability_model_available = bool(reliability_model.get("ok") is True)
     reliability_threshold_valid, reliability_threshold, reliability_threshold_info = _validated_reliability_threshold(reliability_model)
     reliability_threshold_matches_validation = _threshold_matches_validation(dual_model, reliability_model)
+    rolling_slate_accuracy = _optional_f(rolling_slate_accuracy_pct)
+    reliability_progress = _reliability_progress(rolling_slate_accuracy)
 
     common_checks = {
         "cleanOfficialCount": clean_count,
@@ -120,6 +150,13 @@ def evaluate(dual_model: Dict[str, Any], clean_count: int, playable_evidence_cou
 
     if outcome.get("accuracyLiftPctPoints") is None or _f(outcome.get("accuracyLiftPctPoints"), -999.0) < MIN_TEST_ACCURACY_LIFT_PCT:
         _block(direction_blockers, "DOES_NOT_BEAT_MARKET_ACCURACY", outcome.get("accuracyLiftPctPoints"), MIN_TEST_ACCURACY_LIFT_PCT)
+    if outcome.get("accuracyPct") is None or _f(outcome.get("accuracyPct"), -999.0) < MIN_OUTCOME_UNTOUCHED_ACCURACY_PCT:
+        _block(
+            direction_blockers,
+            "OUTCOME_UNTOUCHED_ACCURACY_BELOW_AUTHORITY_TARGET",
+            outcome.get("accuracyPct"),
+            MIN_OUTCOME_UNTOUCHED_ACCURACY_PCT,
+        )
     if outcome.get("brierSkillPct") is None or _f(outcome.get("brierSkillPct"), -999.0) < MIN_BRIER_SKILL_PCT:
         _block(direction_blockers, "NO_POSITIVE_BRIER_SKILL", outcome.get("brierSkillPct"), MIN_BRIER_SKILL_PCT)
     if outcome.get("logLoss") is None or baseline.get("logLoss") is None or _f(outcome.get("logLoss"), 999.0) >= _f(baseline.get("logLoss"), 0.0):
@@ -129,8 +166,7 @@ def evaluate(dual_model: Dict[str, Any], clean_count: int, playable_evidence_cou
 
     selected_count = int(reliability.get("count") or 0)
     selected_accuracy = reliability.get("accuracyPct")
-    price_coverage = reliability.get("priceCoveragePct")
-    selected_roi = reliability.get("flatUnitRoiPct")
+    price_coverage = reliability.get("exactOddsCoveragePct", reliability.get("priceCoveragePct"))
     reliability_calibration = reliability.get("calibrationError")
     if not reliability_threshold_valid or not reliability_threshold_matches_validation:
         _block(
@@ -150,11 +186,25 @@ def evaluate(dual_model: Dict[str, Any], clean_count: int, playable_evidence_cou
     if selected_accuracy is None or _f(selected_accuracy, -999.0) < MIN_SELECTED_RELIABILITY_ACCURACY:
         _block(playability_blockers, "SELECTED_ACCURACY_TOO_LOW", selected_accuracy, MIN_SELECTED_RELIABILITY_ACCURACY)
     if price_coverage is None or _f(price_coverage, -999.0) < MIN_SELECTED_PRICE_COVERAGE:
-        _block(playability_blockers, "SELECTED_PRICE_COVERAGE_TOO_LOW", price_coverage, MIN_SELECTED_PRICE_COVERAGE)
-    if selected_roi is None or _f(selected_roi, -999.0) <= MIN_SELECTED_ROI_PCT:
-        _block(playability_blockers, "SELECTED_ROI_NOT_POSITIVE", selected_roi, f"> {MIN_SELECTED_ROI_PCT}")
+        _block(playability_blockers, "SELECTED_EXACT_ODDS_COVERAGE_TOO_LOW", price_coverage, MIN_SELECTED_PRICE_COVERAGE)
     if reliability_calibration is None or _f(reliability_calibration, 999.0) > MAX_RELIABILITY_CALIBRATION_ERROR:
         _block(playability_blockers, "RELIABILITY_CALIBRATION_ERROR_TOO_HIGH", reliability_calibration, MAX_RELIABILITY_CALIBRATION_ERROR)
+    if rolling_slate_accuracy is None:
+        for blockers in (direction_blockers, playability_blockers):
+            _block(
+                blockers,
+                "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE",
+                None,
+                f">= {MIN_ROLLING_24H_SLATE_ACCURACY_PCT}",
+            )
+    elif rolling_slate_accuracy < MIN_ROLLING_24H_SLATE_ACCURACY_PCT:
+        for blockers in (direction_blockers, playability_blockers):
+            _block(
+                blockers,
+                "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
+                rolling_slate_accuracy,
+                MIN_ROLLING_24H_SLATE_ACCURACY_PCT,
+            )
 
     direction_eligible = not direction_blockers
     playability_eligible = not playability_blockers
@@ -165,21 +215,27 @@ def evaluate(dual_model: Dict[str, Any], clean_count: int, playable_evidence_cou
         "version": VERSION,
         "evaluatedAtUtc": datetime.now(timezone.utc).isoformat(),
         "automaticPromotionEnabled": AUTO_PROMOTE,
+        "automaticPromotionRequiresPassedApplicableGates": True,
         "promotionEligible": any_eligible,
         "directionPromotionEligible": direction_eligible,
         "playabilityPromotionEligible": playability_eligible,
-        "promotionDecision": "PROMOTE" if any_eligible and AUTO_PROMOTE else "READY_FOR_REVIEW" if any_eligible else "RETAIN_CURRENT_CHAMPION",
+        "promotionDecision": "PROMOTE" if any_eligible and AUTO_PROMOTE else "ELIGIBLE_BUT_AUTOMATIC_PROMOTION_DISABLED" if any_eligible else "RETAIN_CURRENT_CHAMPION",
         "directionAuthorityEnabled": bool(direction_eligible and AUTO_PROMOTE),
         "playabilityAuthorityEnabled": bool(playability_eligible and AUTO_PROMOTE),
         "directionChecks": {
             **common_checks,
             "outcomeModelAvailable": outcome_model_available,
+            "outcomeUntouchedAccuracyPct": outcome.get("accuracyPct"),
+            "minimumOutcomeUntouchedAccuracyPct": MIN_OUTCOME_UNTOUCHED_ACCURACY_PCT,
             "outcomeAccuracyLiftPctPoints": outcome.get("accuracyLiftPctPoints"),
             "minimumAccuracyLiftPctPoints": MIN_TEST_ACCURACY_LIFT_PCT,
             "outcomeBrierSkillPct": outcome.get("brierSkillPct"),
             "minimumBrierSkillPct": MIN_BRIER_SKILL_PCT,
             "outcomeLogLoss": outcome.get("logLoss"), "marketLogLoss": baseline.get("logLoss"),
             "outcomeCalibrationError": outcome.get("calibrationError"), "maximumCalibrationError": MAX_CALIBRATION_ERROR,
+            "rolling24hSlateAccuracyPct": rolling_slate_accuracy,
+            "minimumRolling24hSlateAccuracyPct": MIN_ROLLING_24H_SLATE_ACCURACY_PCT,
+            "rolling24hSlateAccuracyAvailable": rolling_slate_accuracy is not None,
         },
         "playabilityChecks": {
             **common_checks,
@@ -190,12 +246,14 @@ def evaluate(dual_model: Dict[str, Any], clean_count: int, playable_evidence_cou
             "minimumSelectedReliabilityTest": MIN_SELECTED_RELIABILITY_TEST,
             "selectedAccuracyPct": selected_accuracy,
             "minimumSelectedAccuracyPct": MIN_SELECTED_RELIABILITY_ACCURACY,
-            "selectedPriceCoveragePct": price_coverage,
-            "minimumSelectedPriceCoveragePct": MIN_SELECTED_PRICE_COVERAGE,
-            "selectedFlatUnitRoiPct": selected_roi,
-            "minimumSelectedFlatUnitRoiPct": f"> {MIN_SELECTED_ROI_PCT}",
+            "selectedExactOddsCoveragePct": price_coverage,
+            "minimumSelectedExactOddsCoveragePct": MIN_SELECTED_PRICE_COVERAGE,
             "selectedCalibrationError": reliability_calibration,
             "maximumSelectedCalibrationError": MAX_RELIABILITY_CALIBRATION_ERROR,
+            "rolling24hSlateAccuracyPct": rolling_slate_accuracy,
+            "minimumRolling24hSlateAccuracyPct": MIN_ROLLING_24H_SLATE_ACCURACY_PCT,
+            "rolling24hSlateAccuracyAvailable": rolling_slate_accuracy is not None,
+            "rolling24hSlateAccuracyProgress": reliability_progress,
         },
         "directionBlockers": direction_blockers,
         "playabilityBlockers": playability_blockers,
@@ -206,7 +264,8 @@ def evaluate(dual_model: Dict[str, Any], clean_count: int, playable_evidence_cou
             "required": MIN_PUBLIC_PLAYABLE_EVIDENCE,
             "policy": "Two hundred settled production playable recommendations are required for a credible public playable-performance claim, but this is not a circular prerequisite for an initially validated playability champion.",
         },
-        "policy": "Direction and playability earn authority independently. Direction must beat the market on untouched chronological data. Playability must reach at least 90% accuracy on the untouched selected sample and also satisfy calibration, price coverage, and positive ROI gates.",
+        "rolling24hSlateAccuracyProgress": reliability_progress,
+        "policy": "Direction and playability earn authority independently and are promoted automatically only after their applicable gates pass. Both require a current rolling 24-hour official-card MLB slate accuracy average of at least 90%, at least 500 clean rows, and at least 100 total untouched-test rows. Direction additionally requires at least 90% untouched outcome accuracy, market lift, and calibration/baseline gates. Playability additionally requires at least 100 selected untouched-test rows, at least 90% selected accuracy, at least 90% exact locked-odds coverage, and calibration error no greater than 0.10. The 50/60/70/80 rolling-slate milestones are shadow/reporting-only and never activate authority.",
     }
 
 
@@ -264,7 +323,7 @@ def _authority_payload(
     direction_enabled = bool(promote_direction or current.get("directionAuthorityEnabled"))
     playability_enabled = bool(promote_playability or current.get("playabilityAuthorityEnabled"))
 
-    # A partial promotion may only replace the artifact for the reviewed
+    # A partial promotion may only replace the artifact for the eligible
     # authority. The other artifact always comes from the existing champion,
     # even when that authority is currently disabled (it may still be useful as
     # shadow evidence and must never be silently swapped for the latest model).
@@ -276,8 +335,8 @@ def _authority_payload(
     payload["directionAuthorityEnabled"] = direction_enabled
     payload["playabilityAuthorityEnabled"] = playability_enabled
     payload["authorityModelSources"] = {
-        "outcomeModel": "latest_reviewed_challenger" if promote_direction else "existing_champion" if outcome_model else None,
-        "reliabilityModel": "latest_reviewed_challenger" if promote_playability else "existing_champion" if reliability_model else None,
+        "outcomeModel": "latest_gate_eligible_challenger" if promote_direction else "existing_champion" if outcome_model else None,
+        "reliabilityModel": "latest_gate_eligible_challenger" if promote_playability else "existing_champion" if reliability_model else None,
     }
     payload["partialPromotionModelIsolationApplied"] = True
     errors = _champion_payload_errors(payload)
@@ -297,7 +356,11 @@ def _store_champion(bundle: Dict[str, Any], approval_mode: str) -> Dict[str, Any
     if table is None or history is None:
         return {"ok": False, "promoted": False, "error": "SNAPSHOTS_TABLE not configured"}
     payload = copy.deepcopy(bundle)
-    payload["mode"] = "APPROVED_CHAMPION"
+    payload["mode"] = (
+        "APPROVED_CHAMPION"
+        if payload.get("directionAuthorityEnabled") is True or payload.get("playabilityAuthorityEnabled") is True
+        else str(payload.get("mode") or "SHADOW_CHAMPION")
+    )
     payload["approvedAtUtc"] = datetime.now(timezone.utc).isoformat()
     payload["approvalMode"] = approval_mode
     champion = history.ddb_safe({"PK": "MLB_ML_OPTIMIZATION#V3", "SK": "CHAMPION", "record_type": "mlb_ml_optimization_champion", "sport": "mlb", "created_at": payload["approvedAtUtc"], "data": payload})
@@ -305,15 +368,68 @@ def _store_champion(bundle: Dict[str, Any], approval_mode: str) -> Dict[str, Any
     return {"ok": True, "promoted": True, "pk": champion["PK"], "sk": champion["SK"], "directionAuthorityEnabled": payload.get("directionAuthorityEnabled"), "playabilityAuthorityEnabled": payload.get("playabilityAuthorityEnabled")}
 
 
+def _rolling_slate_authority_blocked(decision: Dict[str, Any]) -> bool:
+    rolling_codes = {
+        "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE",
+        "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
+    }
+    return any(
+        str(item.get("code") or "") in rolling_codes
+        for item in (decision.get("blockers") or [])
+        if isinstance(item, dict)
+    )
+
+
+def _suspend_current_authorities(decision: Dict[str, Any]) -> Dict[str, Any]:
+    current = load_champion() or {}
+    if not current or not (
+        current.get("directionAuthorityEnabled") is True
+        or current.get("playabilityAuthorityEnabled") is True
+    ):
+        return {
+            "ok": True,
+            "promoted": False,
+            "suspended": False,
+            "reason": "rolling_slate_gate_failed_no_enabled_authority_to_suspend",
+        }
+    payload = copy.deepcopy(current)
+    payload["directionAuthorityEnabled"] = False
+    payload["playabilityAuthorityEnabled"] = False
+    payload["mode"] = "SHADOW_SUSPENDED_ROLLING_24H_SLATE_BELOW_AUTHORITY_TARGET"
+    payload["automaticAuthoritySuspension"] = {
+        "applied": True,
+        "reason": "rolling_24h_official_card_slate_accuracy_missing_or_below_90pct",
+        "preservedModelArtifactsForShadow": True,
+        "promotionGateVersion": decision.get("version"),
+        "blockers": [
+            item for item in (decision.get("blockers") or [])
+            if isinstance(item, dict) and str(item.get("code") or "").startswith("ROLLING_24H_SLATE_ACCURACY_")
+        ],
+    }
+    result = _store_champion(payload, "automatic_rolling_slate_authority_suspension")
+    result["promoted"] = False
+    result["suspended"] = result.get("ok") is True
+    result["reason"] = "enabled_authorities_suspended_below_90pct_rolling_slate_target"
+    return result
+
+
 def promote_if_allowed(bundle: Dict[str, Any]) -> Dict[str, Any]:
     decision = bundle.get("promotionGate") or {}
-    if not AUTO_PROMOTE or decision.get("promotionDecision") != "PROMOTE":
+    if not AUTO_PROMOTE:
         return {"ok": True, "promoted": False, "reason": "automatic_promotion_disabled_or_not_eligible"}
+    if _rolling_slate_authority_blocked(decision):
+        return _suspend_current_authorities(decision)
+    if decision.get("promotionDecision") != "PROMOTE":
+        return {"ok": True, "promoted": False, "reason": "automatic_promotion_disabled_or_not_eligible"}
+    promote_direction = decision.get("directionPromotionEligible") is True
+    promote_playability = decision.get("playabilityPromotionEligible") is True
+    if not promote_direction and not promote_playability:
+        return {"ok": True, "promoted": False, "reason": "no_applicable_promotion_gate_passed"}
     payload, errors = _authority_payload(
         bundle,
         load_champion() or {},
-        bool(decision.get("directionPromotionEligible")),
-        bool(decision.get("playabilityPromotionEligible")),
+        promote_direction,
+        promote_playability,
     )
     if errors or payload is None:
         return {"ok": False, "promoted": False, "error": "unsafe automatic promotion payload", "safetyErrors": errors}
@@ -321,27 +437,14 @@ def promote_if_allowed(bundle: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def promote_reviewed_latest(authority: str = "both") -> Dict[str, Any]:
-    if authority not in {"direction", "playability", "both"}:
-        return {"ok": False, "promoted": False, "error": "authority must be direction, playability, or both"}
-    table, _ = _ddb_table()
-    if table is None:
-        return {"ok": False, "promoted": False, "error": "SNAPSHOTS_TABLE not configured"}
-    item = table.get_item(Key={"PK": "MLB_ML_OPTIMIZATION#V3", "SK": "CHALLENGER#LATEST"}, ConsistentRead=True).get("Item") or {}
-    bundle = item.get("data") or {}
-    gate = bundle.get("promotionGate") or {}
-    direction = authority in {"direction", "both"}
-    playability = authority in {"playability", "both"}
-    if direction and gate.get("directionPromotionEligible") is not True:
-        return {"ok": False, "promoted": False, "error": "latest challenger has not passed direction promotion gates", "blockers": gate.get("directionBlockers")}
-    if playability and gate.get("playabilityPromotionEligible") is not True:
-        return {"ok": False, "promoted": False, "error": "latest challenger has not passed playability promotion gates", "blockers": gate.get("playabilityBlockers")}
-    current = load_champion() or {}
-    payload, errors = _authority_payload(bundle, current, direction, playability)
-    if errors or payload is None:
-        return {"ok": False, "promoted": False, "error": "unsafe reviewed promotion payload", "safetyErrors": errors}
-    payload["manualReviewConfirmed"] = True
-    payload["manualReviewAuthorityRequested"] = authority
-    return _store_champion(payload, "manual_reviewed_challenger_promotion")
+    """Deprecated compatibility entry point; automatic gated audit is authoritative."""
+    return {
+        "ok": True,
+        "promoted": False,
+        "deprecated": True,
+        "requestedAuthority": authority,
+        "reason": "legacy_manual_promotion_disabled_use_authoritative_automatic_gate",
+    }
 
 
 def load_champion() -> Optional[Dict[str, Any]]:

@@ -16,6 +16,7 @@ if str(HELLO) not in sys.path:
 import mlb_immutable_locked_storage_patch as immutable_storage
 import mlb_last_possible_prediction_gate as final_gate
 import mlb_locked_prediction_storage_finalizer_v1 as finalizer
+from mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 
 class FakeTable:
@@ -91,6 +92,7 @@ def locked_result(*, include_price=True):
         "predictionSourcePullAt": "2026-07-13T17:14:00+00:00",
         "tags": ["SLATE_LOCKED"],
     }
+    attach_lock_safe_features(row)
     return {
         "ok": True,
         "sport": "mlb",

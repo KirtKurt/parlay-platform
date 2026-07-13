@@ -79,7 +79,8 @@ jobs:
           body = json.loads(response.get("body") or "{}")
           assert body.get("ok") is True, body
           assert body.get("engine_import_ok") is True, body
-          assert str(body.get("model_version") or "").startswith("INQSI-MLB-v3.0"), body
+          assert str(body.get("model_version") or "").startswith("INQSI-MLB-v3.1"), body
+          assert body.get("productionAuthoritySource") == "gate_promoted_DynamoDB_champion_bundle_only", body
           assert str(body.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"), body
           runtime = body.get("ml_runtime_install") or {}
           assert runtime.get("ok") is True, runtime

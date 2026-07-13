@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v9-separated-accuracy-targets"
+VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v10-90pct-automatic-gated-promotion"
 AUTHORITATIVE_TRAINER = "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger"
 _INSTALLED = False
 
@@ -29,7 +29,7 @@ def install() -> dict:
         accuracy_policy = mlb_accuracy_target_policy_v1.install()
         if accuracy_policy.get("ok") is not True:
             raise RuntimeError(str(accuracy_policy.get("errors") or accuracy_policy))
-        applied.append("90pct_all_games_audit_60pct_recommendation_policy")
+        applied.append("90pct_rolling_slate_and_untouched_playability_policy")
     except Exception as exc:
         errors.append(f"accuracy_target_policy:{exc}")
 
@@ -49,14 +49,6 @@ def install() -> dict:
     except Exception as exc:
         errors.append(f"freeze_bridge:{exc}")
 
-    try:
-        import mlb_ml_champion_challenger_v1
-        import mlb_ml_manual_promotion_only_v1
-        mlb_ml_manual_promotion_only_v1.apply(mlb_ml_champion_challenger_v1)
-        applied.append("automatic_champion_promotion_permanently_disabled")
-    except Exception as exc:
-        errors.append(f"promotion_safety:{exc}")
-
     _INSTALLED = not errors
     return {
         "ok": not errors,
@@ -65,14 +57,15 @@ def install() -> dict:
         "errors": errors,
         "authoritativeTrainer": AUTHORITATIVE_TRAINER,
         "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
-        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.4-canonical-exact-vector-storage",
+        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority",
         "runtimeInstallerCallSite": "usercustomize.py_after_prediction_chain",
         "singleRuntimeInstallCall": True,
         "duplicateTrainerAuthorityDisabled": True,
         "duplicateOutcomeRuntimeAuthorityDisabled": True,
-        "automaticPromotionDisabled": True,
+        "automaticPromotionSupported": True,
+        "automaticPromotionEnabledOnlyByAuthoritativeAwsAudit": True,
+        "automaticPromotionRequiresApplicableGate": True,
         "rolling24hAllGamesAuditTargetPct": 90.0,
-        "recommendationReliabilityThresholdPct": 60.0,
-        "manualPromotionModule": "MLB-ML-MANUAL-PROMOTION-ONLY-v1",
-        "manualPromotionWorkflow": "mlb-ml-promote-champion.yml",
+        "rolling24hSlateAccuracyAuthorityTargetPct": 90.0,
+        "selectedUntouchedTestAccuracyTargetPct": 90.0,
     }

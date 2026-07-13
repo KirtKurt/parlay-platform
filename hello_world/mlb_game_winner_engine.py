@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import inqsi_pull_history as history
+import mlb_temporal_features_v1 as temporal_features
 
 SLATE_TZ = ZoneInfo("America/New_York")
 ENGINE = "MLB-SINGLE-GAME-ML-PROMOTION-v2.1"
@@ -208,6 +209,7 @@ def _side_score(series: List[Dict[str, Any]], side: str) -> Dict[str, Any]:
     price, price_book = _price_from_book(game, side)
     decimal_odds = _american_decimal(price)
     market_side = _market_side(price)
+    temporal = temporal_features.summarize_side(series, side, cutoff_at=latest.get("pulled_at"))
 
     movement_adj = max(-0.03, min(0.03, delta * 0.70))
     if market_side == "underdog" and delta > 0:
@@ -291,6 +293,8 @@ def _side_score(series: List[Dict[str, Any]], side: str) -> Dict[str, Any]:
         "bookCount": book_count,
         "bookDivergence": round(divergence, 6),
         "reversalCount": reversals,
+        "temporalFeatures": temporal,
+        "temporalFeatureVersion": temporal_features.VERSION,
         "tags": sorted(set(tags)),
         "blockedReasons": blocked,
         "promoted": promoted,
@@ -352,6 +356,7 @@ def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any
         "pullCountForGame": len(series),
         "homeSignal": home,
         "awaySignal": away,
+        "temporalFeatureVersion": temporal_features.VERSION,
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
         "createdAt": _now(),
     }

@@ -3,9 +3,10 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Optional
 
-VERSION = "MLB-REAL-WORLD-ACCURACY-v1.5-90pct-all-games-audit-60pct-recommendation"
+VERSION = "MLB-REAL-WORLD-ACCURACY-v1.6-90pct-production-reliability"
 ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT = 90.0
-MIN_PLAYABLE_TARGET_ACCURACY_PCT = 60.0
+MIN_PLAYABLE_TARGET_ACCURACY_PCT = 90.0
+RELIABILITY_PROGRESS_MILESTONES_PCT = (50.0, 60.0, 70.0, 80.0)
 
 
 def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -22,6 +23,19 @@ def _target_floor(value: Any, minimum: float) -> float:
     return max(float(minimum), float(parsed or minimum))
 
 
+def _rolling_slate_progress(value: Any) -> Dict[str, Any]:
+    actual = _f(value)
+    return {
+        "reportingOnlyBelow90Pct": True,
+        "actualRolling24hOfficialCardSlateAccuracyPct": actual,
+        "milestones": [
+            {"accuracyPct": milestone, "reached": bool(actual is not None and actual >= milestone)}
+            for milestone in RELIABILITY_PROGRESS_MILESTONES_PCT
+        ],
+        "authorityTargetPct": MIN_PLAYABLE_TARGET_ACCURACY_PCT,
+    }
+
+
 def _install_critical_ml_fixes() -> Dict[str, Any]:
     try:
         import mlb_ml_critical_blockers_patch
@@ -32,7 +46,7 @@ def _install_critical_ml_fixes() -> Dict[str, Any]:
 
 def apply(accuracy_module: Any):
     critical_fix_status = _install_critical_ml_fixes()
-    if getattr(accuracy_module, "_INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V15", False):
+    if getattr(accuracy_module, "_INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V16", False):
         return accuracy_module
 
     def strict_playable(row: Dict[str, Any]) -> bool:
@@ -127,19 +141,23 @@ def apply(accuracy_module: Any):
             ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT,
         )
         playable_threshold = _target_floor(
-            os.environ.get("INQSI_MLB_ML_PLAYABLE_TARGET_ACCURACY", "60"),
+            os.environ.get("INQSI_MLB_ML_PLAYABLE_TARGET_ACCURACY", "90"),
             MIN_PLAYABLE_TARGET_ACCURACY_PCT,
         )
 
         summary.update({
             "targetAccuracyPct": all_games_audit_target,
             "rolling24hAllGamesAccuracyPct": official_accuracy,
+            "rolling24hOfficialCardSlateAccuracyPct": official_accuracy,
+            "rolling24hOfficialCardSlateAuthorityTargetPct": all_games_audit_target,
+            "rolling24hOfficialCardSlateAccuracyProgress": _rolling_slate_progress(official_accuracy),
             "rolling24hTargetMet": (official_accuracy >= all_games_audit_target) if official_accuracy is not None else None,
             "optimizedPickCount": current_playable.get("count"),
             "optimizedCorrect": current_playable.get("correct"),
             "optimizedWrong": current_playable.get("wrong"),
             "rolling24hOptimizedAccuracyPct": playable_accuracy,
             "playableRecommendationAccuracyThresholdPct": playable_threshold,
+            "selectedUntouchedTestPlayabilityAccuracyTargetPct": MIN_PLAYABLE_TARGET_ACCURACY_PCT,
             "rolling24hPlayableThresholdMet": (playable_accuracy >= playable_threshold) if playable_accuracy is not None else None,
             "allScoredPickAccuracyPct": official_accuracy,
             "sevenDayRowsUsedForLearning": (seven.get("officialPredictions") or {}).get("count"),
@@ -150,10 +168,12 @@ def apply(accuracy_module: Any):
             "seasonAccuracyPct": season_official.get("accuracyPct"),
             "seasonOfficialPredictionCount": season_official.get("count"),
             "seasonPlayablePredictionCount": season_playable.get("count"),
-            "accuracyTargetRowPolicy": "90pct_target_applies_only_to_all_official_games_in_the_rolling_24h_audit; recommendation_reliability_threshold_is_60pct",
+            "accuracyTargetRowPolicy": "90pct_is_the_production_playability_accuracy_gate_and_the_rolling_24h_all_games_audit_target",
             "actionabilityPolicy": "Playable metrics require explicit modern playability or ACTIONABLE_PICK/ML_CONFIRMED. officialPick is never a playability signal.",
             "officialCardPolicy": "Every immutable locked winner is graded as an official prediction, regardless of playability.",
-            "optimizationTargetPolicy": "Reliability/recommendation validation uses a 60% selected-sample threshold plus positive ROI, adequate price coverage, and acceptable calibration. Outcome direction must independently beat the de-vigged market baseline. The 90% figure is reporting-only for the rolling 24-hour all-games audit.",
+            "optimizationTargetPolicy": "Production playability requires at least 100 selected untouched-test rows, 90% selected accuracy, 90% exact locked-odds coverage, calibration error no greater than 0.10, 500 clean rows, and 100 total untouched-test rows. Outcome direction has independent gates. Eligible authorities promote automatically only in the authoritative AWS audit.",
+            "rolling24hSlateAccuracyProgressMilestonesPct": list(RELIABILITY_PROGRESS_MILESTONES_PCT),
+            "rolling24hSlateAccuracyProgressMilestonesReportingOnly": True,
             "accuracyClassificationVersion": VERSION,
         })
         out["summary"] = summary
@@ -167,8 +187,12 @@ def apply(accuracy_module: Any):
         rwa["mlCriticalFixStatus"] = critical_fix_status
         rwa["mlTrainingPolicy"] = "Only immutable lock-time feature vectors with current semantics and complete slate coverage may train the dual-model ML v3 system."
         rwa["rolling24hAllGamesAuditTargetPct"] = all_games_audit_target
+        rwa["rolling24hOfficialCardSlateAccuracyPct"] = official_accuracy
+        rwa["rolling24hOfficialCardSlateAuthorityTargetPct"] = all_games_audit_target
+        rwa["rolling24hOfficialCardSlateAccuracyProgress"] = _rolling_slate_progress(official_accuracy)
         rwa["playableAccuracyTargetPct"] = playable_threshold
-        rwa["auditTargetDoesNotSuppressRecommendations"] = True
+        rwa["auditTargetDoesNotSuppressOfficialPredictions"] = True
+        rwa["below90SuspendsModelAuthority"] = True
         out["realWorldAccuracy"] = rwa
         return out
 
@@ -191,4 +215,5 @@ def apply(accuracy_module: Any):
     accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V13 = True
     accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V14 = True
     accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V15 = True
+    accuracy_module._INQSI_MLB_REAL_WORLD_ACCURACY_SEMANTICS_FIXED_V16 = True
     return accuracy_module

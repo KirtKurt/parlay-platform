@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
 VERSION = "MLB-DAILY-LOCK-ML-VECTOR-PRESERVATION-v1-fail-closed"
-EXPECTED_VECTOR_VERSION = "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome"
+EXPECTED_VECTOR_VERSION = "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness"
 
 # These fields are intentionally retained in the write-once daily card because the
 # postgame outcome and reliability models must be trained from the exact pregame
@@ -67,6 +67,13 @@ def _selected_price_proven(row: Dict[str, Any]) -> bool:
     return bool(price not in (None, "", 0, 0.0) and (book or source in {"real_book", "locked_real_book"}))
 
 
+def _number(value: Any) -> float | None:
+    try:
+        return float(value) if value not in (None, "") else None
+    except Exception:
+        return None
+
+
 def _validate(row: Dict[str, Any], compact: Dict[str, Any]) -> List[str]:
     errors: List[str] = []
     vector = compact.get("frozenFeatureVector")
@@ -118,6 +125,78 @@ def _validate(row: Dict[str, Any], compact: Dict[str, Any]) -> List[str]:
     if source_at and row_source_at and source_at != row_source_at:
         errors.append("frozen_vector_source_timestamp_mismatch")
 
+    try:
+        import mlb_ml_clean_cohort_v1 as cohort
+        import mlb_ml_dual_model_v1 as dual
+
+        features = vector.get("features") or {}
+        if vector.get("temporalFeatureVersion") != cohort.temporal_features.VERSION:
+            errors.append("frozen_vector_temporal_feature_version_missing_or_wrong")
+        if vector.get("temporalFeaturesAtOrBeforeLock") is not True:
+            errors.append("frozen_vector_temporal_features_not_lock_safe")
+        temporal_source = _parse_dt(vector.get("temporalSourcePullAtUtc"))
+        if not temporal_source or not source_at or not lock_at or temporal_source > source_at or temporal_source > lock_at:
+            errors.append("frozen_vector_temporal_source_after_or_missing_lock")
+        if _number(features.get("homeTemporalAvailable")) != 1.0:
+            errors.append("frozen_vector_home_temporal_history_missing")
+        if _number(features.get("awayTemporalAvailable")) != 1.0:
+            errors.append("frozen_vector_away_temporal_history_missing")
+
+        temporal_times = []
+        temporal_summaries: Dict[str, Any] = {}
+        for side in ("home", "away"):
+            signal = row.get(f"{side}Signal") or {}
+            summary = signal.get("temporalFeatures") if isinstance(signal, dict) else None
+            if not cohort.temporal_features.provenance_is_lock_safe(summary, source_at, lock_at):
+                errors.append(f"{side}_temporal_summary_not_lock_safe")
+                continue
+            parsed = _parse_dt(summary.get("asOfUtc"))
+            if parsed:
+                temporal_times.append(parsed)
+                temporal_summaries[side] = summary
+        if temporal_source and temporal_times and max(temporal_times) != temporal_source:
+            errors.append("frozen_vector_temporal_source_summary_mismatch")
+        if len(temporal_summaries) == 2:
+            expected_temporal, expected_safe, expected_temporal_source = cohort._temporal_vector_features(
+                temporal_summaries["home"],
+                temporal_summaries["away"],
+                str(row.get("predictedSide") or "home"),
+                source_at,
+                lock_at,
+            )
+            if not expected_safe or expected_temporal_source != temporal_source:
+                errors.append("frozen_vector_temporal_recalculation_provenance_mismatch")
+            if any(_number(features.get(key)) != float(value) for key, value in expected_temporal.items()):
+                errors.append("frozen_vector_temporal_feature_recalculation_mismatch")
+
+        if vector.get("missingnessFeatureVersion") != cohort.feature_missingness.VERSION:
+            errors.append("frozen_vector_missingness_feature_version_missing_or_wrong")
+        if vector.get("fundamentalsSnapshotVersion") != cohort.feature_missingness.FUNDAMENTALS_VERSION:
+            errors.append("frozen_vector_fundamentals_snapshot_version_missing_or_wrong")
+        if vector.get("fundamentalMasksAtOrBeforeLock") is not True:
+            errors.append("frozen_vector_fundamental_masks_not_lock_safe")
+        fundamental_source = _parse_dt(vector.get("fundamentalsSnapshotAsOfUtc"))
+        if not fundamental_source or not source_at or not lock_at or fundamental_source > source_at or fundamental_source > lock_at:
+            errors.append("frozen_vector_fundamental_source_after_or_missing_lock")
+        fundamentals = compact.get("fundamentalsSnapshot") or row.get("fundamentalsSnapshot") or {}
+        if fundamentals.get("version") != vector.get("fundamentalsSnapshotVersion"):
+            errors.append("frozen_vector_fundamentals_snapshot_version_mismatch")
+        if _parse_dt(fundamentals.get("asOfUtc")) != fundamental_source:
+            errors.append("frozen_vector_fundamentals_snapshot_source_mismatch")
+        if not cohort.feature_missingness.provenance_is_lock_safe(fundamentals, source_at, lock_at, _parse_dt):
+            errors.append("fundamentals_snapshot_not_lock_safe")
+        expected_masks = cohort.feature_missingness.build_masks(fundamentals)
+        if any(_number(features.get(key)) != float(value) for key, value in expected_masks.items()):
+            errors.append("frozen_vector_fundamental_mask_recalculation_mismatch")
+
+        required_features = set(dual.OUTCOME_FEATURES) | set(dual.RELIABILITY_FEATURES)
+        if required_features - set(features):
+            errors.append("frozen_vector_required_model_features_missing")
+        elif any(_number(features.get(key)) is None for key in required_features):
+            errors.append("frozen_vector_required_model_feature_not_numeric")
+    except Exception:
+        errors.append("frozen_vector_temporal_missingness_validation_failed")
+
     labels = vector.get("labels")
     if not isinstance(labels, dict) or not {"homeWon", "pickCorrect"}.issubset(labels):
         errors.append("pregame_vector_explicit_null_labels_missing")
@@ -136,8 +215,8 @@ def _validate(row: Dict[str, Any], compact: Dict[str, Any]) -> List[str]:
     )
     if not coverage_complete:
         errors.append("complete_slate_coverage_not_proven")
-    if freeze.get("exactVectorCreated") is False:
-        errors.append("exact_vector_creation_failed")
+    if freeze.get("exactVectorCreated") is not True:
+        errors.append("exact_vector_creation_not_proven")
     if compact.get("predictionSemanticsVersion") in (None, "") and compact.get("probabilitySemanticsFixed") is not True:
         errors.append("modern_probability_semantics_missing")
     if compact.get("teamWinProbabilityPct") in (None, ""):
@@ -201,6 +280,7 @@ def apply(daily_lock_module: Any) -> Dict[str, Any]:
         return {
             "ok": True,
             "version": VERSION,
+            "expectedVectorVersion": EXPECTED_VECTOR_VERSION,
             "alreadyApplied": True,
             "failClosed": True,
         }
@@ -255,6 +335,7 @@ def apply(daily_lock_module: Any) -> Dict[str, Any]:
     return {
         "ok": True,
         "version": VERSION,
+        "expectedVectorVersion": EXPECTED_VECTOR_VERSION,
         "preservedFields": list(PRESERVED_FIELDS),
         "failClosed": True,
         "outcomeLabelsForbiddenAtLock": True,

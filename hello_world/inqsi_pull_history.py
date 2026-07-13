@@ -61,7 +61,7 @@ def ddb_safe(x: Any) -> Any:
         # only for the canonical pregame ML vector so readback can prove that
         # neither outcome was available at lock. Other None fields remain omitted.
         if (
-            x.get("version") == "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome"
+            str(x.get("version") or "").startswith("MLB-ML-FROZEN-FEATURE-SNAPSHOT-")
             and isinstance(x.get("labels"), dict)
         ):
             labels = dict(out.get("labels") or {})

@@ -16,6 +16,7 @@ if str(HELLO_WORLD) not in sys.path:
 
 import mlb_ml_clean_cohort_hardening_v1 as hardening
 import mlb_ml_clean_cohort_v1 as cohort
+from mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 
 def base_row():
@@ -39,6 +40,10 @@ def base_row():
         "fundamentalsSnapshot": {"completenessRatio": 0.0, "numericValues": {}},
     }
     pregame = copy.deepcopy(row); pregame.pop("winner"); pregame.pop("correct"); pregame.pop("status")
+    attach_lock_safe_features(pregame)
+    row["homeSignal"] = copy.deepcopy(pregame["homeSignal"])
+    row["awaySignal"] = copy.deepcopy(pregame["awaySignal"])
+    row["fundamentalsSnapshot"] = copy.deepcopy(pregame["fundamentalsSnapshot"])
     row["frozenFeatureVector"] = cohort.freeze_feature_snapshot(pregame)
     row["frozenFeatureVectorVersion"] = row["frozenFeatureVector"]["version"]
     return row
@@ -85,9 +90,13 @@ def main() -> int:
     ok, reasons = cohort.eligibility(clean)
     assert ok is True, reasons
     assert clean["frozenFeatureVector"]["fingerprintVersion"] == cohort.FINGERPRINT_VERSION
+    assert clean["frozenFeatureVector"]["temporalFeaturesAtOrBeforeLock"] is True
+    assert clean["frozenFeatureVector"]["fundamentalMasksAtOrBeforeLock"] is True
 
     round_tripped = _dynamodb_round_trip(clean)
     assert isinstance(round_tripped["frozenFeatureVector"]["features"]["homeMarketProb"], Decimal)
+    assert isinstance(round_tripped["frozenFeatureVector"]["features"]["homeVelocityPpHr60m"], Decimal)
+    assert isinstance(round_tripped["frozenFeatureVector"]["features"]["fundamentalFipXfipMissing"], Decimal)
     assert round_tripped["frozenFeatureVector"]["labels"] == {"homeWon": None, "pickCorrect": None}
     ok, reasons = cohort.eligibility(round_tripped)
     assert ok is True, reasons
@@ -145,7 +154,7 @@ def main() -> int:
     ok, reasons = cohort.eligibility(no_price_source)
     assert ok is False and "selected_side_odds_source_not_proven" in reasons
 
-    print("MLB frozen feature integrity verified: DynamoDB Decimal round-trip, bound identity/source/selected-price context, and tamper rejection pass")
+    print("MLB frozen feature integrity verified: DynamoDB Decimal round-trip, lock-safe temporal and missingness provenance, bound identity/source/selected-price context, and tamper rejection pass")
     return 0
 
 

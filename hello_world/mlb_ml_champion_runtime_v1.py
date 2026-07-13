@@ -188,7 +188,7 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
         if direction_flipped:
             direction_flip_playability_blocks += 1
             row_playability_safety_reasons.append(
-                "direction_flip_not_validated_for_reliability_or_selected_side_priced_roi"
+                "direction_flip_not_validated_for_reliability_or_selected_side_exact_odds"
             )
         champion_playable = bool(
             playability_authority

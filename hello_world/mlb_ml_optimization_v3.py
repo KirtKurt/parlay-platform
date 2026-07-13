@@ -9,11 +9,8 @@ import mlb_fundamentals_snapshot_v1 as fundamentals
 import mlb_ml_champion_challenger_v1 as champion
 import mlb_ml_clean_cohort_v1 as cohort
 import mlb_ml_dual_model_v1 as dual_model
-import mlb_ml_manual_promotion_only_patch as manual_promotion
 
-manual_promotion.apply(champion)
-
-VERSION = "MLB-ML-OPTIMIZATION-v3.1-clean-dual-manual-champion-promotion"
+VERSION = "MLB-ML-OPTIMIZATION-v3.2-90pct-rolling-slate-automatic-promotion"
 REPORT_PATH = "runtime_reports/mlb_ml_optimization_status_latest.json"
 CLEAN_PATH = "runtime_reports/mlb_ml_clean_cohort_latest.json"
 OUTCOME_PATH = "runtime_reports/mlb_ml_outcome_challenger_latest.json"
@@ -59,6 +56,17 @@ def _playable_evidence(report: Dict[str, Any]) -> int:
     )
 
 
+def _rolling_24h_slate_accuracy(report: Dict[str, Any]):
+    summary = report.get("summary") or {}
+    if summary.get("rolling24hOfficialCardSlateAccuracyPct") is not None:
+        return summary.get("rolling24hOfficialCardSlateAccuracyPct")
+    if summary.get("rolling24hAllGamesAccuracyPct") is not None:
+        return summary.get("rolling24hAllGamesAccuracyPct")
+    accuracy = report.get("realWorldAccuracy") or {}
+    current = ((accuracy.get("windows") or {}).get("current24h") or {})
+    return (current.get("officialPredictions") or {}).get("accuracyPct")
+
+
 def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: bool = True) -> Dict[str, Any]:
     created = datetime.now(timezone.utc).isoformat()
     rows = _all_rows(module, report)
@@ -68,14 +76,20 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
     clean = cohort.build(rows)
     trained = dual_model.train(clean.get("cleanRows") or [])
     playable_count = _playable_evidence(report)
-    gate = champion.evaluate(trained, int(clean.get("cleanRowCount") or 0), playable_count)
+    rolling_slate_accuracy = _rolling_24h_slate_accuracy(report)
+    gate = champion.evaluate(
+        trained,
+        int(clean.get("cleanRowCount") or 0),
+        playable_count,
+        rolling_slate_accuracy_pct=rolling_slate_accuracy,
+    )
 
     bundle = {
         "ok": True,
         "version": VERSION,
         "createdAtUtc": created,
         "sport": "mlb",
-        "mode": "READY_FOR_MANUAL_REVIEW" if gate.get("promotionEligible") else "SHADOW_CHALLENGER",
+        "mode": "AUTOMATIC_PROMOTION_GATE_PASSED" if gate.get("promotionDecision") == "PROMOTE" else "SHADOW_CHALLENGER",
         "cleanCohort": {key: value for key, value in clean.items() if key not in {"cleanRows", "quarantinedRows"}},
         "dualModel": trained,
         "promotionGate": gate,
@@ -83,12 +97,13 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
         "reliabilityModel": trained.get("reliabilityModel"),
         "directionAuthorityEnabled": False,
         "playabilityAuthorityEnabled": False,
-        "automaticPromotionSupported": False,
-        "manualPromotionRequired": True,
-        "manualPromotionFunction": "promote_reviewed_latest",
+        "automaticPromotionSupported": True,
+        "automaticPromotionEnabled": champion.AUTO_PROMOTE,
+        "automaticPromotionRequiresPassedApplicableGates": True,
+        "rolling24hSlateAccuracyPct": rolling_slate_accuracy,
         "legacyTrainerAuthorityDisabled": True,
         "legacyTrainingArtifacts": "diagnostic_only_not_authoritative",
-        "policy": "Only the exact stored post-fix lock-time feature vector may train the dual challenger. The challenger remains shadow-only until its eligible authority is manually reviewed and promoted from DynamoDB.",
+        "policy": "Only the exact stored post-fix lock-time feature vector may train the dual challenger. In the authoritative AWS audit, direction and playability promote independently and automatically only after their applicable gates pass; playability also requires a current rolling 24-hour MLB slate accuracy average of at least 90%.",
     }
 
     store_result = champion.store_challenger(bundle) if store else {"ok": True, "stored": False}
@@ -115,7 +130,9 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
             "validation": trained.get("validation"),
             "untouchedTest": trained.get("untouchedTest"),
             "promotionGate": gate,
-            "automaticPromotionSupported": False,
+            "automaticPromotionSupported": True,
+            "automaticPromotionEnabled": champion.AUTO_PROMOTE,
+            "rolling24hSlateAccuracyPct": rolling_slate_accuracy,
             "stored": store_result,
             "promotion": promotion_result,
         })
@@ -138,7 +155,9 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
         "reliabilityModelVersion": (trained.get("reliabilityModel") or {}).get("version"),
         "testWasUntouched": trained.get("testWasUntouchedDuringFitAndThresholdSelection"),
         "legacyTrainerAuthorityDisabled": True,
-        "automaticPromotionSupported": False,
+        "automaticPromotionSupported": True,
+        "automaticPromotionEnabled": champion.AUTO_PROMOTE,
+        "rolling24hSlateAccuracyPct": rolling_slate_accuracy,
         "stored": store_result,
         "promotion": promotion_result,
     }
@@ -146,8 +165,10 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
         "authoritative": "mlOptimizationV3_clean_dual_model_only",
         "legacyArtifactRole": "diagnostic_only",
         "automaticWeightMutation": False,
-        "automaticChampionPromotion": False,
-        "productionAuthoritySource": "reviewed_DynamoDB_champion_bundle_only",
+        "automaticChampionPromotion": champion.AUTO_PROMOTE,
+        "automaticChampionPromotionSupported": True,
+        "automaticPromotionGateRequired": True,
+        "productionAuthoritySource": "gate_promoted_DynamoDB_champion_bundle_only",
     }
     return report
 

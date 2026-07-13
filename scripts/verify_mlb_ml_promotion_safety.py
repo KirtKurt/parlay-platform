@@ -12,7 +12,6 @@ if str(HELLO_WORLD) not in sys.path:
 
 import mlb_ml_champion_challenger_v1 as champion
 import mlb_ml_champion_runtime_v1 as runtime
-import mlb_ml_manual_promotion_only_v1 as safety
 import mlb_accuracy_target_policy_v1 as accuracy_policy
 
 
@@ -20,7 +19,7 @@ def _threshold():
     return {
         "ok": True,
         "threshold": 0.7,
-        "selectedCount": 50,
+        "selectedCount": 100,
         "coveragePct": 50.0,
         "accuracyPct": 100.0,
         "selectionSource": "validation_only",
@@ -52,6 +51,7 @@ def _trained_dual(outcome=True, reliability=True, valid_threshold=True):
         "untouchedTest": {
             "outcome": {
                 "count": 100,
+                "accuracyPct": 90.0,
                 "accuracyLiftPctPoints": 2.0,
                 "brierSkillPct": 1.0,
                 "logLoss": 0.60,
@@ -59,10 +59,9 @@ def _trained_dual(outcome=True, reliability=True, valid_threshold=True):
                 "baseline": {"logLoss": 0.65},
             },
             "selectedReliability": {
-                "count": 50,
-                "accuracyPct": 100.0,
-                "priceCoveragePct": 100.0,
-                "flatUnitRoiPct": 5.0,
+                "count": 100,
+                "accuracyPct": 90.0,
+                "exactOddsCoveragePct": 90.0,
                 "calibrationError": 0.05,
             },
         },
@@ -105,37 +104,25 @@ def _runtime_row():
     }
 
 
-class _LatestTable:
-    def __init__(self, bundle):
-        self.bundle = bundle
-
-    def get_item(self, **_kwargs):
-        return {"Item": {"data": self.bundle}}
-
-
 def main() -> int:
     policy = accuracy_policy.install()
     assert policy["ok"] is True
     assert champion.VERSION == accuracy_policy.CHAMPION_GATE_VERSION
-    assert "v1.4" in champion.VERSION and "60pct" in champion.VERSION
-    safety.apply(champion)
-    assert champion.AUTO_PROMOTE is False
-    assert champion.AUTOMATIC_PROMOTION_SUPPORTED is False
-    assert champion.MANUAL_PROMOTION_ONLY_VERSION == "MLB-ML-MANUAL-PROMOTION-ONLY-v1"
+    assert "v1.5" in champion.VERSION and "90pct" in champion.VERSION
+    champion.AUTO_PROMOTE = True
     result = champion.promote_if_allowed({
         "promotionGate": {
-            "promotionDecision": "PROMOTE",
-            "directionPromotionEligible": True,
-            "playabilityPromotionEligible": True,
+            "promotionDecision": "RETAIN_CURRENT_CHAMPION",
+            "directionPromotionEligible": False,
+            "playabilityPromotionEligible": False,
         }
     })
     assert result["promoted"] is False
-    assert result["reason"] == "automatic_promotion_permanently_disabled_manual_review_required"
-    assert callable(champion.promote_reviewed_latest)
+    assert result["reason"] == "automatic_promotion_disabled_or_not_eligible"
 
     # Outcome and reliability availability must gate only their own authority.
     reliability_only = _trained_dual(outcome=False, reliability=True)
-    gate = champion.evaluate(reliability_only, clean_count=500, playable_evidence_count=200)
+    gate = champion.evaluate(reliability_only, clean_count=500, playable_evidence_count=200, rolling_slate_accuracy_pct=90.0)
     assert gate["directionPromotionEligible"] is False
     assert gate["playabilityPromotionEligible"] is True, gate
     assert "OUTCOME_MODEL_NOT_TRAINED" in {item["code"] for item in gate["directionBlockers"]}
@@ -143,18 +130,19 @@ def main() -> int:
     # Playability is impossible when the threshold was not successfully selected
     # on validation data, even if untouched-test summary numbers look strong.
     invalid_threshold = _trained_dual(outcome=True, reliability=True, valid_threshold=False)
-    gate = champion.evaluate(invalid_threshold, clean_count=500, playable_evidence_count=200)
+    gate = champion.evaluate(invalid_threshold, clean_count=500, playable_evidence_count=200, rolling_slate_accuracy_pct=90.0)
     assert gate["directionPromotionEligible"] is True, gate
     assert gate["playabilityPromotionEligible"] is False
     assert "RELIABILITY_THRESHOLD_NOT_VALIDATION_SELECTED" in {item["code"] for item in gate["playabilityBlockers"]}
 
     valid = _trained_dual(outcome=True, reliability=True, valid_threshold=True)
-    gate = champion.evaluate(valid, clean_count=500, playable_evidence_count=200)
+    gate = champion.evaluate(valid, clean_count=500, playable_evidence_count=200, rolling_slate_accuracy_pct=90.0)
     assert gate["directionPromotionEligible"] is True
     assert gate["playabilityPromotionEligible"] is True, gate
     assert gate["playabilityChecks"]["reliabilityThresholdValidated"] is True
 
-    # A partial promotion replaces only the reviewed authority's model artifact.
+    # Automatic promotion replaces only model artifacts whose independent gates
+    # passed and preserves the other authority's incumbent model.
     latest = {
         "promotionGate": {"directionPromotionEligible": True, "playabilityPromotionEligible": True},
         "dualModel": {
@@ -171,28 +159,44 @@ def main() -> int:
         },
     }
     captured = {}
-    original_ddb = champion._ddb_table
     original_loader = champion.load_champion
     original_store = champion._store_champion
     try:
-        champion._ddb_table = lambda: (_LatestTable(latest), None)
         champion.load_champion = lambda: current
 
         def capture_store(payload, approval_mode):
+            captured["writeCount"] = int(captured.get("writeCount") or 0) + 1
             captured["payload"] = copy.deepcopy(payload)
             captured["approvalMode"] = approval_mode
             return {"ok": True, "promoted": True}
 
         champion._store_champion = capture_store
-        promoted = champion.promote_reviewed_latest("direction")
+
+        champion.load_champion = lambda: {}
+        fully_eligible_bundle = copy.deepcopy(latest)
+        fully_eligible_bundle["promotionGate"] = gate
+        fully_promoted = champion.promote_if_allowed(fully_eligible_bundle)
+        assert fully_promoted["promoted"] is True
+        assert captured["payload"]["directionAuthorityEnabled"] is True
+        assert captured["payload"]["playabilityAuthorityEnabled"] is True
+
+        champion.load_champion = lambda: current
+        direction_bundle = copy.deepcopy(latest)
+        direction_bundle["promotionGate"] = {
+            "promotionDecision": "PROMOTE",
+            "directionPromotionEligible": True,
+            "playabilityPromotionEligible": False,
+        }
+        promoted = champion.promote_if_allowed(direction_bundle)
         assert promoted["promoted"] is True
         payload = captured["payload"]
         assert payload["dualModel"]["outcomeModel"]["version"] == "outcome-latest"
         assert payload["dualModel"]["reliabilityModel"]["version"] == "reliability-current"
         assert payload["playabilityAuthorityEnabled"] is True
         assert payload["partialPromotionModelIsolationApplied"] is True
+        assert captured["approvalMode"] == "automatic_gate_promotion"
 
-        current_playability_review = {
+        current_playability = {
             "directionAuthorityEnabled": True,
             "playabilityAuthorityEnabled": False,
             "dualModel": {
@@ -200,21 +204,80 @@ def main() -> int:
                 "reliabilityModel": _reliability_model("reliability-current-shadow"),
             },
         }
-        champion.load_champion = lambda: current_playability_review
-        promoted = champion.promote_reviewed_latest("playability")
+        champion.load_champion = lambda: current_playability
+        playability_bundle = copy.deepcopy(latest)
+        playability_bundle["promotionGate"] = {
+            "promotionDecision": "PROMOTE",
+            "directionPromotionEligible": False,
+            "playabilityPromotionEligible": True,
+        }
+        promoted = champion.promote_if_allowed(playability_bundle)
         assert promoted["promoted"] is True
         payload = captured["payload"]
         assert payload["dualModel"]["outcomeModel"]["version"] == "outcome-current"
         assert payload["dualModel"]["reliabilityModel"]["version"] == "reliability-latest"
         assert payload["directionAuthorityEnabled"] is True
+
+        # A forged PROMOTE decision with no passed authority is rejected before
+        # any champion write.
+        no_gate = champion.promote_if_allowed({
+            "promotionGate": {
+                "promotionDecision": "PROMOTE",
+                "directionPromotionEligible": False,
+                "playabilityPromotionEligible": False,
+            }
+        })
+        assert no_gate["promoted"] is False and no_gate["reason"] == "no_applicable_promotion_gate_passed"
+
+        # Payload validation remains fail-closed even when a gate claims success.
+        unsafe = copy.deepcopy(playability_bundle)
+        unsafe["dualModel"]["reliabilityModel"] = _reliability_model("unsafe", valid_threshold=False)
+        unsafe["reliabilityModel"] = unsafe["dualModel"]["reliabilityModel"]
+        rejected = champion.promote_if_allowed(unsafe)
+        assert rejected["promoted"] is False
+        assert "playability_authority_requires_validation_selected_reliability_threshold" in rejected["safetyErrors"]
+
+        # A previously enabled champion must be suspended when the common
+        # rolling official-card slate prerequisite falls into a 50-80 shadow band.
+        enabled_current = {
+            "directionAuthorityEnabled": True,
+            "playabilityAuthorityEnabled": True,
+            "dualModel": {
+                "outcomeModel": _outcome_model("enabled-outcome"),
+                "reliabilityModel": _reliability_model("enabled-reliability"),
+            },
+        }
+        champion.load_champion = lambda: enabled_current
+        low_rolling_gate = champion.evaluate(
+            valid,
+            clean_count=500,
+            playable_evidence_count=200,
+            rolling_slate_accuracy_pct=80.0,
+        )
+        suspended = champion.promote_if_allowed({"promotionGate": low_rolling_gate})
+        assert suspended["suspended"] is True and suspended["promoted"] is False
+        suspended_payload = captured["payload"]
+        assert suspended_payload["directionAuthorityEnabled"] is False
+        assert suspended_payload["playabilityAuthorityEnabled"] is False
+        assert suspended_payload["dualModel"] == enabled_current["dualModel"]
+        assert suspended_payload["automaticAuthoritySuspension"]["preservedModelArtifactsForShadow"] is True
+
+        # Local/ad-hoc runs keep the fail-safe default and must never write even
+        # when the same rolling-slate suspension condition is observed.
+        writes_before = captured["writeCount"]
+        champion.AUTO_PROMOTE = False
+        local = champion.promote_if_allowed({"promotionGate": low_rolling_gate})
+        assert local["promoted"] is False and local.get("suspended") is not True
+        assert captured["writeCount"] == writes_before
+        champion.AUTO_PROMOTE = True
     finally:
-        champion._ddb_table = original_ddb
         champion.load_champion = original_loader
         champion._store_champion = original_store
 
     # Runtime models remain independently usable. A champion direction flip
     # recomputes selectedScore for shadow reliability, but cannot become playable
-    # because reliability/ROI were validated on incumbent selections and prices.
+    # because reliability and exact selected-side odds were validated on the
+    # incumbent selections, not on a direction-flipped side.
     original_loader = runtime.champion_store.load_champion
     original_score = runtime.dual_model.score
     reliability_records = []
@@ -242,7 +305,7 @@ def main() -> int:
         assert reliability_records[-1]["selectedScore"] == 25.0
         assert row["optimizedPickReliabilityPct"] == 95.0
         assert row["championPlayable"] is False
-        assert "direction_flip_not_validated_for_reliability_or_selected_side_priced_roi" in row["championPlayabilitySafetyReasons"]
+        assert "direction_flip_not_validated_for_reliability_or_selected_side_exact_odds" in row["championPlayabilitySafetyReasons"]
         assert result["mlOptimizationRuntime"]["directionFlipPlayabilityBlockedCount"] == 1
 
         outcome_only = {
@@ -279,7 +342,7 @@ def main() -> int:
         runtime.champion_store.load_champion = original_loader
         runtime.dual_model.score = original_score
 
-    print("MLB ML promotion safety verified: independent model authority, validation-selected thresholds, partial-promotion isolation, and direction-flip playability fail-closed behavior")
+    print("MLB ML promotion safety verified: 90% automatic gates, independent authority promotion, no early writes, payload validation, and direction-flip fail-closed behavior")
     return 0
 
 
