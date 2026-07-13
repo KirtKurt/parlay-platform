@@ -15,10 +15,14 @@ except Exception:
 
 ROLLING_TARGET_ACCURACY_PCT = 90.0
 ROLLING_WINDOW_HOURS = 24
-RISK_POLICY_VERSION = "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v4-reversal-flip-gate"
+RISK_POLICY_VERSION = "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v5-market-anchor-low-confidence-fallback"
 BAD_TAGS = {"LOW_PULL_DEPTH", "SINGLE_PULL_BASELINE", "BOOK_DIVERGENCE", "LATE_INSTABILITY"}
 REAL_SIGNAL_TAGS = {"STEAM", "RUN_LINE_CONFIRMATION", "RUN_LINE_MOVEMENT", "REVERSAL", "COMPRESSED_MARKET", "BOOK_AGREEMENT"}
 UNSTABLE_TAGS = {"BOOK_DIVERGENCE", "COMPRESSED_MARKET", "UNCONFIRMED_RUN_LINE_MOVE", "LATE_INSTABILITY", "RESISTANCE"}
+DIRECTIONAL_OVERRIDE_MIN_SCORE = 64.0
+DIRECTIONAL_OVERRIDE_MIN_SCORE_MARGIN = 8.0
+DIRECTIONAL_OVERRIDE_MIN_DELTA = 0.01
+DIRECTIONAL_OVERRIDE_MIN_MARKET_PROB = 0.42
 _LEARNING_CACHE = None
 
 
@@ -214,6 +218,53 @@ def _previous_signal(home, away, old_side, old_winner):
     return None
 
 
+def _market_anchor(home, away):
+    if not home:
+        return away
+    if not away:
+        return home
+    return home if _market_probability(home) >= _market_probability(away) else away
+
+
+def _directional_override(candidate, market_anchor):
+    """Allow a non-market side only when direction is unusually clean.
+
+    The rolling audit showed that reversal-heavy positive movement and book
+    agreement were materially weaker than the market favorite baseline. This
+    gate therefore treats the de-vigged market leader as the low-confidence
+    fallback, while preserving a narrow path for genuinely confirmed movement.
+    """
+    if not candidate or not market_anchor or candidate.get("team") == market_anchor.get("team"):
+        return True, []
+
+    tags = set(candidate.get("tags") or [])
+    rev = int(_as_float(candidate.get("reversalCount"), 0.0))
+    market_prob = _market_probability(candidate)
+    delta = _as_float(candidate.get("delta"), 0.0)
+    score = _as_float(candidate.get("optimizedWinnerScore"), 0.0)
+    score_margin = score - _as_float(market_anchor.get("optimizedWinnerScore"), 0.0)
+    reasons = []
+
+    if market_prob < DIRECTIONAL_OVERRIDE_MIN_MARKET_PROB:
+        reasons.append("directional_override_deep_underdog")
+    if score < DIRECTIONAL_OVERRIDE_MIN_SCORE:
+        reasons.append("directional_override_score_below_solid")
+    if score_margin < DIRECTIONAL_OVERRIDE_MIN_SCORE_MARGIN:
+        reasons.append("directional_override_insufficient_score_margin")
+    if delta < DIRECTIONAL_OVERRIDE_MIN_DELTA:
+        reasons.append("directional_override_insufficient_positive_movement")
+    if rev > 1:
+        reasons.append("directional_override_multiple_reversals")
+    if "BOOK_AGREEMENT" not in tags:
+        reasons.append("directional_override_without_book_agreement")
+    if not ({"STEAM", "RUN_LINE_CONFIRMATION"} & tags):
+        reasons.append("directional_override_without_confirmed_steam_or_run_line")
+    if tags & (BAD_TAGS | UNSTABLE_TAGS):
+        reasons.append("directional_override_unstable_market_profile")
+
+    return not reasons, reasons
+
+
 def _safe_optimizer_flip(candidate, previous):
     if not candidate or not previous:
         return True, []
@@ -276,10 +327,40 @@ def optimize_prediction(row):
 
     old_winner = row.get("predictedWinner")
     old_side = row.get("predictedSide")
-    candidate = home if _as_float(home.get("optimizedWinnerScore"), -1.0) >= _as_float(away.get("optimizedWinnerScore"), -1.0) else away
     previous = _previous_signal(home, away, old_side, old_winner)
+    market_anchor = _market_anchor(home, away)
+    score_candidate = home if _as_float(home.get("optimizedWinnerScore"), -1.0) >= _as_float(away.get("optimizedWinnerScore"), -1.0) else away
+
+    override_requested = bool(market_anchor and score_candidate.get("team") != market_anchor.get("team"))
+    override_allowed, override_block_reasons = _directional_override(score_candidate, market_anchor)
+    candidate = score_candidate if override_allowed else market_anchor
+
+    previous_override_allowed, previous_override_reasons = _directional_override(previous, market_anchor)
+    previous_needs_anchor_correction = bool(
+        previous
+        and market_anchor
+        and previous.get("team") != market_anchor.get("team")
+        and not previous_override_allowed
+    )
+    if previous_needs_anchor_correction:
+        candidate = market_anchor
+
+    market_anchor_applied = bool(
+        market_anchor
+        and candidate
+        and candidate.get("team") == market_anchor.get("team")
+        and (
+            (score_candidate and score_candidate.get("team") != market_anchor.get("team"))
+            or previous_needs_anchor_correction
+        )
+    )
+
     flip_requested = bool(previous and candidate.get("team") != previous.get("team"))
-    flip_allowed, flip_block_reasons = _safe_optimizer_flip(candidate, previous)
+    if market_anchor_applied:
+        flip_allowed, flip_block_reasons = True, []
+    else:
+        flip_allowed, flip_block_reasons = _safe_optimizer_flip(candidate, previous)
+
     pick = candidate
     if flip_requested and not flip_allowed:
         pick = previous
@@ -289,6 +370,12 @@ def optimize_prediction(row):
     prob = _as_float(pick.get("winProbability"), _prob_from_score(score))
     tags = sorted(set(pick.get("tags") or []))
     risks = _preliminary_risks(pick)
+    if market_anchor_applied:
+        risks = sorted(set(risks + ["market_anchor_low_confidence_fallback_applied"]))
+    if override_requested and not override_allowed:
+        risks = sorted(set(risks + override_block_reasons))
+    if previous_needs_anchor_correction:
+        risks = sorted(set(risks + previous_override_reasons))
     if flip_requested and not flip_allowed:
         risks = sorted(set(risks + ["unsafe_optimizer_flip_blocked"] + flip_block_reasons))
 
@@ -314,6 +401,12 @@ def optimize_prediction(row):
     out["optimizerFlipRequested"] = flip_requested
     out["optimizerFlipAllowed"] = bool(not flip_requested or flip_allowed)
     out["optimizerFlipBlockedReasons"] = flip_block_reasons if flip_requested and not flip_allowed else []
+    out["marketAnchorApplied"] = market_anchor_applied
+    out["marketAnchorTeam"] = market_anchor.get("team") if market_anchor else None
+    out["marketAnchorProbability"] = round(_market_probability(market_anchor), 6) if market_anchor else None
+    out["directionalOverrideRequested"] = override_requested
+    out["directionalOverrideAllowed"] = bool(not override_requested or override_allowed)
+    out["directionalOverrideBlockedReasons"] = override_block_reasons if override_requested and not override_allowed else []
 
     out["officialPrediction"] = True
     out["platformPick"] = bool(pick.get("team"))
@@ -332,10 +425,16 @@ def optimize_prediction(row):
     }
     out["winnerOptimizer"] = {
         "applied": True,
-        "basis": "market_signal_plus_multi_window_learning_plus_reversal_flip_safety",
+        "basis": "market_signal_plus_multi_window_learning_plus_market_anchor_and_reversal_flip_safety",
         "latestLearningApplied": bool(_latest_learning()),
         "homeOptimizedScore": home.get("optimizedWinnerScore"),
         "awayOptimizedScore": away.get("optimizedWinnerScore"),
+        "marketAnchorTeam": out["marketAnchorTeam"],
+        "marketAnchorProbability": out["marketAnchorProbability"],
+        "marketAnchorApplied": market_anchor_applied,
+        "directionalOverrideRequested": override_requested,
+        "directionalOverrideAllowed": out["directionalOverrideAllowed"],
+        "directionalOverrideBlockedReasons": out["directionalOverrideBlockedReasons"],
         "flippedPick": out["optimizerFlippedPick"],
         "flipRequested": flip_requested,
         "flipAllowed": bool(not flip_requested or flip_allowed),
@@ -348,6 +447,8 @@ def optimize_prediction(row):
 def _summary(predictions):
     flipped = [row for row in predictions if row.get("optimizerFlippedPick")]
     blocked = [row for row in predictions if row.get("optimizerFlipRequested") and not row.get("optimizerFlipAllowed")]
+    anchored = [row for row in predictions if row.get("marketAnchorApplied")]
+    overrides = [row for row in predictions if row.get("directionalOverrideRequested") and row.get("directionalOverrideAllowed")]
     return {
         "targetAccuracyPct": ROLLING_TARGET_ACCURACY_PCT,
         "windowHours": ROLLING_WINDOW_HOURS,
@@ -355,7 +456,9 @@ def _summary(predictions):
         "optimizerFlipCount": len(flipped),
         "optimizerFlipBlockedCount": len(blocked),
         "optimizerFlippedTeams": [row.get("predictedWinner") for row in flipped],
-        "policy": "Every game receives a visible optimized winner prediction. Official/actionable status is assigned only by downstream risk and validated-ML gates.",
+        "marketAnchorFallbackCount": len(anchored),
+        "directionalOverrideAllowedCount": len(overrides),
+        "policy": "Every game receives a visible optimized winner prediction. Weak or reversal-heavy directional selections fall back to the de-vigged market leader; non-market overrides require clean confirmed movement. Official/actionable status is assigned only by downstream risk and validated-ML gates.",
         "latestLearningApplied": bool(_latest_learning()),
         "riskPolicyVersion": RISK_POLICY_VERSION,
     }
@@ -379,7 +482,7 @@ def apply(module):
         result["allGamesOptimizedForWinner"] = True
         result["rolling24hAccuracyTarget"] = _summary(predictions)
         result["accuracyTarget"] = result["rolling24hAccuracyTarget"]
-        result["modelVersion"] = str(result.get("modelVersion") or "") + "+individual-winner-optimizer-risk-v4"
+        result["modelVersion"] = str(result.get("modelVersion") or "") + "+individual-winner-optimizer-risk-v5-market-anchor"
         return result
 
     module.predict_all = guarded_predict_all
