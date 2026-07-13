@@ -1,7 +1,7 @@
 {
   "ok": true,
   "version": "MLB-ML-OPTIMIZATION-v3.2-90pct-rolling-slate-automatic-promotion",
-  "createdAtUtc": "2026-07-13T19:53:18.718485+00:00",
+  "createdAtUtc": "2026-07-13T21:15:00.858793+00:00",
   "sport": "mlb",
   "mode": "SHADOW_CHALLENGER",
   "cleanCohort": {
@@ -101,7 +101,7 @@
   "promotionGate": {
     "ok": true,
     "version": "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion",
-    "evaluatedAtUtc": "2026-07-13T19:53:28.622102+00:00",
+    "evaluatedAtUtc": "2026-07-13T21:15:10.700013+00:00",
     "automaticPromotionEnabled": true,
     "automaticPromotionRequiresPassedApplicableGates": true,
     "promotionEligible": false,
@@ -130,9 +130,9 @@
       "marketLogLoss": null,
       "outcomeCalibrationError": null,
       "maximumCalibrationError": 0.08,
-      "rolling24hSlateAccuracyPct": 0.0,
+      "rolling24hSlateAccuracyPct": null,
       "minimumRolling24hSlateAccuracyPct": 90.0,
-      "rolling24hSlateAccuracyAvailable": true
+      "rolling24hSlateAccuracyAvailable": false
     },
     "playabilityChecks": {
       "cleanOfficialCount": 0,
@@ -154,12 +154,12 @@
       "minimumSelectedExactOddsCoveragePct": 90.0,
       "selectedCalibrationError": null,
       "maximumSelectedCalibrationError": 0.1,
-      "rolling24hSlateAccuracyPct": 0.0,
+      "rolling24hSlateAccuracyPct": null,
       "minimumRolling24hSlateAccuracyPct": 90.0,
-      "rolling24hSlateAccuracyAvailable": true,
+      "rolling24hSlateAccuracyAvailable": false,
       "rolling24hSlateAccuracyProgress": {
         "reportingOnly": true,
-        "actualRolling24hSlateAccuracyPct": 0.0,
+        "actualRolling24hSlateAccuracyPct": null,
         "milestones": [
           {
             "accuracyPct": 50.0,
@@ -231,9 +231,9 @@
         "required": 0.08
       },
       {
-        "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
-        "actual": 0.0,
-        "required": 90.0
+        "code": "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE",
+        "actual": null,
+        "required": ">= 90.0"
       }
     ],
     "playabilityBlockers": [
@@ -289,9 +289,9 @@
         "required": 0.1
       },
       {
-        "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
-        "actual": 0.0,
-        "required": 90.0
+        "code": "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE",
+        "actual": null,
+        "required": ">= 90.0"
       }
     ],
     "blockers": [
@@ -341,9 +341,9 @@
         "required": 0.08
       },
       {
-        "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
-        "actual": 0.0,
-        "required": 90.0
+        "code": "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE",
+        "actual": null,
+        "required": ">= 90.0"
       },
       {
         "code": "RELIABILITY_MODEL_NOT_TRAINED",
@@ -390,7 +390,7 @@
     },
     "rolling24hSlateAccuracyProgress": {
       "reportingOnly": true,
-      "actualRolling24hSlateAccuracyPct": 0.0,
+      "actualRolling24hSlateAccuracyPct": null,
       "milestones": [
         {
           "accuracyPct": 50.0,
@@ -439,7 +439,7 @@
   "automaticPromotionSupported": true,
   "automaticPromotionEnabled": true,
   "automaticPromotionRequiresPassedApplicableGates": true,
-  "rolling24hSlateAccuracyPct": 0.0,
+  "rolling24hSlateAccuracyPct": null,
   "legacyTrainerAuthorityDisabled": true,
   "legacyTrainingArtifacts": "diagnostic_only_not_authoritative",
   "policy": "Only the exact stored post-fix lock-time feature vector may train the dual challenger. In the authoritative AWS audit, direction and playability promote independently and automatically only after their applicable gates pass; playability also requires a current rolling 24-hour MLB slate accuracy average of at least 90%.",
@@ -447,7 +447,7 @@
     "ok": true,
     "latestPk": "MLB_ML_OPTIMIZATION#V3",
     "latestSk": "CHALLENGER#LATEST",
-    "runSk": "CHALLENGER#2026-07-13T19:53:18.718485+00:00"
+    "runSk": "CHALLENGER#2026-07-13T21:15:00.858793+00:00"
   },
   "promotion": {
     "ok": true,
