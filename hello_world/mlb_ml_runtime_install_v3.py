@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-VERSION = "MLB-ML-RUNTIME-INSTALL-v3.3-separated-accuracy-targets"
+VERSION = "MLB-ML-RUNTIME-INSTALL-v3.4-canonical-exact-vector-storage"
 
 
 def install() -> Dict[str, Any]:
@@ -36,6 +36,7 @@ def install() -> Dict[str, Any]:
         import mlb_official_freeze_bridge
         import mlb_ml_frozen_features
         import mlb_ml_exact_lock_vector_patch
+        import mlb_locked_prediction_storage_finalizer_v1
 
         mlb_ml_exact_lock_vector_patch.apply(mlb_ml_frozen_features)
         mlb_official_freeze_bridge.apply(mlb_official_prediction_semantics)
@@ -58,6 +59,10 @@ def install() -> Dict[str, Any]:
         # Compatibility name used by the existing AWS deploy smoke test. It now
         # means the stronger exact clean-cohort vector path is installed.
         status["steps"]["immutableFeatureFreeze"] = bool(exact_vector and official_bridge)
+        mlb_locked_prediction_storage_finalizer_v1.apply(engine)
+        status["steps"]["canonicalLockedStorageFinalizer"] = hasattr(
+            engine, "_INQSI_MLB_LOCKED_STORAGE_FINALIZER_V1_APPLIED"
+        )
         engine.MLB_ML_RUNTIME_INSTALL_V3 = status
     except Exception as exc:
         status["steps"]["engineRuntime"] = False

@@ -11,6 +11,7 @@ ACCURACY_TARGET_SEPARATION_VERIFY = Path('scripts/verify_mlb_accuracy_target_sep
 ML_OPTIMIZATION_VERIFY = Path('scripts/verify_mlb_ml_optimization_v3.py')
 ML_PROMOTION_VERIFY = Path('scripts/verify_mlb_ml_promotion_safety.py')
 ML_FEATURE_INTEGRITY_VERIFY = Path('scripts/verify_mlb_ml_feature_integrity.py')
+LOCKED_STORAGE_FINALIZER_VERIFY = Path('scripts/verify_mlb_locked_storage_finalizer.py')
 ML_INSTALLATION_1_5_VERIFY = Path('scripts/verify_mlb_ml_installation_1_5.py')
 MLB_API_FUNCTION_IMPORT_VERIFY = Path('scripts/verify_api_function_mlb_v3_import.py')
 text = TEMPLATE.read_text()
@@ -108,6 +109,7 @@ for required_path in [
     Path('hello_world/mlb_ml_champion_runtime_v1.py'),
     Path('hello_world/mlb_ml_runtime_safety_patch.py'),
     Path('hello_world/mlb_ml_runtime_install_v3.py'),
+    Path('hello_world/mlb_locked_prediction_storage_finalizer_v1.py'),
     Path('hello_world/mlb_ml_optimization_v3.py'),
     Path('scripts/promote_mlb_ml_champion.py'),
     Path('.github/workflows/mlb-ml-promote-champion.yml'),
@@ -118,6 +120,7 @@ for required_path in [
     ML_OPTIMIZATION_VERIFY,
     ML_PROMOTION_VERIFY,
     ML_FEATURE_INTEGRITY_VERIFY,
+    LOCKED_STORAGE_FINALIZER_VERIFY,
     ML_INSTALLATION_1_5_VERIFY,
     MLB_API_FUNCTION_IMPORT_VERIFY,
 ]:
@@ -135,6 +138,7 @@ subprocess.run([sys.executable, str(ACCURACY_TARGET_SEPARATION_VERIFY)], check=T
 subprocess.run([sys.executable, str(ML_OPTIMIZATION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_PROMOTION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_FEATURE_INTEGRITY_VERIFY)], check=True)
+subprocess.run([sys.executable, str(LOCKED_STORAGE_FINALIZER_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_INSTALLATION_1_5_VERIFY)], check=True)
 subprocess.run([sys.executable, str(MLB_API_FUNCTION_IMPORT_VERIFY)], check=True)
 

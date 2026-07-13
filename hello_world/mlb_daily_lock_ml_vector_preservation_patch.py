@@ -135,6 +135,25 @@ def _validate(row: Dict[str, Any], compact: Dict[str, Any]) -> List[str]:
     return sorted(set(errors))
 
 
+def validate_exact_locked_row(row: Dict[str, Any]) -> List[str]:
+    """Return exact-vector contract errors for any locked prediction row.
+
+    The daily-card compactor and the game-level immutable store share this one
+    fail-closed validator so neither keyspace can accept a weaker row.
+    """
+    source = copy.deepcopy(row or {})
+    return _validate(source, source)
+
+
+def require_exact_locked_row(row: Dict[str, Any]) -> None:
+    errors = validate_exact_locked_row(row)
+    if errors:
+        game_id = row.get("gameId") or row.get("game_id") or "unknown"
+        raise RuntimeError(
+            f"MLB_LOCKED_ML_VECTOR_INVALID:{game_id}:" + ",".join(errors)
+        )
+
+
 def apply(daily_lock_module: Any) -> Dict[str, Any]:
     if getattr(daily_lock_module, "_INQSI_MLB_DAILY_LOCK_ML_VECTOR_PRESERVATION_V1", False):
         return {

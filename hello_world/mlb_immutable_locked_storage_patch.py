@@ -1,10 +1,11 @@
 from __future__ import annotations
 
-from typing import Any, Dict
+import copy
+from typing import Any, Dict, List
 
 from botocore.exceptions import ClientError
 
-VERSION = "MLB-IMMUTABLE-LOCKED-STORAGE-v1-write-once-separate-keyspace"
+VERSION = "MLB-IMMUTABLE-LOCKED-STORAGE-v2-exact-vector-write-once"
 
 
 def _tags(row: Dict[str, Any]) -> set[str]:
@@ -67,6 +68,48 @@ def _locked_item(module: Any, row: Dict[str, Any]) -> Dict[str, Any]:
     })
 
 
+def _vector_errors(row: Dict[str, Any]) -> List[str]:
+    try:
+        import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
+        return vector_contract.validate_exact_locked_row(row)
+    except Exception as exc:
+        return [f"exact_vector_validator_unavailable:{exc}"]
+
+
+def _require_vector(row: Dict[str, Any], *, context: str) -> None:
+    errors = _vector_errors(row)
+    if errors:
+        game_id = _identity(row)
+        raise RuntimeError(
+            f"MLB_IMMUTABLE_LOCKED_VECTOR_REJECTED:{context}:{game_id}:"
+            + ",".join(sorted(set(errors)))
+        )
+
+
+def _stored_row(item: Dict[str, Any]) -> Dict[str, Any]:
+    data = item.get("data") or {}
+    return copy.deepcopy(data) if isinstance(data, dict) else {}
+
+
+def _fingerprint(row: Dict[str, Any]) -> str:
+    vector = row.get("frozenFeatureVector") or {}
+    return str(vector.get("fingerprint") or "")
+
+
+def _vector_identity(row: Dict[str, Any]) -> Dict[str, Any]:
+    vector = row.get("frozenFeatureVector") or {}
+    return {
+        "version": vector.get("version"),
+        "fingerprint": vector.get("fingerprint"),
+        "gameId": vector.get("gameId"),
+        "lockAtUtc": vector.get("lockAtUtc"),
+        "sourcePullAtUtc": vector.get("sourcePullAtUtc"),
+        "predictedWinner": vector.get("predictedWinner"),
+        "predictedSide": vector.get("predictedSide"),
+        "labels": vector.get("labels") or {},
+    }
+
+
 def apply(module: Any):
     if getattr(module, "_INQSI_MLB_IMMUTABLE_LOCKED_STORAGE_APPLIED", False):
         return module
@@ -85,6 +128,7 @@ def apply(module: Any):
         if module.history.PULLS is None:
             return {"ok": False, "error": "SNAPSHOTS_TABLE not configured", "storageClass": "LOCKED_IMMUTABLE"}
 
+        _require_vector(row, context="new_write")
         item = _locked_item(module, row)
         try:
             module.history.PULLS.put_item(
@@ -98,6 +142,8 @@ def apply(module: Any):
                 "storageClass": "LOCKED_IMMUTABLE",
                 "writeOnce": True,
                 "created": True,
+                "exactVectorVerified": True,
+                "frozenFeatureVectorFingerprint": _fingerprint(row),
                 "version": VERSION,
             }
         except ClientError as exc:
@@ -110,6 +156,22 @@ def apply(module: Any):
             ).get("Item")
             if not existing:
                 raise
+            existing_row = _stored_row(existing)
+            _require_vector(existing_row, context="existing_collision")
+            incoming_fingerprint = _fingerprint(row)
+            existing_fingerprint = _fingerprint(existing_row)
+            if (
+                not incoming_fingerprint
+                or incoming_fingerprint != existing_fingerprint
+                or _vector_identity(row) != _vector_identity(existing_row)
+                or row.get("predictedWinner") != existing_row.get("predictedWinner")
+                or row.get("predictedSide") != existing_row.get("predictedSide")
+            ):
+                raise RuntimeError(
+                    "MLB_IMMUTABLE_LOCKED_VECTOR_COLLISION_MISMATCH:"
+                    f"{_identity(row)}:{existing_fingerprint or 'missing'}:"
+                    f"{incoming_fingerprint or 'missing'}"
+                )
             return {
                 "ok": True,
                 "pk": item["PK"],
@@ -118,6 +180,8 @@ def apply(module: Any):
                 "writeOnce": True,
                 "created": False,
                 "immutableExisting": True,
+                "exactVectorVerified": True,
+                "frozenFeatureVectorFingerprint": existing_fingerprint,
                 "version": VERSION,
             }
 

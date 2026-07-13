@@ -5,8 +5,10 @@ import copy
 import hashlib
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[1]
 HELLO_WORLD = ROOT / "hello_world"
@@ -14,6 +16,7 @@ if str(HELLO_WORLD) not in sys.path:
     sys.path.insert(0, str(HELLO_WORLD))
 
 import mlb_daily_lock_ml_vector_preservation_patch as patch
+import mlb_daily_lock_coverage_patch as coverage_patch
 
 
 def fingerprint(vector: dict) -> str:
@@ -99,6 +102,82 @@ def valid_row() -> dict:
     }
 
 
+class FakeTable:
+    def __init__(self) -> None:
+        self.puts = []
+
+    def put_item(self, *, Item, ConditionExpression=None):
+        self.puts.append({
+            "Item": copy.deepcopy(Item),
+            "ConditionExpression": ConditionExpression,
+        })
+        return {}
+
+
+def full_lock_module(prediction: dict) -> SimpleNamespace:
+    game = {
+        "game_id": "game-1",
+        "id": "game-1",
+        "game_key": "mlb|2026-07-13|away club|home club",
+        "commence_time": "2026-07-13T18:00:00+00:00",
+        "home_team": "Home Club",
+        "away_team": "Away Club",
+    }
+    pulls = [
+        {
+            "pulled_at": "2026-07-13T14:59:00+00:00",
+            "pull_id": "pull-1",
+            "games": [game],
+        }
+    ]
+    table = FakeTable()
+    payload = {
+        "ok": True,
+        "modelVersion": "test-single-game-model",
+        "engine": "test-engine",
+        "predictions": [copy.deepcopy(prediction)],
+        "promotedCount": 0,
+        "storedCount": 1,
+        "allGamesPredicted": True,
+        "slateCoverage": {"coverageComplete": True},
+    }
+
+    def parse_dt(value):
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+    module = SimpleNamespace(
+        _compact_pick=base_compact,
+        _lock_response=lambda item: item,
+        _get_lock_item=lambda slate: None,
+        _pulls_for_date=lambda slate: copy.deepcopy(pulls),
+        _parse_dt=parse_dt,
+        _game_date_et=lambda row: parse_dt(row.get("commence_time") or row.get("commenceTime")).astimezone(ZoneInfo("America/New_York")).date().isoformat(),
+        _first_start_et=lambda rows: min(parse_dt(row.get("commence_time") or row.get("commenceTime")).astimezone(ZoneInfo("America/New_York")) for row in rows),
+        _now_utc=lambda: datetime(2026, 7, 13, 17, 16, tzinfo=timezone.utc),
+        _latest_pull_age_minutes=lambda rows, now: 2.0,
+        _pull_depths=lambda rows, games: {"provider:game-1": 4},
+        _sort_picks=lambda rows: rows,
+        _today_et=lambda: "2026-07-13",
+        _lock_pk=lambda slate: f"LOCKED_PICKS#mlb#{slate}",
+        _lock_sk=lambda: "DAILY_LOCK#TMINUS45",
+        TABLE=table,
+        REQUIRE_ALL_GAMES_FOR_LOCK=True,
+        MIN_PULLS_PER_GAME_FOR_LOCK=4,
+        MAX_LATEST_PULL_AGE_MINUTES=20,
+        LOCK_MINUTES=45,
+        LOCK_POLICY="first_mlb_game_minus_45_minutes",
+        EASTERN=ZoneInfo("America/New_York"),
+        timedelta=timedelta,
+        history=SimpleNamespace(ddb_safe=lambda item: copy.deepcopy(item)),
+        mlb_game_winner_engine=SimpleNamespace(predict_all=lambda slate, store, limit: copy.deepcopy(payload)),
+        ClientError=Exception,
+    )
+    coverage_patch.apply(module)
+    patch.apply(module)
+    return module
+
+
 def main() -> int:
     module = SimpleNamespace(_compact_pick=base_compact)
     status = patch.apply(module)
@@ -150,10 +229,39 @@ def main() -> int:
     else:
         raise AssertionError("daily lock accepted a mutated frozen vector")
 
+    # Full production-order proof: the complete-slate patch is installed first by
+    # sitecustomize, then the protected Lambda installs this preservation wrapper.
+    # The first clean row must survive that exact conversion path unchanged.
+    clean_source = valid_row()
+    clean_module = full_lock_module(clean_source)
+    clean_result = clean_module.run_lock("2026-07-13", force=False)
+    assert clean_result["locked"] is True
+    assert len(clean_module.TABLE.puts) == 1
+    stored_pick = clean_module.TABLE.puts[0]["Item"]["data"]["picks"][0]
+    assert stored_pick["mlLockVectorStorageVerified"] is True
+    assert stored_pick["frozenFeatureVector"] == clean_source["frozenFeatureVector"]
+    assert stored_pick["frozenFeatureVector"]["labels"] == {"homeWon": None, "pickCorrect": None}
+    assert clean_module.TABLE.puts[0]["ConditionExpression"] == "attribute_not_exists(PK) AND attribute_not_exists(SK)"
+
+    # Full fail-closed proof: an invalid row aborts card construction before the
+    # DynamoDB write call. No partial or vectorless daily card can be persisted.
+    invalid_source = valid_row()
+    invalid_source.pop("frozenFeatureVector")
+    invalid_source.pop("frozenFeatureVectorVersion")
+    invalid_module = full_lock_module(invalid_source)
+    try:
+        invalid_module.run_lock("2026-07-13", force=False)
+    except RuntimeError as exc:
+        assert "missing_frozen_feature_vector" in str(exc)
+    else:
+        raise AssertionError("full lock path accepted a vectorless prediction")
+    assert invalid_module.TABLE.puts == []
+
     print(
         "MLB daily lock ML vector preservation verified: exact vector, fingerprint, "
         "timestamps, semantics, selected price, and blank pregame labels survive compaction; "
-        "invalid cards fail before storage."
+        "invalid cards fail before storage, and the full complete-slate lock path "
+        "cannot reach DynamoDB without the exact vector."
     )
     return 0
 

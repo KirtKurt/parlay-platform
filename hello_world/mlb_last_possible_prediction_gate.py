@@ -55,40 +55,23 @@ def _phase(minutes_to_start: float | None) -> str:
     return "PRE_FINAL_GATE"
 
 
-def _store_final(row: Dict[str, Any]) -> Dict[str, Any]:
-    if history is None or history.PULLS is None:
+def _store_final(row: Dict[str, Any], module: Any = None) -> Dict[str, Any]:
+    """Delegate final rows through the canonical prediction store.
+
+    Direct DynamoDB writes here previously bypassed the immutable exact-vector
+    guard. The outer finalizer normally suppresses this early store; direct
+    callers are still protected by the module's central `_store_prediction`.
+    """
+    if module is None or not hasattr(module, "_store_prediction"):
         return {"ok": False, "error": "SNAPSHOTS_TABLE not configured"}
     try:
-        gate = row.get("lastPossiblePredictionGate") or {}
-        item = history.ddb_safe({
-            "PK": f"GAME_WINNERS#mlb#{row.get('slate_date')}",
-            "SK": f"GAME#{row.get('commenceTime') or 'unknown'}#{row.get('gameId')}",
-            "record_type": "mlb_game_winner_prediction",
-            "sport": "mlb",
-            "slate_date": row.get("slate_date"),
-            "game_id": row.get("gameId"),
-            "game_key": row.get("gameKey"),
-            "predicted_winner": row.get("predictedWinner"),
-            "confidence_tier": row.get("confidenceTier"),
-            "score": row.get("score"),
-            "win_probability": row.get("winProbability"),
-            "created_at": row.get("createdAt"),
-            "final_gate_phase": gate.get("phase"),
-            "final_gate_locked": gate.get("finalLocked"),
-            "final_gate_blocked": gate.get("finalGateBlocked"),
-            "fundamentals_applied": gate.get("sportsDataIoFundamentalsApplied"),
-            "odds_api_only": gate.get("oddsApiOnly"),
-            "slate_wide_lock": gate.get("slateWideLock"),
-            "slate_lock_at_utc": gate.get("lockAtUtc"),
-            "data": row,
-        })
-        history.PULLS.put_item(Item=item)
-        return {"ok": True, "pk": item["PK"], "sk": item["SK"], "finalGateStored": True}
+        stored = module._store_prediction(row)
+        return {**(stored or {}), "finalGateStored": bool((stored or {}).get("ok"))}
     except Exception as exc:
         return {"ok": False, "error": str(exc)}
 
 
-def _annotate_from_slate_lock(out: Dict[str, Any], persist: bool = False) -> Dict[str, Any]:
+def _annotate_from_slate_lock(out: Dict[str, Any], persist: bool = False, module: Any = None) -> Dict[str, Any]:
     lock = dict(out.get("slatePredictionLock") or {})
     optimizer = out.get("winnerOptimizer") or {}
     fundamentals_applied = bool(optimizer.get("fundamentalsApplied"))
@@ -151,14 +134,14 @@ def _annotate_from_slate_lock(out: Dict[str, Any], persist: bool = False) -> Dic
         out["actionabilityReason"] = "sportsdataio_required_for_full_data_slate_lock_but_not_applied"
     out["tags"] = sorted(set(tags))
     if persist:
-        out["finalGateStored"] = _store_final(out)
+        out["finalGateStored"] = _store_final(out, module=module)
     return out
 
 
-def annotate_prediction(row: Dict[str, Any], persist: bool = False) -> Dict[str, Any]:
+def annotate_prediction(row: Dict[str, Any], persist: bool = False, module: Any = None) -> Dict[str, Any]:
     out = dict(row or {})
     if (out.get("slatePredictionLock") or {}).get("slateWideLock"):
-        return _annotate_from_slate_lock(out, persist=persist)
+        return _annotate_from_slate_lock(out, persist=persist, module=module)
 
     minutes = _minutes_to_start(out)
     phase = _phase(minutes)
@@ -220,14 +203,14 @@ def annotate_prediction(row: Dict[str, Any], persist: bool = False) -> Dict[str,
         out["fullDataFinalPick"] = True
     out["tags"] = sorted(set(tags))
     if persist:
-        out["finalGateStored"] = _store_final(out)
+        out["finalGateStored"] = _store_final(out, module=module)
     return out
 
 
-def annotate_result(result: Dict[str, Any], persist: bool = False) -> Dict[str, Any]:
+def annotate_result(result: Dict[str, Any], persist: bool = False, module: Any = None) -> Dict[str, Any]:
     if not isinstance(result, dict):
         return result
-    predictions = [annotate_prediction(row, persist=persist) for row in (result.get("predictions") or [])]
+    predictions = [annotate_prediction(row, persist=persist, module=module) for row in (result.get("predictions") or [])]
     predictions.sort(key=lambda r: (float(r.get("actionablePick") is True), float(r.get("score") or 0), float(r.get("winProbability") or 0)), reverse=True)
     for idx, row in enumerate(predictions, 1):
         row["rank"] = idx
@@ -285,7 +268,7 @@ def apply(module):
     def patched_predict_all(*args, **kwargs):
         persist = bool(kwargs.get("store"))
         result = original_predict_all(*args, **kwargs)
-        return annotate_result(result, persist=persist)
+        return annotate_result(result, persist=persist, module=module)
 
     module.predict_all = patched_predict_all
     module._INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED = True

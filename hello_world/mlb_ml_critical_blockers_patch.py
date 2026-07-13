@@ -65,7 +65,7 @@ def install() -> dict:
         "errors": errors,
         "authoritativeTrainer": AUTHORITATIVE_TRAINER,
         "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
-        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.3-separated-accuracy-targets",
+        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.4-canonical-exact-vector-storage",
         "runtimeInstallerCallSite": "usercustomize.py_after_prediction_chain",
         "singleRuntimeInstallCall": True,
         "duplicateTrainerAuthorityDisabled": True,
