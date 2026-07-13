@@ -64,7 +64,13 @@ def _history_module():
 
 def _dynamodb_round_trip(value):
     """Use production ddb_safe and boto3's wire codec when it is installed."""
+    # The rolling-audit workflow runs this validator before configuring AWS
+    # credentials. A test-only region is enough to construct the resource; this
+    # test never reads or writes a live table.
+    os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
+    os.environ.setdefault("AWS_REGION", "us-east-1")
     os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
+    os.environ.setdefault("SNAPSHOTS_TABLE", "")
     safe = _history_module().ddb_safe(value)
     try:
         from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
