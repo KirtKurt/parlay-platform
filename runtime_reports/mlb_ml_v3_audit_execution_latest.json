@@ -1,15 +1,15 @@
 {
   "ok": true,
   "proofType": "MLB_ML_V3_AWS_AUDIT_EXECUTION",
-  "createdAtUtc": "2026-07-13T01:35:36.777920+00:00",
+  "createdAtUtc": "2026-07-13T03:11:09.776007+00:00",
   "environment": {
     "snapshotsTableConfigured": true,
     "oddsApiKeyConfigured": true,
-    "autoPromote": "false",
+    "autoPromote": "true",
     "allowLocalFileChampion": "false"
   },
   "failures": [],
-  "reportCreatedAt": "2026-07-13T01:35:43.390275+00:00",
+  "reportCreatedAt": "2026-07-13T03:11:27.287871+00:00",
   "reportOk": true,
   "summary": {
     "windowHours": 24,
@@ -42,7 +42,7 @@
     "actionableCorrect": 0,
     "actionableWrong": 0,
     "rolling24hActionableAccuracyPct": null,
-    "accuracyTargetRowPolicy": "90pct_target_applies_only_to_all_official_games_in_the_rolling_24h_audit; recommendation_reliability_threshold_is_60pct",
+    "accuracyTargetRowPolicy": "90pct_is_the_production_playability_accuracy_gate_and_the_rolling_24h_all_games_audit_target",
     "excludedNoPickOptimizedRows": 14,
     "actionabilityPolicy": "Playable metrics require explicit modern playability or ACTIONABLE_PICK/ML_CONFIRMED. officialPick is never a playability signal.",
     "officialPredictionCount": 15,
@@ -66,12 +66,45 @@
     "playableFlatUnitRoiPct": null,
     "seasonOfficialPredictionCount": 114,
     "seasonPlayablePredictionCount": 8,
-    "accuracyClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.5-90pct-all-games-audit-60pct-recommendation",
+    "accuracyClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v1.6-90pct-production-reliability",
     "rolling24hAllGamesAccuracyPct": 40.0,
-    "playableRecommendationAccuracyThresholdPct": 60.0,
+    "rolling24hOfficialCardSlateAccuracyPct": 40.0,
+    "rolling24hOfficialCardSlateAuthorityTargetPct": 90.0,
+    "rolling24hOfficialCardSlateAccuracyProgress": {
+      "reportingOnlyBelow90Pct": true,
+      "actualRolling24hOfficialCardSlateAccuracyPct": 40.0,
+      "milestones": [
+        {
+          "accuracyPct": 50.0,
+          "reached": false
+        },
+        {
+          "accuracyPct": 60.0,
+          "reached": false
+        },
+        {
+          "accuracyPct": 70.0,
+          "reached": false
+        },
+        {
+          "accuracyPct": 80.0,
+          "reached": false
+        }
+      ],
+      "authorityTargetPct": 90.0
+    },
+    "playableRecommendationAccuracyThresholdPct": 90.0,
+    "selectedUntouchedTestPlayabilityAccuracyTargetPct": 90.0,
     "rolling24hPlayableThresholdMet": null,
     "officialCardPolicy": "Every immutable locked winner is graded as an official prediction, regardless of playability.",
-    "optimizationTargetPolicy": "Reliability/recommendation validation uses a 60% selected-sample threshold plus positive ROI, adequate price coverage, and acceptable calibration. Outcome direction must independently beat the de-vigged market baseline. The 90% figure is reporting-only for the rolling 24-hour all-games audit."
+    "optimizationTargetPolicy": "Production playability requires at least 100 selected untouched-test rows, 90% selected accuracy, 90% exact locked-odds coverage, calibration error no greater than 0.10, 500 clean rows, and 100 total untouched-test rows. Outcome direction has independent gates. Eligible authorities promote automatically only in the authoritative AWS audit.",
+    "rolling24hSlateAccuracyProgressMilestonesPct": [
+      50.0,
+      60.0,
+      70.0,
+      80.0
+    ],
+    "rolling24hSlateAccuracyProgressMilestonesReportingOnly": true
   },
   "accuracyLedger": {
     "ok": true,
@@ -82,54 +115,63 @@
     "queriedRowCount": 99,
     "immutable": true,
     "dedupeKey": "slate_date + provider_game_id_or_matchup",
-    "version": "MLB-REAL-WORLD-ACCURACY-v1.5-90pct-all-games-audit-60pct-recommendation"
+    "version": "MLB-REAL-WORLD-ACCURACY-v1.6-90pct-production-reliability"
   },
   "mlCriticalFixStatus": {
     "ok": true,
-    "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v9-separated-accuracy-targets",
+    "version": "MLB-ML-CRITICAL-BLOCKERS-PATCH-v10-90pct-automatic-gated-promotion",
     "applied": [
-      "90pct_all_games_audit_60pct_recommendation_policy",
+      "90pct_rolling_slate_and_untouched_playability_policy",
       "legacy_local_reliability_runtime_disabled",
-      "immutable_exact_lock_feature_freeze",
-      "automatic_champion_promotion_permanently_disabled"
+      "immutable_exact_lock_feature_freeze"
     ],
     "errors": [],
     "authoritativeTrainer": "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger",
     "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
-    "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.4-canonical-exact-vector-storage",
+    "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority",
     "runtimeInstallerCallSite": "usercustomize.py_after_prediction_chain",
     "singleRuntimeInstallCall": true,
     "duplicateTrainerAuthorityDisabled": true,
     "duplicateOutcomeRuntimeAuthorityDisabled": true,
-    "automaticPromotionDisabled": true,
+    "automaticPromotionSupported": true,
+    "automaticPromotionEnabledOnlyByAuthoritativeAwsAudit": true,
+    "automaticPromotionRequiresApplicableGate": true,
     "rolling24hAllGamesAuditTargetPct": 90.0,
-    "recommendationReliabilityThresholdPct": 60.0,
-    "manualPromotionModule": "MLB-ML-MANUAL-PROMOTION-ONLY-v1",
-    "manualPromotionWorkflow": "mlb-ml-promote-champion.yml"
+    "rolling24hSlateAccuracyAuthorityTargetPct": 90.0,
+    "selectedUntouchedTestAccuracyTargetPct": 90.0
   },
   "mlOptimizationV3": {
     "applied": true,
-    "version": "MLB-ML-OPTIMIZATION-v3.1-clean-dual-manual-champion-promotion",
+    "version": "MLB-ML-OPTIMIZATION-v3.2-90pct-rolling-slate-automatic-promotion",
     "mode": "SHADOW_CHALLENGER",
     "cleanRowCount": 0,
     "quarantinedRowCount": 213,
     "quarantineReasonCounts": {
       "feature_vector_not_proven_immutable": 191,
       "feature_vector_source_not_lock_time_prediction": 191,
+      "frozen_vector_away_temporal_history_missing": 213,
       "frozen_vector_awayteam_mismatch": 191,
       "frozen_vector_explicit_blank_labels_missing": 213,
       "frozen_vector_features_missing": 191,
+      "frozen_vector_fundamental_masks_not_lock_safe": 213,
+      "frozen_vector_fundamental_source_after_or_missing_lock": 213,
+      "frozen_vector_fundamentals_snapshot_version_missing_or_wrong": 213,
       "frozen_vector_game_identity_mismatch": 198,
+      "frozen_vector_home_temporal_history_missing": 213,
       "frozen_vector_hometeam_mismatch": 191,
+      "frozen_vector_missingness_feature_version_missing_or_wrong": 213,
       "frozen_vector_predicted_side_mismatch": 191,
       "frozen_vector_predicted_winner_mismatch": 191,
       "frozen_vector_source_after_or_missing_lock": 191,
+      "frozen_vector_temporal_feature_version_missing_or_wrong": 213,
+      "frozen_vector_temporal_features_not_lock_safe": 213,
+      "frozen_vector_temporal_source_after_or_missing_lock": 213,
       "incomplete_or_unproven_slate_coverage": 191,
       "legacy_probability_semantics": 183,
       "missing_exact_stored_lock_time_feature_vector": 191,
       "missing_frozen_vector_fingerprint_version": 213,
       "pre_clean_cohort_cutoff": 74,
-      "wrong_frozen_feature_vector_version": 191,
+      "wrong_frozen_feature_vector_version": 213,
       "missing_team_win_probability": 162,
       "selected_side_odds_source_not_proven": 155,
       "missing_selected_side_locked_odds": 151,
@@ -164,9 +206,10 @@
     "untouchedTest": null,
     "promotionGate": {
       "ok": true,
-      "version": "MLB-ML-CHAMPION-CHALLENGER-v1.4-independent-model-validation-threshold-isolated-promotion-60pct-playability",
-      "evaluatedAtUtc": "2026-07-13T01:36:05.643305+00:00",
-      "automaticPromotionEnabled": false,
+      "version": "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion",
+      "evaluatedAtUtc": "2026-07-13T03:12:30.832769+00:00",
+      "automaticPromotionEnabled": true,
+      "automaticPromotionRequiresPassedApplicableGates": true,
       "promotionEligible": false,
       "directionPromotionEligible": false,
       "playabilityPromotionEligible": false,
@@ -183,6 +226,8 @@
         "modelScope": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS",
         "averageFundamentalsCompletenessPct": 0.0,
         "outcomeModelAvailable": false,
+        "outcomeUntouchedAccuracyPct": null,
+        "minimumOutcomeUntouchedAccuracyPct": 90.0,
         "outcomeAccuracyLiftPctPoints": null,
         "minimumAccuracyLiftPctPoints": 1.0,
         "outcomeBrierSkillPct": null,
@@ -190,7 +235,10 @@
         "outcomeLogLoss": null,
         "marketLogLoss": null,
         "outcomeCalibrationError": null,
-        "maximumCalibrationError": 0.08
+        "maximumCalibrationError": 0.08,
+        "rolling24hSlateAccuracyPct": 40.0,
+        "minimumRolling24hSlateAccuracyPct": 90.0,
+        "rolling24hSlateAccuracyAvailable": true
       },
       "playabilityChecks": {
         "cleanOfficialCount": 0,
@@ -205,15 +253,42 @@
         "reliabilityThresholdValidated": false,
         "validationSelectedReliabilityThreshold": null,
         "selectedReliabilityTestCount": 0,
-        "minimumSelectedReliabilityTest": 50,
+        "minimumSelectedReliabilityTest": 100,
         "selectedAccuracyPct": null,
-        "minimumSelectedAccuracyPct": 60.0,
-        "selectedPriceCoveragePct": null,
-        "minimumSelectedPriceCoveragePct": 90.0,
-        "selectedFlatUnitRoiPct": null,
-        "minimumSelectedFlatUnitRoiPct": "> 0.0",
+        "minimumSelectedAccuracyPct": 90.0,
+        "selectedExactOddsCoveragePct": null,
+        "minimumSelectedExactOddsCoveragePct": 90.0,
         "selectedCalibrationError": null,
-        "maximumSelectedCalibrationError": 0.1
+        "maximumSelectedCalibrationError": 0.1,
+        "rolling24hSlateAccuracyPct": 40.0,
+        "minimumRolling24hSlateAccuracyPct": 90.0,
+        "rolling24hSlateAccuracyAvailable": true,
+        "rolling24hSlateAccuracyProgress": {
+          "reportingOnly": true,
+          "actualRolling24hSlateAccuracyPct": 40.0,
+          "milestones": [
+            {
+              "accuracyPct": 50.0,
+              "reached": false
+            },
+            {
+              "accuracyPct": 60.0,
+              "reached": false
+            },
+            {
+              "accuracyPct": 70.0,
+              "reached": false
+            },
+            {
+              "accuracyPct": 80.0,
+              "reached": false
+            }
+          ],
+          "highestReachedPct": null,
+          "nextMilestonePct": 50.0,
+          "promotionTargetPct": 90.0,
+          "affectsPromotionEligibility": false
+        }
       },
       "directionBlockers": [
         {
@@ -242,6 +317,11 @@
           "required": 1.0
         },
         {
+          "code": "OUTCOME_UNTOUCHED_ACCURACY_BELOW_AUTHORITY_TARGET",
+          "actual": null,
+          "required": 90.0
+        },
+        {
           "code": "NO_POSITIVE_BRIER_SKILL",
           "actual": null,
           "required": 0.1
@@ -255,6 +335,11 @@
           "code": "CALIBRATION_ERROR_TOO_HIGH",
           "actual": null,
           "required": 0.08
+        },
+        {
+          "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
+          "actual": 40.0,
+          "required": 90.0
         }
       ],
       "playabilityBlockers": [
@@ -292,27 +377,27 @@
         {
           "code": "INSUFFICIENT_SELECTED_RELIABILITY_TEST_ROWS",
           "actual": 0,
-          "required": 50
+          "required": 100
         },
         {
           "code": "SELECTED_ACCURACY_TOO_LOW",
           "actual": null,
-          "required": 60.0
-        },
-        {
-          "code": "SELECTED_PRICE_COVERAGE_TOO_LOW",
-          "actual": null,
           "required": 90.0
         },
         {
-          "code": "SELECTED_ROI_NOT_POSITIVE",
+          "code": "SELECTED_EXACT_ODDS_COVERAGE_TOO_LOW",
           "actual": null,
-          "required": "> 0.0"
+          "required": 90.0
         },
         {
           "code": "RELIABILITY_CALIBRATION_ERROR_TOO_HIGH",
           "actual": null,
           "required": 0.1
+        },
+        {
+          "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
+          "actual": 40.0,
+          "required": 90.0
         }
       ],
       "blockers": [
@@ -342,6 +427,11 @@
           "required": 1.0
         },
         {
+          "code": "OUTCOME_UNTOUCHED_ACCURACY_BELOW_AUTHORITY_TARGET",
+          "actual": null,
+          "required": 90.0
+        },
+        {
           "code": "NO_POSITIVE_BRIER_SKILL",
           "actual": null,
           "required": 0.1
@@ -355,6 +445,11 @@
           "code": "CALIBRATION_ERROR_TOO_HIGH",
           "actual": null,
           "required": 0.08
+        },
+        {
+          "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
+          "actual": 40.0,
+          "required": 90.0
         },
         {
           "code": "RELIABILITY_MODEL_NOT_TRAINED",
@@ -375,22 +470,17 @@
         {
           "code": "INSUFFICIENT_SELECTED_RELIABILITY_TEST_ROWS",
           "actual": 0,
-          "required": 50
+          "required": 100
         },
         {
           "code": "SELECTED_ACCURACY_TOO_LOW",
           "actual": null,
-          "required": 60.0
-        },
-        {
-          "code": "SELECTED_PRICE_COVERAGE_TOO_LOW",
-          "actual": null,
           "required": 90.0
         },
         {
-          "code": "SELECTED_ROI_NOT_POSITIVE",
+          "code": "SELECTED_EXACT_ODDS_COVERAGE_TOO_LOW",
           "actual": null,
-          "required": "> 0.0"
+          "required": 90.0
         },
         {
           "code": "RELIABILITY_CALIBRATION_ERROR_TOO_HIGH",
@@ -404,38 +494,72 @@
         "required": 200,
         "policy": "Two hundred settled production playable recommendations are required for a credible public playable-performance claim, but this is not a circular prerequisite for an initially validated playability champion."
       },
-      "policy": "Direction and playability earn authority independently. Direction must beat the market on untouched chronological data. Reliability/recommendation validation uses a 60% selected-sample threshold plus calibration, price coverage, and positive ROI. The 90% figure is reporting-only for the rolling 24-hour audit of all official games.",
+      "rolling24hSlateAccuracyProgress": {
+        "reportingOnly": true,
+        "actualRolling24hSlateAccuracyPct": 40.0,
+        "milestones": [
+          {
+            "accuracyPct": 50.0,
+            "reached": false
+          },
+          {
+            "accuracyPct": 60.0,
+            "reached": false
+          },
+          {
+            "accuracyPct": 70.0,
+            "reached": false
+          },
+          {
+            "accuracyPct": 80.0,
+            "reached": false
+          }
+        ],
+        "highestReachedPct": null,
+        "nextMilestonePct": 50.0,
+        "promotionTargetPct": 90.0,
+        "affectsPromotionEligibility": false
+      },
+      "policy": "Direction and playability promote automatically and independently only after their applicable gates pass. Both require a current rolling 24-hour official-card MLB slate accuracy average of 90%, 500 clean rows, and 100 total untouched-test rows. Direction separately requires 90% untouched outcome accuracy; playability separately requires 100 selected rows, 90% selected accuracy, 90% exact locked-odds coverage, and calibration error no greater than 0.10. Rolling-slate accuracy milestones at 50/60/70/80 are reporting-only.",
       "rolling24hAllGamesAuditTargetPct": 90.0,
-      "recommendationReliabilityThresholdPct": 60.0
+      "recommendationReliabilityThresholdPct": 90.0,
+      "selectedUntouchedTestPlayabilityAccuracyTargetPct": 90.0,
+      "rolling24hSlateAccuracyProgressMilestonesPct": [
+        50.0,
+        60.0,
+        70.0,
+        80.0
+      ],
+      "rolling24hSlateAccuracyProgressMilestonesReportingOnly": true
     },
     "outcomeModelVersion": null,
     "reliabilityModelVersion": null,
     "testWasUntouched": null,
     "legacyTrainerAuthorityDisabled": true,
-    "automaticPromotionSupported": false,
+    "automaticPromotionSupported": true,
+    "automaticPromotionEnabled": true,
+    "rolling24hSlateAccuracyPct": 40.0,
     "stored": {
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-13T01:35:57.220972+00:00"
+      "runSk": "CHALLENGER#2026-07-13T03:12:10.552484+00:00"
     },
     "promotion": {
       "ok": true,
       "promoted": false,
-      "reason": "automatic_promotion_permanently_disabled_manual_review_required",
-      "directionPromotionEligible": false,
-      "playabilityPromotionEligible": false,
-      "manualPromotionFunction": "promote_reviewed_latest",
-      "manualPromotionWorkflow": "mlb-ml-promote-champion.yml",
-      "version": "MLB-ML-MANUAL-PROMOTION-ONLY-v1"
+      "suspended": false,
+      "reason": "rolling_slate_gate_failed_no_enabled_authority_to_suspend"
     }
   },
   "mlTrainingAuthority": {
     "authoritative": "mlOptimizationV3_clean_dual_model_only",
     "legacyArtifactRole": "diagnostic_only",
     "automaticWeightMutation": false,
-    "automaticChampionPromotion": false,
-    "productionAuthoritySource": "reviewed_DynamoDB_champion_bundle_only"
+    "automaticChampionPromotion": true,
+    "automaticChampionPromotionSupported": true,
+    "automaticPromotionGateRequired": true,
+    "productionAuthoritySource": "gate_promoted_DynamoDB_champion_bundle_only"
   },
   "dailyLockAuditFallback": {
     "applied": true,
@@ -446,7 +570,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-13T01:35:43.390275+00:00"
+    "runSk": "AUDIT#2026-07-13T03:11:27.287871+00:00"
   },
   "storeError": null
 }
