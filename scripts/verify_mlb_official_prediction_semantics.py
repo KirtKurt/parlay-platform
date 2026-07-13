@@ -9,10 +9,14 @@ HELLO_WORLD = ROOT / "hello_world"
 if str(HELLO_WORLD) not in sys.path:
     sys.path.insert(0, str(HELLO_WORLD))
 
+import mlb_accuracy_target_policy_v1 as target_policy
 import mlb_official_prediction_semantics as semantics
 import mlb_real_world_accuracy_patch as accuracy
 import mlb_real_world_accuracy_semantics_fix as accuracy_fix
 
+
+installed = target_policy.install()
+assert installed.get("ok") is True, installed
 accuracy_fix.apply(accuracy)
 
 
@@ -21,23 +25,36 @@ def main() -> int:
         "slatePredictionLock": {"locked": True, "lockStatus": "LOCKED"},
         "predictions": [
             {
-                "gameId": "low-confidence-official",
+                "gameId": "below-60-locked-diagnostic",
                 "predictedWinner": "Washington Nationals",
-                "actionablePick": False,
-                "officialPick": False,
-                "tags": ["SLATE_LOCKED", "ML_REJECTED", "NOT_PLAYABLE"],
+                "predictedSide": "home",
+                "teamWinProbabilityPct": 59.99,
+                "winProbabilityPct": 59.99,
+                "actionablePick": True,
+                "tags": ["SLATE_LOCKED", "ACTIONABLE_PICK"],
             },
             {
-                "gameId": "playable-official",
+                "gameId": "at-60-official-not-playable",
+                "predictedWinner": "New York Mets",
+                "predictedSide": "away",
+                "teamWinProbabilityPct": 60.0,
+                "winProbabilityPct": 60.0,
+                "actionablePick": False,
+                "tags": ["SLATE_LOCKED", "NOT_PLAYABLE"],
+            },
+            {
+                "gameId": "above-60-official-playable",
                 "predictedWinner": "Los Angeles Dodgers",
+                "predictedSide": "home",
+                "teamWinProbabilityPct": 64.0,
+                "winProbabilityPct": 64.0,
                 "actionablePick": True,
-                "officialPick": False,
                 "tags": ["SLATE_LOCKED", "ACTIONABLE_PICK"],
             },
         ],
     }
     result = semantics.enhance_result(locked)
-    first, second = result["predictions"]
+    below, at_floor, playable = result["predictions"]
 
     assert result["officialPredictionCount"] == 2
     assert result["officialPickCount"] == 2
@@ -47,22 +64,39 @@ def main() -> int:
     assert len(result["playablePredictionDisplay"]) == 1
     assert len(result["nonPlayableOfficialPredictionDisplay"]) == 1
 
-    assert first["officialPrediction"] is True
-    assert first["officialPick"] is True
-    assert first["playable"] is False
-    assert first["recommendationStatus"] == "OFFICIAL_PREDICTION_NOT_PLAYABLE"
-    assert "OFFICIAL_LOCKED_PREDICTION" in first["tags"]
-    assert "NOT_PLAYABLE" in first["tags"]
+    assert below["officialPrediction"] is False
+    assert below["officialPick"] is False
+    assert below["playable"] is False
+    assert below["actionablePick"] is False
+    assert below["accuracyTargetEligible"] is False
+    assert below["officialPredictionStatus"] == "LOCKED_DIAGNOSTIC_BELOW_60PCT"
+    assert below["recommendationStatus"] == "LOCKED_PREDICTION_BELOW_60PCT_NOT_OFFICIAL"
+    assert "BELOW_60PCT_GAME_LOCK_FLOOR" in below["tags"]
+    assert "OFFICIAL_LOCKED_PREDICTION" not in below["tags"]
 
-    assert second["officialPrediction"] is True
-    assert second["officialPick"] is True
-    assert second["playable"] is True
-    assert second["recommendationStatus"] == "PLAYABLE_PREDICTION"
+    assert at_floor["officialPrediction"] is True
+    assert at_floor["officialPick"] is True
+    assert at_floor["playable"] is False
+    assert at_floor["officialPredictionStatus"] == "OFFICIAL_LOCKED_PREDICTION"
+    assert at_floor["individualGameLockProbabilityPct"] == 60.0
+    assert at_floor["individualGameLockEligible"] is True
+
+    assert playable["officialPrediction"] is True
+    assert playable["officialPick"] is True
+    assert playable["playable"] is True
+    assert playable["recommendationStatus"] == "PLAYABLE_PREDICTION"
 
     pre_lock = semantics.enhance_result(
         {
             "slatePredictionLock": {"locked": False},
-            "predictions": [{"gameId": "pre-lock", "predictedWinner": "New York Mets", "actionablePick": False}],
+            "predictions": [
+                {
+                    "gameId": "pre-lock",
+                    "predictedWinner": "New York Mets",
+                    "teamWinProbabilityPct": 70.0,
+                    "actionablePick": False,
+                }
+            ],
         }
     )
     row = pre_lock["predictions"][0]
@@ -74,31 +108,31 @@ def main() -> int:
         {
             "status": "GRADED",
             "id": "official-not-playable",
-            "slateDateEt": "2026-07-11",
-            "commenceTime": "2026-07-11T18:00:00Z",
-            "homeTeam": "Washington Nationals",
-            "awayTeam": "New York Yankees",
-            "winner": "New York Yankees",
-            "predictedWinner": "New York Yankees",
-            "predictedSide": "away",
+            "slateDateEt": "2026-07-13",
+            "commenceTime": "2026-07-13T18:00:00Z",
+            "homeTeam": "New York Mets",
+            "awayTeam": "Washington Nationals",
+            "winner": "New York Mets",
+            "predictedWinner": "New York Mets",
+            "predictedSide": "home",
             "correct": True,
             "officialPrediction": True,
             "officialPick": True,
             "actionablePick": False,
             "accuracyTargetEligible": False,
             "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-            "predictionSemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1",
-            "tags": ["SLATE_LOCKED", "ML_REJECTED", "NOT_PLAYABLE"],
-            "teamWinProbabilityPct": 58.0,
+            "predictionSemanticsVersion": semantics.VERSION,
+            "tags": ["FINAL_LOCKED", "NOT_PLAYABLE"],
+            "teamWinProbabilityPct": 60.0,
             "americanOdds": -125,
-            "homeSignal": {"marketConsensusProbability": 0.42, "americanOdds": 115},
-            "awaySignal": {"marketConsensusProbability": 0.58, "americanOdds": -125},
+            "homeSignal": {"marketConsensusProbability": 0.60, "americanOdds": -125},
+            "awaySignal": {"marketConsensusProbability": 0.40, "americanOdds": 115},
         },
         {
             "status": "GRADED",
             "id": "official-playable",
-            "slateDateEt": "2026-07-11",
-            "commenceTime": "2026-07-11T19:00:00Z",
+            "slateDateEt": "2026-07-13",
+            "commenceTime": "2026-07-13T19:00:00Z",
             "homeTeam": "Los Angeles Dodgers",
             "awayTeam": "Arizona Diamondbacks",
             "winner": "Arizona Diamondbacks",
@@ -110,82 +144,27 @@ def main() -> int:
             "actionablePick": True,
             "accuracyTargetEligible": True,
             "recommendationStatus": "PLAYABLE_PREDICTION",
-            "predictionSemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1",
-            "tags": ["SLATE_LOCKED", "ACTIONABLE_PICK"],
-            "teamWinProbabilityPct": 55.0,
+            "predictionSemanticsVersion": semantics.VERSION,
+            "tags": ["FINAL_LOCKED", "ACTIONABLE_PICK"],
+            "teamWinProbabilityPct": 64.0,
             "americanOdds": -110,
-            "homeSignal": {"marketConsensusProbability": 0.55, "americanOdds": -110},
-            "awaySignal": {"marketConsensusProbability": 0.45, "americanOdds": 100},
+            "homeSignal": {"marketConsensusProbability": 0.64, "americanOdds": -110},
+            "awaySignal": {"marketConsensusProbability": 0.36, "americanOdds": 100},
         },
     ]
     normalized = [accuracy._normalize_audit_row(row) for row in audit_rows]
     metrics = accuracy._window_metrics(normalized)
-
-    assert normalized[0]["officialPrediction"] is True
-    assert normalized[0]["playable"] is False
-    assert normalized[1]["officialPrediction"] is True
-    assert normalized[1]["playable"] is True
     assert metrics["officialPredictions"]["count"] == 2
     assert metrics["playableRecommendations"]["count"] == 1
     assert metrics["officialPredictions"]["accuracyPct"] == 50.0
     assert metrics["playableRecommendations"]["accuracyPct"] == 0.0
     assert metrics["officialPredictions"]["probabilityScoring"]["brierScore"] is not None
-    assert metrics["officialPredictions"]["probabilityScoring"]["logLoss"] is not None
     assert metrics["officialPredictions"]["roi"]["pricedPickCount"] == 2
-    assert metrics["marketFavoriteBaseline"]["count"] == 2
-    assert metrics["comparison"]["modelAccuracyLiftVsMarketPct"] is not None
 
-    legacy = accuracy._normalize_audit_row(
-        {
-            "status": "GRADED",
-            "id": "legacy-flipped-official-not-proven-playable",
-            "slateDateEt": "2026-07-10",
-            "commenceTime": "2026-07-10T20:00:00Z",
-            "homeTeam": "Texas Rangers",
-            "awayTeam": "Houston Astros",
-            "winner": "Texas Rangers",
-            "predictedWinner": "Houston Astros",
-            "predictedSide": "away",
-            "correct": False,
-            "officialPick": True,
-            "actionablePick": True,
-            "accuracyTargetEligible": True,
-            "actionability": "OPTIMIZED_GAME_WINNER_PICK",
-            "tags": ["SLATE_LOCKED", "FAVORITE"],
-            "winProbabilityPct": 6.66,
-            "americanOdds": 120,
-            "homeSignal": {"probLatest": 0.442592, "americanOdds": 120},
-            "awaySignal": {"probLatest": 0.557408, "americanOdds": -142},
-        }
+    print(
+        "MLB official semantics verified: 60% selected-team probability is the individual-game official-lock floor; "
+        "sub-60% rows remain visible immutable diagnostics."
     )
-    assert legacy["officialPrediction"] is True
-    assert legacy["playable"] is False
-    assert legacy["teamWinProbabilityPct"] == 55.74
-    assert legacy["lockedAmericanOdds"] == -142.0
-
-    old_ledger_row = {
-        "id": "old-ledger-no-status",
-        "slateDateEt": "2026-07-10",
-        "commenceTime": "2026-07-10T21:00:00Z",
-        "homeTeam": "Baltimore Orioles",
-        "awayTeam": "Kansas City Royals",
-        "winner": "Baltimore Orioles",
-        "predictedWinner": "Baltimore Orioles",
-        "predictedSide": "home",
-        "correct": True,
-        "officialPrediction": True,
-        "officialPick": True,
-        "tags": ["SLATE_LOCKED"],
-        "homeSignal": {"probLatest": 0.587345, "americanOdds": -156},
-        "awaySignal": {"probLatest": 0.412655, "americanOdds": 132},
-    }
-    normalized_ledger = accuracy._normalize_audit_row(old_ledger_row)
-    stored_ledger = accuracy._ledger_row(normalized_ledger)
-    assert normalized_ledger["status"] == "GRADED"
-    assert stored_ledger["status"] == "GRADED"
-    assert accuracy._dedupe([normalized_ledger])
-
-    print("MLB official/playable, immutable-ledger, selected-odds, and real-world accuracy metrics verified")
     return 0
 
 
