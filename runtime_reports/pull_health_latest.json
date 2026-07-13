@@ -1,7 +1,7 @@
 {
   "ok": true,
   "source": "diagnostic_provider_probe_no_snapshot_storage",
-  "createdAt": "2026-07-13T00:15:43.594599+00:00",
+  "createdAt": "2026-07-13T02:28:24.076797+00:00",
   "sportsRequested": [
     "mlb",
     "wnba",
@@ -14,11 +14,11 @@
     "tennis"
   ],
   "sportsWithConvertibleMarkets": [
+    "mlb",
     "wnba",
     "soccer"
   ],
   "sportsWithZeroConvertibleMarkets": [
-    "mlb",
     "nfl",
     "cfb",
     "nba",
@@ -27,16 +27,8 @@
     "tennis"
   ],
   "sportsFailedActiveConversion": [],
-  "providerErrorCount": 10,
+  "providerErrorCount": 9,
   "providerErrors": [
-    {
-      "appSport": "mlb",
-      "providerSportKey": "baseball_mlb",
-      "rawGamesReturned": 0,
-      "rawGamesInWindow": 0,
-      "gamesConvertible": 0,
-      "error": "active_slate_window_empty"
-    },
     {
       "appSport": "nfl",
       "providerSportKey": "americanfootball_nfl",
@@ -118,38 +110,38 @@
   ],
   "results": [
     {
-      "ok": false,
+      "ok": true,
       "appSport": "mlb",
-      "rawGamesReturned": 0,
-      "rawGamesInWindow": 0,
-      "gamesConvertible": 0,
+      "rawGamesReturned": 1,
+      "rawGamesInWindow": 1,
+      "gamesConvertible": 1,
       "gamesStored": null,
       "diagnosticOnlyNoSnapshotStored": true,
       "activeStorageFailure": false,
       "providerPulls": [
         {
-          "ok": false,
+          "ok": true,
           "appSport": "mlb",
           "providerSportKey": "baseball_mlb",
-          "rawGamesReturned": 0,
-          "rawGamesInWindow": 0,
-          "gamesConvertible": 0,
+          "rawGamesReturned": 1,
+          "rawGamesInWindow": 1,
+          "gamesConvertible": 1,
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T18:15:41.220543+00:00",
-          "activeWindowEnd": "2026-07-15T00:15:41.220543+00:00",
+          "activeWindowStart": "2026-07-12T20:28:21.503030+00:00",
+          "activeWindowEnd": "2026-07-15T02:28:21.503030+00:00",
           "slateWindowDays": 2,
-          "error": "active_slate_window_empty"
+          "error": null
         }
       ]
     },
     {
       "ok": true,
       "appSport": "wnba",
-      "rawGamesReturned": 6,
-      "rawGamesInWindow": 6,
-      "gamesConvertible": 6,
+      "rawGamesReturned": 5,
+      "rawGamesInWindow": 5,
+      "gamesConvertible": 5,
       "gamesStored": null,
       "diagnosticOnlyNoSnapshotStored": true,
       "activeStorageFailure": false,
@@ -158,14 +150,14 @@
           "ok": true,
           "appSport": "wnba",
           "providerSportKey": "basketball_wnba",
-          "rawGamesReturned": 6,
-          "rawGamesInWindow": 6,
-          "gamesConvertible": 6,
+          "rawGamesReturned": 5,
+          "rawGamesInWindow": 5,
+          "gamesConvertible": 5,
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T18:15:41.422558+00:00",
-          "activeWindowEnd": "2026-07-15T00:15:41.422558+00:00",
+          "activeWindowStart": "2026-07-12T20:28:21.716445+00:00",
+          "activeWindowEnd": "2026-07-15T02:28:21.716445+00:00",
           "slateWindowDays": 2,
           "error": null
         }
@@ -191,8 +183,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T18:15:41.824480+00:00",
-          "activeWindowEnd": "2026-07-20T00:15:41.824480+00:00",
+          "activeWindowStart": "2026-07-12T20:28:22.104128+00:00",
+          "activeWindowEnd": "2026-07-20T02:28:22.104128+00:00",
           "slateWindowDays": 7,
           "error": "active_slate_window_empty"
         }
@@ -218,8 +210,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T18:15:42.253881+00:00",
-          "activeWindowEnd": "2026-07-20T00:15:42.253881+00:00",
+          "activeWindowStart": "2026-07-12T20:28:22.588175+00:00",
+          "activeWindowEnd": "2026-07-20T02:28:22.588175+00:00",
           "slateWindowDays": 7,
           "error": "active_slate_window_empty"
         }
@@ -245,8 +237,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T18:15:42.378719+00:00",
-          "activeWindowEnd": "2026-07-15T00:15:42.378719+00:00",
+          "activeWindowStart": "2026-07-12T20:28:22.709596+00:00",
+          "activeWindowEnd": "2026-07-15T02:28:22.709596+00:00",
           "slateWindowDays": 2,
           "error": "active_slate_window_empty"
         }
@@ -272,8 +264,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T18:15:42.525758+00:00",
-          "activeWindowEnd": "2026-07-15T00:15:42.525758+00:00",
+          "activeWindowStart": "2026-07-12T20:28:22.839570+00:00",
+          "activeWindowEnd": "2026-07-15T02:28:22.839570+00:00",
           "slateWindowDays": 2,
           "error": "active_slate_window_empty"
         }
@@ -299,8 +291,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T18:15:42.669586+00:00",
-          "activeWindowEnd": "2026-07-15T00:15:42.669586+00:00",
+          "activeWindowStart": "2026-07-12T20:28:22.959005+00:00",
+          "activeWindowEnd": "2026-07-15T02:28:22.959005+00:00",
           "slateWindowDays": 2,
           "error": "active_slate_window_empty"
         }
@@ -326,8 +318,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T18:15:42.872021+00:00",
-          "activeWindowEnd": "2026-07-27T00:15:42.872021+00:00",
+          "activeWindowStart": "2026-07-12T20:28:23.187850+00:00",
+          "activeWindowEnd": "2026-07-27T02:28:23.187850+00:00",
           "slateWindowDays": 14,
           "error": null
         },
@@ -341,8 +333,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T18:15:43.080658+00:00",
-          "activeWindowEnd": "2026-07-27T00:15:43.080658+00:00",
+          "activeWindowStart": "2026-07-12T20:28:23.555050+00:00",
+          "activeWindowEnd": "2026-07-27T02:28:23.555050+00:00",
           "slateWindowDays": 14,
           "error": "active_slate_window_empty"
         },
@@ -356,8 +348,8 @@
           "gamesDroppedDuringConversion": 0,
           "gamesStored": 0,
           "diagnosticOnlyNoSnapshotStored": true,
-          "activeWindowStart": "2026-07-12T18:15:43.223668+00:00",
-          "activeWindowEnd": "2026-07-27T00:15:43.223668+00:00",
+          "activeWindowStart": "2026-07-12T20:28:23.686316+00:00",
+          "activeWindowEnd": "2026-07-27T02:28:23.686316+00:00",
           "slateWindowDays": 14,
           "error": "active_slate_window_empty"
         }
