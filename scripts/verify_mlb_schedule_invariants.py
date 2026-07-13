@@ -28,6 +28,7 @@ LOCKED_STORAGE_FINALIZER_VERIFY = Path('scripts/verify_mlb_locked_storage_finali
 ML_INSTALLATION_1_5_VERIFY = Path('scripts/verify_mlb_ml_installation_1_5.py')
 MLB_API_FUNCTION_IMPORT_VERIFY = Path('scripts/verify_api_function_mlb_v3_import.py')
 ML_TRAINING_READINESS_VERIFY = Path('scripts/verify_mlb_ml_training_readiness.py')
+YESTERDAY_AUDIT_IMMUTABLE_SOURCE_VERIFY = Path('scripts/verify_mlb_yesterday_audit_immutable_source.py')
 text = TEMPLATE.read_text()
 engine = ENGINE.read_text() if ENGINE.exists() else ''
 violations = []
@@ -141,6 +142,7 @@ for required_path in [
     ML_INSTALLATION_1_5_VERIFY,
     MLB_API_FUNCTION_IMPORT_VERIFY,
     ML_TRAINING_READINESS_VERIFY,
+    YESTERDAY_AUDIT_IMMUTABLE_SOURCE_VERIFY,
 ]:
     if not required_path.exists():
         violations.append(f'production component missing: {required_path}')
@@ -161,6 +163,7 @@ subprocess.run([sys.executable, str(PER_GAME_LOCK_VERIFY)], check=True)
 subprocess.run([sys.executable, str(LOCKED_STORAGE_FINALIZER_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_INSTALLATION_1_5_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_TRAINING_READINESS_VERIFY)], check=True)
+subprocess.run([sys.executable, str(YESTERDAY_AUDIT_IMMUTABLE_SOURCE_VERIFY)], check=True)
 subprocess.run([sys.executable, str(MLB_API_FUNCTION_IMPORT_VERIFY)], check=True)
 
 print('MLB production invariants PASS: complete-slate coverage, immutable write-once locked storage, exact ML lock vector preservation, 90% rolling official-card slate authority target, separate 90% untouched outcome and selected-playability gates, exact-odds coverage, calibration, source-honest fundamentals, independent automatic DDB authority promotion, fail-closed suspension below the rolling target, and single runtime authority are installed.')

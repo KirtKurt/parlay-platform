@@ -178,12 +178,17 @@ jobs:
           print(json.dumps(payload, indent=2, default=str))
           if payload.get("ok") is not True or payload.get("engine_import_ok") is not True:
               raise SystemExit("MLB v3 engine did not import in live AWS Lambda")
-          if not str(payload.get("model_version") or "").startswith("INQSI-MLB-v3.1"):
-              raise SystemExit("live model version is not MLB v3.1 automatic authority")
+          expected_model = "INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority"
+          if payload.get("model_version") != expected_model:
+              raise SystemExit(f"live model version is stale: expected {expected_model}, got {payload.get('model_version')}")
           if payload.get("productionAuthoritySource") != "gate_promoted_DynamoDB_champion_bundle_only":
               raise SystemExit("live MLB authority source is stale or not gate-promoted")
           if payload.get("automaticPromotionPolicy") != "authoritative_AWS_audit_only_after_independent_90pct_authority_gates":
               raise SystemExit("live MLB automatic promotion policy is stale")
+          if payload.get("requiredWinnerPickPolicy") != "one_official_locked_winner_prediction_for_every_mlb_game":
+              raise SystemExit("live MLB every-game official-pick policy is stale")
+          if payload.get("playablePolicy") != "playability_is_separate_and_may_be_false_for_an_official_prediction":
+              raise SystemExit("live MLB playability/official-pick separation is stale")
           if not str(payload.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"):
               raise SystemExit("live ML optimization v3 orchestrator is missing")
           runtime = payload.get("ml_runtime_install") or {}
@@ -192,6 +197,39 @@ jobs:
           expected_runtime = "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority"
           if runtime.get("version") != expected_runtime:
               raise SystemExit(f"live MLB ML runtime is stale: expected {expected_runtime}, got {runtime.get('version')}")
+          policy = runtime.get("accuracyTargetPolicy") or {}
+          required_thresholds = {
+              "rolling24hAllGamesAuditTargetPct": 90.0,
+              "minimumRolling24hSlateAccuracyPct": 90.0,
+              "minimumOutcomeUntouchedAccuracyPct": 90.0,
+              "recommendationReliabilityThresholdPct": 90.0,
+              "selectedUntouchedTestPlayabilityAccuracyTargetPct": 90.0,
+              "minimumExactOddsCoveragePct": 90.0,
+          }
+          wrong_thresholds = {
+              name: {"expected": expected, "actual": policy.get(name)}
+              for name, expected in required_thresholds.items()
+              if policy.get(name) != expected
+          }
+          if wrong_thresholds:
+              raise SystemExit(f"live MLB authority thresholds are stale: {wrong_thresholds}")
+          if policy.get("rolling24hSlateAccuracyProgressMilestonesPct") != [50.0, 60.0, 70.0, 80.0]:
+              raise SystemExit(f"live MLB reporting milestones are stale: {policy}")
+          if policy.get("rolling24hSlateAccuracyProgressMilestonesReportingOnly") is not True:
+              raise SystemExit(f"live MLB reporting milestones can affect authority: {policy}")
+          if policy.get("automaticPromotionAfterApplicableGates") is not True:
+              raise SystemExit(f"live MLB automatic promotion policy is disabled: {policy}")
+          if policy.get("roiPromotionGateRequired") is not False:
+              raise SystemExit(f"live MLB policy incorrectly requires ROI for promotion: {policy}")
+          if policy.get("everyGameRetainsOfficialPick") is not True:
+              raise SystemExit(f"live MLB policy can suppress official game picks: {policy}")
+          if policy.get("playabilitySeparateFromOfficialPick") is not True:
+              raise SystemExit(f"live MLB playability is not separate from official picks: {policy}")
+          if (
+              "individualGameOfficialPickProbabilityFloorPct" not in policy
+              or policy.get("individualGameOfficialPickProbabilityFloorPct") is not None
+          ):
+              raise SystemExit(f"live MLB policy has an unauthorized official-pick probability floor: {policy}")
           steps = runtime.get("steps") or {}
           required = [
               "accuracyTargetsSeparated",

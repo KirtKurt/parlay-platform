@@ -5,6 +5,12 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/mlb-rolling-24h-audit.yml'
+      # Broad contract paths prevent a new policy/validator module from bypassing
+      # the authoritative AWS-backed audit simply because it was not enumerated.
+      - 'hello_world/mlb_*.py'
+      - 'scripts/*mlb*.py'
+      - 'tests/unit/test_mlb_*.py'
+      - 'template.yaml'
       - 'hello_world/mlb_rolling_24h_audit.py'
       - 'hello_world/mlb_accuracy_target_patch.py'
       - 'hello_world/mlb_audit_actionability_patch.py'

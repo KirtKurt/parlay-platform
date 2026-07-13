@@ -1,6 +1,12 @@
 name: MLB Daily Yesterday Audit
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-daily-yesterday-audit.yml'
+      - 'hello_world/mlb_yesterday_audit.py'
+      - 'scripts/verify_mlb_yesterday_audit_immutable_source.py'
   schedule:
     # 5:00 AM ET during daylight saving time. Audits the completed prior ET slate.
     - cron: '0 9 * * *'
@@ -29,6 +35,9 @@ jobs:
       - name: Install runtime dependencies
         run: python -m pip install --upgrade boto3
 
+      - name: Verify immutable historical-pick authority
+        run: python scripts/verify_mlb_yesterday_audit_immutable_source.py
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
@@ -54,11 +63,16 @@ jobs:
           print(json.dumps({
               'ok': report.get('ok'),
               'slate_date': report.get('slate_date'),
+              'status': report.get('status'),
+              'immutableLockAuthority': report.get('immutableLockAuthority'),
               'summary': report.get('summary'),
               'finalScoreCount': report.get('finalScoreCount'),
               'stored': report.get('stored'),
+              'supersedes': report.get('supersedes'),
               'storeError': report.get('storeError'),
           }, indent=2, default=str))
+          if report.get('ok') is not True:
+              raise SystemExit('MLB yesterday immutable-lock audit failed closed: ' + json.dumps(report, default=str))
           PY
 
       - name: Commit MLB audit proof
