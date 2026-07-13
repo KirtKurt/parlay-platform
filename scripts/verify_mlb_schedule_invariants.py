@@ -1,6 +1,17 @@
 from pathlib import Path
+import os
 import subprocess
 import sys
+
+# Validation imports Lambda modules that create boto3 resources at import time.
+# The audit job intentionally configures production AWS credentials only after
+# this offline invariant suite passes, so give those imports a deterministic,
+# network-free region instead of letting botocore consult instance metadata.
+if not os.environ.get('AWS_DEFAULT_REGION'):
+    os.environ['AWS_DEFAULT_REGION'] = os.environ.get('AWS_REGION') or 'us-east-1'
+if not os.environ.get('AWS_REGION'):
+    os.environ['AWS_REGION'] = os.environ['AWS_DEFAULT_REGION']
+os.environ.setdefault('AWS_EC2_METADATA_DISABLED', 'true')
 
 TEMPLATE = Path('template.yaml')
 ENGINE = Path('hello_world/mlb_game_winner_engine.py')
