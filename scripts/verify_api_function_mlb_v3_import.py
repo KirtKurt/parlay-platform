@@ -36,9 +36,10 @@ assert response.get("statusCode") == 200, response
 body = json.loads(response.get("body") or "{}")
 assert body.get("ok") is True, body
 assert body.get("engine_import_ok") is True, body
-assert str(body.get("model_version") or "").startswith("INQSI-MLB-v3.2"), body
+assert str(body.get("model_version") or "").startswith("INQSI-MLB-v3.1"), body
 assert body.get("productionAuthoritySource") == "gate_promoted_DynamoDB_champion_bundle_only", body
-assert body.get("automaticPromotionPolicy") == "authoritative_AWS_audit_only_after_independent_80pct_authority_gates", body
+assert body.get("automaticPromotionPolicy") == "authoritative_AWS_audit_only_after_independent_90pct_authority_gates", body
+assert body.get("automaticPromotionPolicyCurrent") == "authoritative_AWS_audit_only_after_independent_80pct_authority_gates", body
 assert body.get("rolling24hAccuracyTargetPct") == 80.0, body
 assert body.get("outcomeUntouchedAccuracyTargetPct") == 80.0, body
 assert body.get("playableReliabilityTargetPct") == 80.0, body
@@ -47,7 +48,13 @@ assert body.get("individualGameLockMinimumProbabilityPct") == 60.0, body
 assert str(body.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"), body
 runtime = body.get("ml_runtime_install") or {}
 assert runtime.get("ok") is True, runtime
-assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.7-80pct-production-60pct-game-lock", runtime
+assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority", runtime
+assert runtime.get("policyVersion") == "MLB-ML-RUNTIME-POLICY-v3.7-80pct-production-60pct-game-lock", runtime
+assert runtime.get("rolling24hAccuracyTargetPct") == 80.0, runtime
+assert runtime.get("outcomeUntouchedAccuracyTargetPct") == 80.0, runtime
+assert runtime.get("playableReliabilityTargetPct") == 80.0, runtime
+assert runtime.get("exactLockedOddsCoverageTargetPct") == 80.0, runtime
+assert runtime.get("individualGameLockMinimumProbabilityPct") == 60.0, runtime
 required = {"accuracyTargetsSeparated","individualGameLockProbabilityFloor","legacyReliabilityOverlaySafety","singleDdbChampionAuthority","officialSemanticsFinalized","immutableFeatureFreeze","exactCleanCohortVectorPatch","officialFreezeBridge","canonicalLockedStorageFinalizer"}
 missing = sorted(name for name in required if (runtime.get("steps") or {}).get(name) is not True)
 assert not missing, {"missingRuntimeSteps": missing, "runtime": runtime}
