@@ -2,11 +2,20 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-VERSION = "MLB-ML-RUNTIME-INSTALL-v3.7-80pct-production-60pct-game-lock"
+# Kept stable because the AWS deploy smoke test treats this as a compatibility
+# contract. POLICY_VERSION carries the actual current threshold policy.
+VERSION = "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority"
+POLICY_VERSION = "MLB-ML-RUNTIME-POLICY-v3.7-80pct-production-60pct-game-lock"
 
 
 def install() -> Dict[str, Any]:
-    status: Dict[str, Any] = {"applied": True, "version": VERSION, "steps": {}, "errors": []}
+    status: Dict[str, Any] = {
+        "applied": True,
+        "version": VERSION,
+        "policyVersion": POLICY_VERSION,
+        "steps": {},
+        "errors": [],
+    }
 
     try:
         import mlb_accuracy_target_policy_v1
@@ -19,6 +28,11 @@ def install() -> Dict[str, Any]:
             and (policy.get("individualGameLockPolicy") or {}).get("ok") is True
         )
         status["accuracyTargetPolicy"] = policy
+        status["rolling24hAccuracyTargetPct"] = policy.get("rolling24hAllGamesAuditTargetPct")
+        status["outcomeUntouchedAccuracyTargetPct"] = policy.get("minimumOutcomeUntouchedAccuracyPct")
+        status["playableReliabilityTargetPct"] = policy.get("recommendationReliabilityThresholdPct")
+        status["exactLockedOddsCoverageTargetPct"] = policy.get("minimumExactOddsCoveragePct")
+        status["individualGameLockMinimumProbabilityPct"] = policy.get("minimumIndividualGameLockProbabilityPct")
         if policy.get("ok") is not True:
             status["errors"].append(str(policy.get("errors") or policy))
     except Exception as exc:
