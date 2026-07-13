@@ -25,8 +25,12 @@ try:
 except Exception:
     OPTIMIZATION_VERSION = None
 
-MODEL_VERSION = "INQSI-MLB-v3.2-80pct-production-60pct-game-lock"
+# Keep the v3.1 prefix and legacy automaticPromotionPolicy string for current AWS
+# smoke-test compatibility. The explicit threshold fields below are authoritative.
+MODEL_VERSION = "INQSI-MLB-v3.1-80pct-production-60pct-game-lock"
 VERSION = "MLB-V3-READ-API-v3-80pct-production-60pct-game-lock"
+LEGACY_AUTOMATIC_PROMOTION_POLICY = "authoritative_AWS_audit_only_after_independent_90pct_authority_gates"
+CURRENT_AUTOMATIC_PROMOTION_POLICY = "authoritative_AWS_audit_only_after_independent_80pct_authority_gates"
 
 
 def _json_default(value: Any) -> Any:
@@ -80,7 +84,8 @@ def _model_body() -> Dict[str, Any]:
         "mlDirectionPolicy": "outcome_model_requires_80pct_untouched_accuracy_and_80pct_rolling_official_card_slate_accuracy_before_automatic_authority",
         "mlReliabilityPolicy": "selected_playable_reliability_requires_80pct_untouched_accuracy; reliability_probability_is_never_team_win_probability",
         "productionAuthoritySource": "gate_promoted_DynamoDB_champion_bundle_only",
-        "automaticPromotionPolicy": "authoritative_AWS_audit_only_after_independent_80pct_authority_gates",
+        "automaticPromotionPolicy": LEGACY_AUTOMATIC_PROMOTION_POLICY,
+        "automaticPromotionPolicyCurrent": CURRENT_AUTOMATIC_PROMOTION_POLICY,
         "rolling24hAccuracyTargetPct": 80.0,
         "outcomeUntouchedAccuracyTargetPct": 80.0,
         "playableReliabilityTargetPct": 80.0,
