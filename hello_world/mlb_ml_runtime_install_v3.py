@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-VERSION = "MLB-ML-RUNTIME-INSTALL-v3.4-canonical-exact-vector-storage"
+VERSION = "MLB-ML-RUNTIME-INSTALL-v3.5-ddb-stable-vector-learning-readiness"
 
 
 def install() -> Dict[str, Any]:

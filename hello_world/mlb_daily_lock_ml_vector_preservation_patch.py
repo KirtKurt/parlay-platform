@@ -1,8 +1,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Tuple
 
@@ -56,16 +54,8 @@ def _parse_dt(value: Any) -> datetime | None:
 
 
 def _expected_fingerprint(vector: Dict[str, Any]) -> str:
-    payload = json.dumps(
-        {
-            "gameId": vector.get("gameId"),
-            "lockAtUtc": vector.get("lockAtUtc"),
-            "features": vector.get("features") or {},
-        },
-        sort_keys=True,
-        default=str,
-    )
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+    import mlb_ml_clean_cohort_v1 as cohort
+    return cohort.fingerprint_for_vector(vector)
 
 
 def _selected_price_proven(row: Dict[str, Any]) -> bool:
@@ -97,18 +87,41 @@ def _validate(row: Dict[str, Any], compact: Dict[str, Any]) -> List[str]:
     row_game_id = str(compact.get("gameId") or row.get("gameId") or "")
     if not row_game_id or str(vector.get("gameId") or "") != row_game_id:
         errors.append("frozen_vector_game_identity_mismatch")
+    for vector_key, camel_key, snake_key in (
+        ("homeTeam", "homeTeam", "home_team"),
+        ("awayTeam", "awayTeam", "away_team"),
+    ):
+        row_team = compact.get(camel_key) or row.get(camel_key) or row.get(snake_key)
+        if str(vector.get(vector_key) or "").strip().lower() != str(row_team or "").strip().lower():
+            errors.append(f"frozen_vector_{vector_key.lower()}_mismatch")
+    if vector.get("predictedSide") != compact.get("predictedSide"):
+        errors.append("frozen_vector_predicted_side_mismatch")
+    if str(vector.get("predictedWinner") or "").strip().lower() != str(compact.get("predictedWinner") or "").strip().lower():
+        errors.append("frozen_vector_predicted_winner_mismatch")
 
     lock_at = _parse_dt(vector.get("lockAtUtc"))
     source_at = _parse_dt(vector.get("sourcePullAtUtc"))
+    row_gate = compact.get("slatePredictionLock") or compact.get("lastPossiblePredictionGate") or {}
+    row_lock_at = _parse_dt(compact.get("lockedAtUtc") or row_gate.get("lockAtUtc"))
+    row_source_at = _parse_dt(
+        compact.get("predictionSourcePullAt")
+        or row_gate.get("latestScoringPullAt")
+    )
     if not lock_at:
         errors.append("frozen_vector_lock_timestamp_missing")
     if not source_at:
         errors.append("frozen_vector_source_timestamp_missing")
     if lock_at and source_at and source_at > lock_at:
         errors.append("frozen_vector_source_after_lock")
+    if lock_at and row_lock_at and lock_at != row_lock_at:
+        errors.append("frozen_vector_lock_timestamp_mismatch")
+    if source_at and row_source_at and source_at != row_source_at:
+        errors.append("frozen_vector_source_timestamp_mismatch")
 
-    labels = vector.get("labels") or {}
-    if labels.get("homeWon") is not None or labels.get("pickCorrect") is not None:
+    labels = vector.get("labels")
+    if not isinstance(labels, dict) or not {"homeWon", "pickCorrect"}.issubset(labels):
+        errors.append("pregame_vector_explicit_null_labels_missing")
+    elif labels.get("homeWon") is not None or labels.get("pickCorrect") is not None:
         errors.append("pregame_vector_contains_outcome_label")
     if vector.get("immutableSource") != "locked_prediction_row_pre_game_features":
         errors.append("wrong_immutable_vector_source")
@@ -131,6 +144,35 @@ def _validate(row: Dict[str, Any], compact: Dict[str, Any]) -> List[str]:
         errors.append("team_win_probability_missing")
     if not _selected_price_proven(compact):
         errors.append("selected_side_locked_price_not_proven")
+
+    try:
+        import mlb_ml_clean_cohort_v1 as cohort
+        fingerprint_version = str(vector.get("fingerprintVersion") or "")
+        if fingerprint_version != cohort.FINGERPRINT_VERSION:
+            errors.append(
+                "missing_frozen_vector_fingerprint_version"
+                if not fingerprint_version
+                else "unsupported_frozen_vector_fingerprint_version"
+            )
+        if fingerprint_version == cohort.FINGERPRINT_VERSION:
+            signal = compact.get("homeSignal") if compact.get("predictedSide") == "home" else compact.get("awaySignal")
+            signal = signal if isinstance(signal, dict) else {}
+            row_price = compact.get("lockedAmericanOdds")
+            if row_price in (None, "", 0, 0.0):
+                row_price = compact.get("americanOdds")
+            if row_price in (None, "", 0, 0.0):
+                row_price = signal.get("americanOdds")
+            vector_price = vector.get("selectedAmericanOdds")
+            if vector_price in (None, "") or row_price in (None, "") or float(vector_price) != float(row_price):
+                errors.append("frozen_vector_selected_price_mismatch")
+            row_book = compact.get("priceBook") or signal.get("priceBook")
+            row_source = compact.get("priceSource") or signal.get("priceSource")
+            if str(vector.get("selectedPriceBook") or "") != str(row_book or ""):
+                errors.append("frozen_vector_selected_price_book_mismatch")
+            if str(vector.get("selectedPriceSource") or "") != str(row_source or ""):
+                errors.append("frozen_vector_selected_price_source_mismatch")
+    except Exception:
+        errors.append("frozen_vector_bound_context_validation_failed")
 
     return sorted(set(errors))
 

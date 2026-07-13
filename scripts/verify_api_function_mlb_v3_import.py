@@ -13,6 +13,7 @@ HELLO_WORLD = ROOT / "hello_world"
 
 def main() -> int:
     env = dict(os.environ)
+    inherited_pythonpath = env.get("PYTHONPATH")
     env.update({
         "AWS_DEFAULT_REGION": env.get("AWS_DEFAULT_REGION") or "us-east-1",
         "AWS_REGION": env.get("AWS_REGION") or "us-east-1",
@@ -20,7 +21,9 @@ def main() -> int:
         "SNAPSHOTS_TABLE": "",
         "INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION": "false",
         "INQSI_MLB_ML_AUTO_PROMOTE": "false",
-        "PYTHONPATH": str(HELLO_WORLD),
+        "PYTHONPATH": os.pathsep.join(
+            value for value in (str(HELLO_WORLD), inherited_pythonpath) if value
+        ),
     })
     code = r'''
 import json
@@ -37,6 +40,7 @@ assert str(body.get("model_version") or "").startswith("INQSI-MLB-v3.0"), body
 assert str(body.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"), body
 runtime = body.get("ml_runtime_install") or {}
 assert runtime.get("ok") is True, runtime
+assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.5-ddb-stable-vector-learning-readiness", runtime
 required = {"legacyReliabilityOverlaySafety","singleDdbChampionAuthority","officialSemanticsFinalized","immutableFeatureFreeze","exactCleanCohortVectorPatch","officialFreezeBridge","canonicalLockedStorageFinalizer"}
 missing = sorted(name for name in required if (runtime.get("steps") or {}).get(name) is not True)
 assert not missing, {"missingRuntimeSteps": missing, "runtime": runtime}

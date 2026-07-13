@@ -14,6 +14,7 @@ ML_FEATURE_INTEGRITY_VERIFY = Path('scripts/verify_mlb_ml_feature_integrity.py')
 LOCKED_STORAGE_FINALIZER_VERIFY = Path('scripts/verify_mlb_locked_storage_finalizer.py')
 ML_INSTALLATION_1_5_VERIFY = Path('scripts/verify_mlb_ml_installation_1_5.py')
 MLB_API_FUNCTION_IMPORT_VERIFY = Path('scripts/verify_api_function_mlb_v3_import.py')
+ML_TRAINING_READINESS_VERIFY = Path('scripts/verify_mlb_ml_training_readiness.py')
 text = TEMPLATE.read_text()
 engine = ENGINE.read_text() if ENGINE.exists() else ''
 violations = []
@@ -123,6 +124,7 @@ for required_path in [
     LOCKED_STORAGE_FINALIZER_VERIFY,
     ML_INSTALLATION_1_5_VERIFY,
     MLB_API_FUNCTION_IMPORT_VERIFY,
+    ML_TRAINING_READINESS_VERIFY,
 ]:
     if not required_path.exists():
         violations.append(f'production component missing: {required_path}')
@@ -140,6 +142,7 @@ subprocess.run([sys.executable, str(ML_PROMOTION_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_FEATURE_INTEGRITY_VERIFY)], check=True)
 subprocess.run([sys.executable, str(LOCKED_STORAGE_FINALIZER_VERIFY)], check=True)
 subprocess.run([sys.executable, str(ML_INSTALLATION_1_5_VERIFY)], check=True)
+subprocess.run([sys.executable, str(ML_TRAINING_READINESS_VERIFY)], check=True)
 subprocess.run([sys.executable, str(MLB_API_FUNCTION_IMPORT_VERIFY)], check=True)
 
 print('MLB production invariants PASS: complete-slate coverage, immutable write-once locked storage, exact ML lock vector survives daily-card compaction and invalid cards fail closed, 90% rolling all-games audit separated from the 60% recommendation threshold, exact clean-cohort lock vectors, final-label joins, separate outcome/reliability models, untouched validation with priced ROI, source-honest fundamentals, independent promotion gates, manual-only DDB champion promotion, and single runtime authority are installed.')

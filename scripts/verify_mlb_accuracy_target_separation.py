@@ -14,11 +14,28 @@ import mlb_accuracy_target_policy_v1 as policy
 
 
 def _dual_model(selected_accuracy: float):
+    selected_threshold = {
+        "ok": True,
+        "threshold": 0.7,
+        "selectedCount": 50,
+        "coveragePct": 50.0,
+        "accuracyPct": selected_accuracy,
+        "selectionSource": "validation_only",
+    }
     return {
         "ok": True,
         "status": "TRAINED",
+        "outcomeModel": {"ok": True, "version": "test-outcome", "target": "homeWon"},
+        "reliabilityModel": {
+            "ok": True,
+            "version": "test-reliability",
+            "target": "pickCorrect",
+            "selectedThreshold": selected_threshold,
+            "thresholdSelectedOnValidationOnly": True,
+        },
         "testWasUntouchedDuringFitAndThresholdSelection": True,
         "split": {"counts": {"train": 300, "validation": 100, "test": 100}},
+        "validation": {"selectedReliability": selected_threshold},
         "dataQuality": {
             "modelScope": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS",
             "averageFundamentalsCompletenessPct": 0.0,
@@ -60,6 +77,8 @@ def main() -> int:
 
     assert runtime_safety.MIN_ACCURACY_TARGET_PCT == 60.0
     assert champion.MIN_SELECTED_RELIABILITY_ACCURACY == 60.0
+    assert champion.VERSION == policy.CHAMPION_GATE_VERSION
+    assert "v1.4" in champion.VERSION and "60pct" in champion.VERSION
     assert semantics.ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT == 90.0
     assert semantics.MIN_PLAYABLE_TARGET_ACCURACY_PCT == 60.0
 

@@ -15,7 +15,17 @@ ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 REPORT_PATH = "runtime_reports/mlb_rolling_24h_audit_latest.json"
 WINDOW_HOURS = 24
 TARGET_ACCURACY_PCT = 90.0
-HISTORICAL_AUDIT_RUN_LIMIT = int(os.environ.get("INQSI_MLB_HISTORICAL_AUDIT_RUN_LIMIT", "720"))
+HISTORICAL_AUDIT_WINDOW_DAYS = max(
+    1,
+    int(os.environ.get("INQSI_MLB_HISTORICAL_AUDIT_WINDOW_DAYS", "60")),
+)
+# A positive legacy run limit remains available as an explicit operational
+# circuit breaker. The default is uncapped because 720 twice-hourly runs retained
+# only about 15 days/~225 MLB games and made the 500-row promotion gate impossible.
+HISTORICAL_AUDIT_RUN_LIMIT = max(
+    0,
+    int(os.environ.get("INQSI_MLB_HISTORICAL_AUDIT_RUN_LIMIT", "0")),
+)
 MIN_MULTI_WINDOW_SAMPLE = int(os.environ.get("INQSI_MLB_MIN_MULTI_WINDOW_SAMPLE", "6"))
 MULTI_WINDOW_WEIGHTS = {
     "current24h": float(os.environ.get("INQSI_MLB_WEIGHT_CURRENT_24H", "0.50")),
@@ -193,23 +203,26 @@ def _dedupe_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return list(seen.values())
 
 
-def historical_audit_rows(limit: int = HISTORICAL_AUDIT_RUN_LIMIT) -> List[Dict[str, Any]]:
+def historical_audit_rows(limit: Optional[int] = None) -> List[Dict[str, Any]]:
     """Return deduped historical graded rows from prior stored audit runs.
 
-    The workflow runs hourly, so the same completed game can appear in many
+    The workflow runs twice hourly, so the same completed game can appear in many
     rolling 24h reports. Dedupe prevents repeat runs from overweighting one game.
     """
     if history.PULLS is None:
         return []
     seen: Dict[str, Dict[str, Any]] = {}
     start_key = None
-    remaining = max(1, int(limit or HISTORICAL_AUDIT_RUN_LIMIT))
-    while remaining > 0:
+    configured_limit = HISTORICAL_AUDIT_RUN_LIMIT if limit is None else max(0, int(limit))
+    queried_runs = 0
+    cutoff = now_utc() - timedelta(days=HISTORICAL_AUDIT_WINDOW_DAYS)
+    window_complete = False
+    while not window_complete:
         try:
             args = {
                 "KeyConditionExpression": history.Key("PK").eq("MLB_ROLLING_24H_AUDIT#RUNS"),
                 "ScanIndexForward": False,
-                "Limit": min(100, remaining),
+                "Limit": min(100, configured_limit - queried_runs) if configured_limit else 100,
             }
             if start_key:
                 args["ExclusiveStartKey"] = start_key
@@ -217,9 +230,15 @@ def historical_audit_rows(limit: int = HISTORICAL_AUDIT_RUN_LIMIT) -> List[Dict[
         except Exception:
             return list(seen.values())
         for item in resp.get("Items") or []:
-            remaining -= 1
-            audit_created = item.get("created_at")
+            queried_runs += 1
             data = item.get("data") or {}
+            audit_created = item.get("created_at") or data.get("createdAt")
+            audit_created_dt = parse_dt(audit_created)
+            if audit_created_dt and audit_created_dt < cutoff:
+                # Runs are queried newest-first. Once a well-formed run is older
+                # than the configured durable window, every later page is older.
+                window_complete = True
+                break
             for row in data.get("rows") or []:
                 if row.get("status") != "GRADED":
                     continue
@@ -229,7 +248,9 @@ def historical_audit_rows(limit: int = HISTORICAL_AUDIT_RUN_LIMIT) -> List[Dict[
                     copied["sourceAuditCreatedAt"] = audit_created
                     seen[key] = copied
         start_key = resp.get("LastEvaluatedKey")
-        if not start_key:
+        if window_complete or not start_key:
+            break
+        if configured_limit and queried_runs >= configured_limit:
             break
     return list(seen.values())
 
@@ -377,7 +398,9 @@ def score_learning(rows: List[Dict[str, Any]], historical_rows: Optional[List[Di
         "currentWindowStats": windows.get("current24h"),
         "historicalStats": {
             "historicalRowsUsed": len(_dedupe_rows(historical_rows)),
-            "historicalRunLimit": HISTORICAL_AUDIT_RUN_LIMIT,
+            "historicalWindowDays": HISTORICAL_AUDIT_WINDOW_DAYS,
+            "historicalRunLimit": HISTORICAL_AUDIT_RUN_LIMIT or None,
+            "historicalRunLimitMeaning": "explicit_circuit_breaker_only" if HISTORICAL_AUDIT_RUN_LIMIT else "uncapped_within_window",
             "minHistoricalSampleForBlend": MIN_MULTI_WINDOW_SAMPLE,
         },
         "tagStats": (windows.get("current24h") or {}).get("tagStats") or {},

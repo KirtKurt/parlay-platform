@@ -3,11 +3,14 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+from decimal import Decimal, InvalidOperation
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 VERSION = "MLB-ML-CLEAN-COHORT-v1-post-fix-immutable-feature-snapshot"
 FEATURE_SNAPSHOT_VERSION = "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome"
+FINGERPRINT_VERSION = "MLB-ML-FROZEN-FINGERPRINT-v2-ddb-canonical-bound-context"
+LEGACY_FINGERPRINT_VERSION = "MLB-ML-FROZEN-FINGERPRINT-v1-game-lock-features"
 DEFAULT_MIN_LOCK_AT_UTC = os.environ.get("INQSI_MLB_ML_CLEAN_MIN_LOCK_AT_UTC", "2026-07-11T15:22:00+00:00")
 
 
@@ -34,6 +37,85 @@ def _parse_dt(value: Any) -> Optional[datetime]:
 
 def _norm(value: Any) -> str:
     return " ".join(str(value or "").lower().strip().split())
+
+
+def _canonical_decimal_text(value: Any) -> str:
+    """Return one stable representation for float/Decimal/JSON numeric values."""
+    try:
+        number = value if isinstance(value, Decimal) else Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return str(value)
+    if not number.is_finite():
+        return str(value)
+    if number == 0:
+        return "0"
+    normalized = number.normalize()
+    text = format(normalized, "f")
+    return text.rstrip("0").rstrip(".") if "." in text else text
+
+
+def _canonical_features(features: Any) -> Dict[str, str]:
+    if not isinstance(features, dict):
+        return {}
+    return {
+        str(key): _canonical_decimal_text(value)
+        for key, value in sorted(features.items(), key=lambda item: str(item[0]))
+    }
+
+
+def _legacy_fingerprint(vector: Dict[str, Any]) -> str:
+    """Reproduce the original float JSON hash after a DynamoDB Decimal read."""
+    legacy_features: Dict[str, Any] = {}
+    for key, value in (vector.get("features") or {}).items():
+        try:
+            legacy_features[str(key)] = float(value)
+        except Exception:
+            legacy_features[str(key)] = value
+    source = json.dumps(
+        {
+            "gameId": vector.get("gameId"),
+            "lockAtUtc": vector.get("lockAtUtc"),
+            "features": legacy_features,
+        },
+        sort_keys=True,
+        default=str,
+    )
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+
+def fingerprint_payload(vector: Dict[str, Any]) -> Dict[str, Any]:
+    """Build the v2 immutable contract independent of DynamoDB numeric types."""
+    return {
+        "fingerprintVersion": FINGERPRINT_VERSION,
+        "vectorVersion": vector.get("version"),
+        "gameId": vector.get("gameId"),
+        "slateDateEt": vector.get("slateDateEt"),
+        "commenceTime": vector.get("commenceTime"),
+        "homeTeam": vector.get("homeTeam"),
+        "awayTeam": vector.get("awayTeam"),
+        "predictedWinner": vector.get("predictedWinner"),
+        "predictedSide": vector.get("predictedSide"),
+        "sourcePullAtUtc": vector.get("sourcePullAtUtc"),
+        "lockAtUtc": vector.get("lockAtUtc"),
+        "selectedAmericanOdds": _canonical_decimal_text(vector.get("selectedAmericanOdds")),
+        "selectedPriceBook": vector.get("selectedPriceBook"),
+        "selectedPriceSource": vector.get("selectedPriceSource"),
+        "immutableSource": vector.get("immutableSource"),
+        "derivedOnceFromImmutableLockedRow": vector.get("derivedOnceFromImmutableLockedRow"),
+        "pregameLabelContract": {"homeWon": None, "pickCorrect": None},
+        "features": _canonical_features(vector.get("features")),
+    }
+
+
+def fingerprint_for_vector(vector: Dict[str, Any]) -> str:
+    """Recalculate either the v2 contract or a pre-v2 migration fingerprint."""
+    version = str(vector.get("fingerprintVersion") or "")
+    if not version:
+        return _legacy_fingerprint(vector)
+    if version != FINGERPRINT_VERSION:
+        return ""
+    source = json.dumps(fingerprint_payload(vector), sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
 def _sig(row: Dict[str, Any], side: str) -> Dict[str, Any]:
@@ -199,6 +281,12 @@ def freeze_feature_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
     selected_prob = home_prob if selected_side == "home" else away_prob
     selected_signal = home if selected_side == "home" else away
     opponent_prob = away_prob if selected_side == "home" else home_prob
+    selected_price = _f(
+        row.get("lockedAmericanOdds"),
+        _f(row.get("americanOdds"), _f(selected_signal.get("americanOdds"))),
+    )
+    selected_price_book = row.get("priceBook") or selected_signal.get("priceBook")
+    selected_price_source = row.get("priceSource") or selected_signal.get("priceSource")
 
     features = {
         "homeMarketProb": home_prob,
@@ -257,13 +345,16 @@ def freeze_feature_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
         "awayTeam": row.get("awayTeam") or row.get("away_team"),
         "predictedWinner": row.get("predictedWinner"),
         "predictedSide": selected_side,
+        "selectedAmericanOdds": selected_price,
+        "selectedPriceBook": selected_price_book,
+        "selectedPriceSource": selected_price_source,
         "features": features,
         "labels": {"homeWon": _home_won(row), "pickCorrect": _correct(row)},
         "immutableSource": "locked_prediction_row_pre_game_features",
         "derivedOnceFromImmutableLockedRow": True,
+        "fingerprintVersion": FINGERPRINT_VERSION,
     }
-    fingerprint_source = json.dumps({"gameId": payload["gameId"], "lockAtUtc": payload["lockAtUtc"], "features": features}, sort_keys=True, default=str)
-    payload["fingerprint"] = hashlib.sha256(fingerprint_source.encode("utf-8")).hexdigest()
+    payload["fingerprint"] = fingerprint_for_vector(payload)
     return payload
 
 

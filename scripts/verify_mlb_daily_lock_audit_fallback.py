@@ -48,6 +48,15 @@ class FakeTable:
                         "priceBook": "fanduel",
                         "priceSource": "real_book",
                         "winProbabilityPct": 52.0,
+                        "frozenFeatureVector": {
+                            "version": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome",
+                            "gameId": "db5e5f99da28e0ea52c06c7694fb5ad1",
+                            "lockAtUtc": "2026-07-11T15:21:00+00:00",
+                            "sourcePullAtUtc": "2026-07-11T15:15:00+00:00",
+                            "features": {"homeMarketProb": 0.48, "awayMarketProb": 0.52},
+                            "labels": {"homeWon": None, "pickCorrect": None},
+                            "fingerprint": "test-fingerprint",
+                        },
                         "tags": ["BOOK_AGREEMENT", "PICKEM", "POSITIVE_MOVE"],
                     }]
                 },
@@ -108,6 +117,11 @@ def main() -> int:
     assert audit.get("matchMethod") == "provider_game_id", audit
     assert audit.get("authoritySource") == "immutable_daily_locked_card", audit
     assert audit.get("writeOnceCard") is True, audit
+    assert audit.get("lockAtUtc") == "2026-07-11T15:21:00+00:00", audit
+    assert audit.get("explicitSourceAtUtc") == "2026-07-11T15:15:00+00:00", audit
+    fallback_proof = row.get("immutableDailyLockFallback") or {}
+    assert fallback_proof.get("cardStoredAtUtc") == "2026-07-11T15:21:20+00:00", fallback_proof
+    assert fallback_proof.get("cardLatestPullAtUtc") == "2026-07-11T15:15:25+00:00", fallback_proof
     print("MLB immutable daily lock settlement fallback verified: unsafe live row rejected, write-once card accepted")
     return 0
 

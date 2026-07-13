@@ -45,6 +45,7 @@ def apply(frozen_module: Any):
                 "exactVectorPatchVersion": VERSION,
                 "exactVectorCreated": exact_ok,
                 "exactVectorVersion": snapshot.get("version"),
+                "exactVectorFingerprintVersion": snapshot.get("fingerprintVersion"),
                 "exactVectorFingerprint": snapshot.get("fingerprint"),
                 "outcomeLabelsJoinedOnlyAfterFinal": True,
             })

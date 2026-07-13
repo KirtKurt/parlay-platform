@@ -3,15 +3,25 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
+HELLO = ROOT / "hello_world"
+if str(HELLO) not in sys.path:
+    sys.path.insert(0, str(HELLO))
 AUDIT_PATH = ROOT / "runtime_reports" / "mlb_rolling_24h_audit_latest.json"
 REPORT_PATH = ROOT / "runtime_reports" / "mlb_postdeploy_settlement_integrity_latest.json"
-DEFAULT_CUTOFF = "2026-07-12T00:20:17+00:00"
+DEFAULT_CUTOFF = "2026-07-13T00:20:03+00:00"
 CUTOFF = os.environ.get("INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC", DEFAULT_CUTOFF)
+
+import mlb_ml_clean_cohort_hardening_v1 as cohort_hardening
+import mlb_ml_clean_cohort_v1 as cohort
+
+cohort_hardening.apply(cohort)
+cohort.DEFAULT_MIN_LOCK_AT_UTC = CUTOFF
 
 
 def parse_dt(value: Any) -> Optional[datetime]:
@@ -77,6 +87,9 @@ def main() -> int:
             reasons.append("missing_final_winner_label")
         if not isinstance(row.get("correct"), bool):
             reasons.append("missing_boolean_pick_correct_label")
+        clean_eligible, clean_reasons = cohort.eligibility(row)
+        if not clean_eligible:
+            reasons.extend(f"clean_cohort:{reason}" for reason in clean_reasons)
         vector = row.get("frozenFeatureVector") or {}
         labels = vector.get("labels") or {}
         if labels.get("homeWon") is not None or labels.get("pickCorrect") is not None:
@@ -102,7 +115,7 @@ def main() -> int:
         "failureCount": len(failures),
         "failures": failures,
         "status": "VERIFIED" if completed and not failures else "WAITING_FOR_FIRST_POSTDEPLOY_FINAL" if not completed else "FAILED",
-        "policy": "Final winner and correctness labels are joined only after completion; the immutable pregame feature vector must retain blank outcome labels.",
+        "policy": "Every completed post-deployment row must be eligible for the authoritative clean cohort. Final labels are joined after completion and the exact immutable pregame vector retains blank outcome labels.",
     }
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text(json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8")

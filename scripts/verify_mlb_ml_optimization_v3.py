@@ -44,12 +44,12 @@ def row(index: int, modern: bool = True):
     predicted_winner = "Home Team" if predicted_side == "home" else "Away Team"
     winner = "Home Team" if home_won else "Away Team"
     lock_hour = 15 + (index // 60); minute = index % 60
-    lock_at = f"2026-07-12T{lock_hour:02d}:{minute:02d}:00+00:00"
-    source_at = f"2026-07-12T{lock_hour:02d}:{max(0, minute - 1):02d}:00+00:00"
+    lock_at = f"2026-07-13T{lock_hour:02d}:{minute:02d}:00+00:00"
+    source_at = f"2026-07-13T{lock_hour:02d}:{max(0, minute - 1):02d}:00+00:00"
     selected_price = -110 if predicted_side == "home" else (100 if home_probability >= 0.5 else -120)
     return {
         "status": "GRADED", "id": f"game-{index}", "gameId": f"game-{index}",
-        "slateDateEt": "2026-07-12", "commenceTime": f"2026-07-12T{18 + (index // 60):02d}:{minute:02d}:00Z",
+        "slateDateEt": "2026-07-13", "commenceTime": f"2026-07-13T{18 + (index // 60):02d}:{minute:02d}:00Z",
         "homeTeam": "Home Team", "awayTeam": "Away Team", "winner": winner,
         "predictedWinner": predicted_winner, "predictedSide": predicted_side,
         "correct": predicted_winner == winner, "officialPrediction": True,

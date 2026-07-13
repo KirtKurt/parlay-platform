@@ -56,7 +56,20 @@ def ddb_safe(x: Any) -> Any:
     if isinstance(x, list):
         return [ddb_safe(i) for i in x]
     if isinstance(x, dict):
-        return {k: ddb_safe(v) for k, v in x.items() if v is not None}
+        out = {k: ddb_safe(v) for k, v in x.items() if v is not None}
+        # DynamoDB supports explicit NULL values. Preserve the two target slots
+        # only for the canonical pregame ML vector so readback can prove that
+        # neither outcome was available at lock. Other None fields remain omitted.
+        if (
+            x.get("version") == "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v1-home-away-outcome"
+            and isinstance(x.get("labels"), dict)
+        ):
+            labels = dict(out.get("labels") or {})
+            for target in ("homeWon", "pickCorrect"):
+                if target in x.get("labels", {}) and x["labels"].get(target) is None:
+                    labels[target] = None
+            out["labels"] = labels
+        return out
     return x
 
 

@@ -7,7 +7,7 @@ VERSION = "MLB-ACCURACY-TARGET-POLICY-v1-90pct-all-games-audit-60pct-recommendat
 ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT = 90.0
 RECOMMENDATION_RELIABILITY_THRESHOLD_PCT = 60.0
 RUNTIME_SAFETY_VERSION = "MLB-ML-RUNTIME-SAFETY-v4-ddb-champion-60pct-recommendation-threshold"
-CHAMPION_GATE_VERSION = "MLB-ML-CHAMPION-CHALLENGER-v1.3-separate-direction-60pct-playability-gates"
+CHAMPION_GATE_VERSION = "MLB-ML-CHAMPION-CHALLENGER-v1.4-independent-model-validation-threshold-isolated-promotion-60pct-playability"
 
 
 def install() -> Dict[str, Any]:

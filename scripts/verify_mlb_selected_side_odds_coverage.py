@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 ROOT = Path(__file__).resolve().parents[1]
 AUDIT_PATH = ROOT / "runtime_reports" / "mlb_rolling_24h_audit_latest.json"
 REPORT_PATH = ROOT / "runtime_reports" / "mlb_selected_side_odds_coverage_latest.json"
-DEFAULT_CUTOFF = "2026-07-12T00:20:17+00:00"
+DEFAULT_CUTOFF = "2026-07-13T00:20:03+00:00"
 CUTOFF = os.environ.get("INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC", DEFAULT_CUTOFF)
 
 

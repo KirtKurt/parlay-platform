@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-VERSION = "MLB-DAILY-LOCK-AUDIT-FALLBACK-v1.1-authoritative-write-once-card"
+VERSION = "MLB-DAILY-LOCK-AUDIT-FALLBACK-v1.2-vector-time-authority"
 
 
 def _parse_dt(value: Any) -> Optional[datetime]:
@@ -72,6 +72,19 @@ def _daily_lock_rows(module: Any, slate_date: str) -> List[Dict[str, Any]]:
         if not isinstance(raw, dict):
             continue
         row = dict(raw)
+        vector = row.get("frozenFeatureVector") if isinstance(row.get("frozenFeatureVector"), dict) else {}
+        vector_lock_at = str(
+            vector.get("lockAtUtc")
+            or (row.get("slatePredictionLock") or {}).get("lockAtUtc")
+            or row.get("lockedAtUtc")
+            or locked_at
+        )
+        vector_source_at = str(
+            vector.get("sourcePullAtUtc")
+            or row.get("predictionSourcePullAt")
+            or (row.get("slatePredictionLock") or {}).get("latestScoringPullAt")
+            or latest_pull
+        )
         tags = {str(value) for value in (row.get("tags") or [])}
         tags.update({
             "FINAL_LOCKED",
@@ -93,7 +106,8 @@ def _daily_lock_rows(module: Any, slate_date: str) -> List[Dict[str, Any]]:
             "playable": False,
             "playablePick": False,
             "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
-            "predictionSourcePullAt": latest_pull,
+            "predictionSourcePullAt": vector_source_at,
+            "lockedAtUtc": vector_lock_at,
             "createdAt": locked_at,
             "lockedAmericanOdds": row.get("lockedAmericanOdds") if row.get("lockedAmericanOdds") is not None else row.get("americanOdds"),
             "tags": sorted(tags),
@@ -101,8 +115,8 @@ def _daily_lock_rows(module: Any, slate_date: str) -> List[Dict[str, Any]]:
                 "locked": True,
                 "finalLocked": True,
                 "phase": "SLATE_LOCKED",
-                "lockAtUtc": locked_at,
-                "latestScoringPullAt": latest_pull,
+                "lockAtUtc": vector_lock_at,
+                "latestScoringPullAt": vector_source_at,
                 "source": "immutable_daily_locked_card",
             },
             "immutableDailyLockFallback": {
@@ -112,8 +126,10 @@ def _daily_lock_rows(module: Any, slate_date: str) -> List[Dict[str, Any]]:
                 "pk": item.get("PK"),
                 "sk": item.get("SK"),
                 "writeOnceCard": True,
-                "lockedAtUtc": locked_at,
-                "sourcePullAtUtc": latest_pull,
+                "lockedAtUtc": vector_lock_at,
+                "sourcePullAtUtc": vector_source_at,
+                "cardStoredAtUtc": locked_at,
+                "cardLatestPullAtUtc": latest_pull,
                 "gameCount": _as_int(item.get("game_count")),
                 "predictionCount": _as_int(item.get("prediction_count")),
             },

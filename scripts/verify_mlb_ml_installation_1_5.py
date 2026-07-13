@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
 import json
 import sys
 from pathlib import Path
@@ -27,26 +26,17 @@ import mlb_official_prediction_semantics as semantics
 
 
 def _fingerprint(vector):
-    source = json.dumps(
-        {
-            "gameId": vector.get("gameId"),
-            "lockAtUtc": vector.get("lockAtUtc"),
-            "features": vector.get("features") or {},
-        },
-        sort_keys=True,
-        default=str,
-    )
-    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+    return cohort.fingerprint_for_vector(vector)
 
 
 def _locked_result():
-    lock_at = "2026-07-12T15:15:00+00:00"
-    source_at = "2026-07-12T15:14:30+00:00"
+    lock_at = "2026-07-13T15:15:00+00:00"
+    source_at = "2026-07-13T15:14:30+00:00"
     row = {
         "gameId": "install-proof-game-1",
-        "gameKey": "mlb|2026-07-12|away team|home team",
-        "slateDateEt": "2026-07-12",
-        "commenceTime": "2026-07-12T18:00:00+00:00",
+        "gameKey": "mlb|2026-07-13|away team|home team",
+        "slateDateEt": "2026-07-13",
+        "commenceTime": "2026-07-13T18:00:00+00:00",
         "homeTeam": "Home Team",
         "awayTeam": "Away Team",
         "predictedWinner": "Home Team",

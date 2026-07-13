@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -17,19 +15,11 @@ if str(HELLO_WORLD) not in sys.path:
 
 import mlb_daily_lock_ml_vector_preservation_patch as patch
 import mlb_daily_lock_coverage_patch as coverage_patch
+import mlb_ml_clean_cohort_v1 as cohort
 
 
 def fingerprint(vector: dict) -> str:
-    source = json.dumps(
-        {
-            "gameId": vector.get("gameId"),
-            "lockAtUtc": vector.get("lockAtUtc"),
-            "features": vector.get("features") or {},
-        },
-        sort_keys=True,
-        default=str,
-    )
-    return hashlib.sha256(source.encode("utf-8")).hexdigest()
+    return cohort.fingerprint_for_vector(vector)
 
 
 def base_compact(row: dict) -> dict:
@@ -56,10 +46,14 @@ def valid_row() -> dict:
         "awayTeam": "Away Club",
         "predictedWinner": "Home Club",
         "predictedSide": "home",
+        "selectedAmericanOdds": -115,
+        "selectedPriceBook": "FanDuel",
+        "selectedPriceSource": "real_book",
         "features": {"homeMarketProb": 0.55, "awayMarketProb": 0.45},
         "labels": {"homeWon": None, "pickCorrect": None},
         "immutableSource": "locked_prediction_row_pre_game_features",
         "derivedOnceFromImmutableLockedRow": True,
+        "fingerprintVersion": cohort.FINGERPRINT_VERSION,
     }
     vector["fingerprint"] = fingerprint(vector)
     return {

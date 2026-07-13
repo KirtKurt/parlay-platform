@@ -73,29 +73,45 @@ def split_chronological(
 ) -> Dict[str, Any]:
     rows = sorted(list(records or []), key=lambda row: str(row.get(time_key) or ""))
     count = len(rows)
-    train_end = max(min_train, int(count * train_fraction))
-    validation_count = max(min_validation, int(count * validation_fraction))
-    validation_end = train_end + validation_count
-    if count < min_train + min_validation + min_test or validation_end > count - min_test:
+    minimum_required = min_train + min_validation + min_test
+    if count < minimum_required:
         return {
             "ok": False,
             "version": VERSION,
             "reason": "insufficient_clean_rows_for_three_way_chronological_split",
             "rowCount": count,
-            "required": min_train + min_validation + min_test,
+            "required": minimum_required,
+            "actualMinimumRequired": minimum_required,
             "minimums": {"train": min_train, "validation": min_validation, "test": min_test},
             "train": [],
             "validation": [],
             "test": [],
         }
+
+    # Fractions are targets, not additional admission gates. Always reserve the
+    # declared validation and untouched-test minimums before growing the training
+    # partition. This makes the stated minimum (80 + 30 + 30 by default) the real
+    # minimum instead of silently requiring extra rows to satisfy the 60% target.
+    train_count = min(
+        max(min_train, int(count * train_fraction)),
+        count - min_validation - min_test,
+    )
+    remaining_after_train = count - train_count
+    validation_count = min(
+        max(min_validation, int(count * validation_fraction)),
+        remaining_after_train - min_test,
+    )
+    train_end = train_count
+    validation_end = train_end + validation_count
     return {
         "ok": True,
         "version": VERSION,
         "rowCount": count,
+        "minimumRequired": minimum_required,
         "train": rows[:train_end],
         "validation": rows[train_end:validation_end],
         "test": rows[validation_end:],
-        "counts": {"train": train_end, "validation": validation_count, "test": count - validation_end},
+        "counts": {"train": train_count, "validation": validation_count, "test": count - validation_end},
         "boundaries": {
             "trainEnd": rows[train_end - 1].get(time_key),
             "validationStart": rows[train_end].get(time_key),

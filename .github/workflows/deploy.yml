@@ -185,6 +185,9 @@ jobs:
           runtime = payload.get("ml_runtime_install") or {}
           if runtime.get("ok") is not True:
               raise SystemExit(f"live MLB ML runtime install failed: {runtime}")
+          expected_runtime = "MLB-ML-RUNTIME-INSTALL-v3.5-ddb-stable-vector-learning-readiness"
+          if runtime.get("version") != expected_runtime:
+              raise SystemExit(f"live MLB ML runtime is stale: expected {expected_runtime}, got {runtime.get('version')}")
           steps = runtime.get("steps") or {}
           required = ["legacyReliabilityOverlaySafety", "singleDdbChampionAuthority", "officialSemanticsFinalized", "immutableFeatureFreeze", "canonicalLockedStorageFinalizer"]
           missing = [name for name in required if steps.get(name) is not True]

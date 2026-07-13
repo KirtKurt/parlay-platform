@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import copy
-import hashlib
-import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -17,6 +15,7 @@ if str(HELLO) not in sys.path:
 
 import mlb_immutable_locked_storage_patch as patch
 import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
+import mlb_ml_clean_cohort_v1 as cohort
 
 
 class FakeTable:
@@ -52,6 +51,8 @@ def locked_row(base, *, game_id="provider-123", winner="Home Team"):
         **base,
         "gameId": game_id,
         "gameIdentity": game_id,
+        "homeTeam": "Home Team",
+        "awayTeam": "Away Team",
         "predictedWinner": winner,
         "predictedSide": "home" if winner == "Home Team" else "away",
         "americanOdds": -120,
@@ -90,16 +91,16 @@ def locked_row(base, *, game_id="provider-123", winner="Home Team"):
         "awayTeam": "Away Team",
         "predictedWinner": winner,
         "predictedSide": row["predictedSide"],
+        "selectedAmericanOdds": -120,
+        "selectedPriceBook": "fanduel",
+        "selectedPriceSource": "real_book",
         "features": {"homeMarketProb": 0.55, "awayMarketProb": 0.45},
         "labels": {"homeWon": None, "pickCorrect": None},
         "immutableSource": "locked_prediction_row_pre_game_features",
         "derivedOnceFromImmutableLockedRow": True,
+        "fingerprintVersion": cohort.FINGERPRINT_VERSION,
     }
-    source = json.dumps(
-        {"gameId": vector["gameId"], "lockAtUtc": vector["lockAtUtc"], "features": vector["features"]},
-        sort_keys=True,
-    )
-    vector["fingerprint"] = hashlib.sha256(source.encode("utf-8")).hexdigest()
+    vector["fingerprint"] = cohort.fingerprint_for_vector(vector)
     row["frozenFeatureVector"] = vector
     row["frozenFeatureVectorVersion"] = vector["version"]
     return row

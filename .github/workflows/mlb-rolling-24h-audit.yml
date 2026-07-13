@@ -49,6 +49,7 @@ on:
       - 'scripts/verify_mlb_postdeploy_settlement_integrity.py'
       - 'scripts/verify_mlb_selected_side_odds_coverage.py'
       - 'scripts/verify_mlb_ml_optimization_v3.py'
+      - 'scripts/verify_mlb_ml_training_readiness.py'
       - 'scripts/verify_mlb_ml_feature_integrity.py'
       - 'scripts/verify_mlb_ml_installation_1_5.py'
       - 'scripts/extract_mlb_missing_settlement_diagnostics.py'
@@ -117,7 +118,7 @@ jobs:
           SNAPSHOTS_TABLE: parlay_platform_snapshots
           INQSI_MLB_ML_AUTO_PROMOTE: 'false'
           INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
-          INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-12T00:20:17+00:00'
+          INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-13T00:20:03+00:00'
           PYTHONPATH: ${{ github.workspace }}/hello_world
         run: python scripts/run_mlb_ml_v3_audit_report.py
 
@@ -126,12 +127,12 @@ jobs:
 
       - name: Verify post-deploy final-label joins
         env:
-          INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-12T00:20:17+00:00'
+          INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-13T00:20:03+00:00'
         run: python scripts/verify_mlb_postdeploy_settlement_integrity.py
 
       - name: Verify selected-side odds coverage
         env:
-          INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-12T00:20:17+00:00'
+          INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-13T00:20:03+00:00'
         run: python scripts/verify_mlb_selected_side_odds_coverage.py
 
       - name: Enforce AWS-backed MLB audit and freshness

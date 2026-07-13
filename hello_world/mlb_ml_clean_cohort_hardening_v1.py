@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import hashlib
-import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "MLB-ML-CLEAN-COHORT-HARDENING-v5-postgreen-priced-label-safe"
-GREEN_DEPLOYMENT_CUTOFF_UTC = os.environ.get("INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC", "2026-07-12T00:20:17+00:00")
+VERSION = "MLB-ML-CLEAN-COHORT-HARDENING-v6-ddb-stable-bound-vector"
+GREEN_DEPLOYMENT_CUTOFF_UTC = os.environ.get("INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC", "2026-07-13T00:20:03+00:00")
 
 
 def _row_game_id(row: Dict[str, Any]) -> str:
@@ -19,19 +17,6 @@ def _row_game_id(row: Dict[str, Any]) -> str:
         or (row.get("lockedCardAudit") or {}).get("providerGameId")
         or ""
     )
-
-
-def _expected_fingerprint(vector: Dict[str, Any]) -> str:
-    source = json.dumps(
-        {
-            "gameId": vector.get("gameId"),
-            "lockAtUtc": vector.get("lockAtUtc"),
-            "features": vector.get("features") or {},
-        },
-        sort_keys=True,
-        default=str,
-    )
-    return hashlib.sha256(source.encode("utf-8")).hexdigest()
 
 
 def _number(value: Any) -> Optional[float]:
@@ -78,7 +63,7 @@ def _candidate_rank(row: Dict[str, Any]) -> tuple:
 
 
 def apply(cohort_module: Any):
-    if getattr(cohort_module, "_INQSI_MLB_CLEAN_COHORT_HARDENING_V5_APPLIED", False):
+    if getattr(cohort_module, "_INQSI_MLB_CLEAN_COHORT_HARDENING_V6_APPLIED", False):
         return cohort_module
 
     # The clean evidence clock begins only after the fully green production deployment.
@@ -113,23 +98,35 @@ def apply(cohort_module: Any):
         vector_source = cohort_module._parse_dt(frozen_vector.get("sourcePullAtUtc"))
         vector_lock = cohort_module._parse_dt(frozen_vector.get("lockAtUtc"))
         row_lock = cohort_module._lock_at(row)
+        row_source = cohort_module._source_at(row)
         if not vector_source or not vector_lock or vector_source > vector_lock:
             reasons.append("frozen_vector_source_after_or_missing_lock")
         if vector_lock and row_lock and vector_lock != row_lock:
             reasons.append("frozen_vector_lock_mismatch")
+        if vector_source and row_source and vector_source != row_source:
+            reasons.append("frozen_vector_source_timestamp_mismatch")
 
         row_game_id = _row_game_id(row)
         if row_game_id and str(frozen_vector.get("gameId") or "") != row_game_id:
             reasons.append("frozen_vector_game_identity_mismatch")
 
+        fingerprint_version = str(frozen_vector.get("fingerprintVersion") or "")
+        if fingerprint_version != str(cohort_module.FINGERPRINT_VERSION):
+            reasons.append(
+                "missing_frozen_vector_fingerprint_version"
+                if not fingerprint_version
+                else "unsupported_frozen_vector_fingerprint_version"
+            )
         fingerprint = str(frozen_vector.get("fingerprint") or "")
-        if fingerprint and fingerprint != _expected_fingerprint(frozen_vector):
+        if fingerprint and fingerprint != cohort_module.fingerprint_for_vector(frozen_vector):
             reasons.append("frozen_vector_fingerprint_mismatch")
         if not isinstance(frozen_vector.get("features"), dict) or not frozen_vector.get("features"):
             reasons.append("frozen_vector_features_missing")
 
-        labels = frozen_vector.get("labels") or {}
-        if labels.get("homeWon") is not None or labels.get("pickCorrect") is not None:
+        labels = frozen_vector.get("labels")
+        if not isinstance(labels, dict) or not {"homeWon", "pickCorrect"}.issubset(labels):
+            reasons.append("frozen_vector_explicit_blank_labels_missing")
+        elif labels.get("homeWon") is not None or labels.get("pickCorrect") is not None:
             reasons.append("frozen_vector_labels_mutated_after_lock")
 
         selected_price, price_book, price_source = _selected_locked_price(row)
@@ -137,6 +134,26 @@ def apply(cohort_module: Any):
             reasons.append("missing_selected_side_locked_odds")
         if not price_book and str(price_source or "").lower() not in {"real_book", "locked_real_book"}:
             reasons.append("selected_side_odds_source_not_proven")
+
+        if frozen_vector.get("predictedSide") != row.get("predictedSide"):
+            reasons.append("frozen_vector_predicted_side_mismatch")
+        if cohort_module._norm(frozen_vector.get("predictedWinner")) != cohort_module._norm(row.get("predictedWinner")):
+            reasons.append("frozen_vector_predicted_winner_mismatch")
+        for vector_key, row_key in (("homeTeam", "homeTeam"), ("awayTeam", "awayTeam")):
+            row_value = row.get(row_key) or row.get("home_team" if row_key == "homeTeam" else "away_team")
+            if cohort_module._norm(frozen_vector.get(vector_key)) != cohort_module._norm(row_value):
+                reasons.append(f"frozen_vector_{vector_key.lower()}_mismatch")
+
+        # Only v2 vectors may enter the authoritative post-cutoff cohort. The
+        # legacy recalculator remains diagnostic-only for migration evidence.
+        if fingerprint_version == str(cohort_module.FINGERPRINT_VERSION):
+            vector_price = _number(frozen_vector.get("selectedAmericanOdds"))
+            if vector_price is None or selected_price is None or vector_price != selected_price:
+                reasons.append("frozen_vector_selected_price_mismatch")
+            if str(frozen_vector.get("selectedPriceBook") or "") != str(price_book or ""):
+                reasons.append("frozen_vector_selected_price_book_mismatch")
+            if str(frozen_vector.get("selectedPriceSource") or "") != str(price_source or ""):
+                reasons.append("frozen_vector_selected_price_source_mismatch")
 
         reasons = sorted(set(reasons))
         return not reasons, reasons
@@ -207,6 +224,7 @@ def apply(cohort_module: Any):
         out["selectedSideOddsBookOrRealSourceRequired"] = True
         out["laterFeatureReconstructionAllowed"] = False
         out["requiredFeatureVectorVersion"] = cohort_module.FEATURE_SNAPSHOT_VERSION
+        out["requiredFingerprintVersionForNewVectors"] = cohort_module.FINGERPRINT_VERSION
         out["version"] = str(out.get("version") or "") + "+" + VERSION
         return out
 
@@ -217,4 +235,5 @@ def apply(cohort_module: Any):
     cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V3_APPLIED = True
     cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V4_APPLIED = True
     cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V5_APPLIED = True
+    cohort_module._INQSI_MLB_CLEAN_COHORT_HARDENING_V6_APPLIED = True
     return cohort_module
