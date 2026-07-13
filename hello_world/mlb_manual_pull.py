@@ -606,6 +606,12 @@ def _build_and_store_game_winners(*, game_date: str) -> Dict[str, Any]:
         return {"ok": False, "sport": "mlb", "game_date_et": game_date, "error": str(exc)}
 
 
+def _fetch_odds_with_completion_timestamp() -> tuple[List[Dict[str, Any]], str]:
+    """Timestamp a pull only after the provider response has completed."""
+    raw = _http_get_json(_odds_url())
+    return raw, _now_iso()
+
+
 def lambda_handler(event, context):
     event = event or {}
     if (event.get("httpMethod") or "").upper() == "OPTIONS":
@@ -632,8 +638,7 @@ def lambda_handler(event, context):
 
         days_ahead = int(payload.get("days_ahead", DEFAULT_DAYS_AHEAD))
         slate_date = payload.get("slate_date_et") or _slate_date_et()
-        asof = _now_iso()
-        raw_all = _http_get_json(_odds_url())
+        raw_all, asof = _fetch_odds_with_completion_timestamp()
         raw = _filter_upcoming_et(raw_all, start_date=slate_date, days_ahead=days_ahead)
         compact = _compact(raw)
         if snapshots_tbl is None:

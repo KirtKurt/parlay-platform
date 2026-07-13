@@ -79,6 +79,8 @@ class FakeEngine:
         self.tampered_provenance = tampered_provenance
         self.canonical_new_writes = 0
         self.canonical_calls = 0
+        self.canonical_failures_remaining = 0
+        self.pull_to_add_during_prediction = None
 
     def predict_all(self, slate, store=False, limit=500):
         pulls = self.history.query_pulls("mlb", slate, limit)
@@ -176,10 +178,16 @@ class FakeEngine:
                 "trainingEligible": True,
                 "trainingExclusionReasons": [],
             }
+        if self.pull_to_add_during_prediction is not None:
+            self.history.pulls.append(copy.deepcopy(self.pull_to_add_during_prediction))
+            self.pull_to_add_during_prediction = None
         return {"ok": True, "gameCount": 1, "count": 1, "predictions": [row]}
 
     def _store_prediction(self, row):
         self.canonical_calls += 1
+        if self.canonical_failures_remaining:
+            self.canonical_failures_remaining -= 1
+            raise RuntimeError("injected canonical write failure")
         import mlb_daily_lock_ml_vector_preservation_patch as contract
 
         errors = contract.validate_exact_locked_row(row)
@@ -338,8 +346,125 @@ def build_module(pulls, now, *, vectorless=False, tampered_provenance=False):
     return module
 
 
+def test_manual_pull_timestamp_is_captured_after_provider_response():
+    source = (HELLO_WORLD / "mlb_manual_pull.py").read_text(encoding="utf-8")
+    start = source.index("def _fetch_odds_with_completion_timestamp")
+    end = source.index("\n\ndef lambda_handler", start)
+    helper = source[start:end]
+
+    assert helper.index("_http_get_json(_odds_url())") < helper.index("_now_iso()")
+    assert "raw_all, asof = _fetch_odds_with_completion_timestamp()" in source
+
+
+def test_cutoff_waits_full_120_seconds_without_changing_scheduled_lock():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:16:59+00:00")
+
+    result = module.run_lock(SLATE)
+
+    assert result["reason"] == "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER"
+    assert not staged_items(module)
+    g1_status = next(row for row in result["perGameLockProgress"]["games"] if row["gameId"] == "g1")
+    assert g1_status["state"] == "WAITING_FOR_CUTOFF_STABILIZATION"
+    assert g1_status["scheduledLockAtUtc"] == "2026-07-13T17:15:00+00:00"
+    assert g1_status["sourceWindowStableAtUtc"] == "2026-07-13T17:17:00+00:00"
+    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+
+
+def test_newer_cutoff_pull_arriving_during_grace_wins_source_window():
+    initial = [
+        pull("2026-07-13T17:00:00+00:00", [G1], "1700-one"),
+        pull("2026-07-13T17:14:00+00:00", [G1], "1714-one"),
+    ]
+    module = build_module(initial, "2026-07-13T17:16:00+00:00")
+    waiting = module.run_lock(SLATE)
+    assert waiting["perGameLockProgress"]["stabilizingCount"] == 1
+    assert not staged_items(module)
+
+    module.history.pulls.append(pull("2026-07-13T17:15:00+00:00", [G1], "1715-one"))
+    module.now = dt("2026-07-13T17:17:00+00:00")
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    assert stage["source_pull_id"] == "pull-1715-one"
+    assert stage["source_pull_at_utc"] == "2026-07-13T17:15:00+00:00"
+
+
+def test_response_completed_after_cutoff_is_not_in_bound_source_window():
+    pulls = [
+        pull("2026-07-13T17:14:00+00:00", [G1], "1714-before"),
+        pull("2026-07-13T17:15:01+00:00", [G1], "171501-after"),
+    ]
+    module = build_module(pulls, "2026-07-13T17:17:00+00:00")
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    assert stage["source_pull_id"] == "pull-1714-before"
+    assert [entry["pullId"] for entry in stage["source_window"]["pulls"]] == ["pull-1714-before"]
+
+
+def test_prewrite_requery_regenerates_if_source_window_changes():
+    initial = [pull("2026-07-13T17:14:00+00:00", [G1], "1714-race")]
+    module = build_module(initial, "2026-07-13T17:17:00+00:00")
+    module.mlb_game_winner_engine.pull_to_add_during_prediction = pull(
+        "2026-07-13T17:15:00+00:00", [G1], "1715-race"
+    )
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    assert stage["source_pull_id"] == "pull-1715-race"
+    assert stage["pull_depth"] == 2
+    assert [entry["pullId"] for entry in stage["source_window"]["pulls"]] == [
+        "pull-1714-race",
+        "pull-1715-race",
+    ]
+
+
+def test_late_backfill_does_not_invalidate_stage_or_block_canonical_retry():
+    initial = [pull("2026-07-13T17:14:00+00:00", [G1], "1714-retry")]
+    module = build_module(initial, "2026-07-13T17:17:00+00:00")
+    module.mlb_game_winner_engine.canonical_failures_remaining = 2
+
+    first = module.run_lock(SLATE)
+    assert first["ok"] is False
+    assert first["reason"] == "PER_GAME_LOCK_DUE_BUT_NOT_CANONICAL"
+    assert len(staged_items(module)) == 1
+    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+
+    module.history.pulls.append(pull("2026-07-13T17:15:00+00:00", [G1], "1715-late-backfill"))
+    second = module.run_lock(SLATE)
+
+    assert second["locked"] is True
+    assert module.mlb_game_winner_engine.canonical_new_writes == 1
+    status = second["perGameLockProgress"]["games"][0]
+    assert status["state"] == "LOCKED_CANONICAL"
+    assert status["lateBackfillDetected"] is True
+    assert status["lateBackfillPullCount"] == 1
+    stage = staged_items(module)[0]
+    assert stage["source_pull_id"] == "pull-1714-retry"
+
+
+def test_bound_pull_mutation_invalidates_stage_fail_closed():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00")
+    module.run_lock(SLATE)
+    assert len(staged_items(module)) == 1
+
+    module.history.pulls[-1]["games"][0]["books"]["fanduel"]["ml"]["home"] = -999
+    result = module.run_lock(SLATE)
+
+    assert result["ok"] is False
+    assert result["reason"] == "PER_GAME_LOCK_DUE_BUT_NOT_CANONICAL"
+    errors = result["perGameLockProgress"]["games"][0]["errors"]
+    assert "bound_source_window_pull_missing_or_changed" in errors
+    assert daily_item(module) is None
+
+
 def test_first_game_canonical_at_own_cutoff_while_later_game_pending():
-    module = build_module(EARLY_PULLS, "2026-07-13T17:16:00+00:00")
+    module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00")
 
     result = module.run_lock(SLATE)
 
@@ -350,18 +475,21 @@ def test_first_game_canonical_at_own_cutoff_while_later_game_pending():
     stage = staged_items(module)[0]
     assert stage["game_id"] == "g1"
     assert stage["scheduled_lock_at_utc"] == "2026-07-13T17:15:00+00:00"
-    assert stage["staged_at_utc"] == "2026-07-13T17:16:00+00:00"
+    assert stage["staged_at_utc"] == "2026-07-13T17:17:00+00:00"
     assert stage["source_pull_at_utc"] == "2026-07-13T17:15:00+00:00"
+    assert stage["source_window"]["stabilizationSeconds"] == 120
+    assert stage["source_window"]["scheduledCutoffAtUtc"] == "2026-07-13T17:15:00+00:00"
+    assert stage["source_window"]["pulls"][-1]["pullId"] == "pull-1715"
     assert daily_item(module) is None
 
 
 def test_later_game_uses_newer_own_cutoff_pull_and_only_then_finalizes_daily_card():
-    module = build_module(EARLY_PULLS, "2026-07-13T17:16:00+00:00")
+    module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00")
     module.run_lock(SLATE)
     assert daily_item(module) is None
 
     module.history.pulls.extend(LATE_PULLS)
-    module.now = dt("2026-07-13T19:16:00+00:00")
+    module.now = dt("2026-07-13T19:17:00+00:00")
     result = module.run_lock(SLATE)
 
     assert result["locked"] is True
@@ -392,12 +520,12 @@ def test_no_stage_or_canonical_write_before_due_or_after_game_start():
 
 
 def test_manifest_drift_after_first_stage_fails_closed_without_daily_card():
-    module = build_module(EARLY_PULLS, "2026-07-13T17:16:00+00:00")
+    module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00")
     module.run_lock(SLATE)
     assert module.mlb_game_winner_engine.canonical_new_writes == 1
 
     module.history.pulls.append(pull("2026-07-13T18:30:00+00:00", [G2, G3], "drift"))
-    module.now = dt("2026-07-13T19:16:00+00:00")
+    module.now = dt("2026-07-13T19:17:00+00:00")
     result = module.run_lock(SLATE)
 
     assert result["ok"] is False
@@ -408,7 +536,7 @@ def test_manifest_drift_after_first_stage_fails_closed_without_daily_card():
 
 
 def test_vectorless_or_tampered_generation_writes_nothing_canonical():
-    module = build_module(EARLY_PULLS, "2026-07-13T17:16:00+00:00", vectorless=True)
+    module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00", vectorless=True)
     result = module.run_lock(SLATE)
 
     assert result["ok"] is False
@@ -421,7 +549,7 @@ def test_vectorless_or_tampered_generation_writes_nothing_canonical():
 def test_post_source_temporal_and_fundamental_provenance_writes_nothing():
     module = build_module(
         EARLY_PULLS,
-        "2026-07-13T17:16:00+00:00",
+        "2026-07-13T17:17:00+00:00",
         tampered_provenance=True,
     )
     result = module.run_lock(SLATE)
@@ -437,7 +565,7 @@ def test_post_source_temporal_and_fundamental_provenance_writes_nothing():
 
 
 def test_stage_and_canonical_collisions_are_idempotent():
-    module = build_module(EARLY_PULLS, "2026-07-13T17:16:00+00:00")
+    module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00")
     module.run_lock(SLATE)
     stage_count = len(staged_items(module))
     canonical_writes = module.mlb_game_winner_engine.canonical_new_writes
@@ -450,7 +578,7 @@ def test_stage_and_canonical_collisions_are_idempotent():
 
 
 def test_status_is_read_only_and_does_not_repair_missing_canonical_row():
-    module = build_module(EARLY_PULLS, "2026-07-13T17:16:00+00:00")
+    module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00")
     module.run_lock(SLATE)
     stage = staged_items(module)[0]
     row = stage["data"]["row"]
@@ -475,10 +603,10 @@ def test_dynamic_template_keeps_one_minute_lock_check_and_invariant():
 
 
 def test_per_game_daily_card_remains_authoritative_for_settlement_fallback():
-    module = build_module(EARLY_PULLS, "2026-07-13T17:16:00+00:00")
+    module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00")
     module.run_lock(SLATE)
     module.history.pulls.extend(LATE_PULLS)
-    module.now = dt("2026-07-13T19:16:00+00:00")
+    module.now = dt("2026-07-13T19:17:00+00:00")
     module.run_lock(SLATE)
 
     assert audit_fallback._authoritative(daily_item(module)) is True

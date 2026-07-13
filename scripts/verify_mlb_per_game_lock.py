@@ -26,8 +26,10 @@ def main() -> int:
         test()
     print(
         "MLB per-game T-minus-45 lock verified: own-cutoff pulls, immediate "
-        "canonical write-once game rows, read-only status, no late backfill, "
-        "manifest-drift/tamper fail-closed behavior, idempotency, and final-card gating."
+        "canonical write-once game rows, 120-second source-window stabilization, "
+        "response-completion timestamps, canonical retry across diagnostic late backfills, "
+        "read-only status, manifest-drift/tamper fail-closed behavior, idempotency, "
+        "and final-card gating."
     )
     return 0
 

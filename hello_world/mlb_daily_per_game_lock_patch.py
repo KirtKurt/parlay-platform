@@ -15,6 +15,8 @@ from mlb_slate_coverage_patch import game_identity
 VERSION = "INQSI-MLB-DAILY-LOCK-v4-per-game-tminus45-staged-write-once"
 LOCK_POLICY = "each_mlb_game_minus_45_minutes"
 STAGE_RECORD_TYPE = "mlb_staged_per_game_tminus45_lock"
+CUTOFF_STABILIZATION_SECONDS = 120
+SOURCE_WINDOW_VERSION = "mlb_per_game_cutoff_source_window_v1"
 
 _SCOPED_PULLS: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
     "inqsi_mlb_scoped_per_game_lock_pulls",
@@ -77,6 +79,38 @@ def _scoring_pulls(
         scoped["games"] = [copy.deepcopy(matching)]
         selected.append(scoped)
     return selected
+
+
+def _game_snapshot_fingerprint(game: Dict[str, Any]) -> str:
+    payload = json.dumps(_plain(game), sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _source_window_entry(module: Any, pull: Dict[str, Any], game: Dict[str, Any]) -> Dict[str, Any]:
+    matching = _matching_game(pull, game_identity(game))
+    pulled_at = _pull_at(module, pull)
+    return {
+        "pullId": str(pull.get("pull_id") or ""),
+        "pulledAtUtc": pulled_at.isoformat() if pulled_at else None,
+        "gameSnapshotFingerprint": _game_snapshot_fingerprint(matching or {}),
+    }
+
+
+def _source_window_entries(module: Any, scoring: Iterable[Dict[str, Any]], game: Dict[str, Any]) -> List[Dict[str, Any]]:
+    return [_source_window_entry(module, pull, game) for pull in scoring]
+
+
+def _source_window_key(entry: Dict[str, Any]) -> Tuple[str, str, str]:
+    return (
+        str(entry.get("pullId") or ""),
+        str(entry.get("pulledAtUtc") or ""),
+        str(entry.get("gameSnapshotFingerprint") or ""),
+    )
+
+
+def _cutoff_stable_at(module: Any, game: Dict[str, Any]) -> Optional[datetime]:
+    lock_at = _lock_at(module, game)
+    return lock_at + timedelta(seconds=CUTOFF_STABILIZATION_SECONDS) if lock_at else None
 
 
 def _install_scoped_query(history: Any) -> None:
@@ -142,6 +176,7 @@ def _fingerprint_material(item: Dict[str, Any]) -> Dict[str, Any]:
         "scheduledLockAtUtc": item.get("scheduled_lock_at_utc"),
         "sourcePullAtUtc": item.get("source_pull_at_utc"),
         "sourcePullId": item.get("source_pull_id"),
+        "sourceWindow": item.get("source_window") or {},
         "actualStagedAtUtc": item.get("staged_at_utc"),
         "predictedWinner": row.get("predictedWinner"),
         "predictedSide": row.get("predictedSide"),
@@ -422,7 +457,14 @@ def _validate_stage(
     start = _start(module, game)
     staged_at = _parse_iso(item.get("staged_at_utc"))
     source_at = _parse_iso(item.get("source_pull_at_utc"))
-    expected_source = _pull_at(module, scoring[-1]) if scoring else None
+    stable_at = _cutoff_stable_at(module, game)
+    source_window = item.get("source_window") or {}
+    raw_bound_entries = source_window.get("pulls") or []
+    bound_entries = raw_bound_entries if isinstance(raw_bound_entries, list) else []
+    current_entries = _source_window_entries(module, scoring, game)
+    bound_keys = {_source_window_key(entry) for entry in bound_entries if isinstance(entry, dict)}
+    current_keys = {_source_window_key(entry) for entry in current_entries}
+    source_window_closed_at = _parse_iso(source_window.get("closedAtUtc"))
     if item.get("record_type") != STAGE_RECORD_TYPE or item.get("immutable_staged") is not True:
         errors.append("not_immutable_per_game_stage")
     if str(item.get("slate_date") or "") != slate:
@@ -435,13 +477,26 @@ def _validate_stage(
         errors.append("scheduled_lock_mismatch")
     if not start or not staged_at or staged_at >= start:
         errors.append("late_stage_at_or_after_game_start")
+    if source_window.get("version") != SOURCE_WINDOW_VERSION:
+        errors.append("missing_or_wrong_bound_source_window_version")
+    if not source_window_closed_at or source_window_closed_at != staged_at:
+        errors.append("source_window_close_timestamp_mismatch")
+    if stable_at and (not staged_at or staged_at < stable_at):
+        errors.append("cutoff_source_window_not_stabilized")
+    if not isinstance(raw_bound_entries, list) or not bound_entries:
+        errors.append("missing_bound_source_window_pulls")
+    elif len(bound_keys) != len(bound_entries):
+        errors.append("duplicate_bound_source_window_pull")
+    if bound_keys - current_keys:
+        errors.append("bound_source_window_pull_missing_or_changed")
     if not source_at or not lock_at or source_at > lock_at:
         errors.append("source_after_or_missing_scheduled_lock")
-    if source_at != expected_source:
-        errors.append("not_latest_valid_pull_at_or_before_scheduled_lock")
-    if str(item.get("source_pull_id") or "") != str((scoring[-1] if scoring else {}).get("pull_id") or ""):
-        errors.append("source_pull_id_mismatch")
-    if int(item.get("pull_depth") or 0) != len(scoring):
+    latest_bound = bound_entries[-1] if bound_entries and isinstance(bound_entries[-1], dict) else {}
+    if source_at != _parse_iso(latest_bound.get("pulledAtUtc")):
+        errors.append("source_pull_timestamp_mismatch_bound_window")
+    if str(item.get("source_pull_id") or "") != str(latest_bound.get("pullId") or ""):
+        errors.append("source_pull_id_mismatch_bound_window")
+    if int(item.get("pull_depth") or 0) != len(bound_entries):
         errors.append("pull_depth_mismatch")
     if item.get("stage_fingerprint") != _stage_fingerprint(item):
         errors.append("stage_fingerprint_mismatch")
@@ -473,6 +528,9 @@ def _generate_stage(
     now = module._now_utc().astimezone(timezone.utc)
     if not start or now >= start:
         return None, ["late_stage_blocked_game_already_started"]
+    stable_at = _cutoff_stable_at(module, game)
+    if not stable_at or now < stable_at:
+        return None, ["cutoff_source_window_still_stabilizing"]
     with _pull_scope(module.history, slate, scoring):
         result = module.mlb_game_winner_engine.predict_all(slate, store=False, limit=500)
     candidates = [row for row in (result.get("predictions") or []) if game_identity(row) == game_identity(game)]
@@ -480,6 +538,13 @@ def _generate_stage(
         return None, [f"scoped_prediction_count_{len(candidates)}"]
     source = scoring[-1]
     row = _prepare_row(module, candidates[0], slate, game, source, now, manifest, locked_count)
+    source_window = {
+        "version": SOURCE_WINDOW_VERSION,
+        "closedAtUtc": now.isoformat(),
+        "scheduledCutoffAtUtc": (_lock_at(module, game) or now).isoformat(),
+        "stabilizationSeconds": CUTOFF_STABILIZATION_SECONDS,
+        "pulls": _source_window_entries(module, scoring, game),
+    }
     item = module.history.ddb_safe({
         **_stage_key(module, slate, game),
         "record_type": STAGE_RECORD_TYPE,
@@ -497,6 +562,7 @@ def _generate_stage(
         "source_pull_at_utc": (_pull_at(module, source) or now).isoformat(),
         "source_pull_id": source.get("pull_id"),
         "pull_depth": len(scoring),
+        "source_window": source_window,
         "manifest_game_count": len(manifest),
         "data": {
             "row": row,
@@ -580,6 +646,25 @@ def _canonical_readback(module: Any, row: Dict[str, Any]) -> Optional[Dict[str, 
     }
 
 
+def _late_backfill_count(module: Any, stage: Optional[Dict[str, Any]], scoring: List[Dict[str, Any]], game: Dict[str, Any]) -> int:
+    if not stage:
+        return 0
+    source_window = stage.get("source_window") or {}
+    bound_entries = source_window.get("pulls") or []
+    if not isinstance(bound_entries, list):
+        return 0
+    bound_keys = {
+        _source_window_key(entry)
+        for entry in bound_entries
+        if isinstance(entry, dict)
+    }
+    current_keys = {
+        _source_window_key(entry)
+        for entry in _source_window_entries(module, scoring, game)
+    }
+    return len(current_keys - bound_keys)
+
+
 def _progress(
     module: Any,
     slate: str,
@@ -599,11 +684,14 @@ def _progress(
         scoring = _scoring_pulls(module, pulls, game)
         stage = _get_stage(module, slate, game)
         errors = _validate_stage(module, stage, slate, game, manifest, scoring) if stage else []
+        late_backfill_count = _late_backfill_count(module, stage, scoring, game)
         state = "LOCKED_STAGED" if stage and not errors else "PENDING"
         if errors:
             state = "INVALID_STAGE_BLOCKED"
         elif not stage and start and now >= start:
             state = "MISSED_NOT_BACKFILLED"
+        elif not stage and lock_at and now >= lock_at and now < (_cutoff_stable_at(module, game) or lock_at):
+            state = "WAITING_FOR_CUTOFF_STABILIZATION"
         elif not stage and lock_at and now >= lock_at:
             state = "DUE_NOT_STAGED"
         if stage and not errors:
@@ -627,6 +715,10 @@ def _progress(
             "sourcePullAtUtc": stage.get("source_pull_at_utc") if stage else None,
             "actualStagedAtUtc": stage.get("staged_at_utc") if stage else None,
             "pullDepthAtCutoff": len(scoring),
+            "sourceWindowStabilizationSeconds": CUTOFF_STABILIZATION_SECONDS,
+            "sourceWindowStableAtUtc": (_cutoff_stable_at(module, game) or lock_at).isoformat() if lock_at else None,
+            "lateBackfillDetected": late_backfill_count > 0,
+            "lateBackfillPullCount": late_backfill_count,
             "errors": errors,
         })
     return {
@@ -635,7 +727,8 @@ def _progress(
         "canonical": canonical,
         "stagedCount": len(valid_stages),
         "canonicalCount": len(canonical),
-        "pendingCount": len([row for row in rows if row["state"] == "PENDING"]),
+        "pendingCount": len([row for row in rows if row["state"] in {"PENDING", "WAITING_FOR_CUTOFF_STABILIZATION"}]),
+        "stabilizingCount": len([row for row in rows if row["state"] == "WAITING_FOR_CUTOFF_STABILIZATION"]),
         "dueMissingCount": len([row for row in rows if row["state"] in {"DUE_NOT_STAGED", "STAGED_CANONICAL_WRITE_BLOCKED", "INVALID_STAGE_BLOCKED"}]),
         "missedCount": len([row for row in rows if row["state"] == "MISSED_NOT_BACKFILLED"]),
     }
@@ -712,6 +805,7 @@ def _daily_item(
                     "actualStagedAtUtc": item.get("staged_at_utc"),
                     "sourcePullAtUtc": item.get("source_pull_at_utc"),
                     "sourcePullId": item.get("source_pull_id"),
+                    "sourceWindow": item.get("source_window") or {},
                     "stageFingerprint": item.get("stage_fingerprint"),
                     "writeOnce": True,
                     "canonicalImmutableGameRow": True,
@@ -774,7 +868,7 @@ def apply(module: Any) -> Any:
         pulls = sorted(module._pulls_for_date(slate), key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc))
         manifest = module._latest_games_for_date(slate, pulls)
         now = module._now_utc().astimezone(timezone.utc)
-        progress = _progress(module, slate, pulls, manifest, now, ensure_canonical=False) if manifest else {"games": [], "stagedCount": 0, "canonicalCount": 0, "pendingCount": 0, "dueMissingCount": 0, "missedCount": 0}
+        progress = _progress(module, slate, pulls, manifest, now, ensure_canonical=False) if manifest else {"games": [], "stagedCount": 0, "canonicalCount": 0, "pendingCount": 0, "stabilizingCount": 0, "dueMissingCount": 0, "missedCount": 0}
         cutoffs = sorted([value for value in (_lock_at(module, game) for game in manifest) if value])
         future = [value for value in cutoffs if value > now]
         return {
@@ -787,6 +881,7 @@ def apply(module: Any) -> Any:
             "stagedGameCount": progress.get("stagedCount"),
             "canonicalImmutableGameRowCount": progress.get("canonicalCount"),
             "pendingGameCount": progress.get("pendingCount"),
+            "stabilizingGameCount": progress.get("stabilizingCount"),
             "dueMissingGameCount": progress.get("dueMissingCount"),
             "missedGameCount": progress.get("missedCount"),
             "perGameStatus": progress.get("games") or [],
@@ -822,20 +917,64 @@ def apply(module: Any) -> Any:
             identity = game_status["gameIdentity"]
             game = next(entry for entry in manifest if game_identity(entry) == identity)
             scoring = _scoring_pulls(module, pulls, game)
-            lock_at = _lock_at(module, game)
-            source_at = _pull_at(module, scoring[-1]) if scoring else None
-            source_age = ((lock_at - source_at).total_seconds() / 60.0) if lock_at and source_at else None
-            if len(scoring) < module.MIN_PULLS_PER_GAME_FOR_LOCK:
-                failures.append({"gameIdentity": identity, "reason": "INSUFFICIENT_PULL_DEPTH_NOT_STAGED", "pullDepth": len(scoring)})
+            stable_item: Optional[Dict[str, Any]] = None
+            failed = False
+            for _attempt in range(3):
+                lock_at = _lock_at(module, game)
+                source_at = _pull_at(module, scoring[-1]) if scoring else None
+                source_age = ((lock_at - source_at).total_seconds() / 60.0) if lock_at and source_at else None
+                if len(scoring) < module.MIN_PULLS_PER_GAME_FOR_LOCK:
+                    failures.append({"gameIdentity": identity, "reason": "INSUFFICIENT_PULL_DEPTH_NOT_STAGED", "pullDepth": len(scoring)})
+                    failed = True
+                    break
+                if source_age is None or source_age > module.MAX_LATEST_PULL_AGE_MINUTES:
+                    failures.append({"gameIdentity": identity, "reason": "STALE_OR_MISSING_CUTOFF_PULL_NOT_STAGED", "sourceAgeAtLockMinutes": source_age})
+                    failed = True
+                    break
+
+                item, errors = _generate_stage(module, slate, game, manifest, scoring, pre.get("stagedCount", 0) + 1)
+                if errors or not item:
+                    failures.append({"gameIdentity": identity, "reason": "PER_GAME_STAGE_VALIDATION_FAILED", "errors": errors})
+                    failed = True
+                    break
+
+                # Close the source window against a consistent re-read immediately
+                # before the immutable stage write. If an in-flight pull appeared,
+                # regenerate from that newer at-or-before-cutoff window.
+                refreshed_pulls = sorted(
+                    module._pulls_for_date(slate),
+                    key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc),
+                )
+                refreshed_manifest = module._latest_games_for_date(slate, refreshed_pulls)
+                if [game_identity(entry) for entry in refreshed_manifest] != [game_identity(entry) for entry in manifest]:
+                    failures.append({"gameIdentity": identity, "reason": "MANIFEST_CHANGED_DURING_SOURCE_WINDOW_CLOSE_NOT_STAGED"})
+                    failed = True
+                    break
+                refreshed_game = next(
+                    (entry for entry in refreshed_manifest if game_identity(entry) == identity),
+                    None,
+                )
+                if refreshed_game is None:
+                    failures.append({"gameIdentity": identity, "reason": "GAME_MISSING_DURING_SOURCE_WINDOW_CLOSE_NOT_STAGED"})
+                    failed = True
+                    break
+                refreshed_scoring = _scoring_pulls(module, refreshed_pulls, refreshed_game)
+                pulls = refreshed_pulls
+                manifest = refreshed_manifest
+                game = refreshed_game
+                if _source_window_entries(module, scoring, game) == _source_window_entries(module, refreshed_scoring, game):
+                    scoring = refreshed_scoring
+                    stable_item = item
+                    break
+                scoring = refreshed_scoring
+
+            if failed:
                 continue
-            if source_age is None or source_age > module.MAX_LATEST_PULL_AGE_MINUTES:
-                failures.append({"gameIdentity": identity, "reason": "STALE_OR_MISSING_CUTOFF_PULL_NOT_STAGED", "sourceAgeAtLockMinutes": source_age})
+            if stable_item is None:
+                failures.append({"gameIdentity": identity, "reason": "SOURCE_WINDOW_CHANGED_REPEATEDLY_NOT_STAGED"})
                 continue
-            item, errors = _generate_stage(module, slate, game, manifest, scoring, pre.get("stagedCount", 0) + 1)
-            if errors or not item:
-                failures.append({"gameIdentity": identity, "reason": "PER_GAME_STAGE_VALIDATION_FAILED", "errors": errors})
-                continue
-            stored = _put_stage(module, item, slate, game)
+
+            stored = _put_stage(module, stable_item, slate, game)
             stored_errors = _validate_stage(module, stored, slate, game, manifest, scoring)
             if stored_errors:
                 failures.append({"gameIdentity": identity, "reason": "PER_GAME_STAGE_READBACK_INVALID", "errors": stored_errors})
@@ -845,6 +984,8 @@ def apply(module: Any) -> Any:
             except Exception as exc:
                 failures.append({"gameIdentity": identity, "reason": "CANONICAL_IMMUTABLE_GAME_WRITE_FAILED", "errors": [str(exc)]})
 
+        pulls = sorted(module._pulls_for_date(slate), key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc))
+        manifest = module._latest_games_for_date(slate, pulls)
         progress = _progress(module, slate, pulls, manifest, module._now_utc().astimezone(timezone.utc), ensure_canonical=True)
         if progress.get("missedCount"):
             return {"ok": False, "sport": "mlb", "modelVersion": VERSION, "slateDateEt": slate, "locked": False, "reason": "MISSED_PER_GAME_LOCK_NOT_BACKFILLED", "failClosed": True, "forceIgnoredForSafety": bool(force), "failures": failures, "perGameLockProgress": progress}
