@@ -35,6 +35,11 @@ for k, v in SUPPORTED.items():
     for a in v.get("aliases", []):
         ALIASES[a] = k
 
+MLB_EXCLUDED_EXHIBITION_MATCHUPS = {
+    frozenset({"american league", "national league"}),
+}
+MLB_EXHIBITION_MARKERS = ("all-star", "all star")
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -86,6 +91,33 @@ def team_key(name: Optional[str]) -> str:
 
 def game_key(sport: str, g: Dict[str, Any]) -> str:
     return str(g.get("game_key") or g.get("game_id") or g.get("id") or f"{sport}|{team_key(g.get('away_team') or g.get('away'))}|{team_key(g.get('home_team') or g.get('home'))}")
+
+
+def mlb_model_eligible_game(game: Dict[str, Any]) -> bool:
+    """Return False for special MLB exhibitions that must not enter accuracy or ML learning."""
+    home = team_key(game.get("home_team") or game.get("home") or game.get("homeTeam"))
+    away = team_key(game.get("away_team") or game.get("away") or game.get("awayTeam"))
+    if frozenset({home, away}) in MLB_EXCLUDED_EXHIBITION_MATCHUPS:
+        return False
+    descriptor = " ".join(
+        str(game.get(field) or "")
+        for field in ("league", "name", "title", "description", "event_name", "eventName")
+    ).lower()
+    return not any(marker in descriptor for marker in MLB_EXHIBITION_MARKERS)
+
+
+def _filter_mlb_model_pull(pull: Dict[str, Any]) -> Dict[str, Any]:
+    games = list(pull.get("games") or [])
+    eligible = [game for game in games if mlb_model_eligible_game(game)]
+    if len(eligible) == len(games):
+        return pull
+    filtered = dict(pull)
+    filtered["games"] = eligible
+    meta = dict(filtered.get("meta") or {})
+    meta["excludedNonModelGameCount"] = len(games) - len(eligible)
+    meta["excludedNonModelGamePolicy"] = "MLB_ALL_STAR_EXHIBITION_EXCLUDED_FROM_PREDICTION_ACCURACY_AND_LEARNING"
+    filtered["meta"] = meta
+    return filtered
 
 
 def american_prob(v: Any) -> Optional[float]:
@@ -195,7 +227,10 @@ def query_pulls(sport: str, date: Optional[str] = None, limit: int = 500) -> Lis
         if start_key:
             args["ExclusiveStartKey"] = start_key
         res = PULLS.query(**args)
-        out.extend([i.get("data", {}) for i in res.get("Items", [])])
+        rows = [i.get("data", {}) for i in res.get("Items", [])]
+        if sport == "mlb":
+            rows = [_filter_mlb_model_pull(row) for row in rows]
+        out.extend(rows)
         start_key = res.get("LastEvaluatedKey")
         if not start_key:
             break
