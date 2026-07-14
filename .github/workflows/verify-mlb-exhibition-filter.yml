@@ -1,0 +1,28 @@
+name: Verify MLB exhibition filtering
+
+on:
+  pull_request:
+    paths:
+      - "hello_world/inqsi_pull_history.py"
+      - "scripts/verify_mlb_exhibition_filter.py"
+      - ".github/workflows/verify-mlb-exhibition-filter.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install runtime dependency
+        run: python -m pip install boto3
+      - name: Verify All-Star exclusion
+        env:
+          AWS_EC2_METADATA_DISABLED: "true"
+          AWS_DEFAULT_REGION: us-east-1
+        run: python scripts/verify_mlb_exhibition_filter.py
