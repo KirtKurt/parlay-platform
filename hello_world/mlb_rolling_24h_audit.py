@@ -90,6 +90,8 @@ def final_scores_last_24h(days_from: int = 3) -> List[Dict[str, Any]]:
     for game in raw or []:
         if not game.get("completed"):
             continue
+        if not history.mlb_model_eligible_game(game):
+            continue
         commence_dt = parse_dt(game.get("commence_time"))
         if not commence_dt or commence_dt < cutoff or commence_dt > now_utc() + timedelta(hours=1):
             continue
