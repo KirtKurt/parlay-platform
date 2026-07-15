@@ -1,8 +1,8 @@
 {
   "ok": true,
   "proofRun": "recurring_mlb_all_games_signal_proof_read_only_every_15_min",
-  "createdAtUtc": "2026-07-15T00:57:17.116552+00:00",
-  "createdAtEt": "2026-07-14T20:57:17.116570-04:00",
+  "createdAtUtc": "2026-07-15T04:15:26.487215+00:00",
+  "createdAtEt": "2026-07-15T00:15:26.487230-04:00",
   "question": "Show every MLB game scored before the qualifying-leg filter was applied.",
   "error": null,
   "mlbAllGamesSignalRows": [],
@@ -15,21 +15,11 @@
   "mlbGameWinnerPredictions": {
     "ok": true,
     "sport": "mlb",
-    "slate_date": "2026-07-14",
+    "slate_date": "2026-07-15",
     "engine": "MLB-SINGLE-GAME-ML-PROMOTION-v2.1",
-    "modelVersion": "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production+individual-winner-optimizer-risk-v5-market-anchor+fundamentals-calibration-no-pick-v1+last-possible-gate-v4-12h-individual-game-odds-api-only+MLB-WINNER-STACK-v2.2-market-confirmed-actionable-lean+individual-winner-optimizer-risk-v5-market-anchor+slate-wide-45min-final-gate+MLB-BALANCED-SIGNAL-GATE-v1-controlled-market-backed-output+MLB-ML-SIGNAL-LAYERS-v1.2-score-only-required-pick-preservation+MLB-SIGNAL-POLICY-v1.6-official-prediction-playability-separated+MLB-DIRECTIONAL-SCORE-v2-premium-clean-official-gate+MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop+MLB-OFFICIAL-PREDICTION-SEMANTICS-v1-locked-official-playable-separate",
-    "promotionThreshold": 0.0015,
-    "fallbackPromotionThreshold": 0.0005,
-    "pullCount": 85,
-    "latestPullAt": "2026-07-15T00:45:26.117039+00:00",
-    "latestPullId": "mlb_v1_2026-07-14_2026_07_15T00_45_26_117039_00_00",
-    "gameCount": 0,
     "count": 0,
-    "promotedCount": 0,
-    "allGamesPredicted": true,
-    "stored": false,
-    "storedCount": 0,
     "predictions": [],
+    "message": "No MLB pull history found for this slate.",
     "allGamesOptimizedForWinner": true,
     "rolling24hAccuracyTarget": {
       "targetAccuracyPct": 90.0,
@@ -45,15 +35,14 @@
       "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v5-market-anchor-low-confidence-fallback",
       "lastPossiblePredictionGate": {
         "applied": true,
-        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v2-45MIN-doubleheader-safe-complete-manifest",
-        "slateWideLock": true,
+        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
+        "slateWideLock": false,
         "lockAtUtc": null,
         "firstGameStartUtc": null,
-        "latestScoringPullAt": "2026-07-15T00:45:26.117039+00:00",
+        "latestScoringPullAt": null,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 45,
-          "closesAt": 45,
-          "meaning": "single_slate_wide_lock_cutoff"
+          "opensAt": 720,
+          "closesAt": 10
         },
         "phaseCounts": {},
         "finalLockedCount": 0,
@@ -228,15 +217,14 @@
       "riskPolicyVersion": "MLB-INDIVIDUAL-WINNER-RISK-CALIBRATION-v5-market-anchor-low-confidence-fallback",
       "lastPossiblePredictionGate": {
         "applied": true,
-        "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v2-45MIN-doubleheader-safe-complete-manifest",
-        "slateWideLock": true,
+        "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
+        "slateWideLock": false,
         "lockAtUtc": null,
         "firstGameStartUtc": null,
-        "latestScoringPullAt": "2026-07-15T00:45:26.117039+00:00",
+        "latestScoringPullAt": null,
         "gateWindowMinutesBeforeStart": {
-          "opensAt": 45,
-          "closesAt": 45,
-          "meaning": "single_slate_wide_lock_cutoff"
+          "opensAt": 720,
+          "closesAt": 10
         },
         "phaseCounts": {},
         "finalLockedCount": 0,
@@ -397,6 +385,7 @@
       "officialPredictionMeaning": "immutable winner selected for a slate-locked game",
       "playableMeaning": "higher-confidence wagering recommendation; separate from official prediction"
     },
+    "modelVersion": "+individual-winner-optimizer-risk-v5-market-anchor+fundamentals-calibration-no-pick-v1+last-possible-gate-v4-12h-individual-game-odds-api-only+MLB-WINNER-STACK-v2.2-market-confirmed-actionable-lean+individual-winner-optimizer-risk-v5-market-anchor+MLB-BALANCED-SIGNAL-GATE-v1-controlled-market-backed-output+MLB-ML-SIGNAL-LAYERS-v1.2-score-only-required-pick-preservation+MLB-SIGNAL-POLICY-v1.6-official-prediction-playability-separated+MLB-DIRECTIONAL-SCORE-v2-premium-clean-official-gate+MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop+MLB-OFFICIAL-PREDICTION-SEMANTICS-v1-locked-official-playable-separate",
     "actionablePickCount": 0,
     "noPickCount": 0,
     "calibrationPolicy": {
@@ -414,15 +403,14 @@
     },
     "lastPossiblePredictionGate": {
       "applied": true,
-      "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v2-45MIN-doubleheader-safe-complete-manifest",
-      "slateWideLock": true,
+      "policyVersion": "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY",
+      "slateWideLock": false,
       "lockAtUtc": null,
       "firstGameStartUtc": null,
-      "latestScoringPullAt": "2026-07-15T00:45:26.117039+00:00",
+      "latestScoringPullAt": null,
       "gateWindowMinutesBeforeStart": {
-        "opensAt": 45,
-        "closesAt": 45,
-        "meaning": "single_slate_wide_lock_cutoff"
+        "opensAt": 720,
+        "closesAt": 10
       },
       "phaseCounts": {},
       "finalLockedCount": 0,
@@ -501,59 +489,12 @@
       "officialPredictionMeaning": "immutable winner selected for a slate-locked game",
       "playableMeaning": "higher-confidence wagering recommendation; separate from official prediction"
     },
-    "slatePredictionLock": {
-      "applied": false,
-      "policyVersion": "MLB-SLATE-WIDE-PREDICTION-LOCK-v2-45MIN-doubleheader-safe-complete-manifest",
-      "slateWideLock": true,
-      "lockMinutesBeforeFirstGame": 45,
-      "firstGameStartUtc": null,
-      "lockAtUtc": null,
-      "locked": false,
-      "lockStatus": "OPEN_PRE_LOCK",
-      "source": "live_pre_lock_pull_history",
-      "minutesUntilFirstGameStart": null,
-      "minutesUntilSlateLock": null,
-      "totalPullCountAvailable": 85,
-      "scoringPullCount": 85,
-      "latestAvailablePullAt": "2026-07-15T00:45:26.117039+00:00",
-      "latestScoringPullAt": "2026-07-15T00:45:26.117039+00:00",
-      "rules": [
-        "All predictions for the slate lock together 45 minutes before the first game begins.",
-        "After lock, later pulls may continue for audit but cannot change picks.",
-        "Locked scoring uses only pulls captured at or before the lock timestamp."
-      ],
-      "manifestVersion": "MLB-SLATE-COVERAGE-v2-doubleheader-safe-complete-manifest",
-      "manifestGameCount": 0,
-      "manifestGameIdentities": [],
-      "doubleheaderSafeIdentity": true
-    },
-    "totalPullCountAvailable": 85,
-    "scoringPullCount": 85,
-    "latestScoringPullAt": "2026-07-15T00:45:26.117039+00:00",
     "slateCoverage": {
       "applied": true,
       "version": "MLB-SLATE-COVERAGE-v2-doubleheader-safe-complete-manifest",
-      "strictCoverageRequired": true,
-      "doubleheaderSafeIdentity": true,
-      "manifestGameCount": 0,
-      "predictionGameCount": 0,
-      "storedPredictionCount": 0,
-      "storeRequested": false,
-      "coverageRatio": null,
-      "coverageComplete": true,
-      "operationalStatus": "OPEN_PRE_LOCK",
-      "missingGameIdentities": [],
-      "extraGameIdentities": [],
-      "manifestGameIdentities": [],
-      "predictionGameIdentities": [],
-      "doubleheaderMatchups": [],
-      "publicAccuracyEligible": false,
-      "rules": [
-        "Provider game id is the primary identity.",
-        "When provider id is unavailable, game key plus commence time is required.",
-        "Same-team doubleheaders must remain separate lock-manifest rows.",
-        "A locked slate is incomplete when any manifest game lacks a stored winner prediction."
-      ]
+      "coverageComplete": false,
+      "operationalStatus": "NO_PULL_HISTORY",
+      "publicAccuracyEligible": false
     },
     "mlSignalLayers": {
       "applied": true,
@@ -649,6 +590,7 @@
       "officialPredictionMeaning": "immutable winner selected for a slate-locked game",
       "playableMeaning": "higher-confidence wagering recommendation; separate from official prediction"
     },
+    "promotedCount": 0,
     "lowConfidencePredictionCount": 0,
     "nonActionablePredictionCount": 0,
     "requiredGameWinnerPredictionCount": 0,
@@ -684,7 +626,7 @@
       "version": "MLB-ML-FROZEN-FEATURES-v1-clean-postfix-lock-vector",
       "frozenRowCount": 0,
       "trainingEligibleCount": 0,
-      "coverageComplete": true,
+      "coverageComplete": false,
       "officialFreezeBridgeVersion": "MLB-OFFICIAL-FREEZE-BRIDGE-v2-exact-clean-cohort-vector",
       "exactCleanCohortVectorRequired": true
     },
@@ -719,27 +661,27 @@
   "mlbB10Build": {
     "ok": true,
     "sport": "mlb",
-    "slate_date": "2026-07-14",
+    "slate_date": "2026-07-15",
     "slateTimezone": "America/New_York",
     "engine": "MLB-B1.0",
     "thresholdVersion": "MLB-B1.0-2026-06",
-    "pullCount": 85,
+    "pullCount": 0,
     "pullCoverage": {
       "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
       "startHourEt": 1,
       "intervalMinutes": 15,
-      "expectedStartAtUtc": "2026-07-14T05:00:00+00:00",
-      "expectedStartAtEt": "2026-07-14T01:00:00-04:00",
-      "firstPullAtUtc": "2026-07-14T04:00:26.199371+00:00",
-      "firstPullAtEt": "2026-07-14T00:00:26.199371-04:00",
-      "latestPullAtUtc": "2026-07-15T00:45:26.117039+00:00",
-      "latestPullAtEt": "2026-07-14T20:45:26.117039-04:00",
-      "actualPullCount": 85,
-      "actualPullCountSinceStart": 81,
-      "expectedPullCountSinceStart": 80,
+      "expectedStartAtUtc": "2026-07-15T05:00:00+00:00",
+      "expectedStartAtEt": "2026-07-15T01:00:00-04:00",
+      "firstPullAtUtc": null,
+      "firstPullAtEt": null,
+      "latestPullAtUtc": null,
+      "latestPullAtEt": null,
+      "actualPullCount": 0,
+      "actualPullCountSinceStart": 0,
+      "expectedPullCountSinceStart": 0,
       "missingPullCountSinceStart": 0,
-      "coverageRatio": 1.0125,
-      "overnightCoverageComplete": true
+      "coverageRatio": null,
+      "overnightCoverageComplete": false
     },
     "buildDeadline": {
       "ok": false,
@@ -765,7 +707,7 @@
     },
     "buildStatus": "NO_BUILD",
     "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
-    "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG.",
+    "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG. Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy.",
     "candidates": [],
     "structureGate": {
       "applied": true,
@@ -798,32 +740,14 @@
   "mlbSlateCoverage": {
     "applied": true,
     "version": "MLB-SLATE-COVERAGE-v2-doubleheader-safe-complete-manifest",
-    "strictCoverageRequired": true,
-    "doubleheaderSafeIdentity": true,
-    "manifestGameCount": 0,
-    "predictionGameCount": 0,
-    "storedPredictionCount": 0,
-    "storeRequested": false,
-    "coverageRatio": null,
     "coverageComplete": true,
     "operationalStatus": "COMPLETE",
-    "missingGameIdentities": [],
-    "extraGameIdentities": [],
-    "manifestGameIdentities": [],
-    "predictionGameIdentities": [],
-    "doubleheaderMatchups": [],
     "publicAccuracyEligible": false,
-    "rules": [
-      "Provider game id is the primary identity.",
-      "When provider id is unavailable, game key plus commence time is required.",
-      "Same-team doubleheaders must remain separate lock-manifest rows.",
-      "A locked slate is incomplete when any manifest game lacks a stored winner prediction."
-    ],
     "proofVersion": "MLB-ALL-GAMES-PROOF-v2-complete-slate-doubleheader-safe",
     "coverageVersion": "MLB-SLATE-COVERAGE-v2-doubleheader-safe-complete-manifest",
     "locked": false,
     "proofRowCount": 0,
-    "winnerGameCount": 0,
+    "winnerGameCount": null,
     "b10GameCount": 0,
     "proofMissingPredictionCount": 0,
     "proofMissingGameIdentities": [],
@@ -846,12 +770,12 @@
     "mlbBuilt": false,
     "mlbLatestBuild": {
       "freezeMinutesBeforeGame": "120",
-      "reason": "NOT_ENOUGH_UNIQUE_GAMES_FOR_3_LEG",
+      "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
       "leanCount": "0",
       "gameHistoryStored": "0",
       "strongCount": "0",
       "buildStatus": "NO_BUILD",
-      "slate_date": "2026-07-14",
+      "slate_date": "2026-07-15",
       "engine": "MLB-B1.0",
       "audit": {
         "tracks": [
@@ -869,8 +793,7 @@
       },
       "ok": true,
       "candidateCount": "0",
-      "uniqueSignalCount": "0",
-      "pullCount": "85",
+      "pullCount": "0",
       "minimumGameHistoryPoints": "4",
       "gameCount": "0",
       "slateTimezone": "America/New_York",
@@ -881,33 +804,27 @@
         "structure": "ANCHOR_LEAN_CONTROLLED_VARIABLE"
       },
       "thresholdVersion": "MLB-B1.0-2026-06",
-      "message": "Cannot build a three-leg parlay without three unique games or matches.",
-      "storedAt": "2026-07-15T00:57:19.439549+00:00",
+      "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG. Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy.",
+      "storedAt": "2026-07-15T04:15:26.651234+00:00",
       "candidates": [],
       "storeMode": "mlb_b10_or_strict_auto_after_live_pull_with_12_snapshot_baseline",
       "pullCoverage": {
-        "expectedStartAtUtc": "2026-07-14T05:00:00+00:00",
-        "firstPullAtUtc": "2026-07-14T04:00:26.199371+00:00",
-        "actualPullCount": "85",
-        "intervalMinutes": "15",
-        "firstPullAtEt": "2026-07-14T00:00:26.199371-04:00",
-        "latestPullAtEt": "2026-07-14T20:45:26.117039-04:00",
-        "coverageRatio": "1.0125",
-        "startHourEt": "1",
-        "latestPullAtUtc": "2026-07-15T00:45:26.117039+00:00",
-        "actualPullCountSinceStart": "81",
-        "expectedPullCountSinceStart": "80",
+        "actualPullCountSinceStart": "0",
+        "expectedStartAtUtc": "2026-07-15T05:00:00+00:00",
+        "expectedPullCountSinceStart": "0",
         "missingPullCountSinceStart": "0",
-        "overnightCoverageComplete": true,
-        "expectedStartAtEt": "2026-07-14T01:00:00-04:00",
-        "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes."
+        "overnightCoverageComplete": false,
+        "actualPullCount": "0",
+        "intervalMinutes": "15",
+        "expectedStartAtEt": "2026-07-15T01:00:00-04:00",
+        "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
+        "startHourEt": "1"
       },
       "scoredGameCount": "0",
       "sport": "mlb",
       "allScoredGamesCount": "0",
       "allScoredGames": [],
-      "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default",
-      "minimumParlayPulls": "12"
+      "requires": "2 MLB_STRONG + 1 MLB_LEAN_OR_STRONG; zero true COIN_FLIP by default"
     },
     "result": {
       "ok": true,
@@ -917,27 +834,27 @@
         {
           "ok": true,
           "sport": "mlb",
-          "slate_date": "2026-07-14",
+          "slate_date": "2026-07-15",
           "slateTimezone": "America/New_York",
           "engine": "MLB-B1.0",
           "thresholdVersion": "MLB-B1.0-2026-06",
-          "pullCount": 85,
+          "pullCount": 0,
           "pullCoverage": {
             "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
             "startHourEt": 1,
             "intervalMinutes": 15,
-            "expectedStartAtUtc": "2026-07-14T05:00:00+00:00",
-            "expectedStartAtEt": "2026-07-14T01:00:00-04:00",
-            "firstPullAtUtc": "2026-07-14T04:00:26.199371+00:00",
-            "firstPullAtEt": "2026-07-14T00:00:26.199371-04:00",
-            "latestPullAtUtc": "2026-07-15T00:45:26.117039+00:00",
-            "latestPullAtEt": "2026-07-14T20:45:26.117039-04:00",
-            "actualPullCount": 85,
-            "actualPullCountSinceStart": 81,
-            "expectedPullCountSinceStart": 80,
+            "expectedStartAtUtc": "2026-07-15T05:00:00+00:00",
+            "expectedStartAtEt": "2026-07-15T01:00:00-04:00",
+            "firstPullAtUtc": null,
+            "firstPullAtEt": null,
+            "latestPullAtUtc": null,
+            "latestPullAtEt": null,
+            "actualPullCount": 0,
+            "actualPullCountSinceStart": 0,
+            "expectedPullCountSinceStart": 0,
             "missingPullCountSinceStart": 0,
-            "coverageRatio": 1.0125,
-            "overnightCoverageComplete": true
+            "coverageRatio": null,
+            "overnightCoverageComplete": false
           },
           "buildDeadline": {
             "ok": false,
@@ -962,8 +879,8 @@
             ]
           },
           "buildStatus": "NO_BUILD",
-          "reason": "NOT_ENOUGH_UNIQUE_GAMES_FOR_3_LEG",
-          "message": "Cannot build a three-leg parlay without three unique games or matches.",
+          "reason": "NO_BUILD_MLB_STRUCTURE_NOT_MET",
+          "message": "MLB-B1.0 refused because frozen same-slate history did not produce 2 MLB_STRONG plus 1 MLB_LEAN/STRONG. Pull coverage is incomplete versus the 1:00 AM ET HOT capture policy.",
           "candidates": [],
           "structureGate": {
             "applied": true,
@@ -974,20 +891,18 @@
           "allScoredGamesCount": 0,
           "allScoredGames": [],
           "candidateFilterPolicy": "Candidates are the post-score subset where frozen=true and selected grade is MLB_STRONG or MLB_LEAN. This full board shows the pre-filter scoring pass for every MLB game.",
-          "uniqueSignalCount": 0,
-          "minimumParlayPulls": 12,
           "stored": {
             "ok": true,
-            "pk": "PARLAY_BUILDS#mlb#2026-07-14",
-            "sk": "BUILD#2026-07-15T00:57:19.439549+00:00",
-            "latestPk": "PARLAY_BUILDS#mlb#2026-07-14#LATEST",
+            "pk": "PARLAY_BUILDS#mlb#2026-07-15",
+            "sk": "BUILD#2026-07-15T04:15:26.651234+00:00",
+            "latestPk": "PARLAY_BUILDS#mlb#2026-07-15#LATEST",
             "latestSk": "LATEST"
           }
         },
         {
           "ok": true,
           "sport": "wnba",
-          "slate_date": "2026-07-14",
+          "slate_date": "2026-07-15",
           "pullCount": 0,
           "pullCoverage": {
             "ok": true,
@@ -995,17 +910,17 @@
             "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
             "startHourEt": 1,
             "intervalMinutes": 15,
-            "expectedStartAtUtc": "2026-07-14T05:00:00+00:00",
-            "expectedStartAtEt": "2026-07-14T01:00:00-04:00",
+            "expectedStartAtUtc": "2026-07-15T05:00:00+00:00",
+            "expectedStartAtEt": "2026-07-15T01:00:00-04:00",
             "firstPullAtUtc": null,
             "firstPullAtEt": null,
             "latestPullAtUtc": null,
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 80,
-            "missingPullCountSinceStart": 80,
-            "coverageRatio": 0.0,
+            "expectedPullCountSinceStart": 0,
+            "missingPullCountSinceStart": 0,
+            "coverageRatio": null,
             "coverageComplete": false
           },
           "buildDeadline": {
@@ -1025,16 +940,16 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "ok": true,
-            "pk": "PARLAY_BUILDS#wnba#2026-07-14",
-            "sk": "BUILD#2026-07-15T00:57:19.752766+00:00",
-            "latestPk": "PARLAY_BUILDS#wnba#2026-07-14#LATEST",
+            "pk": "PARLAY_BUILDS#wnba#2026-07-15",
+            "sk": "BUILD#2026-07-15T04:15:26.702896+00:00",
+            "latestPk": "PARLAY_BUILDS#wnba#2026-07-15#LATEST",
             "latestSk": "LATEST"
           }
         },
         {
           "ok": true,
           "sport": "nfl",
-          "slate_date": "2026-07-14",
+          "slate_date": "2026-07-15",
           "pullCount": 0,
           "pullCoverage": {
             "ok": true,
@@ -1042,17 +957,17 @@
             "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
             "startHourEt": 1,
             "intervalMinutes": 15,
-            "expectedStartAtUtc": "2026-07-14T05:00:00+00:00",
-            "expectedStartAtEt": "2026-07-14T01:00:00-04:00",
+            "expectedStartAtUtc": "2026-07-15T05:00:00+00:00",
+            "expectedStartAtEt": "2026-07-15T01:00:00-04:00",
             "firstPullAtUtc": null,
             "firstPullAtEt": null,
             "latestPullAtUtc": null,
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 80,
-            "missingPullCountSinceStart": 80,
-            "coverageRatio": 0.0,
+            "expectedPullCountSinceStart": 0,
+            "missingPullCountSinceStart": 0,
+            "coverageRatio": null,
             "coverageComplete": false
           },
           "buildDeadline": {
@@ -1072,16 +987,16 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "ok": true,
-            "pk": "PARLAY_BUILDS#nfl#2026-07-14",
-            "sk": "BUILD#2026-07-15T00:57:20.048518+00:00",
-            "latestPk": "PARLAY_BUILDS#nfl#2026-07-14#LATEST",
+            "pk": "PARLAY_BUILDS#nfl#2026-07-15",
+            "sk": "BUILD#2026-07-15T04:15:26.732495+00:00",
+            "latestPk": "PARLAY_BUILDS#nfl#2026-07-15#LATEST",
             "latestSk": "LATEST"
           }
         },
         {
           "ok": true,
           "sport": "cfb",
-          "slate_date": "2026-07-14",
+          "slate_date": "2026-07-15",
           "pullCount": 0,
           "pullCoverage": {
             "ok": true,
@@ -1089,17 +1004,17 @@
             "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
             "startHourEt": 1,
             "intervalMinutes": 15,
-            "expectedStartAtUtc": "2026-07-14T05:00:00+00:00",
-            "expectedStartAtEt": "2026-07-14T01:00:00-04:00",
+            "expectedStartAtUtc": "2026-07-15T05:00:00+00:00",
+            "expectedStartAtEt": "2026-07-15T01:00:00-04:00",
             "firstPullAtUtc": null,
             "firstPullAtEt": null,
             "latestPullAtUtc": null,
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 80,
-            "missingPullCountSinceStart": 80,
-            "coverageRatio": 0.0,
+            "expectedPullCountSinceStart": 0,
+            "missingPullCountSinceStart": 0,
+            "coverageRatio": null,
             "coverageComplete": false
           },
           "buildDeadline": {
@@ -1119,16 +1034,16 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "ok": true,
-            "pk": "PARLAY_BUILDS#cfb#2026-07-14",
-            "sk": "BUILD#2026-07-15T00:57:20.343391+00:00",
-            "latestPk": "PARLAY_BUILDS#cfb#2026-07-14#LATEST",
+            "pk": "PARLAY_BUILDS#cfb#2026-07-15",
+            "sk": "BUILD#2026-07-15T04:15:26.766334+00:00",
+            "latestPk": "PARLAY_BUILDS#cfb#2026-07-15#LATEST",
             "latestSk": "LATEST"
           }
         },
         {
           "ok": true,
           "sport": "nba",
-          "slate_date": "2026-07-14",
+          "slate_date": "2026-07-15",
           "pullCount": 0,
           "pullCoverage": {
             "ok": true,
@@ -1136,17 +1051,17 @@
             "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
             "startHourEt": 1,
             "intervalMinutes": 15,
-            "expectedStartAtUtc": "2026-07-14T05:00:00+00:00",
-            "expectedStartAtEt": "2026-07-14T01:00:00-04:00",
+            "expectedStartAtUtc": "2026-07-15T05:00:00+00:00",
+            "expectedStartAtEt": "2026-07-15T01:00:00-04:00",
             "firstPullAtUtc": null,
             "firstPullAtEt": null,
             "latestPullAtUtc": null,
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 80,
-            "missingPullCountSinceStart": 80,
-            "coverageRatio": 0.0,
+            "expectedPullCountSinceStart": 0,
+            "missingPullCountSinceStart": 0,
+            "coverageRatio": null,
             "coverageComplete": false
           },
           "buildDeadline": {
@@ -1166,16 +1081,16 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "ok": true,
-            "pk": "PARLAY_BUILDS#nba#2026-07-14",
-            "sk": "BUILD#2026-07-15T00:57:20.656645+00:00",
-            "latestPk": "PARLAY_BUILDS#nba#2026-07-14#LATEST",
+            "pk": "PARLAY_BUILDS#nba#2026-07-15",
+            "sk": "BUILD#2026-07-15T04:15:26.793392+00:00",
+            "latestPk": "PARLAY_BUILDS#nba#2026-07-15#LATEST",
             "latestSk": "LATEST"
           }
         },
         {
           "ok": true,
           "sport": "ncaam",
-          "slate_date": "2026-07-14",
+          "slate_date": "2026-07-15",
           "pullCount": 0,
           "pullCoverage": {
             "ok": true,
@@ -1183,17 +1098,17 @@
             "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
             "startHourEt": 1,
             "intervalMinutes": 15,
-            "expectedStartAtUtc": "2026-07-14T05:00:00+00:00",
-            "expectedStartAtEt": "2026-07-14T01:00:00-04:00",
+            "expectedStartAtUtc": "2026-07-15T05:00:00+00:00",
+            "expectedStartAtEt": "2026-07-15T01:00:00-04:00",
             "firstPullAtUtc": null,
             "firstPullAtEt": null,
             "latestPullAtUtc": null,
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 80,
-            "missingPullCountSinceStart": 80,
-            "coverageRatio": 0.0,
+            "expectedPullCountSinceStart": 0,
+            "missingPullCountSinceStart": 0,
+            "coverageRatio": null,
             "coverageComplete": false
           },
           "buildDeadline": {
@@ -1213,16 +1128,16 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "ok": true,
-            "pk": "PARLAY_BUILDS#ncaam#2026-07-14",
-            "sk": "BUILD#2026-07-15T00:57:20.948875+00:00",
-            "latestPk": "PARLAY_BUILDS#ncaam#2026-07-14#LATEST",
+            "pk": "PARLAY_BUILDS#ncaam#2026-07-15",
+            "sk": "BUILD#2026-07-15T04:15:26.821678+00:00",
+            "latestPk": "PARLAY_BUILDS#ncaam#2026-07-15#LATEST",
             "latestSk": "LATEST"
           }
         },
         {
           "ok": true,
           "sport": "nhl",
-          "slate_date": "2026-07-14",
+          "slate_date": "2026-07-15",
           "pullCount": 0,
           "pullCoverage": {
             "ok": true,
@@ -1230,17 +1145,17 @@
             "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
             "startHourEt": 1,
             "intervalMinutes": 15,
-            "expectedStartAtUtc": "2026-07-14T05:00:00+00:00",
-            "expectedStartAtEt": "2026-07-14T01:00:00-04:00",
+            "expectedStartAtUtc": "2026-07-15T05:00:00+00:00",
+            "expectedStartAtEt": "2026-07-15T01:00:00-04:00",
             "firstPullAtUtc": null,
             "firstPullAtEt": null,
             "latestPullAtUtc": null,
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 80,
-            "missingPullCountSinceStart": 80,
-            "coverageRatio": 0.0,
+            "expectedPullCountSinceStart": 0,
+            "missingPullCountSinceStart": 0,
+            "coverageRatio": null,
             "coverageComplete": false
           },
           "buildDeadline": {
@@ -1260,16 +1175,16 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "ok": true,
-            "pk": "PARLAY_BUILDS#nhl#2026-07-14",
-            "sk": "BUILD#2026-07-15T00:57:21.241566+00:00",
-            "latestPk": "PARLAY_BUILDS#nhl#2026-07-14#LATEST",
+            "pk": "PARLAY_BUILDS#nhl#2026-07-15",
+            "sk": "BUILD#2026-07-15T04:15:26.853327+00:00",
+            "latestPk": "PARLAY_BUILDS#nhl#2026-07-15#LATEST",
             "latestSk": "LATEST"
           }
         },
         {
           "ok": true,
           "sport": "soccer",
-          "slate_date": "2026-07-14",
+          "slate_date": "2026-07-15",
           "pullCount": 0,
           "pullCoverage": {
             "ok": true,
@@ -1277,17 +1192,17 @@
             "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
             "startHourEt": 1,
             "intervalMinutes": 15,
-            "expectedStartAtUtc": "2026-07-14T05:00:00+00:00",
-            "expectedStartAtEt": "2026-07-14T01:00:00-04:00",
+            "expectedStartAtUtc": "2026-07-15T05:00:00+00:00",
+            "expectedStartAtEt": "2026-07-15T01:00:00-04:00",
             "firstPullAtUtc": null,
             "firstPullAtEt": null,
             "latestPullAtUtc": null,
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 80,
-            "missingPullCountSinceStart": 80,
-            "coverageRatio": 0.0,
+            "expectedPullCountSinceStart": 0,
+            "missingPullCountSinceStart": 0,
+            "coverageRatio": null,
             "coverageComplete": false
           },
           "buildDeadline": {
@@ -1307,16 +1222,16 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "ok": true,
-            "pk": "PARLAY_BUILDS#soccer#2026-07-14",
-            "sk": "BUILD#2026-07-15T00:57:21.534166+00:00",
-            "latestPk": "PARLAY_BUILDS#soccer#2026-07-14#LATEST",
+            "pk": "PARLAY_BUILDS#soccer#2026-07-15",
+            "sk": "BUILD#2026-07-15T04:15:26.882671+00:00",
+            "latestPk": "PARLAY_BUILDS#soccer#2026-07-15#LATEST",
             "latestSk": "LATEST"
           }
         },
         {
           "ok": true,
           "sport": "tennis",
-          "slate_date": "2026-07-14",
+          "slate_date": "2026-07-15",
           "pullCount": 0,
           "pullCoverage": {
             "ok": true,
@@ -1324,17 +1239,17 @@
             "policy": "All active same-day sports should start timestamped pulls at 1:00 AM ET and continue every 15 minutes.",
             "startHourEt": 1,
             "intervalMinutes": 15,
-            "expectedStartAtUtc": "2026-07-14T05:00:00+00:00",
-            "expectedStartAtEt": "2026-07-14T01:00:00-04:00",
+            "expectedStartAtUtc": "2026-07-15T05:00:00+00:00",
+            "expectedStartAtEt": "2026-07-15T01:00:00-04:00",
             "firstPullAtUtc": null,
             "firstPullAtEt": null,
             "latestPullAtUtc": null,
             "latestPullAtEt": null,
             "actualPullCount": 0,
             "actualPullCountSinceStart": 0,
-            "expectedPullCountSinceStart": 80,
-            "missingPullCountSinceStart": 80,
-            "coverageRatio": 0.0,
+            "expectedPullCountSinceStart": 0,
+            "missingPullCountSinceStart": 0,
+            "coverageRatio": null,
             "coverageComplete": false
           },
           "buildDeadline": {
@@ -1354,9 +1269,9 @@
           "message": "Refused before minimum pull depth.",
           "stored": {
             "ok": true,
-            "pk": "PARLAY_BUILDS#tennis#2026-07-14",
-            "sk": "BUILD#2026-07-15T00:57:21.832275+00:00",
-            "latestPk": "PARLAY_BUILDS#tennis#2026-07-14#LATEST",
+            "pk": "PARLAY_BUILDS#tennis#2026-07-15",
+            "sk": "BUILD#2026-07-15T04:15:26.910582+00:00",
+            "latestPk": "PARLAY_BUILDS#tennis#2026-07-15#LATEST",
             "latestSk": "LATEST"
           }
         }
@@ -1365,7 +1280,7 @@
     "pullDiagnostics": {
       "ok": true,
       "source": "diagnostic_provider_probe_no_snapshot_storage",
-      "createdAt": "2026-07-15T00:57:26.054562+00:00",
+      "createdAt": "2026-07-15T04:15:28.517356+00:00",
       "sportsRequested": [
         "mlb",
         "wnba",
@@ -1378,11 +1293,11 @@
         "tennis"
       ],
       "sportsWithConvertibleMarkets": [
-        "mlb",
         "wnba",
         "soccer"
       ],
       "sportsWithZeroConvertibleMarkets": [
+        "mlb",
         "nfl",
         "cfb",
         "nba",
@@ -1391,8 +1306,16 @@
         "tennis"
       ],
       "sportsFailedActiveConversion": [],
-      "providerErrorCount": 9,
+      "providerErrorCount": 10,
       "providerErrors": [
+        {
+          "appSport": "mlb",
+          "providerSportKey": "baseball_mlb",
+          "rawGamesReturned": 0,
+          "rawGamesInWindow": 0,
+          "gamesConvertible": 0,
+          "error": "active_slate_window_empty"
+        },
         {
           "appSport": "nfl",
           "providerSportKey": "americanfootball_nfl",
@@ -1474,29 +1397,29 @@
       ],
       "results": [
         {
-          "ok": true,
+          "ok": false,
           "appSport": "mlb",
-          "rawGamesReturned": 1,
-          "rawGamesInWindow": 1,
-          "gamesConvertible": 1,
+          "rawGamesReturned": 0,
+          "rawGamesInWindow": 0,
+          "gamesConvertible": 0,
           "gamesStored": null,
           "diagnosticOnlyNoSnapshotStored": true,
           "activeStorageFailure": false,
           "providerPulls": [
             {
-              "ok": true,
+              "ok": false,
               "appSport": "mlb",
               "providerSportKey": "baseball_mlb",
-              "rawGamesReturned": 1,
-              "rawGamesInWindow": 1,
-              "gamesConvertible": 1,
+              "rawGamesReturned": 0,
+              "rawGamesInWindow": 0,
+              "gamesConvertible": 0,
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-14T18:57:22.303821+00:00",
-              "activeWindowEnd": "2026-07-17T00:57:22.303821+00:00",
+              "activeWindowStart": "2026-07-14T22:15:27.130845+00:00",
+              "activeWindowEnd": "2026-07-17T04:15:27.130845+00:00",
               "slateWindowDays": 2,
-              "error": null
+              "error": "active_slate_window_empty"
             }
           ]
         },
@@ -1504,8 +1427,8 @@
           "ok": true,
           "appSport": "wnba",
           "rawGamesReturned": 5,
-          "rawGamesInWindow": 4,
-          "gamesConvertible": 4,
+          "rawGamesInWindow": 5,
+          "gamesConvertible": 5,
           "gamesStored": null,
           "diagnosticOnlyNoSnapshotStored": true,
           "activeStorageFailure": false,
@@ -1515,13 +1438,13 @@
               "appSport": "wnba",
               "providerSportKey": "basketball_wnba",
               "rawGamesReturned": 5,
-              "rawGamesInWindow": 4,
-              "gamesConvertible": 4,
+              "rawGamesInWindow": 5,
+              "gamesConvertible": 5,
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-14T18:57:22.742946+00:00",
-              "activeWindowEnd": "2026-07-17T00:57:22.742946+00:00",
+              "activeWindowStart": "2026-07-14T22:15:27.205324+00:00",
+              "activeWindowEnd": "2026-07-17T04:15:27.205324+00:00",
               "slateWindowDays": 2,
               "error": null
             }
@@ -1547,8 +1470,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-14T18:57:23.194309+00:00",
-              "activeWindowEnd": "2026-07-22T00:57:23.194309+00:00",
+              "activeWindowStart": "2026-07-14T22:15:27.445675+00:00",
+              "activeWindowEnd": "2026-07-22T04:15:27.445675+00:00",
               "slateWindowDays": 7,
               "error": "active_slate_window_empty"
             }
@@ -1574,8 +1497,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-14T18:57:23.844932+00:00",
-              "activeWindowEnd": "2026-07-22T00:57:23.844932+00:00",
+              "activeWindowStart": "2026-07-14T22:15:27.628020+00:00",
+              "activeWindowEnd": "2026-07-22T04:15:27.628020+00:00",
               "slateWindowDays": 7,
               "error": "active_slate_window_empty"
             }
@@ -1601,8 +1524,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-14T18:57:24.141572+00:00",
-              "activeWindowEnd": "2026-07-17T00:57:24.141572+00:00",
+              "activeWindowStart": "2026-07-14T22:15:27.771800+00:00",
+              "activeWindowEnd": "2026-07-17T04:15:27.771800+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -1628,8 +1551,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-14T18:57:24.492967+00:00",
-              "activeWindowEnd": "2026-07-17T00:57:24.492967+00:00",
+              "activeWindowStart": "2026-07-14T22:15:27.849046+00:00",
+              "activeWindowEnd": "2026-07-17T04:15:27.849046+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -1655,8 +1578,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-14T18:57:24.638926+00:00",
-              "activeWindowEnd": "2026-07-17T00:57:24.638926+00:00",
+              "activeWindowStart": "2026-07-14T22:15:27.915775+00:00",
+              "activeWindowEnd": "2026-07-17T04:15:27.915775+00:00",
               "slateWindowDays": 2,
               "error": "active_slate_window_empty"
             }
@@ -1682,8 +1605,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-14T18:57:25.016122+00:00",
-              "activeWindowEnd": "2026-07-29T00:57:25.016122+00:00",
+              "activeWindowStart": "2026-07-14T22:15:27.985644+00:00",
+              "activeWindowEnd": "2026-07-29T04:15:27.985644+00:00",
               "slateWindowDays": 14,
               "error": null
             },
@@ -1697,8 +1620,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-14T18:57:25.177716+00:00",
-              "activeWindowEnd": "2026-07-29T00:57:25.177716+00:00",
+              "activeWindowStart": "2026-07-14T22:15:28.128133+00:00",
+              "activeWindowEnd": "2026-07-29T04:15:28.128133+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             },
@@ -1712,8 +1635,8 @@
               "gamesDroppedDuringConversion": 0,
               "gamesStored": 0,
               "diagnosticOnlyNoSnapshotStored": true,
-              "activeWindowStart": "2026-07-14T18:57:25.318777+00:00",
-              "activeWindowEnd": "2026-07-29T00:57:25.318777+00:00",
+              "activeWindowStart": "2026-07-14T22:15:28.214334+00:00",
+              "activeWindowEnd": "2026-07-29T04:15:28.214334+00:00",
               "slateWindowDays": 14,
               "error": "active_slate_window_empty"
             }
