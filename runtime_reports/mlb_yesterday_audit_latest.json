@@ -1,23 +1,32 @@
 {
-  "ok": true,
+  "ok": false,
   "proofType": "MLB_YESTERDAY_IMMUTABLE_LOCK_AUDIT",
   "version": "MLB-YESTERDAY-AUDIT-v2.1-immutable-lock-identity",
-  "createdAt": "2026-07-14T10:28:32.373057+00:00",
+  "createdAt": "2026-07-15T10:41:02.187847+00:00",
   "sport": "mlb",
-  "slate_date": "2026-07-13",
-  "status": "NO_FINAL_GAMES_NO_AUDIT_REQUIRED",
-  "finalScoreCount": 0,
+  "slate_date": "2026-07-14",
+  "status": "LOCKED_EVIDENCE_UNAVAILABLE",
+  "reason": "IMMUTABLE_DAILY_LOCK_CARD_UNAVAILABLE",
+  "finalScoreCount": 1,
   "officialSchedule": {
     "ok": true,
     "source": "official_mlb_stats_api",
-    "requestedDate": "2026-07-13",
+    "requestedDate": "2026-07-14",
     "exactDateVerified": true,
-    "totalGames": 0,
-    "gamePks": [],
-    "gameStates": []
+    "totalGames": 1,
+    "gamePks": [
+      "823443"
+    ],
+    "gameStates": [
+      {
+        "gamePk": "823443",
+        "abstractGameState": "Final",
+        "detailedState": "Final"
+      }
+    ]
   },
-  "officialScheduleZeroGamesVerified": true,
   "stored": false,
+  "failClosed": true,
   "historicalPredictionsRecomputed": false,
-  "policy": "The exact-date official MLB Stats API schedule independently verified totalGames=0. No historical pick was reconstructed and LATEST was not changed."
+  "policy": "The audit requires an independently verified exact-date official MLB schedule, complete FINAL provider coverage, and one-to-one immutable locked game identities. Any uncertainty fails closed without changing LATEST."
 }
