@@ -1,12 +1,126 @@
 {
-  "ok": true,
+  "ok": false,
   "proofType": "MLB_MISSING_SETTLEMENT_DIAGNOSTICS",
-  "createdAtUtc": "2026-07-15T01:04:01.023022+00:00",
-  "auditCreatedAt": "2026-07-15T01:03:01.044378+00:00",
+  "createdAtUtc": "2026-07-15T04:19:54.282037+00:00",
+  "auditCreatedAt": "2026-07-15T04:18:59.044817+00:00",
   "snapshotsTableConfigured": true,
   "ddbQueryErrors": {},
-  "completedFinalGames": 0,
+  "completedFinalGames": 1,
   "gradedPredictionCount": 0,
-  "missingPredictionCount": 0,
-  "missingRows": []
+  "missingPredictionCount": 1,
+  "missingRows": [
+    {
+      "status": "MISSING_LOCKED_PREDICTION",
+      "id": "7fecfdecc539334a88781da1943c5e9a",
+      "gameId": null,
+      "provider_game_id": null,
+      "slateDateEt": "2026-07-14",
+      "matchup": "American League at National League",
+      "awayTeam": "American League",
+      "homeTeam": "National League",
+      "commenceTime": "2026-07-15T00:29:00Z",
+      "winner": "American League",
+      "homeScore": 0,
+      "awayScore": 4,
+      "missingReason": "no_unambiguous_locked_prediction_match",
+      "finalProviderIds": [
+        "7fecfdecc539334a88781da1943c5e9a"
+      ],
+      "finalCommenceTime": "2026-07-15T00:29:00+00:00",
+      "matchupCandidateCount": 0,
+      "candidateDiagnostics": [],
+      "selectionPolicy": "provider_alias_then_exact_time_then_safe_nearest_time_then_unique_matchup",
+      "auditVersion": "MLB-LOCKED-CARD-AUDIT-v3-provider-alias-nearest-time-doubleheader-safe",
+      "ddbPartition": "GAME_WINNERS#mlb#2026-07-14",
+      "ddbQueryError": null,
+      "ddbPartitionRowCount": 1,
+      "ddbProviderIdMatchCount": 1,
+      "ddbMatchupMatchCount": 1,
+      "ddbProviderIdMatches": [
+        {
+          "providerIds": [
+            "7fecfdecc539334a88781da1943c5e9a"
+          ],
+          "gameId": "7fecfdecc539334a88781da1943c5e9a",
+          "awayTeam": "American League",
+          "homeTeam": "National League",
+          "commenceTime": "2026-07-15T00:01:00Z",
+          "predictedWinner": "American League",
+          "officialPrediction": null,
+          "officialPredictionStatus": null,
+          "lockedPrediction": null,
+          "lockAtUtc": null,
+          "createdAt": "2026-07-14T05:30:26.560458+00:00",
+          "tags": [
+            "BOOK_AGREEMENT",
+            "UNDERDOG"
+          ],
+          "hasFrozenFeatureVector": false,
+          "lockedAmericanOdds": null,
+          "americanOdds": 116,
+          "priceBook": "fanduel",
+          "priceSource": "real_book"
+        }
+      ],
+      "ddbMatchupMatches": [
+        {
+          "providerIds": [
+            "7fecfdecc539334a88781da1943c5e9a"
+          ],
+          "gameId": "7fecfdecc539334a88781da1943c5e9a",
+          "awayTeam": "American League",
+          "homeTeam": "National League",
+          "commenceTime": "2026-07-15T00:01:00Z",
+          "predictedWinner": "American League",
+          "officialPrediction": null,
+          "officialPredictionStatus": null,
+          "lockedPrediction": null,
+          "lockAtUtc": null,
+          "createdAt": "2026-07-14T05:30:26.560458+00:00",
+          "tags": [
+            "BOOK_AGREEMENT",
+            "UNDERDOG"
+          ],
+          "hasFrozenFeatureVector": false,
+          "lockedAmericanOdds": null,
+          "americanOdds": 116,
+          "priceBook": "fanduel",
+          "priceSource": "real_book"
+        }
+      ],
+      "dailyLockQueryError": null,
+      "dailyLock": {
+        "present": false,
+        "authoritative": false,
+        "matchingPickCount": 0,
+        "matchingPicks": []
+      },
+      "ddbAllStoredRows": [
+        {
+          "providerIds": [
+            "7fecfdecc539334a88781da1943c5e9a"
+          ],
+          "gameId": "7fecfdecc539334a88781da1943c5e9a",
+          "awayTeam": "American League",
+          "homeTeam": "National League",
+          "commenceTime": "2026-07-15T00:01:00Z",
+          "predictedWinner": "American League",
+          "officialPrediction": null,
+          "officialPredictionStatus": null,
+          "lockedPrediction": null,
+          "lockAtUtc": null,
+          "createdAt": "2026-07-14T05:30:26.560458+00:00",
+          "tags": [
+            "BOOK_AGREEMENT",
+            "UNDERDOG"
+          ],
+          "hasFrozenFeatureVector": false,
+          "lockedAmericanOdds": null,
+          "americanOdds": 116,
+          "priceBook": "fanduel",
+          "priceSource": "real_book"
+        }
+      ]
+    }
+  ]
 }
