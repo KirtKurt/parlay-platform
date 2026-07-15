@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
@@ -13,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "hello_world"))
 
 import inqsi_pull_history as history  # noqa: E402
+import mlb_rolling_24h_audit as audit  # noqa: E402
 
 
 class FakeTable:
@@ -33,6 +35,19 @@ def game(game_id: str, away: str, home: str, league: str = "MLB"):
         "commence_time": "2026-07-15T00:01:00Z",
         "books": {"fanduel": {"ml": {"home": -120, "away": 105}}},
     }
+
+
+def completed_score(game_id: str, away: str, home: str, league: str = "MLB"):
+    row = game(game_id, away, home, league)
+    row.update({
+        "id": game_id,
+        "completed": True,
+        "scores": [
+            {"name": away, "score": "3"},
+            {"name": home, "score": "5"},
+        ],
+    })
+    return row
 
 
 def main() -> None:
@@ -61,6 +76,17 @@ def main() -> None:
     assert history.mlb_model_eligible_game(regular) is True
     assert history.mlb_model_eligible_game(all_star) is False
     assert history.mlb_model_eligible_game(game("marker", "Team A", "Team B", "All Star Exhibition")) is False
+
+    audit.ODDS_API_KEY = "test-key"
+    audit.now_utc = lambda: datetime(2026, 7, 15, 4, 0, tzinfo=timezone.utc)
+    audit.http_get_json = lambda _url: [
+        completed_score("all-star", "American League", "National League", "MLB All-Star Game"),
+        completed_score("regular", "Boston Red Sox", "New York Yankees"),
+    ]
+    finals = audit.final_scores_last_24h()
+    assert len(finals) == 1
+    assert finals[0]["id"] == "regular"
+    assert finals[0]["matchup"] == "Boston Red Sox at New York Yankees"
 
     print("MLB exhibition filtering verification passed")
 
