@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 from mlb_ml_candidate_policy import VERSION as CANDIDATE_POLICY_VERSION, miss as candidate_profile_misses
 from mlb_ml_feature_vector import VERSION as FEATURE_VECTOR_VERSION, feature_vector
 
-VERSION = "MLB-ML-RUNTIME-OVERLAY-v5-probability-semantics-guarded-backstop"
+VERSION = "MLB-ML-RUNTIME-OVERLAY-v5.1-probability-direction-integrity"
 MODEL_PATH = os.environ.get("INQSI_MLB_ML_MODEL_PATH", "runtime_reports/mlb_ml_model_latest.json")
 
 
@@ -86,45 +86,125 @@ def _profile(fmap: Dict[str, Any], profile: Any):
     return clean, "clean_market_backstop" if clean else "no_backstop_profile", [] if clean else ["no_backstop_profile"]
 
 
+def _normalized_side(value: Any) -> str:
+    side = str(value or "").lower()
+    return side if side in {"home", "away"} else "home"
+
+
+def _signal_for_side(row: Dict[str, Any], side: str) -> Dict[str, Any]:
+    signal = row.get("homeSignal") if side == "home" else row.get("awaySignal")
+    return signal if isinstance(signal, dict) else {}
+
+
 def _signal_for_selected_side(row: Dict[str, Any]) -> Dict[str, Any]:
-    return row.get("homeSignal") or {} if row.get("predictedSide") == "home" else row.get("awaySignal") or {}
+    return _signal_for_side(row, _normalized_side(row.get("predictedSide")))
 
 
-def _true_team_probability(row: Dict[str, Any]) -> float | None:
-    signal = _signal_for_selected_side(row)
-    candidates = [
+def _side_probability(signal: Dict[str, Any]) -> float | None:
+    # Use side-bound market fields only. A row-level calibrated value can belong to
+    # the previously selected side and must never silently reverse the winner.
+    for value in (
         signal.get("marketConsensusProbability"),
-        row.get("marketConsensusProbability"),
-        row.get("calibratedWinProbability"),
-    ]
-    for value in candidates:
+        signal.get("fairProbability"),
+        signal.get("probLatest"),
+    ):
         probability = _f(value, -1.0)
         if 0.0 < probability < 1.0:
             return probability
     return None
 
 
+def _true_team_probability(row: Dict[str, Any]) -> float | None:
+    probability = _side_probability(_signal_for_selected_side(row))
+    if probability is not None:
+        return probability
+    # Retain a narrowly scoped compatibility fallback only when the value is
+    # explicitly represented as a selected-side market probability.
+    for key in ("selectedTeamMarketProbability", "marketConsensusProbability"):
+        value = _f(row.get(key), -1.0)
+        if 0.0 < value < 1.0:
+            return value
+    return None
+
+
+def _sync_direction(row: Dict[str, Any], side: str, probability: float, corrected: bool) -> None:
+    side = _normalized_side(side)
+    selected = _signal_for_side(row, side)
+    home_team = row.get("homeTeam")
+    away_team = row.get("awayTeam")
+    winner = home_team if side == "home" else away_team
+    opponent = away_team if side == "home" else home_team
+
+    if winner:
+        row["predictedWinner"] = winner
+    row["predictedSide"] = side
+    row["opponent"] = opponent
+
+    # Keep every side-dependent display and settlement field bound to the same
+    # selected team. Missing values are not invented.
+    for row_key, signal_keys in {
+        "americanOdds": ("americanOdds", "averageAmericanOdds"),
+        "priceBook": ("priceBook",),
+        "priceSource": ("priceSource",),
+        "marketSide": ("marketSide",),
+        "fairProbabilityPct": ("fairProbabilityPct",),
+    }.items():
+        for signal_key in signal_keys:
+            value = selected.get(signal_key)
+            if value is not None:
+                row[row_key] = value
+                break
+
+    if selected.get("score") is not None:
+        if corrected:
+            row["scoreBeforeProbabilityDirectionCorrection"] = row.get("score")
+        row["score"] = selected.get("score")
+
+    pct = round(probability * 100.0, 2)
+    row["winProbability"] = round(probability, 6)
+    row["teamWinProbabilityPct"] = pct
+    row["winProbabilityPct"] = pct
+    row["winProbabilityMeaning"] = "estimated_probability_selected_team_wins_game"
+
+    if corrected:
+        side_tags = {"FAVORITE", "UNDERDOG", "PICKEM", "POSITIVE_MOVE", "NEGATIVE_MOVE", "REVERSAL", "BOOK_AGREEMENT", "BOOK_DIVERGENCE", "STEAM", "RESISTANCE", "RUN_LINE_MOVEMENT", "RUN_LINE_CONFIRMATION", "UNCONFIRMED_RUN_LINE_MOVE", "COMPRESSED_MARKET", "LATE_INSTABILITY"}
+        tags = set(row.get("tags") or []) - side_tags
+        tags.update(selected.get("tags") or [])
+        tags.add("PROBABILITY_DIRECTION_INTEGRITY_CORRECTION")
+        row["tags"] = sorted(tags)
+
+
 def _normalize_probability_fields(row: Dict[str, Any], reliability: float | None) -> None:
-    original = row.get("winProbabilityPct")
-    row["directionalSignalProbabilityPct"] = original
-    true_probability = _true_team_probability(row)
-    if true_probability is not None:
-        if true_probability < 0.5:
-            current_side = row.get("predictedSide")
-            opposite_team = row.get("awayTeam") if current_side == "home" else row.get("homeTeam")
-            if opposite_team:
-                row["probabilityCorrectionApplied"] = True
-                row["probabilityCorrectionReason"] = "selected_side_market_probability_below_50_flipped_to_opponent"
-                row["predictedWinner"] = opposite_team
-                row["predictedSide"] = "away" if current_side == "home" else "home"
-                true_probability = 1.0 - true_probability
-        pct = round(true_probability * 100.0, 2)
-        row["teamWinProbabilityPct"] = pct
-        row["winProbabilityPct"] = pct
-        row["winProbabilityMeaning"] = "estimated_probability_selected_team_wins_game"
+    row["directionalSignalProbabilityPct"] = row.get("winProbabilityPct")
+    side = _normalized_side(row.get("predictedSide"))
+    expected_winner = row.get("homeTeam") if side == "home" else row.get("awayTeam")
+    identity_mismatch = bool(expected_winner and row.get("predictedWinner") != expected_winner)
+    probability = _true_team_probability(row)
+
+    if probability is not None:
+        corrected = identity_mismatch
+        if probability < 0.5:
+            side = "away" if side == "home" else "home"
+            probability = 1.0 - probability
+            corrected = True
+            row["probabilityCorrectionReason"] = "selected_side_market_probability_below_50_flipped_to_opponent"
+        elif identity_mismatch:
+            row["probabilityCorrectionReason"] = "predicted_winner_did_not_match_predicted_side"
+        if corrected:
+            row["probabilityCorrectionApplied"] = True
+        _sync_direction(row, side, probability, corrected)
     else:
+        # Even without a usable probability, preserve side/winner/opponent
+        # identity so grading cannot bind a pick to the wrong club.
+        if identity_mismatch:
+            row["probabilityCorrectionApplied"] = True
+            row["probabilityCorrectionReason"] = "predicted_winner_did_not_match_predicted_side_without_probability"
+            _sync_direction(row, side, _f(row.get("winProbability"), 0.5), True)
+        else:
+            row["opponent"] = row.get("awayTeam") if side == "home" else row.get("homeTeam")
         row["teamWinProbabilityPct"] = None
         row["winProbabilityMeaning"] = "unavailable_not_ml_reliability"
+
     if reliability is not None:
         row["mlPickReliabilityPct"] = round(reliability * 100.0, 2)
         row["mlPickReliabilityMeaning"] = "estimated_probability_platform_selected_winner_is_correct"
@@ -269,6 +349,7 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "candidatePolicyVersion": CANDIDATE_POLICY_VERSION, "modelVersion": (model or {}).get("version"),
         "minGuardedPromotions": min_promotions, "maxGuardedPromotions": max_promotions,
         "probabilitySemanticsFixed": True,
+        "probabilityDirectionIntegrityFixed": True,
         "teamWinProbabilityField": "teamWinProbabilityPct",
         "mlReliabilityField": "mlPickReliabilityPct",
         "requiredWinnerPickPreserved": True, "displayPredictionCount": displayed,
@@ -280,6 +361,7 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "displayPredictionCount": displayed, "allGamesHaveWinnerPrediction": bool(rows and required == len(rows)),
         "allGamesHaveDisplayedWinnerPrediction": bool(rows and displayed == len(rows)), "noPickCount": 0,
         "probabilitySemanticsFixed": True,
+        "probabilityDirectionIntegrityFixed": True,
         "requiredWinnerPredictionDisplay": [_card(row) for row in rows if row.get("displayPrediction")],
     })
     result["officialPredictionDisplay"] = result["requiredWinnerPredictionDisplay"]
