@@ -10,7 +10,10 @@ from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import uuid4
 
+import inqsi_pull_history as history_contract
 from mlb_slate_coverage_patch import game_identity
+
+PAYLOAD_FINGERPRINT_VERSION = history_contract.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
 
 
 VERSION = "INQSI-MLB-DAILY-LOCK-v4-per-game-tminus45-staged-write-once"
@@ -40,6 +43,13 @@ _SCOPED_PULLS: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
     "inqsi_mlb_scoped_per_game_lock_pulls",
     default=None,
 )
+
+
+def _supported_payload_fingerprint_version(value: Any) -> bool:
+    # Missing means a legacy snapshot written before the algorithm identifier
+    # was added.  It is still required to match the canonical persisted-row
+    # hash; unknown named algorithms always fail closed.
+    return value in (None, "", PAYLOAD_FINGERPRINT_VERSION)
 
 
 def _parse_dt(module: Any, value: Any) -> Optional[datetime]:
@@ -363,6 +373,16 @@ def _candidate_snapshot_authority_errors(table: Any, item: Dict[str, Any]) -> Li
         or proof.get("snapshotVersion") != PREGAME_SNAPSHOT_VERSION
     ):
         errors.append("candidate_snapshot_version_mismatch")
+    candidate_fingerprint_version = candidate.get("prediction_payload_fingerprint_version")
+    proof_fingerprint_version = proof.get("predictionPayloadFingerprintVersion")
+    fingerprint_contract_ready = bool(
+        _supported_payload_fingerprint_version(candidate_fingerprint_version)
+        and _supported_payload_fingerprint_version(proof_fingerprint_version)
+        and (candidate_fingerprint_version or None)
+        == (proof_fingerprint_version or None)
+    )
+    if not fingerprint_contract_ready:
+        errors.append("candidate_snapshot_payload_fingerprint_version_mismatch")
     if (
         candidate.get("prediction_persistence_proof_type") != PREGAME_PERSISTENCE_PROOF_TYPE
         or proof.get("persistenceProofType") != PREGAME_PERSISTENCE_PROOF_TYPE
@@ -375,19 +395,26 @@ def _candidate_snapshot_authority_errors(table: Any, item: Dict[str, Any]) -> Li
         or proof.get("persistenceWriteSk") != expected_live_sk
     ):
         errors.append("candidate_snapshot_live_write_binding_mismatch")
-    if _payload_fingerprint(candidate_row) != str(proof.get("candidateRowFingerprint") or ""):
-        errors.append("candidate_snapshot_row_fingerprint_mismatch")
-    if (
-        str(candidate.get("prediction_payload_fingerprint") or "")
-        != _payload_fingerprint(candidate_row)
-        or str(proof.get("predictionPayloadFingerprint") or "")
-        != _payload_fingerprint(candidate_row)
-    ):
-        errors.append("candidate_snapshot_persisted_payload_fingerprint_mismatch")
-    if _payload_fingerprint(candidate) != str(proof.get("candidateSnapshotFingerprint") or ""):
-        errors.append("candidate_snapshot_item_fingerprint_mismatch")
-    if _payload_fingerprint(_selection_material(candidate_row)) != str(proof.get("candidateSelectionFingerprint") or ""):
-        errors.append("candidate_snapshot_selection_fingerprint_mismatch")
+    fingerprint_version = candidate_fingerprint_version or None
+    if fingerprint_contract_ready:
+        row_fingerprint = _payload_fingerprint(candidate_row, fingerprint_version)
+        if row_fingerprint != str(proof.get("candidateRowFingerprint") or ""):
+            errors.append("candidate_snapshot_row_fingerprint_mismatch")
+        if (
+            str(candidate.get("prediction_payload_fingerprint") or "")
+            != row_fingerprint
+            or str(proof.get("predictionPayloadFingerprint") or "")
+            != row_fingerprint
+        ):
+            errors.append("candidate_snapshot_persisted_payload_fingerprint_mismatch")
+        if _payload_fingerprint(candidate, fingerprint_version) != str(
+            proof.get("candidateSnapshotFingerprint") or ""
+        ):
+            errors.append("candidate_snapshot_item_fingerprint_mismatch")
+        if _payload_fingerprint(
+            _selection_material(candidate_row), fingerprint_version
+        ) != str(proof.get("candidateSelectionFingerprint") or ""):
+            errors.append("candidate_snapshot_selection_fingerprint_mismatch")
     if (candidate_row.get("frozenFeatureVector") or {}).get("fingerprint") != proof.get("candidateVectorFingerprint"):
         errors.append("candidate_snapshot_vector_fingerprint_mismatch")
     if stage_row.get("lastPrelockSelectionFingerprint") != proof.get("candidateSelectionFingerprint"):
@@ -961,9 +988,12 @@ def _prepare_row(
     staged_at: datetime,
     manifest: List[Dict[str, Any]],
     locked_count: int,
+    fingerprint_version: Optional[str] = PAYLOAD_FINGERPRINT_VERSION,
 ) -> Dict[str, Any]:
     out = copy.deepcopy(row)
-    selection_fingerprint = _payload_fingerprint(_selection_material(out))
+    selection_fingerprint = _payload_fingerprint(
+        _selection_material(out), fingerprint_version
+    )
     lock = _per_game_lock(module, slate, game, source_pull, staged_at, manifest, locked_count)
     coverage = _manifest_coverage(manifest, locked_count)
     out.update({
@@ -1054,7 +1084,7 @@ def _prepare_row(
         )
     except Exception as exc:
         raise RuntimeError(f"LAST_PRELOCK_FINALIZATION_FAILED:{exc}") from exc
-    if _payload_fingerprint(_selection_material(out)) != selection_fingerprint:
+    if _payload_fingerprint(_selection_material(out), fingerprint_version) != selection_fingerprint:
         raise RuntimeError("LAST_PRELOCK_SELECTION_CHANGED_DURING_FINALIZATION")
     out["lastPrelockSelectionFingerprint"] = selection_fingerprint
     out["lastPrelockPromotionVersion"] = PROMOTION_POLICY_VERSION
@@ -1241,9 +1271,15 @@ def _selection_material(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _payload_fingerprint(payload: Any) -> str:
-    raw = json.dumps(_plain(payload), sort_keys=True, separators=(",", ":"), default=str)
-    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+def _payload_fingerprint(
+    payload: Any,
+    version: Optional[str] = PAYLOAD_FINGERPRINT_VERSION,
+) -> str:
+    if version in (None, ""):
+        return history_contract.legacy_payload_fingerprint(payload)
+    if version == PAYLOAD_FINGERPRINT_VERSION:
+        return history_contract.canonical_payload_fingerprint(payload)
+    raise ValueError(f"unsupported payload fingerprint version: {version}")
 
 
 def _candidate_items(module: Any, slate: str, game: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1366,6 +1402,12 @@ def _last_prelock_candidate(
         errors: List[str] = []
         if item.get("snapshot_version") != PREGAME_SNAPSHOT_VERSION:
             errors.append("persisted_prelock_snapshot_version_mismatch")
+        fingerprint_version = item.get("prediction_payload_fingerprint_version") or None
+        fingerprint_version_supported = _supported_payload_fingerprint_version(
+            fingerprint_version
+        )
+        if not fingerprint_version_supported:
+            errors.append("persisted_prelock_payload_fingerprint_version_unsupported")
         if item.get("prediction_persistence_proof_type") != PREGAME_PERSISTENCE_PROOF_TYPE:
             errors.append("persisted_prelock_post_write_ack_missing")
         expected_live_pk = f"GAME_WINNERS#mlb#{slate}"
@@ -1380,7 +1422,9 @@ def _last_prelock_candidate(
             errors.append("persisted_prelock_write_pk_mismatch")
         if item.get("prediction_persistence_write_sk") != expected_live_sk:
             errors.append("persisted_prelock_write_sk_mismatch")
-        if item.get("prediction_payload_fingerprint") != _payload_fingerprint(row):
+        if fingerprint_version_supported and item.get(
+            "prediction_payload_fingerprint"
+        ) != _payload_fingerprint(row, fingerprint_version):
             errors.append("persisted_prelock_payload_fingerprint_mismatch")
         if not row.get("predictedWinner") or row.get("predictedSide") not in {"home", "away"}:
             errors.append("persisted_prelock_selection_missing")
@@ -1450,14 +1494,17 @@ def _last_prelock_candidate(
             "persistenceWritePk": item.get("prediction_persistence_write_pk"),
             "persistenceWriteSk": item.get("prediction_persistence_write_sk"),
             "predictionPayloadFingerprint": item.get("prediction_payload_fingerprint"),
-            "candidateSnapshotFingerprint": _payload_fingerprint(item),
+            "predictionPayloadFingerprintVersion": item.get("prediction_payload_fingerprint_version"),
+            "candidateSnapshotFingerprint": _payload_fingerprint(item, fingerprint_version),
             "predictionSourcePullAtUtc": source_at.isoformat(),
             "predictionSourcePullId": source_pull.get("pull_id") if source_pull else source_id or None,
             "sourceAtOrBeforeCutoff": source_at <= lock_at,
             "createdAtOrBeforeCutoff": created_at <= lock_at,
             "persistedAtOrBeforeCutoff": persisted_at <= lock_at,
-            "candidateRowFingerprint": _payload_fingerprint(row),
-            "candidateSelectionFingerprint": _payload_fingerprint(_selection_material(row)),
+            "candidateRowFingerprint": _payload_fingerprint(row, fingerprint_version),
+            "candidateSelectionFingerprint": _payload_fingerprint(
+                _selection_material(row), fingerprint_version
+            ),
             "candidateVectorFingerprint": (row.get("frozenFeatureVector") or {}).get("fingerprint"),
             "rejectedNewerCandidateCount": len(rejected),
             "rejectedNewerCandidates": rejected,
@@ -1523,6 +1570,10 @@ def _validate_stage(
         errors.append("candidate_post_write_ack_proof_missing")
     if candidate_proof.get("snapshotVersion") != PREGAME_SNAPSHOT_VERSION:
         errors.append("candidate_snapshot_version_mismatch")
+    if not _supported_payload_fingerprint_version(
+        candidate_proof.get("predictionPayloadFingerprintVersion")
+    ):
+        errors.append("candidate_payload_fingerprint_version_unsupported")
     if row.get("modelOrSignalRecomputedAtLock") is not False:
         errors.append("row_lock_rescore_not_explicitly_disabled")
     if row.get("lastPrelockPromotionVersion") != PROMOTION_POLICY_VERSION:
@@ -1632,7 +1683,17 @@ def _generate_stage(
         return None, candidate_errors or ["persisted_prelock_prediction_missing"]
     source = bound_scoring[-1]
     try:
-        row = _prepare_row(module, candidate, slate, game, source, now, manifest, locked_count)
+        row = _prepare_row(
+            module,
+            candidate,
+            slate,
+            game,
+            source,
+            now,
+            manifest,
+            locked_count,
+            candidate_proof.get("predictionPayloadFingerprintVersion") or None,
+        )
     except Exception as exc:
         return None, [str(exc)]
     if row.get("lastPrelockSelectionFingerprint") != candidate_proof.get("candidateSelectionFingerprint"):

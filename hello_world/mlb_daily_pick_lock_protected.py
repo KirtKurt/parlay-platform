@@ -73,7 +73,7 @@ import mlb_daily_lock_coverage_patch
 import mlb_daily_lock_ml_vector_preservation_patch
 import mlb_daily_per_game_lock_patch
 
-LOCK_RUNTIME_FIX_VERSION = "MLB-LOCK-RUNTIME-FIX-v2-last-prelock-becomes-final"
+LOCK_RUNTIME_FIX_VERSION = "MLB-LOCK-RUNTIME-FIX-v3-ddb-canonical-prelock-fingerprint"
 
 mlb_daily_lock_coverage_patch.apply(mlb_daily_pick_lock)
 ML_VECTOR_PRESERVATION_STATUS = mlb_daily_lock_ml_vector_preservation_patch.apply(mlb_daily_pick_lock)
@@ -98,11 +98,29 @@ _promotion_ready = bool(
     _expected_promotion_version
     and _promotion_version == _expected_promotion_version
 )
+_payload_fingerprint_version = getattr(
+    mlb_daily_per_game_lock_patch, "PAYLOAD_FINGERPRINT_VERSION", None
+)
+_prediction_engine = getattr(mlb_daily_pick_lock, "mlb_game_winner_engine", None)
+_history_contract = getattr(mlb_daily_pick_lock, "history", None)
+_writer_payload_fingerprint_version = getattr(
+    _prediction_engine, "PAYLOAD_FINGERPRINT_VERSION", None
+)
+_history_payload_fingerprint_version = getattr(
+    _history_contract, "CANONICAL_PAYLOAD_FINGERPRINT_VERSION", None
+)
+_payload_fingerprint_ready = bool(
+    _payload_fingerprint_version
+    and _payload_fingerprint_version == _writer_payload_fingerprint_version
+    and _payload_fingerprint_version == _history_payload_fingerprint_version
+    and callable(getattr(_history_contract, "canonical_payload_fingerprint", None))
+)
 PER_GAME_LOCK_STATUS = {
     "ok": bool(
         getattr(mlb_daily_pick_lock, "_INQSI_MLB_DAILY_PER_GAME_LOCK_V1", False)
         and _attempt_diagnostics_ready
         and _promotion_ready
+        and _payload_fingerprint_ready
     ),
     "version": getattr(mlb_daily_pick_lock, "MLB_DAILY_PER_GAME_LOCK_VERSION", None),
     "policy": getattr(mlb_daily_pick_lock, "LOCK_POLICY", None),
@@ -113,6 +131,10 @@ PER_GAME_LOCK_STATUS = {
     "lastPrelockPromotionVersion": _promotion_version,
     "expectedLastPrelockPromotionVersion": _expected_promotion_version,
     "fixVersion": LOCK_RUNTIME_FIX_VERSION,
+    "candidatePayloadFingerprintVersion": _payload_fingerprint_version,
+    "writerPayloadFingerprintVersion": _writer_payload_fingerprint_version,
+    "historyPayloadFingerprintVersion": _history_payload_fingerprint_version,
+    "candidatePayloadFingerprintDdbReadCanonical": _payload_fingerprint_ready,
     "explicitMlRuntimeInstall": True,
     "durableAttemptDiagnostics": _attempt_diagnostics_ready,
     "attemptDiagnosticsVersion": _attempt_diagnostics_version,

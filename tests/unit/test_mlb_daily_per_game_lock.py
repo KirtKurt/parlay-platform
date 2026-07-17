@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import sys
 from datetime import datetime, timedelta, timezone
+from decimal import Decimal
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -485,6 +486,7 @@ def persist_candidate(module, game_row, source_pull, mutate=None, persisted_at=N
         "prediction_persistence_proof_type": patch.PREGAME_PERSISTENCE_PROOF_TYPE,
         "prediction_persistence_write_pk": pk,
         "prediction_persistence_write_sk": f"GAME#{row['commenceTime']}#{identity}",
+        "prediction_payload_fingerprint_version": patch.PAYLOAD_FINGERPRINT_VERSION,
         "prediction_payload_fingerprint": patch._payload_fingerprint(row),
         "prediction_source_pull_at_utc": row["predictionSourcePullAt"],
         "prediction_source_pull_id": row["predictionSourcePullId"],
@@ -508,6 +510,21 @@ def persist_candidate(module, game_row, source_pull, mutate=None, persisted_at=N
         "data": copy.deepcopy(row),
     })
     return row
+
+
+def persist_candidate_with_production_writer(module, game_row, source_pull):
+    import mlb_game_winner_engine as production_writer
+
+    row = module.mlb_game_winner_engine.prediction_row(game_row, source_pull)
+    snapshot = production_writer._pregame_snapshot_item(
+        row,
+        persisted_at=row["createdAt"],
+    )
+    module.TABLE.put_item(
+        Item=snapshot,
+        ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
+    )
+    return row, snapshot
 
 
 def persist_latest_prelock_candidates(module, pulls):
@@ -677,6 +694,105 @@ def test_exact_last_persisted_prelock_selection_becomes_final_lock():
     assert stage["candidate_proof"]["predictionSourcePullId"] == "pull-last-candidate"
     assert stage["candidate_proof"]["candidateSelectionFingerprint"] == locked["lastPrelockSelectionFingerprint"]
     assert module.mlb_game_winner_engine.prediction_calls == 0
+
+
+def test_production_ddb_normalized_candidate_promotes_without_cutoff_rescore():
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "production-ddb")
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    candidate, snapshot = persist_candidate_with_production_writer(module, G1, source)
+
+    # The actual writer converts integral floats to Decimal before persisting.
+    # This is the representation that triggered the production hash mismatch.
+    assert snapshot["data"]["score"] == Decimal("64.0")
+    assert snapshot["prediction_payload_fingerprint_version"] == (
+        patch.PAYLOAD_FINGERPRINT_VERSION
+    )
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    locked = stage["data"]["row"]
+    assert locked["predictedWinner"] == candidate["predictedWinner"]
+    assert locked["predictedSide"] == candidate["predictedSide"]
+    assert stage["source_pull_id"] == source["pull_id"]
+    assert stage["source_pull_at_utc"] == source["pulled_at"]
+    assert stage["candidate_proof"]["predictionPayloadFingerprintVersion"] == (
+        patch.PAYLOAD_FINGERPRINT_VERSION
+    )
+    assert module.mlb_game_winner_engine.prediction_calls == 0
+    assert module.mlb_game_winner_engine.canonical_new_writes == 1
+
+
+def test_ddb_normalized_candidate_payload_tamper_fails_closed():
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "production-ddb-tamper")
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    _, snapshot = persist_candidate_with_production_writer(module, G1, source)
+    stored_snapshot = module.TABLE.items[(snapshot["PK"], snapshot["SK"])]
+    stored_snapshot["data"]["americanOdds"] = Decimal("-124")
+
+    result = module.run_lock(SLATE)
+
+    assert result["ok"] is False
+    assert "persisted_prelock_payload_fingerprint_mismatch" in str(result["failures"])
+    assert not staged_items(module)
+    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+
+
+def test_unknown_candidate_payload_fingerprint_version_fails_closed():
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "unknown-hash-version")
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    _, snapshot = persist_candidate_with_production_writer(module, G1, source)
+    stored_snapshot = module.TABLE.items[(snapshot["PK"], snapshot["SK"])]
+    stored_snapshot["prediction_payload_fingerprint_version"] = "UNKNOWN-FINGERPRINT-v99"
+
+    result = module.run_lock(SLATE)
+
+    assert result["ok"] is False
+    assert "persisted_prelock_payload_fingerprint_version_unsupported" in str(
+        result["failures"]
+    )
+    assert not staged_items(module)
+
+
+def test_legacy_unversioned_candidate_with_matching_persisted_hash_remains_valid():
+    import inqsi_pull_history as history_contract
+
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "legacy-unversioned")
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    persist_candidate(module, G1, source)
+    snapshot = next(
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.PREGAME_SNAPSHOT_RECORD_TYPE
+    )
+    snapshot.pop("prediction_payload_fingerprint_version")
+    snapshot["prediction_payload_fingerprint"] = (
+        history_contract.legacy_payload_fingerprint(snapshot["data"])
+    )
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    assert staged_items(module)[0]["candidate_proof"].get(
+        "predictionPayloadFingerprintVersion"
+    ) is None
 
 
 def test_missing_or_post_cutoff_candidate_fails_closed_without_stage():

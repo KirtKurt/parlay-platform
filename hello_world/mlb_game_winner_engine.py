@@ -13,6 +13,8 @@ import inqsi_pull_history as history
 from mlb_slate_coverage_patch import game_identity as _canonical_game_identity
 import mlb_temporal_features_v1 as temporal_features
 
+PAYLOAD_FINGERPRINT_VERSION = history.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
+
 SLATE_TZ = ZoneInfo("America/New_York")
 ENGINE = "MLB-SINGLE-GAME-ML-PROMOTION-v2.1"
 MODEL_VERSION = "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production"
@@ -394,9 +396,8 @@ def _pregame_snapshot_item(row: Dict[str, Any], *, persisted_at: str) -> Dict[st
     digest = hashlib.sha256(identity_material.encode("utf-8")).hexdigest()[:20]
     live_pk = f"GAME_WINNERS#mlb#{row.get('slate_date')}"
     live_sk = f"GAME#{row.get('commenceTime') or 'unknown'}#{identity}"
-    payload_fingerprint = hashlib.sha256(
-        json.dumps(row, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
-    ).hexdigest()
+    persisted_row = history.ddb_safe(row)
+    prediction_payload_fingerprint = history.canonical_payload_fingerprint(persisted_row)
     return history.ddb_safe({
         "PK": live_pk,
         "SK": f"PREGAME#GAME#{identity}#PERSISTED#{persisted_at}#CREATED#{created_at}#{digest}",
@@ -415,12 +416,13 @@ def _pregame_snapshot_item(row: Dict[str, Any], *, persisted_at: str) -> Dict[st
         "prediction_persistence_proof_type": PREGAME_PERSISTENCE_PROOF_TYPE,
         "prediction_persistence_write_pk": live_pk,
         "prediction_persistence_write_sk": live_sk,
-        "prediction_payload_fingerprint": payload_fingerprint,
+        "prediction_payload_fingerprint_version": PAYLOAD_FINGERPRINT_VERSION,
+        "prediction_payload_fingerprint": prediction_payload_fingerprint,
         "prediction_source_pull_at_utc": source_at or None,
         "prediction_source_pull_id": row.get("predictionSourcePullId"),
         "immutable_pregame": True,
         "write_once": True,
-        "data": row,
+        "data": persisted_row,
         "created_at": created_at,
     })
 
@@ -443,8 +445,21 @@ def _put_pregame_snapshot(item: Dict[str, Any]) -> Dict[str, Any]:
         ).get("Item")
         if not existing:
             raise RuntimeError("MLB_PREGAME_SNAPSHOT_COLLISION_WITHOUT_READBACK") from exc
-        expected = json.dumps(item.get("data") or {}, sort_keys=True, default=str)
-        actual = json.dumps(existing.get("data") or {}, sort_keys=True, default=str)
+        collision_fields = (
+            "data",
+            "prediction_payload_fingerprint_version",
+            "prediction_payload_fingerprint",
+        )
+        expected = json.dumps(
+            {key: item.get(key) for key in collision_fields},
+            sort_keys=True,
+            default=str,
+        )
+        actual = json.dumps(
+            {key: existing.get(key) for key in collision_fields},
+            sort_keys=True,
+            default=str,
+        )
         if expected != actual:
             raise RuntimeError("MLB_PREGAME_SNAPSHOT_COLLISION_MISMATCH") from exc
         created = False
