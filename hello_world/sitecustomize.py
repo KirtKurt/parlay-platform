@@ -31,6 +31,8 @@ except Exception:
 try:
     import mlb_game_winner_engine
     import mlb_accuracy_target_patch
+    import mlb_market_anchor_flip_safety_patch
+    mlb_market_anchor_flip_safety_patch.apply(mlb_accuracy_target_patch)
     mlb_accuracy_target_patch.apply(mlb_game_winner_engine)
 except Exception:
     pass
