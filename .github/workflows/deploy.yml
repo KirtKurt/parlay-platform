@@ -454,9 +454,18 @@ jobs:
               raise SystemExit(f"live per-game lock contract is incomplete: {per_game}")
           if per_game.get("lastPrelockAtCutoffBecomesFinal") is not True or per_game.get("modelOrSignalRecomputedAtLock") is not False:
               raise SystemExit(f"live last-prelock promotion contract is incomplete: {per_game}")
-          expected_fix = "MLB-LOCK-RUNTIME-FIX-v2-last-prelock-becomes-final"
+          expected_fix = "MLB-LOCK-RUNTIME-FIX-v3-ddb-canonical-prelock-fingerprint"
           if per_game.get("fixVersion") != expected_fix:
               raise SystemExit(f"live MLB lock runtime fix is stale: expected {expected_fix}, got {per_game.get('fixVersion')}")
+          expected_payload_fingerprint = "INQSI-DDB-READ-EXACT-TYPED-JSON-SHA256-v1"
+          if (
+              per_game.get("candidatePayloadFingerprintVersion") != expected_payload_fingerprint
+              or per_game.get("candidatePayloadFingerprintDdbReadCanonical") is not True
+          ):
+              raise SystemExit(
+                  "live MLB pre-lock payload fingerprint contract is stale: "
+                  f"expected {expected_payload_fingerprint}, got {per_game}"
+              )
           if per_game.get("explicitMlRuntimeInstall") is not True:
               raise SystemExit(f"live MLB lock does not explicitly install the ML runtime: {per_game}")
           if per_game.get("durableAttemptDiagnostics") is not True:

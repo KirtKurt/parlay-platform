@@ -41,6 +41,7 @@ MLB_EXCLUDED_EXHIBITION_MATCHUPS = {
 MLB_EXHIBITION_MARKERS = ("all-star", "all star")
 PROVIDER_MANIFEST_VERSION = "INQSI-PROVIDER-SCHEDULE-MANIFEST-v1"
 PROVIDER_MANIFEST_RECORD_TYPE = "provider_schedule_manifest"
+CANONICAL_PAYLOAD_FINGERPRINT_VERSION = "INQSI-DDB-READ-EXACT-TYPED-JSON-SHA256-v1"
 
 
 def now() -> str:
@@ -78,6 +79,77 @@ def ddb_safe(x: Any) -> Any:
             out["labels"] = labels
         return out
     return x
+
+
+def _exact_decimal_text(value: Decimal) -> str:
+    """Return an exact, context-independent spelling for a numeric value."""
+    if not value.is_finite():
+        return str(value)
+    sign, raw_digits, exponent = value.as_tuple()
+    digits = list(raw_digits)
+    while digits and digits[-1] == 0:
+        digits.pop()
+        exponent += 1
+    if not digits:
+        return "0"
+    coefficient = "".join(str(digit) for digit in digits)
+    return f"{'-' if sign else ''}{coefficient}e{exponent}"
+
+
+def _canonical_payload_value(x: Any) -> Any:
+    """Encode a DynamoDB value as an exact, type-tagged JSON tree."""
+    if x is None:
+        return ["null"]
+    if isinstance(x, bool):
+        return ["boolean", x]
+    if isinstance(x, Decimal):
+        return ["number", _exact_decimal_text(x)]
+    if isinstance(x, int):
+        return ["number", _exact_decimal_text(Decimal(x))]
+    if isinstance(x, float):
+        return ["number", _exact_decimal_text(Decimal(str(x)))]
+    if isinstance(x, str):
+        return ["string", x]
+    if isinstance(x, list):
+        return ["list", [_canonical_payload_value(item) for item in x]]
+    if isinstance(x, dict):
+        entries = sorted(
+            ((str(key), _canonical_payload_value(value)) for key, value in x.items()),
+            key=lambda entry: entry[0],
+        )
+        return ["object", entries]
+    return ["other", f"{type(x).__module__}.{type(x).__qualname__}", str(x)]
+
+
+def _legacy_payload_value(x: Any) -> Any:
+    if isinstance(x, Decimal):
+        return int(x) if x % 1 == 0 else float(x)
+    if isinstance(x, list):
+        return [_legacy_payload_value(item) for item in x]
+    if isinstance(x, dict):
+        return {str(key): _legacy_payload_value(value) for key, value in x.items()}
+    return x
+
+
+def canonical_payload_fingerprint(value: Any) -> str:
+    payload = json.dumps(
+        _canonical_payload_value(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def legacy_payload_fingerprint(value: Any) -> str:
+    """Verify unversioned snapshots written before the exact typed contract."""
+    payload = json.dumps(
+        _legacy_payload_value(value),
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
 def slate_date(ts: str) -> str:

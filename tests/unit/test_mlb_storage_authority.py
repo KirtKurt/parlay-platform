@@ -3,8 +3,11 @@ from __future__ import annotations
 import copy
 import sys
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+
+from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -15,6 +18,85 @@ if str(HELLO) not in sys.path:
 import mlb_immutable_locked_storage_patch as immutable_storage
 import mlb_locked_prediction_storage_finalizer_v1 as finalizer
 import mlb_last_possible_prediction_gate as legacy_gate
+
+
+def test_pregame_snapshot_payload_fingerprint_survives_production_ddb_round_trip():
+    import mlb_daily_per_game_lock_patch as per_game_lock
+    import mlb_game_winner_engine as engine
+    import inqsi_pull_history as history_contract
+
+    row = {
+        "slate_date": "2026-07-17",
+        "gameId": "game-ddb-fingerprint",
+        "gameIdentity": "game-ddb-fingerprint",
+        "commenceTime": "2026-07-17T18:00:00+00:00",
+        "predictedWinner": "Home",
+        "predictedSide": "home",
+        "americanOdds": -118.0,
+        "lockedAmericanOdds": -118.0,
+        "score": 100.0,
+        "winProbability": 0.3753,
+        "expectedValue": 0.015137,
+        "championReliabilityThreshold": None,
+        "homeSignal": {
+            "score": 34.65,
+            "americanOdds": -118.0,
+            "zero": 0.0,
+            "one": 1.0,
+            "nested": [100.0, 0.3753, None],
+        },
+        "frozenFeatureVector": {
+            "version": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v-test",
+            "labels": {"homeWon": None, "pickCorrect": None},
+        },
+        "predictionSourcePullAt": "2026-07-17T17:15:00+00:00",
+        "predictionSourcePullId": "pull-ddb-fingerprint",
+        "createdAt": "2026-07-17T17:15:30+00:00",
+    }
+
+    snapshot = engine._pregame_snapshot_item(
+        row,
+        persisted_at="2026-07-17T17:15:31+00:00",
+    )
+    readback = TypeDeserializer().deserialize(TypeSerializer().serialize(snapshot))
+    persisted_row = readback["data"]
+
+    assert "championReliabilityThreshold" not in persisted_row
+    assert persisted_row["frozenFeatureVector"]["labels"] == {
+        "homeWon": None,
+        "pickCorrect": None,
+    }
+    assert persisted_row["americanOdds"] == Decimal("-118.0")
+    assert persisted_row["homeSignal"]["score"] == Decimal("34.65")
+    assert persisted_row["homeSignal"]["nested"][-1] is None
+    assert snapshot["prediction_payload_fingerprint_version"] == (
+        history_contract.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
+    )
+    assert engine.PAYLOAD_FINGERPRINT_VERSION == per_game_lock.PAYLOAD_FINGERPRINT_VERSION
+    assert snapshot["prediction_payload_fingerprint"] == per_game_lock._payload_fingerprint(
+        persisted_row
+    )
+
+    tampered = copy.deepcopy(persisted_row)
+    tampered["americanOdds"] = Decimal("-117")
+    assert snapshot["prediction_payload_fingerprint"] != per_game_lock._payload_fingerprint(
+        tampered
+    )
+
+
+def test_exact_payload_fingerprint_distinguishes_low_order_decimal_tampering():
+    import inqsi_pull_history as history_contract
+
+    original = Decimal("0.12345678901234567890123456789012345678")
+    tampered = Decimal("0.12345678901234567890123456789012345679")
+
+    assert float(original) == float(tampered)
+    assert history_contract.canonical_payload_fingerprint({"value": original}) != (
+        history_contract.canonical_payload_fingerprint({"value": tampered})
+    )
+    assert history_contract.canonical_payload_fingerprint({"value": 100}) == (
+        history_contract.canonical_payload_fingerprint({"value": Decimal("100.0")})
+    )
 
 
 def test_pregame_persistence_time_is_sampled_after_successful_live_put(monkeypatch):

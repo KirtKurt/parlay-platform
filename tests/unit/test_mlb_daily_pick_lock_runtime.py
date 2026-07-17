@@ -53,6 +53,7 @@ def _load_handler(
     runtime_error=None,
     delegate_payload=None,
     installed_diagnostics_version="test-diagnostics-version",
+    writer_payload_fingerprint_version="test-ddb-canonical-fingerprint-version",
 ):
     events = []
     delegate_calls = []
@@ -69,6 +70,15 @@ def _load_handler(
     runtime.install = install
 
     daily_lock = ModuleType("mlb_daily_pick_lock")
+    daily_lock.mlb_game_winner_engine = ModuleType("mlb_game_winner_engine")
+    daily_lock.mlb_game_winner_engine.PAYLOAD_FINGERPRINT_VERSION = (
+        writer_payload_fingerprint_version
+    )
+    daily_lock.history = ModuleType("inqsi_pull_history")
+    daily_lock.history.CANONICAL_PAYLOAD_FINGERPRINT_VERSION = (
+        "test-ddb-canonical-fingerprint-version"
+    )
+    daily_lock.history.canonical_payload_fingerprint = lambda value: str(value)
 
     def delegate(event, context):
         delegate_calls.append((event, context))
@@ -104,6 +114,7 @@ def _load_handler(
     per_game = ModuleType("mlb_daily_per_game_lock_patch")
     per_game.ATTEMPT_DIAGNOSTICS_VERSION = "test-diagnostics-version"
     per_game.PROMOTION_POLICY_VERSION = "test-promotion-version"
+    per_game.PAYLOAD_FINGERPRINT_VERSION = "test-ddb-canonical-fingerprint-version"
 
     def apply_per_game(module):
         assert module is daily_lock
@@ -175,12 +186,22 @@ def test_installs_exact_runtime_before_lock_patches_and_delegates():
             name: True for name in REQUIRED_RUNTIME_STEPS
         }
         assert payload["perGameLockInstallation"]["fixVersion"] == (
-            "MLB-LOCK-RUNTIME-FIX-v2-last-prelock-becomes-final"
+            "MLB-LOCK-RUNTIME-FIX-v3-ddb-canonical-prelock-fingerprint"
         )
         assert payload["perGameLockInstallation"]["lastPrelockAtCutoffBecomesFinal"] is True
         assert payload["perGameLockInstallation"]["modelOrSignalRecomputedAtLock"] is False
         assert payload["perGameLockInstallation"]["explicitMlRuntimeInstall"] is True
         assert payload["perGameLockInstallation"]["durableAttemptDiagnostics"] is True
+        assert payload["perGameLockInstallation"]["candidatePayloadFingerprintVersion"] == (
+            "test-ddb-canonical-fingerprint-version"
+        )
+        assert payload["perGameLockInstallation"]["writerPayloadFingerprintVersion"] == (
+            "test-ddb-canonical-fingerprint-version"
+        )
+        assert payload["perGameLockInstallation"]["historyPayloadFingerprintVersion"] == (
+            "test-ddb-canonical-fingerprint-version"
+        )
+        assert payload["perGameLockInstallation"]["candidatePayloadFingerprintDdbReadCanonical"] is True
         assert len(delegate_calls) == 1
 
 
@@ -272,4 +293,25 @@ def test_stale_attempt_diagnostics_version_fails_closed():
         assert payload["error"] == "MLB_DAILY_PER_GAME_LOCK_NOT_INSTALLED"
         assert payload["status"]["durableAttemptDiagnostics"] is False
         assert payload["status"]["expectedAttemptDiagnosticsVersion"] == "test-diagnostics-version"
+        assert delegate_calls == []
+
+
+def test_writer_fingerprint_contract_mismatch_fails_closed():
+    with _load_handler(writer_payload_fingerprint_version="stale-writer-fingerprint") as (
+        handler,
+        _,
+        delegate_calls,
+    ):
+        response = handler.lambda_handler(
+            {"httpMethod": "POST", "requestContext": {"stage": "test"}},
+            None,
+        )
+        payload = _body(response)
+
+        assert response["statusCode"] == 500
+        assert payload["error"] == "MLB_DAILY_PER_GAME_LOCK_NOT_INSTALLED"
+        assert payload["status"]["candidatePayloadFingerprintDdbReadCanonical"] is False
+        assert payload["status"]["writerPayloadFingerprintVersion"] == (
+            "stale-writer-fingerprint"
+        )
         assert delegate_calls == []
