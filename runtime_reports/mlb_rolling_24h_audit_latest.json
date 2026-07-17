@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-17T01:14:57.649138+00:00",
+  "createdAt": "2026-07-17T02:18:29.371427+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -18,7 +18,7 @@
     "winnerOptimizerAppliedCount": 0,
     "winnerOptimizerFlipCount": 1,
     "allScoredPickAccuracyPct": 0.0,
-    "historicalRowsUsedForLearning": 213,
+    "historicalRowsUsedForLearning": 214,
     "sevenDayRowsUsedForLearning": 52,
     "sevenDayAccuracyPct": 46.15,
     "thirtyDayRowsUsedForLearning": 115,
@@ -2328,7 +2328,7 @@
       }
     },
     "historicalStats": {
-      "historicalRowsUsed": 213,
+      "historicalRowsUsed": 214,
       "historicalWindowDays": 60,
       "historicalRunLimit": null,
       "historicalRunLimitMeaning": "uncapped_within_window",
@@ -3629,7 +3629,7 @@
     "featureVectorVersion": "MLB-ML-FEATURE-VECTOR-v3-underdog-balanced-directional",
     "trainingSource": {
       "currentRows": 1,
-      "historicalRows": 213,
+      "historicalRows": 214,
       "dedupedTrainingRows": 214,
       "recordsWritten": 214,
       "lockedCardAuditRequired": true
@@ -3698,7 +3698,7 @@
       "modelPath": "runtime_reports/mlb_ml_model_latest.json",
       "trainingSource": {
         "currentRows": 1,
-        "historicalRows": 213,
+        "historicalRows": 214,
         "dedupedTrainingRows": 214,
         "recordsWritten": 214,
         "lockedCardAuditRequired": true
@@ -4246,7 +4246,7 @@
       "errors": [],
       "authoritativeTrainer": "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger",
       "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
-      "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority",
+      "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.8-verified-stage-promotion-authority",
       "runtimeInstallerCallSite": "usercustomize.py_after_prediction_chain",
       "singleRuntimeInstallCall": true,
       "duplicateTrainerAuthorityDisabled": true,
@@ -4291,8 +4291,8 @@
   },
   "accuracyLedger": {
     "ok": true,
-    "inserted": 1,
-    "existing": 114,
+    "inserted": 0,
+    "existing": 115,
     "errors": [],
     "ledgerPk": "MLB_REAL_WORLD_ACCURACY#LEDGER",
     "queriedRowCount": 100,
@@ -4305,7 +4305,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-17T01:14:57.649138+00:00"
+    "runSk": "AUDIT#2026-07-17T02:18:29.371427+00:00"
   },
   "mlOptimizationV3": {
     "applied": true,
@@ -4374,7 +4374,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion",
-      "evaluatedAtUtc": "2026-07-17T01:15:30.946108+00:00",
+      "evaluatedAtUtc": "2026-07-17T02:18:58.520222+00:00",
       "automaticPromotionEnabled": true,
       "automaticPromotionRequiresPassedApplicableGates": true,
       "promotionEligible": false,
@@ -4710,7 +4710,7 @@
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-17T01:15:19.823361+00:00"
+      "runSk": "CHALLENGER#2026-07-17T02:18:48.147686+00:00"
     },
     "promotion": {
       "ok": true,
