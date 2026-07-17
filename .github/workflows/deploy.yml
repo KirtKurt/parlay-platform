@@ -310,6 +310,7 @@ jobs:
           PY
 
       - name: Smoke test live MLB Odds API pull and storage
+        id: mlb_live_pull
         env:
           API_URL: ${{ steps.stack_outputs.outputs.api_url }}
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
@@ -348,6 +349,8 @@ jobs:
           if payload.get("fallback_used"):
               raise SystemExit("MLB live pull used fallback/cached data during deploy smoke")
           count = int(payload.get("count") or 0)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write(f"provider_game_count={count}\n")
           canonical = payload.get("canonical_pull_history") or []
           manifests = payload.get("provider_schedule_manifests") or []
           winners = payload.get("game_winner_predictions") or []
@@ -403,15 +406,40 @@ jobs:
       - name: Smoke test MLB lock status endpoint
         env:
           API_URL: ${{ steps.stack_outputs.outputs.api_url }}
+          LIVE_PULL_PROVIDER_GAME_COUNT: ${{ steps.mlb_live_pull.outputs.provider_game_count }}
         run: |
           python - <<'PY'
           import json
           import os
+          import urllib.error
           import urllib.request
 
-          with urllib.request.urlopen(os.environ["API_URL"] + "v1/mlb/locks/status", timeout=45) as resp:
-              payload = json.loads(resp.read().decode("utf-8"))
+          try:
+              with urllib.request.urlopen(os.environ["API_URL"] + "v1/mlb/locks/status", timeout=45) as resp:
+                  status_code = resp.status
+                  payload = json.loads(resp.read().decode("utf-8"))
+          except urllib.error.HTTPError as exc:
+              status_code = exc.code
+              payload = json.loads(exc.read().decode("utf-8"))
           print(json.dumps(payload, indent=2, default=str))
+          provider_game_count = int(os.environ.get("LIVE_PULL_PROVIDER_GAME_COUNT") or 0)
+          if status_code >= 400:
+              expected_post_game_cutover_gap = (
+                  provider_game_count == 0
+                  and status_code == 500
+                  and payload.get("ok") is False
+                  and payload.get("error")
+                      == "MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:provider_schedule_manifest_missing"
+              )
+              if not expected_post_game_cutover_gap:
+                  raise SystemExit(
+                      f"live MLB lock status failed unexpectedly: HTTP {status_code}: {payload}"
+                  )
+              print(
+                  "MLB lock status correctly failed closed: the deploy-time provider pull "
+                  "returned zero games, so no immutable manifest could replace legacy "
+                  "same-date history. Historical rows are not backfilled."
+              )
           preservation = payload.get("mlLockVectorPreservation") or {}
           if preservation.get("ok") is not True or preservation.get("failClosed") is not True:
               raise SystemExit(f"live exact-vector preservation is not fail-closed: {preservation}")
