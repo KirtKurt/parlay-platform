@@ -1402,9 +1402,14 @@ def _last_prelock_candidate(
         errors: List[str] = []
         if item.get("snapshot_version") != PREGAME_SNAPSHOT_VERSION:
             errors.append("persisted_prelock_snapshot_version_mismatch")
-        fingerprint_version = item.get("prediction_payload_fingerprint_version") or None
+        raw_fingerprint_version = item.get("prediction_payload_fingerprint_version")
+        fingerprint_version = (
+            None
+            if raw_fingerprint_version in (None, "")
+            else raw_fingerprint_version
+        )
         fingerprint_version_supported = _supported_payload_fingerprint_version(
-            fingerprint_version
+            raw_fingerprint_version
         )
         if not fingerprint_version_supported:
             errors.append("persisted_prelock_payload_fingerprint_version_unsupported")

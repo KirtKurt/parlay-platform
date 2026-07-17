@@ -123,7 +123,7 @@ def _canonical_payload_value(x: Any) -> Any:
 
 def _legacy_payload_value(x: Any) -> Any:
     if isinstance(x, Decimal):
-        return int(x) if x % 1 == 0 else float(x)
+        return int(x) if x.is_finite() and x == x.to_integral_value() else float(x)
     if isinstance(x, list):
         return [_legacy_payload_value(item) for item in x]
     if isinstance(x, dict):

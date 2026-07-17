@@ -99,6 +99,16 @@ def test_exact_payload_fingerprint_distinguishes_low_order_decimal_tampering():
     )
 
 
+def test_legacy_payload_fingerprint_handles_full_precision_integral_decimal():
+    import inqsi_pull_history as history_contract
+
+    value = Decimal("12345678901234567890123456789012345678")
+
+    assert history_contract.legacy_payload_fingerprint({"value": value}) == (
+        history_contract.legacy_payload_fingerprint({"value": int(value)})
+    )
+
+
 def test_pregame_persistence_time_is_sampled_after_successful_live_put(monkeypatch):
     import mlb_game_winner_engine as engine
 
