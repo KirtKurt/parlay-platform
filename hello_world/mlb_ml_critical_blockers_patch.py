@@ -57,7 +57,7 @@ def install() -> dict:
         "errors": errors,
         "authoritativeTrainer": AUTHORITATIVE_TRAINER,
         "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
-        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority",
+        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.8-verified-stage-promotion-authority",
         "runtimeInstallerCallSite": "usercustomize.py_after_prediction_chain",
         "singleRuntimeInstallCall": True,
         "duplicateTrainerAuthorityDisabled": True,

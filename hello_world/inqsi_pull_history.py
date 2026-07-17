@@ -1,4 +1,4 @@
-import os, uuid, json
+import os, uuid, json, hashlib
 from datetime import datetime, timezone
 from decimal import Decimal
 from typing import Any, Dict, List, Optional
@@ -39,6 +39,8 @@ MLB_EXCLUDED_EXHIBITION_MATCHUPS = {
     frozenset({"american league", "national league"}),
 }
 MLB_EXHIBITION_MARKERS = ("all-star", "all star")
+PROVIDER_MANIFEST_VERSION = "INQSI-PROVIDER-SCHEDULE-MANIFEST-v1"
+PROVIDER_MANIFEST_RECORD_TYPE = "provider_schedule_manifest"
 
 
 def now() -> str:
@@ -91,6 +93,232 @@ def team_key(name: Optional[str]) -> str:
 
 def game_key(sport: str, g: Dict[str, Any]) -> str:
     return str(g.get("game_key") or g.get("game_id") or g.get("id") or f"{sport}|{team_key(g.get('away_team') or g.get('away'))}|{team_key(g.get('home_team') or g.get('home'))}")
+
+
+def provider_game_identity(sport: str, game: Dict[str, Any]) -> str:
+    """Stable schedule identity, independent of whether odds are available."""
+    return str(
+        game.get("game_id")
+        or game.get("id")
+        or game.get("game_key")
+        or f"{sport}|{team_key(game.get('away_team') or game.get('away'))}|{team_key(game.get('home_team') or game.get('home'))}|{game.get('commence_time') or game.get('start_time') or game.get('startTime') or ''}"
+    )
+
+
+def _provider_manifest_game(sport: str, game: Dict[str, Any]) -> Dict[str, Any]:
+    identity = provider_game_identity(sport, game)
+    return {
+        "game_id": identity,
+        "id": str(game.get("id") or identity),
+        "game_key": str(game.get("game_key") or game_key(sport, game)),
+        "home_team": game.get("home_team") or game.get("home") or game.get("homeTeam"),
+        "away_team": game.get("away_team") or game.get("away") or game.get("awayTeam"),
+        "commence_time": game.get("commence_time") or game.get("start_time") or game.get("startTime"),
+        "league": game.get("league") or SUPPORTED[sport]["label"],
+        "level": game.get("level") or SUPPORTED[sport].get("level"),
+        "gender": game.get("gender") or SUPPORTED[sport].get("gender"),
+        "provider_sport_key": game.get("provider_sport_key"),
+    }
+
+
+def _manifest_sort_key(game: Dict[str, Any]) -> tuple:
+    return (
+        str(game.get("commence_time") or ""),
+        str(game.get("game_id") or game.get("id") or ""),
+        team_key(game.get("away_team")),
+        team_key(game.get("home_team")),
+    )
+
+
+def _provider_manifest_material(manifest: Dict[str, Any]) -> Dict[str, Any]:
+    games = sorted(
+        [_provider_manifest_game(str(manifest.get("sport") or "mlb"), game) for game in manifest.get("games") or []],
+        key=_manifest_sort_key,
+    )
+    return {
+        "version": str(manifest.get("version") or ""),
+        "recordType": str(manifest.get("recordType") or ""),
+        "sport": str(manifest.get("sport") or ""),
+        "slateDate": str(manifest.get("slateDate") or ""),
+        "pullId": str(manifest.get("pullId") or ""),
+        "observedAtUtc": str(manifest.get("observedAtUtc") or ""),
+        "source": str(manifest.get("source") or ""),
+        "gameCount": len(games),
+        "gameIdentities": [provider_game_identity(str(manifest.get("sport") or "mlb"), game) for game in games],
+        "games": games,
+    }
+
+
+def provider_manifest_fingerprint(manifest: Dict[str, Any]) -> str:
+    payload = json.dumps(_provider_manifest_material(manifest), sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _build_provider_schedule_manifest(
+    *,
+    sport: str,
+    slate: str,
+    pulled_at: str,
+    pull_id: str,
+    source: str,
+    games: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    schedule_games = sorted([_provider_manifest_game(sport, game) for game in games], key=_manifest_sort_key)
+    manifest: Dict[str, Any] = {
+        "version": PROVIDER_MANIFEST_VERSION,
+        "recordType": PROVIDER_MANIFEST_RECORD_TYPE,
+        "sport": sport,
+        "slateDate": slate,
+        "pullId": pull_id,
+        "observedAtUtc": pulled_at,
+        "source": source,
+        "gameCount": len(schedule_games),
+        "gameIdentities": [provider_game_identity(sport, game) for game in schedule_games],
+        "games": schedule_games,
+    }
+    manifest["fingerprint"] = provider_manifest_fingerprint(manifest)
+    return manifest
+
+
+def _provider_manifest_key(manifest: Dict[str, Any]) -> Dict[str, str]:
+    return {
+        "PK": f"PROVIDER_MANIFEST#{manifest['sport']}#{manifest['slateDate']}",
+        "SK": f"OBSERVED#{manifest['observedAtUtc']}#PULL#{manifest['pullId']}",
+    }
+
+
+def validate_provider_schedule_manifest(
+    pull: Dict[str, Any],
+    expected_slate: Optional[str] = None,
+    *,
+    verify_immutable_storage: bool = False,
+) -> List[str]:
+    """Validate the full schedule proof and, for lock reads, its write-once copy."""
+    errors: List[str] = []
+    manifest = pull.get("provider_schedule_manifest")
+    binding = pull.get("provider_manifest_binding")
+    if not isinstance(manifest, dict):
+        return ["provider_schedule_manifest_missing"]
+    if not isinstance(binding, dict):
+        return ["provider_manifest_binding_missing"]
+    if manifest.get("version") != PROVIDER_MANIFEST_VERSION:
+        errors.append("provider_manifest_version_mismatch")
+    if manifest.get("recordType") != PROVIDER_MANIFEST_RECORD_TYPE:
+        errors.append("provider_manifest_record_type_mismatch")
+    if expected_slate and str(manifest.get("slateDate") or "") != str(expected_slate):
+        errors.append("provider_manifest_slate_mismatch")
+    fingerprint = provider_manifest_fingerprint(manifest)
+    if str(manifest.get("fingerprint") or "") != fingerprint:
+        errors.append("provider_manifest_fingerprint_mismatch")
+    schedule_games = sorted(list(manifest.get("games") or []), key=_manifest_sort_key)
+    identities = [provider_game_identity(str(manifest.get("sport") or "mlb"), game) for game in schedule_games]
+    pull_games = sorted(list(pull.get("games") or []), key=_manifest_sort_key)
+    pull_identities = [provider_game_identity(str(pull.get("sport") or "mlb"), game) for game in pull_games]
+    try:
+        declared_count = int(manifest.get("gameCount"))
+    except Exception:
+        declared_count = -1
+    if declared_count != len(schedule_games):
+        errors.append("provider_manifest_game_count_mismatch")
+    if list(manifest.get("gameIdentities") or []) != identities:
+        errors.append("provider_manifest_identity_proof_mismatch")
+    if len(set(identities)) != len(identities):
+        errors.append("provider_manifest_duplicate_game_identity")
+    if pull_identities != identities:
+        errors.append("provider_manifest_pull_membership_mismatch")
+    expected_key = _provider_manifest_key(manifest)
+    try:
+        bound_count = int(binding.get("gameCount"))
+    except Exception:
+        bound_count = -1
+    if (
+        binding.get("version") != PROVIDER_MANIFEST_VERSION
+        or str(binding.get("fingerprint") or "") != fingerprint
+        or bound_count != len(schedule_games)
+        or binding.get("pk") != expected_key["PK"]
+        or binding.get("sk") != expected_key["SK"]
+        or binding.get("immutable") is not True
+        or binding.get("fullProviderSchedule") is not True
+    ):
+        errors.append("provider_manifest_binding_mismatch")
+    if verify_immutable_storage:
+        if PULLS is None:
+            errors.append("provider_manifest_storage_unavailable")
+        else:
+            stored = PULLS.get_item(Key=expected_key, ConsistentRead=True).get("Item")
+            stored_manifest = (stored or {}).get("data") if isinstance(stored, dict) else None
+            if not isinstance(stored_manifest, dict):
+                errors.append("immutable_provider_manifest_missing")
+            elif (
+                stored.get("record_type") != PROVIDER_MANIFEST_RECORD_TYPE
+                or str(stored.get("manifest_fingerprint") or "") != fingerprint
+                or str(stored_manifest.get("fingerprint") or "") != fingerprint
+                or provider_manifest_fingerprint(stored_manifest) != fingerprint
+            ):
+                errors.append("immutable_provider_manifest_readback_mismatch")
+    return errors
+
+
+def provider_manifest_games_for_lock(pull: Dict[str, Any], slate: str) -> List[Dict[str, Any]]:
+    errors = validate_provider_schedule_manifest(pull, slate, verify_immutable_storage=True)
+    if errors:
+        raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:" + ",".join(errors))
+    return sorted(list((pull.get("provider_schedule_manifest") or {}).get("games") or []), key=_manifest_sort_key)
+
+
+def provider_manifest_authority_for_lock(
+    pull: Dict[str, Any],
+    slate: str,
+    expected_games: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """Return the exact immutable full-schedule proof used by a lock stage.
+
+    This is intentionally a pointer-and-fingerprint proof rather than a copy of
+    a caller supplied flag.  The manifest has already been independently
+    written, and this function performs the strongly consistent readback before
+    a per-game stage may bind it.
+    """
+    errors = validate_provider_schedule_manifest(
+        pull,
+        slate,
+        verify_immutable_storage=True,
+    )
+    manifest = pull.get("provider_schedule_manifest") or {}
+    binding = pull.get("provider_manifest_binding") or {}
+    manifest_games = sorted(list(manifest.get("games") or []), key=_manifest_sort_key)
+    manifest_identities = [
+        provider_game_identity(str(manifest.get("sport") or "mlb"), game)
+        for game in manifest_games
+    ]
+    if expected_games is not None:
+        expected = sorted(
+            [_provider_manifest_game("mlb", game) for game in expected_games],
+            key=_manifest_sort_key,
+        )
+        expected_identities = [provider_game_identity("mlb", game) for game in expected]
+        if expected_identities != manifest_identities:
+            errors.append("provider_manifest_lock_slate_membership_mismatch")
+    if errors:
+        raise RuntimeError(
+            "MLB_PROVIDER_SCHEDULE_MANIFEST_AUTHORITY_INVALID:"
+            + ",".join(sorted(set(errors)))
+        )
+    return {
+        "version": PROVIDER_MANIFEST_VERSION,
+        "recordType": PROVIDER_MANIFEST_RECORD_TYPE,
+        "pk": binding.get("pk"),
+        "sk": binding.get("sk"),
+        "fingerprint": manifest.get("fingerprint"),
+        "slateDate": manifest.get("slateDate"),
+        "observedAtUtc": manifest.get("observedAtUtc"),
+        "pullId": manifest.get("pullId"),
+        "gameCount": len(manifest_games),
+        "gameIdentities": manifest_identities,
+        "immutable": True,
+        "writeOnce": True,
+        "fullProviderSchedule": True,
+        "consistentReadVerified": True,
+    }
 
 
 def mlb_model_eligible_game(game: Dict[str, Any]) -> bool:
@@ -155,6 +383,9 @@ def normalize_pull(body: Dict[str, Any]) -> Dict[str, Any]:
         return {"ok": False, "error": "unsupported_sport", "sport": sport, "supportedSports": [x["key"] for x in supported_sports()["sports"]]}
     pulled_at = body.get("pulled_at") or body.get("asof") or now()
     raw_games = body.get("games") or body.get("events") or []
+    pull_id = str(body.get("pull_id") or f"pull_{uuid.uuid4().hex[:16]}")
+    slate = str(body.get("slate_date") or slate_date(pulled_at))
+    source = str(body.get("source") or "manual_or_provider_payload")
     games = []
     for raw in raw_games if isinstance(raw_games, list) else []:
         if not isinstance(raw, dict):
@@ -179,7 +410,10 @@ def normalize_pull(body: Dict[str, Any]) -> Dict[str, Any]:
                 books[key]["spread"] = data["spread"]
             if "total" in data:
                 books[key]["total"] = data["total"]
-        if home and away and books:
+        # The provider schedule is authoritative even when no supported book has
+        # posted a moneyline yet.  Empty books must remain visible so prediction
+        # coverage cannot silently shrink to only the games that were scoreable.
+        if home and away:
             games.append({
                 "game_id": str(raw.get("game_id") or raw.get("id") or game_key(sport, raw)),
                 "game_key": game_key(sport, raw),
@@ -191,10 +425,49 @@ def normalize_pull(body: Dict[str, Any]) -> Dict[str, Any]:
                 "gender": raw.get("gender") or SUPPORTED[sport].get("gender"),
                 "provider_sport_key": raw.get("provider_sport_key"),
                 "books": books,
+                "odds_available": bool(books),
+                "moneyline_available": any((payload or {}).get("ml") for payload in books.values()),
             })
     if not games:
-        return {"ok": False, "error": "games_required", "message": "Provide at least one game with home/away teams and moneyline books."}
-    return {"ok": True, "pull": {"pull_id": body.get("pull_id") or f"pull_{uuid.uuid4().hex[:16]}", "sport": sport, "pulled_at": pulled_at, "slate_date": body.get("slate_date") or slate_date(pulled_at), "source": body.get("source") or "manual_or_provider_payload", "interval_minutes": int(body.get("interval_minutes") or 15), "games": games, "meta": {"oddsApiOperational": body.get("source") == "the_odds_api", "architecture": "15_min_pull_history"}}}
+        return {"ok": False, "error": "games_required", "message": "Provide at least one provider game with home and away teams."}
+    games = sorted(games, key=_manifest_sort_key)
+    manifest = _build_provider_schedule_manifest(
+        sport=sport,
+        slate=slate,
+        pulled_at=str(pulled_at),
+        pull_id=pull_id,
+        source=source,
+        games=games,
+    )
+    manifest_key = _provider_manifest_key(manifest)
+    meta = dict(body.get("meta") or {})
+    meta.update({
+        "oddsApiOperational": source == "the_odds_api",
+        "architecture": "15_min_pull_history",
+        "providerManifestVersion": PROVIDER_MANIFEST_VERSION,
+        "providerManifestFingerprint": manifest["fingerprint"],
+        "providerManifestGameCount": len(games),
+    })
+    return {"ok": True, "pull": {
+        "pull_id": pull_id,
+        "sport": sport,
+        "pulled_at": pulled_at,
+        "slate_date": slate,
+        "source": source,
+        "interval_minutes": int(body.get("interval_minutes") or 15),
+        "games": games,
+        "provider_schedule_manifest": manifest,
+        "provider_manifest_binding": {
+            "version": PROVIDER_MANIFEST_VERSION,
+            "fingerprint": manifest["fingerprint"],
+            "gameCount": len(games),
+            "pk": manifest_key["PK"],
+            "sk": manifest_key["SK"],
+            "immutable": True,
+            "fullProviderSchedule": True,
+        },
+        "meta": meta,
+    }}
 
 
 def store_pull(body: Dict[str, Any]) -> Dict[str, Any]:
@@ -204,9 +477,68 @@ def store_pull(body: Dict[str, Any]) -> Dict[str, Any]:
     if not n.get("ok"):
         return n
     p = n["pull"]
+    manifest = p["provider_schedule_manifest"]
+    manifest_key = _provider_manifest_key(manifest)
+    manifest_item = {
+        **manifest_key,
+        "record_type": PROVIDER_MANIFEST_RECORD_TYPE,
+        "sport": p["sport"],
+        "slate_date": p["slate_date"],
+        "pulled_at": p["pulled_at"],
+        "pull_id": p["pull_id"],
+        "manifest_version": PROVIDER_MANIFEST_VERSION,
+        "manifest_fingerprint": manifest["fingerprint"],
+        "write_once": True,
+        "data": ddb_safe(manifest),
+        "created_at": now(),
+    }
+    manifest_created = True
+    try:
+        PULLS.put_item(
+            Item=manifest_item,
+            ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
+        )
+    except Exception as exc:
+        code = str(((getattr(exc, "response", {}) or {}).get("Error") or {}).get("Code") or "")
+        if code != "ConditionalCheckFailedException":
+            raise
+        existing = PULLS.get_item(Key=manifest_key, ConsistentRead=True).get("Item")
+        if (
+            not isinstance(existing, dict)
+            or existing.get("record_type") != PROVIDER_MANIFEST_RECORD_TYPE
+            or str(existing.get("manifest_fingerprint") or "") != str(manifest["fingerprint"])
+            or provider_manifest_fingerprint(existing.get("data") or {}) != manifest["fingerprint"]
+        ):
+            raise RuntimeError("IMMUTABLE_PROVIDER_MANIFEST_COLLISION") from exc
+        manifest_created = False
     item = {"PK": f"PULLS#{p['sport']}#{p['slate_date']}", "SK": f"PULL#{p['pulled_at']}#{p['pull_id']}", "record_type": "pull_run", "sport": p["sport"], "slate_date": p["slate_date"], "pulled_at": p["pulled_at"], "pull_id": p["pull_id"], "data": ddb_safe(p), "created_at": now()}
     PULLS.put_item(Item=item)
-    return {"ok": True, "stored": {"pk": item["PK"], "sk": item["SK"], "pull_id": p["pull_id"], "game_count": len(p["games"])}, "pull": p}
+    authority_errors = validate_provider_schedule_manifest(
+        p,
+        p["slate_date"],
+        verify_immutable_storage=True,
+    )
+    if authority_errors:
+        raise RuntimeError(
+            "PROVIDER_SCHEDULE_MANIFEST_READBACK_INVALID:"
+            + ",".join(authority_errors)
+        )
+    return {"ok": True, "stored": {
+        "pk": item["PK"],
+        "sk": item["SK"],
+        "pull_id": p["pull_id"],
+        "game_count": len(p["games"]),
+        "provider_manifest": {
+            "pk": manifest_key["PK"],
+            "sk": manifest_key["SK"],
+            "version": PROVIDER_MANIFEST_VERSION,
+            "fingerprint": manifest["fingerprint"],
+            "game_count": len(p["games"]),
+            "immutable": True,
+            "full_provider_schedule": True,
+            "created": manifest_created,
+        },
+    }, "pull": p}
 
 
 def query_pulls(sport: str, date: Optional[str] = None, limit: int = 500) -> List[Dict[str, Any]]:

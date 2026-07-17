@@ -26,7 +26,7 @@ except Exception:
     OPTIMIZATION_VERSION = None
 
 MODEL_VERSION = "INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority"
-VERSION = "MLB-V3-READ-API-v2-automatic-gate-authority"
+VERSION = "MLB-V3-READ-API-v3-read-only"
 
 
 def _json_default(value: Any) -> Any:
@@ -82,6 +82,7 @@ def _model_body() -> Dict[str, Any]:
         "productionAuthoritySource": "gate_promoted_DynamoDB_champion_bundle_only",
         "automaticPromotionPolicy": "authoritative_AWS_audit_only_after_independent_90pct_authority_gates",
         "parlaysEnabled": False,
+        "readOnly": True,
         "sourcePolicy": "The Odds API pull history plus timestamped source-honest fundamentals snapshots.",
     }
 
@@ -92,17 +93,20 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return _response(200, {"ok": True})
     path = _path(event)
     params = _query(event)
+    model = _model_body()
     if path == "/v1/mlb/model/version":
-        return _response(200, _model_body())
+        return _response(200 if model.get("ok") is True else 503, model)
     if path not in {"/v1/mlb/today", "/v1/mlb/games", "/v1/mlb/predictions", "/v1/mlb/game-winners"}:
         return _response(404, {"ok": False, "error": "route_not_found", "path": path, "apiRuntimeVersion": VERSION})
-    if ENGINE is None:
-        return _response(503, {**_model_body(), "ok": False, "winner_predictions": [], "predictions": [], "count": 0})
+    if ENGINE is None or model.get("ok") is not True:
+        return _response(503, {**model, "ok": False, "winner_predictions": [], "predictions": [], "count": 0})
     date = params.get("game_date_et") or params.get("date") or _today_et()
     try:
         result = ENGINE.predict_all(
             date,
-            store=str(params.get("store") or "false").lower() == "true",
+            # This public Lambda has no write authority. Persisted
+            # candidates are owned by protected scheduled ingestion.
+            store=False,
             limit=min(max(int(params.get("limit") or 500), 1), 500),
         )
     except Exception as exc:
@@ -112,9 +116,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "sport": "mlb",
         "date": date,
         "model_version": MODEL_VERSION,
-        "ml_runtime_install": _model_body().get("ml_runtime_install"),
+        "ml_runtime_install": model.get("ml_runtime_install"),
         "apiRuntimeVersion": VERSION,
         "winner_predictions": result.get("predictions") or [],
         "parlaysEnabled": False,
+        "readOnly": True,
     })
     return _response(200, result)

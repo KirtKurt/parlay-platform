@@ -62,6 +62,19 @@ def ensure_function_env(current: str, resource_name: str, key: str, value: str) 
     return "".join(lines)
 
 
+def resource_block(current: str, resource_name: str) -> str:
+    lines = current.splitlines()
+    start = next((i for i, line in enumerate(lines) if line.startswith(f"  {resource_name}:")), None)
+    if start is None:
+        return ""
+    end = len(lines)
+    for i in range(start + 1, len(lines)):
+        if lines[i].startswith("  ") and not lines[i].startswith("    "):
+            end = i
+            break
+    return "\n".join(lines[start:end])
+
+
 admin_env = "        INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken\n"
 if admin_env not in text:
     marker = "        ODDS_API_KEY: !Ref OddsApiKey\n"
@@ -91,7 +104,7 @@ dedicated = """
       Timeout: 60
       MemorySize: 1024
       Policies:
-        - DynamoDBCrudPolicy:
+        - DynamoDBReadPolicy:
             TableName: !Ref SnapshotsTable
       Events:
         MLBV3ModelVersion:
@@ -122,6 +135,14 @@ dedicated = """
 
 """
 text = insert_once(text, "  ApiFunction:\n", dedicated, "  MLBV3ReadFunction:\n")
+mlb_v3_read_block = resource_block(text, "MLBV3ReadFunction")
+if "DynamoDBCrudPolicy:" in mlb_v3_read_block:
+    text = text.replace(
+        mlb_v3_read_block,
+        mlb_v3_read_block.replace("DynamoDBCrudPolicy:", "DynamoDBReadPolicy:"),
+        1,
+    )
+    mlb_v3_read_block = resource_block(text, "MLBV3ReadFunction")
 
 verifier = """
   MLBProductionVerifierFunction:
@@ -157,20 +178,6 @@ verifier = """
 """
 text = insert_once(text, "  MLBResultsSchedulerFunction:\n", verifier, "  MLBProductionVerifierFunction:\n")
 
-
-def resource_block(current: str, resource_name: str) -> str:
-    lines = current.splitlines()
-    start = next((i for i, line in enumerate(lines) if line.startswith(f"  {resource_name}:")), None)
-    if start is None:
-        return ""
-    end = len(lines)
-    for i in range(start + 1, len(lines)):
-        if lines[i].startswith("  ") and not lines[i].startswith("    "):
-            end = i
-            break
-    return "\n".join(lines[start:end])
-
-
 required = [
     "Handler: inqsi_backend_api_wrapper.lambda_handler",
     "  MLBV3ReadFunction:", "Handler: mlb_v3_read_api.lambda_handler",
@@ -186,7 +193,11 @@ missing_function_tokens = [
     for resource_name in ("MLBAuditedPullFunction", "MLBDailyPickLockFunction")
     if "          INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken" not in resource_block(text, resource_name)
 ]
-if missing or invalid_top_level or missing_function_tokens:
+invalid_read_policy = (
+    "DynamoDBReadPolicy:" not in mlb_v3_read_block
+    or "DynamoDBCrudPolicy:" in mlb_v3_read_block
+)
+if missing or invalid_top_level or missing_function_tokens or invalid_read_policy:
     details = []
     if missing:
         details.append("missing: " + ", ".join(missing))
@@ -194,7 +205,8 @@ if missing or invalid_top_level or missing_function_tokens:
         details.append("resource indentation invalid: " + ", ".join(invalid_top_level))
     if missing_function_tokens:
         details.append("function-specific admin token missing: " + ", ".join(missing_function_tokens))
+    if invalid_read_policy:
+        details.append("MLBV3ReadFunction must have DynamoDBReadPolicy and no DynamoDBCrudPolicy")
     raise RuntimeError("MLB dedicated v3 route patch failed; " + "; ".join(details))
-
 TEMPLATE.write_text(text)
 print("Patched template.yaml with dedicated MLB v3 reads, explicit pull/lock admin tokens, and production verifier resources.")

@@ -1,4 +1,5 @@
 from pathlib import Path
+import ast
 import os
 import subprocess
 import sys
@@ -15,6 +16,8 @@ os.environ.setdefault('AWS_EC2_METADATA_DISABLED', 'true')
 
 TEMPLATE = Path('template.yaml')
 ENGINE = Path('hello_world/mlb_game_winner_engine.py')
+LOCK_HANDLER = Path('hello_world/mlb_daily_pick_lock_protected.py')
+MANUAL_PULL_HANDLER = Path('hello_world/mlb_manual_pull_protected.py')
 COVERAGE_VERIFY = Path('scripts/verify_mlb_complete_slate_coverage.py')
 IMMUTABLE_LOCKED_STORAGE_VERIFY = Path('scripts/verify_mlb_immutable_locked_storage.py')
 DAILY_LOCK_VECTOR_VERIFY = Path('scripts/verify_mlb_daily_lock_ml_vector_preservation.py')
@@ -32,6 +35,94 @@ YESTERDAY_AUDIT_IMMUTABLE_SOURCE_VERIFY = Path('scripts/verify_mlb_yesterday_aud
 text = TEMPLATE.read_text()
 engine = ENGINE.read_text() if ENGINE.exists() else ''
 violations = []
+
+
+def _verify_explicit_lock_runtime_install() -> None:
+    if not LOCK_HANDLER.exists():
+        return
+    try:
+        tree = ast.parse(LOCK_HANDLER.read_text())
+    except SyntaxError as exc:
+        violations.append(f'protected MLB lock handler is not valid Python: {exc}')
+        return
+
+    install_lines = []
+    lock_import_lines = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == 'install'
+                and isinstance(func.value, ast.Name)
+                and func.value.id == 'mlb_ml_runtime_install_v3'
+            ):
+                install_lines.append(node.lineno)
+        elif isinstance(node, ast.Import):
+            if any(alias.name == 'mlb_daily_pick_lock' for alias in node.names):
+                lock_import_lines.append(node.lineno)
+
+    if not install_lines:
+        violations.append('protected MLB lock handler does not explicitly install the ML runtime')
+    if not lock_import_lines:
+        violations.append('protected MLB lock handler does not import the daily lock implementation')
+    if install_lines and lock_import_lines and min(install_lines) >= min(lock_import_lines):
+        violations.append('protected MLB lock handler installs the ML runtime after importing the daily lock implementation')
+
+    source = LOCK_HANDLER.read_text()
+    if 'MLB_ML_LOCK_RUNTIME_NOT_READY' not in source:
+        violations.append('protected MLB lock handler does not fail closed when ML runtime installation is incomplete')
+    if 'mlRuntimeInstallation' not in source:
+        violations.append('protected MLB lock handler does not expose ML runtime installation status')
+    if 'MLB-LOCK-RUNTIME-FIX-v2-last-prelock-becomes-final' not in source:
+        violations.append('protected MLB lock handler is missing the last-prelock promotion fix marker')
+    if 'MLB_PER_GAME_LOCK_ATTEMPT_DIAGNOSTICS_VERSION' not in source:
+        violations.append('protected MLB lock handler does not require durable lock-attempt diagnostics')
+    if 'lastPrelockAtCutoffBecomesFinal' not in source or 'modelOrSignalRecomputedAtLock' not in source:
+        violations.append('protected MLB lock handler does not attest no-rescore last-prelock promotion')
+
+
+def _verify_explicit_pull_runtime_install() -> None:
+    if not MANUAL_PULL_HANDLER.exists():
+        return
+    try:
+        tree = ast.parse(MANUAL_PULL_HANDLER.read_text())
+    except SyntaxError as exc:
+        violations.append(f'protected MLB pull handler is not valid Python: {exc}')
+        return
+
+    install_lines = []
+    pull_import_lines = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call):
+            func = node.func
+            if (
+                isinstance(func, ast.Attribute)
+                and func.attr == 'install'
+                and isinstance(func.value, ast.Name)
+                and func.value.id == 'mlb_ml_runtime_install_v3'
+            ):
+                install_lines.append(node.lineno)
+        elif isinstance(node, ast.Import):
+            if any(alias.name == 'mlb_manual_pull' for alias in node.names):
+                pull_import_lines.append(node.lineno)
+
+    if not install_lines:
+        violations.append('protected MLB pull handler does not explicitly install the ML runtime')
+    if not pull_import_lines:
+        violations.append('protected MLB pull handler does not import the HOT candidate writer')
+    if install_lines and pull_import_lines and min(install_lines) >= min(pull_import_lines):
+        violations.append('protected MLB pull handler imports the candidate writer before installing the ML runtime')
+
+    source = MANUAL_PULL_HANDLER.read_text()
+    if 'MLB_ML_PULL_RUNTIME_NOT_READY' not in source:
+        violations.append('protected MLB pull handler does not fail closed when ML runtime installation is incomplete')
+    if 'lastPrelockPromotionAuthority' not in source:
+        violations.append('protected MLB pull handler does not require last-prelock promotion authority')
+    if 'immutableLockedStorageAuthority' not in source:
+        violations.append('protected MLB pull handler does not require verified immutable stage storage authority')
+    if 'MLB_SCHEDULED_PULL_FAILED' not in source:
+        violations.append('protected MLB pull handler hides delegated scheduled pull failures')
 
 
 def _ensure_validation_dependencies() -> None:
@@ -102,6 +193,9 @@ if not ('MLB_PROMOTION_EDGE_THRESHOLD' in text or 'PROMOTION_THRESHOLD' in engin
 if '"sports":"mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis"' in text:
     violations.append('all-sports scheduler still includes MLB duplicate pulls')
 
+_verify_explicit_lock_runtime_install()
+_verify_explicit_pull_runtime_install()
+
 for required_path in [
     Path('hello_world/mlb_slate_coverage_patch.py'),
     Path('hello_world/mlb_doubleheader_safe_audit_patch.py'),
@@ -109,7 +203,8 @@ for required_path in [
     Path('hello_world/mlb_immutable_locked_storage_patch.py'),
     Path('hello_world/mlb_daily_lock_ml_vector_preservation_patch.py'),
     Path('hello_world/mlb_daily_per_game_lock_patch.py'),
-    Path('hello_world/mlb_daily_pick_lock_protected.py'),
+    LOCK_HANDLER,
+    MANUAL_PULL_HANDLER,
     Path('hello_world/mlb_accuracy_target_policy_v1.py'),
     Path('hello_world/mlb_ml_frozen_features.py'),
     Path('hello_world/mlb_ml_exact_lock_vector_patch.py'),

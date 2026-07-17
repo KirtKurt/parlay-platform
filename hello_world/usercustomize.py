@@ -156,6 +156,12 @@ try:
             engine = None
             engine_ok = False
             engine_error = str(exc)
+        runtime_install = getattr(engine, "MLB_ML_RUNTIME_INSTALL_V3", None) if engine is not None else None
+        runtime_ready = bool(
+            engine_ok
+            and isinstance(runtime_install, dict)
+            and runtime_install.get("ok") is True
+        )
 
         if path == "/v1/mlb/model/version":
             try:
@@ -163,9 +169,8 @@ try:
                 optimization_version = optimization.VERSION
             except Exception:
                 optimization_version = None
-            runtime_install = getattr(engine, "MLB_ML_RUNTIME_INSTALL_V3", None) if engine is not None else None
-            return _json_resp(200, {
-                "ok": True,
+            return _json_resp(200 if runtime_ready else 503, {
+                "ok": runtime_ready,
                 "sport": "mlb",
                 "model_version": "INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority",
                 "game_winner_model": getattr(engine, "MODEL_VERSION", None) if engine is not None else None,
@@ -182,16 +187,31 @@ try:
                 "productionAuthoritySource": "gate_promoted_DynamoDB_champion_bundle_only",
                 "automaticPromotionPolicy": "authoritative_AWS_audit_only_after_independent_90pct_authority_gates",
                 "parlaysEnabled": False,
+                "readOnly": True,
                 "sourcePolicy": "The Odds API stored pull history plus timestamped source-honest fundamentals snapshots.",
             })
 
         if path in {"/v1/mlb/today", "/v1/mlb/games", "/v1/mlb/predictions", "/v1/mlb/game-winners"}:
-            if engine is None:
-                return _json_resp(200, {"ok": False, "sport": "mlb", "date": date, "error": engine_error, "winner_predictions": [], "count": 0})
+            if not runtime_ready:
+                return _json_resp(503, {
+                    "ok": False,
+                    "sport": "mlb",
+                    "date": date,
+                    "error": engine_error or "MLB_PUBLIC_READ_RUNTIME_NOT_READY",
+                    "ml_runtime_install": runtime_install,
+                    "winner_predictions": [],
+                    "predictions": [],
+                    "count": 0,
+                    "readOnly": True,
+                })
             try:
-                payload = engine.predict_all(date, store=str(params.get("store", "false")).lower() == "true", limit=min(int(params.get("limit") or 500), 500))
+                payload = engine.predict_all(
+                    date,
+                    store=False,
+                    limit=min(int(params.get("limit") or 500), 500),
+                )
             except Exception as exc:
-                return _json_resp(200, {"ok": False, "sport": "mlb", "date": date, "error": str(exc), "winner_predictions": [], "count": 0})
+                return _json_resp(500, {"ok": False, "sport": "mlb", "date": date, "error": str(exc), "winner_predictions": [], "predictions": [], "count": 0, "readOnly": True})
             if path == "/v1/mlb/today":
                 return _json_resp(200, {
                     "ok": True,
@@ -215,8 +235,14 @@ try:
                     "priority": "one_official_locked_individual_game_moneyline_prediction_per_game",
                     "playabilitySeparateFromOfficialPrediction": True,
                     "parlaysEnabled": False,
+                    "readOnly": True,
                 })
-            return _json_resp(200, {**payload, "winner_predictions": payload.get("predictions") or [], "parlaysEnabled": False})
+            return _json_resp(200, {
+                **payload,
+                "winner_predictions": payload.get("predictions") or [],
+                "parlaysEnabled": False,
+                "readOnly": True,
+            })
 
         return None
 

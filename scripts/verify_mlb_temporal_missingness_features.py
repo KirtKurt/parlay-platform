@@ -42,7 +42,9 @@ except ModuleNotFoundError:
     sys.modules["boto3.dynamodb.conditions"] = conditions_stub
 
 import mlb_fundamentals_snapshot_v1 as fundamentals
+import mlb_daily_per_game_lock_patch as per_game
 import mlb_game_winner_engine as winner_engine
+import mlb_immutable_locked_storage_patch as immutable_storage
 import mlb_ml_clean_cohort_hardening_v1 as hardening
 import mlb_ml_clean_cohort_v1 as cohort
 import mlb_ml_dual_model_v1 as dual
@@ -50,6 +52,7 @@ import mlb_ml_exact_lock_vector_patch as exact_patch
 import mlb_ml_frozen_features as frozen_features
 import mlb_official_freeze_bridge as freeze_bridge
 import mlb_official_prediction_semantics as semantics
+import mlb_slate_coverage_patch as slate_coverage
 import mlb_slate_prediction_lock as slate_lock
 import mlb_temporal_features_v1 as temporal
 
@@ -165,6 +168,8 @@ def ddb_round_trip(value):
 
 
 def actual_locked_wrapper_result():
+    import inqsi_pull_history
+
     now = datetime.now(timezone.utc)
     commence = now + timedelta(minutes=20)
     slate = commence.astimezone(ZoneInfo("America/New_York")).date().isoformat()
@@ -186,32 +191,199 @@ def actual_locked_wrapper_result():
                 "draftkings": {"ml": {"home": home_price - 2, "away": away_price + 2}},
             },
         }
-        pulls.append({"pulled_at": pulled_at.isoformat(), "pull_id": f"pull-{index}", "games": [game]})
+        pulled_at_value = pulled_at.isoformat()
+        pull_id = f"pull-{index}"
+        manifest = inqsi_pull_history._build_provider_schedule_manifest(
+            sport="mlb",
+            slate=slate,
+            pulled_at=pulled_at_value,
+            pull_id=pull_id,
+            source="the_odds_api",
+            games=[game],
+        )
+        manifest_key = inqsi_pull_history._provider_manifest_key(manifest)
+        pulls.append({
+            "sport": "mlb",
+            "source": "the_odds_api",
+            "slate_date": slate,
+            "pulled_at": pulled_at_value,
+            "pull_id": pull_id,
+            "games": [game],
+            "provider_schedule_manifest": manifest,
+            "provider_manifest_binding": {
+                "version": inqsi_pull_history.PROVIDER_MANIFEST_VERSION,
+                "fingerprint": manifest["fingerprint"],
+                "gameCount": manifest["gameCount"],
+                "pk": manifest_key["PK"],
+                "sk": manifest_key["SK"],
+                "immutable": True,
+                "fullProviderSchedule": True,
+            },
+        })
 
-    def prediction_for_game(scoring_pulls, latest_game, slate_date):
-        row = winner_engine._prediction_for_game(scoring_pulls, latest_game, slate_date)
-        row["advanced_context"] = advanced_context()
-        return row
+    latest_game = pulls[-1]["games"][0]
+    source_at = datetime.fromisoformat(pulls[-1]["pulled_at"])
+    lock_at = commence - timedelta(minutes=45)
+    canonical = winner_engine._prediction_for_game(pulls, latest_game, slate)
+    canonical.update({
+        "advanced_context": advanced_context(),
+        "createdAt": source_at.isoformat(),
+        "lockedAtUtc": lock_at.isoformat(),
+        "predictionSourcePullAt": source_at.isoformat(),
+        "lockedPrediction": True,
+        "officialPrediction": True,
+        "officialPick": True,
+        "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
+        "immutablePerGameStage": True,
+        "lastPrelockSelectionFingerprint": "selection-actual-lock-game",
+        "lastPrelockPromotionVersion": per_game.PROMOTION_POLICY_VERSION,
+        "modelOrSignalRecomputedAtLock": False,
+        "slateCoverage": {"coverageComplete": True},
+        "slatePredictionLock": {
+            "locked": True,
+            "slateWideLock": False,
+            "perGameLock": True,
+            "lockAtUtc": lock_at.isoformat(),
+            "latestScoringPullAt": source_at.isoformat(),
+        },
+    })
+    canonical["teamWinProbabilityPct"] = canonical.get("winProbabilityPct")
+    fundamentals.enhance_row(canonical)
+    exact_patch.apply(frozen_features)
+    freeze_bridge.apply(semantics)
+    canonical_result = semantics.enhance_result({
+        "ok": True,
+        "sport": "mlb",
+        "slate_date": slate,
+        "slateCoverage": {"coverageComplete": True},
+        "slatePredictionLock": canonical["slatePredictionLock"],
+        "predictions": [canonical],
+    })
+    canonical = canonical_result["predictions"][0]
+    stage = {
+        **immutable_storage._stage_key(canonical),
+        "record_type": per_game.STAGE_RECORD_TYPE,
+        "slate_date": slate,
+        "game_identity": slate_coverage.game_identity(canonical),
+        "commence_time": canonical.get("commenceTime"),
+        "scheduled_lock_at_utc": lock_at.isoformat(),
+        "source_pull_at_utc": source_at.isoformat(),
+        "staged_at_utc": now.isoformat(),
+        "promotion_policy_version": per_game.PROMOTION_POLICY_VERSION,
+        "immutable_staged": True,
+        "write_once": True,
+        "candidate_proof": {
+            "version": per_game.PROMOTION_POLICY_VERSION,
+            "predictionSourcePullAtUtc": source_at.isoformat(),
+            "predictionCreatedAtUtc": source_at.isoformat(),
+            "predictionPersistedAtUtc": lock_at.isoformat(),
+            "sourceAtOrBeforeCutoff": True,
+            "createdAtOrBeforeCutoff": True,
+            "persistedAtOrBeforeCutoff": True,
+            "candidateSelectionFingerprint": canonical.get("lastPrelockSelectionFingerprint"),
+            "modelOrSignalRecomputedAtLock": False,
+        },
+        "data": {"row": copy.deepcopy(canonical)},
+    }
+    stage["stage_fingerprint"] = per_game._stage_fingerprint(stage)
+    canonical["immutableLockedStorage"] = True
+    canonical["immutableLockedStorageVersion"] = immutable_storage.VERSION
+    canonical["immutableLockedStorageKeyspace"] = "LOCKED#GAME"
+    canonical["canonicalPerGameStageAuthority"] = immutable_storage._authority_proof(stage)
+
+    canonical_item = {
+        "PK": f"GAME_WINNERS#mlb#{slate}",
+        "SK": f"LOCKED#GAME#{canonical.get('commenceTime')}#{canonical.get('gameIdentity')}",
+        "record_type": slate_coverage.CANONICAL_RECORD_TYPE,
+        "immutable_locked": True,
+        "stage_authority_verified": True,
+        "stage_authority_version": immutable_storage.AUTHORITY_VERSION,
+        "stage_fingerprint": stage["stage_fingerprint"],
+        "data": copy.deepcopy(canonical),
+    }
+
+    # The live predictor deliberately disagrees.  Public authority must return
+    # the stored canonical row and must never call _prediction_for_game again.
+    live = copy.deepcopy(canonical)
+    live.update({
+        "predictedWinner": canonical["awayTeam"] if canonical["predictedSide"] == "home" else canonical["homeTeam"],
+        "predictedSide": "away" if canonical["predictedSide"] == "home" else "home",
+        "lockedPrediction": False,
+        "officialPrediction": False,
+        "officialPick": False,
+    })
+    for key in (
+        "frozenFeatureVector",
+        "frozenFeatureVectorVersion",
+        "featureVectorFrozenAtLock",
+        "mlFeatureFreeze",
+        "immutableLockedStorage",
+        "immutablePerGameStage",
+    ):
+        live.pop(key, None)
+
+    manifest_records = {}
+    for pull in pulls:
+        manifest = pull["provider_schedule_manifest"]
+        key = inqsi_pull_history._provider_manifest_key(manifest)
+        manifest_records[(key["PK"], key["SK"])] = {
+            **key,
+            "record_type": inqsi_pull_history.PROVIDER_MANIFEST_RECORD_TYPE,
+            "manifest_fingerprint": manifest["fingerprint"],
+            "data": copy.deepcopy(manifest),
+        }
+
+    class Table:
+        @staticmethod
+        def query(**kwargs):
+            return {"Items": [copy.deepcopy(canonical_item)]}
+
+        @staticmethod
+        def get_item(*, Key, ConsistentRead=False):
+            if (Key.get("PK"), Key.get("SK")) == (stage["PK"], stage["SK"]):
+                return {"Item": copy.deepcopy(stage)}
+            manifest_item = manifest_records.get((Key.get("PK"), Key.get("SK")))
+            if manifest_item:
+                return {"Item": copy.deepcopy(manifest_item)}
+            return {}
+
+    table = Table()
+    inqsi_pull_history.PULLS = table
 
     module = SimpleNamespace(
-        history=SimpleNamespace(query_pulls=lambda sport, date, limit: copy.deepcopy(pulls)),
+        history=SimpleNamespace(
+            PULLS=table,
+            query_pulls=lambda sport, date, limit: copy.deepcopy(pulls),
+            provider_manifest_games_for_lock=inqsi_pull_history.provider_manifest_games_for_lock,
+        ),
         _today_et=lambda: slate,
-        _prediction_for_game=prediction_for_game,
+        _prediction_for_game=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("canonical public lock must not recompute at cutoff")
+        ),
         _store_prediction=lambda row: {"ok": True},
         predict_all=lambda *args, **kwargs: {
             "ok": True,
             "sport": "mlb",
             "slate_date": slate,
             "slateCoverage": {"coverageComplete": True},
-            "predictions": [],
+            "predictions": [copy.deepcopy(live)],
         },
     )
+    slate_coverage.apply(slate_lock)
     slate_lock.apply(module)
     fundamentals.apply(module)
-    exact_patch.apply(frozen_features)
-    freeze_bridge.apply(semantics)
     semantics.apply(module)
-    return module.predict_all(slate, store=False, limit=500)
+    slate_coverage.install_public_authority(module, slate_lock)
+    # Temporal/vector semantics are the subject of this verifier. The full
+    # persisted stage-authority chain is independently exercised by the
+    # immutable-storage verifier, so isolate that validator for this synthetic
+    # canonical row while retaining the real provider-manifest validation.
+    original_stage_validate = immutable_storage.validate_canonical_stage_authority
+    immutable_storage.validate_canonical_stage_authority = lambda table, row: []
+    try:
+        return module.predict_all(slate, store=False, limit=500)
+    finally:
+        immutable_storage.validate_canonical_stage_authority = original_stage_validate
 
 
 def main() -> int:
@@ -287,7 +459,16 @@ def main() -> int:
 
     actual = actual_locked_wrapper_result()
     assert actual["slatePredictionLock"]["locked"] is True, actual
+    assert actual["slatePredictionLock"]["slateWideLock"] is False
+    assert actual["slatePredictionLock"]["perGameLock"] is True
+    assert actual["slatePredictionLock"]["canonicalLockedGameCount"] == 1
+    assert actual["slatePredictionLock"]["pendingCanonicalGameCount"] == 0
+    assert actual["publicPerGameAuthority"]["version"] == slate_coverage.AUTHORITY_VERSION
+    assert actual["publicPerGameAuthority"]["recomputedLockedPredictions"] is False
     actual_row = actual["predictions"][0]
+    assert actual_row["perGameCanonicalLock"]["canonical"] is True
+    assert actual_row["immutableLockedStorage"] is True
+    assert actual_row["officialPredictionStatus"] == "OFFICIAL_LOCKED_PREDICTION"
     actual_vector = actual_row["frozenFeatureVector"]
     assert actual_row["fundamentalsSnapshot"]["asOfUtc"]
     assert actual_vector["fundamentalsSnapshotAsOfUtc"] <= actual_vector["sourcePullAtUtc"] <= actual_vector["lockAtUtc"]
