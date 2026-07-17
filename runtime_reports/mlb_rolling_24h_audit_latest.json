@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-17T02:18:29.371427+00:00",
+  "createdAt": "2026-07-17T02:44:12.599920+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -4246,9 +4246,10 @@
       "errors": [],
       "authoritativeTrainer": "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger",
       "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
-      "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.8-verified-stage-promotion-authority",
-      "runtimeInstallerCallSite": "usercustomize.py_after_prediction_chain",
-      "singleRuntimeInstallCall": true,
+      "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority",
+      "runtimeInstallerCallSite": "explicit_each_lambda_entrypoint_before_route_or_writer_import",
+      "singleRuntimeInstallCall": false,
+      "idempotentAuthoritativeInstallerPerLambdaProcess": true,
       "duplicateTrainerAuthorityDisabled": true,
       "duplicateOutcomeRuntimeAuthorityDisabled": true,
       "automaticPromotionSupported": true,
@@ -4305,7 +4306,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-17T02:18:29.371427+00:00"
+    "runSk": "AUDIT#2026-07-17T02:44:12.599920+00:00"
   },
   "mlOptimizationV3": {
     "applied": true,
@@ -4374,7 +4375,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion",
-      "evaluatedAtUtc": "2026-07-17T02:18:58.520222+00:00",
+      "evaluatedAtUtc": "2026-07-17T02:44:41.332913+00:00",
       "automaticPromotionEnabled": true,
       "automaticPromotionRequiresPassedApplicableGates": true,
       "promotionEligible": false,
@@ -4710,7 +4711,7 @@
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-17T02:18:48.147686+00:00"
+      "runSk": "CHALLENGER#2026-07-17T02:44:31.232164+00:00"
     },
     "promotion": {
       "ok": true,
