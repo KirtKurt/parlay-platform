@@ -8,3 +8,7 @@ Required fail-closed behavior: the daily card is not written when the exact vect
 Required provider smoke behavior: the provider call must be live and fallback-free; zero active games is valid off-slate, while nonzero games must be stored and scored.
 Required historical policy: July 12 and earlier invalid rows remain quarantined and are not reconstructed after outcomes are known.
 Required ML policy: outcome and reliability models remain separate, recommendation reliability threshold remains 60%, rolling 24-hour all-games audit target remains 90%, and champion promotion remains manual and DynamoDB-reviewed.
+
+Deployment request UTC: 2026-07-17T02:57:00Z
+Purpose: verify the MLB T-minus-45 last-prelock promotion runtime and the exact zero-game post-game provider-manifest cutover smoke on production main.
+Expected behavior: live nonzero pulls require complete immutable manifests; zero-game post-cutover history remains unbackfilled and fails closed without being misclassified as a runtime installation failure.
