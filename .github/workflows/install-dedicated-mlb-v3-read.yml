@@ -1,10 +1,6 @@
 name: Install Dedicated MLB V3 Read Lambda
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/install-dedicated-mlb-v3-read.yml'
   workflow_dispatch:
 
 permissions:
@@ -366,7 +362,7 @@ jobs:
           assert str(body.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"), body
           runtime = body.get("ml_runtime_install") or {}
           assert runtime.get("ok") is True, runtime
-          assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.8-verified-stage-promotion-authority", runtime
+          assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority", runtime
           required = {"legacyReliabilityOverlaySafety","singleDdbChampionAuthority","officialSemanticsFinalized","immutableFeatureFreeze","immutableLockedStorageAuthority","exactCleanCohortVectorPatch","officialFreezeBridge","lastPrelockPromotionAuthority","legacyFinalGateDisabled"}
           missing = sorted(name for name in required if (runtime.get("steps") or {}).get(name) is not True)
           assert not missing, {"missingRuntimeSteps": missing, "runtime": runtime}

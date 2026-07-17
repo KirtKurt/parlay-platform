@@ -8,9 +8,10 @@ _INSTALLED = False
 def install() -> dict:
     """Install safeguards without duplicating the runtime wrapper chain.
 
-    `usercustomize.py` executes the one authoritative runtime installer after the
-    legacy prediction chain has been assembled. This function only installs
-    module-level safety and freeze bridges that must exist before that final call.
+    Every Lambda entrypoint explicitly executes the same idempotent authoritative
+    runtime installer after its prediction chain is importable.  usercustomize is
+    compatibility-only. This function installs only the module-level safety and
+    freeze bridges that must exist before the entrypoint's authoritative call.
     """
     global _INSTALLED
     if _INSTALLED:
@@ -57,9 +58,10 @@ def install() -> dict:
         "errors": errors,
         "authoritativeTrainer": AUTHORITATIVE_TRAINER,
         "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
-        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.8-verified-stage-promotion-authority",
-        "runtimeInstallerCallSite": "usercustomize.py_after_prediction_chain",
-        "singleRuntimeInstallCall": True,
+        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority",
+        "runtimeInstallerCallSite": "explicit_each_lambda_entrypoint_before_route_or_writer_import",
+        "singleRuntimeInstallCall": False,
+        "idempotentAuthoritativeInstallerPerLambdaProcess": True,
         "duplicateTrainerAuthorityDisabled": True,
         "duplicateOutcomeRuntimeAuthorityDisabled": True,
         "automaticPromotionSupported": True,
