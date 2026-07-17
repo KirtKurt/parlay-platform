@@ -767,6 +767,26 @@ def test_unknown_candidate_payload_fingerprint_version_fails_closed():
     assert not staged_items(module)
 
 
+def test_falsy_invalid_candidate_payload_fingerprint_version_fails_closed():
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "falsy-hash-version")
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    _, snapshot = persist_candidate_with_production_writer(module, G1, source)
+    stored_snapshot = module.TABLE.items[(snapshot["PK"], snapshot["SK"])]
+    stored_snapshot["prediction_payload_fingerprint_version"] = 0
+
+    result = module.run_lock(SLATE)
+
+    assert result["ok"] is False
+    assert "persisted_prelock_payload_fingerprint_version_unsupported" in str(
+        result["failures"]
+    )
+    assert not staged_items(module)
+
+
 def test_legacy_unversioned_candidate_with_matching_persisted_hash_remains_valid():
     import inqsi_pull_history as history_contract
 
