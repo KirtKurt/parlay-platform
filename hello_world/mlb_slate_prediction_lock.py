@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
 LOCK_MINUTES = int(os.environ.get("INQSI_MLB_SLATE_LOCK_MINUTES_BEFORE_FIRST_GAME", "45"))
-POLICY_VERSION = "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN"
+POLICY_VERSION = "MLB-PER-GAME-CANONICAL-PREDICTION-AUTHORITY-v1-last-prelock-promotion"
 
 
 def _parse_dt(value: Any) -> Optional[datetime]:
@@ -53,37 +53,42 @@ def _lock_state(pulls: List[Dict[str, Any]], slate: str) -> Dict[str, Any]:
     all_games = _latest_games(pulls, slate)
     starts = [dt for dt in (_parse_dt(g.get("commence_time") or g.get("commenceTime")) for g in all_games) if dt]
     first_start = min(starts) if starts else None
-    lock_at = first_start - timedelta(minutes=LOCK_MINUTES) if first_start else None
-    locked = bool(lock_at and now >= lock_at)
-    if locked and lock_at:
-        scoring = [p for p in pulls if (_pull_dt(p) and _pull_dt(p) <= lock_at)]
-        source = "latest_pre_lock_pull_history" if scoring else "no_pre_lock_pull_available_fallback_to_available_history"
-        scoring = scoring or pulls
-    else:
-        scoring = pulls
-        source = "live_pre_lock_pull_history"
+    last_start = max(starts) if starts else None
+    first_cutoff = first_start - timedelta(minutes=LOCK_MINUTES) if first_start else None
+    last_cutoff = last_start - timedelta(minutes=LOCK_MINUTES) if last_start else None
+    scoring = pulls
     latest = pulls[-1] if pulls else {}
     latest_scoring = scoring[-1] if scoring else {}
     state = {
         "applied": bool(first_start),
         "policyVersion": POLICY_VERSION,
-        "slateWideLock": True,
+        "authorityVersion": POLICY_VERSION,
+        "slateWideLock": False,
+        "perGameLock": True,
         "lockMinutesBeforeFirstGame": LOCK_MINUTES,
+        "lockMinutesBeforeEachGame": LOCK_MINUTES,
         "firstGameStartUtc": first_start.isoformat() if first_start else None,
-        "lockAtUtc": lock_at.isoformat() if lock_at else None,
-        "locked": locked,
-        "lockStatus": "LOCKED" if locked else "OPEN_PRE_LOCK",
-        "source": source,
+        "lastGameStartUtc": last_start.isoformat() if last_start else None,
+        "firstPerGameLockAtUtc": first_cutoff.isoformat() if first_cutoff else None,
+        "lastPerGameLockAtUtc": last_cutoff.isoformat() if last_cutoff else None,
+        # A slate is never declared locked merely because the first cutoff has
+        # passed.  The canonical per-game authority overlays immutable rows and
+        # is the only code allowed to set this to true.
+        "lockAtUtc": None,
+        "locked": False,
+        "lockStatus": "AWAITING_CANONICAL_PER_GAME_ROWS",
+        "source": "live_prediction_with_canonical_per_game_overlay_pending",
         "minutesUntilFirstGameStart": round((first_start - now).total_seconds() / 60.0, 2) if first_start else None,
-        "minutesUntilSlateLock": round((lock_at - now).total_seconds() / 60.0, 2) if lock_at else None,
+        "minutesUntilFirstPerGameLock": round((first_cutoff - now).total_seconds() / 60.0, 2) if first_cutoff else None,
         "totalPullCountAvailable": len(pulls),
         "scoringPullCount": len(scoring),
         "latestAvailablePullAt": latest.get("pulled_at"),
         "latestScoringPullAt": latest_scoring.get("pulled_at"),
         "rules": [
-            "All predictions for the slate lock together 45 minutes before the first game begins.",
-            "After lock, later pulls may continue for audit but cannot change picks.",
-            "Locked scoring uses only pulls captured at or before the lock timestamp.",
+            "Each game locks independently 45 minutes before its own scheduled start.",
+            "The last valid pre-lock prediction at that cutoff becomes the final lock.",
+            "Public reads may call the live predictor for still-open games but never recompute a locked game.",
+            "Only a validated immutable LOCKED#GAME row is an official prediction.",
         ],
     }
     state["_scoring_pulls"] = scoring
@@ -138,11 +143,6 @@ def _attach_lock(result: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any
     for row in out.get("predictions") or []:
         if isinstance(row, dict):
             row["slatePredictionLock"] = public
-            if public.get("locked"):
-                row["lockedPrediction"] = True
-                row["lockedAtUtc"] = public.get("lockAtUtc")
-                row["predictionSourcePullAt"] = public.get("latestScoringPullAt")
-                row["tags"] = sorted(set((row.get("tags") or []) + ["SLATE_LOCKED", "SLATE_WIDE_45_MIN_LOCK_POLICY"]))
     return out
 
 
@@ -152,61 +152,10 @@ def _locked_result(module: Any, result: Dict[str, Any], args: Tuple[Any, ...], k
     if not pulls:
         return result
     state = _lock_state(pulls, slate)
-    if not state.get("locked"):
-        return _attach_lock(result, state)
-    scoring = state.get("_scoring_pulls") or pulls
-    public = {k: v for k, v in state.items() if not k.startswith("_")}
-    games = _latest_games(scoring, slate)
-    predictions = []
-    stored = []
-    for game in games:
-        row = module._prediction_for_game(scoring, game, slate)
-        if not row:
-            continue
-        row = _optimize_locked_row(row)
-        row["slatePredictionLock"] = public
-        row["lockedPrediction"] = True
-        row["lockedAtUtc"] = public.get("lockAtUtc")
-        row["predictionSourcePullAt"] = public.get("latestScoringPullAt")
-        row["tags"] = sorted(set((row.get("tags") or []) + ["SLATE_LOCKED", "SLATE_WIDE_45_MIN_LOCK_POLICY"]))
-        if store and hasattr(module, "_store_prediction"):
-            row["stored"] = module._store_prediction(row)
-            stored.append(row.get("stored"))
-        predictions.append(row)
-    predictions.sort(key=lambda r: (float(r.get("actionablePick") is True), float(r.get("score") or 0), float(r.get("winProbability") or 0)), reverse=True)
-    for i, row in enumerate(predictions, 1):
-        row["rank"] = i
-    latest = pulls[-1]
-    latest_scoring = scoring[-1] if scoring else latest
-    out = dict(result)
-    out.update({
-        "ok": True,
-        "sport": "mlb",
-        "slate_date": slate,
-        "pullCount": len(pulls),
-        "totalPullCountAvailable": len(pulls),
-        "scoringPullCount": len(scoring),
-        "latestPullAt": latest.get("pulled_at"),
-        "latestScoringPullAt": latest_scoring.get("pulled_at"),
-        "gameCount": len(games),
-        "count": len(predictions),
-        "allGamesPredicted": len(predictions) == len(games),
-        "stored": store,
-        "storedCount": len([s for s in stored if s and s.get("ok")]),
-        "actionablePickCount": len([r for r in predictions if r.get("actionablePick")]),
-        "noPickCount": len([r for r in predictions if not r.get("actionablePick")]),
-        "slatePredictionLock": public,
-        "predictions": predictions,
-    })
-    out = _enhance(out)
-    out["slatePredictionLock"] = public
-    for row in out.get("predictions") or []:
-        if isinstance(row, dict):
-            row["slatePredictionLock"] = public
-            row["lockedPrediction"] = True
-            row["lockedAtUtc"] = public.get("lockAtUtc")
-            row["predictionSourcePullAt"] = public.get("latestScoringPullAt")
-    return out
+    # This layer is intentionally annotation-only.  The coverage authority
+    # replaces rows from canonical immutable storage; it must never synthesize
+    # a second prediction at or after a cutoff.
+    return _attach_lock(result, state)
 
 
 def apply(module: Any):

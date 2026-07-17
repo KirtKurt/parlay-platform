@@ -12,7 +12,15 @@ def _latest_games(module: Any, slate_date: str, pulls: List[Dict[str, Any]]) -> 
     by_identity: Dict[str, Tuple[datetime, Dict[str, Any]]] = {}
     for pull in pulls or []:
         pulled_at = module._parse_dt(pull.get("pulled_at")) or datetime.min.replace(tzinfo=timezone.utc)
-        for game in pull.get("games") or []:
+        if (
+            str(pull.get("source") or "") == "the_odds_api"
+            or pull.get("provider_schedule_manifest") is not None
+            or pull.get("provider_manifest_binding") is not None
+        ):
+            pull_games = module.history.provider_manifest_games_for_lock(pull, slate_date)
+        else:
+            pull_games = pull.get("games") or []
+        for game in pull_games:
             if module._game_date_et(game) != slate_date:
                 continue
             identity = game_identity(game)

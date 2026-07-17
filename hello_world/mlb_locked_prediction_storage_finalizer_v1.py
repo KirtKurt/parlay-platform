@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-import copy
 from typing import Any, Dict, List, Tuple
 
-VERSION = "MLB-LOCKED-PREDICTION-STORAGE-FINALIZER-v1-exact-vector-only"
+VERSION = "MLB-LOCKED-PREDICTION-STORAGE-FINALIZER-v3-verified-per-game-stage-authority"
+UNAUTHORIZED_LOCKED_WRITE = "immutable_per_game_stage_authority_missing"
 
 
 def _store_requested(args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> bool:
@@ -22,71 +22,27 @@ def _without_store(args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> Tuple[Tuple
     return tuple(inner_args), inner_kwargs
 
 
-def _locked(result: Dict[str, Any]) -> bool:
-    slate_lock = result.get("slatePredictionLock") or {}
-    if slate_lock.get("locked") is True:
-        return True
-    return any(
-        bool(
-            row.get("lockedPrediction") is True
-            or row.get("officialPredictionStatus") == "OFFICIAL_LOCKED_PREDICTION"
-            or (row.get("lastPossiblePredictionGate") or {}).get("finalLocked") is True
-        )
-        for row in (result.get("predictions") or [])
-        if isinstance(row, dict)
+def _row_locked(row: Dict[str, Any]) -> bool:
+    lock = row.get("slatePredictionLock") or row.get("lastPossiblePredictionGate") or {}
+    audit = row.get("lockedCardAudit") or {}
+    tags = {str(value) for value in (row.get("tags") or [])}
+    return bool(
+        row.get("lockedPrediction") is True
+        or row.get("officialPredictionStatus") == "OFFICIAL_LOCKED_PREDICTION"
+        or audit.get("lockedFlag") is True
+        or (isinstance(lock, dict) and (lock.get("locked") is True or lock.get("finalLocked") is True))
+        or bool(tags & {"FINAL_LOCKED", "SLATE_LOCKED", "OFFICIAL_LOCKED_PREDICTION"})
     )
 
 
-def _prepare_locked_result(result: Dict[str, Any]) -> Dict[str, Any]:
-    import mlb_official_freeze_bridge
-    import mlb_official_prediction_semantics
-
-    mlb_official_freeze_bridge.apply(mlb_official_prediction_semantics)
-    out = mlb_official_prediction_semantics.enhance_result(copy.deepcopy(result))
-    coverage = copy.deepcopy(out.get("slateCoverage") or {})
-    slate_lock = copy.deepcopy(out.get("slatePredictionLock") or {})
-    slate = out.get("slate_date") or out.get("slateDateEt")
-
-    for row in out.get("predictions") or []:
-        if not isinstance(row, dict):
-            continue
-        row["slate_date"] = row.get("slate_date") or slate
-        row["slateDateEt"] = row.get("slateDateEt") or slate
-        row["slateCoverage"] = copy.deepcopy(row.get("slateCoverage") or coverage)
-        row["slatePredictionLock"] = copy.deepcopy(row.get("slatePredictionLock") or slate_lock)
-        row["lockedPrediction"] = True
-        row["officialPrediction"] = True
-        row["officialPick"] = True
-        row["officialPredictionStatus"] = "OFFICIAL_LOCKED_PREDICTION"
-        row["lockedAtUtc"] = (
-            row.get("lockedAtUtc")
-            or (row.get("frozenFeatureVector") or {}).get("lockAtUtc")
-            or slate_lock.get("lockAtUtc")
-        )
-        row["predictionSourcePullAt"] = (
-            row.get("predictionSourcePullAt")
-            or (row.get("frozenFeatureVector") or {}).get("sourcePullAtUtc")
-            or slate_lock.get("latestScoringPullAt")
-        )
-        if row.get("lockedAmericanOdds") in (None, ""):
-            row["lockedAmericanOdds"] = row.get("americanOdds")
-        row["canonicalLockedStorageFinalizerVersion"] = VERSION
-
-    # Re-freeze after the canonical row fields above are attached. This creates
-    # the one vector that the immutable store and later settlement will share.
-    return mlb_official_prediction_semantics.enhance_result(out)
-
-
-def _validate_all(rows: List[Dict[str, Any]]) -> Dict[str, List[str]]:
+def _validate_row(row: Dict[str, Any]) -> List[str]:
     import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 
-    errors: Dict[str, List[str]] = {}
-    for row in rows:
-        row_errors = vector_contract.validate_exact_locked_row(row)
-        if row_errors:
-            game_id = str(row.get("gameId") or row.get("game_id") or "unknown")
-            errors[game_id] = row_errors
-    return errors
+    return vector_contract.validate_exact_locked_row(row)
+
+
+def _game_id(row: Dict[str, Any]) -> str:
+    return str(row.get("gameId") or row.get("game_id") or row.get("gameIdentity") or "unknown")
 
 
 def _store_final(module: Any, result: Dict[str, Any], requested: bool) -> Dict[str, Any]:
@@ -96,49 +52,97 @@ def _store_final(module: Any, result: Dict[str, Any], requested: bool) -> Dict[s
     if not rows or not hasattr(module, "_store_prediction"):
         return result
 
-    out = _prepare_locked_result(result) if _locked(result) else copy.deepcopy(result)
-    rows = [row for row in (out.get("predictions") or []) if isinstance(row, dict)]
-
-    validation_errors = _validate_all(rows) if _locked(out) else {}
-    if validation_errors:
-        out.update({
-            "ok": False,
-            "stored": False,
-            "storedCount": 0,
-            "canonicalLockedStoredCount": 0,
-            "canonicalLockedStorageErrors": validation_errors,
-            "canonicalLockedStorageVersion": VERSION,
-            "operationalDefect": True,
-            "allGamesPredicted": False,
-        })
-        return out
-
+    # The result is intentionally not run back through the legacy official
+    # semantics enhancer here.  That enhancer can mark an entire mixed result
+    # locked from a slate-level flag.  Storage authority belongs to each row:
+    # only the immutable per-game stage may create a canonical LOCKED#GAME row.
+    out = result
     stored_count = 0
-    storage_errors: List[str] = []
+    pre_lock_stored_count = 0
+    pre_lock_candidate_count = 0
+    canonical_stored_count = 0
+    canonical_candidate_count = 0
+    suppressed_locked_count = 0
+    pre_lock_storage_errors: List[str] = []
+    canonical_storage_errors: Dict[str, List[str]] = {}
     for row in rows:
+        row_locked = _row_locked(row)
+        stage_authorized = row.get("immutablePerGameStage") is True
+
+        if row_locked and not stage_authorized:
+            suppressed_locked_count += 1
+            row["canonicalLockedStoreSuppressed"] = True
+            row["canonicalLockedStoreSuppressionReason"] = UNAUTHORIZED_LOCKED_WRITE
+            continue
+
+        if row_locked:
+            canonical_candidate_count += 1
+            row_errors = _validate_row(row)
+            if row_errors:
+                canonical_storage_errors[_game_id(row)] = sorted(set(row_errors))
+                row["canonicalLockedStoreError"] = ",".join(sorted(set(row_errors)))
+                continue
+        else:
+            pre_lock_candidate_count += 1
+
         try:
             stored = module._store_prediction(row)
-            row["canonicalLockedStore"] = stored
+            if row_locked:
+                row["canonicalLockedStore"] = stored
+            else:
+                row["preLockStore"] = stored
             if isinstance(stored, dict) and stored.get("ok"):
                 stored_count += 1
+                if row_locked:
+                    canonical_stored_count += 1
+                else:
+                    pre_lock_stored_count += 1
             else:
-                storage_errors.append(str(stored))
+                if row_locked:
+                    canonical_storage_errors.setdefault(_game_id(row), []).append(str(stored))
+                else:
+                    pre_lock_storage_errors.append(str(stored))
         except Exception as exc:
-            row["canonicalLockedStoreError"] = str(exc)
-            storage_errors.append(str(exc))
+            if row_locked:
+                row["canonicalLockedStoreError"] = str(exc)
+                canonical_storage_errors.setdefault(_game_id(row), []).append(str(exc))
+            else:
+                row["preLockStoreError"] = str(exc)
+                pre_lock_storage_errors.append(str(exc))
 
-    expected = len(rows)
-    storage_ok = stored_count == expected and not storage_errors
+    canonical_storage_complete = bool(
+        canonical_candidate_count
+        and canonical_stored_count == canonical_candidate_count
+        and not canonical_storage_errors
+    )
+    pre_lock_storage_complete = bool(
+        pre_lock_candidate_count == pre_lock_stored_count
+        and not pre_lock_storage_errors
+    )
     out.update({
-        "stored": True,
+        "stored": stored_count > 0,
         "storedCount": stored_count,
-        "canonicalLockedStoredCount": stored_count,
-        "canonicalLockedStorageErrors": storage_errors,
+        "preLockStoredCount": pre_lock_stored_count,
+        "preLockStorageCandidateCount": pre_lock_candidate_count,
+        "preLockStorageComplete": pre_lock_storage_complete,
+        "preLockStorageErrors": pre_lock_storage_errors,
+        "canonicalLockedStorageCandidateCount": canonical_candidate_count,
+        "canonicalLockedStoredCount": canonical_stored_count,
+        "canonicalLockedStorageErrors": canonical_storage_errors,
         "canonicalLockedStorageVersion": VERSION,
-        "canonicalLockedStorageComplete": storage_ok,
+        "canonicalLockedStorageComplete": canonical_storage_complete,
+        "canonicalLockedStorageSuppressedUnauthorizedCount": suppressed_locked_count,
+        "canonicalLockedStorageAuthority": "consistent-read verified immutable T-minus-45 stage",
         "canonicalLockedStorageSuppressedEarlyWrites": True,
     })
-    if _locked(out) and not storage_ok:
+    if canonical_candidate_count and not canonical_storage_complete:
+        out["ok"] = False
+        out["operationalDefect"] = True
+        out["allGamesPredicted"] = False
+    if pre_lock_candidate_count and not pre_lock_storage_complete:
+        # The lock can only promote a prediction that was durably persisted
+        # before cutoff.  Never report a successful HOT candidate run when one
+        # or more pre-lock rows failed storage.
         out["ok"] = False
         out["operationalDefect"] = True
         out["allGamesPredicted"] = False

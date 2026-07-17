@@ -2,17 +2,23 @@ from __future__ import annotations
 
 import math
 import os
+import hashlib
+import json
 from datetime import datetime, timezone
 from statistics import mean
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import inqsi_pull_history as history
+from mlb_slate_coverage_patch import game_identity as _canonical_game_identity
 import mlb_temporal_features_v1 as temporal_features
 
 SLATE_TZ = ZoneInfo("America/New_York")
 ENGINE = "MLB-SINGLE-GAME-ML-PROMOTION-v2.1"
 MODEL_VERSION = "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production"
+PREGAME_SNAPSHOT_RECORD_TYPE = "mlb_immutable_prelock_prediction_snapshot"
+PREGAME_SNAPSHOT_VERSION = "MLB-PREGAME-PREDICTION-SNAPSHOT-v2-post-write-ack"
+PREGAME_PERSISTENCE_PROOF_TYPE = "DDB_LIVE_PREDICTION_PUT_SUCCESS_ACK-v1"
 
 PRIMARY_BOOK = os.environ.get("ODDS_PRIMARY_BOOK", "fanduel").lower().strip()
 BOOK_PRIORITY = [
@@ -60,16 +66,10 @@ def _game_day(game: Dict[str, Any]) -> Optional[str]:
 
 
 def _game_identity(game: Dict[str, Any]) -> str:
-    provider_id = game.get("game_id") or game.get("id")
-    if provider_id:
-        return str(provider_id)
-    start = str(game.get("commence_time") or game.get("commenceTime") or "unknown")
-    key = str(game.get("game_key") or "")
-    if key:
-        return f"{key}|{start}"
-    home = str(game.get("home_team") or game.get("homeTeam") or "home").lower()
-    away = str(game.get("away_team") or game.get("awayTeam") or "away").lower()
-    return f"{start}|{away}|{home}"
+    identity = _canonical_game_identity(game)
+    # Preserve the historical raw provider id in engine rows while using the
+    # exact shared fallback identity for games without a provider id.
+    return identity.replace("provider:", "", 1) if identity.startswith("provider:") else identity
 
 
 def _same_game(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
@@ -162,7 +162,12 @@ def _series_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any]) -
             if _same_game(game, latest_game):
                 fair = _market_fair(game)
                 if fair.get("book_count", 0) > 0:
-                    rows.append({"pulled_at": pulled_at, "game": game, "fair": fair})
+                    rows.append({
+                        "pull_id": pull.get("pull_id"),
+                        "pulled_at": pulled_at,
+                        "game": game,
+                        "fair": fair,
+                    })
                 break
     return rows
 
@@ -319,6 +324,7 @@ def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any
 
     pick = home if sort_key(home) >= sort_key(away) else away
     opponent = away if pick["side"] == "home" else home
+    source = series[-1]
     return {
         "ok": True,
         "sport": "mlb",
@@ -357,8 +363,99 @@ def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any
         "homeSignal": home,
         "awaySignal": away,
         "temporalFeatureVersion": temporal_features.VERSION,
+        "predictionSourcePullAt": source.get("pulled_at"),
+        "predictionSourcePullId": source.get("pull_id"),
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
         "createdAt": _now(),
+    }
+
+
+def _pregame_snapshot_item(row: Dict[str, Any], *, persisted_at: str) -> Dict[str, Any]:
+    created_at = str(row.get("createdAt") or row.get("created_at") or _now())
+    identity = str(row.get("gameIdentity") or row.get("gameId") or "unknown")
+    source_at = str(
+        row.get("predictionSourcePullAt")
+        or ((row.get("frozenFeatureVector") or {}).get("sourcePullAtUtc"))
+        or ""
+    )
+    identity_material = json.dumps(
+        {
+            "createdAt": created_at,
+            "persistedAt": persisted_at,
+            "gameIdentity": identity,
+            "sourcePullAt": source_at,
+            "predictedWinner": row.get("predictedWinner"),
+            "predictedSide": row.get("predictedSide"),
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+        default=str,
+    )
+    digest = hashlib.sha256(identity_material.encode("utf-8")).hexdigest()[:20]
+    live_pk = f"GAME_WINNERS#mlb#{row.get('slate_date')}"
+    live_sk = f"GAME#{row.get('commenceTime') or 'unknown'}#{identity}"
+    payload_fingerprint = hashlib.sha256(
+        json.dumps(row, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+    return history.ddb_safe({
+        "PK": live_pk,
+        "SK": f"PREGAME#GAME#{identity}#PERSISTED#{persisted_at}#CREATED#{created_at}#{digest}",
+        "record_type": PREGAME_SNAPSHOT_RECORD_TYPE,
+        "snapshot_version": PREGAME_SNAPSHOT_VERSION,
+        "sport": "mlb",
+        "slate_date": row.get("slate_date"),
+        "game_id": row.get("gameId"),
+        "game_identity": identity,
+        "game_key": row.get("gameKey"),
+        "commence_time": row.get("commenceTime"),
+        "predicted_winner": row.get("predictedWinner"),
+        "predicted_side": row.get("predictedSide"),
+        "prediction_created_at_utc": created_at,
+        "prediction_persisted_at_utc": persisted_at,
+        "prediction_persistence_proof_type": PREGAME_PERSISTENCE_PROOF_TYPE,
+        "prediction_persistence_write_pk": live_pk,
+        "prediction_persistence_write_sk": live_sk,
+        "prediction_payload_fingerprint": payload_fingerprint,
+        "prediction_source_pull_at_utc": source_at or None,
+        "prediction_source_pull_id": row.get("predictionSourcePullId"),
+        "immutable_pregame": True,
+        "write_once": True,
+        "data": row,
+        "created_at": created_at,
+    })
+
+
+def _put_pregame_snapshot(item: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        history.PULLS.put_item(
+            Item=item,
+            ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
+        )
+        created = True
+    except Exception as exc:
+        response = getattr(exc, "response", {}) or {}
+        code = str((response.get("Error") or {}).get("Code") or "")
+        if code != "ConditionalCheckFailedException":
+            raise
+        existing = history.PULLS.get_item(
+            Key={"PK": item["PK"], "SK": item["SK"]},
+            ConsistentRead=True,
+        ).get("Item")
+        if not existing:
+            raise RuntimeError("MLB_PREGAME_SNAPSHOT_COLLISION_WITHOUT_READBACK") from exc
+        expected = json.dumps(item.get("data") or {}, sort_keys=True, default=str)
+        actual = json.dumps(existing.get("data") or {}, sort_keys=True, default=str)
+        if expected != actual:
+            raise RuntimeError("MLB_PREGAME_SNAPSHOT_COLLISION_MISMATCH") from exc
+        created = False
+    return {
+        "ok": True,
+        "pk": item["PK"],
+        "sk": item["SK"],
+        "storageClass": "PREGAME_IMMUTABLE_SNAPSHOT",
+        "writeOnce": True,
+        "created": created,
+        "version": PREGAME_SNAPSHOT_VERSION,
     }
 
 
@@ -385,8 +482,22 @@ def _store_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
         "created_at": row.get("createdAt"),
         "data": row,
     })
+    # The immutable snapshot timestamp is captured only after DynamoDB has
+    # returned success for the live prediction write.  It is therefore a
+    # conservative upper bound on when this exact prediction first existed in
+    # the table; a timestamp sampled before put_item cannot prove persistence.
     history.PULLS.put_item(Item=item)
-    return {"ok": True, "pk": item["PK"], "sk": item["SK"]}
+    persisted_at = _now()
+    snapshot = _put_pregame_snapshot(
+        _pregame_snapshot_item(row, persisted_at=persisted_at)
+    )
+    return {
+        "ok": True,
+        "pk": item["PK"],
+        "sk": item["SK"],
+        "storageClass": "LIVE_MUTABLE",
+        "pregameSnapshot": snapshot,
+    }
 
 
 def predict_all(game_date: Optional[str] = None, store: bool = False, limit: int = 500) -> Dict[str, Any]:

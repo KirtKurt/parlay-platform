@@ -4,20 +4,119 @@ import json
 import os
 from typing import Any, Dict, Optional
 
+try:
+    import mlb_ml_runtime_install_v3
+
+    _raw_runtime_status = mlb_ml_runtime_install_v3.install()
+except Exception as exc:
+    _raw_runtime_status = {
+        "applied": False,
+        "ok": False,
+        "steps": {},
+        "errors": [str(exc)],
+    }
+
+_REQUIRED_RUNTIME_STEPS = {
+    "accuracyTargetsSeparated",
+    "legacyReliabilityOverlaySafety",
+    "sourceHonestFundamentals",
+    "singleDdbChampionAuthority",
+    "officialSemanticsFinalized",
+    "exactCleanCohortVectorPatch",
+    "officialFreezeBridge",
+    "immutableFeatureFreeze",
+    "immutableLockedStorageAuthority",
+    "canonicalLockedStorageFinalizer",
+    "lastPrelockPromotionAuthority",
+    "legacyFinalGateDisabled",
+}
+if isinstance(_raw_runtime_status, dict):
+    ML_RUNTIME_INSTALL_STATUS = dict(_raw_runtime_status)
+else:
+    ML_RUNTIME_INSTALL_STATUS = {
+        "applied": False,
+        "ok": False,
+        "steps": {},
+        "errors": [
+            "mlb_ml_runtime_install_v3.install() returned a non-dictionary status"
+        ],
+    }
+_runtime_steps = ML_RUNTIME_INSTALL_STATUS.get("steps")
+if not isinstance(_runtime_steps, dict):
+    _runtime_steps = {}
+    ML_RUNTIME_INSTALL_STATUS["ok"] = False
+    ML_RUNTIME_INSTALL_STATUS["errors"] = list(
+        ML_RUNTIME_INSTALL_STATUS.get("errors") or []
+    ) + ["mlb_ml_runtime_install_v3.install() returned invalid step status"]
+_missing_runtime_steps = sorted(
+    name for name in _REQUIRED_RUNTIME_STEPS if _runtime_steps.get(name) is not True
+)
+_expected_runtime_version = getattr(
+    globals().get("mlb_ml_runtime_install_v3"), "VERSION", None
+)
+if ML_RUNTIME_INSTALL_STATUS.get("applied") is not True:
+    ML_RUNTIME_INSTALL_STATUS["ok"] = False
+if ML_RUNTIME_INSTALL_STATUS.get("errors"):
+    ML_RUNTIME_INSTALL_STATUS["ok"] = False
+if (
+    not _expected_runtime_version
+    or ML_RUNTIME_INSTALL_STATUS.get("version") != _expected_runtime_version
+):
+    ML_RUNTIME_INSTALL_STATUS["ok"] = False
+    ML_RUNTIME_INSTALL_STATUS["expectedVersion"] = _expected_runtime_version
+if _missing_runtime_steps:
+    ML_RUNTIME_INSTALL_STATUS["ok"] = False
+    ML_RUNTIME_INSTALL_STATUS["missingRequiredSteps"] = _missing_runtime_steps
+
 import mlb_daily_pick_lock
 import mlb_daily_lock_coverage_patch
 import mlb_daily_lock_ml_vector_preservation_patch
 import mlb_daily_per_game_lock_patch
 
+LOCK_RUNTIME_FIX_VERSION = "MLB-LOCK-RUNTIME-FIX-v2-last-prelock-becomes-final"
+
 mlb_daily_lock_coverage_patch.apply(mlb_daily_pick_lock)
 ML_VECTOR_PRESERVATION_STATUS = mlb_daily_lock_ml_vector_preservation_patch.apply(mlb_daily_pick_lock)
 mlb_daily_per_game_lock_patch.apply(mlb_daily_pick_lock)
+_expected_attempt_diagnostics_version = getattr(
+    mlb_daily_per_game_lock_patch, "ATTEMPT_DIAGNOSTICS_VERSION", None
+)
+_attempt_diagnostics_version = getattr(
+    mlb_daily_pick_lock, "MLB_PER_GAME_LOCK_ATTEMPT_DIAGNOSTICS_VERSION", None
+)
+_attempt_diagnostics_ready = bool(
+    _expected_attempt_diagnostics_version
+    and _attempt_diagnostics_version == _expected_attempt_diagnostics_version
+)
+_expected_promotion_version = getattr(
+    mlb_daily_per_game_lock_patch, "PROMOTION_POLICY_VERSION", None
+)
+_promotion_version = getattr(
+    mlb_daily_pick_lock, "MLB_LAST_PRELOCK_PROMOTION_VERSION", None
+)
+_promotion_ready = bool(
+    _expected_promotion_version
+    and _promotion_version == _expected_promotion_version
+)
 PER_GAME_LOCK_STATUS = {
-    "ok": bool(getattr(mlb_daily_pick_lock, "_INQSI_MLB_DAILY_PER_GAME_LOCK_V1", False)),
+    "ok": bool(
+        getattr(mlb_daily_pick_lock, "_INQSI_MLB_DAILY_PER_GAME_LOCK_V1", False)
+        and _attempt_diagnostics_ready
+        and _promotion_ready
+    ),
     "version": getattr(mlb_daily_pick_lock, "MLB_DAILY_PER_GAME_LOCK_VERSION", None),
     "policy": getattr(mlb_daily_pick_lock, "LOCK_POLICY", None),
     "failClosed": True,
     "canonicalGameWriteAtOwnTMinus45": True,
+    "lastPrelockAtCutoffBecomesFinal": _promotion_ready,
+    "modelOrSignalRecomputedAtLock": False,
+    "lastPrelockPromotionVersion": _promotion_version,
+    "expectedLastPrelockPromotionVersion": _expected_promotion_version,
+    "fixVersion": LOCK_RUNTIME_FIX_VERSION,
+    "explicitMlRuntimeInstall": True,
+    "durableAttemptDiagnostics": _attempt_diagnostics_ready,
+    "attemptDiagnosticsVersion": _attempt_diagnostics_version,
+    "expectedAttemptDiagnosticsVersion": _expected_attempt_diagnostics_version,
 }
 ADMIN_TOKEN = os.environ.get("INQSI_ADMIN_API_TOKEN", "")
 
@@ -33,6 +132,36 @@ def _resp(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
         },
         "body": json.dumps(body),
     }
+
+
+def _is_scheduled(event: Dict[str, Any]) -> bool:
+    return not (event.get("httpMethod") or event.get("requestContext"))
+
+
+def _failure_response(event: Dict[str, Any], status: int, body: Dict[str, Any]) -> Dict[str, Any]:
+    if _is_scheduled(event):
+        raise RuntimeError(
+            f"MLB_SCHEDULED_LOCK_PREREQUISITE_FAILED:{json.dumps(body, default=str, sort_keys=True)}"
+        )
+    return _resp(status, body)
+
+
+def _raise_scheduled_delegate_failure(event: Dict[str, Any], response: Any) -> None:
+    if not _is_scheduled(event) or not isinstance(response, dict):
+        return
+    body = response.get("body")
+    try:
+        payload = json.loads(body) if isinstance(body, str) else dict(body or {})
+    except Exception:
+        payload = {"rawBody": body}
+    try:
+        status_code = int(response.get("statusCode") or 200)
+    except Exception:
+        status_code = 500
+    if status_code >= 400 or payload.get("ok") is False:
+        raise RuntimeError(
+            f"MLB_SCHEDULED_LOCK_FAILED:{json.dumps(payload, default=str, sort_keys=True)}"
+        )
 
 
 def _header(event: Dict[str, Any], name: str) -> str:
@@ -73,6 +202,7 @@ def _attach_preservation_status(response: Any) -> Any:
     except Exception:
         payload = {"rawBody": body}
     if isinstance(payload, dict):
+        payload["mlRuntimeInstallation"] = ML_RUNTIME_INSTALL_STATUS
         payload["mlLockVectorPreservation"] = ML_VECTOR_PRESERVATION_STATUS
         payload["perGameLockInstallation"] = PER_GAME_LOCK_STATUS
         out["body"] = json.dumps(payload)
@@ -84,11 +214,24 @@ def lambda_handler(event, context):
     if (event.get("httpMethod") or "").upper() == "OPTIONS":
         return _resp(200, {
             "ok": True,
+            "mlRuntimeInstallation": ML_RUNTIME_INSTALL_STATUS,
             "mlLockVectorPreservation": ML_VECTOR_PRESERVATION_STATUS,
             "perGameLockInstallation": PER_GAME_LOCK_STATUS,
         })
+    if ML_RUNTIME_INSTALL_STATUS.get("ok") is not True:
+        return _failure_response(
+            event,
+            500,
+            {
+                "ok": False,
+                "sport": "mlb",
+                "error": "MLB_ML_LOCK_RUNTIME_NOT_READY",
+                "status": ML_RUNTIME_INSTALL_STATUS,
+            },
+        )
     if ML_VECTOR_PRESERVATION_STATUS.get("ok") is not True:
-        return _resp(
+        return _failure_response(
+            event,
             500,
             {
                 "ok": False,
@@ -98,7 +241,8 @@ def lambda_handler(event, context):
             },
         )
     if PER_GAME_LOCK_STATUS.get("ok") is not True:
-        return _resp(
+        return _failure_response(
+            event,
             500,
             {
                 "ok": False,
@@ -110,4 +254,6 @@ def lambda_handler(event, context):
     auth_error = _auth_error(event)
     if auth_error is not None:
         return auth_error
-    return _attach_preservation_status(mlb_daily_pick_lock.lambda_handler(event, context))
+    response = _attach_preservation_status(mlb_daily_pick_lock.lambda_handler(event, context))
+    _raise_scheduled_delegate_failure(event, response)
+    return response

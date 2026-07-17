@@ -41,10 +41,12 @@ assert body.get("productionAuthoritySource") == "gate_promoted_DynamoDB_champion
 assert body.get("automaticPromotionPolicy") == "authoritative_AWS_audit_only_after_independent_90pct_authority_gates", body
 assert body.get("requiredWinnerPickPolicy") == "one_official_locked_winner_prediction_for_every_mlb_game", body
 assert body.get("playablePolicy") == "playability_is_separate_and_may_be_false_for_an_official_prediction", body
+assert body.get("apiRuntimeVersion") == "MLB-V3-READ-API-v3-read-only", body
+assert body.get("readOnly") is True, body
 assert str(body.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"), body
 runtime = body.get("ml_runtime_install") or {}
 assert runtime.get("ok") is True, runtime
-assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority", runtime
+assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.8-verified-stage-promotion-authority", runtime
 policy = runtime.get("accuracyTargetPolicy") or {}
 assert policy.get("rolling24hAllGamesAuditTargetPct") == 90.0, policy
 assert policy.get("minimumRolling24hSlateAccuracyPct") == 90.0, policy
@@ -60,9 +62,46 @@ assert policy.get("everyGameRetainsOfficialPick") is True, policy
 assert policy.get("playabilitySeparateFromOfficialPick") is True, policy
 assert "individualGameOfficialPickProbabilityFloorPct" in policy, policy
 assert policy.get("individualGameOfficialPickProbabilityFloorPct") is None, policy
-required = {"accuracyTargetsSeparated","legacyReliabilityOverlaySafety","singleDdbChampionAuthority","officialSemanticsFinalized","immutableFeatureFreeze","exactCleanCohortVectorPatch","officialFreezeBridge","canonicalLockedStorageFinalizer"}
+required = {"accuracyTargetsSeparated","legacyReliabilityOverlaySafety","singleDdbChampionAuthority","officialSemanticsFinalized","immutableFeatureFreeze","immutableLockedStorageAuthority","exactCleanCohortVectorPatch","officialFreezeBridge","canonicalLockedStorageFinalizer","lastPrelockPromotionAuthority","legacyFinalGateDisabled"}
 missing = sorted(name for name in required if (runtime.get("steps") or {}).get(name) is not True)
 assert not missing, {"missingRuntimeSteps": missing, "runtime": runtime}
+
+read_calls = []
+original_predict_all = mlb_v3_read_api.ENGINE.predict_all
+try:
+    def capture_predict_all(date, *, store, limit):
+        read_calls.append({"date": date, "store": store, "limit": limit})
+        return {"ok": True, "predictions": [], "count": 0}
+    mlb_v3_read_api.ENGINE.predict_all = capture_predict_all
+    read_event = {
+        "path": "/v1/mlb/predictions",
+        "rawPath": "/v1/mlb/predictions",
+        "httpMethod": "GET",
+        "queryStringParameters": {"date": "2026-07-16", "store": "true", "limit": "7"},
+    }
+    read_response = mlb_v3_read_api.lambda_handler(read_event, None)
+finally:
+    mlb_v3_read_api.ENGINE.predict_all = original_predict_all
+assert read_response.get("statusCode") == 200, read_response
+read_body = json.loads(read_response.get("body") or "{}")
+assert read_calls == [{"date": "2026-07-16", "store": False, "limit": 7}], read_calls
+assert read_body.get("readOnly") is True, read_body
+
+original_runtime_status = mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3
+original_predict_all = mlb_v3_read_api.ENGINE.predict_all
+fail_closed_calls = []
+try:
+    mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3 = {**original_runtime_status, "ok": False}
+    mlb_v3_read_api.ENGINE.predict_all = lambda *args, **kwargs: fail_closed_calls.append((args, kwargs))
+    failed_response = mlb_v3_read_api.lambda_handler(read_event, None)
+finally:
+    mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3 = original_runtime_status
+    mlb_v3_read_api.ENGINE.predict_all = original_predict_all
+assert failed_response.get("statusCode") == 503, failed_response
+failed_body = json.loads(failed_response.get("body") or "{}")
+assert fail_closed_calls == [], fail_closed_calls
+assert failed_body.get("predictions") == [], failed_body
+assert failed_body.get("winner_predictions") == [], failed_body
 print(json.dumps({"ok":True,"modelVersion":body.get("model_version"),"runtime":runtime}, indent=2))
 '''
     result = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), env=env, text=True, capture_output=True, timeout=90)

@@ -52,7 +52,7 @@ jobs:
               OPTIMIZATION_VERSION = None
 
           MODEL_VERSION = "INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority"
-          VERSION = "MLB-V3-READ-API-v2-automatic-gate-authority"
+          VERSION = "MLB-V3-READ-API-v3-read-only"
 
 
           def _json_default(value: Any) -> Any:
@@ -108,6 +108,7 @@ jobs:
                   "productionAuthoritySource": "gate_promoted_DynamoDB_champion_bundle_only",
                   "automaticPromotionPolicy": "authoritative_AWS_audit_only_after_independent_90pct_authority_gates",
                   "parlaysEnabled": False,
+                  "readOnly": True,
                   "sourcePolicy": "The Odds API pull history plus timestamped source-honest fundamentals snapshots.",
               }
 
@@ -118,17 +119,20 @@ jobs:
                   return _response(200, {"ok": True})
               path = _path(event)
               params = _query(event)
+              model = _model_body()
               if path == "/v1/mlb/model/version":
-                  return _response(200, _model_body())
+                  return _response(200 if model.get("ok") is True else 503, model)
               if path not in {"/v1/mlb/today", "/v1/mlb/games", "/v1/mlb/predictions", "/v1/mlb/game-winners"}:
                   return _response(404, {"ok": False, "error": "route_not_found", "path": path, "apiRuntimeVersion": VERSION})
-              if ENGINE is None:
-                  return _response(503, {**_model_body(), "ok": False, "winner_predictions": [], "predictions": [], "count": 0})
+              if ENGINE is None or model.get("ok") is not True:
+                  return _response(503, {**model, "ok": False, "winner_predictions": [], "predictions": [], "count": 0})
               date = params.get("game_date_et") or params.get("date") or _today_et()
               try:
                   result = ENGINE.predict_all(
                       date,
-                      store=str(params.get("store") or "false").lower() == "true",
+                      # This public Lambda has no write authority. Persisted
+                      # candidates are owned by protected scheduled ingestion.
+                      store=False,
                       limit=min(max(int(params.get("limit") or 500), 1), 500),
                   )
               except Exception as exc:
@@ -138,10 +142,11 @@ jobs:
                   "sport": "mlb",
                   "date": date,
                   "model_version": MODEL_VERSION,
-                  "ml_runtime_install": _model_body().get("ml_runtime_install"),
+                  "ml_runtime_install": model.get("ml_runtime_install"),
                   "apiRuntimeVersion": VERSION,
                   "winner_predictions": result.get("predictions") or [],
                   "parlaysEnabled": False,
+                  "readOnly": True,
               })
               return _response(200, result)
           PY
@@ -180,6 +185,19 @@ jobs:
               return "".join(out)
 
 
+          def resource_block(current: str, resource_name: str) -> str:
+              lines = current.splitlines()
+              start = next((i for i, line in enumerate(lines) if line.startswith(f"  {resource_name}:")), None)
+              if start is None:
+                  return ""
+              end = len(lines)
+              for i in range(start + 1, len(lines)):
+                  if lines[i].startswith("  ") and not lines[i].startswith("    "):
+                      end = i
+                      break
+              return "\n".join(lines[start:end])
+
+
           admin_env = "        INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken\n"
           if admin_env not in text:
               marker = "        ODDS_API_KEY: !Ref OddsApiKey\n"
@@ -198,76 +216,84 @@ jobs:
           text = text.replace("Handler: mlb_daily_pick_lock.lambda_handler", "Handler: mlb_daily_pick_lock_protected.lambda_handler", 1)
 
           dedicated = """
-          MLBV3ReadFunction:
-            Type: AWS::Serverless::Function
-            Properties:
-              CodeUri: hello_world/
-              Handler: mlb_v3_read_api.lambda_handler
-              Timeout: 60
-              MemorySize: 1024
-              Policies:
-                - DynamoDBCrudPolicy:
-                    TableName: !Ref SnapshotsTable
-              Events:
-                MLBV3ModelVersion:
-                  Type: Api
-                  Properties:
-                    Path: /v1/mlb/model/version
-                    Method: GET
-                MLBV3Today:
-                  Type: Api
-                  Properties:
-                    Path: /v1/mlb/today
-                    Method: GET
-                MLBV3GameWinners:
-                  Type: Api
-                  Properties:
-                    Path: /v1/mlb/game-winners
-                    Method: GET
-                MLBV3Predictions:
-                  Type: Api
-                  Properties:
-                    Path: /v1/mlb/predictions
-                    Method: GET
-                MLBV3Games:
-                  Type: Api
-                  Properties:
-                    Path: /v1/mlb/games
-                    Method: GET
+            MLBV3ReadFunction:
+              Type: AWS::Serverless::Function
+              Properties:
+                CodeUri: hello_world/
+                Handler: mlb_v3_read_api.lambda_handler
+                Timeout: 60
+                MemorySize: 1024
+                Policies:
+                  - DynamoDBReadPolicy:
+                      TableName: !Ref SnapshotsTable
+                Events:
+                  MLBV3ModelVersion:
+                    Type: Api
+                    Properties:
+                      Path: /v1/mlb/model/version
+                      Method: GET
+                  MLBV3Today:
+                    Type: Api
+                    Properties:
+                      Path: /v1/mlb/today
+                      Method: GET
+                  MLBV3GameWinners:
+                    Type: Api
+                    Properties:
+                      Path: /v1/mlb/game-winners
+                      Method: GET
+                  MLBV3Predictions:
+                    Type: Api
+                    Properties:
+                      Path: /v1/mlb/predictions
+                      Method: GET
+                  MLBV3Games:
+                    Type: Api
+                    Properties:
+                      Path: /v1/mlb/games
+                      Method: GET
 
           """
           text = insert_once(text, "  ApiFunction:\n", dedicated, "  MLBV3ReadFunction:\n")
+          mlb_v3_read_block = resource_block(text, "MLBV3ReadFunction")
+          if "DynamoDBCrudPolicy:" in mlb_v3_read_block:
+              text = text.replace(
+                  mlb_v3_read_block,
+                  mlb_v3_read_block.replace("DynamoDBCrudPolicy:", "DynamoDBReadPolicy:"),
+                  1,
+              )
+              mlb_v3_read_block = resource_block(text, "MLBV3ReadFunction")
 
           verifier = """
-          MLBProductionVerifierFunction:
-            Type: AWS::Serverless::Function
-            Properties:
-              CodeUri: hello_world/
-              Handler: mlb_production_verifier.lambda_handler
-              Timeout: 60
-              MemorySize: 1024
-              Environment:
-                Variables:
-                  MLB_VERIFY_MAX_PULL_AGE_MINUTES: '20'
-              Policies:
-                - DynamoDBCrudPolicy:
-                    TableName: !Ref SnapshotsTable
-              Events:
-                MLBProductionVerifierEvery5Min:
-                  Type: Schedule
-                  Properties:
-                    Schedule: rate(5 minutes)
-                    Input: '{"sport":"mlb","mode":"continuous","run":"aws_production_verifier_5m"}'
-                MLBProductionIngestVerifyDaily435Et:
-                  Type: Schedule
-                  Properties:
-                    Schedule: cron(35 20 * * ? *)
-                    Input: '{"sport":"mlb","mode":"ingest","run":"daily_ingest_verify_1635_et"}'
-                MLBProductionLockVerifyDaily556Et:
-                  Type: Schedule
-                  Properties:
-                    Schedule: cron(56 21 * * ? *)
-                    Input: '{"sport":"mlb","mode":"lock","run":"daily_lock_verify_1756_et"}'
+            MLBProductionVerifierFunction:
+              Type: AWS::Serverless::Function
+              Properties:
+                CodeUri: hello_world/
+                Handler: mlb_production_verifier.lambda_handler
+                Timeout: 60
+                MemorySize: 1024
+                Environment:
+                  Variables:
+                    MLB_VERIFY_MAX_PULL_AGE_MINUTES: '20'
+                Policies:
+                  - DynamoDBCrudPolicy:
+                      TableName: !Ref SnapshotsTable
+                Events:
+                  MLBProductionVerifierEvery5Min:
+                    Type: Schedule
+                    Properties:
+                      Schedule: rate(5 minutes)
+                      Input: '{"sport":"mlb","mode":"continuous","run":"aws_production_verifier_5m"}'
+                  MLBProductionIngestVerifyDaily435Et:
+                    Type: Schedule
+                    Properties:
+                      Schedule: cron(35 20 * * ? *)
+                      Input: '{"sport":"mlb","mode":"ingest","run":"daily_ingest_verify_1635_et"}'
+                  MLBProductionLockVerifyDaily556Et:
+                    Type: Schedule
+                    Properties:
+                      Schedule: cron(56 21 * * ? *)
+                      Input: '{"sport":"mlb","mode":"lock","run":"daily_lock_verify_1756_et"}'
 
           """
           text = insert_once(text, "  MLBResultsSchedulerFunction:\n", verifier, "MLBProductionVerifierFunction:")
@@ -281,8 +307,17 @@ jobs:
               "MLBProductionVerifierFunction:", "MLBProductionVerifierEvery5Min:", "MLBProductionIngestVerifyDaily435Et:", "MLBProductionLockVerifyDaily556Et:",
           ]
           missing = [value for value in required if value not in text]
-          if missing:
-              raise RuntimeError("MLB dedicated v3 route patch failed; missing: " + ", ".join(missing))
+          invalid_read_policy = (
+              "DynamoDBReadPolicy:" not in mlb_v3_read_block
+              or "DynamoDBCrudPolicy:" in mlb_v3_read_block
+          )
+          if missing or invalid_read_policy:
+              details = []
+              if missing:
+                  details.append("missing: " + ", ".join(missing))
+              if invalid_read_policy:
+                  details.append("MLBV3ReadFunction must have DynamoDBReadPolicy and no DynamoDBCrudPolicy")
+              raise RuntimeError("MLB dedicated v3 route patch failed; " + "; ".join(details))
           TEMPLATE.write_text(text)
           print("Patched template.yaml with dedicated MLB v3 read Lambda, protected writes, and production verification schedules.")
           PY
@@ -326,13 +361,52 @@ jobs:
           assert str(body.get("model_version") or "").startswith("INQSI-MLB-v3.1"), body
           assert body.get("productionAuthoritySource") == "gate_promoted_DynamoDB_champion_bundle_only", body
           assert body.get("automaticPromotionPolicy") == "authoritative_AWS_audit_only_after_independent_90pct_authority_gates", body
+          assert body.get("apiRuntimeVersion") == "MLB-V3-READ-API-v3-read-only", body
+          assert body.get("readOnly") is True, body
           assert str(body.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"), body
           runtime = body.get("ml_runtime_install") or {}
           assert runtime.get("ok") is True, runtime
-          assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority", runtime
-          required = {"legacyReliabilityOverlaySafety","singleDdbChampionAuthority","officialSemanticsFinalized","immutableFeatureFreeze","exactCleanCohortVectorPatch","officialFreezeBridge"}
+          assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.8-verified-stage-promotion-authority", runtime
+          required = {"legacyReliabilityOverlaySafety","singleDdbChampionAuthority","officialSemanticsFinalized","immutableFeatureFreeze","immutableLockedStorageAuthority","exactCleanCohortVectorPatch","officialFreezeBridge","lastPrelockPromotionAuthority","legacyFinalGateDisabled"}
           missing = sorted(name for name in required if (runtime.get("steps") or {}).get(name) is not True)
           assert not missing, {"missingRuntimeSteps": missing, "runtime": runtime}
+
+          read_calls = []
+          original_predict_all = mlb_v3_read_api.ENGINE.predict_all
+          try:
+              def capture_predict_all(date, *, store, limit):
+                  read_calls.append({"date": date, "store": store, "limit": limit})
+                  return {"ok": True, "predictions": [], "count": 0}
+              mlb_v3_read_api.ENGINE.predict_all = capture_predict_all
+              read_event = {
+                  "path": "/v1/mlb/predictions",
+                  "rawPath": "/v1/mlb/predictions",
+                  "httpMethod": "GET",
+                  "queryStringParameters": {"date": "2026-07-16", "store": "true", "limit": "7"},
+              }
+              read_response = mlb_v3_read_api.lambda_handler(read_event, None)
+          finally:
+              mlb_v3_read_api.ENGINE.predict_all = original_predict_all
+          assert read_response.get("statusCode") == 200, read_response
+          read_body = json.loads(read_response.get("body") or "{}")
+          assert read_calls == [{"date": "2026-07-16", "store": False, "limit": 7}], read_calls
+          assert read_body.get("readOnly") is True, read_body
+
+          original_runtime_status = mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3
+          original_predict_all = mlb_v3_read_api.ENGINE.predict_all
+          fail_closed_calls = []
+          try:
+              mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3 = {**original_runtime_status, "ok": False}
+              mlb_v3_read_api.ENGINE.predict_all = lambda *args, **kwargs: fail_closed_calls.append((args, kwargs))
+              failed_response = mlb_v3_read_api.lambda_handler(read_event, None)
+          finally:
+              mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3 = original_runtime_status
+              mlb_v3_read_api.ENGINE.predict_all = original_predict_all
+          assert failed_response.get("statusCode") == 503, failed_response
+          failed_body = json.loads(failed_response.get("body") or "{}")
+          assert fail_closed_calls == [], fail_closed_calls
+          assert failed_body.get("predictions") == [], failed_body
+          assert failed_body.get("winner_predictions") == [], failed_body
           print(json.dumps({"ok":True,"modelVersion":body.get("model_version"),"runtime":runtime}, indent=2))
           '''
               result = subprocess.run([sys.executable, "-c", code], cwd=str(ROOT), env=env, text=True, capture_output=True, timeout=90)
@@ -356,6 +430,26 @@ jobs:
           python scripts/patch_template_mlb_v1.py
           python scripts/patch_template_mlb_security.py
           python scripts/patch_template_mlb_results_routes.py
+          python - <<'PY'
+          from pathlib import Path
+
+          source = Path("hello_world/mlb_v3_read_api.py").read_text()
+          assert "store=False" in source
+          assert 'store=str(params.get("store")' not in source
+          assert 'ENGINE is None or model.get("ok") is not True' in source
+          assert 'return _response(200 if model.get("ok") is True else 503, model)' in source
+
+          lines = Path("template.yaml").read_text().splitlines()
+          start = lines.index("  MLBV3ReadFunction:")
+          end = next(
+              (i for i in range(start + 1, len(lines)) if lines[i].startswith("  ") and not lines[i].startswith("    ")),
+              len(lines),
+          )
+          block = "\n".join(lines[start:end])
+          assert "DynamoDBReadPolicy:" in block, block
+          assert "DynamoDBCrudPolicy:" not in block, block
+          print("Dedicated public MLB v3 read-only authority verified")
+          PY
           python scripts/verify_mlb_schedule_invariants.py
           sam validate
           sam build --no-cached

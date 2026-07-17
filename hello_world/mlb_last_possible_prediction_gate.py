@@ -268,6 +268,11 @@ def apply(module):
     def patched_predict_all(*args, **kwargs):
         persist = bool(kwargs.get("store"))
         result = original_predict_all(*args, **kwargs)
+        if getattr(module, "_INQSI_MLB_CANONICAL_PER_GAME_AUTHORITY_ENABLED", False):
+            # The per-game T-45 authority owns finality.  This legacy T-12h
+            # display gate must not mark live candidates locked or prevent
+            # their immutable pre-lock snapshots from being persisted.
+            return result
         return annotate_result(result, persist=persist, module=module)
 
     module.predict_all = patched_predict_all

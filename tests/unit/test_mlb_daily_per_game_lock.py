@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
 
 import mlb_daily_per_game_lock_patch as patch
 import mlb_daily_lock_audit_fallback_patch as audit_fallback
+import inqsi_pull_history as history_contract
 import mlb_ml_clean_cohort_v1 as cohort
 from scripts.mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
@@ -38,18 +39,60 @@ class FakeTable:
     def __init__(self):
         self.items = {}
         self.put_calls = []
+        self.put_requests = []
+        self.diagnostic_write_failures_remaining = 0
 
     def get_item(self, Key, ConsistentRead=False):
         item = self.items.get((Key["PK"], Key["SK"]))
         return {"Item": copy.deepcopy(item)} if item is not None else {}
 
     def put_item(self, Item, ConditionExpression=None):
+        if (
+            Item.get("record_type") in {
+                patch.ATTEMPT_RECORD_TYPE,
+                patch.ATTEMPT_OUTCOME_RECORD_TYPE,
+            }
+            and self.diagnostic_write_failures_remaining > 0
+        ):
+            self.diagnostic_write_failures_remaining -= 1
+            raise RuntimeError("injected diagnostic write failure")
         key = (Item["PK"], Item["SK"])
         if ConditionExpression and key in self.items:
             raise ConditionalCollision()
         self.items[key] = copy.deepcopy(Item)
         self.put_calls.append(key)
+        self.put_requests.append({
+            "key": key,
+            "condition": ConditionExpression,
+        })
         return {}
+
+    def query(
+        self,
+        KeyConditionExpression=None,
+        ExpressionAttributeValues=None,
+        ConsistentRead=False,
+        ScanIndexForward=True,
+        Limit=None,
+    ):
+        values = ExpressionAttributeValues or {}
+        pk = values.get(":pk")
+        prefix = str(values.get(":prefix") or "")
+        matches = [
+            copy.deepcopy(item)
+            for (item_pk, item_sk), item in self.items.items()
+            if item_pk == pk and str(item_sk).startswith(prefix)
+        ]
+        matches.sort(key=lambda item: str(item.get("SK") or ""), reverse=not ScanIndexForward)
+        truncated = bool(Limit is not None and len(matches) > Limit)
+        selected = matches[:Limit] if Limit is not None else matches
+        response = {"Items": selected}
+        if truncated and selected:
+            response["LastEvaluatedKey"] = {
+                "PK": selected[-1]["PK"],
+                "SK": selected[-1]["SK"],
+            }
+        return response
 
     def delete(self, pk: str, sk: str):
         self.items.pop((pk, sk), None)
@@ -63,7 +106,73 @@ class FakeHistory:
     def query_pulls(self, sport, date=None, limit=500):
         assert sport == "mlb"
         assert date == SLATE
+        for pull in self.pulls[:limit]:
+            key = (
+                f"PULLS#mlb#{pull['slate_date']}",
+                f"PULL#{pull['pulled_at']}#{pull['pull_id']}",
+            )
+            if key not in self.PULLS.items:
+                self.PULLS.items[key] = {
+                    "PK": key[0],
+                    "SK": key[1],
+                    "record_type": "pull_run",
+                    "sport": "mlb",
+                    "slate_date": pull["slate_date"],
+                    "pulled_at": pull["pulled_at"],
+                    "pull_id": pull["pull_id"],
+                    "data": copy.deepcopy(pull),
+                }
         return copy.deepcopy(self.pulls[:limit])
+
+    def provider_manifest_authority_for_lock(self, pull, slate, expected_games):
+        games = sorted(copy.deepcopy(expected_games), key=history_contract._manifest_sort_key)
+        manifest = {
+            "version": history_contract.PROVIDER_MANIFEST_VERSION,
+            "recordType": history_contract.PROVIDER_MANIFEST_RECORD_TYPE,
+            "sport": "mlb",
+            "slateDate": slate,
+            "pullId": pull["pull_id"],
+            "observedAtUtc": pull["pulled_at"],
+            "source": "test_provider",
+            "gameCount": len(games),
+            "gameIdentities": [history_contract.provider_game_identity("mlb", game) for game in games],
+            "games": games,
+        }
+        manifest["fingerprint"] = history_contract.provider_manifest_fingerprint(manifest)
+        key = history_contract._provider_manifest_key(manifest)
+        item = {
+            **key,
+            "record_type": history_contract.PROVIDER_MANIFEST_RECORD_TYPE,
+            "sport": "mlb",
+            "slate_date": slate,
+            "pulled_at": pull["pulled_at"],
+            "pull_id": pull["pull_id"],
+            "manifest_version": history_contract.PROVIDER_MANIFEST_VERSION,
+            "manifest_fingerprint": manifest["fingerprint"],
+            "write_once": True,
+            "data": copy.deepcopy(manifest),
+        }
+        existing = self.PULLS.items.get((key["PK"], key["SK"]))
+        if existing and existing != item:
+            raise RuntimeError("test_provider_manifest_collision")
+        self.PULLS.items[(key["PK"], key["SK"])] = item
+        raw_ids = [history_contract.provider_game_identity("mlb", game) for game in manifest["games"]]
+        return {
+            "version": history_contract.PROVIDER_MANIFEST_VERSION,
+            "recordType": history_contract.PROVIDER_MANIFEST_RECORD_TYPE,
+            "pk": key["PK"],
+            "sk": key["SK"],
+            "fingerprint": manifest["fingerprint"],
+            "slateDate": slate,
+            "observedAtUtc": pull["pulled_at"],
+            "pullId": pull["pull_id"],
+            "gameCount": len(manifest["games"]),
+            "gameIdentities": raw_ids,
+            "immutable": True,
+            "writeOnce": True,
+            "fullProviderSchedule": True,
+            "consistentReadVerified": True,
+        }
 
     @staticmethod
     def ddb_safe(value):
@@ -81,21 +190,21 @@ class FakeEngine:
         self.canonical_calls = 0
         self.canonical_failures_remaining = 0
         self.pull_to_add_during_prediction = None
+        self.prediction_calls = 0
 
-    def predict_all(self, slate, store=False, limit=500):
-        pulls = self.history.query_pulls("mlb", slate, limit)
-        assert pulls
-        game = copy.deepcopy(pulls[-1]["games"][0])
-        source = pulls[-1]
+    def prediction_row(self, game, source):
+        slate = source.get("slate_date") or SLATE
+        game = copy.deepcopy(game)
         start = dt(game["commence_time"])
         lock_at = start - timedelta(minutes=45)
         selected_odds = game["books"]["fanduel"]["ml"]["home"]
+        identity = game.get("game_id") or patch.game_identity(game)
         row = {
             "sport": "mlb",
             "slate_date": slate,
             "slateDateEt": slate,
-            "gameId": game["game_id"],
-            "gameIdentity": game["game_id"],
+            "gameId": identity,
+            "gameIdentity": identity,
             "gameKey": game.get("game_key"),
             "commenceTime": game["commence_time"],
             "homeTeam": game["home_team"],
@@ -178,10 +287,12 @@ class FakeEngine:
                 "trainingEligible": True,
                 "trainingExclusionReasons": [],
             }
-        if self.pull_to_add_during_prediction is not None:
-            self.history.pulls.append(copy.deepcopy(self.pull_to_add_during_prediction))
-            self.pull_to_add_during_prediction = None
-        return {"ok": True, "gameCount": 1, "count": 1, "predictions": [row]}
+        row["createdAt"] = source["pulled_at"]
+        return row
+
+    def predict_all(self, slate, store=False, limit=500):
+        self.prediction_calls += 1
+        raise AssertionError("the lock path must never run prediction scoring")
 
     def _store_prediction(self, row):
         self.canonical_calls += 1
@@ -331,11 +442,89 @@ def staged_items(module):
     return [item for item in module.TABLE.items.values() if item.get("record_type") == patch.STAGE_RECORD_TYPE]
 
 
+def diagnostic_items(module):
+    return [
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") in {
+            patch.ATTEMPT_RECORD_TYPE,
+            patch.ATTEMPT_OUTCOME_RECORD_TYPE,
+        }
+    ]
+
+
 def daily_item(module):
     return module.TABLE.items.get((module._lock_pk(SLATE), module._lock_sk()))
 
 
-def build_module(pulls, now, *, vectorless=False, tampered_provenance=False):
+def persist_candidate(module, game_row, source_pull, mutate=None, persisted_at=None):
+    row = module.mlb_game_winner_engine.prediction_row(game_row, source_pull)
+    if mutate is not None:
+        mutate(row)
+    identity = row["gameIdentity"]
+    created_at = row["createdAt"]
+    persisted_at = persisted_at or created_at
+    digest = patch._payload_fingerprint({
+        "identity": identity,
+        "createdAt": created_at,
+        "source": row["predictionSourcePullAt"],
+        "winner": row["predictedWinner"],
+    })[:20]
+    pk = f"GAME_WINNERS#mlb#{SLATE}"
+    snapshot = {
+        "PK": pk,
+        "SK": f"PREGAME#GAME#{identity}#PERSISTED#{persisted_at}#CREATED#{created_at}#{digest}",
+        "record_type": patch.PREGAME_SNAPSHOT_RECORD_TYPE,
+        "snapshot_version": patch.PREGAME_SNAPSHOT_VERSION,
+        "slate_date": SLATE,
+        "game_id": row["gameId"],
+        "game_identity": identity,
+        "commence_time": row["commenceTime"],
+        "prediction_created_at_utc": created_at,
+        "prediction_persisted_at_utc": persisted_at,
+        "prediction_persistence_proof_type": patch.PREGAME_PERSISTENCE_PROOF_TYPE,
+        "prediction_persistence_write_pk": pk,
+        "prediction_persistence_write_sk": f"GAME#{row['commenceTime']}#{identity}",
+        "prediction_payload_fingerprint": patch._payload_fingerprint(row),
+        "prediction_source_pull_at_utc": row["predictionSourcePullAt"],
+        "prediction_source_pull_id": row["predictionSourcePullId"],
+        "immutable_pregame": True,
+        "write_once": True,
+        "data": copy.deepcopy(row),
+        "created_at": created_at,
+    }
+    module.TABLE.put_item(
+        Item=snapshot,
+        ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
+    )
+    module.TABLE.put_item(Item={
+        "PK": pk,
+        "SK": f"GAME#{row['commenceTime']}#{identity}",
+        "record_type": patch.LIVE_PREDICTION_RECORD_TYPE,
+        "slate_date": SLATE,
+        "game_id": row["gameId"],
+        "game_identity": identity,
+        "created_at": created_at,
+        "data": copy.deepcopy(row),
+    })
+    return row
+
+
+def persist_latest_prelock_candidates(module, pulls):
+    latest = {}
+    for source in pulls:
+        source_at = dt(source["pulled_at"])
+        for game_row in source.get("games") or []:
+            cutoff = dt(game_row["commence_time"]) - timedelta(minutes=45)
+            if source_at <= cutoff:
+                latest[game_row["game_id"]] = (game_row, source)
+    return {
+        game_id: persist_candidate(module, game_row, source)
+        for game_id, (game_row, source) in latest.items()
+    }
+
+
+def build_module(pulls, now, *, vectorless=False, tampered_provenance=False, seed=True):
     module = FakeModule(
         pulls,
         now,
@@ -343,6 +532,8 @@ def build_module(pulls, now, *, vectorless=False, tampered_provenance=False):
         tampered_provenance=tampered_provenance,
     )
     patch.apply(module)
+    if seed:
+        persist_latest_prelock_candidates(module, pulls)
     return module
 
 
@@ -380,7 +571,9 @@ def test_newer_cutoff_pull_arriving_during_grace_wins_source_window():
     assert waiting["perGameLockProgress"]["stabilizingCount"] == 1
     assert not staged_items(module)
 
-    module.history.pulls.append(pull("2026-07-13T17:15:00+00:00", [G1], "1715-one"))
+    newest = pull("2026-07-13T17:15:00+00:00", [G1], "1715-one")
+    module.history.pulls.append(newest)
+    persist_candidate(module, G1, newest)
     module.now = dt("2026-07-13T17:17:00+00:00")
     result = module.run_lock(SLATE)
 
@@ -405,23 +598,230 @@ def test_response_completed_after_cutoff_is_not_in_bound_source_window():
     assert [entry["pullId"] for entry in stage["source_window"]["pulls"]] == ["pull-1714-before"]
 
 
-def test_prewrite_requery_regenerates_if_source_window_changes():
+def test_newer_cutoff_pull_without_a_persisted_prediction_does_not_rescore():
     initial = [pull("2026-07-13T17:14:00+00:00", [G1], "1714-race")]
     module = build_module(initial, "2026-07-13T17:17:00+00:00")
-    module.mlb_game_winner_engine.pull_to_add_during_prediction = pull(
+    module.history.pulls.append(pull(
         "2026-07-13T17:15:00+00:00", [G1], "1715-race"
-    )
+    ))
 
     result = module.run_lock(SLATE)
 
     assert result["locked"] is True
     stage = staged_items(module)[0]
-    assert stage["source_pull_id"] == "pull-1715-race"
-    assert stage["pull_depth"] == 2
+    assert stage["source_pull_id"] == "pull-1714-race"
+    assert stage["pull_depth"] == 1
     assert [entry["pullId"] for entry in stage["source_window"]["pulls"]] == [
         "pull-1714-race",
-        "pull-1715-race",
     ]
+    assert module.mlb_game_winner_engine.prediction_calls == 0
+
+
+def test_candidate_source_id_disambiguates_equal_timestamp_pulls():
+    selected = pull("2026-07-13T17:15:00+00:00", [G1], "selected-source")
+    other = pull("2026-07-13T17:15:00+00:00", [G1], "other-source")
+    other["games"][0]["books"]["fanduel"]["ml"]["home"] = -999
+    module = build_module(
+        [selected, other],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    persist_candidate(module, G1, selected)
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    assert stage["source_pull_id"] == "pull-selected-source"
+    assert stage["candidate_proof"]["predictionSourcePullId"] == "pull-selected-source"
+    assert [entry["pullId"] for entry in stage["source_window"]["pulls"]] == [
+        "pull-selected-source",
+    ]
+
+
+def test_exact_last_persisted_prelock_selection_becomes_final_lock():
+    first = pull("2026-07-13T17:14:00+00:00", [G1], "first-candidate")
+    module = build_module([first], "2026-07-13T17:17:00+00:00")
+    last = pull("2026-07-13T17:15:00+00:00", [G1], "last-candidate")
+    module.history.pulls.append(last)
+
+    def select_away(row):
+        row.update({
+            "predictedWinner": G1["away_team"],
+            "predictedSide": "away",
+            "opponent": G1["home_team"],
+            "americanOdds": G1["books"]["fanduel"]["ml"]["away"],
+            "lockedAmericanOdds": G1["books"]["fanduel"]["ml"]["away"],
+            "score": 77.25,
+            "winProbability": 0.6125,
+            "winProbabilityPct": 61.25,
+            "teamWinProbabilityPct": 61.25,
+            "edgeVsBook": 0.031,
+            "expectedValue": 0.044,
+        })
+
+    candidate = persist_candidate(module, G1, last, mutate=select_away)
+    expected_selection = patch._selection_material(candidate)
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    locked = stage["data"]["row"]
+    assert patch._selection_material(locked) == expected_selection
+    assert locked["predictedWinner"] == G1["away_team"]
+    assert locked["predictedSide"] == "away"
+    assert locked["americanOdds"] == 115
+    assert locked["score"] == 77.25
+    assert locked["modelOrSignalRecomputedAtLock"] is False
+    assert stage["candidate_proof"]["predictionSourcePullId"] == "pull-last-candidate"
+    assert stage["candidate_proof"]["candidateSelectionFingerprint"] == locked["lastPrelockSelectionFingerprint"]
+    assert module.mlb_game_winner_engine.prediction_calls == 0
+
+
+def test_missing_or_post_cutoff_candidate_fails_closed_without_stage():
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "source-only")
+    missing = build_module([source], "2026-07-13T17:17:00+00:00", seed=False)
+
+    missing_result = missing.run_lock(SLATE)
+
+    assert missing_result["ok"] is False
+    assert "no_persisted_prelock_prediction" in str(missing_result["failures"])
+    assert not staged_items(missing)
+
+    after = pull("2026-07-13T17:15:01+00:00", [G1], "after-cutoff")
+    post_cutoff = build_module(
+        [source, after],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    persist_candidate(post_cutoff, G1, after)
+
+    after_result = post_cutoff.run_lock(SLATE)
+
+    assert after_result["ok"] is False
+    assert "no_persisted_prelock_prediction" in str(after_result["failures"])
+    assert not staged_items(post_cutoff)
+    assert post_cutoff.mlb_game_winner_engine.prediction_calls == 0
+
+
+def test_backdated_prediction_persisted_after_cutoff_is_not_authoritative():
+    source = pull("2026-07-13T17:14:00+00:00", [G1], "backdated-source")
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    persist_candidate(
+        module,
+        G1,
+        source,
+        persisted_at="2026-07-13T17:15:01+00:00",
+    )
+
+    result = module.run_lock(SLATE)
+
+    assert result["ok"] is False
+    assert "no_persisted_prelock_prediction" in str(result["failures"])
+
+
+def test_client_timestamp_without_post_write_ack_proof_is_not_authoritative():
+    source = pull("2026-07-13T17:14:00+00:00", [G1], "unproven-client-time")
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    persist_candidate(module, G1, source)
+    snapshot = next(
+        item for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.PREGAME_SNAPSHOT_RECORD_TYPE
+    )
+    snapshot.pop("prediction_persistence_proof_type")
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is False
+    assert "persisted_prelock_post_write_ack_missing" in str(result["failures"])
+    assert not staged_items(module)
+    assert not staged_items(module)
+
+
+def test_newest_invalid_candidate_falls_back_to_last_valid_candidate():
+    valid_pull = pull("2026-07-13T17:14:00+00:00", [G1], "valid-candidate")
+    invalid_pull = pull("2026-07-13T17:15:00+00:00", [G1], "invalid-candidate")
+    module = build_module(
+        [valid_pull, invalid_pull],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    valid = persist_candidate(module, G1, valid_pull)
+
+    def remove_price(row):
+        row["americanOdds"] = None
+        row["lockedAmericanOdds"] = None
+        row["homeSignal"]["americanOdds"] = None
+        row["priceBook"] = None
+        row["homeSignal"]["priceBook"] = None
+
+    persist_candidate(module, G1, invalid_pull, mutate=remove_price)
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    assert stage["source_pull_id"] == "pull-valid-candidate"
+    assert stage["data"]["row"]["predictedWinner"] == valid["predictedWinner"]
+    proof = stage["candidate_proof"]
+    assert proof["rejectedNewerCandidateCount"] == 1
+    assert "persisted_prelock_selected_side_real_book_price_missing" in (
+        proof["rejectedNewerCandidates"][0]["errors"]
+    )
+
+
+def test_no_provider_id_uses_shared_fallback_identity_for_candidate_lookup():
+    game = copy.deepcopy(G1)
+    game.pop("game_id", None)
+    game["game_key"] = "mlb|fallback-doubleheader-safe"
+    source = pull("2026-07-13T17:15:00+00:00", [game], "fallback-identity")
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    candidate = persist_candidate(module, game, source)
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    assert stage["game_identity"].startswith("key:")
+    assert stage["data"]["row"]["gameIdentity"] == candidate["gameIdentity"]
+    assert stage["source_pull_id"] == "pull-fallback-identity"
+
+
+def test_schedule_shift_promotes_same_game_candidate_from_old_commence_key():
+    old = copy.deepcopy(G1)
+    shifted = copy.deepcopy(G1)
+    shifted["commence_time"] = "2026-07-13T18:10:00+00:00"
+    old_pull = pull("2026-07-13T17:15:00+00:00", [old], "old-start")
+    shifted_pull = pull("2026-07-13T17:20:00+00:00", [shifted], "shifted-start")
+    module = build_module(
+        [old_pull, shifted_pull],
+        "2026-07-13T17:27:00+00:00",
+        seed=False,
+    )
+    candidate = persist_candidate(module, old, old_pull)
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    assert stage["candidate_proof"]["sk"].find(old["commence_time"]) == -1
+    assert stage["data"]["row"]["commenceTime"] == shifted["commence_time"]
+    assert stage["data"]["row"]["predictedWinner"] == candidate["predictedWinner"]
+    assert stage["source_pull_id"] == "pull-old-start"
+    assert module.mlb_game_winner_engine.prediction_calls == 0
 
 
 def test_late_backfill_does_not_invalidate_stage_or_block_canonical_retry():
@@ -481,6 +881,27 @@ def test_first_game_canonical_at_own_cutoff_while_later_game_pending():
     assert stage["source_window"]["scheduledCutoffAtUtc"] == "2026-07-13T17:15:00+00:00"
     assert stage["source_window"]["pulls"][-1]["pullId"] == "pull-1715"
     assert daily_item(module) is None
+    diagnostics = diagnostic_items(module)
+    assert len(diagnostics) == 2
+    assert {item["diagnostic_event"] for item in diagnostics} == {
+        "ATTEMPT_STARTED",
+        "ATTEMPT_OUTCOME",
+    }
+    outcome = next(item for item in diagnostics if item["diagnostic_event"] == "ATTEMPT_OUTCOME")
+    assert outcome["outcome"] == "LOCKED_CANONICAL"
+    assert outcome["canonical_proven_after_attempt"] is True
+    assert result["perGameLockAttemptDiagnostics"]["attemptedGameCount"] == 1
+    assert result["perGameLockAttemptDiagnostics"]["attempts"][0]["outcome"] == "LOCKED_CANONICAL"
+    diagnostic_keys = {(item["PK"], item["SK"]) for item in diagnostics}
+    diagnostic_puts = [
+        request for request in module.TABLE.put_requests
+        if request["key"] in diagnostic_keys
+    ]
+    assert len(diagnostic_puts) == 2
+    assert all(
+        request["condition"] == "attribute_not_exists(PK) AND attribute_not_exists(SK)"
+        for request in diagnostic_puts
+    )
 
 
 def test_later_game_uses_newer_own_cutoff_pull_and_only_then_finalizes_daily_card():
@@ -489,6 +910,7 @@ def test_later_game_uses_newer_own_cutoff_pull_and_only_then_finalizes_daily_car
     assert daily_item(module) is None
 
     module.history.pulls.extend(LATE_PULLS)
+    persist_latest_prelock_candidates(module, LATE_PULLS)
     module.now = dt("2026-07-13T19:17:00+00:00")
     result = module.run_lock(SLATE)
 
@@ -517,6 +939,19 @@ def test_no_stage_or_canonical_write_before_due_or_after_game_start():
     assert result["forceIgnoredForSafety"] is True
     assert not staged_items(missed)
     assert missed.mlb_game_winner_engine.canonical_new_writes == 0
+    diagnostics = diagnostic_items(missed)
+    assert len(diagnostics) == 2
+    outcome = next(item for item in diagnostics if item["diagnostic_event"] == "ATTEMPT_OUTCOME")
+    assert outcome["outcome"] == "MISSED_NOT_BACKFILLED"
+    assert outcome["state_at_attempt"] == "MISSED_NOT_BACKFILLED"
+    assert outcome["state_after_attempt"] == "MISSED_NOT_BACKFILLED"
+    assert outcome["force_requested"] is True
+
+    first_diagnostic_keys = {(item["PK"], item["SK"]) for item in diagnostics}
+    repeated = missed.run_lock(SLATE, force=True)
+    assert repeated["reason"] == "MISSED_PER_GAME_LOCK_NOT_BACKFILLED"
+    assert {(item["PK"], item["SK"]) for item in diagnostic_items(missed)} == first_diagnostic_keys
+    assert repeated["perGameLockAttemptDiagnostics"]["attemptedGameCount"] == 0
 
 
 def test_manifest_drift_after_first_stage_fails_closed_without_daily_card():
@@ -535,8 +970,26 @@ def test_manifest_drift_after_first_stage_fails_closed_without_daily_card():
     assert module.mlb_game_winner_engine.canonical_new_writes == 1
 
 
-def test_vectorless_or_tampered_generation_writes_nothing_canonical():
-    module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00", vectorless=True)
+def test_vectorless_prelock_candidate_is_frozen_at_lock_without_rescoring():
+    pulls = [pull("2026-07-13T17:15:00+00:00", [G1], "vectorless")]
+    module = build_module(pulls, "2026-07-13T17:17:00+00:00", vectorless=True)
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    row = staged_items(module)[0]["data"]["row"]
+    vector = row["frozenFeatureVector"]
+    assert vector["fingerprint"] == cohort.fingerprint_for_vector(vector)
+    assert vector["labels"] == {"homeWon": None, "pickCorrect": None}
+    assert module.mlb_game_winner_engine.prediction_calls == 0
+
+
+def test_invalid_persisted_candidate_records_failed_attempt_then_can_retry():
+    pulls = [pull("2026-07-13T17:15:00+00:00", [G1], "invalid")]
+    module = build_module(
+        pulls,
+        "2026-07-13T17:17:00+00:00",
+        tampered_provenance=True,
+    )
     result = module.run_lock(SLATE)
 
     assert result["ok"] is False
@@ -544,6 +997,57 @@ def test_vectorless_or_tampered_generation_writes_nothing_canonical():
     assert not staged_items(module)
     assert module.mlb_game_winner_engine.canonical_new_writes == 0
     assert daily_item(module) is None
+    first_records = diagnostic_items(module)
+    assert len(first_records) == 2
+    first_outcome = next(
+        item for item in first_records
+        if item["diagnostic_event"] == "ATTEMPT_OUTCOME"
+    )
+    assert first_outcome["outcome"] == "FAILED"
+    assert first_outcome["reason"] == "PER_GAME_STAGE_VALIDATION_FAILED"
+    assert first_outcome["failure_details"][0]["reason"] == "PER_GAME_STAGE_VALIDATION_FAILED"
+    assert "temporal" in str(first_outcome["failure_details"][0]["errors"])
+    assert all(item["diagnostic_fingerprint"] for item in first_records)
+
+    records_before_status = {
+        item["SK"]: copy.deepcopy(item)
+        for item in first_records
+    }
+    puts_before_status = len(module.TABLE.put_calls)
+    status = module._status_payload(SLATE)
+    assert len(module.TABLE.put_calls) == puts_before_status
+    assert {
+        item["SK"]: item for item in diagnostic_items(module)
+    } == records_before_status
+    latest = status["perGameStatus"][0]["attemptDiagnostics"]["latestAttempt"]
+    assert latest["outcome"] == "FAILED"
+    assert latest["reason"] == "PER_GAME_STAGE_VALIDATION_FAILED"
+    assert latest["startObserved"] is True
+    assert latest["outcomeObserved"] is True
+
+    module.mlb_game_winner_engine.tampered_provenance = False
+    for key, item in list(module.TABLE.items.items()):
+        if item.get("record_type") in {
+            patch.PREGAME_SNAPSHOT_RECORD_TYPE,
+            patch.LIVE_PREDICTION_RECORD_TYPE,
+        }:
+            module.TABLE.items.pop(key)
+    persist_latest_prelock_candidates(module, pulls)
+    retry = module.run_lock(SLATE)
+
+    assert retry["locked"] is True
+    all_records = diagnostic_items(module)
+    assert len(all_records) == 4
+    assert {
+        sk: module.TABLE.items[(module._lock_pk(SLATE), sk)]
+        for sk in records_before_status
+    } == records_before_status
+    outcomes = sorted(
+        item["outcome"]
+        for item in all_records
+        if item["diagnostic_event"] == "ATTEMPT_OUTCOME"
+    )
+    assert outcomes == ["FAILED", "LOCKED_CANONICAL"]
 
 
 def test_post_source_temporal_and_fundamental_provenance_writes_nothing():
@@ -564,6 +1068,59 @@ def test_post_source_temporal_and_fundamental_provenance_writes_nothing():
     assert daily_item(module) is None
 
 
+def test_status_exposes_newer_orphaned_start_after_older_completed_attempt():
+    pulls = [pull("2026-07-13T17:15:00+00:00", [G1], "orphan")]
+    module = build_module(pulls, "2026-07-13T17:17:00+00:00", vectorless=True)
+    module.run_lock(SLATE)
+
+    orphan_at = dt("2026-07-13T17:18:00+00:00")
+    orphan_id = "orphaned-timeout-attempt"
+    write = patch._put_diagnostic(module, {
+        "PK": module._lock_pk(SLATE),
+        "SK": patch._diagnostic_sk(module, G1, orphan_at, orphan_id, "START"),
+        "record_type": patch.ATTEMPT_RECORD_TYPE,
+        "diagnostics_version": patch.ATTEMPT_DIAGNOSTICS_VERSION,
+        "diagnostic_event": "ATTEMPT_STARTED",
+        "attempt_id": orphan_id,
+        "attempted_at_utc": orphan_at.isoformat(),
+        "game_identity": "g1",
+        "created_at": orphan_at.isoformat(),
+        "write_once": True,
+    })
+    assert write["ok"] is True
+    puts_before_status = len(module.TABLE.put_calls)
+
+    status = module._status_payload(SLATE)
+
+    assert len(module.TABLE.put_calls) == puts_before_status
+    latest = status["perGameStatus"][0]["attemptDiagnostics"]["latestAttempt"]
+    assert latest["attemptId"] == orphan_id
+    assert latest["startObserved"] is True
+    assert latest["outcomeObserved"] is False
+    assert latest["outcome"] is None
+
+
+def test_failed_lock_raises_if_durable_outcome_diagnostic_cannot_persist():
+    pulls = [pull("2026-07-13T17:15:00+00:00", [G1], "diagnostic-failure")]
+    module = build_module(
+        pulls,
+        "2026-07-13T17:17:00+00:00",
+        tampered_provenance=True,
+    )
+    module.TABLE.diagnostic_write_failures_remaining = 10
+
+    try:
+        module.run_lock(SLATE)
+    except RuntimeError as exc:
+        assert "LOCK_ATTEMPT_DIAGNOSTIC_PERSIST_FAILED" in str(exc)
+    else:
+        raise AssertionError("failed lock returned without durable outcome diagnostics")
+
+    assert diagnostic_items(module) == []
+    assert staged_items(module) == []
+    assert daily_item(module) is None
+
+
 def test_stage_and_canonical_collisions_are_idempotent():
     module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00")
     module.run_lock(SLATE)
@@ -575,6 +1132,80 @@ def test_stage_and_canonical_collisions_are_idempotent():
     assert result["reason"] == "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER"
     assert len(staged_items(module)) == stage_count == 1
     assert module.mlb_game_winner_engine.canonical_new_writes == canonical_writes == 1
+
+
+def test_legacy_daily_lock_row_cannot_short_circuit_per_game_authority():
+    pulls = [pull("2026-07-13T17:15:00+00:00", [G1], "legacy-daily")]
+    module = build_module(pulls, "2026-07-13T17:17:00+00:00")
+    module.TABLE.put_item(Item={
+        "PK": module._lock_pk(SLATE),
+        "SK": module._lock_sk(),
+        "record_type": "mlb_daily_locked_moneyline_picks",
+        "sport": "mlb",
+        "slate_date": SLATE,
+        "model_version": "legacy-slate-recompute-v1",
+        "locked": True,
+        "game_count": 1,
+        "prediction_count": 1,
+        "data": {"picks": [{"gameIdentity": "provider:g1"}]},
+    })
+
+    result = module.run_lock(SLATE)
+
+    assert result["ok"] is False
+    assert result["locked"] is False
+    assert result["failClosed"] is True
+    assert result["reason"] == "EXISTING_DAILY_LOCK_NOT_PER_GAME_AUTHORITY"
+    assert "daily_lock_record_type_not_per_game_authority" in result["dailyLockAuthorityErrors"]
+    assert "daily_lock_model_or_manifest_version_mismatch" in result["dailyLockAuthorityErrors"]
+    assert not staged_items(module)
+    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+    assert module.mlb_game_winner_engine.prediction_calls == 0
+
+    status = module._status_payload(SLATE)
+    assert status["locked"] is False
+    assert status["invalidExistingDailyLock"] is True
+    assert "daily_lock_record_type_not_per_game_authority" in status["dailyLockAuthorityErrors"]
+
+
+def test_current_daily_lock_missing_per_game_proofs_is_not_accepted():
+    pulls = [pull("2026-07-13T17:15:00+00:00", [G1], "proof-tamper")]
+    module = build_module(pulls, "2026-07-13T17:17:00+00:00")
+    first = module.run_lock(SLATE)
+    assert first["locked"] is True
+    canonical_writes = module.mlb_game_winner_engine.canonical_new_writes
+
+    stored = daily_item(module)
+    stored["data"]["perGameLockProof"] = []
+    result = module.run_lock(SLATE)
+
+    assert result["ok"] is False
+    assert result["locked"] is False
+    assert result["reason"] == "EXISTING_DAILY_LOCK_NOT_PER_GAME_AUTHORITY"
+    assert "daily_lock_per_game_proof_count_mismatch" in result["dailyLockAuthorityErrors"]
+    assert module.mlb_game_winner_engine.canonical_new_writes == canonical_writes == 1
+
+
+def test_current_daily_lock_with_live_stage_and_canonical_proofs_is_idempotent():
+    pulls = [pull("2026-07-13T17:15:00+00:00", [G1], "current-daily")]
+    module = build_module(pulls, "2026-07-13T17:17:00+00:00")
+    first = module.run_lock(SLATE)
+    stage_count = len(staged_items(module))
+    canonical_writes = module.mlb_game_winner_engine.canonical_new_writes
+
+    second = module.run_lock(SLATE)
+
+    assert first["locked"] is True
+    assert second["ok"] is True
+    assert second["locked"] is True
+    assert second["alreadyLocked"] is True
+    assert second["lock"]["perGameLock"] is True
+    assert len(staged_items(module)) == stage_count == 1
+    assert module.mlb_game_winner_engine.canonical_new_writes == canonical_writes == 1
+    status = module._status_payload(SLATE)
+    assert status["locked"] is True
+    assert status["invalidExistingDailyLock"] is False
+    assert status["dailyLockAuthorityErrors"] == []
 
 
 def test_status_is_read_only_and_does_not_repair_missing_canonical_row():
@@ -606,6 +1237,7 @@ def test_per_game_daily_card_remains_authoritative_for_settlement_fallback():
     module = build_module(EARLY_PULLS, "2026-07-13T17:17:00+00:00")
     module.run_lock(SLATE)
     module.history.pulls.extend(LATE_PULLS)
+    persist_latest_prelock_candidates(module, LATE_PULLS)
     module.now = dt("2026-07-13T19:17:00+00:00")
     module.run_lock(SLATE)
 

@@ -169,7 +169,18 @@ def _latest_games_for_date(slate_date: str, pulls: List[Dict[str, Any]]) -> List
     if not pulls:
         return []
     latest_pull = pulls[-1]
-    return [game for game in latest_pull.get("games") or [] if _game_date_et(game) == slate_date]
+    # Provider pulls are locked against the independently persisted full
+    # schedule manifest, never against an odds-filtered games list.  Missing or
+    # tampered manifest authority raises and makes the scheduled lock fail.
+    if (
+        str(latest_pull.get("source") or "") == "the_odds_api"
+        or latest_pull.get("provider_schedule_manifest") is not None
+        or latest_pull.get("provider_manifest_binding") is not None
+    ):
+        games = history.provider_manifest_games_for_lock(latest_pull, slate_date)
+    else:
+        games = latest_pull.get("games") or []
+    return [game for game in games if _game_date_et(game) == slate_date]
 
 
 def _first_start_et(games: List[Dict[str, Any]]) -> Optional[datetime]:

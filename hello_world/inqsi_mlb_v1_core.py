@@ -117,7 +117,12 @@ def predictions(game_date: Optional[str] = None, limit: int = 500, store: bool =
     game_date = game_date or _today_et()
     try:
         engine = _engine()
-        winners = engine.predict_all(game_date, store=store, limit=limit)
+        runtime = getattr(engine, "MLB_ML_RUNTIME_INSTALL_V3", None)
+        if not isinstance(runtime, dict) or runtime.get("ok") is not True:
+            raise RuntimeError("MLB_PUBLIC_READ_RUNTIME_NOT_READY")
+        # Public MLB surfaces are read-only. Candidate persistence belongs only
+        # to the protected scheduled ingestion path.
+        winners = engine.predict_all(game_date, store=False, limit=limit)
     except Exception as exc:
         return {
             "ok": False,
@@ -144,7 +149,12 @@ def predictions(game_date: Optional[str] = None, limit: int = 500, store: bool =
         "promotionThreshold": winners.get("promotionThreshold"),
         "fallbackPromotionThreshold": winners.get("fallbackPromotionThreshold"),
         "winner_predictions": winners.get("predictions") or [],
-        "storage": {"requested": store, "gameWinnerStoredCount": winners.get("storedCount")},
+        "readOnly": True,
+        "storage": {
+            "requested": False,
+            "callerRequestedWriteIgnored": bool(store),
+            "gameWinnerStoredCount": 0,
+        },
         "parlay_analysis": {"enabled": False, "reason": "MLB production is individual game picks only."},
         "three_leg_parlay": {"ok": False, "disabled": True, "reason": "MLB production is individual game picks only."},
     }
@@ -177,7 +187,8 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if path.endswith("/today"):
             return _resp(200, today(game_date))
         if path.endswith("/games") or path.endswith("/predictions") or path.endswith("/game-winners"):
-            return _resp(200, predictions(game_date, limit, params.get("store", "false").lower() == "true"))
+            payload = predictions(game_date, limit, False)
+            return _resp(200 if payload.get("ok") is True else 503, payload)
         if path.endswith("/audit"):
             return _resp(200, audit(game_date))
         return _resp(404, {"ok": False, "error": f"Route not found: {method} {path}"})

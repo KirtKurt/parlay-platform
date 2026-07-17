@@ -354,9 +354,12 @@ def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
             if payload:
                 books[book_key] = payload
                 books_seen.add(book_key)
-        if not books:
-            continue
         game_key = f"mlb|{game_date}|{away.lower()}|{home.lower()}"
+        markets_stored = sorted({
+            market
+            for payload in books.values()
+            for market in payload
+        })
         games_out.append({
             "id": raw_game.get("id") or game_key,
             "game_id": raw_game.get("id") or game_key,
@@ -368,7 +371,9 @@ def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
             "away_team": away,
             "provider_sport_key": SPORT_KEY,
             "books": books,
-            "markets_stored": ["ml", "spread", "total"],
+            "odds_available": bool(books),
+            "moneyline_available": any("ml" in payload for payload in books.values()),
+            "markets_stored": markets_stored,
         })
     return {
         "games": games_out,
@@ -425,7 +430,7 @@ def _store_snapshot_item(*, t: str, slate_date: str, game_date: str, asof: str, 
 def _canonical_games(compact: Dict[str, Any]) -> List[Dict[str, Any]]:
     games = []
     for game in compact.get("games") or []:
-        if not (game.get("home_team") and game.get("away_team") and game.get("books")):
+        if not (game.get("home_team") and game.get("away_team")):
             continue
         games.append({
             "game_id": str(game.get("game_id") or game.get("id") or game.get("game_key")),
@@ -439,8 +444,17 @@ def _canonical_games(compact: Dict[str, Any]) -> List[Dict[str, Any]]:
             "gender": "men",
             "provider_sport_key": SPORT_KEY,
             "books": game.get("books") or {},
+            "odds_available": bool(game.get("books")),
+            "moneyline_available": bool(game.get("moneyline_available")),
+            "markets_stored": list(game.get("markets_stored") or []),
         })
-    return games
+    return sorted(
+        games,
+        key=lambda game: (
+            str(game.get("commence_time") or ""),
+            str(game.get("game_id") or ""),
+        ),
+    )
 
 
 def _safe_pull_id(game_date: str, asof: str) -> str:
@@ -453,7 +467,7 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
         return {"ok": False, "error": "inqsi_pull_history_unavailable", "games": 0}
     games = _canonical_games(compact)
     if not games:
-        return {"ok": True, "stored": None, "games": 0, "reason": "no_supported_moneyline_games_for_date"}
+        return {"ok": True, "stored": None, "games": 0, "reason": "no_provider_games_for_date"}
     body = {
         "pull_id": _safe_pull_id(game_date, asof),
         "sport": "mlb",
@@ -473,13 +487,31 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
     }
     try:
         stored = pull_history.store_pull(body)
+        manifest = ((stored.get("stored") or {}).get("provider_manifest") or {})
+        manifest_bound = bool(
+            stored.get("ok") is True
+            and manifest.get("immutable") is True
+            and manifest.get("full_provider_schedule") is True
+            and int(manifest.get("game_count") or -1) == len(games)
+            and manifest.get("fingerprint")
+            and manifest.get("pk")
+            and manifest.get("sk")
+        )
         return {
-            "ok": bool(stored.get("ok")),
+            "ok": bool(stored.get("ok")) and manifest_bound,
             "games": len(games),
             "stored": stored.get("stored"),
             "error": stored.get("error"),
             "pull_id": body["pull_id"],
             "pk": (stored.get("stored") or {}).get("pk"),
+            "providerManifestVersion": manifest.get("version"),
+            "providerManifestFingerprint": manifest.get("fingerprint"),
+            "providerManifestGameCount": manifest.get("game_count"),
+            "providerManifestPk": manifest.get("pk"),
+            "providerManifestSk": manifest.get("sk"),
+            "providerManifestImmutable": manifest.get("immutable") is True,
+            "providerManifestFullSchedule": manifest.get("full_provider_schedule") is True,
+            "providerManifestBound": manifest_bound,
         }
     except Exception as exc:
         return {"ok": False, "games": len(games), "error": str(exc), "pull_id": body["pull_id"]}
@@ -671,6 +703,21 @@ def lambda_handler(event, context):
             game_winner_prediction_results.append({"game_date_et": game_date, **_build_and_store_game_winners(game_date=game_date)})
 
         start_at = _parse_start_at_et()
+        provider_schedule_manifests = [
+            {
+                "game_date_et": row.get("game_date_et"),
+                "gameCount": row.get("games"),
+                "version": row.get("providerManifestVersion"),
+                "fingerprint": row.get("providerManifestFingerprint"),
+                "pk": row.get("providerManifestPk"),
+                "sk": row.get("providerManifestSk"),
+                "immutable": row.get("providerManifestImmutable") is True,
+                "fullProviderSchedule": row.get("providerManifestFullSchedule") is True,
+                "boundToCanonicalPull": row.get("providerManifestBound") is True,
+                "ok": row.get("ok") is True,
+            }
+            for row in canonical_pull_history
+        ]
         return _resp(200, {
             "ok": True,
             "sport": "mlb",
@@ -700,6 +747,15 @@ def lambda_handler(event, context):
             "stored": combined_stored,
             "date_isolated_stored": isolated_stored,
             "canonical_pull_history": canonical_pull_history,
+            "provider_schedule_manifests": provider_schedule_manifests,
+            "providerScheduleManifestComplete": bool(
+                compact["count"] == 0
+                or (
+                    provider_schedule_manifests
+                    and all(row.get("ok") and row.get("immutable") and row.get("fullProviderSchedule") and row.get("boundToCanonicalPull") for row in provider_schedule_manifests)
+                    and sum(int(row.get("gameCount") or 0) for row in provider_schedule_manifests) == int(compact["count"] or 0)
+                )
+            ),
             "available_book_keys": compact["available_book_keys"],
             "markets": compact["markets"],
             "audit": audit_results,

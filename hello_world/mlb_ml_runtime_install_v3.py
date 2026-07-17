@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-VERSION = "MLB-ML-RUNTIME-INSTALL-v3.6-per-game-lock-temporal-90pct-auto-authority"
+VERSION = "MLB-ML-RUNTIME-INSTALL-v3.8-verified-stage-promotion-authority"
 
 
 def install() -> Dict[str, Any]:
@@ -36,7 +36,11 @@ def install() -> Dict[str, Any]:
         import mlb_official_freeze_bridge
         import mlb_ml_frozen_features
         import mlb_ml_exact_lock_vector_patch
+        import mlb_immutable_locked_storage_patch
         import mlb_locked_prediction_storage_finalizer_v1
+        import mlb_last_possible_prediction_gate
+        import mlb_slate_coverage_patch
+        import mlb_slate_prediction_lock
 
         mlb_ml_exact_lock_vector_patch.apply(mlb_ml_frozen_features)
         mlb_official_freeze_bridge.apply(mlb_official_prediction_semantics)
@@ -49,6 +53,16 @@ def install() -> Dict[str, Any]:
             if not hasattr(engine, attr):
                 patch.apply(engine)
 
+        # Install the per-game read authority explicitly.  The slate wrapper is
+        # annotation-only; it cannot generate a second pick at the cutoff.
+        mlb_slate_coverage_patch.apply(mlb_slate_prediction_lock)
+        mlb_slate_prediction_lock.apply(engine)
+        engine._INQSI_MLB_CANONICAL_PER_GAME_AUTHORITY_ENABLED = True
+        status["steps"]["legacyFinalGateDisabled"] = bool(
+            getattr(engine, "_INQSI_MLB_CANONICAL_PER_GAME_AUTHORITY_ENABLED", False)
+            and getattr(engine, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED", False)
+        )
+
         exact_vector = getattr(mlb_ml_frozen_features, "_INQSI_MLB_EXACT_LOCK_VECTOR_PATCH_APPLIED", False)
         official_bridge = getattr(mlb_official_prediction_semantics, "_INQSI_MLB_OFFICIAL_FREEZE_BRIDGE_APPLIED_V2", False)
         status["steps"]["sourceHonestFundamentals"] = hasattr(engine, "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED")
@@ -59,10 +73,33 @@ def install() -> Dict[str, Any]:
         # Compatibility name used by the existing AWS deploy smoke test. It now
         # means the stronger exact clean-cohort vector path is installed.
         status["steps"]["immutableFeatureFreeze"] = bool(exact_vector and official_bridge)
+        # Do not rely on sitecustomize for canonical write safety.  The engine
+        # itself must attest that LOCKED#GAME writes consistent-read and bind
+        # the exact immutable T-minus-45 stage before storage.
+        mlb_immutable_locked_storage_patch.apply(engine)
+        status["steps"]["immutableLockedStorageAuthority"] = bool(
+            getattr(engine, "_INQSI_MLB_IMMUTABLE_LOCKED_STORAGE_APPLIED", False)
+            and getattr(engine, "IMMUTABLE_LOCKED_STORAGE_VERSION", None)
+            == mlb_immutable_locked_storage_patch.VERSION
+        )
         mlb_locked_prediction_storage_finalizer_v1.apply(engine)
         status["steps"]["canonicalLockedStorageFinalizer"] = hasattr(
             engine, "_INQSI_MLB_LOCKED_STORAGE_FINALIZER_V1_APPLIED"
         )
+        # This wrapper is deliberately last so no legacy gate can relabel an
+        # unlocked live row as official after canonical rows are overlaid.
+        mlb_slate_coverage_patch.install_public_authority(engine, mlb_slate_prediction_lock)
+        status["steps"]["lastPrelockPromotionAuthority"] = bool(
+            getattr(engine, "_INQSI_MLB_PUBLIC_PER_GAME_AUTHORITY_APPLIED", False)
+            and getattr(
+                mlb_slate_prediction_lock,
+                "_INQSI_MLB_LAST_PRELOCK_PROMOTION_AUTHORITY_APPLIED",
+                False,
+            )
+            and getattr(engine, "MLB_PUBLIC_PER_GAME_AUTHORITY_VERSION", None)
+            == mlb_slate_coverage_patch.AUTHORITY_VERSION
+        )
+        status["lastPrelockPromotionAuthorityVersion"] = mlb_slate_coverage_patch.AUTHORITY_VERSION
         engine.MLB_ML_RUNTIME_INSTALL_V3 = status
     except Exception as exc:
         status["steps"]["engineRuntime"] = False
@@ -74,6 +111,7 @@ def install() -> Dict[str, Any]:
         "Only the authoritative AWS audit may automatically promote an independently eligible authority. "
         "Both authorities require at least 90% current rolling 24-hour official-card slate accuracy; direction "
         "also requires 90% untouched outcome accuracy and playability separately requires 90% selected untouched-test accuracy. "
-        "Every new locked game stores the exact immutable clean-cohort vector before final labels exist."
+        "Every new locked game stores the exact immutable clean-cohort vector before final labels exist. "
+        "The final public lock is the validated canonical promotion of the last prediction available at each game's own T-minus-45 cutoff; no lock-time rescore is authoritative."
     )
     return status
