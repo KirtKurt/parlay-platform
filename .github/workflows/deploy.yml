@@ -81,6 +81,11 @@ jobs:
           rm -rf .aws-sam
           sam build --no-cached
 
+      - name: Verify built MLB v3 Lambda cold-start runtime
+        env:
+          INQSI_MLB_LAMBDA_TASK_ROOT: .aws-sam/build/MLBV3ReadFunction
+        run: python scripts/verify_api_function_mlb_v3_import.py
+
       - name: Wait for existing CloudFormation update to finish
         run: |
           for i in $(seq 1 60); do
@@ -252,7 +257,7 @@ jobs:
           runtime = payload.get("ml_runtime_install") or {}
           if runtime.get("ok") is not True:
               raise SystemExit(f"live MLB ML runtime install failed: {runtime}")
-          expected_runtime = "MLB-ML-RUNTIME-INSTALL-v3.8-verified-stage-promotion-authority"
+          expected_runtime = "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority"
           if runtime.get("version") != expected_runtime:
               raise SystemExit(f"live MLB ML runtime is stale: expected {expected_runtime}, got {runtime.get('version')}")
           policy = runtime.get("accuracyTargetPolicy") or {}
@@ -437,7 +442,7 @@ jobs:
           runtime = payload.get("mlRuntimeInstallation") or {}
           if runtime.get("ok") is not True:
               raise SystemExit(f"live MLB lock ML runtime installation failed: {runtime}")
-          expected_runtime = "MLB-ML-RUNTIME-INSTALL-v3.8-verified-stage-promotion-authority"
+          expected_runtime = "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority"
           required_runtime_steps = {
               "accuracyTargetsSeparated",
               "legacyReliabilityOverlaySafety",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-VERSION = "MLB-ML-RUNTIME-INSTALL-v3.8-verified-stage-promotion-authority"
+VERSION = "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority"
 
 
 def install() -> Dict[str, Any]:
@@ -57,6 +57,13 @@ def install() -> Dict[str, Any]:
         # annotation-only; it cannot generate a second pick at the cutoff.
         mlb_slate_coverage_patch.apply(mlb_slate_prediction_lock)
         mlb_slate_prediction_lock.apply(engine)
+        # Lambda adds LAMBDA_TASK_ROOT to sys.path after Python has already
+        # processed sitecustomize, so this legacy wrapper cannot be assumed to
+        # have been imported during interpreter startup.  Install it here and
+        # then disable its finality behavior with the canonical per-game flag.
+        # The wrapper remains annotation-only and dynamically observes the
+        # flag below on every call.
+        mlb_last_possible_prediction_gate.apply(engine)
         engine._INQSI_MLB_CANONICAL_PER_GAME_AUTHORITY_ENABLED = True
         status["steps"]["legacyFinalGateDisabled"] = bool(
             getattr(engine, "_INQSI_MLB_CANONICAL_PER_GAME_AUTHORITY_ENABLED", False)
