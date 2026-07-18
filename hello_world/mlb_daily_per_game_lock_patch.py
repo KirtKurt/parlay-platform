@@ -1677,6 +1677,19 @@ def _manifest_authority_identity(authority: Dict[str, Any]) -> Tuple[str, ...]:
     )
 
 
+def _pull_history_identity(module: Any, pulls: Iterable[Dict[str, Any]]) -> Tuple[Tuple[str, ...], ...]:
+    """Cheap immutable-history identity used to avoid redundant full-table reads."""
+    return tuple(
+        (
+            str(pull.get("pull_id") or ""),
+            (_pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc)).isoformat(),
+            str((pull.get("provider_schedule_manifest") or {}).get("fingerprint") or ""),
+            str((pull.get("provider_manifest_binding") or {}).get("fingerprint") or ""),
+        )
+        for pull in pulls or []
+    )
+
+
 def _select_provider_manifest_authority(
     module: Any,
     pulls: Iterable[Dict[str, Any]],
@@ -2412,6 +2425,24 @@ def apply(module: Any) -> Any:
         )
         failures: List[Dict[str, Any]] = []
         latest_progress = observed
+        manifest_authority_cache: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
+
+        def manifest_authority_for(
+            current_pulls: List[Dict[str, Any]],
+            current_manifest: List[Dict[str, Any]],
+        ) -> Dict[str, Any]:
+            cache_key: Tuple[Any, ...] = (
+                _pull_history_identity(module, current_pulls),
+                tuple(game_identity(entry) for entry in current_manifest),
+            )
+            if cache_key not in manifest_authority_cache:
+                manifest_authority_cache[cache_key] = _select_provider_manifest_authority(
+                    module,
+                    current_pulls,
+                    slate,
+                    current_manifest,
+                )
+            return copy.deepcopy(manifest_authority_cache[cache_key])
 
         def respond(payload: Dict[str, Any], progress: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             out = dict(payload)
@@ -2460,10 +2491,8 @@ def apply(module: Any) -> Any:
                         break
 
                     try:
-                        manifest_authority = _select_provider_manifest_authority(
-                            module,
+                        manifest_authority = manifest_authority_for(
                             pulls,
-                            slate,
                             manifest,
                         )
                     except Exception as exc:
@@ -2496,7 +2525,15 @@ def apply(module: Any) -> Any:
                         module._pulls_for_date(slate),
                         key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc),
                     )
-                    refreshed_manifest = module._latest_games_for_date(slate, refreshed_pulls)
+                    pull_history_unchanged = (
+                        _pull_history_identity(module, refreshed_pulls)
+                        == _pull_history_identity(module, pulls)
+                    )
+                    refreshed_manifest = (
+                        manifest
+                        if pull_history_unchanged
+                        else module._latest_games_for_date(slate, refreshed_pulls)
+                    )
                     if [game_identity(entry) for entry in refreshed_manifest] != [game_identity(entry) for entry in manifest]:
                         failures.append({"gameIdentity": identity, "reason": "MANIFEST_CHANGED_DURING_SOURCE_WINDOW_CLOSE_NOT_STAGED"})
                         failed = True
@@ -2511,10 +2548,8 @@ def apply(module: Any) -> Any:
                         break
                     refreshed_scoring = _scoring_pulls(module, refreshed_pulls, refreshed_game)
                     try:
-                        refreshed_manifest_authority = _select_provider_manifest_authority(
-                            module,
+                        refreshed_manifest_authority = manifest_authority_for(
                             refreshed_pulls,
-                            slate,
                             refreshed_manifest,
                         )
                     except Exception as exc:
@@ -2558,8 +2593,14 @@ def apply(module: Any) -> Any:
                 except Exception as exc:
                     failures.append({"gameIdentity": identity, "reason": "CANONICAL_IMMUTABLE_GAME_WRITE_FAILED", "errors": [str(exc)]})
 
-            pulls = sorted(module._pulls_for_date(slate), key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc))
-            manifest = module._latest_games_for_date(slate, pulls)
+            final_pulls = sorted(module._pulls_for_date(slate), key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc))
+            final_history_unchanged = (
+                _pull_history_identity(module, final_pulls)
+                == _pull_history_identity(module, pulls)
+            )
+            pulls = final_pulls
+            if not final_history_unchanged:
+                manifest = module._latest_games_for_date(slate, pulls)
             progress = _progress(module, slate, pulls, manifest, module._now_utc().astimezone(timezone.utc), ensure_canonical=True)
             latest_progress = progress
             if progress.get("missedCount"):
