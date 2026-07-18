@@ -6,9 +6,11 @@ on:
     paths:
       - "template.yaml"
       - "hello_world/api.py"
+      - "hello_world/mlb_manual_pull.py"
       - "scripts/patch_template_mlb_v1.py"
       - "scripts/patch_template_mlb_security.py"
       - "scripts/patch_template_mlb_results_routes.py"
+      - "scripts/verify_mlb_daily_pull_start_gate.py"
       - ".github/workflows/canonicalize-mlb-sam-source.yml"
   pull_request:
     branches: ["main"]
@@ -38,23 +40,128 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Apply recurring 1 AM ET pull-start migration
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          manual = Path("hello_world/mlb_manual_pull.py")
+          text = manual.read_text(encoding="utf-8")
+          text = text.replace(
+              'MLB_PULL_START_AT_ET = os.environ.get("MLB_PULL_START_AT_ET", "2026-07-03T01:00:00-04:00")',
+              'MLB_PULL_START_AT_ET = os.environ.get("MLB_PULL_START_AT_ET", "01:00")',
+          )
+          text = text.replace(
+              'PULL_POLICY = "rolling_open_today_plus_tomorrow_every_15_min_date_isolated_hot_only"',
+              'PULL_POLICY = "rolling_today_every_15_min_date_isolated_hot_only"',
+          )
+          old_parser = '''def _parse_start_at_et() -> Optional[datetime]:
+              raw = (MLB_PULL_START_AT_ET or "").strip()
+              if not raw:
+                  return None
+              try:
+                  parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                  if parsed.tzinfo is None:
+                      parsed = parsed.replace(tzinfo=EASTERN)
+                  return parsed.astimezone(EASTERN)
+              except Exception:
+                  return None
+          '''.replace("          ", "")
+          new_parser = '''def _parse_start_at_et(now_et: Optional[datetime] = None) -> Optional[datetime]:
+              raw = (MLB_PULL_START_AT_ET or "").strip()
+              if not raw:
+                  return None
+              reference = now_et or datetime.now(EASTERN)
+              if len(raw) == 5 and raw[2] == ":":
+                  try:
+                      hour, minute = (int(part) for part in raw.split(":", 1))
+                  except Exception:
+                      return None
+                  if not (0 <= hour <= 23 and 0 <= minute <= 59):
+                      return None
+                  return reference.replace(hour=hour, minute=minute, second=0, microsecond=0)
+              try:
+                  parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                  if parsed.tzinfo is None:
+                      parsed = parsed.replace(tzinfo=EASTERN)
+                  return parsed.astimezone(EASTERN)
+              except Exception:
+                  return None
+          '''.replace("          ", "")
+          if old_parser in text:
+              text = text.replace(old_parser, new_parser, 1)
+          elif new_parser not in text:
+              raise SystemExit("Could not locate MLB pull-start parser for migration")
+
+          old_gate = '''    start_at = _parse_start_at_et()
+              if start_at is None:
+                  return None
+              now_et = datetime.now(EASTERN)
+          '''.replace("          ", "")
+          new_gate = '''    now_et = datetime.now(EASTERN)
+              start_at = _parse_start_at_et(now_et)
+              if start_at is None:
+                  return None
+          '''.replace("          ", "")
+          if old_gate in text:
+              text = text.replace(old_gate, new_gate, 1)
+          elif new_gate not in text:
+              raise SystemExit("Could not locate MLB scheduled start gate for migration")
+          manual.write_text(text, encoding="utf-8")
+
+          patcher = Path("scripts/patch_template_mlb_v1.py")
+          text = patcher.read_text(encoding="utf-8")
+          text = text.replace(
+              '("MLB_PULL_START_AT_ET", "\'2026-07-02T01:00:00-04:00\'"),',
+              '("MLB_PULL_START_AT_ET", "\'01:00\'"),',
+          )
+          old_helper = '''def add_global_env(s: str, key: str, value: str) -> str:
+              if f"        {key}:" in s:
+                  return s
+              marker = "        ODDS_API_KEY: !Ref OddsApiKey\\n"
+              if marker not in s:
+                  raise RuntimeError("ODDS_API_KEY marker missing")
+              return s.replace(marker, marker + f"        {key}: {value}\\n", 1)
+          '''.replace("          ", "")
+          new_helper = old_helper + '''
+
+          def set_global_env(s: str, key: str, value: str) -> str:
+              lines = s.splitlines(keepends=True)
+              needle = f"        {key}:"
+              for index, line in enumerate(lines):
+                  if line.startswith(needle):
+                      lines[index] = f"        {key}: {value}\\n"
+                      return "".join(lines)
+              return add_global_env(s, key, value)
+          '''.replace("          ", "")
+          if "def set_global_env(" not in text:
+              if old_helper not in text:
+                  raise SystemExit("Could not locate global environment helper for migration")
+              text = text.replace(old_helper, new_helper, 1)
+          text = text.replace("    text = add_global_env(text, key, value)", "    text = set_global_env(text, key, value)")
+          patcher.write_text(text, encoding="utf-8")
+          PY
+
       - name: Render every deploy-mutated MLB source
         run: |
           python scripts/patch_template_mlb_v1.py
           python scripts/patch_template_mlb_security.py
           python scripts/patch_template_mlb_results_routes.py
 
+      - name: Verify recurring 1 AM ET gate
+        run: python scripts/verify_mlb_daily_pull_start_gate.py
+
       - name: Verify canonical MLB schedule invariants
         run: python scripts/verify_mlb_schedule_invariants.py
 
       - name: Commit canonical source when changed
         run: |
-          if git diff --quiet -- template.yaml hello_world/api.py; then
+          if git diff --quiet -- template.yaml hello_world/api.py hello_world/mlb_manual_pull.py scripts/patch_template_mlb_v1.py; then
             echo "MLB deployment source is already canonical."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add template.yaml hello_world/api.py
-          git commit -m "Canonicalize MLB deployment source"
+          git add template.yaml hello_world/api.py hello_world/mlb_manual_pull.py scripts/patch_template_mlb_v1.py
+          git commit -m "Fix recurring MLB 1 AM pull-start gate"
           git push origin HEAD:agent/stabilize-mlb-production
