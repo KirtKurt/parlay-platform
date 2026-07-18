@@ -46,7 +46,7 @@ signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE e
 
 SPORT_KEY = "baseball_mlb"
 ODDS_MARKETS = "h2h,spreads,totals"
-DEFAULT_DAYS_AHEAD = 1
+DEFAULT_DAYS_AHEAD = 0
 PLATFORM_VERSION = "MLB_PREDICTIVE_PLATFORM_V1"
 ML_FEATURE_VERSION = "mlb_hot_pull_movement_features_v1"
 HOT_ONLY_POLICY = "MLB_B1_15_MIN_HOT_ONLY"

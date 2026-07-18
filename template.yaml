@@ -703,17 +703,6 @@ Resources:
           Properties:
             Schedule: rate(5 minutes)
             Input: '{"sport":"mlb","mode":"continuous","run":"aws_production_verifier_5m"}'
-        MLBProductionIngestVerifyDaily435Et:
-          Type: Schedule
-          Properties:
-            Schedule: cron(35 20 * * ? *)
-            Input: '{"sport":"mlb","mode":"ingest","run":"daily_ingest_verify_1635_et"}'
-        MLBProductionLockVerifyDaily556Et:
-          Type: Schedule
-          Properties:
-            Schedule: cron(56 21 * * ? *)
-            Input: '{"sport":"mlb","mode":"lock","run":"daily_lock_verify_1756_et"}'
-
   MLBResultsSchedulerFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -758,8 +747,8 @@ Resources:
         MLBResultsEvery6Hours:
           Type: Schedule
           Properties:
-            Schedule: rate(6 hours)
-            Input: '{"sport":"mlb","days_from":3,"run":"results_pull"}'
+            Schedule: rate(15 minutes)
+            Input: '{"sport":"mlb","days_from":3,"run":"results_pull_15m"}'
 
   SoccerSchedulerFunction:
     Type: AWS::Serverless::Function
