@@ -1,6 +1,7 @@
 from pathlib import Path
 import ast
 import os
+import re
 import subprocess
 import sys
 
@@ -184,6 +185,20 @@ required_template_strings = {
 for needle, message in required_template_strings.items():
     if needle not in text:
         violations.append(message)
+
+lock_resource_marker = '\n  MLBDailyPickLockFunction:\n'
+lock_resource_start = text.find(lock_resource_marker)
+if lock_resource_start >= 0:
+    resource_tail_start = lock_resource_start + len(lock_resource_marker)
+    next_resource_match = re.search(r'(?m)^  [A-Za-z][A-Za-z0-9]*:\s*$', text[resource_tail_start:])
+    lock_resource_end = (
+        resource_tail_start + next_resource_match.start()
+        if next_resource_match is not None
+        else len(text)
+    )
+    lock_resource = text[lock_resource_start:lock_resource_end]
+    if '\n      Timeout: 300\n' not in lock_resource:
+        violations.append('daily lock function timeout must allow full immutable-manifest verification')
 if not ('MLB_MIN_PULLS_FOR_LOCK' in text or 'MLB_MIN_PULLS_PER_GAME_FOR_LOCK' in text):
     violations.append('minimum pull-depth lock guardrail missing')
 if not ('MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES' in text or 'MLB_MAX_LATEST_PULL_AGE_MINUTES_FOR_LOCK' in text):
