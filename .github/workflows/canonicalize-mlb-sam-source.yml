@@ -1,0 +1,50 @@
+name: Canonicalize MLB SAM source
+
+on:
+  push:
+    branches: ["agent/stabilize-mlb-production"]
+    paths:
+      - "template.yaml"
+      - "scripts/patch_template_mlb_v1.py"
+      - ".github/workflows/canonicalize-mlb-sam-source.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: canonicalize-mlb-sam-source
+  cancel-in-progress: false
+
+jobs:
+  canonicalize:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/stabilize-mlb-production
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Render canonical MLB SAM source
+        run: python scripts/patch_template_mlb_v1.py
+
+      - name: Verify canonical MLB schedule invariants
+        run: python scripts/verify_mlb_schedule_invariants.py
+
+      - name: Commit canonical source when changed
+        run: |
+          if git diff --quiet -- template.yaml; then
+            echo "template.yaml is already canonical."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add template.yaml
+          git commit -m "Canonicalize MLB SAM source"
+          git push origin HEAD:agent/stabilize-mlb-production
