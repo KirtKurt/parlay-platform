@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ML_V3_AND_DEPLOY_INVARIANT_VALIDATION",
-  "createdAtUtc": "2026-07-18T12:39:42.588926+00:00",
+  "createdAtUtc": "2026-07-18T12:48:59.704283+00:00",
   "results": [
     {
       "command": [
@@ -10,7 +10,7 @@
       ],
       "returnCode": 0,
       "ok": true,
-      "stdout": "Patched template.yaml: MLB uses stable proxy routes, quarter-hour MLB HOT schedule, and daily lock.\n",
+      "stdout": "Patched template.yaml: canonical quarter-hour MLB ingest, exact deploy identity, and daily lock.\n",
       "stderr": ""
     },
     {
@@ -20,7 +20,7 @@
       ],
       "returnCode": 0,
       "ok": true,
-      "stdout": "Patched template.yaml with dedicated MLB v3 reads, explicit pull/lock admin tokens, and production verifier resources.\n",
+      "stdout": "Patched template.yaml with dedicated MLB v3 reads, protected writes, and one continuous production verifier.\n",
       "stderr": ""
     },
     {
@@ -30,7 +30,7 @@
       ],
       "returnCode": 0,
       "ok": true,
-      "stdout": "Patched MLB results routes and routed final deploy smoke check through main API.\n",
+      "stdout": "Patched MLB results routes and normalized settlement to a 15-minute cadence.\n",
       "stderr": ""
     },
     {
