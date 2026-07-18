@@ -14,7 +14,6 @@ on:
       - "scripts/verify_mlb_daily_pull_start_gate.py"
       - "scripts/verify_mlb_schedule_invariants.py"
       - "scripts/verify_mlb_deploy_identity.py"
-      - ".github/workflows/deploy.yml"
       - ".github/workflows/canonicalize-mlb-sam-source.yml"
   pull_request:
     branches: ["main"]
@@ -67,8 +66,9 @@ jobs:
           python -m py_compile scripts/stabilize_mlb_deploy_source.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
 
-      - name: Commit canonical source when changed
+      - name: Commit canonical application source when changed
         run: |
+          git restore .github/workflows/deploy.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
@@ -78,12 +78,11 @@ jobs:
             scripts/patch_template_mlb_v1.py \
             scripts/patch_template_mlb_security.py \
             scripts/patch_template_mlb_results_routes.py \
-            scripts/verify_mlb_schedule_invariants.py \
-            .github/workflows/deploy.yml
+            scripts/verify_mlb_schedule_invariants.py
           if git diff --cached --quiet; then
-            echo "MLB deployment source is already canonical."
+            echo "MLB application source is already canonical."
             exit 0
           fi
-          git commit -m "Canonicalize MLB deployment and proof source"
+          git commit -m "Canonicalize MLB application and schedule source"
           git pull --rebase --autostash origin agent/stabilize-mlb-production
           git push origin HEAD:agent/stabilize-mlb-production
