@@ -775,6 +775,33 @@ def test_exact_last_persisted_prelock_selection_becomes_final_lock():
     assert module.mlb_game_winner_engine.prediction_calls == 0
 
 
+def test_persisted_probability_alias_is_promoted_without_rescore():
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "legacy-probability-alias")
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+
+    candidate = persist_candidate(
+        module,
+        G1,
+        source,
+        mutate=lambda row: row.pop("teamWinProbabilityPct", None),
+    )
+    expected_selection = patch._selection_material(candidate)
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    locked = stage["data"]["row"]
+    assert locked["teamWinProbabilityPct"] == candidate["winProbabilityPct"]
+    assert patch._selection_material(locked) == expected_selection
+    assert locked["modelOrSignalRecomputedAtLock"] is False
+    assert module.mlb_game_winner_engine.prediction_calls == 0
+
+
 def test_production_ddb_normalized_candidate_promotes_without_cutoff_rescore():
     source = pull("2026-07-13T17:15:00+00:00", [G1], "production-ddb")
     module = build_module(
@@ -1155,6 +1182,35 @@ def _manifest_item_key(provider_pull):
         provider_pull["provider_schedule_manifest"]
     )
     return key["PK"], key["SK"]
+
+
+def test_stage_membership_uses_immutable_manifest_order_for_same_start_games():
+    first = game("same-start-a", "2026-07-13T18:00:00+00:00")
+    second = game("same-start-b", "2026-07-13T18:00:00+00:00")
+    # Discovery order is intentionally opposite the immutable provider
+    # manifest's (commence, provider-id) order.
+    source = pull(
+        "2026-07-13T17:15:00+00:00",
+        [second, first],
+        "same-start-shuffled",
+    )
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+    )
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    expected = [
+        patch.game_identity(entry)
+        for entry in source["provider_schedule_manifest"]["games"]
+    ]
+    assert expected == ["provider:same-start-a", "provider:same-start-b"]
+    for stage in staged_items(module):
+        assert stage["provider_manifest_authority"]["canonicalGameIdentities"] == expected
+        assert stage["data"]["manifestGameIdentities"] == expected
+        assert patch.persisted_stage_authority_errors(module.TABLE, stage) == []
 
 
 def test_contracted_latest_feed_selects_prior_full_manifest_authority():
