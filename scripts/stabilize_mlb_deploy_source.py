@@ -18,6 +18,10 @@ def _patch_manual_pull() -> None:
     path = ROOT / "hello_world" / "mlb_manual_pull.py"
     text = path.read_text(encoding="utf-8")
     text = text.replace("DEFAULT_DAYS_AHEAD = 1", "DEFAULT_DAYS_AHEAD = 0")
+    text = text.replace(
+        'PULL_POLICY = "rolling_open_today_plus_tomorrow_every_15_min_date_isolated_hot_only"',
+        'PULL_POLICY = "rolling_today_every_15_min_date_isolated_hot_only"',
+    )
     path.write_text(text, encoding="utf-8")
 
 
@@ -51,98 +55,48 @@ for required in [
     path.write_text(text, encoding="utf-8")
 
 
-def _patch_deploy_workflow() -> None:
+def _validate_deploy_workflow() -> None:
     path = ROOT / ".github" / "workflows" / "deploy.yml"
     text = path.read_text(encoding="utf-8")
-    text = text.replace('      - ".github/workflows/**"\n', "")
 
-    patch_anchor = """      - name: Patch SAM template for MLB settlement routes
-        run: python scripts/patch_template_mlb_results_routes.py
-"""
-    idempotence = patch_anchor + """
-      - name: Verify deploy patchers are source-idempotent
-        run: git diff --exit-code -- template.yaml hello_world/api.py
-"""
-    if "Verify deploy patchers are source-idempotent" not in text:
-        text = _replace_once(text, patch_anchor, idempotence, "deploy source idempotence")
-
-    build_anchor = """      - name: Verify built MLB v3 Lambda cold-start runtime
-        env:
-          INQSI_MLB_LAMBDA_TASK_ROOT: .aws-sam/build/MLBV3ReadFunction
-        run: python scripts/verify_api_function_mlb_v3_import.py
-"""
-    identity_step = build_anchor + """
-      - name: Calculate canonical MLB deploy identity
-        id: deploy_identity
-        run: |
-          TEMPLATE_SHA256=$(sha256sum template.yaml | awk '{print $1}')
-          test -n "$TEMPLATE_SHA256"
-          echo "template_sha256=$TEMPLATE_SHA256" >> "$GITHUB_OUTPUT"
-          echo "Git SHA: $GITHUB_SHA"
-          echo "Template SHA-256: $TEMPLATE_SHA256"
-"""
-    if "Calculate canonical MLB deploy identity" not in text:
-        text = _replace_once(text, build_anchor, identity_step, "deploy identity calculation")
-
-    deploy_start = text.index("      - name: Deploy\n")
-    next_step = text.index("\n      - name:", deploy_start + 10)
-    deploy_block = text[deploy_start:next_step]
-    if "DEPLOY_TEMPLATE_SHA256:" not in deploy_block:
-        old_env = """        env:
-          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
-        run: |
-"""
-        new_env = """        env:
-          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
-          DEPLOY_TEMPLATE_SHA256: ${{ steps.deploy_identity.outputs.template_sha256 }}
-        run: |
-"""
-        deploy_block = _replace_once(deploy_block, old_env, new_env, "deploy identity environment")
-    if 'DeployGitSha="${GITHUB_SHA}"' not in deploy_block:
-        old_parameters = """              OddsApiKey="${ODDS_API_KEY_VALUE}" \\
-              InqsiAdminApiToken="${INQSI_ADMIN_API_TOKEN_VALUE:-}"
-"""
-        new_parameters = """              OddsApiKey="${ODDS_API_KEY_VALUE}" \\
-              InqsiAdminApiToken="${INQSI_ADMIN_API_TOKEN_VALUE:-}" \\
-              DeployGitSha="${GITHUB_SHA}" \\
-              DeployTemplateSha256="${DEPLOY_TEMPLATE_SHA256}"
-"""
-        deploy_block = _replace_once(deploy_block, old_parameters, new_parameters, "deploy parameter overrides")
-    text = text[:deploy_start] + deploy_block + text[next_step:]
-
-    schedule_anchor = "      - name: Verify MLB lock EventBridge schedule\n"
-    verify_block = """      - name: Verify exact MLB deployment identity and schedules
-        env:
-          EXPECTED_TEMPLATE_SHA256: ${{ steps.deploy_identity.outputs.template_sha256 }}
-        run: |
-          python scripts/verify_mlb_deploy_identity.py \\
-            --stack-name parlay-platform-dev \\
-            --region "${{ secrets.AWS_REGION }}" \\
-            --expected-git-sha "$GITHUB_SHA" \\
-            --expected-template-sha256 "$EXPECTED_TEMPLATE_SHA256"
-
-      - name: Upload MLB deployment identity proof
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mlb-deployment-identity-${{ github.run_id }}
-          path: runtime_reports/mlb_deploy_identity_latest.json
-          if-no-files-found: warn
-
-"""
-    if "Verify exact MLB deployment identity and schedules" not in text:
-        text = _replace_once(text, schedule_anchor, verify_block + schedule_anchor, "postdeploy identity verification")
-
-    path.write_text(text, encoding="utf-8")
+    required = [
+        "Prove committed MLB source is canonical",
+        "Calculate canonical deployment identity",
+        "Deploy exact canonical source",
+        'DeployGitSha="${GITHUB_SHA}"',
+        'DeployTemplateSha256="${DEPLOY_TEMPLATE_SHA256}"',
+        "Prove exact deployed Lambda identity and schedules",
+        "verify_mlb_deploy_identity.py",
+        "Verify The Odds API without writing an unscheduled pull",
+        "writePerformed",
+        "mlb-deployment-identity-${{ github.run_id }}",
+    ]
+    missing = [token for token in required if token not in text]
+    forbidden = [
+        token
+        for token in [
+            '      - ".github/workflows/**"',
+            "/v1/pull/mlb",
+            "force=true",
+            "deploy_live_odds_smoke",
+            "Smoke test live MLB Odds API pull and storage",
+        ]
+        if token in text
+    ]
+    if missing or forbidden:
+        details = []
+        if missing:
+            details.append("missing deploy contract: " + ", ".join(missing))
+        if forbidden:
+            details.append("forbidden polluting deploy behavior: " + ", ".join(forbidden))
+        raise RuntimeError("Unsafe MLB deploy workflow; " + "; ".join(details))
 
 
 def main() -> None:
     _patch_manual_pull()
     _patch_invariants()
-    _patch_deploy_workflow()
-    print("Applied deterministic MLB deployment source stabilization.")
+    _validate_deploy_workflow()
+    print("MLB deployment source is canonical, identity-bound, and non-polluting.")
 
 
 if __name__ == "__main__":
