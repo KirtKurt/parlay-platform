@@ -7,20 +7,22 @@ on:
       - 'template.yaml'
       - 'hello_world/api.py'
       - 'hello_world/mlb_*.py'
-      - 'scripts/patch_template_mlb_*.py'
-      - 'scripts/verify_mlb_*.py'
+      - 'scripts/*mlb*.py'
+      - 'tests/unit/test_mlb_*.py'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/mlb-production-source-contract.yml'
+      - '.github/workflows/mlb-production-acceptance.yml'
   push:
     branches: [main]
     paths:
       - 'template.yaml'
       - 'hello_world/api.py'
       - 'hello_world/mlb_*.py'
-      - 'scripts/patch_template_mlb_*.py'
-      - 'scripts/verify_mlb_*.py'
+      - 'scripts/*mlb*.py'
+      - 'tests/unit/test_mlb_*.py'
       - '.github/workflows/deploy.yml'
       - '.github/workflows/mlb-production-source-contract.yml'
+      - '.github/workflows/mlb-production-acceptance.yml'
   workflow_dispatch:
 
 permissions:
@@ -43,12 +45,22 @@ jobs:
       - name: Install verification runtime
         run: python -m pip install --quiet "boto3>=1.34,<2"
 
-      - name: Prove deploy patchers are source-idempotent
+      - name: Prove all deployment transforms are source-idempotent
         run: |
+          set -euo pipefail
+          python scripts/stabilize_mlb_deploy_source.py
           python scripts/patch_template_mlb_v1.py
           python scripts/patch_template_mlb_security.py
           python scripts/patch_template_mlb_results_routes.py
-          git diff --exit-code -- template.yaml hello_world/api.py
+          git diff --exit-code -- \
+            template.yaml \
+            hello_world/api.py \
+            hello_world/mlb_manual_pull.py \
+            scripts/patch_template_mlb_v1.py \
+            scripts/patch_template_mlb_security.py \
+            scripts/patch_template_mlb_results_routes.py \
+            scripts/verify_mlb_schedule_invariants.py \
+            .github/workflows/deploy.yml
 
       - name: Verify MLB production invariants
         run: python scripts/verify_mlb_schedule_invariants.py
@@ -56,5 +68,11 @@ jobs:
       - name: Verify recurring 1 AM ET pull gate
         run: python scripts/verify_mlb_daily_pull_start_gate.py
 
-      - name: Compile deployment verification tooling
-        run: python -m py_compile scripts/verify_mlb_deploy_identity.py
+      - name: Verify slate-level production acceptance semantics
+        run: python tests/unit/test_mlb_production_acceptance.py
+
+      - name: Compile deployment and acceptance tooling
+        run: |
+          python -m py_compile scripts/stabilize_mlb_deploy_source.py
+          python -m py_compile scripts/verify_mlb_deploy_identity.py
+          python -m py_compile scripts/enforce_mlb_production_acceptance.py
