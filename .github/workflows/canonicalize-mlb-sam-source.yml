@@ -26,7 +26,7 @@ permissions:
 
 concurrency:
   group: canonicalize-mlb-sam-source
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   canonicalize:
@@ -85,4 +85,5 @@ jobs:
             exit 0
           fi
           git commit -m "Canonicalize MLB deployment and proof source"
+          git pull --rebase --autostash origin agent/stabilize-mlb-production
           git push origin HEAD:agent/stabilize-mlb-production
