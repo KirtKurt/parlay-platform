@@ -487,6 +487,8 @@ def lambda_handler(event, context):
     path = event.get("path") or "/"
     if method == "OPTIONS":
         return _resp(200, {"ok": True})
+    if method == "GET" and path == "/v1/moderation/policy":
+        return _resp(200, {"ok": True, "service": "deploy-smoke", "route": "/v1/moderation/policy"})
     if method == "GET" and path in {"/", "/health", "/v1/health"}:
         return _resp(200, {"ok": True, "status": "healthy", "service": "parlay-platform", "ts": _now_iso()})
     if method == "GET" and path == "/v1/sports/available":

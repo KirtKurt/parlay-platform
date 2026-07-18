@@ -27,6 +27,12 @@ Globals:
         SNAPSHOTS_TABLE: !Ref SnapshotsTable
         SIGNALS_TABLE: !Ref SignalsTable
         ODDS_API_KEY: !Ref OddsApiKey
+        MLB_MIN_EV_FOR_PROMOTION: '0.0'
+        MLB_PROMOTION_FALLBACK_EDGE_THRESHOLD: '0.0005'
+        MLB_PROMOTION_EDGE_THRESHOLD: '0.0015'
+        ODDS_PRIMARY_BOOK: 'fanduel'
+        MLB_SCHED_INTERVAL_MINUTES: '15'
+        MLB_PULL_START_AT_ET: '2026-07-02T01:00:00-04:00'
         SIGNAL_LEDGER_TABLE: !Ref SignalLedgerTable
         PREDICTIONS_TABLE: !Ref PredictionsTable
         OUTCOMES_TABLE: !Ref OutcomesTable
@@ -398,7 +404,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: backend/src/
-      Handler: inqsi_backend_api.lambda_handler
+      Handler: inqsi_backend_api_wrapper.lambda_handler
       Timeout: 60
       MemorySize: 1024
       Environment:
@@ -485,6 +491,44 @@ Resources:
             Path: /v1/admin/{proxy+}
             Method: ANY
 
+
+  MLBV3ReadFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_v3_read_api.lambda_handler
+      Timeout: 60
+      MemorySize: 1024
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref SnapshotsTable
+      Events:
+        MLBV3ModelVersion:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/model/version
+            Method: GET
+        MLBV3Today:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/today
+            Method: GET
+        MLBV3GameWinners:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/game-winners
+            Method: GET
+        MLBV3Predictions:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/predictions
+            Method: GET
+        MLBV3Games:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/games
+            Method: GET
+
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -516,8 +560,11 @@ Resources:
   MLBAuditedPullFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Environment:
+        Variables:
+          INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken
       CodeUri: hello_world/
-      Handler: mlb_manual_pull.lambda_handler
+      Handler: mlb_manual_pull_protected.lambda_handler
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
@@ -534,29 +581,8 @@ Resources:
         MLBHotEvery15Min:
           Type: Schedule
           Properties:
-            Schedule: rate(15 minutes)
-            Input: '{"sport":"mlb","t":"HOT","run":"hot_pull_audited","days_ahead":1}'
-        MLBBasePull:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 7 * * ? *)
-            Input: '{"sport":"mlb","t":"T1","run":"base_pull_audited","days_ahead":1}'
-        MLBT2:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 15 * * ? *)
-            Input: '{"sport":"mlb","t":"T2","run":"mid_pull_audited","days_ahead":1}'
-        MLBT3:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 18 * * ? *)
-            Input: '{"sport":"mlb","t":"T3","run":"late_pull_audited","days_ahead":1}'
-        MLBT4:
-          Type: Schedule
-          Properties:
-            Schedule: cron(0 20 * * ? *)
-            Input: '{"sport":"mlb","t":"T4","run":"freeze_pull_audited","days_ahead":1}'
-
+            Schedule: cron(0/15 * * * ? *)
+            Input: '{"sport":"mlb","t":"HOT","run":"hot_pull_audited","days_ahead":0}'
   MLBSignalApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -603,6 +629,80 @@ Resources:
             Path: /v1/sources/mlb/status
             Method: GET
 
+
+  MLBDailyPickLockFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_daily_pick_lock_protected.lambda_handler
+      # A full-slate lock invocation performs fail-closed, strongly consistent
+      # readback of immutable pull manifests before any write.  A large MLB
+      # pull history can legitimately exceed the 60-second global default.
+      Timeout: 300
+      MemorySize: 1024
+      Environment:
+        Variables:
+          INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken
+          MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'
+          MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'
+          MLB_MIN_PULLS_PER_GAME_FOR_LOCK: '4'
+          MLB_MAX_LATEST_PULL_AGE_MINUTES_FOR_LOCK: '20'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+      Events:
+        MLBDailyPickLockEveryMinute:
+          Type: Schedule
+          Properties:
+            Schedule: rate(1 minute)
+            Input: '{"sport":"mlb","run":"daily_lock_check","auto_ingest":false}'
+        MLBDailyPickLockRun:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/locks/run
+            Method: POST
+        MLBDailyPickLockStatus:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/locks/status
+            Method: GET
+        MLBDailyPickLockToday:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/locks/today
+            Method: GET
+
+
+  MLBProductionVerifierFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_production_verifier.lambda_handler
+      Timeout: 60
+      MemorySize: 1024
+      Environment:
+        Variables:
+          MLB_VERIFY_MAX_PULL_AGE_MINUTES: '20'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+      Events:
+        MLBProductionVerifierEvery5Min:
+          Type: Schedule
+          Properties:
+            Schedule: rate(5 minutes)
+            Input: '{"sport":"mlb","mode":"continuous","run":"aws_production_verifier_5m"}'
+        MLBProductionIngestVerifyDaily435Et:
+          Type: Schedule
+          Properties:
+            Schedule: cron(35 20 * * ? *)
+            Input: '{"sport":"mlb","mode":"ingest","run":"daily_ingest_verify_1635_et"}'
+        MLBProductionLockVerifyDaily556Et:
+          Type: Schedule
+          Properties:
+            Schedule: cron(56 21 * * ? *)
+            Input: '{"sport":"mlb","mode":"lock","run":"daily_lock_verify_1756_et"}'
+
   MLBResultsSchedulerFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -614,6 +714,36 @@ Resources:
         - DynamoDBCrudPolicy:
             TableName: !Ref PredictionsTable
       Events:
+        MLBFinalScoresGet:
+          Type: Api
+          Properties:
+            Path: /v1/results/mlb/final-scores
+            Method: GET
+        MLBSettlementGet:
+          Type: Api
+          Properties:
+            Path: /v1/results/mlb/settlement
+            Method: GET
+        MLBSettlementProofGet:
+          Type: Api
+          Properties:
+            Path: /v1/results/mlb/proof
+            Method: GET
+        MLBSignalLearningGet:
+          Type: Api
+          Properties:
+            Path: /v1/results/mlb/signal-learning
+            Method: GET
+        MLBResultSignalsGet:
+          Type: Api
+          Properties:
+            Path: /v1/results/mlb/result-signals
+            Method: GET
+        MLBResultSignalsPost:
+          Type: Api
+          Properties:
+            Path: /v1/results/mlb/result-signals
+            Method: POST
         MLBResultsEvery6Hours:
           Type: Schedule
           Properties:
