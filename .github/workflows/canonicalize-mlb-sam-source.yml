@@ -5,7 +5,10 @@ on:
     branches: ["agent/stabilize-mlb-production"]
     paths:
       - "template.yaml"
+      - "hello_world/api.py"
       - "scripts/patch_template_mlb_v1.py"
+      - "scripts/patch_template_mlb_security.py"
+      - "scripts/patch_template_mlb_results_routes.py"
       - ".github/workflows/canonicalize-mlb-sam-source.yml"
   pull_request:
     branches: ["main"]
@@ -35,20 +38,23 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Render canonical MLB SAM source
-        run: python scripts/patch_template_mlb_v1.py
+      - name: Render every deploy-mutated MLB source
+        run: |
+          python scripts/patch_template_mlb_v1.py
+          python scripts/patch_template_mlb_security.py
+          python scripts/patch_template_mlb_results_routes.py
 
       - name: Verify canonical MLB schedule invariants
         run: python scripts/verify_mlb_schedule_invariants.py
 
       - name: Commit canonical source when changed
         run: |
-          if git diff --quiet -- template.yaml; then
-            echo "template.yaml is already canonical."
+          if git diff --quiet -- template.yaml hello_world/api.py; then
+            echo "MLB deployment source is already canonical."
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add template.yaml
-          git commit -m "Canonicalize MLB SAM source"
+          git add template.yaml hello_world/api.py
+          git commit -m "Canonicalize MLB deployment source"
           git push origin HEAD:agent/stabilize-mlb-production
