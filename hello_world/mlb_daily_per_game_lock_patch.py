@@ -1662,6 +1662,122 @@ def _provider_manifest_authority(
     return out
 
 
+def _provider_schedule_material(games: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Normalize schedule-only fields exactly as the immutable provider manifest does."""
+    return sorted(
+        [history_contract._provider_manifest_game("mlb", game) for game in games or []],
+        key=history_contract._manifest_sort_key,
+    )
+
+
+def _manifest_authority_identity(authority: Dict[str, Any]) -> Tuple[str, ...]:
+    return tuple(
+        str(authority.get(key) or "")
+        for key in ("version", "pk", "sk", "fingerprint", "pullId", "observedAtUtc")
+    )
+
+
+def _select_provider_manifest_authority(
+    module: Any,
+    pulls: Iterable[Dict[str, Any]],
+    slate: str,
+    manifest: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Select the newest immutable pull that proves the complete daily slate.
+
+    The provider legitimately stops returning games after they start.  That
+    makes the newest response a valid *contracted* response, but not the
+    full-slate authority for later locks.  The selected authority may therefore
+    be older than the scoring pull.  It is schedule proof only; candidate and
+    price selection remain bound to the last persisted pre-cutoff prediction.
+    """
+    ordered_pulls = sorted(
+        list(pulls or []),
+        key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc),
+    )
+    if not ordered_pulls:
+        raise RuntimeError("provider_manifest_pull_history_missing")
+    if not manifest:
+        raise RuntimeError("provider_manifest_complete_slate_missing")
+
+    manifest_reader = getattr(module.history, "provider_manifest_games_for_lock", None)
+    if not callable(manifest_reader):
+        raise RuntimeError("provider_manifest_games_reader_unavailable")
+
+    expected_material = _provider_schedule_material(manifest)
+    expected_by_identity = {game_identity(game): game for game in expected_material}
+    if len(expected_by_identity) != len(expected_material):
+        raise RuntimeError("provider_manifest_complete_slate_duplicate_game_identity")
+
+    # The latest response must itself be authentic.  A contraction is accepted
+    # only when it omits games that had already begun when that response was
+    # observed; unknown, mutated, or prematurely omitted games fail closed.
+    latest_pull = ordered_pulls[-1]
+    latest_games = manifest_reader(latest_pull, slate)
+    latest_material = _provider_schedule_material(latest_games)
+    latest_identities = [game_identity(game) for game in latest_material]
+    if len(set(latest_identities)) != len(latest_identities):
+        raise RuntimeError("provider_manifest_latest_feed_duplicate_game_identity")
+    unknown = sorted(set(latest_identities) - set(expected_by_identity))
+    if unknown:
+        raise RuntimeError(
+            "provider_manifest_latest_feed_unknown_game_identity:" + ",".join(unknown)
+        )
+    latest_by_identity = {game_identity(game): game for game in latest_material}
+    changed = sorted(
+        identity
+        for identity, game in latest_by_identity.items()
+        if game != expected_by_identity.get(identity)
+    )
+    if changed:
+        raise RuntimeError(
+            "provider_manifest_latest_feed_schedule_changed:" + ",".join(changed)
+        )
+    latest_manifest = latest_pull.get("provider_schedule_manifest") or {}
+    observed_at = _parse_iso(latest_manifest.get("observedAtUtc"))
+    if not observed_at:
+        raise RuntimeError("provider_manifest_latest_feed_observed_at_invalid")
+    prematurely_omitted = sorted(
+        identity
+        for identity, game in expected_by_identity.items()
+        if identity not in latest_by_identity
+        and (not _parse_iso(game.get("commence_time")) or _parse_iso(game.get("commence_time")) > observed_at)
+    )
+    if prematurely_omitted:
+        raise RuntimeError(
+            "provider_manifest_latest_feed_future_game_omitted:"
+            + ",".join(prematurely_omitted)
+        )
+
+    authority_failures: List[str] = []
+    for candidate_pull in reversed(ordered_pulls):
+        candidate_manifest = candidate_pull.get("provider_schedule_manifest") or {}
+        candidate_games = list(candidate_manifest.get("games") or [])
+        candidate_material = _provider_schedule_material(candidate_games)
+        candidate_identities = [game_identity(game) for game in candidate_material]
+        if candidate_identities != [game_identity(game) for game in expected_material]:
+            continue
+        if candidate_material != expected_material:
+            authority_failures.append(
+                f"{candidate_pull.get('pull_id') or 'unknown'}:schedule_material_mismatch"
+            )
+            continue
+        try:
+            return _provider_manifest_authority(
+                module,
+                candidate_pull,
+                slate,
+                manifest,
+            )
+        except Exception as exc:
+            authority_failures.append(
+                f"{candidate_pull.get('pull_id') or 'unknown'}:{exc}"
+            )
+
+    suffix = ":" + "|".join(authority_failures) if authority_failures else ""
+    raise RuntimeError("provider_manifest_full_slate_authority_missing" + suffix)
+
+
 def _generate_stage(
     module: Any,
     slate: str,
@@ -1669,7 +1785,7 @@ def _generate_stage(
     manifest: List[Dict[str, Any]],
     scoring: List[Dict[str, Any]],
     locked_count: int,
-    manifest_pull: Dict[str, Any],
+    provider_manifest_authority: Dict[str, Any],
 ) -> Tuple[Optional[Dict[str, Any]], List[str]]:
     start = _start(module, game)
     now = module._now_utc().astimezone(timezone.utc)
@@ -1710,15 +1826,8 @@ def _generate_stage(
         "stabilizationSeconds": CUTOFF_STABILIZATION_SECONDS,
         "pulls": _source_window_entries(module, bound_scoring, game),
     }
-    try:
-        provider_manifest_authority = _provider_manifest_authority(
-            module,
-            manifest_pull,
-            slate,
-            manifest,
-        )
-    except Exception as exc:
-        return None, [f"provider_manifest_authority_invalid:{exc}"]
+    if not isinstance(provider_manifest_authority, dict) or not provider_manifest_authority:
+        return None, ["provider_manifest_authority_missing"]
     item = module.history.ddb_safe({
         **_stage_key(module, slate, game),
         "record_type": STAGE_RECORD_TYPE,
@@ -2350,6 +2459,22 @@ def apply(module: Any) -> Any:
                         failed = True
                         break
 
+                    try:
+                        manifest_authority = _select_provider_manifest_authority(
+                            module,
+                            pulls,
+                            slate,
+                            manifest,
+                        )
+                    except Exception as exc:
+                        failures.append({
+                            "gameIdentity": identity,
+                            "reason": "PROVIDER_MANIFEST_AUTHORITY_NOT_STAGED",
+                            "errors": [str(exc)],
+                        })
+                        failed = True
+                        break
+
                     item, errors = _generate_stage(
                         module,
                         slate,
@@ -2357,7 +2482,7 @@ def apply(module: Any) -> Any:
                         manifest,
                         scoring,
                         pre.get("stagedCount", 0) + 1,
-                        pulls[-1],
+                        manifest_authority,
                     )
                     if errors or not item:
                         failures.append({"gameIdentity": identity, "reason": "PER_GAME_STAGE_VALIDATION_FAILED", "errors": errors})
@@ -2385,10 +2510,33 @@ def apply(module: Any) -> Any:
                         failed = True
                         break
                     refreshed_scoring = _scoring_pulls(module, refreshed_pulls, refreshed_game)
+                    try:
+                        refreshed_manifest_authority = _select_provider_manifest_authority(
+                            module,
+                            refreshed_pulls,
+                            slate,
+                            refreshed_manifest,
+                        )
+                    except Exception as exc:
+                        failures.append({
+                            "gameIdentity": identity,
+                            "reason": "PROVIDER_MANIFEST_AUTHORITY_CHANGED_OR_INVALID_DURING_SOURCE_WINDOW_CLOSE_NOT_STAGED",
+                            "errors": [str(exc)],
+                        })
+                        failed = True
+                        break
                     pulls = refreshed_pulls
                     manifest = refreshed_manifest
                     game = refreshed_game
-                    if _source_window_entries(module, scoring, game) == _source_window_entries(module, refreshed_scoring, game):
+                    source_window_unchanged = (
+                        _source_window_entries(module, scoring, game)
+                        == _source_window_entries(module, refreshed_scoring, game)
+                    )
+                    authority_unchanged = (
+                        _manifest_authority_identity(item.get("provider_manifest_authority") or {})
+                        == _manifest_authority_identity(refreshed_manifest_authority)
+                    )
+                    if source_window_unchanged and authority_unchanged:
                         scoring = refreshed_scoring
                         stable_item = item
                         break
