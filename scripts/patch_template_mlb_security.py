@@ -75,6 +75,12 @@ def resource_block(current: str, resource_name: str) -> str:
     return "\n".join(lines[start:end])
 
 
+for obsolete_verifier_event in [
+    "MLBProductionIngestVerifyDaily435Et",
+    "MLBProductionLockVerifyDaily556Et",
+]:
+    text = remove_child_event(text, obsolete_verifier_event)
+
 admin_env = "        INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken\n"
 if admin_env not in text:
     marker = "        ODDS_API_KEY: !Ref OddsApiKey\n"
@@ -164,16 +170,6 @@ verifier = """
           Properties:
             Schedule: rate(5 minutes)
             Input: '{"sport":"mlb","mode":"continuous","run":"aws_production_verifier_5m"}'
-        MLBProductionIngestVerifyDaily435Et:
-          Type: Schedule
-          Properties:
-            Schedule: cron(35 20 * * ? *)
-            Input: '{"sport":"mlb","mode":"ingest","run":"daily_ingest_verify_1635_et"}'
-        MLBProductionLockVerifyDaily556Et:
-          Type: Schedule
-          Properties:
-            Schedule: cron(56 21 * * ? *)
-            Input: '{"sport":"mlb","mode":"lock","run":"daily_lock_verify_1756_et"}'
 
 """
 text = insert_once(text, "  MLBResultsSchedulerFunction:\n", verifier, "  MLBProductionVerifierFunction:\n")
@@ -184,7 +180,7 @@ required = [
     "Path: /v1/mlb/model/version", "Path: /v1/mlb/today", "Path: /v1/mlb/game-winners", "Path: /v1/mlb/predictions", "Path: /v1/mlb/games",
     "Handler: mlb_manual_pull_protected.lambda_handler", "Handler: mlb_daily_pick_lock_protected.lambda_handler",
     "INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken",
-    "  MLBProductionVerifierFunction:", "MLBProductionVerifierEvery5Min:", "MLBProductionIngestVerifyDaily435Et:", "MLBProductionLockVerifyDaily556Et:",
+    "  MLBProductionVerifierFunction:", "MLBProductionVerifierEvery5Min:",
 ]
 missing = [value for value in required if value not in text]
 invalid_top_level = [name for name in ("MLBV3ReadFunction", "MLBProductionVerifierFunction") if f"\n{name}:\n" in text]
@@ -197,7 +193,11 @@ invalid_read_policy = (
     "DynamoDBReadPolicy:" not in mlb_v3_read_block
     or "DynamoDBCrudPolicy:" in mlb_v3_read_block
 )
-if missing or invalid_top_level or missing_function_tokens or invalid_read_policy:
+obsolete_verifiers = [
+    name for name in ("MLBProductionIngestVerifyDaily435Et", "MLBProductionLockVerifyDaily556Et")
+    if name in text
+]
+if missing or invalid_top_level or missing_function_tokens or invalid_read_policy or obsolete_verifiers:
     details = []
     if missing:
         details.append("missing: " + ", ".join(missing))
@@ -207,6 +207,8 @@ if missing or invalid_top_level or missing_function_tokens or invalid_read_polic
         details.append("function-specific admin token missing: " + ", ".join(missing_function_tokens))
     if invalid_read_policy:
         details.append("MLBV3ReadFunction must have DynamoDBReadPolicy and no DynamoDBCrudPolicy")
+    if obsolete_verifiers:
+        details.append("obsolete fixed-UTC verifier events remain: " + ", ".join(obsolete_verifiers))
     raise RuntimeError("MLB dedicated v3 route patch failed; " + "; ".join(details))
 TEMPLATE.write_text(text)
-print("Patched template.yaml with dedicated MLB v3 reads, explicit pull/lock admin tokens, and production verifier resources.")
+print("Patched template.yaml with dedicated MLB v3 reads, protected writes, and one continuous production verifier.")
