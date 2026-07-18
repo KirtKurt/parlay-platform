@@ -103,11 +103,39 @@ class FakeHistory:
     def __init__(self, table: FakeTable, pulls):
         self.PULLS = table
         self.pulls = list(pulls)
+        self.persisted_manifest_keys = set()
+
+    def _persist_provider_manifest_once(self, pull):
+        manifest = pull.get("provider_schedule_manifest")
+        if not isinstance(manifest, dict):
+            return
+        manifest_key = history_contract._provider_manifest_key(manifest)
+        item_key = (manifest_key["PK"], manifest_key["SK"])
+        if item_key in self.persisted_manifest_keys:
+            return
+        self.PULLS.items.setdefault(
+            item_key,
+            {
+                **manifest_key,
+                "record_type": history_contract.PROVIDER_MANIFEST_RECORD_TYPE,
+                "sport": "mlb",
+                "slate_date": pull["slate_date"],
+                "pulled_at": pull["pulled_at"],
+                "pull_id": pull["pull_id"],
+                "manifest_version": history_contract.PROVIDER_MANIFEST_VERSION,
+                "manifest_fingerprint": manifest["fingerprint"],
+                "write_once": True,
+                "data": copy.deepcopy(manifest),
+                "created_at": pull["pulled_at"],
+            },
+        )
+        self.persisted_manifest_keys.add(item_key)
 
     def query_pulls(self, sport, date=None, limit=500):
         assert sport == "mlb"
         assert date == SLATE
         for pull in self.pulls[:limit]:
+            self._persist_provider_manifest_once(pull)
             key = (
                 f"PULLS#mlb#{pull['slate_date']}",
                 f"PULL#{pull['pulled_at']}#{pull['pull_id']}",
@@ -126,54 +154,24 @@ class FakeHistory:
         return copy.deepcopy(self.pulls[:limit])
 
     def provider_manifest_authority_for_lock(self, pull, slate, expected_games):
-        games = sorted(copy.deepcopy(expected_games), key=history_contract._manifest_sort_key)
-        manifest = {
-            "version": history_contract.PROVIDER_MANIFEST_VERSION,
-            "recordType": history_contract.PROVIDER_MANIFEST_RECORD_TYPE,
-            "sport": "mlb",
-            "slateDate": slate,
-            "pullId": pull["pull_id"],
-            "observedAtUtc": pull["pulled_at"],
-            "source": "test_provider",
-            "gameCount": len(games),
-            "gameIdentities": [history_contract.provider_game_identity("mlb", game) for game in games],
-            "games": games,
-        }
-        manifest["fingerprint"] = history_contract.provider_manifest_fingerprint(manifest)
-        key = history_contract._provider_manifest_key(manifest)
-        item = {
-            **key,
-            "record_type": history_contract.PROVIDER_MANIFEST_RECORD_TYPE,
-            "sport": "mlb",
-            "slate_date": slate,
-            "pulled_at": pull["pulled_at"],
-            "pull_id": pull["pull_id"],
-            "manifest_version": history_contract.PROVIDER_MANIFEST_VERSION,
-            "manifest_fingerprint": manifest["fingerprint"],
-            "write_once": True,
-            "data": copy.deepcopy(manifest),
-        }
-        existing = self.PULLS.items.get((key["PK"], key["SK"]))
-        if existing and existing != item:
-            raise RuntimeError("test_provider_manifest_collision")
-        self.PULLS.items[(key["PK"], key["SK"])] = item
-        raw_ids = [history_contract.provider_game_identity("mlb", game) for game in manifest["games"]]
-        return {
-            "version": history_contract.PROVIDER_MANIFEST_VERSION,
-            "recordType": history_contract.PROVIDER_MANIFEST_RECORD_TYPE,
-            "pk": key["PK"],
-            "sk": key["SK"],
-            "fingerprint": manifest["fingerprint"],
-            "slateDate": slate,
-            "observedAtUtc": pull["pulled_at"],
-            "pullId": pull["pull_id"],
-            "gameCount": len(manifest["games"]),
-            "gameIdentities": raw_ids,
-            "immutable": True,
-            "writeOnce": True,
-            "fullProviderSchedule": True,
-            "consistentReadVerified": True,
-        }
+        original_table = history_contract.PULLS
+        history_contract.PULLS = self.PULLS
+        try:
+            return history_contract.provider_manifest_authority_for_lock(
+                pull,
+                slate,
+                expected_games,
+            )
+        finally:
+            history_contract.PULLS = original_table
+
+    def provider_manifest_games_for_lock(self, pull, slate):
+        original_table = history_contract.PULLS
+        history_contract.PULLS = self.PULLS
+        try:
+            return history_contract.provider_manifest_games_for_lock(pull, slate)
+        finally:
+            history_contract.PULLS = original_table
 
     @staticmethod
     def ddb_safe(value):
@@ -426,7 +424,47 @@ G3 = game("g3", "2026-07-13T22:00:00+00:00")
 
 
 def pull(at: str, games, suffix: str):
-    return {"pull_id": f"pull-{suffix}", "pulled_at": at, "slate_date": SLATE, "games": copy.deepcopy(games)}
+    pull_id = f"pull-{suffix}"
+    games = copy.deepcopy(games)
+    manifest = history_contract._build_provider_schedule_manifest(
+        sport="mlb",
+        slate=SLATE,
+        pulled_at=at,
+        pull_id=pull_id,
+        source="test_provider",
+        games=games,
+    )
+    # Preserve the shared game-key fallback exercised by the legacy no-ID
+    # regression. Odds API production rows carry provider IDs.
+    for index, source_game in enumerate(games):
+        if source_game.get("game_id") or source_game.get("id"):
+            continue
+        manifest["games"][index]["game_id"] = None
+        manifest["games"][index]["id"] = None
+    manifest["gameIdentities"] = [
+        history_contract.provider_game_identity("mlb", game)
+        for game in manifest["games"]
+    ]
+    manifest["fingerprint"] = history_contract.provider_manifest_fingerprint(manifest)
+    key = history_contract._provider_manifest_key(manifest)
+    return {
+        "pull_id": pull_id,
+        "sport": "mlb",
+        "source": "test_provider",
+        "pulled_at": at,
+        "slate_date": SLATE,
+        "games": games,
+        "provider_schedule_manifest": manifest,
+        "provider_manifest_binding": {
+            "version": history_contract.PROVIDER_MANIFEST_VERSION,
+            "fingerprint": manifest["fingerprint"],
+            "gameCount": manifest["gameCount"],
+            "pk": key["PK"],
+            "sk": key["SK"],
+            "immutable": True,
+            "fullProviderSchedule": True,
+        },
+    }
 
 
 EARLY_PULLS = [
@@ -1060,6 +1098,236 @@ def test_later_game_uses_newer_own_cutoff_pull_and_only_then_finalizes_daily_car
     assert card["per_game_lock"] is True
     assert card["canonical_immutable_game_row_count"] == 2
     assert len(card["data"]["perGameLockProof"]) == 2
+
+
+def _fifteen_game_contracted_feed_slate():
+    games = [game("contracted-01", "2026-07-13T18:00:00+00:00")]
+    games.extend(
+        game(f"contracted-{index:02d}", "2026-07-13T20:00:00+00:00")
+        for index in range(2, 16)
+    )
+    return games
+
+
+def _manifest_item_key(provider_pull):
+    key = history_contract._provider_manifest_key(
+        provider_pull["provider_schedule_manifest"]
+    )
+    return key["PK"], key["SK"]
+
+
+def test_contracted_latest_feed_selects_prior_full_manifest_authority():
+    full_slate = _fifteen_game_contracted_feed_slate()
+    full_pull = pull(
+        "2026-07-13T17:15:00+00:00",
+        full_slate,
+        "contracted-full-1715",
+    )
+    module = build_module(
+        [full_pull],
+        "2026-07-13T17:17:00+00:00",
+    )
+
+    first = module.run_lock(SLATE)
+
+    assert first["reason"] == "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER"
+    assert first["perGameLockProgress"]["stagedCount"] == 1
+    assert first["perGameLockProgress"]["canonicalCount"] == 1
+    first_stage = copy.deepcopy(staged_items(module)[0])
+    full_manifest_item = copy.deepcopy(
+        module.TABLE.items[_manifest_item_key(full_pull)]
+    )
+
+    # The provider stops returning a game after it starts.  This later response
+    # is valid scoring evidence for the remaining games, but it must not replace
+    # the already persisted 15-game full-slate authority.
+    remaining_pull = pull(
+        "2026-07-13T19:15:00+00:00",
+        full_slate[1:],
+        "contracted-remaining-1915",
+    )
+    module.history.pulls.append(remaining_pull)
+    persist_latest_prelock_candidates(module, [remaining_pull])
+    module.now = dt("2026-07-13T19:17:00+00:00")
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    assert result["perGameLockProgress"]["stagedCount"] == 15
+    assert result["perGameLockProgress"]["canonicalCount"] == 15
+    assert module.mlb_game_winner_engine.canonical_new_writes == 15
+    stages = {item["game_id"]: item for item in staged_items(module)}
+    assert len(stages) == 15
+    assert stages["contracted-01"] == first_stage
+    expected_fingerprint = full_pull["provider_schedule_manifest"]["fingerprint"]
+    expected_raw_ids = list(
+        full_pull["provider_schedule_manifest"]["gameIdentities"]
+    )
+    expected_canonical_ids = [patch.game_identity(entry) for entry in full_slate]
+    for stage in stages.values():
+        authority = stage["provider_manifest_authority"]
+        assert authority["fingerprint"] == expected_fingerprint
+        assert authority["pk"] == full_pull["provider_manifest_binding"]["pk"]
+        assert authority["sk"] == full_pull["provider_manifest_binding"]["sk"]
+        assert authority["pullId"] == full_pull["pull_id"]
+        assert authority["observedAtUtc"] == full_pull["pulled_at"]
+        assert authority["gameCount"] == 15
+        assert authority["gameIdentities"] == expected_raw_ids
+        assert authority["canonicalGameIdentities"] == expected_canonical_ids
+        assert stage["manifest_game_count"] == 15
+        assert stage["data"]["manifestGameIdentities"] == expected_canonical_ids
+
+    later_stage = stages["contracted-02"]
+    later_row = later_stage["data"]["row"]
+    assert later_stage["source_pull_id"] == remaining_pull["pull_id"]
+    assert later_stage["source_pull_at_utc"] == remaining_pull["pulled_at"]
+    assert later_stage["candidate_proof"]["predictionSourcePullId"] == remaining_pull["pull_id"]
+    assert later_stage["candidate_proof"]["predictionSourcePullAtUtc"] == remaining_pull["pulled_at"]
+    assert later_stage["source_window"]["pulls"][-1]["pullId"] == remaining_pull["pull_id"]
+    assert later_row["predictionSourcePullId"] == remaining_pull["pull_id"]
+    assert later_row["predictionSourcePullAt"] == remaining_pull["pulled_at"]
+    assert later_row["frozenFeatureVector"]["sourcePullAtUtc"] == remaining_pull["pulled_at"]
+    assert later_row["modelOrSignalRecomputedAtLock"] is False
+    assert module.mlb_game_winner_engine.prediction_calls == 0
+
+    card = daily_item(module)
+    assert card["manifest_game_count"] == 15
+    assert card["canonical_immutable_game_row_count"] == 15
+    assert card["data"]["manifestGameIdentities"] == expected_canonical_ids
+    assert len(card["data"]["perGameLockProof"]) == 15
+    assert module.TABLE.items[_manifest_item_key(full_pull)] == full_manifest_item
+
+
+def test_contracted_feed_future_game_omission_fails_closed_without_shrinking_slate():
+    full_slate = _fifteen_game_contracted_feed_slate()
+    full_pull = pull(
+        "2026-07-13T17:15:00+00:00",
+        full_slate,
+        "contracted-full-future-omission",
+    )
+    module = build_module(
+        [full_pull],
+        "2026-07-13T17:17:00+00:00",
+    )
+    module.run_lock(SLATE)
+
+    # contracted-01 has started, so its omission is expected. contracted-15 is
+    # still future and its omission must remain visible as a missing fresh
+    # cutoff source instead of silently contracting the official slate to 14.
+    incomplete_remaining = full_slate[1:-1]
+    remaining_pull = pull(
+        "2026-07-13T19:15:00+00:00",
+        incomplete_remaining,
+        "contracted-future-omitted-1915",
+    )
+    module.history.pulls.append(remaining_pull)
+    persist_latest_prelock_candidates(module, [remaining_pull])
+    module.now = dt("2026-07-13T19:17:00+00:00")
+
+    result = module.run_lock(SLATE)
+
+    assert result["ok"] is False
+    assert result["locked"] is False
+    assert result["reason"] == "PER_GAME_LOCK_DUE_BUT_NOT_CANONICAL"
+    assert len(result["perGameLockProgress"]["games"]) == 15
+    # The contracted pull itself is rejected as manifest authority because it
+    # omitted a still-future game. No game from that pull may advance, even
+    # though its other 13 due games are present and fresh.
+    assert result["perGameLockProgress"]["stagedCount"] == 1
+    assert result["perGameLockProgress"]["canonicalCount"] == 1
+    assert result["perGameLockProgress"]["dueMissingCount"] == 14
+    missing = next(
+        row
+        for row in result["perGameLockProgress"]["games"]
+        if row["gameId"] == "contracted-15"
+    )
+    assert missing["state"] == "DUE_NOT_STAGED"
+    assert not any(
+        item["game_id"] == "contracted-15" for item in staged_items(module)
+    )
+    assert not any(
+        item["game_id"] == "contracted-02" for item in staged_items(module)
+    )
+    assert any(
+        failure.get("gameIdentity") == patch.game_identity(full_slate[1])
+        and failure.get("reason") == "PROVIDER_MANIFEST_AUTHORITY_NOT_STAGED"
+        for failure in result["failures"]
+    )
+    assert any(
+        failure.get("gameIdentity") == patch.game_identity(full_slate[-1])
+        and failure.get("reason") == "STALE_OR_MISSING_CUTOFF_PULL_NOT_STAGED"
+        for failure in result["failures"]
+    )
+    assert daily_item(module) is None
+
+
+def test_missing_full_manifest_authority_blocks_later_contracted_feed():
+    full_slate = _fifteen_game_contracted_feed_slate()
+    full_pull = pull(
+        "2026-07-13T17:15:00+00:00",
+        full_slate,
+        "contracted-full-missing-authority",
+    )
+    module = build_module(
+        [full_pull],
+        "2026-07-13T17:17:00+00:00",
+    )
+    module.run_lock(SLATE)
+    first_stage = copy.deepcopy(staged_items(module)[0])
+    module.TABLE.delete(*_manifest_item_key(full_pull))
+
+    remaining_pull = pull(
+        "2026-07-13T19:15:00+00:00",
+        full_slate[1:],
+        "contracted-remaining-missing-authority",
+    )
+    module.history.pulls.append(remaining_pull)
+    persist_latest_prelock_candidates(module, [remaining_pull])
+    module.now = dt("2026-07-13T19:17:00+00:00")
+
+    result = module.run_lock(SLATE)
+
+    assert result["ok"] is False
+    assert result["locked"] is False
+    assert "immutable_provider_manifest" in str(result)
+    assert staged_items(module) == [first_stage]
+    assert module.mlb_game_winner_engine.canonical_new_writes == 1
+    assert daily_item(module) is None
+
+
+def test_tampered_full_manifest_authority_blocks_later_contracted_feed():
+    full_slate = _fifteen_game_contracted_feed_slate()
+    full_pull = pull(
+        "2026-07-13T17:15:00+00:00",
+        full_slate,
+        "contracted-full-tampered-authority",
+    )
+    module = build_module(
+        [full_pull],
+        "2026-07-13T17:17:00+00:00",
+    )
+    module.run_lock(SLATE)
+    first_stage = copy.deepcopy(staged_items(module)[0])
+    manifest_item = module.TABLE.items[_manifest_item_key(full_pull)]
+    manifest_item["data"]["games"][0]["home_team"] = "Tampered Home"
+
+    remaining_pull = pull(
+        "2026-07-13T19:15:00+00:00",
+        full_slate[1:],
+        "contracted-remaining-tampered-authority",
+    )
+    module.history.pulls.append(remaining_pull)
+    persist_latest_prelock_candidates(module, [remaining_pull])
+    module.now = dt("2026-07-13T19:17:00+00:00")
+
+    result = module.run_lock(SLATE)
+
+    assert result["ok"] is False
+    assert result["locked"] is False
+    assert "immutable_provider_manifest_readback_mismatch" in str(result)
+    assert staged_items(module) == [first_stage]
+    assert module.mlb_game_winner_engine.canonical_new_writes == 1
+    assert daily_item(module) is None
 
 
 def test_no_stage_or_canonical_write_before_due_or_after_game_start():
