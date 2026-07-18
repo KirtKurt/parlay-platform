@@ -1,0 +1,147 @@
+name: MLB Production Acceptance
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'template.yaml'
+      - 'hello_world/mlb_*.py'
+      - 'scripts/*mlb*.py'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/mlb-production-acceptance.yml'
+  schedule:
+    - cron: '10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-production-acceptance
+  cancel-in-progress: true
+
+jobs:
+  acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install runtime
+        run: python -m pip install --quiet "boto3>=1.34,<2"
+
+      - name: Verify acceptance semantics
+        run: python tests/unit/test_mlb_production_acceptance.py
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Build live pull coverage proof
+        env:
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          mkdir -p runtime_reports
+          SLATE_DATE=$(TZ=America/New_York date +%F)
+          PK="PULLS#mlb#${SLATE_DATE}"
+          AWS_OK=true
+          aws dynamodb query \
+            --region "$AWS_REGION" \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --key-condition-expression "PK = :pk" \
+            --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" \
+            --consistent-read \
+            --output json > /tmp/mlb_pulls.json 2>/tmp/mlb_pull_guard_error.txt || AWS_OK=false
+          if [ "$AWS_OK" = "false" ]; then
+            echo '{"Items":[]}' > /tmp/mlb_pulls.json
+          fi
+          python scripts/mlb_pull_guard_status.py \
+            --slate-date "$SLATE_DATE" \
+            --pulls-json /tmp/mlb_pulls.json \
+            --aws-ok "$AWS_OK" \
+            --aws-error-file /tmp/mlb_pull_guard_error.txt \
+            --output runtime_reports/mlb_pull_guard_status_latest.json
+
+      - name: Invoke live production verifier
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          VERIFY_OK=true
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION" \
+            --logical-resource-id MLBProductionVerifierFunction \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text 2>/tmp/mlb_verifier_resolve_error.txt) || VERIFY_OK=false
+          if [ "$VERIFY_OK" = "true" ]; then
+            aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --region "$AWS_REGION" \
+              --cli-binary-format raw-in-base64-out \
+              --payload '{"sport":"mlb","mode":"continuous","run":"github_production_acceptance"}' \
+              /tmp/mlb_verifier_response.json > /tmp/mlb_verifier_meta.json 2>/tmp/mlb_verifier_invoke_error.txt || VERIFY_OK=false
+          fi
+          VERIFY_OK="$VERIFY_OK" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          ok = os.environ.get('VERIFY_OK') == 'true'
+          result = {'ok': False, 'blockers': ['LIVE_PRODUCTION_VERIFIER_INVOKE_FAILED']}
+          if ok:
+              try:
+                  envelope = json.loads(Path('/tmp/mlb_verifier_response.json').read_text(encoding='utf-8'))
+                  body = envelope.get('body')
+                  result = json.loads(body) if isinstance(body, str) else envelope
+              except Exception as exc:
+                  result = {'ok': False, 'error': str(exc), 'blockers': ['LIVE_PRODUCTION_VERIFIER_RESPONSE_INVALID']}
+          else:
+              errors = []
+              for name in ('/tmp/mlb_verifier_resolve_error.txt', '/tmp/mlb_verifier_invoke_error.txt'):
+                  path = Path(name)
+                  if path.exists() and path.read_text(encoding='utf-8').strip():
+                      errors.append(path.read_text(encoding='utf-8')[:500])
+              result['error'] = ' | '.join(errors)
+          Path('runtime_reports/mlb_production_verifier_live_latest.json').write_text(
+              json.dumps(result, indent=2, default=str) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(result, indent=2, default=str))
+          PY
+
+      - name: Generate fresh AWS-backed rolling audit
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          INQSI_MLB_ML_AUTO_PROMOTE: 'true'
+          INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
+          INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-13T00:20:03+00:00'
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: python scripts/run_mlb_ml_v3_audit_report.py
+
+      - name: Enforce end-to-end production acceptance
+        run: |
+          python scripts/enforce_mlb_production_acceptance.py \
+            --pull-guard runtime_reports/mlb_pull_guard_status_latest.json \
+            --verifier runtime_reports/mlb_production_verifier_live_latest.json \
+            --audit runtime_reports/mlb_ml_v3_audit_execution_latest.json \
+            --output runtime_reports/mlb_production_acceptance_latest.json
+
+      - name: Upload production acceptance proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-production-acceptance-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_pull_guard_status_latest.json
+            runtime_reports/mlb_production_verifier_live_latest.json
+            runtime_reports/mlb_ml_v3_audit_execution_latest.json
+            runtime_reports/mlb_rolling_24h_audit_latest.json
+            runtime_reports/mlb_production_acceptance_latest.json
+          if-no-files-found: warn
