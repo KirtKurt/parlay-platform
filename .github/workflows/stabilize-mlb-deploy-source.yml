@@ -1,0 +1,277 @@
+name: Stabilize MLB deploy source
+
+on:
+  push:
+    branches: ["agent/stabilize-mlb-production"]
+    paths:
+      - ".github/workflows/stabilize-mlb-deploy-source.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: stabilize-mlb-deploy-source
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/stabilize-mlb-production
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install verification runtime
+        run: python -m pip install --quiet "boto3>=1.34,<2"
+
+      - name: Apply permanent MLB deployment migrations
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          def replace_once(text, old, new, label):
+              if old in text:
+                  return text.replace(old, new, 1)
+              if new in text:
+                  return text
+              raise SystemExit(f"migration marker missing: {label}")
+
+          manual = Path('hello_world/mlb_manual_pull.py')
+          text = manual.read_text(encoding='utf-8')
+          text = text.replace('DEFAULT_DAYS_AHEAD = 1', 'DEFAULT_DAYS_AHEAD = 0')
+          manual.write_text(text, encoding='utf-8')
+
+          v1 = Path('scripts/patch_template_mlb_v1.py')
+          text = v1.read_text(encoding='utf-8')
+          parameter_marker = 'Globals:\n'
+          parameter_block = '''  DeployGitSha:
+              Type: String
+              Default: unknown
+              Description: Exact Git commit deployed to AWS
+            DeployTemplateSha256:
+              Type: String
+              Default: unknown
+              Description: SHA-256 of the canonical SAM template deployed to AWS
+
+          '''.replace('          ', '')
+          if '  DeployGitSha:\n' not in text:
+              injection = '''if "  DeployGitSha:\\n" not in text:
+              marker = "Globals:\\n"
+              block = """  DeployGitSha:
+                Type: String
+                Default: unknown
+                Description: Exact Git commit deployed to AWS
+              DeployTemplateSha256:
+                Type: String
+                Default: unknown
+                Description: SHA-256 of the canonical SAM template deployed to AWS
+
+              """
+              if marker not in text:
+                  raise RuntimeError("Globals marker missing")
+              text = text.replace(marker, block + marker, 1)
+
+          '''.replace('          ', '')
+              anchor = '# Remove old/dedicated MLB route functions that caused API Gateway/Lambda 502 on smoke tests.\n'
+              if anchor not in text:
+                  raise SystemExit('v1 parameter insertion anchor missing')
+              text = text.replace(anchor, injection + anchor, 1)
+          env_anchor = '    ("MLB_PULL_START_AT_ET", "\'01:00\'"),\n'
+          env_insert = (
+              '    ("INQSI_DEPLOY_GIT_SHA", "!Ref DeployGitSha"),\n'
+              '    ("INQSI_DEPLOY_TEMPLATE_SHA256", "!Ref DeployTemplateSha256"),\n'
+          )
+          if 'INQSI_DEPLOY_GIT_SHA' not in text:
+              if env_anchor not in text:
+                  raise SystemExit('v1 deploy identity env anchor missing')
+              text = text.replace(env_anchor, ''.join(env_insert) + env_anchor, 1)
+          if 'DeployGitSha parameter missing' not in text:
+              check_anchor = 'violations = []\n'
+              check = '''violations = []
+          for required, message in [
+              ("  DeployGitSha:", "DeployGitSha parameter missing"),
+              ("  DeployTemplateSha256:", "DeployTemplateSha256 parameter missing"),
+              ("INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha", "deploy Git SHA environment missing"),
+              ("INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256", "deploy template SHA environment missing"),
+          ]:
+              if required not in text:
+                  violations.append(message)
+          '''.replace('          ', '')
+              text = text.replace(check_anchor, check, 1)
+          v1.write_text(text, encoding='utf-8')
+
+          security = Path('scripts/patch_template_mlb_security.py')
+          text = security.read_text(encoding='utf-8')
+          if 'MLBProductionIngestVerifyDaily435Et' not in text.split('admin_env =', 1)[0]:
+              anchor = 'admin_env = "        INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken\\n"\n'
+              removal = '''for obsolete_verifier_event in [
+              "MLBProductionIngestVerifyDaily435Et",
+              "MLBProductionLockVerifyDaily556Et",
+          ]:
+              text = remove_child_event(text, obsolete_verifier_event)
+
+          '''.replace('          ', '')
+              text = replace_once(text, anchor, removal + anchor, 'security verifier cleanup')
+          for obsolete in [
+              '        MLBProductionIngestVerifyDaily435Et:\n          Type: Schedule\n          Properties:\n            Schedule: cron(35 20 * * ? *)\n            Input: \'{"sport":"mlb","mode":"ingest","run":"daily_ingest_verify_1635_et"}\'\n',
+              '        MLBProductionLockVerifyDaily556Et:\n          Type: Schedule\n          Properties:\n            Schedule: cron(56 21 * * ? *)\n            Input: \'{"sport":"mlb","mode":"lock","run":"daily_lock_verify_1756_et"}\'\n',
+          ]:
+              text = text.replace(obsolete, '')
+          text = text.replace(', "MLBProductionIngestVerifyDaily435Et:", "MLBProductionLockVerifyDaily556Et:"', '')
+          security.write_text(text, encoding='utf-8')
+
+          results = Path('scripts/patch_template_mlb_results_routes.py')
+          text = results.read_text(encoding='utf-8')
+          if 'rate(15 minutes)' not in text:
+              anchor = 'for alias_event in ["MLBResultSignalsAliasGet", "MLBResultSignalsAliasPost"]:\n'
+              normalization = '''text = text.replace("Schedule: rate(6 hours)", "Schedule: rate(15 minutes)")
+          text = text.replace(
+              '\'{"sport":"mlb","days_from":3,"run":"results_pull"}\'',
+              '\'{"sport":"mlb","days_from":3,"run":"results_pull_15m"}\'',
+          )
+
+          '''.replace('          ', '')
+              text = replace_once(text, anchor, normalization + anchor, 'results cadence normalization')
+          results.write_text(text, encoding='utf-8')
+
+          invariants = Path('scripts/verify_mlb_schedule_invariants.py')
+          text = invariants.read_text(encoding='utf-8')
+          text = text.replace("    'MLBProductionIngestVerifyDaily435Et': 'daily ingest verification schedule missing',\n", '')
+          text = text.replace("    'MLBProductionLockVerifyDaily556Et': 'daily lock verification schedule missing',\n", '')
+          insertion_anchor = "if '\"days_ahead\":0' not in text and '\"days_ahead\": 0' not in text:\n    violations.append('same-day days_ahead=0 input missing')\n"
+          extra_checks = insertion_anchor + '''if "MLB_PULL_START_AT_ET: '01:00'" not in text:
+              violations.append('recurring daily 1 AM ET pull gate missing')
+          if "Schedule: rate(15 minutes)" not in text or "results_pull_15m" not in text:
+              violations.append('MLB result settlement is not scheduled every 15 minutes')
+          for obsolete in ["MLBProductionIngestVerifyDaily435Et", "MLBProductionLockVerifyDaily556Et"]:
+              if obsolete in text:
+                  violations.append(f'obsolete fixed-UTC verifier schedule exists: {obsolete}')
+          for required in [
+              "DeployGitSha:",
+              "DeployTemplateSha256:",
+              "INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha",
+              "INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256",
+          ]:
+              if required not in text:
+                  violations.append(f'deploy identity contract missing: {required}')
+          '''.replace('          ', '')
+          if "recurring daily 1 AM ET pull gate missing" not in text:
+              text = replace_once(text, insertion_anchor, extra_checks, 'invariant stabilization checks')
+          invariants.write_text(text, encoding='utf-8')
+
+          deploy = Path('.github/workflows/deploy.yml')
+          text = deploy.read_text(encoding='utf-8')
+          text = text.replace('      - ".github/workflows/**"\n', '')
+          patch_anchor = '''      - name: Patch SAM template for MLB settlement routes
+              run: python scripts/patch_template_mlb_results_routes.py
+          '''.replace('          ', '')
+          idempotence = patch_anchor + '''
+              - name: Verify deploy patchers are source-idempotent
+                run: git diff --exit-code -- template.yaml hello_world/api.py
+          '''.replace('          ', '')
+          if 'Verify deploy patchers are source-idempotent' not in text:
+              text = replace_once(text, patch_anchor, idempotence, 'deploy idempotence')
+          build_anchor = '''      - name: Verify built MLB v3 Lambda cold-start runtime
+              env:
+                INQSI_MLB_LAMBDA_TASK_ROOT: .aws-sam/build/MLBV3ReadFunction
+              run: python scripts/verify_api_function_mlb_v3_import.py
+          '''.replace('          ', '')
+          identity_step = build_anchor + '''
+              - name: Calculate canonical MLB deploy identity
+                id: deploy_identity
+                run: |
+                  TEMPLATE_SHA256=$(sha256sum template.yaml | awk '{print $1}')
+                  test -n "$TEMPLATE_SHA256"
+                  echo "template_sha256=$TEMPLATE_SHA256" >> "$GITHUB_OUTPUT"
+                  echo "Git SHA: $GITHUB_SHA"
+                  echo "Template SHA-256: $TEMPLATE_SHA256"
+          '''.replace('          ', '')
+          if 'Calculate canonical MLB deploy identity' not in text:
+              text = replace_once(text, build_anchor, identity_step, 'deploy identity calculation')
+          old_deploy_env = '''        env:
+              ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+              INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+            run: |
+          '''.replace('          ', '')
+          new_deploy_env = '''        env:
+              ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+              INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+              DEPLOY_TEMPLATE_SHA256: ${{ steps.deploy_identity.outputs.template_sha256 }}
+            run: |
+          '''.replace('          ', '')
+          deploy_pos = text.index('      - name: Deploy\n')
+          tail = text[deploy_pos:]
+          if 'DEPLOY_TEMPLATE_SHA256:' not in tail.split('      - name:', 2)[1]:
+              tail = replace_once(tail, old_deploy_env, new_deploy_env, 'deploy environment')
+              text = text[:deploy_pos] + tail
+          parameter_anchor = '              InqsiAdminApiToken="${INQSI_ADMIN_API_TOKEN_VALUE:-}"\n'
+          parameter_replacement = (
+              '              InqsiAdminApiToken="${INQSI_ADMIN_API_TOKEN_VALUE:-}" \\\n'
+              '              DeployGitSha="${GITHUB_SHA}" \\\n'
+              '              DeployTemplateSha256="${DEPLOY_TEMPLATE_SHA256}"\n'
+          )
+          if 'DeployGitSha="${GITHUB_SHA}"' not in text:
+              text = replace_once(text, parameter_anchor, parameter_replacement, 'deploy parameter overrides')
+          outputs_anchor = '''      - name: Verify MLB lock EventBridge schedule
+          '''.replace('          ', '')
+          verify_block = '''      - name: Verify exact MLB deployment identity and schedules
+              env:
+                EXPECTED_TEMPLATE_SHA256: ${{ steps.deploy_identity.outputs.template_sha256 }}
+              run: |
+                python scripts/verify_mlb_deploy_identity.py \
+                  --stack-name parlay-platform-dev \
+                  --region "${{ secrets.AWS_REGION }}" \
+                  --expected-git-sha "$GITHUB_SHA" \
+                  --expected-template-sha256 "$EXPECTED_TEMPLATE_SHA256"
+
+            - name: Upload MLB deployment identity proof
+              if: always()
+              uses: actions/upload-artifact@v4
+              with:
+                name: mlb-deployment-identity-${{ github.run_id }}
+                path: runtime_reports/mlb_deploy_identity_latest.json
+                if-no-files-found: warn
+
+          '''.replace('          ', '')
+          if 'Verify exact MLB deployment identity and schedules' not in text:
+              text = replace_once(text, outputs_anchor, verify_block + outputs_anchor, 'postdeploy identity verification')
+          deploy.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Render canonical deployment source
+        run: |
+          python scripts/patch_template_mlb_v1.py
+          python scripts/patch_template_mlb_security.py
+          python scripts/patch_template_mlb_results_routes.py
+
+      - name: Verify source contract
+        run: |
+          python scripts/verify_mlb_daily_pull_start_gate.py
+          python scripts/verify_mlb_schedule_invariants.py
+          python -m py_compile scripts/verify_mlb_deploy_identity.py
+
+      - name: Commit stabilization changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            template.yaml \
+            hello_world/api.py \
+            hello_world/mlb_manual_pull.py \
+            scripts/patch_template_mlb_v1.py \
+            scripts/patch_template_mlb_security.py \
+            scripts/patch_template_mlb_results_routes.py \
+            scripts/verify_mlb_schedule_invariants.py \
+            .github/workflows/deploy.yml
+          if git diff --cached --quiet; then
+            echo "No deploy source changes"
+            exit 0
+          fi
+          git commit -m "Stabilize MLB deploy identity and settlement cadence"
+          git push origin HEAD:agent/stabilize-mlb-production
