@@ -7,6 +7,9 @@ on:
       - "template.yaml"
       - "scripts/patch_template_mlb_v1.py"
       - ".github/workflows/canonicalize-mlb-sam-source.yml"
+  pull_request:
+    branches: ["main"]
+    types: [opened, synchronize, reopened]
   workflow_dispatch:
 
 permissions:
@@ -18,9 +21,10 @@ concurrency:
 
 jobs:
   canonicalize:
+    if: github.head_ref == 'agent/stabilize-mlb-production' || github.ref_name == 'agent/stabilize-mlb-production'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout branch
+      - name: Checkout stabilization branch
         uses: actions/checkout@v4
         with:
           ref: agent/stabilize-mlb-production
