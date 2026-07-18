@@ -129,7 +129,10 @@ text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
     Properties:
       CodeUri: hello_world/
       Handler: mlb_daily_pick_lock.lambda_handler
-      Timeout: 60
+      # A full-slate lock invocation performs fail-closed, strongly consistent
+      # readback of immutable pull manifests before any write.  A large MLB
+      # pull history can legitimately exceed the 60-second global default.
+      Timeout: 300
       MemorySize: 1024
       Environment:
         Variables:
