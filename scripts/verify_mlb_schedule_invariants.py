@@ -169,14 +169,27 @@ if 'cron(0/15 * * * ? *)' not in text:
     violations.append('MLBHotEvery15Min is not quarter-hour cron')
 if '"days_ahead":0' not in text and '"days_ahead": 0' not in text:
     violations.append('same-day days_ahead=0 input missing')
+if "MLB_PULL_START_AT_ET: '01:00'" not in text:
+    violations.append('recurring daily 1 AM ET pull gate missing')
+if "Schedule: rate(15 minutes)" not in text or "results_pull_15m" not in text:
+    violations.append('MLB result settlement is not scheduled every 15 minutes')
+for obsolete in ['MLBProductionIngestVerifyDaily435Et', 'MLBProductionLockVerifyDaily556Et']:
+    if obsolete in text:
+        violations.append(f'obsolete fixed-UTC verifier schedule exists: {obsolete}')
+for required in [
+    'DeployGitSha:',
+    'DeployTemplateSha256:',
+    'INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha',
+    'INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256',
+]:
+    if required not in text:
+        violations.append(f'deploy identity contract missing: {required}')
 
 required_template_strings = {
     'MLBDailyPickLockFunction': 'daily lock function missing',
     'MLBDailyPickLockEveryMinute': 'daily lock one-minute scheduler missing',
     'MLBProductionVerifierFunction': 'AWS production verifier function missing',
     'MLBProductionVerifierEvery5Min': '5-minute AWS production verifier schedule missing',
-    'MLBProductionIngestVerifyDaily435Et': 'daily ingest verification schedule missing',
-    'MLBProductionLockVerifyDaily556Et': 'daily lock verification schedule missing',
     'MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME': 'lock T-minus env missing',
     '/v1/mlb/locks/run': 'manual lock route missing',
     '/v1/mlb/locks/status': 'lock status route missing',

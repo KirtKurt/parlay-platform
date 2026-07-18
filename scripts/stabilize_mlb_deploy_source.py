@@ -1,0 +1,103 @@
+from __future__ import annotations
+
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def _replace_once(text: str, old: str, new: str, label: str) -> str:
+    if old in text:
+        return text.replace(old, new, 1)
+    if new in text:
+        return text
+    raise RuntimeError(f"migration marker missing: {label}")
+
+
+def _patch_manual_pull() -> None:
+    path = ROOT / "hello_world" / "mlb_manual_pull.py"
+    text = path.read_text(encoding="utf-8")
+    text = text.replace("DEFAULT_DAYS_AHEAD = 1", "DEFAULT_DAYS_AHEAD = 0")
+    text = text.replace(
+        'PULL_POLICY = "rolling_open_today_plus_tomorrow_every_15_min_date_isolated_hot_only"',
+        'PULL_POLICY = "rolling_today_every_15_min_date_isolated_hot_only"',
+    )
+    path.write_text(text, encoding="utf-8")
+
+
+def _patch_invariants() -> None:
+    path = ROOT / "scripts" / "verify_mlb_schedule_invariants.py"
+    text = path.read_text(encoding="utf-8")
+    text = text.replace("    'MLBProductionIngestVerifyDaily435Et': 'daily ingest verification schedule missing',\n", "")
+    text = text.replace("    'MLBProductionLockVerifyDaily556Et': 'daily lock verification schedule missing',\n", "")
+
+    anchor = """if '\"days_ahead\":0' not in text and '\"days_ahead\": 0' not in text:
+    violations.append('same-day days_ahead=0 input missing')
+"""
+    checks = anchor + """if "MLB_PULL_START_AT_ET: '01:00'" not in text:
+    violations.append('recurring daily 1 AM ET pull gate missing')
+if "Schedule: rate(15 minutes)" not in text or "results_pull_15m" not in text:
+    violations.append('MLB result settlement is not scheduled every 15 minutes')
+for obsolete in ['MLBProductionIngestVerifyDaily435Et', 'MLBProductionLockVerifyDaily556Et']:
+    if obsolete in text:
+        violations.append(f'obsolete fixed-UTC verifier schedule exists: {obsolete}')
+for required in [
+    'DeployGitSha:',
+    'DeployTemplateSha256:',
+    'INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha',
+    'INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256',
+]:
+    if required not in text:
+        violations.append(f'deploy identity contract missing: {required}')
+"""
+    if "recurring daily 1 AM ET pull gate missing" not in text:
+        text = _replace_once(text, anchor, checks, "invariant stabilization checks")
+    path.write_text(text, encoding="utf-8")
+
+
+def _validate_deploy_workflow() -> None:
+    path = ROOT / ".github" / "workflows" / "deploy.yml"
+    text = path.read_text(encoding="utf-8")
+
+    required = [
+        "Prove committed MLB source is canonical",
+        "Calculate canonical deployment identity",
+        "Deploy exact canonical source",
+        'DeployGitSha="${GITHUB_SHA}"',
+        'DeployTemplateSha256="${DEPLOY_TEMPLATE_SHA256}"',
+        "Prove exact deployed Lambda identity and schedules",
+        "verify_mlb_deploy_identity.py",
+        "Verify The Odds API without writing an unscheduled pull",
+        "writePerformed",
+        "mlb-deployment-identity-${{ github.run_id }}",
+    ]
+    missing = [token for token in required if token not in text]
+    forbidden = [
+        token
+        for token in [
+            '      - ".github/workflows/**"',
+            "/v1/pull/mlb",
+            "force=true",
+            "deploy_live_odds_smoke",
+            "Smoke test live MLB Odds API pull and storage",
+        ]
+        if token in text
+    ]
+    if missing or forbidden:
+        details = []
+        if missing:
+            details.append("missing deploy contract: " + ", ".join(missing))
+        if forbidden:
+            details.append("forbidden polluting deploy behavior: " + ", ".join(forbidden))
+        raise RuntimeError("Unsafe MLB deploy workflow; " + "; ".join(details))
+
+
+def main() -> None:
+    _patch_manual_pull()
+    _patch_invariants()
+    _validate_deploy_workflow()
+    print("MLB deployment source is canonical, identity-bound, and non-polluting.")
+
+
+if __name__ == "__main__":
+    main()

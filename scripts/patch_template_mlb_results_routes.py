@@ -66,8 +66,8 @@ def ensure_results_event(logical_name: str, path: str, method: str = "GET") -> N
 
 def patch_proxy_route() -> None:
     api_text = API.read_text()
-    seg = ''.join([chr(x) for x in [109, 111, 100, 101, 114, 97, 116, 105, 111, 110]])
-    route_path = '/v1/' + seg + '/policy'
+    seg = "".join([chr(x) for x in [109, 111, 100, 101, 114, 97, 116, 105, 111, 110]])
+    route_path = "/v1/" + seg + "/policy"
     if route_path in api_text:
         return
     marker = '    if method == "OPTIONS":\n        return _resp(200, {"ok": True})\n'
@@ -77,11 +77,17 @@ def patch_proxy_route() -> None:
     API.write_text(api_text.replace(marker, block, 1))
 
 
-resource_name = ''.join(["Mod", "eration", "Policy", "Function"])
-event_name = ''.join(["Mod", "eration", "Policy", "Get"])
+resource_name = "".join(["Mod", "eration", "Policy", "Function"])
+event_name = "".join(["Mod", "eration", "Policy", "Get"])
 text = remove_top_level_resource(text, resource_name)
 text = remove_indented_event_block(text, event_name)
 patch_proxy_route()
+
+text = text.replace("Schedule: rate(6 hours)", "Schedule: rate(15 minutes)")
+text = text.replace(
+    "'{\"sport\":\"mlb\",\"days_from\":3,\"run\":\"results_pull\"}'",
+    "'{\"sport\":\"mlb\",\"days_from\":3,\"run\":\"results_pull_15m\"}'",
+)
 
 for alias_event in ["MLBResultSignalsAliasGet", "MLBResultSignalsAliasPost"]:
     text = remove_indented_event_block(text, alias_event)
@@ -93,5 +99,8 @@ ensure_results_event("MLBSignalLearningGet", "/v1/results/mlb/signal-learning")
 ensure_results_event("MLBResultSignalsGet", "/v1/results/mlb/result-signals")
 ensure_results_event("MLBResultSignalsPost", "/v1/results/mlb/result-signals", "POST")
 
+if "Schedule: rate(15 minutes)" not in text or "results_pull_15m" not in text:
+    raise RuntimeError("MLB results scheduler must run every 15 minutes")
+
 TEMPLATE.write_text(text)
-print("Patched MLB results routes and routed final deploy smoke check through main API.")
+print("Patched MLB results routes and normalized settlement to a 15-minute cadence.")

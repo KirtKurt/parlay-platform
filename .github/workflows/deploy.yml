@@ -2,11 +2,13 @@ name: Deploy SAM to AWS
 
 on:
   push:
-    branches: ["main"]
+    branches: [main]
     paths-ignore:
       - "runtime_reports/**"
-      - ".github/workflows/**"
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 concurrency:
   group: parlay-platform-deploy
@@ -15,10 +17,11 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
+      - name: Checkout exact source commit
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python 3.11
         uses: actions/setup-python@v5
@@ -32,94 +35,110 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Verify AWS connection
-        run: aws sts get-caller-identity
-
-      - name: Verify Odds API secret present
+      - name: Verify AWS and required secrets
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-        run: |
-          if [ -z "${ODDS_API_KEY_VALUE:-}" ]; then
-            echo "::error::Missing ODDS_API_KEY GitHub secret. MLB production pulls must use The Odds API only."
-            exit 1
-          fi
-          echo "ODDS_API_KEY secret is present."
-
-      - name: Verify admin token secret present
-        env:
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
         run: |
-          if [ -z "${INQSI_ADMIN_API_TOKEN_VALUE:-}" ]; then
-            echo "::error::Missing INQSI_ADMIN_API_TOKEN GitHub secret. MLB ingest/lock write routes require it."
-            exit 1
-          fi
-          echo "INQSI_ADMIN_API_TOKEN secret is present."
+          set -euo pipefail
+          aws sts get-caller-identity
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo "::error::Missing ODDS_API_KEY"; exit 1; }
+          test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}" || { echo "::error::Missing INQSI_ADMIN_API_TOKEN"; exit 1; }
 
       - name: Setup AWS SAM
         uses: aws-actions/setup-sam@v2
 
-      - name: Patch SAM template for MLB v1 schedules and locks
-        run: python scripts/patch_template_mlb_v1.py
+      - name: Install verification runtime
+        run: python -m pip install --quiet "boto3>=1.34,<2"
 
-      - name: Patch SAM template for protected MLB write endpoints
-        run: python scripts/patch_template_mlb_security.py
+      - name: Prove committed MLB source is canonical
+        run: |
+          set -euo pipefail
+          python scripts/stabilize_mlb_deploy_source.py
+          python scripts/patch_template_mlb_v1.py
+          python scripts/patch_template_mlb_security.py
+          python scripts/patch_template_mlb_results_routes.py
+          git diff --exit-code -- \
+            template.yaml \
+            hello_world/api.py \
+            hello_world/mlb_manual_pull.py \
+            scripts/patch_template_mlb_v1.py \
+            scripts/patch_template_mlb_security.py \
+            scripts/patch_template_mlb_results_routes.py \
+            scripts/verify_mlb_schedule_invariants.py \
+            .github/workflows/deploy.yml
 
-      - name: Patch SAM template for MLB settlement routes
-        run: python scripts/patch_template_mlb_results_routes.py
-
-      - name: Validate MLB production invariants
-        run: python scripts/verify_mlb_schedule_invariants.py
-
-      - name: Validate MLB official prediction semantics
-        run: python scripts/verify_mlb_official_prediction_semantics.py
+      - name: Validate MLB production contracts
+        run: |
+          set -euo pipefail
+          python scripts/verify_mlb_daily_pull_start_gate.py
+          python scripts/verify_mlb_schedule_invariants.py
+          python scripts/verify_mlb_official_prediction_semantics.py
+          python tests/unit/test_mlb_production_acceptance.py
+          python -m py_compile scripts/verify_mlb_deploy_identity.py
 
       - name: Validate SAM template
-        run: sam validate
+        run: sam validate --template-file template.yaml
+
+      - name: Calculate canonical deployment identity
+        id: identity
+        run: |
+          set -euo pipefail
+          TEMPLATE_SHA256=$(sha256sum template.yaml | awk '{print $1}')
+          test -n "$TEMPLATE_SHA256"
+          echo "template_sha256=$TEMPLATE_SHA256" >> "$GITHUB_OUTPUT"
+          echo "git_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "Deploy Git SHA: $GITHUB_SHA"
+          echo "Canonical template SHA-256: $TEMPLATE_SHA256"
 
       - name: Build clean
         run: |
+          set -euo pipefail
           rm -rf .aws-sam
-          sam build --no-cached
+          sam build --no-cached --template-file template.yaml
 
-      - name: Verify built MLB v3 Lambda cold-start runtime
+      - name: Verify built MLB Lambda cold start
         env:
           INQSI_MLB_LAMBDA_TASK_ROOT: .aws-sam/build/MLBV3ReadFunction
         run: python scripts/verify_api_function_mlb_v3_import.py
 
-      - name: Wait for existing CloudFormation update to finish
+      - name: Wait for CloudFormation updateability
         run: |
-          for i in $(seq 1 60); do
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
             STATUS=$(aws cloudformation describe-stacks \
               --stack-name parlay-platform-dev \
-              --region ${{ secrets.AWS_REGION }} \
-              --query "Stacks[0].StackStatus" \
-              --output text 2>/dev/null || echo "STACK_MISSING")
-            echo "CloudFormation status: ${STATUS}"
-            case "${STATUS}" in
+              --region "${{ secrets.AWS_REGION }}" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || echo STACK_MISSING)
+            echo "CloudFormation status: $STATUS"
+            case "$STATUS" in
               CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE|STACK_MISSING)
                 exit 0
                 ;;
-              *IN_PROGRESS)
+              *_IN_PROGRESS)
                 sleep 30
                 ;;
               *)
-                echo "Stack status is not safe for update: ${STATUS}"
+                echo "::error::Stack is not updateable: $STATUS"
                 exit 1
                 ;;
             esac
           done
-          echo "Timed out waiting for CloudFormation stack to be updateable."
+          echo "::error::Timed out waiting for CloudFormation"
           exit 1
 
-      - name: Deploy
+      - name: Deploy exact canonical source
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
           INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+          DEPLOY_TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
         run: |
+          set -euo pipefail
           sam deploy \
             --template-file template.yaml \
             --stack-name parlay-platform-dev \
-            --region ${{ secrets.AWS_REGION }} \
+            --region "${{ secrets.AWS_REGION }}" \
             --capabilities CAPABILITY_IAM \
             --resolve-s3 \
             --force-upload \
@@ -127,449 +146,121 @@ jobs:
             --no-fail-on-empty-changeset \
             --parameter-overrides \
               OddsApiKey="${ODDS_API_KEY_VALUE}" \
-              InqsiAdminApiToken="${INQSI_ADMIN_API_TOKEN_VALUE:-}"
-
-      - name: Grant image moderation Rekognition access
-        continue-on-error: true
-        run: |
-          ROLE_NAME=$(aws cloudformation describe-stack-resource \
-            --stack-name parlay-platform-dev \
-            --region ${{ secrets.AWS_REGION }} \
-            --logical-resource-id ApiFunctionRole \
-            --query "StackResourceDetail.PhysicalResourceId" \
-            --output text)
-          test -n "$ROLE_NAME"
-          aws iam put-role-policy \
-            --role-name "$ROLE_NAME" \
-            --policy-name InqsiImageModerationRekognitionAccess \
-            --policy-document '{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["rekognition:DetectModerationLabels","rekognition:DetectText"],"Resource":"*"}]}'
+              InqsiAdminApiToken="${INQSI_ADMIN_API_TOKEN_VALUE}" \
+              DeployGitSha="${GITHUB_SHA}" \
+              DeployTemplateSha256="${DEPLOY_TEMPLATE_SHA256}"
 
       - name: Read stack outputs
-        id: stack_outputs
+        id: stack
         run: |
+          set -euo pipefail
           API_URL=$(aws cloudformation describe-stacks \
             --stack-name parlay-platform-dev \
-            --region ${{ secrets.AWS_REGION }} \
+            --region "${{ secrets.AWS_REGION }}" \
             --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
             --output text)
+          test -n "$API_URL"
+          test "$API_URL" != "None"
           echo "api_url=$API_URL" >> "$GITHUB_OUTPUT"
           echo "API_URL=$API_URL"
 
-      - name: Verify MLB lock EventBridge schedule
+      - name: Prove exact deployed Lambda identity and schedules
+        env:
+          EXPECTED_TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
         run: |
           set -euo pipefail
-          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+          python scripts/verify_mlb_deploy_identity.py \
             --stack-name parlay-platform-dev \
-            --region ${{ secrets.AWS_REGION }} \
-            --logical-resource-id MLBDailyPickLockFunction \
-            --query "StackResourceDetail.PhysicalResourceId" \
-            --output text)
-          test -n "$FUNCTION_NAME"
-          test "$FUNCTION_NAME" != "None"
-          FUNCTION_ARN=$(aws lambda get-function-configuration \
-            --function-name "$FUNCTION_NAME" \
-            --region ${{ secrets.AWS_REGION }} \
-            --query "FunctionArn" \
-            --output text)
-          test -n "$FUNCTION_ARN"
-          test "$FUNCTION_ARN" != "None"
+            --region "${{ secrets.AWS_REGION }}" \
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-template-sha256 "$EXPECTED_TEMPLATE_SHA256" \
+            --output runtime_reports/mlb_deploy_identity_latest.json
 
-          for attempt in $(seq 1 12); do
-            RULE_NAMES=$(aws events list-rule-names-by-target \
-              --target-arn "$FUNCTION_ARN" \
-              --region ${{ secrets.AWS_REGION }} \
-              --query "RuleNames[]" \
-              --output text)
-            for RULE_NAME in $RULE_NAMES; do
-              test "$RULE_NAME" != "None" || continue
-              STATE=$(aws events describe-rule \
-                --name "$RULE_NAME" \
-                --region ${{ secrets.AWS_REGION }} \
-                --query "State" \
-                --output text)
-              SCHEDULE=$(aws events describe-rule \
-                --name "$RULE_NAME" \
-                --region ${{ secrets.AWS_REGION }} \
-                --query "ScheduleExpression" \
-                --output text)
-              TARGET_ARNS=$(aws events list-targets-by-rule \
-                --rule "$RULE_NAME" \
-                --region ${{ secrets.AWS_REGION }} \
-                --query "Targets[].Arn" \
-                --output text)
-              for TARGET_ARN in $TARGET_ARNS; do
-                if [ "$STATE" = "ENABLED" ] && \
-                   [ "$SCHEDULE" = "rate(1 minute)" ] && \
-                   [ "$TARGET_ARN" = "$FUNCTION_ARN" ]; then
-                  echo "Verified enabled MLB lock schedule ${RULE_NAME} -> ${FUNCTION_ARN}."
-                  exit 0
-                fi
-              done
-            done
-            echo "MLB lock schedule not visible yet (attempt ${attempt}/12); retrying."
-            sleep 5
-          done
+      - name: Smoke test health and MLB read runtime
+        env:
+          API_URL: ${{ steps.stack.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error "${API_URL}v1/health" > /tmp/health.json
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
 
-          echo "::error::No enabled rate(1 minute) EventBridge rule targets ${FUNCTION_ARN}."
-          exit 1
+          base = os.environ['API_URL']
+          with urllib.request.urlopen(base + 'v1/mlb/model/version', timeout=45) as response:
+              payload = json.loads(response.read().decode('utf-8'))
+          print(json.dumps(payload, indent=2, default=str))
+          if payload.get('ok') is not True or payload.get('engine_import_ok') is not True:
+              raise SystemExit('Live MLB v3 engine did not import')
+          if payload.get('model_version') != 'INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority':
+              raise SystemExit('Live MLB model version is stale')
+          if payload.get('productionAuthoritySource') != 'gate_promoted_DynamoDB_champion_bundle_only':
+              raise SystemExit('Live MLB authority source is stale')
+          runtime = payload.get('ml_runtime_install') or {}
+          if runtime.get('ok') is not True:
+              raise SystemExit('Live MLB runtime installation is not healthy')
+          policy = runtime.get('accuracyTargetPolicy') or {}
+          for name in (
+              'rolling24hAllGamesAuditTargetPct',
+              'minimumRolling24hSlateAccuracyPct',
+              'minimumOutcomeUntouchedAccuracyPct',
+              'recommendationReliabilityThresholdPct',
+              'selectedUntouchedTestPlayabilityAccuracyTargetPct',
+              'minimumExactOddsCoveragePct',
+          ):
+              if policy.get(name) != 90.0:
+                  raise SystemExit(f'Live MLB authority threshold is stale: {name}={policy.get(name)}')
+          PY
+
+      - name: Verify The Odds API without writing an unscheduled pull
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+
+          params = urllib.parse.urlencode({
+              'apiKey': os.environ['ODDS_API_KEY_VALUE'],
+              'regions': 'us',
+              'markets': 'h2h,spreads,totals',
+              'oddsFormat': 'american',
+              'dateFormat': 'iso',
+          })
+          url = 'https://api.the-odds-api.com/v4/sports/baseball_mlb/odds?' + params
+          request = urllib.request.Request(url, headers={'accept': 'application/json', 'user-agent': 'inqsi-deploy-read-only-smoke/1.0'})
+          with urllib.request.urlopen(request, timeout=45) as response:
+              payload = json.loads(response.read().decode('utf-8'))
+              remaining = response.headers.get('x-requests-remaining')
+          if not isinstance(payload, list):
+              raise SystemExit('The Odds API MLB response was not a list')
+          for game in payload:
+              if not isinstance(game, dict) or not game.get('id') or not game.get('home_team') or not game.get('away_team'):
+                  raise SystemExit('The Odds API returned an invalid MLB game row')
+          print(json.dumps({
+              'ok': True,
+              'provider': 'the_odds_api',
+              'writePerformed': False,
+              'returnedGameCount': len(payload),
+              'requestsRemaining': remaining,
+          }, indent=2))
+          PY
 
       - name: Configure API WAF and throttling
         continue-on-error: true
-        run: bash scripts/configure_api_protection.sh "${{ steps.stack_outputs.outputs.api_url }}" "${{ secrets.AWS_REGION }}"
+        run: bash scripts/configure_api_protection.sh "${{ steps.stack.outputs.api_url }}" "${{ secrets.AWS_REGION }}"
 
       - name: Configure security alarms and budget guardrail
         continue-on-error: true
-        run: bash scripts/configure_security_alarms.sh "parlay-platform-dev" "${{ secrets.AWS_REGION }}" "100"
+        run: bash scripts/configure_security_alarms.sh parlay-platform-dev "${{ secrets.AWS_REGION }}" 100
 
-      - name: Smoke test live health endpoint
-        run: |
-          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          test -n "$API_URL"
-          curl --fail --silent --show-error "${API_URL}v1/health"
-
-      - name: Verify live MLB ML v3 model and runtime installation
-        env:
-          API_URL: ${{ steps.stack_outputs.outputs.api_url }}
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          with urllib.request.urlopen(os.environ["API_URL"] + "v1/mlb/model/version", timeout=45) as resp:
-              payload = json.loads(resp.read().decode("utf-8"))
-          print(json.dumps(payload, indent=2, default=str))
-          if payload.get("ok") is not True or payload.get("engine_import_ok") is not True:
-              raise SystemExit("MLB v3 engine did not import in live AWS Lambda")
-          expected_model = "INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority"
-          if payload.get("model_version") != expected_model:
-              raise SystemExit(f"live model version is stale: expected {expected_model}, got {payload.get('model_version')}")
-          if payload.get("productionAuthoritySource") != "gate_promoted_DynamoDB_champion_bundle_only":
-              raise SystemExit("live MLB authority source is stale or not gate-promoted")
-          if payload.get("automaticPromotionPolicy") != "authoritative_AWS_audit_only_after_independent_90pct_authority_gates":
-              raise SystemExit("live MLB automatic promotion policy is stale")
-          if payload.get("requiredWinnerPickPolicy") != "one_official_locked_winner_prediction_for_every_mlb_game":
-              raise SystemExit("live MLB every-game official-pick policy is stale")
-          if payload.get("playablePolicy") != "playability_is_separate_and_may_be_false_for_an_official_prediction":
-              raise SystemExit("live MLB playability/official-pick separation is stale")
-          if not str(payload.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"):
-              raise SystemExit("live ML optimization v3 orchestrator is missing")
-          runtime = payload.get("ml_runtime_install") or {}
-          if runtime.get("ok") is not True:
-              raise SystemExit(f"live MLB ML runtime install failed: {runtime}")
-          expected_runtime = "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority"
-          if runtime.get("version") != expected_runtime:
-              raise SystemExit(f"live MLB ML runtime is stale: expected {expected_runtime}, got {runtime.get('version')}")
-          policy = runtime.get("accuracyTargetPolicy") or {}
-          required_thresholds = {
-              "rolling24hAllGamesAuditTargetPct": 90.0,
-              "minimumRolling24hSlateAccuracyPct": 90.0,
-              "minimumOutcomeUntouchedAccuracyPct": 90.0,
-              "recommendationReliabilityThresholdPct": 90.0,
-              "selectedUntouchedTestPlayabilityAccuracyTargetPct": 90.0,
-              "minimumExactOddsCoveragePct": 90.0,
-          }
-          wrong_thresholds = {
-              name: {"expected": expected, "actual": policy.get(name)}
-              for name, expected in required_thresholds.items()
-              if policy.get(name) != expected
-          }
-          if wrong_thresholds:
-              raise SystemExit(f"live MLB authority thresholds are stale: {wrong_thresholds}")
-          if policy.get("rolling24hSlateAccuracyProgressMilestonesPct") != [50.0, 60.0, 70.0, 80.0]:
-              raise SystemExit(f"live MLB reporting milestones are stale: {policy}")
-          if policy.get("rolling24hSlateAccuracyProgressMilestonesReportingOnly") is not True:
-              raise SystemExit(f"live MLB reporting milestones can affect authority: {policy}")
-          if policy.get("automaticPromotionAfterApplicableGates") is not True:
-              raise SystemExit(f"live MLB automatic promotion policy is disabled: {policy}")
-          if policy.get("roiPromotionGateRequired") is not False:
-              raise SystemExit(f"live MLB policy incorrectly requires ROI for promotion: {policy}")
-          if policy.get("everyGameRetainsOfficialPick") is not True:
-              raise SystemExit(f"live MLB policy can suppress official game picks: {policy}")
-          if policy.get("playabilitySeparateFromOfficialPick") is not True:
-              raise SystemExit(f"live MLB playability is not separate from official picks: {policy}")
-          if (
-              "individualGameOfficialPickProbabilityFloorPct" not in policy
-              or policy.get("individualGameOfficialPickProbabilityFloorPct") is not None
-          ):
-              raise SystemExit(f"live MLB policy has an unauthorized official-pick probability floor: {policy}")
-          steps = runtime.get("steps") or {}
-          required = [
-              "accuracyTargetsSeparated",
-              "legacyReliabilityOverlaySafety",
-              "singleDdbChampionAuthority",
-              "officialSemanticsFinalized",
-              "immutableFeatureFreeze",
-              "exactCleanCohortVectorPatch",
-              "officialFreezeBridge",
-              "canonicalLockedStorageFinalizer",
-          ]
-          missing = [name for name in required if steps.get(name) is not True]
-          if missing:
-              raise SystemExit(f"live MLB ML runtime steps missing: {missing}")
-          PY
-
-      - name: Smoke test live MLB Odds API pull and storage
-        id: mlb_live_pull
-        env:
-          API_URL: ${{ steps.stack_outputs.outputs.api_url }}
-          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          api_url = os.environ.get("API_URL", "")
-          admin_token = os.environ.get("INQSI_ADMIN_API_TOKEN_VALUE", "")
-          body = json.dumps({"t":"HOT","run":"deploy_live_odds_smoke","days_ahead":0,"force":True}).encode("utf-8")
-          req = urllib.request.Request(
-              api_url + "v1/pull/mlb",
-              data=body,
-              headers={"content-type":"application/json", "x-inqsi-admin-token": admin_token},
-              method="POST",
-          )
-          with urllib.request.urlopen(req, timeout=45) as resp:
-              payload = json.loads(resp.read().decode("utf-8"))
-          print(json.dumps({
-              "ok": payload.get("ok"),
-              "live_pull_ok": payload.get("live_pull_ok"),
-              "fallback_used": payload.get("fallback_used"),
-              "count": payload.get("count"),
-              "game_dates_et": payload.get("game_dates_et"),
-              "canonical_pull_history": payload.get("canonical_pull_history"),
-              "provider_schedule_manifests": payload.get("provider_schedule_manifests"),
-              "providerScheduleManifestComplete": payload.get("providerScheduleManifestComplete"),
-              "game_winner_predictions": payload.get("game_winner_predictions"),
-          }, indent=2))
-          if not payload.get("ok"):
-              raise SystemExit("MLB live pull endpoint returned ok=false")
-          if payload.get("live_pull_ok") is not True:
-              raise SystemExit("MLB live pull did not use The Odds API successfully")
-          if payload.get("fallback_used"):
-              raise SystemExit("MLB live pull used fallback/cached data during deploy smoke")
-          count = int(payload.get("count") or 0)
-          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
-              output.write(f"provider_game_count={count}\n")
-          canonical = payload.get("canonical_pull_history") or []
-          manifests = payload.get("provider_schedule_manifests") or []
-          winners = payload.get("game_winner_predictions") or []
-          if count == 0:
-              print("MLB provider call succeeded with no active/upcoming games; canonical game storage and winner generation are not applicable in this off-slate window.")
-          else:
-              if not canonical or not any(row.get("ok") and int(row.get("games") or 0) > 0 for row in canonical):
-                  raise SystemExit("MLB live pull returned games but did not store canonical pull history with games")
-              if payload.get("providerScheduleManifestComplete") is not True:
-                  raise SystemExit("MLB live pull did not prove a complete immutable provider schedule manifest")
-              if not manifests or not all(
-                  row.get("ok") is True
-                  and row.get("immutable") is True
-                  and row.get("fullProviderSchedule") is True
-                  and row.get("boundToCanonicalPull") is True
-                  and int(row.get("gameCount") or 0) > 0
-                  and row.get("version")
-                  and row.get("fingerprint")
-                  and row.get("pk")
-                  and row.get("sk")
-                  for row in manifests
-              ):
-                  raise SystemExit("MLB live pull provider schedule manifest authority is invalid")
-              manifest_counts = {
-                  str(row.get("game_date_et") or ""): int(row.get("gameCount") or 0)
-                  for row in manifests
-              }
-              if not all(manifest_counts) or len(manifest_counts) != len(manifests) or sum(manifest_counts.values()) != count:
-                  raise SystemExit("MLB provider schedule manifest does not cover every provider game exactly once")
-              if not winners or not all(
-                  row.get("ok") is True
-                  and row.get("allGamesPredicted") is True
-                  and row.get("preLockStorageComplete") is True
-                  and int(row.get("preLockStorageCandidateCount") or 0) > 0
-                  and int(row.get("preLockStoredCount") or 0)
-                      == int(row.get("preLockStorageCandidateCount") or 0)
-                  and int(row.get("preLockStorageCandidateCount") or 0)
-                      == int(row.get("gameCount") or 0)
-                  and int(row.get("gameCount") or 0)
-                      == manifest_counts.get(str(row.get("game_date_et") or ""), -1)
-                  for row in winners
-              ) or {str(row.get("game_date_et") or "") for row in winners} != set(manifest_counts):
-                  raise SystemExit(
-                      "MLB live pull returned games but did not persist every pre-lock game-winner candidate"
-                  )
-          PY
-
-      - name: Smoke test MLB v1 today endpoint
-        run: |
-          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          curl --fail --silent --show-error "${API_URL}v1/mlb/today"
-
-      - name: Smoke test MLB lock status endpoint
-        env:
-          API_URL: ${{ steps.stack_outputs.outputs.api_url }}
-          LIVE_PULL_PROVIDER_GAME_COUNT: ${{ steps.mlb_live_pull.outputs.provider_game_count }}
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import urllib.error
-          import urllib.request
-
-          try:
-              with urllib.request.urlopen(os.environ["API_URL"] + "v1/mlb/locks/status", timeout=45) as resp:
-                  status_code = resp.status
-                  payload = json.loads(resp.read().decode("utf-8"))
-          except urllib.error.HTTPError as exc:
-              status_code = exc.code
-              payload = json.loads(exc.read().decode("utf-8"))
-          print(json.dumps(payload, indent=2, default=str))
-          provider_game_count = int(os.environ.get("LIVE_PULL_PROVIDER_GAME_COUNT") or 0)
-          if status_code >= 400:
-              expected_post_game_cutover_gap = (
-                  provider_game_count == 0
-                  and status_code == 500
-                  and payload.get("ok") is False
-                  and payload.get("error")
-                      == "MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:provider_schedule_manifest_missing"
-              )
-              if not expected_post_game_cutover_gap:
-                  raise SystemExit(
-                      f"live MLB lock status failed unexpectedly: HTTP {status_code}: {payload}"
-                  )
-              print(
-                  "MLB lock status correctly failed closed: the deploy-time provider pull "
-                  "returned zero games, so no immutable manifest could replace legacy "
-                  "same-date history. Historical rows are not backfilled."
-              )
-          preservation = payload.get("mlLockVectorPreservation") or {}
-          if preservation.get("ok") is not True or preservation.get("failClosed") is not True:
-              raise SystemExit(f"live exact-vector preservation is not fail-closed: {preservation}")
-          expected_vector = "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness"
-          if preservation.get("expectedVectorVersion") != expected_vector:
-              raise SystemExit(f"live lock vector version is stale: {preservation}")
-          per_game = payload.get("perGameLockInstallation") or {}
-          expected_lock = "INQSI-MLB-DAILY-LOCK-v4-per-game-tminus45-staged-write-once"
-          if per_game.get("ok") is not True or per_game.get("version") != expected_lock:
-              raise SystemExit(f"live per-game T-minus-45 lock is not installed: {per_game}")
-          if per_game.get("canonicalGameWriteAtOwnTMinus45") is not True or per_game.get("failClosed") is not True:
-              raise SystemExit(f"live per-game lock contract is incomplete: {per_game}")
-          if per_game.get("lastPrelockAtCutoffBecomesFinal") is not True or per_game.get("modelOrSignalRecomputedAtLock") is not False:
-              raise SystemExit(f"live last-prelock promotion contract is incomplete: {per_game}")
-          expected_fix = "MLB-LOCK-RUNTIME-FIX-v3-ddb-canonical-prelock-fingerprint"
-          if per_game.get("fixVersion") != expected_fix:
-              raise SystemExit(f"live MLB lock runtime fix is stale: expected {expected_fix}, got {per_game.get('fixVersion')}")
-          expected_payload_fingerprint = "INQSI-DDB-READ-EXACT-TYPED-JSON-SHA256-v1"
-          if (
-              per_game.get("candidatePayloadFingerprintVersion") != expected_payload_fingerprint
-              or per_game.get("candidatePayloadFingerprintDdbReadCanonical") is not True
-          ):
-              raise SystemExit(
-                  "live MLB pre-lock payload fingerprint contract is stale: "
-                  f"expected {expected_payload_fingerprint}, got {per_game}"
-              )
-          if per_game.get("explicitMlRuntimeInstall") is not True:
-              raise SystemExit(f"live MLB lock does not explicitly install the ML runtime: {per_game}")
-          if per_game.get("durableAttemptDiagnostics") is not True:
-              raise SystemExit(f"live MLB lock does not persist failed lock-attempt diagnostics: {per_game}")
-          expected_diagnostics = "MLB-PER-GAME-LOCK-DIAGNOSTICS-v1-append-only"
-          if per_game.get("attemptDiagnosticsVersion") != expected_diagnostics:
-              raise SystemExit(
-                  f"live MLB lock-attempt diagnostics are stale: expected {expected_diagnostics}, "
-                  f"got {per_game.get('attemptDiagnosticsVersion')}"
-              )
-          runtime = payload.get("mlRuntimeInstallation") or {}
-          if runtime.get("ok") is not True:
-              raise SystemExit(f"live MLB lock ML runtime installation failed: {runtime}")
-          expected_runtime = "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority"
-          required_runtime_steps = {
-              "accuracyTargetsSeparated",
-              "legacyReliabilityOverlaySafety",
-              "sourceHonestFundamentals",
-              "singleDdbChampionAuthority",
-              "officialSemanticsFinalized",
-              "exactCleanCohortVectorPatch",
-              "officialFreezeBridge",
-              "immutableFeatureFreeze",
-              "immutableLockedStorageAuthority",
-              "canonicalLockedStorageFinalizer",
-              "lastPrelockPromotionAuthority",
-              "legacyFinalGateDisabled",
-          }
-          if runtime.get("applied") is not True or runtime.get("version") != expected_runtime:
-              raise SystemExit(f"live MLB lock ML runtime is stale or unapplied: {runtime}")
-          missing_runtime_steps = sorted(
-              name for name in required_runtime_steps
-              if (runtime.get("steps") or {}).get(name) is not True
-          )
-          if missing_runtime_steps or runtime.get("errors"):
-              raise SystemExit(
-                  f"live MLB lock ML runtime is incomplete; missing={missing_runtime_steps}: {runtime}"
-              )
-          PY
-
-      - name: Smoke test MLB game-winner endpoint
-        run: |
-          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          curl --fail --silent --show-error "${API_URL}v1/mlb/game-winners?store=false"
-
-      - name: Verify live official prediction, playability, and ML shadow/champion semantics
-        env:
-          API_URL: ${{ steps.stack_outputs.outputs.api_url }}
-        run: |
-          python - <<'PY'
-          import json
-          import os
-          import urllib.request
-
-          with urllib.request.urlopen(os.environ["API_URL"] + "v1/mlb/game-winners?store=false", timeout=45) as resp:
-              payload = json.loads(resp.read().decode("utf-8"))
-          rows = payload.get("predictions") or payload.get("winner_predictions") or []
-          locked = bool((payload.get("slatePredictionLock") or {}).get("locked"))
-          semantics = payload.get("predictionSemantics") or {}
-          optimization = payload.get("mlOptimizationRuntime") or {}
-          freeze = payload.get("mlFeatureFreeze") or {}
-          if semantics.get("applied") is not True:
-              raise SystemExit("official prediction semantics guard was not applied")
-          if optimization.get("applied") is not True:
-              raise SystemExit("ML optimization runtime was not applied")
-          if optimization.get("directionAuthorityEnabled") and not optimization.get("championAvailable"):
-              raise SystemExit("direction authority enabled without a DDB champion")
-          if optimization.get("playabilityAuthorityEnabled") and not optimization.get("championAvailable"):
-              raise SystemExit("playability authority enabled without a DDB champion")
-          if freeze.get("applied") is not True:
-              raise SystemExit("immutable feature-freeze layer was not applied")
-          if locked and rows:
-              if not all(row.get("officialPrediction") is True and row.get("officialPick") is True for row in rows):
-                  raise SystemExit("locked winner rows were not preserved as official predictions")
-              official_count = int(payload.get("officialPredictionCount") or 0)
-              if official_count != len(rows):
-                  raise SystemExit(f"official prediction count {official_count} != locked row count {len(rows)}")
-              playable_count = sum(row.get("playable") is True for row in rows)
-              if playable_count != int(payload.get("playablePredictionCount") or 0):
-                  raise SystemExit("playable prediction count is inconsistent")
-              missing_vectors = [row.get("gameId") for row in rows if not ((row.get("frozenFeatureVector") or {}).get("fingerprint"))]
-              if missing_vectors:
-                  raise SystemExit(f"locked rows missing exact stored feature vectors: {missing_vectors}")
-          print(json.dumps({
-              "locked": locked,
-              "rows": len(rows),
-              "officialPredictionCount": payload.get("officialPredictionCount"),
-              "playablePredictionCount": payload.get("playablePredictionCount"),
-              "nonPlayableOfficialPredictionCount": payload.get("nonPlayableOfficialPredictionCount"),
-              "semanticsVersion": semantics.get("version"),
-              "mlOptimizationRuntime": optimization,
-              "mlFeatureFreeze": freeze,
-          }, indent=2))
-          PY
-
-      - name: Smoke test MLB signal learning endpoint
-        run: |
-          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          curl --fail --silent --show-error "${API_URL}v1/results/mlb/signal-learning?fetch_scores=false"
-
-      - name: Smoke test image moderation policy endpoint
-        continue-on-error: true
-        run: |
-          API_URL="${{ steps.stack_outputs.outputs.api_url }}"
-          if ! curl --fail --silent --show-error "${API_URL}v1/moderation/policy"; then
-            echo "::warning::Image moderation policy endpoint is returning an error. This is non-MLB and will not block MLB/runtime deploys."
-          fi
+      - name: Upload exact deployment proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-deployment-identity-${{ github.run_id }}
+          path: runtime_reports/mlb_deploy_identity_latest.json
+          if-no-files-found: warn
