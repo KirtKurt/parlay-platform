@@ -10,6 +10,9 @@ VERSION = "INQSI-MLB-DAILY-LOCK-v3-complete-slate-doubleheader-safe"
 
 def _latest_games(module: Any, slate_date: str, pulls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     by_identity: Dict[str, Tuple[datetime, Dict[str, Any]]] = {}
+    provider_pulls: List[Tuple[datetime, Dict[str, Any], List[Dict[str, Any]]]] = []
+    local_validator = getattr(module.history, "validate_provider_schedule_manifest", None)
+    manifest_reader = getattr(module.history, "provider_manifest_games_for_lock", None)
     for pull in pulls or []:
         pulled_at = module._parse_dt(pull.get("pulled_at")) or datetime.min.replace(tzinfo=timezone.utc)
         if (
@@ -17,7 +20,33 @@ def _latest_games(module: Any, slate_date: str, pulls: List[Dict[str, Any]]) -> 
             or pull.get("provider_schedule_manifest") is not None
             or pull.get("provider_manifest_binding") is not None
         ):
-            pull_games = module.history.provider_manifest_games_for_lock(pull, slate_date)
+            # Recalculate every embedded proof in memory, but do not make one
+            # strongly consistent DynamoDB request per historical pull.  The
+            # exact full-slate authority and latest contracted feed are read
+            # back below; those are the only two records that can influence a
+            # new lock stage.
+            if callable(local_validator):
+                errors = local_validator(
+                    pull,
+                    slate_date,
+                    verify_immutable_storage=False,
+                )
+                if errors:
+                    raise RuntimeError(
+                        "MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:"
+                        + ",".join(sorted(set(errors)))
+                    )
+                pull_games = list(
+                    (pull.get("provider_schedule_manifest") or {}).get("games") or []
+                )
+            else:
+                # Compatibility fallback for older injected history adapters.
+                # Production exposes the local validator and takes the fast
+                # path; the fallback retains the prior fail-closed behavior.
+                if not callable(manifest_reader):
+                    raise RuntimeError("provider_manifest_games_reader_unavailable")
+                pull_games = manifest_reader(pull, slate_date)
+            provider_pulls.append((pulled_at, pull, pull_games))
         else:
             pull_games = pull.get("games") or []
         for game in pull_games:
@@ -27,10 +56,78 @@ def _latest_games(module: Any, slate_date: str, pulls: List[Dict[str, Any]]) -> 
             current = by_identity.get(identity)
             if current is None or pulled_at >= current[0]:
                 by_identity[identity] = (pulled_at, game)
-    return sorted(
+    games = sorted(
         (item[1] for item in by_identity.values()),
         key=lambda game: module._parse_dt(game.get("commence_time") or game.get("commenceTime")) or datetime.max.replace(tzinfo=timezone.utc),
     )
+
+    if provider_pulls and callable(local_validator):
+        if not callable(manifest_reader):
+            raise RuntimeError("provider_manifest_games_reader_unavailable")
+
+        def material(entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+            return sorted(
+                [entry for entry in entries if module._game_date_et(entry) == slate_date],
+                key=lambda entry: game_identity(entry),
+            )
+
+        expected = material(games)
+        expected_identities = [game_identity(entry) for entry in expected]
+        if len(set(expected_identities)) != len(expected_identities):
+            raise RuntimeError("provider_manifest_complete_slate_duplicate_game_identity")
+
+        # The newest exact manifest proving the cumulative slate is the
+        # schedule authority.  The latest provider response is independently
+        # verified too because it may legitimately contract after games start.
+        exact = [
+            record
+            for record in provider_pulls
+            if material(record[2]) == expected
+        ]
+        if not exact:
+            raise RuntimeError("provider_manifest_full_slate_authority_missing")
+        full_authority = max(exact, key=lambda record: record[0])
+        latest = max(provider_pulls, key=lambda record: record[0])
+
+        verified_keys = set()
+        for _pulled_at, pull, embedded_games in (full_authority, latest):
+            manifest = pull.get("provider_schedule_manifest") or {}
+            key = (
+                str(manifest.get("fingerprint") or ""),
+                str(manifest.get("pullId") or pull.get("pull_id") or ""),
+            )
+            if key in verified_keys:
+                continue
+            verified = manifest_reader(pull, slate_date)
+            if material(verified) != material(embedded_games):
+                raise RuntimeError("immutable_provider_manifest_readback_games_mismatch")
+            verified_keys.add(key)
+
+        latest_games = material(latest[2])
+        latest_identities = {game_identity(entry) for entry in latest_games}
+        observed_at = module._parse_dt(
+            (latest[1].get("provider_schedule_manifest") or {}).get("observedAtUtc")
+        )
+        if observed_at is None:
+            raise RuntimeError("provider_manifest_latest_feed_observed_at_invalid")
+        prematurely_omitted = sorted(
+            game_identity(entry)
+            for entry in expected
+            if game_identity(entry) not in latest_identities
+            and (
+                module._parse_dt(entry.get("commence_time") or entry.get("commenceTime"))
+                is None
+                or module._parse_dt(entry.get("commence_time") or entry.get("commenceTime"))
+                > observed_at
+            )
+        )
+        if prematurely_omitted:
+            raise RuntimeError(
+                "provider_manifest_latest_feed_future_game_omitted:"
+                + ",".join(prematurely_omitted)
+            )
+
+    return games
 
 
 def _coverage(module: Any, games: List[Dict[str, Any]], payload: Dict[str, Any], predictions: List[Dict[str, Any]]) -> Dict[str, Any]:
