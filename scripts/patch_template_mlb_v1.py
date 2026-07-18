@@ -59,6 +59,15 @@ def add_global_env(s: str, key: str, value: str) -> str:
     return s.replace(marker, marker + f"        {key}: {value}\n", 1)
 
 
+def set_global_env(s: str, key: str, value: str) -> str:
+    lines = s.splitlines(keepends=True)
+    needle = f"        {key}:"
+    for index, line in enumerate(lines):
+        if line.startswith(needle):
+            lines[index] = f"        {key}: {value}\n"
+            return "".join(lines)
+    return add_global_env(s, key, value)
+
 def patch_mlb_hot_block(s: str) -> str:
     lines = s.splitlines(keepends=True)
     out = []
@@ -114,14 +123,14 @@ text = patch_mlb_hot_block(text)
 text = text.replace('"days_ahead":1', '"days_ahead":0').replace('"days_ahead": 1', '"days_ahead": 0')
 
 for key, value in [
-    ("MLB_PULL_START_AT_ET", "'2026-07-02T01:00:00-04:00'"),
+    ("MLB_PULL_START_AT_ET", "'01:00'"),
     ("MLB_SCHED_INTERVAL_MINUTES", "'15'"),
     ("ODDS_PRIMARY_BOOK", "'fanduel'"),
     ("MLB_PROMOTION_EDGE_THRESHOLD", "'0.0015'"),
     ("MLB_PROMOTION_FALLBACK_EDGE_THRESHOLD", "'0.0005'"),
     ("MLB_MIN_EV_FOR_PROMOTION", "'0.0'"),
 ]:
-    text = add_global_env(text, key, value)
+    text = set_global_env(text, key, value)
 
 text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
   MLBDailyPickLockFunction:

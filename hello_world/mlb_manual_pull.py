@@ -38,7 +38,7 @@ dynamodb = boto3.resource("dynamodb")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
 SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
-MLB_PULL_START_AT_ET = os.environ.get("MLB_PULL_START_AT_ET", "2026-07-03T01:00:00-04:00")
+MLB_PULL_START_AT_ET = os.environ.get("MLB_PULL_START_AT_ET", "01:00")
 MLB_SCHED_INTERVAL_MINUTES = int(os.environ.get("MLB_SCHED_INTERVAL_MINUTES", "15"))
 
 snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
@@ -50,7 +50,7 @@ DEFAULT_DAYS_AHEAD = 1
 PLATFORM_VERSION = "MLB_PREDICTIVE_PLATFORM_V1"
 ML_FEATURE_VERSION = "mlb_hot_pull_movement_features_v1"
 HOT_ONLY_POLICY = "MLB_B1_15_MIN_HOT_ONLY"
-PULL_POLICY = "rolling_open_today_plus_tomorrow_every_15_min_date_isolated_hot_only"
+PULL_POLICY = "rolling_today_every_15_min_date_isolated_hot_only"
 EASTERN = ZoneInfo("America/New_York")
 
 
@@ -220,10 +220,19 @@ def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_er
         }
 
 
-def _parse_start_at_et() -> Optional[datetime]:
+def _parse_start_at_et(now_et: Optional[datetime] = None) -> Optional[datetime]:
     raw = (MLB_PULL_START_AT_ET or "").strip()
     if not raw:
         return None
+    reference = now_et or datetime.now(EASTERN)
+    if len(raw) == 5 and raw[2] == ":":
+        try:
+            hour, minute = (int(part) for part in raw.split(":", 1))
+        except Exception:
+            return None
+        if not (0 <= hour <= 23 and 0 <= minute <= 59):
+            return None
+        return reference.replace(hour=hour, minute=minute, second=0, microsecond=0)
     try:
         parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
         if parsed.tzinfo is None:
@@ -231,7 +240,6 @@ def _parse_start_at_et() -> Optional[datetime]:
         return parsed.astimezone(EASTERN)
     except Exception:
         return None
-
 
 def _truthy(value: Any) -> bool:
     return str(value or "").strip().lower() in {"1", "true", "yes", "y", "force"}
@@ -243,10 +251,10 @@ def _scheduled_start_gate(event: Dict[str, Any], payload: Dict[str, Any]) -> Opt
     is_http = bool(event.get("httpMethod") or event.get("requestContext", {}).get("http"))
     if is_http:
         return None
-    start_at = _parse_start_at_et()
+    now_et = datetime.now(EASTERN)
+    start_at = _parse_start_at_et(now_et)
     if start_at is None:
         return None
-    now_et = datetime.now(EASTERN)
     if now_et >= start_at:
         return None
     return {
