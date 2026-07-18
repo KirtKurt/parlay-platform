@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 import mlb_daily_per_game_lock_patch as patch
+import mlb_daily_lock_coverage_patch as coverage_patch
 import mlb_daily_lock_audit_fallback_patch as audit_fallback
 import inqsi_pull_history as history_contract
 import mlb_ml_clean_cohort_v1 as cohort
@@ -104,6 +105,7 @@ class FakeHistory:
         self.PULLS = table
         self.pulls = list(pulls)
         self.persisted_manifest_keys = set()
+        self.provider_manifest_read_count = 0
 
     def _persist_provider_manifest_once(self, pull):
         manifest = pull.get("provider_schedule_manifest")
@@ -166,12 +168,26 @@ class FakeHistory:
             history_contract.PULLS = original_table
 
     def provider_manifest_games_for_lock(self, pull, slate):
+        self.provider_manifest_read_count += 1
         original_table = history_contract.PULLS
         history_contract.PULLS = self.PULLS
         try:
             return history_contract.provider_manifest_games_for_lock(pull, slate)
         finally:
             history_contract.PULLS = original_table
+
+    @staticmethod
+    def validate_provider_schedule_manifest(
+        pull,
+        slate,
+        *,
+        verify_immutable_storage=False,
+    ):
+        return history_contract.validate_provider_schedule_manifest(
+            pull,
+            slate,
+            verify_immutable_storage=verify_immutable_storage,
+        )
 
     @staticmethod
     def ddb_safe(value):
@@ -392,6 +408,10 @@ class FakeModule:
         return sorted(latest.values(), key=lambda game: game["commence_time"])
 
     @staticmethod
+    def _game_date_et(game):
+        return str(game.get("commence_time") or game.get("commenceTime") or "")[:10]
+
+    @staticmethod
     def _sort_picks(rows):
         return sorted(rows, key=lambda row: row["commenceTime"])
 
@@ -590,6 +610,27 @@ def build_module(pulls, now, *, vectorless=False, tampered_provenance=False, see
     if seed:
         persist_latest_prelock_candidates(module, pulls)
     return module
+
+
+def test_complete_slate_union_reads_back_only_full_authority_and_latest_feed():
+    historical = [
+        pull(
+            (dt("2026-07-13T16:00:00+00:00") + timedelta(minutes=index)).isoformat(),
+            [G1, G2],
+            f"history-{index}",
+        )
+        for index in range(92)
+    ]
+    historical.append(
+        pull("2026-07-13T18:01:00+00:00", [G2], "latest-contracted")
+    )
+    module = FakeModule(historical, "2026-07-13T18:02:00+00:00")
+    persisted = module._pulls_for_date(SLATE)
+
+    games = coverage_patch._latest_games(module, SLATE, persisted)
+
+    assert [game["game_id"] for game in games] == ["g1", "g2"]
+    assert module.history.provider_manifest_read_count == 2
 
 
 def test_manual_pull_timestamp_is_captured_after_provider_response():
