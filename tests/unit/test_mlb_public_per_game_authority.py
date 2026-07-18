@@ -253,6 +253,11 @@ def test_partial_canonical_overlay_preserves_lock_and_clears_legacy_official_fla
     canonical = _canonical_item(G1, G1["home_team"], "home", 71)
     engine = _engine([canonical])
     _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 17, 21, 0, tzinfo=timezone.utc),
+    )
 
     result = engine.predict_all(SLATE, store=False)
 

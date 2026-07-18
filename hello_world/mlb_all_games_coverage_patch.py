@@ -51,11 +51,18 @@ def apply(module: Any):
         if not card:
             return card
         playable = _playable(winner)
+        canonical = card.get("officialPrediction") is True
         card["playable"] = playable
         card["playablePick"] = playable
-        card["recommendationStatus"] = winner.get("recommendationStatus") or ("PLAYABLE_PREDICTION" if playable else "OFFICIAL_PREDICTION_NOT_PLAYABLE")
-        card["officialPrediction"] = bool(winner.get("officialPrediction") or winner.get("predictedWinner"))
-        card["officialPick"] = bool(winner.get("officialPick") or winner.get("predictedWinner"))
+        card["recommendationStatus"] = winner.get("recommendationStatus") or (
+            "PLAYABLE_PREDICTION"
+            if playable
+            else "OFFICIAL_PREDICTION_NOT_PLAYABLE"
+            if canonical
+            else "PRE_LOCK_PREDICTION_NOT_PLAYABLE"
+        )
+        card["officialPrediction"] = canonical
+        card["officialPick"] = canonical
         card["gameIdentity"] = game_identity(winner)
         return card
 
@@ -73,6 +80,7 @@ def apply(module: Any):
                 if key in index:
                     winner = index[key]
                     break
+            winner_card = compact_winner(winner or {})
             rows.append({
                 "gameId": b10_row.get("gameId"),
                 "gameKey": b10_row.get("gameKey"),
@@ -91,7 +99,8 @@ def apply(module: Any):
                 "b10SelectedScore": b10_row.get("selectedScore"),
                 "b10HomeSignal": b10_row.get("homeSignal"),
                 "b10AwaySignal": b10_row.get("awaySignal"),
-                "gameWinnerPrediction": compact_winner(winner or {}),
+                **module._authority_fields(winner_card, b10_row),
+                "gameWinnerPrediction": winner_card,
                 "rawB10Points": b10_row.get("points") or [],
             })
         rows.sort(key=lambda row: (module._safe_float((row.get("gameWinnerPrediction") or {}).get("score"), -1.0) or -1.0, module._safe_float(row.get("b10SelectedScore"), 0.0) or 0.0), reverse=True)
@@ -111,6 +120,16 @@ def apply(module: Any):
         playable_rows = [row for row in winner_rows if (row.get("gameWinnerPrediction") or {}).get("playable")]
         low_confidence_rows = [row for row in required_rows if not (row.get("gameWinnerPrediction") or {}).get("playable")]
         missing_rows = [row for row in rows if not row.get("gameWinnerPrediction")]
+        published_display = module._published_display_rows(rows)
+        official_display = [
+            row for row in published_display if row.get("officialPrediction") is True
+        ]
+        playable_display = [
+            row for row in published_display if row.get("playable") is True
+        ]
+        non_official_display = [
+            row for row in published_display if row.get("officialPrediction") is not True
+        ]
         slate_coverage = dict(winners.get("slateCoverage") or {})
         locked = bool((winners.get("slatePredictionLock") or {}).get("locked"))
         count_match = len(rows) == int(winners.get("gameCount") or len(rows)) == int(b10.get("gameCount") or len(rows))
@@ -154,10 +173,18 @@ def apply(module: Any):
             "rolling24hAccuracyTarget": winners.get("rolling24hAccuracyTarget"),
             "accuracyTarget": winners.get("accuracyTarget"),
             "winnerStackV2": winners.get("winnerStackV2"),
-            "requiredWinnerPredictionDisplay": winners.get("requiredWinnerPredictionDisplay") or [],
-            "officialPredictionDisplay": winners.get("officialPredictionDisplay") or [],
-            "playablePredictionDisplay": winners.get("playablePredictionDisplay") or [],
-            "nonOfficialPredictionDisplay": winners.get("nonOfficialPredictionDisplay") or [],
+            "publishedPredictionAuthority": {
+                "version": module.PUBLISHED_PREDICTION_AUTHORITY_VERSION,
+                "source": module.PUBLISHED_PREDICTION_SOURCE,
+                "sourceField": "requiredWinnerPredictionDisplay[].predictedWinner",
+                "rawB10SignalLeaderIsPrediction": False,
+                "officialRequiresCanonicalImmutableLock": True,
+            },
+            "publishedPredictionDisplay": published_display,
+            "requiredWinnerPredictionDisplay": published_display,
+            "officialPredictionDisplay": official_display,
+            "playablePredictionDisplay": playable_display,
+            "nonOfficialPredictionDisplay": non_official_display,
             "rows": rows,
             "summary": {
                 "totalRows": len(rows),
@@ -167,7 +194,11 @@ def apply(module: Any):
                 "requiredGameWinnerPredictionCount": len(required_rows),
                 "allGamesHaveDisplayedWinnerPrediction": bool(rows and len(required_rows) == len(rows)),
                 "gamesMissingDisplayedWinnerPrediction": [row.get("matchup") for row in rows if not (row.get("gameWinnerPrediction") or {}).get("displayPrediction")],
-                "officialPredictionCount": len(required_rows),
+                "officialPredictionCount": sum(
+                    1
+                    for row in required_rows
+                    if (row.get("gameWinnerPrediction") or {}).get("officialPrediction") is True
+                ),
                 "playablePredictionCount": len(playable_rows),
                 "lowConfidencePredictionCount": len(low_confidence_rows),
                 "lowConfidencePredictionTeams": [(row.get("gameWinnerPrediction") or {}).get("predictedWinner") for row in low_confidence_rows],
@@ -176,7 +207,7 @@ def apply(module: Any):
                 "operationalDefect": operational_defect,
                 "publicAccuracyEligible": bool(locked and coverage_complete),
             },
-            "policy": "Every observed pre-lock MLB game must have one immutable stored winner prediction. Doubleheaders are distinct by provider id or commence time. Playability remains separate.",
+            "policy": "Every observed MLB game has one published GAME_WINNERS prediction. The B10 leader is diagnostic-only. A published prediction becomes official only after its canonical immutable per-game lock. Doubleheaders are distinct by provider id or commence time.",
         }
         if write_file:
             os.makedirs("runtime_reports", exist_ok=True)

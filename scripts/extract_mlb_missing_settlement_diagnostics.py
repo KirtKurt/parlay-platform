@@ -185,9 +185,16 @@ def main() -> int:
     daily_lock_cache: Dict[str, Tuple[Dict[str, Any] | None, str | None]] = {}
 
     for row in rows:
-        if row.get("status") not in {"MISSING_LOCKED_PREDICTION", "MISSING_PREDICTION"}:
+        if row.get("status") not in {
+            "INVALID_CANONICAL_LOCK",
+            "MISSING_CANONICAL_LOCK",
+            "CANONICAL_LOCK_IDENTITY_MISMATCH",
+            "MISSING_LOCKED_PREDICTION",
+            "MISSING_PREDICTION",
+        }:
             continue
         audit = row.get("lockedCardAudit") or {}
+        canonical_authority = row.get("canonicalLockAuthority") or {}
         slate = str(row.get("slateDateEt") or "")
         partition = partition_cache.setdefault(slate, query_partition(slate))
         daily_lock_item, daily_lock_error = daily_lock_cache.setdefault(slate, read_daily_lock(slate))
@@ -214,6 +221,11 @@ def main() -> int:
             "homeScore": row.get("homeScore"),
             "awayScore": row.get("awayScore"),
             "missingReason": audit.get("missingReason"),
+            "canonicalAuthorityVersion": canonical_authority.get("version"),
+            "canonicalAuthorityVerified": canonical_authority.get("verified"),
+            "canonicalAuthorityRejectionReasons": canonical_authority.get("rejectionReasons") or [],
+            "canonicalLockEvidenceStatus": row.get("canonicalLockEvidenceStatus"),
+            "canonicalLockValidationErrors": row.get("canonicalLockValidationErrors") or [],
             "finalProviderIds": audit.get("finalProviderIds"),
             "finalCommenceTime": audit.get("finalCommenceTime"),
             "matchupCandidateCount": audit.get("matchupCandidateCount"),
@@ -241,6 +253,9 @@ def main() -> int:
         "completedFinalGames": (report.get("summary") or {}).get("completedFinalGames"),
         "gradedPredictionCount": (report.get("summary") or {}).get("gradedPredictionCount"),
         "missingPredictionCount": len(missing),
+        "invalidCanonicalLockCount": sum(
+            1 for row in missing if row.get("status") == "INVALID_CANONICAL_LOCK"
+        ),
         "missingRows": missing,
     }
     OUTPUT.parent.mkdir(parents=True, exist_ok=True)

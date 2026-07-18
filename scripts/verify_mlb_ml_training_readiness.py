@@ -44,6 +44,7 @@ class _PagedTable:
 
 
 def _audit_item(created_at: datetime, game_id: str):
+    slate = created_at.date().isoformat()
     return {
         "created_at": created_at.isoformat(),
         "data": {
@@ -52,9 +53,25 @@ def _audit_item(created_at: datetime, game_id: str):
                 {
                     "status": "GRADED",
                     "id": game_id,
+                    "slateDateEt": slate,
                     "gameKeyBase": game_id,
                     "commenceTime": created_at.isoformat(),
                     "predictedWinner": "Home",
+                    "canonicalLockAuthority": {
+                        "version": "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1",
+                        "verified": True,
+                        "consistentRead": True,
+                        "sourcePk": f"GAME_WINNERS#mlb#{slate}",
+                        "sourceSk": f"LOCKED#GAME#{created_at.isoformat()}#{game_id}",
+                        "recordType": "mlb_immutable_locked_single_game_prediction",
+                        "immutableLocked": True,
+                        "stageAuthorityVerified": True,
+                        "persistedStageAuthorityValidated": True,
+                        "exactLockVectorValidated": True,
+                        "exactProviderIdentityMatched": True,
+                        "matchMethod": "exact_provider_game_id_and_teams",
+                        "legacyOrDailyCardFallbackUsed": False,
+                    },
                 }
             ],
         },

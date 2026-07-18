@@ -6,8 +6,9 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Iterable, List, Optional
 
-VERSION = "MLB-REAL-WORLD-ACCURACY-v1.0-official-playable-calibration-roi-baseline-ledger"
-LEDGER_PK = "MLB_REAL_WORLD_ACCURACY#LEDGER"
+VERSION = "MLB-REAL-WORLD-ACCURACY-v2-canonical-lock-authority-ledger"
+LEDGER_PK = "MLB_CANONICAL_LOCK_ACCURACY#LEDGER#v2"
+CANONICAL_LOCK_AUTHORITY_VERSION = "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1"
 OFFICIAL_CREDIBLE_TARGET = int(os.environ.get("INQSI_MLB_OFFICIAL_CREDIBLE_SAMPLE", "500"))
 PLAYABLE_CREDIBLE_TARGET = int(os.environ.get("INQSI_MLB_PLAYABLE_CREDIBLE_SAMPLE", "200"))
 PROVISIONAL_TARGET = int(os.environ.get("INQSI_MLB_PROVISIONAL_SAMPLE", "300"))
@@ -58,8 +59,29 @@ def _is_locked(row: Dict[str, Any]) -> bool:
     )
 
 
+def _has_canonical_lock_authority(row: Dict[str, Any]) -> bool:
+    authority = row.get("canonicalLockAuthority") or {}
+    slate = str(row.get("slateDateEt") or "")
+    return bool(
+        isinstance(authority, dict)
+        and authority.get("version") == CANONICAL_LOCK_AUTHORITY_VERSION
+        and authority.get("verified") is True
+        and authority.get("consistentRead") is True
+        and authority.get("immutableLocked") is True
+        and authority.get("stageAuthorityVerified") is True
+        and authority.get("persistedStageAuthorityValidated") is True
+        and authority.get("exactLockVectorValidated") is True
+        and authority.get("exactProviderIdentityMatched") is True
+        and authority.get("matchMethod") == "exact_provider_game_id_and_teams"
+        and authority.get("legacyOrDailyCardFallbackUsed") is False
+        and authority.get("sourcePk") == f"GAME_WINNERS#mlb#{slate}"
+        and str(authority.get("sourceSk") or "").startswith("LOCKED#GAME#")
+        and authority.get("recordType") == "mlb_immutable_locked_single_game_prediction"
+    )
+
+
 def _is_official(row: Dict[str, Any]) -> bool:
-    return bool(row.get("predictedWinner") and (row.get("officialPrediction") is True or _is_locked(row)))
+    return bool(row.get("predictedWinner") and _has_canonical_lock_authority(row))
 
 
 def _is_playable(row: Dict[str, Any]) -> bool:
@@ -381,7 +403,7 @@ def _window_metrics(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 def _dedupe(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen: Dict[str, Dict[str, Any]] = {}
     for row in rows:
-        if row.get("status") != "GRADED":
+        if row.get("status") != "GRADED" or not _has_canonical_lock_authority(row):
             continue
         key = "|".join([
             str(row.get("id") or ""), str(row.get("gameKeyBase") or ""),
@@ -443,6 +465,7 @@ def _ledger_row(row: Dict[str, Any]) -> Dict[str, Any]:
         "confidenceTier", "score", "tags", "modelVersion", "engine", "finalPipelineVersion",
         "predictionSemanticsVersion", "lockedCardAudit", "auditClassificationVersion",
         "priceBook", "priceSource", "homeSignal", "awaySignal", "mlOverlay",
+        "status", "canonicalLockAuthority",
     )
     return {key: row.get(key) for key in fields if key in row}
 
@@ -459,7 +482,7 @@ def _store_ledger(module: Any, rows: List[Dict[str, Any]]) -> Dict[str, Any]:
     inserted = existing = 0
     errors: List[str] = []
     for row in _dedupe(rows):
-        if row.get("officialPrediction") is not True:
+        if row.get("officialPrediction") is not True or not _has_canonical_lock_authority(row):
             continue
         data = _ledger_row(row)
         item = module.history.ddb_safe({
@@ -500,7 +523,7 @@ def _query_ledger(module: Any) -> List[Dict[str, Any]]:
             break
         for item in response.get("Items") or []:
             data = item.get("data") or item
-            if isinstance(data, dict):
+            if isinstance(data, dict) and _has_canonical_lock_authority(data):
                 rows.append(_normalize_audit_row(data))
         start_key = response.get("LastEvaluatedKey")
         if not start_key:
@@ -558,7 +581,7 @@ def enhance_report(module: Any, report: Dict[str, Any], historical_rows: Optiona
         "applied": True,
         "version": VERSION,
         "classification": {
-            "officialPrediction": "immutable winner selected for a locked game",
+            "officialPrediction": "winner selected in an exact canonical immutable LOCKED#GAME row",
             "playableRecommendation": "higher-confidence wagering recommendation; official status is excluded",
         },
         "windows": windows,
@@ -569,7 +592,7 @@ def enhance_report(module: Any, report: Dict[str, Any], historical_rows: Optiona
             "market_favorite_baseline", "model_lift_vs_market", "brier_skill_vs_market",
         ],
         "immutableLedgerPk": LEDGER_PK,
-        "policy": "Only completed games with immutable locked predictions are graded. Official-card and playable-recommendation performance are reported separately.",
+        "policy": "Only completed games with exact canonical immutable LOCKED#GAME authority are graded. Daily-card, legacy, fuzzy-match, and displayed-forecast rows are excluded.",
     }
     out["summary"] = _enhance_summary(out.get("summary") or {}, windows["current24h"], windows["season"])
     out["policy"] = (

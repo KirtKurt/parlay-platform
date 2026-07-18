@@ -516,10 +516,37 @@ def daily_item(module):
     return module.TABLE.items.get((module._lock_pk(SLATE), module._lock_sk()))
 
 
+def mark_user_visible_prelock(row):
+    row["lockedPrediction"] = False
+    row["officialPrediction"] = False
+    row["officialPick"] = False
+    row["officialPredictionStatus"] = patch.PREGAME_DISPLAY_STATUS
+    row["displayPrediction"] = True
+    row["displayGroup"] = "pre_lock_prediction"
+    row["signalPolicyV13"] = {
+        "applied": True,
+        "version": "MLB-SIGNAL-POLICY-v13-test",
+    }
+    row["perGameCanonicalLock"] = {
+        "authorityVersion": patch.PREGAME_PUBLIC_AUTHORITY_VERSION,
+        "status": "OPEN_PRE_LOCK",
+        "canonical": False,
+    }
+    tags = {
+        str(tag)
+        for tag in (row.get("tags") or [])
+        if str(tag) not in {"FINAL_LOCKED", "SLATE_LOCKED"}
+    }
+    tags.add("PRE_LOCK_PREDICTION")
+    row["tags"] = sorted(tags)
+    return row
+
+
 def persist_candidate(module, game_row, source_pull, mutate=None, persisted_at=None):
     row = module.mlb_game_winner_engine.prediction_row(game_row, source_pull)
     if mutate is not None:
         mutate(row)
+    mark_user_visible_prelock(row)
     identity = row["gameIdentity"]
     created_at = row["createdAt"]
     persisted_at = persisted_at or created_at
@@ -535,6 +562,13 @@ def persist_candidate(module, game_row, source_pull, mutate=None, persisted_at=N
         "SK": f"PREGAME#GAME#{identity}#PERSISTED#{persisted_at}#CREATED#{created_at}#{digest}",
         "record_type": patch.PREGAME_SNAPSHOT_RECORD_TYPE,
         "snapshot_version": patch.PREGAME_SNAPSHOT_VERSION,
+        "snapshot_role": patch.PREGAME_SNAPSHOT_ROLE,
+        "public_authority_version": patch.PREGAME_PUBLIC_AUTHORITY_VERSION,
+        "user_visible": True,
+        "display_prediction": True,
+        "display_status": patch.PREGAME_DISPLAY_STATUS,
+        "display_surface": patch.PREGAME_DISPLAY_SURFACE,
+        "signal_policy_version": "MLB-SIGNAL-POLICY-v13-test",
         "slate_date": SLATE,
         "game_id": row["gameId"],
         "game_identity": identity,
@@ -574,6 +608,7 @@ def persist_candidate_with_production_writer(module, game_row, source_pull):
     import mlb_game_winner_engine as production_writer
 
     row = module.mlb_game_winner_engine.prediction_row(game_row, source_pull)
+    mark_user_visible_prelock(row)
     snapshot = production_writer._pregame_snapshot_item(
         row,
         persisted_at=row["createdAt"],
@@ -783,11 +818,16 @@ def test_persisted_probability_alias_is_promoted_without_rescore():
         seed=False,
     )
 
+    def retain_only_frozen_probability(row):
+        row.pop("teamWinProbabilityPct", None)
+        row.pop("winProbabilityPct", None)
+        row.pop("winProbability", None)
+
     candidate = persist_candidate(
         module,
         G1,
         source,
-        mutate=lambda row: row.pop("teamWinProbabilityPct", None),
+        mutate=retain_only_frozen_probability,
     )
     expected_selection = patch._selection_material(candidate)
 
@@ -796,7 +836,10 @@ def test_persisted_probability_alias_is_promoted_without_rescore():
     assert result["locked"] is True
     stage = staged_items(module)[0]
     locked = stage["data"]["row"]
-    assert locked["teamWinProbabilityPct"] == candidate["winProbabilityPct"]
+    assert locked["teamWinProbabilityPct"] == (
+        candidate["frozenFeatureVector"]["features"]["selectedMarketProb"]
+        * 100
+    )
     assert patch._selection_material(locked) == expected_selection
     assert locked["modelOrSignalRecomputedAtLock"] is False
     assert module.mlb_game_winner_engine.prediction_calls == 0
@@ -893,7 +936,7 @@ def test_falsy_invalid_candidate_payload_fingerprint_version_fails_closed():
     assert not staged_items(module)
 
 
-def test_legacy_unversioned_candidate_with_matching_persisted_hash_remains_valid():
+def test_v3_unversioned_candidate_with_matching_legacy_hash_fails_closed():
     import inqsi_pull_history as history_contract
 
     source = pull("2026-07-13T17:15:00+00:00", [G1], "legacy-unversioned")
@@ -915,10 +958,12 @@ def test_legacy_unversioned_candidate_with_matching_persisted_hash_remains_valid
 
     result = module.run_lock(SLATE)
 
-    assert result["locked"] is True
-    assert staged_items(module)[0]["candidate_proof"].get(
-        "predictionPayloadFingerprintVersion"
-    ) is None
+    assert result["locked"] is False
+    assert result["failClosed"] is True
+    assert "persisted_prelock_payload_fingerprint_version_mismatch" in str(
+        result["failures"]
+    )
+    assert not staged_items(module)
 
 
 def test_missing_or_post_cutoff_candidate_fails_closed_without_stage():
@@ -928,7 +973,9 @@ def test_missing_or_post_cutoff_candidate_fails_closed_without_stage():
     missing_result = missing.run_lock(SLATE)
 
     assert missing_result["ok"] is False
-    assert "no_persisted_prelock_prediction" in str(missing_result["failures"])
+    assert "no_persisted_user_visible_platform_prelock_prediction" in str(
+        missing_result["failures"]
+    )
     assert not staged_items(missing)
 
     after = pull("2026-07-13T17:15:01+00:00", [G1], "after-cutoff")
@@ -942,7 +989,9 @@ def test_missing_or_post_cutoff_candidate_fails_closed_without_stage():
     after_result = post_cutoff.run_lock(SLATE)
 
     assert after_result["ok"] is False
-    assert "no_persisted_prelock_prediction" in str(after_result["failures"])
+    assert "no_persisted_user_visible_platform_prelock_prediction" in str(
+        after_result["failures"]
+    )
     assert not staged_items(post_cutoff)
     assert post_cutoff.mlb_game_winner_engine.prediction_calls == 0
 
@@ -964,7 +1013,9 @@ def test_backdated_prediction_persisted_after_cutoff_is_not_authoritative():
     result = module.run_lock(SLATE)
 
     assert result["ok"] is False
-    assert "no_persisted_prelock_prediction" in str(result["failures"])
+    assert "no_persisted_user_visible_platform_prelock_prediction" in str(
+        result["failures"]
+    )
 
 
 def test_client_timestamp_without_post_write_ack_proof_is_not_authoritative():
@@ -1019,6 +1070,83 @@ def test_newest_invalid_candidate_falls_back_to_last_valid_candidate():
     assert "persisted_prelock_selected_side_real_book_price_missing" in (
         proof["rejectedNewerCandidates"][0]["errors"]
     )
+
+
+def test_newer_unmarked_engine_snapshot_cannot_replace_public_prelock_candidate():
+    public_pull = pull("2026-07-13T17:14:00+00:00", [G1], "public-candidate")
+    raw_pull = pull("2026-07-13T17:15:00+00:00", [G1], "raw-candidate")
+    module = build_module(
+        [public_pull, raw_pull],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    public_row = persist_candidate(module, G1, public_pull)
+    persist_candidate(module, G1, raw_pull)
+    raw_snapshot = max(
+        (
+            item
+            for item in module.TABLE.items.values()
+            if item.get("record_type") == patch.PREGAME_SNAPSHOT_RECORD_TYPE
+        ),
+        key=lambda item: item["prediction_persisted_at_utc"],
+    )
+    raw_snapshot["snapshot_version"] = "MLB-PREGAME-PREDICTION-SNAPSHOT-v2-post-write-ack"
+    raw_snapshot.pop("snapshot_role")
+    raw_snapshot.pop("public_authority_version")
+    raw_snapshot.pop("user_visible")
+    raw_snapshot.pop("display_prediction")
+    raw_snapshot.pop("display_status")
+    raw_snapshot.pop("display_surface")
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    assert stage["source_pull_id"] == public_pull["pull_id"]
+    assert stage["data"]["row"]["predictedWinner"] == public_row["predictedWinner"]
+    proof = stage["candidate_proof"]
+    assert proof["snapshotRole"] == patch.PREGAME_SNAPSHOT_ROLE
+    assert proof["publicAuthorityVersion"] == patch.PREGAME_PUBLIC_AUTHORITY_VERSION
+    assert proof["userVisible"] is True
+    assert proof["displayPrediction"] is True
+    assert proof["rejectedNewerCandidateCount"] == 1
+    rejected_errors = proof["rejectedNewerCandidates"][0]["errors"]
+    assert "persisted_prelock_snapshot_version_mismatch" in rejected_errors
+    assert "persisted_prelock_snapshot_role_mismatch" in rejected_errors
+    assert module.mlb_game_winner_engine.prediction_calls == 0
+
+
+def test_only_unmarked_v2_snapshot_fails_closed_without_rescore():
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "raw-only")
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    persist_candidate(module, G1, source)
+    snapshot = next(
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.PREGAME_SNAPSHOT_RECORD_TYPE
+    )
+    snapshot["snapshot_version"] = "MLB-PREGAME-PREDICTION-SNAPSHOT-v2-post-write-ack"
+    snapshot.pop("snapshot_role")
+    snapshot.pop("public_authority_version")
+    snapshot.pop("user_visible")
+    snapshot.pop("display_prediction")
+    snapshot.pop("display_status")
+    snapshot.pop("display_surface")
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is False
+    assert result["failClosed"] is True
+    assert "no_valid_user_visible_platform_prelock_prediction" in str(
+        result["failures"]
+    )
+    assert "persisted_prelock_snapshot_role_mismatch" in str(result["failures"])
+    assert not staged_items(module)
+    assert module.mlb_game_winner_engine.prediction_calls == 0
 
 
 def test_no_provider_id_uses_shared_fallback_identity_for_candidate_lookup():

@@ -350,6 +350,7 @@ def _prelock_row(
         "lockedPrediction": False,
         "officialPrediction": False,
         "officialPick": False,
+        "displayPrediction": True,
         "isOfficialDisplayPick": False,
         "officialPredictionStatus": official_status,
         "officialPredictionReason": reason,

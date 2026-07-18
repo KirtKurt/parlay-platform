@@ -24,6 +24,9 @@ except Exception:
 
 SLATE_TZ = ZoneInfo("America/New_York")
 REPORT_PATH = "runtime_reports/mlb_all_games_signal_proof_latest.json"
+PUBLISHED_PREDICTION_AUTHORITY_VERSION = "MLB-PUBLISHED-PREDICTION-AUTHORITY-v1"
+PUBLISHED_PREDICTION_SOURCE = "GAME_WINNERS_PUBLIC_PER_GAME_AUTHORITY"
+RAW_SIGNAL_DIAGNOSTIC_ROLE = "RAW_B10_SIGNAL_SCORE_LEADER_DIAGNOSTIC_ONLY"
 
 
 def _today_et() -> str:
@@ -67,7 +70,22 @@ def _compact_winner(winner: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     if not winner:
         return None
     has_winner = bool(winner.get("predictedWinner"))
-    playable = bool(winner.get("actionablePick") is True or winner.get("officialPick") is True)
+    playable = bool(
+        winner.get("actionablePick") is True
+        or winner.get("playablePick") is True
+        or winner.get("playable") is True
+        or winner.get("accuracyTargetEligible") is True
+        or str(winner.get("recommendationStatus") or "").upper()
+        == "PLAYABLE_PREDICTION"
+    )
+    canonical = bool(
+        winner.get("lockedPrediction") is True
+        and winner.get("officialPrediction") is True
+        and winner.get("immutableLockedStorage") is True
+        and (winner.get("perGameCanonicalLock") or {}).get("canonical") is True
+        and (winner.get("perGameCanonicalLock") or {}).get("status")
+        == "OFFICIAL_LOCKED_PREDICTION"
+    )
     return {
         "predictedWinner": winner.get("predictedWinner"),
         "predictedSide": winner.get("predictedSide"),
@@ -79,7 +97,9 @@ def _compact_winner(winner: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "confidenceTier": winner.get("confidenceTier"),
         "pickQuality": winner.get("pickQuality"),
         "platformPick": bool(winner.get("platformPick") or has_winner),
-        "officialPrediction": bool(winner.get("officialPrediction") or has_winner),
+        # A prediction is public/displayable before lock, but it is official
+        # only after the validated immutable per-game row is overlaid.
+        "officialPrediction": canonical,
         "customerVisibleWinnerPick": bool(winner.get("customerVisibleWinnerPick") or has_winner),
         "requiredGameWinnerPrediction": bool(winner.get("requiredGameWinnerPrediction") or has_winner),
         "winnerPredictionAvailable": has_winner,
@@ -88,7 +108,7 @@ def _compact_winner(winner: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "recommendationStatus": winner.get("recommendationStatus") or ("PLAYABLE_PREDICTION" if playable else "LOW_CONFIDENCE_PREDICTION_NOT_PLAYABLE"),
         "playable": playable,
         "actionablePick": winner.get("actionablePick"),
-        "officialPick": winner.get("officialPick"),
+        "officialPick": canonical,
         "accuracyTargetEligible": winner.get("accuracyTargetEligible"),
         "actionability": winner.get("actionability"),
         "actionabilityReason": winner.get("actionabilityReason"),
@@ -113,7 +133,117 @@ def _compact_winner(winner: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "lockedAtUtc": winner.get("lockedAtUtc"),
         "predictionSourcePullAt": winner.get("predictionSourcePullAt"),
         "stored": winner.get("stored"),
+        "predictionAuthorityVersion": PUBLISHED_PREDICTION_AUTHORITY_VERSION,
+        "predictionAuthoritySource": PUBLISHED_PREDICTION_SOURCE,
     }
+
+
+def _norm_team(value: Any) -> str:
+    return " ".join(str(value or "").lower().strip().split())
+
+
+def _published_prediction(card: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not card or not card.get("predictedWinner"):
+        return None
+    return {
+        "authorityVersion": PUBLISHED_PREDICTION_AUTHORITY_VERSION,
+        "source": PUBLISHED_PREDICTION_SOURCE,
+        "sourceField": "requiredWinnerPredictionDisplay[].predictedWinner",
+        "predictedWinner": card.get("predictedWinner"),
+        "predictedSide": card.get("predictedSide"),
+        "teamWinProbabilityPct": card.get("winProbabilityPct"),
+        "score": card.get("score"),
+        "officialPrediction": card.get("officialPrediction") is True,
+        "lockedPrediction": card.get("lockedPrediction") is True,
+        "displayPrediction": card.get("displayPrediction") is True,
+        "canonicalImmutableLockRequiredForOfficial": True,
+    }
+
+
+def _raw_signal_diagnostic(b10_row: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "role": RAW_SIGNAL_DIAGNOSTIC_ROLE,
+        "isPublishedPrediction": False,
+        "isOfficialPrediction": False,
+        "team": b10_row.get("selectedTeam"),
+        "side": b10_row.get("selectedSide"),
+        "grade": b10_row.get("selectedGrade"),
+        "score": b10_row.get("selectedScore"),
+        "homeSignal": b10_row.get("homeSignal"),
+        "awaySignal": b10_row.get("awaySignal"),
+    }
+
+
+def _authority_fields(
+    winner_card: Optional[Dict[str, Any]],
+    b10_row: Dict[str, Any],
+) -> Dict[str, Any]:
+    published = _published_prediction(winner_card)
+    raw = _raw_signal_diagnostic(b10_row)
+    return {
+        "predictionAuthorityVersion": PUBLISHED_PREDICTION_AUTHORITY_VERSION,
+        "predictionAuthoritySource": PUBLISHED_PREDICTION_SOURCE,
+        "publishedPrediction": published,
+        "predictedWinner": (published or {}).get("predictedWinner"),
+        "predictedSide": (published or {}).get("predictedSide"),
+        "teamWinProbabilityPct": (published or {}).get("teamWinProbabilityPct"),
+        "predictionScore": (published or {}).get("score"),
+        "officialPrediction": (published or {}).get("officialPrediction") is True,
+        "lockedPrediction": (published or {}).get("lockedPrediction") is True,
+        "rawSignalScoreLeader": raw,
+        "signalPredictionAgreement": bool(
+            published
+            and _norm_team(published.get("predictedWinner"))
+            == _norm_team(raw.get("team"))
+        ),
+        # Compatibility fields remain available, but their semantic role is
+        # explicit so no consumer can honestly label them as the prediction.
+        "b10SelectionRole": RAW_SIGNAL_DIAGNOSTIC_ROLE,
+        "b10SelectedTeamIsPrediction": False,
+    }
+
+
+def _published_display_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Derive public display rows from the normalized combined authority.
+
+    Never copy a parallel display array from an upstream wrapper.  Doing so
+    would allow stale winner/official flags to disagree with the row that this
+    proof says is authoritative.
+    """
+    display: List[Dict[str, Any]] = []
+    for row in rows:
+        published = row.get("publishedPrediction") or {}
+        card = row.get("gameWinnerPrediction") or {}
+        if (
+            not published.get("predictedWinner")
+            or published.get("displayPrediction") is not True
+        ):
+            continue
+        display.append({
+            "gameId": row.get("gameId"),
+            "gameIdentity": row.get("gameIdentity"),
+            "gameKey": row.get("gameKey"),
+            "matchup": row.get("matchup"),
+            "homeTeam": row.get("homeTeam"),
+            "awayTeam": row.get("awayTeam"),
+            "commenceTime": row.get("commenceTime"),
+            "predictedWinner": published.get("predictedWinner"),
+            "predictedSide": published.get("predictedSide"),
+            "teamWinProbabilityPct": published.get("teamWinProbabilityPct"),
+            "score": published.get("score"),
+            "officialPrediction": published.get("officialPrediction") is True,
+            "officialPick": published.get("officialPrediction") is True,
+            "lockedPrediction": published.get("lockedPrediction") is True,
+            "displayPrediction": published.get("displayPrediction") is True,
+            "playable": card.get("playable") is True,
+            "playablePick": card.get("playable") is True,
+            "confidenceTier": card.get("confidenceTier"),
+            "recommendationStatus": card.get("recommendationStatus"),
+            "tags": card.get("tags") or [],
+            "predictionAuthorityVersion": PUBLISHED_PREDICTION_AUTHORITY_VERSION,
+            "predictionAuthoritySource": PUBLISHED_PREDICTION_SOURCE,
+        })
+    return display
 
 
 def _compact_b10_signal(signal: Dict[str, Any]) -> Dict[str, Any]:
@@ -190,6 +320,7 @@ def _combined_rows(winners: Dict[str, Any], b10: Dict[str, Any]) -> List[Dict[st
     for b10_row in b10.get("rows") or []:
         key = b10_row.get("gameKey") or b10_row.get("gameId")
         winner = winner_by_key.get(str(key)) or {}
+        winner_card = _compact_winner(winner)
         rows.append({
             "gameId": b10_row.get("gameId"),
             "gameKey": b10_row.get("gameKey"),
@@ -207,7 +338,8 @@ def _combined_rows(winners: Dict[str, Any], b10: Dict[str, Any]) -> List[Dict[st
             "b10SelectedScore": b10_row.get("selectedScore"),
             "b10HomeSignal": b10_row.get("homeSignal"),
             "b10AwaySignal": b10_row.get("awaySignal"),
-            "gameWinnerPrediction": _compact_winner(winner),
+            **_authority_fields(winner_card, b10_row),
+            "gameWinnerPrediction": winner_card,
             "rawB10Points": b10_row.get("points") or [],
         })
     rows.sort(key=lambda row: (_safe_float((row.get("gameWinnerPrediction") or {}).get("score"), -1.0) or -1.0, _safe_float(row.get("b10SelectedScore"), 0.0) or 0.0), reverse=True)
@@ -225,6 +357,10 @@ def build(slate_date: Optional[str] = None, store: bool = True, write_file: bool
     required_rows = [r for r in winner_rows if (r.get("gameWinnerPrediction") or {}).get("displayPrediction")]
     actionable_rows = [r for r in winner_rows if (r.get("gameWinnerPrediction") or {}).get("playable")]
     low_confidence_rows = [r for r in required_rows if not (r.get("gameWinnerPrediction") or {}).get("playable")]
+    published_display = _published_display_rows(rows)
+    official_display = [row for row in published_display if row.get("officialPrediction") is True]
+    playable_display = [row for row in published_display if row.get("playable") is True]
+    non_official_display = [row for row in published_display if row.get("officialPrediction") is not True]
     proof = {
         "ok": True,
         "proofType": "MLB_ALL_GAMES_SIGNAL_PROOF",
@@ -245,10 +381,18 @@ def build(slate_date: Optional[str] = None, store: bool = True, write_file: bool
         "rolling24hAccuracyTarget": winners.get("rolling24hAccuracyTarget"),
         "accuracyTarget": winners.get("accuracyTarget"),
         "winnerStackV2": winners.get("winnerStackV2"),
-        "requiredWinnerPredictionDisplay": winners.get("requiredWinnerPredictionDisplay") or [],
-        "officialPredictionDisplay": winners.get("officialPredictionDisplay") or [],
-        "playablePredictionDisplay": winners.get("playablePredictionDisplay") or [],
-        "nonOfficialPredictionDisplay": winners.get("nonOfficialPredictionDisplay") or [],
+        "publishedPredictionAuthority": {
+            "version": PUBLISHED_PREDICTION_AUTHORITY_VERSION,
+            "source": PUBLISHED_PREDICTION_SOURCE,
+            "sourceField": "requiredWinnerPredictionDisplay[].predictedWinner",
+            "rawB10SignalLeaderIsPrediction": False,
+            "officialRequiresCanonicalImmutableLock": True,
+        },
+        "publishedPredictionDisplay": published_display,
+        "requiredWinnerPredictionDisplay": published_display,
+        "officialPredictionDisplay": official_display,
+        "playablePredictionDisplay": playable_display,
+        "nonOfficialPredictionDisplay": non_official_display,
         "rows": rows,
         "summary": {
             "totalRows": len(rows),
@@ -258,12 +402,17 @@ def build(slate_date: Optional[str] = None, store: bool = True, write_file: bool
             "allGamesHaveDisplayedWinnerPrediction": bool(rows and len(required_rows) == len(rows)),
             "gamesMissingDisplayedWinnerPrediction": [r.get("matchup") for r in rows if not (r.get("gameWinnerPrediction") or {}).get("displayPrediction")],
             "playablePredictionCount": len(actionable_rows),
+            "officialPredictionCount": sum(
+                1
+                for row in required_rows
+                if (row.get("gameWinnerPrediction") or {}).get("officialPrediction") is True
+            ),
             "lowConfidencePredictionCount": len(low_confidence_rows),
             "playableTeams": [(r.get("gameWinnerPrediction") or {}).get("predictedWinner") for r in actionable_rows],
             "lowConfidencePredictionTeams": [(r.get("gameWinnerPrediction") or {}).get("predictedWinner") for r in low_confidence_rows],
             "b10QualifiedCandidates": sum(1 for r in rows if r.get("b10SelectedGrade") in {"MLB_STRONG", "MLB_LEAN"}),
         },
-        "policy": "Every MLB game with convertible 15-minute pull data receives one visible platform winner prediction. Playable/actionable status is separate and may be false without removing the prediction.",
+        "policy": "Every MLB game with convertible pull data receives one published GAME_WINNERS prediction. The B10 signal-score leader is diagnostic-only and can disagree. Playability is separate; official status requires the validated immutable per-game lock.",
     }
     if write_file:
         os.makedirs("runtime_reports", exist_ok=True)

@@ -89,12 +89,10 @@ def install() -> Dict[str, Any]:
             and getattr(engine, "IMMUTABLE_LOCKED_STORAGE_VERSION", None)
             == mlb_immutable_locked_storage_patch.VERSION
         )
-        mlb_locked_prediction_storage_finalizer_v1.apply(engine)
-        status["steps"]["canonicalLockedStorageFinalizer"] = hasattr(
-            engine, "_INQSI_MLB_LOCKED_STORAGE_FINALIZER_V1_APPLIED"
-        )
-        # This wrapper is deliberately last so no legacy gate can relabel an
-        # unlocked live row as official after canonical rows are overlaid.
+        # Produce the final public pre-lock representation before persistence.
+        # The storage finalizer installed immediately afterward is outermost:
+        # it forces every inner wrapper to store=False, then persists the exact
+        # user-visible PRE_LOCK_PLATFORM_PREDICTION returned here.
         mlb_slate_coverage_patch.install_public_authority(engine, mlb_slate_prediction_lock)
         status["steps"]["lastPrelockPromotionAuthority"] = bool(
             getattr(engine, "_INQSI_MLB_PUBLIC_PER_GAME_AUTHORITY_APPLIED", False)
@@ -107,6 +105,10 @@ def install() -> Dict[str, Any]:
             == mlb_slate_coverage_patch.AUTHORITY_VERSION
         )
         status["lastPrelockPromotionAuthorityVersion"] = mlb_slate_coverage_patch.AUTHORITY_VERSION
+        mlb_locked_prediction_storage_finalizer_v1.apply(engine)
+        status["steps"]["canonicalLockedStorageFinalizer"] = hasattr(
+            engine, "_INQSI_MLB_LOCKED_STORAGE_FINALIZER_V1_APPLIED"
+        )
         engine.MLB_ML_RUNTIME_INSTALL_V3 = status
     except Exception as exc:
         status["steps"]["engineRuntime"] = False

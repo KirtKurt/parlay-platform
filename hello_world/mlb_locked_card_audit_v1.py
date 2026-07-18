@@ -185,6 +185,7 @@ def _copy_audit_fields(pred: Dict[str, Any]) -> Dict[str, Any]:
         "actionabilityRiskReasons": pred.get("actionabilityRiskReasons") or [],
         "homeSignal": pred.get("homeSignal"),
         "awaySignal": pred.get("awaySignal"),
+        "canonicalLockAuthority": pred.get("canonicalLockAuthority"),
         "finalGuardedStored": pred.get("finalGuardedStored"),
         "finalPipelineVersion": pred.get("finalPipelineVersion"),
         "lockedCardAudit": {
@@ -211,8 +212,26 @@ def apply(module: Any):
         index: Dict[str, Dict[str, Any]] = {}
         for slate in dates:
             for pred in module._query_predictions_for_slate(slate):
-                key = f"{module.normalize_team(pred.get('awayTeam'))}|{module.normalize_team(pred.get('homeTeam'))}"
-                if not key.strip("|"):
+                authority = pred.get("canonicalLockAuthority") or {}
+                if not (
+                    isinstance(authority, dict)
+                    and authority.get("version")
+                    == getattr(module, "CANONICAL_LOCK_AUTHORITY_VERSION", None)
+                    and authority.get("verified") is True
+                    and authority.get("consistentRead") is True
+                    and authority.get("immutableLocked") is True
+                    and authority.get("stageAuthorityVerified") is True
+                    and authority.get("persistedStageAuthorityValidated") is True
+                    and authority.get("exactLockVectorValidated") is True
+                    and authority.get("legacyOrDailyCardFallbackUsed") is False
+                    and authority.get("sourcePk") == f"GAME_WINNERS#mlb#{slate}"
+                    and str(authority.get("sourceSk") or "").startswith("LOCKED#GAME#")
+                    and authority.get("recordType")
+                    == "mlb_immutable_locked_single_game_prediction"
+                ):
+                    continue
+                key = module._provider_game_id(pred) if hasattr(module, "_provider_game_id") else ""
+                if not key:
                     continue
                 rank = _candidate_rank(pred)
                 if rank is None:
@@ -226,21 +245,56 @@ def apply(module: Any):
         index = predictions_index(finals)
         rows = []
         for final in finals:
-            pred = index.get(final.get("gameKeyBase")) or {}
+            provider_id = module._provider_game_id(final) if hasattr(module, "_provider_game_id") else ""
+            pred = index.get(provider_id) or {}
             if not pred:
+                diagnostics = (
+                    module._canonical_rejection_diagnostics(final)
+                    if hasattr(module, "_canonical_rejection_diagnostics")
+                    else {}
+                )
+                invalid = diagnostics.get("canonicalLockEvidenceStatus") == "INVALID"
                 rows.append({
                     **final,
-                    "status": "MISSING_LOCKED_PREDICTION",
+                    "status": "INVALID_CANONICAL_LOCK" if invalid else "MISSING_CANONICAL_LOCK",
+                    **diagnostics,
                     "lockedCardAudit": {
                         "applied": True,
                         "version": VERSION,
                         "selectionPolicy": "strict_45_minute_locked_card_only",
-                        "missingReason": "no_locked_prediction_row_or_no_pre_lock_source_row",
+                        "missingReason": (
+                            "canonical_lock_failed_validation"
+                            if invalid
+                            else "canonical_lock_not_found"
+                        ),
+                    },
+                })
+                continue
+            teams_match = (
+                module.normalize_team(pred.get("awayTeam")) == module.normalize_team(final.get("awayTeam"))
+                and module.normalize_team(pred.get("homeTeam")) == module.normalize_team(final.get("homeTeam"))
+            )
+            if not provider_id or not teams_match:
+                rows.append({
+                    **final,
+                    "status": "CANONICAL_LOCK_IDENTITY_MISMATCH",
+                    "lockedCardAudit": {
+                        "applied": True,
+                        "version": VERSION,
+                        "selectionPolicy": "exact_provider_game_id_and_teams_only",
+                        "missingReason": "provider_identity_or_teams_mismatch",
                     },
                 })
                 continue
             correct = module.normalize_team(pred.get("predictedWinner")) == module.normalize_team(final.get("winner"))
-            rows.append({**final, "status": "GRADED", **_copy_audit_fields(pred), "correct": correct})
+            copied = _copy_audit_fields(pred)
+            authority = dict(copied.get("canonicalLockAuthority") or {})
+            authority.update({
+                "exactProviderIdentityMatched": True,
+                "matchMethod": "exact_provider_game_id_and_teams",
+            })
+            copied["canonicalLockAuthority"] = authority
+            rows.append({**final, "status": "GRADED", **copied, "correct": correct})
         return rows
 
     module.predictions_index = predictions_index

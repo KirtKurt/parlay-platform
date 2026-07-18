@@ -16,6 +16,24 @@ import mlb_real_world_accuracy_semantics_fix as accuracy_fix
 accuracy_fix.apply(accuracy)
 
 
+def canonical_authority(slate: str, game_id: str, commence: str) -> dict:
+    return {
+        "version": "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1",
+        "verified": True,
+        "consistentRead": True,
+        "sourcePk": f"GAME_WINNERS#mlb#{slate}",
+        "sourceSk": f"LOCKED#GAME#{commence}#{game_id}",
+        "recordType": "mlb_immutable_locked_single_game_prediction",
+        "immutableLocked": True,
+        "stageAuthorityVerified": True,
+        "persistedStageAuthorityValidated": True,
+        "exactLockVectorValidated": True,
+        "exactProviderIdentityMatched": True,
+        "matchMethod": "exact_provider_game_id_and_teams",
+        "legacyOrDailyCardFallbackUsed": False,
+    }
+
+
 def main() -> int:
     locked = {
         "slatePredictionLock": {"locked": True, "lockStatus": "LOCKED"},
@@ -97,6 +115,9 @@ def main() -> int:
             "americanOdds": -125,
             "homeSignal": {"marketConsensusProbability": 0.42, "americanOdds": 115},
             "awaySignal": {"marketConsensusProbability": 0.58, "americanOdds": -125},
+            "canonicalLockAuthority": canonical_authority(
+                "2026-07-11", "official-not-playable", "2026-07-11T18:00:00Z"
+            ),
         },
         {
             "status": "GRADED",
@@ -120,6 +141,9 @@ def main() -> int:
             "americanOdds": -110,
             "homeSignal": {"marketConsensusProbability": 0.55, "americanOdds": -110},
             "awaySignal": {"marketConsensusProbability": 0.45, "americanOdds": 100},
+            "canonicalLockAuthority": canonical_authority(
+                "2026-07-11", "official-playable", "2026-07-11T19:00:00Z"
+            ),
         },
     ]
     normalized = [accuracy._normalize_audit_row(row) for row in audit_rows]
@@ -162,7 +186,7 @@ def main() -> int:
             "awaySignal": {"probLatest": 0.557408, "americanOdds": -142},
         }
     )
-    assert legacy["officialPrediction"] is True
+    assert legacy["officialPrediction"] is False
     assert legacy["playable"] is False
     assert legacy["teamWinProbabilityPct"] == 55.74
     assert legacy["lockedAmericanOdds"] == -142.0
@@ -187,9 +211,9 @@ def main() -> int:
     stored_ledger = accuracy._ledger_row(normalized_ledger)
     assert normalized_ledger["status"] == "GRADED"
     assert stored_ledger["status"] == "GRADED"
-    assert accuracy._dedupe([normalized_ledger])
+    assert accuracy._dedupe([normalized_ledger]) == []
 
-    print("MLB official/playable, immutable-ledger, selected-odds, and real-world accuracy metrics verified")
+    print("MLB official/playable display semantics and canonical-only accuracy ledger metrics verified")
     return 0
 
 

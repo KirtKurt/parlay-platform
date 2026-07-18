@@ -156,7 +156,39 @@ def seed_stage(history, row):
         "data": copy.deepcopy(manifest),
     })
 
+    # The persisted candidate is the exact user-visible PRE_LOCK row that was
+    # published before T-45.  The stage row below is its later immutable lock
+    # promotion.  Keep the selection fields identical while restoring the
+    # explicit public PRE_LOCK authority markers required by the v3 snapshot
+    # contract.
     candidate = copy.deepcopy(row)
+    candidate["lockedPrediction"] = False
+    candidate["officialPrediction"] = False
+    candidate["officialPick"] = False
+    candidate["officialPredictionStatus"] = per_game.PREGAME_DISPLAY_STATUS
+    candidate["displayPrediction"] = True
+    candidate["displayGroup"] = "pre_lock_prediction"
+    candidate["perGameCanonicalLock"] = {
+        "authorityVersion": per_game.PREGAME_PUBLIC_AUTHORITY_VERSION,
+        "status": "OPEN_PRE_LOCK",
+        "canonical": False,
+    }
+    candidate["signalPolicyV13"] = {
+        "applied": True,
+        "version": "MLB-SIGNAL-POLICY-v13-immutable-storage-verifier",
+    }
+    candidate["tags"] = sorted({
+        *(
+            str(tag)
+            for tag in (candidate.get("tags") or [])
+            if str(tag) not in {
+                "FINAL_LOCKED",
+                "SLATE_LOCKED",
+                "OFFICIAL_LOCKED_PREDICTION",
+            }
+        ),
+        "PRE_LOCK_PREDICTION",
+    })
     candidate["createdAt"] = created_at.isoformat()
     candidate["predictionSourcePullAt"] = source_dt.isoformat()
     candidate["predictionSourcePullId"] = pull_id
@@ -168,6 +200,13 @@ def seed_stage(history, row):
         "SK": f"PREGAME#GAME#{raw_identity}#PERSISTED#{persisted_at.isoformat()}#CREATED#{created_at.isoformat()}#fixture",
         "record_type": per_game.PREGAME_SNAPSHOT_RECORD_TYPE,
         "snapshot_version": per_game.PREGAME_SNAPSHOT_VERSION,
+        "snapshot_role": per_game.PREGAME_SNAPSHOT_ROLE,
+        "public_authority_version": per_game.PREGAME_PUBLIC_AUTHORITY_VERSION,
+        "user_visible": True,
+        "display_prediction": True,
+        "display_status": per_game.PREGAME_DISPLAY_STATUS,
+        "display_surface": per_game.PREGAME_DISPLAY_SURFACE,
+        "signal_policy_version": candidate["signalPolicyV13"]["version"],
         "slate_date": row["slate_date"],
         "game_id": row.get("gameId"),
         "game_identity": raw_identity,
@@ -192,6 +231,13 @@ def seed_stage(history, row):
         "sk": snapshot["SK"],
         "recordType": per_game.PREGAME_SNAPSHOT_RECORD_TYPE,
         "snapshotVersion": per_game.PREGAME_SNAPSHOT_VERSION,
+        "snapshotRole": per_game.PREGAME_SNAPSHOT_ROLE,
+        "publicAuthorityVersion": per_game.PREGAME_PUBLIC_AUTHORITY_VERSION,
+        "userVisible": True,
+        "displayPrediction": True,
+        "displayStatus": per_game.PREGAME_DISPLAY_STATUS,
+        "displaySurface": per_game.PREGAME_DISPLAY_SURFACE,
+        "signalPolicyVersion": candidate["signalPolicyV13"]["version"],
         "predictionSourcePullAtUtc": source_dt.isoformat(),
         "predictionSourcePullId": pull_id,
         "predictionCreatedAtUtc": created_at.isoformat(),

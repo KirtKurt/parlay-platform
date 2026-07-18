@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-VERSION = "MLB-LOCKED-CARD-AUDIT-v3-provider-alias-nearest-time-doubleheader-safe"
+VERSION = "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only"
+CANONICAL_LOCK_AUTHORITY_VERSION = "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1"
 MAX_TIME_DRIFT_MINUTES = 45.0
 MIN_NEAREST_SEPARATION_MINUTES = 10.0
 
@@ -61,8 +62,33 @@ def _provider_ids(row: Dict[str, Any]) -> Set[str]:
 
 
 def _provider_id(row: Dict[str, Any]) -> str:
-    values = sorted(_provider_ids(row))
-    return values[0] if values else ""
+    for key in ("gameId", "game_id", "providerGameId", "provider_game_id", "id"):
+        value = row.get(key)
+        if value not in (None, ""):
+            text = str(value).strip()
+            return text[len("provider:"):] if text.startswith("provider:") else text
+    identity = str(row.get("gameIdentity") or "").strip()
+    return identity[len("provider:"):] if identity.startswith("provider:") else ""
+
+
+def _canonical_authority(row: Dict[str, Any], authority_version: str) -> bool:
+    authority = row.get("canonicalLockAuthority") or {}
+    slate = str(row.get("slateDateEt") or row.get("slate_date") or "")
+    return bool(
+        isinstance(authority, dict)
+        and authority.get("version") == authority_version
+        and authority.get("verified") is True
+        and authority.get("consistentRead") is True
+        and authority.get("immutableLocked") is True
+        and authority.get("stageAuthorityVerified") is True
+        and authority.get("persistedStageAuthorityValidated") is True
+        and authority.get("exactLockVectorValidated") is True
+        and authority.get("legacyOrDailyCardFallbackUsed") is False
+        and authority.get("sourcePk") == f"GAME_WINNERS#mlb#{slate}"
+        and str(authority.get("sourceSk") or "").startswith("LOCKED#GAME#")
+        and authority.get("recordType")
+        == "mlb_immutable_locked_single_game_prediction"
+    )
 
 
 def _matchup_key(row: Dict[str, Any]) -> str:
@@ -130,8 +156,6 @@ def apply(module: Any):
     def predictions_index(finals: List[Dict[str, Any]]) -> Dict[str, Any]:
         dates = sorted({str(final.get("slateDateEt")) for final in finals if final.get("slateDateEt")})
         provider: Dict[str, Dict[str, Any]] = {}
-        timed: Dict[str, Dict[str, Any]] = {}
-        matchup_candidates: Dict[str, List[Dict[str, Any]]] = {}
 
         def keep_best(bucket: Dict[str, Dict[str, Any]], key: str, pred: Dict[str, Any]) -> None:
             if not key:
@@ -145,91 +169,42 @@ def apply(module: Any):
 
         for slate in dates:
             for pred in module._query_predictions_for_slate(slate):
+                if not _canonical_authority(
+                    pred,
+                    CANONICAL_LOCK_AUTHORITY_VERSION,
+                ):
+                    continue
                 rank = base._candidate_rank(pred)
                 if rank is None:
                     continue
-                for provider_id in _provider_ids(pred):
-                    keep_best(provider, provider_id, pred)
-                keep_best(timed, _time_key(pred), pred)
-                matchup_candidates.setdefault(_matchup_key(pred), []).append(pred)
-
-        unique_matchups: Dict[str, Dict[str, Any]] = {}
-        candidate_diagnostics: Dict[str, List[Dict[str, Any]]] = {}
-        for key, candidates in matchup_candidates.items():
-            unique_by_identity: Dict[str, Dict[str, Any]] = {}
-            for pred in candidates:
-                identity = _provider_id(pred) or _time_key(pred)
-                rank = base._candidate_rank(pred)
-                current = unique_by_identity.get(identity)
-                if rank is not None and (current is None or rank > (base._candidate_rank(current) or (-1, ""))):
-                    unique_by_identity[identity] = pred
-            values = list(unique_by_identity.values())
-            if len(values) == 1:
-                unique_matchups[key] = values[0]
-            candidate_diagnostics[key] = [
-                {
-                    "providerIds": sorted(_provider_ids(pred)),
-                    "commenceTime": _commence_dt(pred).isoformat() if _commence_dt(pred) else None,
-                    "predictedWinner": pred.get("predictedWinner"),
-                }
-                for pred in values
-            ]
+                keep_best(provider, _provider_id(pred), pred)
 
         return {
             "provider": provider,
-            "timed": timed,
-            "uniqueMatchup": unique_matchups,
-            "matchupCandidates": matchup_candidates,
-            "matchupCandidateCount": {
-                key: len({_provider_id(pred) or _time_key(pred) for pred in values})
-                for key, values in matchup_candidates.items()
-            },
-            "candidateDiagnostics": candidate_diagnostics,
             "version": VERSION,
         }
 
     def lookup(index: Dict[str, Any], final: Dict[str, Any]) -> Tuple[Optional[Dict[str, Any]], str, Dict[str, Any]]:
-        final_provider_ids = sorted(_provider_ids(final))
-        for provider_id in final_provider_ids:
-            pred = (index.get("provider") or {}).get(provider_id)
-            if pred:
-                return pred, "provider_game_id", {"matchedProviderId": provider_id, "providerAliasAware": True}
-
-        timed_key = _time_key(final)
-        pred = (index.get("timed") or {}).get(timed_key)
-        if pred:
-            return pred, "teams_and_exact_commence_time", {}
-
-        matchup_key = _matchup_key(final)
+        provider_id = _provider_id(final)
+        pred = (index.get("provider") or {}).get(provider_id) if provider_id else None
+        if not pred:
+            return None, "no_exact_canonical_provider_game_id_match", {"finalProviderGameId": provider_id or None}
+        if _matchup_key(pred) != _matchup_key(final):
+            return None, "canonical_provider_id_team_mismatch", {
+                "finalProviderGameId": provider_id,
+                "canonicalMatchup": _matchup_key(pred),
+                "finalMatchup": _matchup_key(final),
+            }
         final_time = _commence_dt(final)
-        candidates = list((index.get("matchupCandidates") or {}).get(matchup_key) or [])
-        if final_time and candidates:
-            ranked: List[Tuple[float, Dict[str, Any]]] = []
-            seen: Set[str] = set()
-            for candidate in candidates:
-                identity = _provider_id(candidate) or _time_key(candidate)
-                if identity in seen:
-                    continue
-                seen.add(identity)
-                candidate_time = _commence_dt(candidate)
-                if candidate_time:
-                    ranked.append((abs((candidate_time - final_time).total_seconds()) / 60.0, candidate))
-            ranked.sort(key=lambda item: item[0])
-            if ranked and ranked[0][0] <= MAX_TIME_DRIFT_MINUTES:
-                second_distance = ranked[1][0] if len(ranked) > 1 else None
-                if second_distance is None or (second_distance - ranked[0][0]) >= MIN_NEAREST_SEPARATION_MINUTES:
-                    return ranked[0][1], "teams_and_nearest_commence_time", {
-                        "timeDriftMinutes": round(ranked[0][0], 2),
-                        "secondNearestMinutes": round(second_distance, 2) if second_distance is not None else None,
-                    }
-
-        if matchup_key in (index.get("uniqueMatchup") or {}):
-            return (index.get("uniqueMatchup") or {}).get(matchup_key), "unique_matchup_fallback", {}
-
-        return None, "no_unambiguous_locked_prediction_match", {
-            "finalProviderIds": final_provider_ids,
-            "finalCommenceTime": final_time.isoformat() if final_time else None,
-            "candidateDiagnostics": (index.get("candidateDiagnostics") or {}).get(matchup_key, []),
+        predicted_time = _commence_dt(pred)
+        drift = (
+            abs((predicted_time - final_time).total_seconds()) / 60.0
+            if final_time and predicted_time
+            else None
+        )
+        return pred, "exact_provider_game_id_and_teams", {
+            "matchedProviderId": provider_id,
+            "commenceTimeDriftMinutes": round(drift, 2) if drift is not None else None,
         }
 
     def audit_rows(finals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -239,15 +214,24 @@ def apply(module: Any):
             pred, method, diagnostics = lookup(index, final)
             if not pred:
                 matchup_key = _matchup_key(final)
+                authority_diagnostics = (
+                    module._canonical_rejection_diagnostics(final)
+                    if hasattr(module, "_canonical_rejection_diagnostics")
+                    else {}
+                )
+                invalid = (
+                    authority_diagnostics.get("canonicalLockEvidenceStatus")
+                    == "INVALID"
+                )
                 rows.append({
                     **final,
-                    "status": "MISSING_LOCKED_PREDICTION",
+                    "status": "INVALID_CANONICAL_LOCK" if invalid else "MISSING_CANONICAL_LOCK",
+                    **authority_diagnostics,
                     "lockedCardAudit": {
                         "applied": True,
                         "version": VERSION,
-                        "selectionPolicy": "provider_alias_then_exact_time_then_safe_nearest_time_then_unique_matchup",
-                        "missingReason": method,
-                        "matchupCandidateCount": (index.get("matchupCandidateCount") or {}).get(matchup_key, 0),
+                        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+                        "missingReason": "canonical_lock_failed_validation" if invalid else method,
                         "doubleheaderSafe": True,
                         **diagnostics,
                     },
@@ -259,12 +243,18 @@ def apply(module: Any):
             audit.update({
                 "version": VERSION,
                 "matchMethod": method,
-                "providerGameId": next(iter(sorted(_provider_ids(final) or _provider_ids(pred))), ""),
+                "providerGameId": _provider_id(final),
                 "doubleheaderSafe": True,
-                "selectionPolicy": "provider_alias_then_exact_time_then_safe_nearest_time_then_unique_matchup",
+                "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
                 **diagnostics,
             })
             copied["lockedCardAudit"] = audit
+            authority = dict(copied.get("canonicalLockAuthority") or {})
+            authority.update({
+                "exactProviderIdentityMatched": True,
+                "matchMethod": "exact_provider_game_id_and_teams",
+            })
+            copied["canonicalLockAuthority"] = authority
             rows.append({**final, "status": "GRADED", **copied, "correct": correct})
         return rows
 

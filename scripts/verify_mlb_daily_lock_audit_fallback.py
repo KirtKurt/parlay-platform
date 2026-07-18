@@ -70,6 +70,9 @@ class History:
 
 class AuditModule:
     history = History()
+    CANONICAL_LOCK_AUTHORITY_VERSION = (
+        "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1"
+    )
 
     @staticmethod
     def normalize_team(value):
@@ -107,22 +110,25 @@ def main() -> int:
     rows = module.audit_rows([final])
     assert len(rows) == 1, rows
     row = rows[0]
-    assert row.get("status") == "GRADED", row
-    assert row.get("predictedWinner") == "Toronto Blue Jays", row
-    assert row.get("correct") is False, row
-    assert row.get("lockedAmericanOdds") == -104, row
-    assert row.get("priceBook") == "fanduel", row
-    assert "IMMUTABLE_DAILY_LOCK_FALLBACK" in set(row.get("tags") or []), row
+    assert row.get("status") == "MISSING_CANONICAL_LOCK", row
     audit = row.get("lockedCardAudit") or {}
-    assert audit.get("matchMethod") == "provider_game_id", audit
-    assert audit.get("authoritySource") == "immutable_daily_locked_card", audit
-    assert audit.get("writeOnceCard") is True, audit
-    assert audit.get("lockAtUtc") == "2026-07-11T15:21:00+00:00", audit
-    assert audit.get("explicitSourceAtUtc") == "2026-07-11T15:15:00+00:00", audit
-    fallback_proof = row.get("immutableDailyLockFallback") or {}
-    assert fallback_proof.get("cardStoredAtUtc") == "2026-07-11T15:21:20+00:00", fallback_proof
-    assert fallback_proof.get("cardLatestPullAtUtc") == "2026-07-11T15:15:25+00:00", fallback_proof
-    print("MLB immutable daily lock settlement fallback verified: unsafe live row rejected, write-once card accepted")
+    assert audit.get("missingReason") == "no_exact_canonical_provider_game_id_match", audit
+
+    diagnostics = module.legacy_daily_card_diagnostic_rows("2026-07-11")
+    assert len(diagnostics) == 1, diagnostics
+    diagnostic = diagnostics[0]
+    assert diagnostic.get("predictedWinner") == "Toronto Blue Jays", diagnostic
+    assert diagnostic.get("officialPrediction") is False, diagnostic
+    assert diagnostic.get("officialPredictionStatus") == "DIAGNOSTIC_DAILY_CARD_NOT_OFFICIAL", diagnostic
+    assert diagnostic.get("lockedAmericanOdds") == -104, diagnostic
+    assert diagnostic.get("priceBook") == "fanduel", diagnostic
+    assert "LEGACY_DAILY_CARD_DIAGNOSTIC" in set(diagnostic.get("tags") or []), diagnostic
+    proof = diagnostic.get("legacyDailyCardDiagnostic") or {}
+    assert proof.get("officialAuditEligible") is False, proof
+    assert proof.get("learningEligible") is False, proof
+    assert proof.get("cardStoredAtUtc") == "2026-07-11T15:21:20+00:00", proof
+    assert proof.get("cardLatestPullAtUtc") == "2026-07-11T15:15:25+00:00", proof
+    print("MLB daily lock diagnostic verified: daily card is inspectable but excluded from official audit and learning")
     return 0
 
 

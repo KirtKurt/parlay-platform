@@ -329,7 +329,10 @@ def apply(module: Any):
             stored = original_store(row)
             if isinstance(stored, dict):
                 stored = dict(stored)
-                stored["storageClass"] = "LIVE_MUTABLE"
+                if stored.get("ok") is True:
+                    stored["storageClass"] = "LIVE_MUTABLE"
+                else:
+                    stored.setdefault("storageClass", "PREGAME_REJECTED")
                 stored["immutableLockedStorageVersion"] = VERSION
             return stored
 

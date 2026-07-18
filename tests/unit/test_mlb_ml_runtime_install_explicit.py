@@ -62,9 +62,12 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
     immutable.apply = apply_immutable
 
     finalizer = _module("mlb_locked_prediction_storage_finalizer_v1")
-    finalizer.apply = lambda module: setattr(
-        module, "_INQSI_MLB_LOCKED_STORAGE_FINALIZER_V1_APPLIED", True
-    )
+
+    def apply_finalizer(module: ModuleType) -> None:
+        events.append("storage_finalizer_apply")
+        module._INQSI_MLB_LOCKED_STORAGE_FINALIZER_V1_APPLIED = True
+
+    finalizer.apply = apply_finalizer
 
     legacy_gate = _module("mlb_last_possible_prediction_gate")
 
@@ -84,6 +87,7 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
     coverage.apply = lambda module: events.append("coverage_apply")
 
     def install_public_authority(module: ModuleType, lock_module: ModuleType) -> None:
+        events.append("public_authority_apply")
         module._INQSI_MLB_PUBLIC_PER_GAME_AUTHORITY_APPLIED = True
         module.MLB_PUBLIC_PER_GAME_AUTHORITY_VERSION = coverage.AUTHORITY_VERSION
         lock_module._INQSI_MLB_LAST_PRELOCK_PROMOTION_AUTHORITY_APPLIED = True
@@ -128,6 +132,9 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
         assert status["steps"]["legacyFinalGateDisabled"] is True
         assert status["steps"]["lastPrelockPromotionAuthority"] is True
         assert events.count("legacy_gate_apply") == 1
+        assert events.index("public_authority_apply") < events.index(
+            "storage_finalizer_apply"
+        )
         assert engine._INQSI_MLB_CANONICAL_PER_GAME_AUTHORITY_ENABLED is True
     finally:
         sys.modules.pop(module_name, None)

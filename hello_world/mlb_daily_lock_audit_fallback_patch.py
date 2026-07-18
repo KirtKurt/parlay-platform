@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-VERSION = "MLB-DAILY-LOCK-AUDIT-FALLBACK-v1.2-vector-time-authority"
+VERSION = "MLB-DAILY-LOCK-DIAGNOSTIC-v2-non-official"
 
 
 def _parse_dt(value: Any) -> Optional[datetime]:
@@ -143,18 +143,16 @@ def _daily_lock_rows(module: Any, slate_date: str) -> List[Dict[str, Any]]:
         tags.update({
             "FINAL_LOCKED",
             "SLATE_LOCKED",
-            "OFFICIAL_LOCKED_PREDICTION",
-            "OFFICIAL_PREDICTION",
             "NOT_PLAYABLE",
-            "IMMUTABLE_DAILY_LOCK_FALLBACK",
+            "LEGACY_DAILY_CARD_DIAGNOSTIC",
         })
         row.update({
             "sport": "mlb",
             "slateDateEt": slate_date,
             "slate_date": slate_date,
             "lockedPrediction": True,
-            "officialPrediction": True,
-            "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
+            "officialPrediction": False,
+            "officialPredictionStatus": "DIAGNOSTIC_DAILY_CARD_NOT_OFFICIAL",
             "actionablePick": False,
             "accuracyTargetEligible": False,
             "playable": False,
@@ -177,10 +175,12 @@ def _daily_lock_rows(module: Any, slate_date: str) -> List[Dict[str, Any]]:
                 "perGameLock": per_game,
                 "slateWideLock": not per_game,
             },
-            "immutableDailyLockFallback": {
+            "legacyDailyCardDiagnostic": {
                 "applied": True,
                 "version": VERSION,
                 "authoritySource": "LOCKED_PICKS_DAILY_LOCK_TMINUS45",
+                "officialAuditEligible": False,
+                "learningEligible": False,
                 "pk": item.get("PK"),
                 "sk": item.get("SK"),
                 "writeOnceCard": True,
@@ -202,42 +202,14 @@ def apply(module: Any):
     if getattr(module, "_INQSI_MLB_DAILY_LOCK_AUDIT_FALLBACK_APPLIED", False):
         return module
 
-    import mlb_locked_card_audit_v1 as base
+    def legacy_daily_card_diagnostic_rows(slate_date: str):
+        return _daily_lock_rows(module, str(slate_date))
 
-    original_query = module._query_predictions_for_slate
-    original_copy = base._copy_audit_fields
-
-    def query_predictions_for_slate(slate_date: str):
-        rows = list(original_query(slate_date) or [])
-        rows.extend(_daily_lock_rows(module, str(slate_date)))
-        return rows
-
-    def copy_audit_fields(pred: Dict[str, Any]) -> Dict[str, Any]:
-        out = dict(original_copy(pred))
-        fallback = pred.get("immutableDailyLockFallback") or {}
-        if fallback.get("applied") is True:
-            out.update({
-                "americanOdds": pred.get("americanOdds"),
-                "lockedAmericanOdds": pred.get("lockedAmericanOdds"),
-                "priceBook": pred.get("priceBook"),
-                "priceSource": pred.get("priceSource"),
-                "fairProbabilityPct": pred.get("fairProbabilityPct"),
-                "teamWinProbabilityPct": pred.get("teamWinProbabilityPct") or pred.get("winProbabilityPct"),
-                "immutableDailyLockFallback": fallback,
-            })
-            audit = dict(out.get("lockedCardAudit") or {})
-            audit.update({
-                "authoritySource": "immutable_daily_locked_card",
-                "authorityVersion": VERSION,
-                "writeOnceCard": True,
-                "dailyLockPk": fallback.get("pk"),
-                "dailyLockSk": fallback.get("sk"),
-            })
-            out["lockedCardAudit"] = audit
-        return out
-
-    module._query_predictions_for_slate = query_predictions_for_slate
-    base._copy_audit_fields = copy_audit_fields
+    # Kept as an explicit diagnostic reader only. It must never be appended to
+    # _query_predictions_for_slate, because that function feeds official grading,
+    # accuracy ledgers, score learning, and ML promotion gates.
+    module.legacy_daily_card_diagnostic_rows = legacy_daily_card_diagnostic_rows
     module.MLB_DAILY_LOCK_AUDIT_FALLBACK_VERSION = VERSION
+    module.MLB_DAILY_LOCK_AUDIT_FALLBACK_OFFICIAL_ELIGIBLE = False
     module._INQSI_MLB_DAILY_LOCK_AUDIT_FALLBACK_APPLIED = True
     return module

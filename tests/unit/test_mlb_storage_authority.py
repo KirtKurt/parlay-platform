@@ -8,6 +8,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -20,12 +21,35 @@ import mlb_locked_prediction_storage_finalizer_v1 as finalizer
 import mlb_last_possible_prediction_gate as legacy_gate
 
 
+def _user_visible_prelock(engine, row):
+    out = copy.deepcopy(row)
+    out.update({
+        "lockedPrediction": False,
+        "officialPrediction": False,
+        "officialPick": False,
+        "officialPredictionStatus": engine.PREGAME_DISPLAY_STATUS,
+        "displayPrediction": True,
+        "displayGroup": "pre_lock_prediction",
+        "perGameCanonicalLock": {
+            "authorityVersion": engine.PUBLIC_PRELOCK_AUTHORITY_VERSION,
+            "status": "OPEN_PRE_LOCK",
+            "canonical": False,
+        },
+        "signalPolicyV13": {
+            "applied": True,
+            "version": "MLB-SIGNAL-POLICY-v-test",
+        },
+    })
+    out["tags"] = sorted(set((out.get("tags") or []) + ["PRE_LOCK_PREDICTION"]))
+    return out
+
+
 def test_pregame_snapshot_payload_fingerprint_survives_production_ddb_round_trip():
     import mlb_daily_per_game_lock_patch as per_game_lock
     import mlb_game_winner_engine as engine
     import inqsi_pull_history as history_contract
 
-    row = {
+    row = _user_visible_prelock(engine, {
         "slate_date": "2026-07-17",
         "gameId": "game-ddb-fingerprint",
         "gameIdentity": "game-ddb-fingerprint",
@@ -52,7 +76,7 @@ def test_pregame_snapshot_payload_fingerprint_survives_production_ddb_round_trip
         "predictionSourcePullAt": "2026-07-17T17:15:00+00:00",
         "predictionSourcePullId": "pull-ddb-fingerprint",
         "createdAt": "2026-07-17T17:15:30+00:00",
-    }
+    })
 
     snapshot = engine._pregame_snapshot_item(
         row,
@@ -73,9 +97,22 @@ def test_pregame_snapshot_payload_fingerprint_survives_production_ddb_round_trip
         history_contract.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
     )
     assert engine.PAYLOAD_FINGERPRINT_VERSION == per_game_lock.PAYLOAD_FINGERPRINT_VERSION
+    assert engine.PREGAME_SNAPSHOT_VERSION == per_game_lock.PREGAME_SNAPSHOT_VERSION
+    assert engine.PREGAME_SNAPSHOT_ROLE == per_game_lock.PREGAME_SNAPSHOT_ROLE
+    assert engine.PUBLIC_PRELOCK_AUTHORITY_VERSION == (
+        per_game_lock.PREGAME_PUBLIC_AUTHORITY_VERSION
+    )
     assert snapshot["prediction_payload_fingerprint"] == per_game_lock._payload_fingerprint(
         persisted_row
     )
+    assert snapshot["snapshot_version"] == engine.PREGAME_SNAPSHOT_VERSION
+    assert snapshot["snapshot_role"] == engine.PREGAME_SNAPSHOT_ROLE
+    assert snapshot["public_authority_version"] == engine.PUBLIC_PRELOCK_AUTHORITY_VERSION
+    assert snapshot["user_visible"] is True
+    assert snapshot["display_prediction"] is True
+    assert snapshot["display_status"] == engine.PREGAME_DISPLAY_STATUS
+    assert snapshot["display_surface"] == engine.PREGAME_DISPLAY_SURFACE
+    assert snapshot["signal_policy_version"] == "MLB-SIGNAL-POLICY-v-test"
 
     tampered = copy.deepcopy(persisted_row)
     tampered["americanOdds"] = Decimal("-117")
@@ -132,7 +169,7 @@ def test_pregame_persistence_time_is_sampled_after_successful_live_put(monkeypat
     monkeypatch.setattr(engine.history, "ddb_safe", copy.deepcopy)
     monkeypatch.setattr(engine, "_now", acknowledged_at)
 
-    result = engine._store_prediction({
+    result = engine._store_prediction(_user_visible_prelock(engine, {
         "slate_date": "2026-07-16",
         "gameId": "game-1",
         "gameIdentity": "game-1",
@@ -140,7 +177,7 @@ def test_pregame_persistence_time_is_sampled_after_successful_live_put(monkeypat
         "predictedWinner": "Home",
         "predictedSide": "home",
         "createdAt": "2026-07-16T22:14:58+00:00",
-    })
+    }))
 
     assert result["ok"] is True
     assert events == [
@@ -151,6 +188,84 @@ def test_pregame_persistence_time_is_sampled_after_successful_live_put(monkeypat
     snapshot = written[-1]
     assert snapshot["prediction_persisted_at_utc"] == "2026-07-16T22:14:59+00:00"
     assert snapshot["prediction_persistence_proof_type"] == engine.PREGAME_PERSISTENCE_PROOF_TYPE
+
+
+def test_raw_engine_row_cannot_create_authoritative_pregame_snapshot(monkeypatch):
+    import mlb_game_winner_engine as engine
+
+    writes = []
+
+    class Table:
+        def put_item(self, **kwargs):
+            writes.append(copy.deepcopy(kwargs))
+
+    monkeypatch.setattr(engine.history, "PULLS", Table())
+
+    raw = {
+        "slate_date": "2026-07-17",
+        "gameId": "raw-engine-row",
+        "gameIdentity": "raw-engine-row",
+        "commenceTime": "2026-07-17T18:00:00+00:00",
+        "predictedWinner": "Home",
+        "predictedSide": "home",
+        "createdAt": "2026-07-17T17:00:00+00:00",
+    }
+
+    result = engine._store_prediction(raw)
+
+    assert result["ok"] is False
+    assert result["stored"] is False
+    assert result["suppressed"] is True
+    assert result["error"] == (
+        "MLB_PREGAME_SNAPSHOT_REQUIRES_USER_VISIBLE_PLATFORM_PRELOCK"
+    )
+    assert result["storageClass"] == "PREGAME_REJECTED"
+    assert "display_status_mismatch" in result["authorityErrors"]
+    assert writes == []
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_error"),
+    [
+        (lambda row: row.update(displayPrediction=False), "display_prediction_not_true"),
+        (lambda row: row.pop("signalPolicyV13"), "signal_policy_version_missing"),
+        (
+            lambda row: row.update(signalPolicyV13={"applied": True, "version": ""}),
+            "signal_policy_version_missing",
+        ),
+    ],
+)
+def test_public_snapshot_marker_requires_real_display_and_signal_policy(
+    monkeypatch,
+    mutation,
+    expected_error,
+):
+    import mlb_game_winner_engine as engine
+
+    writes = []
+
+    class Table:
+        def put_item(self, **kwargs):
+            writes.append(copy.deepcopy(kwargs))
+
+    monkeypatch.setattr(engine.history, "PULLS", Table())
+    row = _user_visible_prelock(engine, {
+        "slate_date": "2026-07-17",
+        "gameId": "marker-test",
+        "gameIdentity": "marker-test",
+        "commenceTime": "2026-07-17T18:00:00+00:00",
+        "predictedWinner": "Home",
+        "predictedSide": "home",
+        "createdAt": "2026-07-17T17:00:00+00:00",
+    })
+    mutation(row)
+
+    result = engine._store_prediction(row)
+
+    assert result["ok"] is False
+    assert result["storageClass"] == "PREGAME_REJECTED"
+    assert expected_error in result["authorityErrors"]
+    assert writes == []
 
 
 def test_direct_legacy_locked_write_is_suppressed_before_any_store():

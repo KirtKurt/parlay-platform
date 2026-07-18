@@ -33,12 +33,10 @@ def main() -> int:
         import mlb_locked_card_audit_v1
         import mlb_ml_audit_feature_bridge_v1
         import mlb_doubleheader_safe_audit_patch
-        import mlb_daily_lock_audit_fallback_patch
 
         mlb_locked_card_audit_v1.apply(mlb_rolling_24h_audit)
         mlb_ml_audit_feature_bridge_v1.apply(mlb_locked_card_audit_v1)
         mlb_doubleheader_safe_audit_patch.apply(mlb_rolling_24h_audit)
-        mlb_daily_lock_audit_fallback_patch.apply(mlb_rolling_24h_audit)
 
         report = mlb_rolling_24h_audit.build(store=True, write_file=True)
         accuracy = report.get("realWorldAccuracy") or {}
@@ -78,8 +76,9 @@ def main() -> int:
             "mlOptimizationV3": optimization,
             "mlTrainingAuthority": authority,
             "dailyLockAuditFallback": {
-                "applied": bool(getattr(mlb_rolling_24h_audit, "_INQSI_MLB_DAILY_LOCK_AUDIT_FALLBACK_APPLIED", False)),
-                "version": getattr(mlb_rolling_24h_audit, "MLB_DAILY_LOCK_AUDIT_FALLBACK_VERSION", None),
+                "applied": False,
+                "officialAuditEligible": False,
+                "policy": "Daily-card and legacy fallback rows are diagnostic-only; official audit and learning require exact canonical LOCKED#GAME authority.",
             },
             "stored": report.get("stored"),
             "storeError": report.get("storeError"),

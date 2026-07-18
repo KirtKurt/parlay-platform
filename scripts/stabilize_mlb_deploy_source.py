@@ -70,6 +70,13 @@ def _validate_deploy_workflow() -> None:
         "Verify The Odds API without writing an unscheduled pull",
         "writePerformed",
         "mlb-deployment-identity-${{ github.run_id }}",
+        "Enforce MLB published prediction and immutable lock regressions",
+        '"pytest>=8,<9"',
+        "test_mlb_published_prediction_authority.py",
+        "test_mlb_daily_per_game_lock.py",
+        "test_mlb_storage_authority.py",
+        "test_mlb_rolling_canonical_authority.py",
+        "test_mlb_ml_runtime_install_explicit.py",
     ]
     missing = [token for token in required if token not in text]
     forbidden = [

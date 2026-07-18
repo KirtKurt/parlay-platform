@@ -10,7 +10,10 @@ from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import inqsi_pull_history as history
-from mlb_slate_coverage_patch import game_identity as _canonical_game_identity
+from mlb_slate_coverage_patch import (
+    AUTHORITY_VERSION as PUBLIC_PRELOCK_AUTHORITY_VERSION,
+    game_identity as _canonical_game_identity,
+)
 import mlb_temporal_features_v1 as temporal_features
 
 PAYLOAD_FINGERPRINT_VERSION = history.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
@@ -19,8 +22,11 @@ SLATE_TZ = ZoneInfo("America/New_York")
 ENGINE = "MLB-SINGLE-GAME-ML-PROMOTION-v2.1"
 MODEL_VERSION = "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production"
 PREGAME_SNAPSHOT_RECORD_TYPE = "mlb_immutable_prelock_prediction_snapshot"
-PREGAME_SNAPSHOT_VERSION = "MLB-PREGAME-PREDICTION-SNAPSHOT-v2-post-write-ack"
+PREGAME_SNAPSHOT_VERSION = "MLB-PREGAME-PREDICTION-SNAPSHOT-v3-user-visible-platform-prelock"
 PREGAME_PERSISTENCE_PROOF_TYPE = "DDB_LIVE_PREDICTION_PUT_SUCCESS_ACK-v1"
+PREGAME_SNAPSHOT_ROLE = "USER_VISIBLE_PLATFORM_PRELOCK"
+PREGAME_DISPLAY_STATUS = "PRE_LOCK_PLATFORM_PREDICTION"
+PREGAME_DISPLAY_SURFACE = "nonOfficialPredictionDisplay"
 
 PRIMARY_BOOK = os.environ.get("ODDS_PRIMARY_BOOK", "fanduel").lower().strip()
 BOOK_PRIORITY = [
@@ -372,7 +378,67 @@ def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any
     }
 
 
+def _public_prelock_markers(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Prove that ``row`` is the final public pre-lock representation.
+
+    The immutable candidate may only be written after the canonical public
+    authority wrapper has converted the internal scoring row into the exact
+    user-visible pre-lock row.  Failing closed here prevents a raw engine row
+    from silently becoming the T-minus-45 lock candidate.
+    """
+    per_game = row.get("perGameCanonicalLock") or {}
+    tags = {str(value) for value in (row.get("tags") or [])}
+    errors: List[str] = []
+    if row.get("lockedPrediction") is not False:
+        errors.append("locked_prediction_not_false")
+    if row.get("officialPrediction") is not False:
+        errors.append("official_prediction_not_false")
+    if row.get("officialPredictionStatus") != PREGAME_DISPLAY_STATUS:
+        errors.append("display_status_mismatch")
+    if row.get("displayPrediction") is not True:
+        errors.append("display_prediction_not_true")
+    if row.get("displayGroup") != "pre_lock_prediction":
+        errors.append("display_group_mismatch")
+    if "PRE_LOCK_PREDICTION" not in tags:
+        errors.append("prelock_display_tag_missing")
+    if not isinstance(per_game, dict):
+        errors.append("per_game_authority_missing")
+        per_game = {}
+    if per_game.get("authorityVersion") != PUBLIC_PRELOCK_AUTHORITY_VERSION:
+        errors.append("public_authority_version_mismatch")
+    if per_game.get("status") != "OPEN_PRE_LOCK":
+        errors.append("public_authority_status_not_open_prelock")
+    if per_game.get("canonical") is not False:
+        errors.append("public_authority_canonical_flag_not_false")
+    if not row.get("predictedWinner") or row.get("predictedSide") not in {"home", "away"}:
+        errors.append("winner_or_side_missing")
+    if errors:
+        raise RuntimeError(
+            "MLB_PREGAME_SNAPSHOT_REQUIRES_USER_VISIBLE_PLATFORM_PRELOCK:"
+            + ",".join(sorted(set(errors)))
+        )
+    signal_policy = row.get("signalPolicyV13") or {}
+    signal_policy_version = (
+        signal_policy.get("version") if isinstance(signal_policy, dict) else None
+    )
+    if not signal_policy_version:
+        raise RuntimeError(
+            "MLB_PREGAME_SNAPSHOT_REQUIRES_USER_VISIBLE_PLATFORM_PRELOCK:"
+            "signal_policy_version_missing"
+        )
+    return {
+        "snapshot_role": PREGAME_SNAPSHOT_ROLE,
+        "public_authority_version": PUBLIC_PRELOCK_AUTHORITY_VERSION,
+        "user_visible": True,
+        "display_prediction": True,
+        "display_status": PREGAME_DISPLAY_STATUS,
+        "display_surface": PREGAME_DISPLAY_SURFACE,
+        "signal_policy_version": signal_policy_version,
+    }
+
+
 def _pregame_snapshot_item(row: Dict[str, Any], *, persisted_at: str) -> Dict[str, Any]:
+    markers = _public_prelock_markers(row)
     created_at = str(row.get("createdAt") or row.get("created_at") or _now())
     identity = str(row.get("gameIdentity") or row.get("gameId") or "unknown")
     source_at = str(
@@ -420,6 +486,7 @@ def _pregame_snapshot_item(row: Dict[str, Any], *, persisted_at: str) -> Dict[st
         "prediction_payload_fingerprint": prediction_payload_fingerprint,
         "prediction_source_pull_at_utc": source_at or None,
         "prediction_source_pull_id": row.get("predictionSourcePullId"),
+        **markers,
         "immutable_pregame": True,
         "write_once": True,
         "data": persisted_row,
@@ -447,6 +514,14 @@ def _put_pregame_snapshot(item: Dict[str, Any]) -> Dict[str, Any]:
             raise RuntimeError("MLB_PREGAME_SNAPSHOT_COLLISION_WITHOUT_READBACK") from exc
         collision_fields = (
             "data",
+            "snapshot_version",
+            "snapshot_role",
+            "public_authority_version",
+            "user_visible",
+            "display_prediction",
+            "display_status",
+            "display_surface",
+            "signal_policy_version",
             "prediction_payload_fingerprint_version",
             "prediction_payload_fingerprint",
         )
@@ -475,8 +550,32 @@ def _put_pregame_snapshot(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _store_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
+    # Validate before creating even the mutable row.  A runtime wrapper-order
+    # regression must fail closed instead of leaving an unmarked candidate that
+    # a later lock attempt could mistake for the public platform prediction.
+    try:
+        _public_prelock_markers(row)
+    except RuntimeError as exc:
+        message = str(exc)
+        prefix = "MLB_PREGAME_SNAPSHOT_REQUIRES_USER_VISIBLE_PLATFORM_PRELOCK"
+        details = message.split(":", 1)[1].split(",") if ":" in message else []
+        return {
+            "ok": False,
+            "stored": False,
+            "suppressed": True,
+            "error": prefix,
+            "authorityErrors": sorted(set(value for value in details if value)),
+            "storageClass": "PREGAME_REJECTED",
+            "version": PREGAME_SNAPSHOT_VERSION,
+        }
     if history.PULLS is None:
-        return {"ok": False, "error": "SNAPSHOTS_TABLE not configured"}
+        return {
+            "ok": False,
+            "stored": False,
+            "error": "SNAPSHOTS_TABLE not configured",
+            "storageClass": "PREGAME_REJECTED",
+            "version": PREGAME_SNAPSHOT_VERSION,
+        }
     item = history.ddb_safe({
         "PK": f"GAME_WINNERS#mlb#{row.get('slate_date')}",
         "SK": f"GAME#{row.get('commenceTime') or 'unknown'}#{row.get('gameIdentity') or row.get('gameId')}",

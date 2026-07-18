@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Optional
 
-VERSION = "MLB-REAL-WORLD-ACCURACY-v1.6-90pct-production-reliability"
+VERSION = "MLB-REAL-WORLD-ACCURACY-v2.1-canonical-lock-only"
 ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT = 90.0
 MIN_PLAYABLE_TARGET_ACCURACY_PCT = 90.0
 RELIABILITY_PROGRESS_MILESTONES_PCT = (50.0, 60.0, 70.0, 80.0)
@@ -183,7 +183,7 @@ def apply(accuracy_module: Any):
         rwa["legacyProbabilityPolicy"] = "Use selected-side de-vigged market probability for legacy reporting; legacy rows are excluded from ML v3 training."
         rwa["legacyPlayabilityPolicy"] = "Do not accept officialPick/actionablePick alone as proof of a playable recommendation on legacy rows."
         rwa["selectedOddsPolicy"] = "Use the final predicted side's stored signal price; row-level pre-flip prices are fallback only."
-        rwa["ledgerReadbackPolicy"] = "Immutable ledger rows without an older status field are treated as GRADED when final winner and correctness are stored."
+        rwa["ledgerReadbackPolicy"] = "Only canonical-lock v2 ledger rows are read; statusless legacy ledger rows are excluded from official accuracy and learning."
         rwa["mlCriticalFixStatus"] = critical_fix_status
         rwa["mlTrainingPolicy"] = "Only immutable lock-time feature vectors with current semantics and complete slate coverage may train the dual-model ML v3 system."
         rwa["rolling24hAllGamesAuditTargetPct"] = all_games_audit_target

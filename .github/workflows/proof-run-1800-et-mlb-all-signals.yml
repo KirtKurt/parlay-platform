@@ -76,9 +76,11 @@ jobs:
               'proofRun': 'recurring_mlb_all_games_signal_proof_read_only_every_15_min',
               'createdAtUtc': now_utc(),
               'createdAtEt': now_et(),
-              'question': 'Show every MLB game scored before the qualifying-leg filter was applied.',
+              'question': 'Show the single published prediction for every MLB game, with raw signal-score leaders kept as diagnostics only.',
               'error': None,
               'mlbAllGamesSignalRows': [],
+              'mlbPublishedPredictions': [],
+              'mlbRawSignalScoreDiagnostics': [],
           }
 
           try:
@@ -119,7 +121,14 @@ jobs:
                   'ok': True,
                   'pull': pull,
                   'mlbGameWinnerPredictions': mlb_winners,
+                  'mlbPublishedPredictionAuthority': all_games.get('publishedPredictionAuthority'),
+                  'mlbPublishedPredictions': all_games.get('publishedPredictionDisplay') or [],
                   'mlbB10Build': b10,
+                  'mlbB10BuildRole': 'RAW_B10_SIGNAL_SCORE_DIAGNOSTIC_ONLY_NOT_A_PREDICTION',
+                  'mlbRawSignalScoreDiagnostics': [
+                      row.get('rawSignalScoreLeader')
+                      for row in (all_games.get('rows') or [])
+                  ],
                   'mlbAllGamesSignalProofPath': 'runtime_reports/mlb_all_games_signal_proof_latest.json',
                   'mlbAllGamesSignalProofSummary': all_games.get('summary'),
                   'mlbSlateCoverage': proof_coverage,

@@ -18,6 +18,10 @@ import mlb_doubleheader_safe_audit_patch as patch
 
 
 class DummyAudit:
+    CANONICAL_LOCK_AUTHORITY_VERSION = (
+        "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1"
+    )
+
     @staticmethod
     def normalize_team(value):
         return " ".join(str(value or "").lower().split())
@@ -35,7 +39,9 @@ LOCK = {
 
 
 def prediction(game_id, away, home, start, winner, *, id_field="providerGameId"):
+    slate = "2026-07-12"
     row = {
+        "slateDateEt": slate,
         "awayTeam": away,
         "homeTeam": home,
         "commenceTime": start,
@@ -47,6 +53,19 @@ def prediction(game_id, away, home, start, winner, *, id_field="providerGameId")
         "actionablePick": False,
         "accuracyTargetEligible": False,
         "recommendationStatus": "OFFICIAL_PREDICTION_NOT_PLAYABLE",
+        "canonicalLockAuthority": {
+            "version": DummyAudit.CANONICAL_LOCK_AUTHORITY_VERSION,
+            "verified": True,
+            "consistentRead": True,
+            "immutableLocked": True,
+            "stageAuthorityVerified": True,
+            "persistedStageAuthorityValidated": True,
+            "exactLockVectorValidated": True,
+            "legacyOrDailyCardFallbackUsed": False,
+            "sourcePk": f"GAME_WINNERS#mlb#{slate}",
+            "sourceSk": f"LOCKED#GAME#{start}#{game_id}",
+            "recordType": "mlb_immutable_locked_single_game_prediction",
+        },
     }
     row[id_field] = game_id
     return row
@@ -70,14 +89,19 @@ FINALS = [
         "commenceTime": "2026-07-12T19:07:00Z", "winner": "Away B", "slateDateEt": "2026-07-12",
     },
     {
-        "gameId": "different-final-id-1",
+        "gameId": "dh-1",
         "awayTeam": "Milwaukee Brewers", "homeTeam": "Pittsburgh Pirates",
         "commenceTime": "2026-07-12T17:06:00Z", "winner": "Milwaukee Brewers", "slateDateEt": "2026-07-12",
     },
     {
-        "gameId": "different-final-id-2",
+        "gameId": "dh-2",
         "awayTeam": "Milwaukee Brewers", "homeTeam": "Pittsburgh Pirates",
         "commenceTime": "2026-07-12T21:08:00Z", "winner": "Pittsburgh Pirates", "slateDateEt": "2026-07-12",
+    },
+    {
+        "gameId": "different-final-id",
+        "awayTeam": "Milwaukee Brewers", "homeTeam": "Pittsburgh Pirates",
+        "commenceTime": "2026-07-12T17:02:00Z", "winner": "Milwaukee Brewers", "slateDateEt": "2026-07-12",
     },
 ]
 
@@ -88,18 +112,22 @@ def main():
             delattr(DummyAudit, name)
     patch.apply(DummyAudit)
     rows = DummyAudit.audit_rows(FINALS)
-    assert len(rows) == 4, rows
-    assert all(row.get("status") == "GRADED" for row in rows), rows
-    assert all(row.get("correct") is True for row in rows), rows
+    assert len(rows) == 5, rows
+    assert [row.get("status") for row in rows] == [
+        "GRADED", "MISSING_CANONICAL_LOCK", "GRADED", "GRADED", "MISSING_CANONICAL_LOCK",
+    ], rows
+    assert rows[0].get("correct") is True, rows
+    assert rows[2].get("correct") is True, rows
+    assert rows[3].get("correct") is True, rows
     methods = [row.get("lockedCardAudit", {}).get("matchMethod") for row in rows]
-    assert methods[0] == "provider_game_id", methods
-    assert rows[0].get("lockedCardAudit", {}).get("providerAliasAware") is True, rows[0]
-    assert methods[1] == "teams_and_nearest_commence_time", methods
-    assert methods[2] == "teams_and_nearest_commence_time", methods
-    assert methods[3] == "teams_and_nearest_commence_time", methods
+    assert methods[0] == "exact_provider_game_id_and_teams", methods
+    assert methods[2] == "exact_provider_game_id_and_teams", methods
+    assert methods[3] == "exact_provider_game_id_and_teams", methods
     assert rows[2]["predictedWinner"] == "Milwaukee Brewers", rows[2]
     assert rows[3]["predictedWinner"] == "Pittsburgh Pirates", rows[3]
-    print("MLB settlement matching v3 verified: provider aliases, time drift, and doubleheaders remain distinct")
+    assert rows[1]["lockedCardAudit"]["missingReason"] == "no_exact_canonical_provider_game_id_match", rows[1]
+    assert rows[4]["lockedCardAudit"]["missingReason"] == "no_exact_canonical_provider_game_id_match", rows[4]
+    print("MLB settlement matching verified: exact canonical provider IDs grade; fuzzy joins fail closed; doubleheaders remain distinct")
 
 
 if __name__ == "__main__":

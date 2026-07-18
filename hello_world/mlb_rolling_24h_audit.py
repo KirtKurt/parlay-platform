@@ -15,6 +15,9 @@ ODDS_API_KEY = os.environ.get("ODDS_API_KEY", "")
 REPORT_PATH = "runtime_reports/mlb_rolling_24h_audit_latest.json"
 WINDOW_HOURS = 24
 TARGET_ACCURACY_PCT = 90.0
+CANONICAL_LOCK_RECORD_TYPE = "mlb_immutable_locked_single_game_prediction"
+CANONICAL_LOCK_AUTHORITY_VERSION = "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1"
+_CANONICAL_REJECTIONS_BY_SLATE: Dict[str, Dict[str, List[str]]] = {}
 HISTORICAL_AUDIT_WINDOW_DAYS = max(
     1,
     int(os.environ.get("INQSI_MLB_HISTORICAL_AUDIT_WINDOW_DAYS", "60")),
@@ -51,6 +54,145 @@ def now_iso() -> str:
 
 def normalize_team(name: Optional[str]) -> str:
     return " ".join((name or "").lower().strip().split())
+
+
+def _provider_game_id(row: Dict[str, Any]) -> str:
+    for key in ("gameId", "game_id", "providerGameId", "provider_game_id", "id"):
+        value = row.get(key)
+        if value not in (None, ""):
+            text = str(value).strip()
+            return text[len("provider:"):] if text.startswith("provider:") else text
+    identity = str(row.get("gameIdentity") or "").strip()
+    return identity[len("provider:"):] if identity.startswith("provider:") else ""
+
+
+def _canonical_lock_item_errors(item: Dict[str, Any], slate_date: str) -> List[str]:
+    """Validate the DynamoDB envelope and persisted stage proof for one lock row."""
+    errors: List[str] = []
+    data = item.get("data") if isinstance(item.get("data"), dict) else None
+    expected_pk = f"GAME_WINNERS#mlb#{slate_date}"
+    if item.get("PK") != expected_pk:
+        errors.append("canonical_pk_mismatch")
+    if not str(item.get("SK") or "").startswith("LOCKED#GAME#"):
+        errors.append("canonical_sk_missing")
+    if item.get("record_type") != CANONICAL_LOCK_RECORD_TYPE:
+        errors.append("canonical_record_type_mismatch")
+    if item.get("immutable_locked") is not True:
+        errors.append("immutable_locked_envelope_flag_missing")
+    if item.get("stage_authority_verified") is not True:
+        errors.append("stage_authority_envelope_flag_missing")
+    if not isinstance(data, dict):
+        errors.append("canonical_data_missing")
+        return sorted(set(errors))
+
+    identity = str(data.get("gameIdentity") or data.get("gameId") or data.get("game_id") or data.get("id") or "")
+    commence = str(data.get("commenceTime") or data.get("commence_time") or "")
+    if not identity or not commence:
+        errors.append("canonical_identity_or_commence_missing")
+    elif item.get("SK") != f"LOCKED#GAME#{commence}#{identity}":
+        errors.append("canonical_sk_payload_binding_mismatch")
+    if str(item.get("slate_date") or slate_date) != str(slate_date):
+        errors.append("canonical_slate_mismatch")
+    if item.get("game_identity") not in (None, "") and str(item.get("game_identity")) != identity:
+        errors.append("canonical_envelope_game_identity_mismatch")
+    if item.get("game_id") not in (None, "") and str(item.get("game_id")) != _provider_game_id(data):
+        errors.append("canonical_envelope_provider_game_id_mismatch")
+    if data.get("immutableLockedStorage") is not True:
+        errors.append("immutable_locked_payload_flag_missing")
+    if data.get("immutableLockedStorageKeyspace") != "LOCKED#GAME":
+        errors.append("immutable_locked_payload_keyspace_mismatch")
+
+    try:
+        import mlb_immutable_locked_storage_patch as immutable_storage
+
+        proof = data.get("canonicalPerGameStageAuthority") or {}
+        if item.get("immutable_locked_storage_version") != immutable_storage.VERSION:
+            errors.append("immutable_locked_envelope_version_mismatch")
+        if data.get("immutableLockedStorageVersion") != immutable_storage.VERSION:
+            errors.append("immutable_locked_payload_version_mismatch")
+        if item.get("stage_authority_version") != immutable_storage.AUTHORITY_VERSION:
+            errors.append("stage_authority_envelope_version_mismatch")
+        if not item.get("stage_fingerprint"):
+            errors.append("stage_fingerprint_envelope_missing")
+        elif not isinstance(proof, dict) or item.get("stage_fingerprint") != proof.get(
+            "stageFingerprint"
+        ):
+            errors.append("stage_fingerprint_envelope_payload_mismatch")
+        errors.extend(immutable_storage.validate_canonical_stage_authority(history.PULLS, data))
+    except Exception as exc:
+        errors.append(f"canonical_stage_authority_validator_failed:{type(exc).__name__}")
+    try:
+        import mlb_daily_lock_ml_vector_preservation_patch as exact_vector
+
+        errors.extend(exact_vector.validate_exact_locked_row(data))
+    except Exception as exc:
+        errors.append(f"exact_lock_vector_validator_failed:{type(exc).__name__}")
+    return sorted(set(errors))
+
+
+def _canonical_lock_authority(item: Dict[str, Any], slate_date: str) -> Dict[str, Any]:
+    data = item.get("data") or {}
+    return {
+        "version": CANONICAL_LOCK_AUTHORITY_VERSION,
+        "verified": True,
+        "consistentRead": True,
+        "sourcePk": item.get("PK"),
+        "sourceSk": item.get("SK"),
+        "recordType": item.get("record_type"),
+        "immutableLocked": item.get("immutable_locked") is True,
+        "stageAuthorityVerified": item.get("stage_authority_verified") is True,
+        "stageAuthorityVersion": item.get("stage_authority_version"),
+        "stageFingerprint": item.get("stage_fingerprint"),
+        "persistedStageAuthorityValidated": True,
+        "exactLockVectorValidated": True,
+        "slateDateEt": slate_date,
+        "providerGameId": _provider_game_id(data),
+        "exactProviderIdentityMatched": False,
+        "matchMethod": None,
+        "legacyOrDailyCardFallbackUsed": False,
+    }
+
+
+def _canonical_rejection_diagnostics(final: Dict[str, Any]) -> Dict[str, Any]:
+    slate = str(final.get("slateDateEt") or "")
+    provider_id = _provider_game_id(final)
+    reasons = list((_CANONICAL_REJECTIONS_BY_SLATE.get(slate) or {}).get(provider_id) or [])
+    invalid = bool(reasons)
+    effective_reasons = reasons or ["canonical_lock_item_not_found"]
+    return {
+        "canonicalLockEvidenceStatus": "INVALID" if invalid else "MISSING",
+        "canonicalLockValidationErrors": reasons,
+        "canonicalLockAuthority": {
+            "version": CANONICAL_LOCK_AUTHORITY_VERSION,
+            "verified": False,
+            "providerGameId": provider_id or None,
+            "rejectionReasons": effective_reasons,
+            "officialAuditEligible": False,
+            "learningEligible": False,
+        },
+    }
+
+
+def _is_canonical_graded_row(row: Dict[str, Any]) -> bool:
+    authority = row.get("canonicalLockAuthority") or {}
+    slate = str(row.get("slateDateEt") or "")
+    return bool(
+        row.get("status") == "GRADED"
+        and isinstance(authority, dict)
+        and authority.get("version") == CANONICAL_LOCK_AUTHORITY_VERSION
+        and authority.get("verified") is True
+        and authority.get("consistentRead") is True
+        and authority.get("immutableLocked") is True
+        and authority.get("stageAuthorityVerified") is True
+        and authority.get("persistedStageAuthorityValidated") is True
+        and authority.get("exactLockVectorValidated") is True
+        and authority.get("exactProviderIdentityMatched") is True
+        and authority.get("matchMethod") == "exact_provider_game_id_and_teams"
+        and authority.get("legacyOrDailyCardFallbackUsed") is False
+        and authority.get("sourcePk") == f"GAME_WINNERS#mlb#{slate}"
+        and str(authority.get("sourceSk") or "").startswith("LOCKED#GAME#")
+        and authority.get("recordType") == CANONICAL_LOCK_RECORD_TYPE
+    )
 
 
 def parse_dt(value: Any) -> Optional[datetime]:
@@ -128,16 +270,40 @@ def _query_predictions_for_slate(slate_date: str) -> List[Dict[str, Any]]:
     if history.PULLS is None:
         return []
     out: List[Dict[str, Any]] = []
+    rejections: Dict[str, List[str]] = {}
+    _CANONICAL_REJECTIONS_BY_SLATE[str(slate_date)] = rejections
     start_key = None
     while True:
-        args = {"KeyConditionExpression": history.Key("PK").eq(f"GAME_WINNERS#mlb#{slate_date}")}
+        args = {
+            "KeyConditionExpression": (
+                history.Key("PK").eq(f"GAME_WINNERS#mlb#{slate_date}")
+                & history.Key("SK").begins_with("LOCKED#GAME#")
+            ),
+            "ConsistentRead": True,
+        }
         if start_key:
             args["ExclusiveStartKey"] = start_key
         resp = history.PULLS.query(**args)
         for item in resp.get("Items") or []:
-            data = item.get("data") or item
-            if isinstance(data, dict):
-                out.append(data)
+            if not isinstance(item, dict):
+                continue
+            # Mutable GAME rows and immutable PRELOCK snapshots share this
+            # partition with canonical locks.  They are neither official audit
+            # candidates nor malformed lock evidence, so do not let their
+            # expected schema differences turn a genuinely missing lock into an
+            # INVALID_CANONICAL_LOCK result.
+            if not str(item.get("SK") or "").startswith("LOCKED#GAME#"):
+                continue
+            errors = _canonical_lock_item_errors(item, slate_date)
+            if errors:
+                data = item.get("data") if isinstance(item.get("data"), dict) else {}
+                provider_id = _provider_game_id(data) or str(item.get("game_id") or "")
+                if provider_id:
+                    rejections[provider_id] = sorted(set((rejections.get(provider_id) or []) + errors))
+                continue
+            data = dict(item.get("data") or {})
+            data["canonicalLockAuthority"] = _canonical_lock_authority(item, slate_date)
+            out.append(data)
         start_key = resp.get("LastEvaluatedKey")
         if not start_key:
             break
@@ -149,7 +315,9 @@ def predictions_index(finals: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]
     index: Dict[str, Dict[str, Any]] = {}
     for slate in dates:
         for pred in _query_predictions_for_slate(slate):
-            key = f"{normalize_team(pred.get('awayTeam'))}|{normalize_team(pred.get('homeTeam'))}"
+            key = _provider_game_id(pred)
+            if not key:
+                continue
             current = index.get(key)
             if current is None or str(pred.get("createdAt") or "") > str(current.get("createdAt") or ""):
                 index[key] = pred
@@ -160,10 +328,42 @@ def audit_rows(finals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     index = predictions_index(finals)
     rows = []
     for final in finals:
-        pred = index.get(final.get("gameKeyBase")) or {}
+        provider_id = _provider_game_id(final)
+        pred = index.get(provider_id) or {}
         if not pred:
-            rows.append({**final, "status": "MISSING_PREDICTION"})
+            diagnostics = _canonical_rejection_diagnostics(final)
+            rows.append({
+                **final,
+                "status": (
+                    "INVALID_CANONICAL_LOCK"
+                    if diagnostics.get("canonicalLockEvidenceStatus") == "INVALID"
+                    else "MISSING_CANONICAL_LOCK"
+                ),
+                **diagnostics,
+            })
             continue
+        teams_match = (
+            normalize_team(pred.get("awayTeam")) == normalize_team(final.get("awayTeam"))
+            and normalize_team(pred.get("homeTeam")) == normalize_team(final.get("homeTeam"))
+        )
+        if not provider_id or not teams_match:
+            rows.append({
+                **final,
+                "status": "CANONICAL_LOCK_IDENTITY_MISMATCH",
+                "canonicalLockAuthority": {
+                    **dict(pred.get("canonicalLockAuthority") or {}),
+                    "verified": False,
+                    "rejectionReasons": ["exact_provider_id_matched_but_teams_mismatched"],
+                    "officialAuditEligible": False,
+                    "learningEligible": False,
+                },
+            })
+            continue
+        authority = dict(pred.get("canonicalLockAuthority") or {})
+        authority.update({
+            "exactProviderIdentityMatched": True,
+            "matchMethod": "exact_provider_game_id_and_teams",
+        })
         correct = normalize_team(pred.get("predictedWinner")) == normalize_team(final.get("winner"))
         rows.append({
             **final,
@@ -180,6 +380,7 @@ def audit_rows(finals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "winnerOptimizer": pred.get("winnerOptimizer"),
             "homeSignal": pred.get("homeSignal"),
             "awaySignal": pred.get("awaySignal"),
+            "canonicalLockAuthority": authority,
             "correct": correct,
         })
     return rows
@@ -197,7 +398,7 @@ def _historical_key(row: Dict[str, Any]) -> str:
 def _dedupe_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     seen: Dict[str, Dict[str, Any]] = {}
     for row in rows or []:
-        if row.get("status") != "GRADED":
+        if not _is_canonical_graded_row(row):
             continue
         key = _historical_key(row)
         if key not in seen:
@@ -242,7 +443,7 @@ def historical_audit_rows(limit: Optional[int] = None) -> List[Dict[str, Any]]:
                 window_complete = True
                 break
             for row in data.get("rows") or []:
-                if row.get("status") != "GRADED":
+                if not _is_canonical_graded_row(row):
                     continue
                 key = _historical_key(row)
                 if key not in seen:
@@ -435,6 +636,12 @@ def summarize(rows: List[Dict[str, Any]], historical_rows: Optional[List[Dict[st
         "completedFinalGames": len(rows),
         "gradedPredictionCount": len(graded),
         "missingPredictionCount": len(rows) - len(graded),
+        "invalidCanonicalLockCount": sum(
+            1 for row in rows if row.get("status") == "INVALID_CANONICAL_LOCK"
+        ),
+        "missingCanonicalLockCount": sum(
+            1 for row in rows if row.get("status") == "MISSING_CANONICAL_LOCK"
+        ),
         "optimizedPickCount": len(graded),
         "optimizedCorrect": len(correct),
         "optimizedWrong": len(graded) - len(correct),

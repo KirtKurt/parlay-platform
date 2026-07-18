@@ -273,8 +273,27 @@ def main() -> int:
     assert "milwaukee brewers|pittsburgh pirates" in result["slateCoverage"]["doubleheaderMatchups"]
 
     prediction_rows = result["predictions"]
+    authority_version = "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1"
+    for prediction in prediction_rows:
+        identity = prediction.get("gameIdentity") or prediction.get("gameId")
+        commence = prediction.get("commenceTime")
+        prediction["canonicalLockAuthority"] = {
+            "version": authority_version,
+            "verified": True,
+            "consistentRead": True,
+            "sourcePk": "GAME_WINNERS#mlb#2020-07-11",
+            "sourceSk": f"LOCKED#GAME#{commence}#{identity}",
+            "recordType": "mlb_immutable_locked_single_game_prediction",
+            "immutableLocked": True,
+            "stageAuthorityVerified": True,
+            "persistedStageAuthorityValidated": True,
+            "exactLockVectorValidated": True,
+            "legacyOrDailyCardFallbackUsed": False,
+        }
 
     class AuditModule:
+        CANONICAL_LOCK_AUTHORITY_VERSION = authority_version
+
         @staticmethod
         def normalize_team(name):
             return " ".join(str(name or "").lower().split())
@@ -319,7 +338,10 @@ def main() -> int:
     assert len(audited) == 3
     assert all(row.get("status") == "GRADED" for row in audited)
     assert all(row.get("correct") is True for row in audited)
-    assert all((row.get("lockedCardAudit") or {}).get("matchMethod") == "provider_game_id" for row in audited)
+    assert all(
+        (row.get("lockedCardAudit") or {}).get("matchMethod") == "exact_provider_game_id_and_teams"
+        for row in audited
+    )
     assert audited[0]["predictedWinner"] != audited[1]["predictedWinner"]
 
     # Missing, tampered, and odds-subset pull evidence must all fail closed;

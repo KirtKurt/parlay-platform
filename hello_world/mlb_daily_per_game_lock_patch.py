@@ -11,7 +11,10 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import uuid4
 
 import inqsi_pull_history as history_contract
-from mlb_slate_coverage_patch import game_identity
+from mlb_slate_coverage_patch import (
+    AUTHORITY_VERSION as PREGAME_PUBLIC_AUTHORITY_VERSION,
+    game_identity,
+)
 
 PAYLOAD_FINGERPRINT_VERSION = history_contract.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
 
@@ -28,8 +31,11 @@ ATTEMPT_OUTCOME_RECORD_TYPE = "mlb_per_game_lock_attempt_outcome_diagnostic"
 PROMOTION_POLICY_VERSION = "MLB-LAST-PRELOCK-PROMOTION-v1-at-cutoff-no-rescore"
 PREGAME_SNAPSHOT_RECORD_TYPE = "mlb_immutable_prelock_prediction_snapshot"
 LIVE_PREDICTION_RECORD_TYPE = "mlb_single_game_moneyline_prediction"
-PREGAME_SNAPSHOT_VERSION = "MLB-PREGAME-PREDICTION-SNAPSHOT-v2-post-write-ack"
+PREGAME_SNAPSHOT_VERSION = "MLB-PREGAME-PREDICTION-SNAPSHOT-v3-user-visible-platform-prelock"
 PREGAME_PERSISTENCE_PROOF_TYPE = "DDB_LIVE_PREDICTION_PUT_SUCCESS_ACK-v1"
+PREGAME_SNAPSHOT_ROLE = "USER_VISIBLE_PLATFORM_PRELOCK"
+PREGAME_DISPLAY_STATUS = "PRE_LOCK_PLATFORM_PREDICTION"
+PREGAME_DISPLAY_SURFACE = "nonOfficialPredictionDisplay"
 
 _DIAGNOSTIC_STATES = {
     "WAITING_FOR_CUTOFF_STABILIZATION",
@@ -50,6 +56,68 @@ def _supported_payload_fingerprint_version(value: Any) -> bool:
     # was added.  It is still required to match the canonical persisted-row
     # hash; unknown named algorithms always fail closed.
     return value in (None, "", PAYLOAD_FINGERPRINT_VERSION)
+
+
+def _public_prelock_marker_errors(
+    item: Dict[str, Any],
+    row: Dict[str, Any],
+) -> List[str]:
+    """Validate the explicit public-display authority carried by a snapshot."""
+    errors: List[str] = []
+    if item.get("snapshot_version") != PREGAME_SNAPSHOT_VERSION:
+        errors.append("persisted_prelock_snapshot_version_mismatch")
+    if item.get("snapshot_role") != PREGAME_SNAPSHOT_ROLE:
+        errors.append("persisted_prelock_snapshot_role_mismatch")
+    if item.get("public_authority_version") != PREGAME_PUBLIC_AUTHORITY_VERSION:
+        errors.append("persisted_prelock_public_authority_version_mismatch")
+    if item.get("user_visible") is not True:
+        errors.append("persisted_prelock_user_visible_marker_missing")
+    if item.get("display_prediction") is not True:
+        errors.append("persisted_prelock_display_prediction_marker_missing")
+    if item.get("display_status") != PREGAME_DISPLAY_STATUS:
+        errors.append("persisted_prelock_display_status_mismatch")
+    if item.get("display_surface") != PREGAME_DISPLAY_SURFACE:
+        errors.append("persisted_prelock_display_surface_mismatch")
+    # Snapshot v3 was introduced together with the named canonical hash
+    # contract.  A missing algorithm identifier can only belong to an older
+    # snapshot and must not be accepted under the v3 public-authority markers.
+    if item.get("prediction_payload_fingerprint_version") != PAYLOAD_FINGERPRINT_VERSION:
+        errors.append("persisted_prelock_payload_fingerprint_version_mismatch")
+
+    per_game = row.get("perGameCanonicalLock") or {}
+    tags = {str(value) for value in (row.get("tags") or [])}
+    if row.get("lockedPrediction") is not False:
+        errors.append("persisted_prelock_row_locked_marker_invalid")
+    if row.get("officialPrediction") is not False:
+        errors.append("persisted_prelock_row_official_marker_invalid")
+    if row.get("officialPredictionStatus") != PREGAME_DISPLAY_STATUS:
+        errors.append("persisted_prelock_row_display_status_mismatch")
+    if row.get("displayPrediction") is not True:
+        errors.append("persisted_prelock_row_display_prediction_missing")
+    if row.get("displayGroup") != "pre_lock_prediction":
+        errors.append("persisted_prelock_row_display_group_mismatch")
+    if "PRE_LOCK_PREDICTION" not in tags:
+        errors.append("persisted_prelock_row_display_tag_missing")
+    if not isinstance(per_game, dict):
+        errors.append("persisted_prelock_row_public_authority_missing")
+        per_game = {}
+    if per_game.get("authorityVersion") != PREGAME_PUBLIC_AUTHORITY_VERSION:
+        errors.append("persisted_prelock_row_public_authority_version_mismatch")
+    if per_game.get("status") != "OPEN_PRE_LOCK":
+        errors.append("persisted_prelock_row_public_status_not_open")
+    if per_game.get("canonical") is not False:
+        errors.append("persisted_prelock_row_canonical_marker_invalid")
+    signal_policy = row.get("signalPolicyV13") or {}
+    row_signal_version = (
+        signal_policy.get("version") if isinstance(signal_policy, dict) else None
+    )
+    if not row_signal_version:
+        errors.append("persisted_prelock_signal_policy_version_missing")
+    if not item.get("signal_policy_version"):
+        errors.append("persisted_prelock_snapshot_signal_policy_version_missing")
+    if item.get("signal_policy_version") != row_signal_version:
+        errors.append("persisted_prelock_signal_policy_version_mismatch")
+    return sorted(set(errors))
 
 
 def _parse_dt(module: Any, value: Any) -> Optional[datetime]:
@@ -373,6 +441,19 @@ def _candidate_snapshot_authority_errors(table: Any, item: Dict[str, Any]) -> Li
         or proof.get("snapshotVersion") != PREGAME_SNAPSHOT_VERSION
     ):
         errors.append("candidate_snapshot_version_mismatch")
+    errors.extend(_public_prelock_marker_errors(candidate, candidate_row))
+    marker_proof_fields = (
+        ("snapshot_role", "snapshotRole"),
+        ("public_authority_version", "publicAuthorityVersion"),
+        ("user_visible", "userVisible"),
+        ("display_prediction", "displayPrediction"),
+        ("display_status", "displayStatus"),
+        ("display_surface", "displaySurface"),
+        ("signal_policy_version", "signalPolicyVersion"),
+    )
+    for stored_key, proof_key in marker_proof_fields:
+        if candidate.get(stored_key) != proof.get(proof_key):
+            errors.append(f"candidate_snapshot_{stored_key}_proof_mismatch")
     candidate_fingerprint_version = candidate.get("prediction_payload_fingerprint_version")
     proof_fingerprint_version = proof.get("predictionPayloadFingerprintVersion")
     fingerprint_contract_ready = bool(
@@ -1301,6 +1382,8 @@ def _team_win_probability_pct(row: Dict[str, Any]) -> Any:
 
     probability = row.get("winProbability")
     if probability in (None, ""):
+        probability = _frozen_selected_team_probability(row)
+    if probability in (None, ""):
         side = row.get("predictedSide")
         signal = row.get("homeSignal") if side == "home" else row.get("awaySignal")
         signal = signal if isinstance(signal, dict) else {}
@@ -1312,6 +1395,40 @@ def _team_win_probability_pct(row: Dict[str, Any]) -> Any:
             return None
         return probability * 100
     except (TypeError, ValueError):
+        return None
+
+
+def _frozen_selected_team_probability(row: Dict[str, Any]) -> Any:
+    """Read the selected-team value only from a fingerprint-valid frozen vector."""
+    vector = row.get("frozenFeatureVector") or {}
+    if not isinstance(vector, dict) or not vector:
+        return None
+    try:
+        import mlb_ml_clean_cohort_v1 as cohort
+
+        labels = vector.get("labels") or {}
+        if (
+            vector.get("version") != cohort.FEATURE_SNAPSHOT_VERSION
+            or vector.get("fingerprintVersion") != cohort.FINGERPRINT_VERSION
+            or vector.get("fingerprint") != cohort.fingerprint_for_vector(vector)
+            or str(vector.get("gameId") or "") != str(row.get("gameId") or "")
+            or vector.get("predictedSide") != row.get("predictedSide")
+            or _norm(vector.get("predictedWinner")) != _norm(row.get("predictedWinner"))
+            or not {"homeWon", "pickCorrect"}.issubset(labels)
+            or labels.get("homeWon") is not None
+            or labels.get("pickCorrect") is not None
+        ):
+            return None
+        features = vector.get("features") or {}
+        value = features.get("selectedTeamWinProbability")
+        if value in (None, ""):
+            # The canonical clean-cohort vector calls this same selected-side
+            # persisted probability ``selectedMarketProb``.
+            value = features.get("selectedMarketProb")
+        if value in (None, "") or isinstance(value, bool) or value < 0 or value > 1:
+            return None
+        return value
+    except (ImportError, AttributeError, TypeError, ValueError):
         return None
 
 
@@ -1432,9 +1549,9 @@ def _last_prelock_candidate(
         eligible.append((persisted_at, created_at, source_at, item, row))
     if not eligible:
         return None, None, [], [
-            "no_persisted_prelock_prediction_at_or_before_cutoff"
+            "no_persisted_user_visible_platform_prelock_prediction_at_or_before_cutoff"
             if observed_prelock == 0
-            else "no_valid_persisted_prelock_prediction"
+            else "no_valid_user_visible_platform_prelock_prediction"
         ]
 
     rejected: List[Dict[str, Any]] = []
@@ -1443,9 +1560,7 @@ def _last_prelock_candidate(
         key=lambda entry: (entry[0], entry[1], entry[2]),
         reverse=True,
     ):
-        errors: List[str] = []
-        if item.get("snapshot_version") != PREGAME_SNAPSHOT_VERSION:
-            errors.append("persisted_prelock_snapshot_version_mismatch")
+        errors: List[str] = _public_prelock_marker_errors(item, row)
         raw_fingerprint_version = item.get("prediction_payload_fingerprint_version")
         fingerprint_version = (
             None
@@ -1537,6 +1652,13 @@ def _last_prelock_candidate(
             "sk": item.get("SK"),
             "recordType": item.get("record_type"),
             "snapshotVersion": item.get("snapshot_version"),
+            "snapshotRole": item.get("snapshot_role"),
+            "publicAuthorityVersion": item.get("public_authority_version"),
+            "userVisible": item.get("user_visible"),
+            "displayPrediction": item.get("display_prediction"),
+            "displayStatus": item.get("display_status"),
+            "displaySurface": item.get("display_surface"),
+            "signalPolicyVersion": item.get("signal_policy_version"),
             "predictionCreatedAtUtc": created_at.isoformat(),
             "predictionPersistedAtUtc": persisted_at.isoformat(),
             "persistenceProofType": item.get("prediction_persistence_proof_type"),
@@ -1567,7 +1689,10 @@ def _last_prelock_candidate(
         for rejection in rejected
         for error in (rejection.get("errors") or [])
     })
-    return None, None, [], ["no_valid_persisted_prelock_prediction", *rejection_errors]
+    return None, None, [], [
+        "no_valid_user_visible_platform_prelock_prediction",
+        *rejection_errors,
+    ]
 
 
 def _validate_stage(
@@ -1619,10 +1744,23 @@ def _validate_stage(
         errors.append("candidate_post_write_ack_proof_missing")
     if candidate_proof.get("snapshotVersion") != PREGAME_SNAPSHOT_VERSION:
         errors.append("candidate_snapshot_version_mismatch")
-    if not _supported_payload_fingerprint_version(
+    if candidate_proof.get("snapshotRole") != PREGAME_SNAPSHOT_ROLE:
+        errors.append("candidate_snapshot_role_mismatch")
+    if candidate_proof.get("publicAuthorityVersion") != PREGAME_PUBLIC_AUTHORITY_VERSION:
+        errors.append("candidate_public_authority_version_mismatch")
+    if candidate_proof.get("userVisible") is not True:
+        errors.append("candidate_user_visible_marker_missing")
+    if candidate_proof.get("displayPrediction") is not True:
+        errors.append("candidate_display_prediction_marker_missing")
+    if candidate_proof.get("displayStatus") != PREGAME_DISPLAY_STATUS:
+        errors.append("candidate_display_status_mismatch")
+    if candidate_proof.get("displaySurface") != PREGAME_DISPLAY_SURFACE:
+        errors.append("candidate_display_surface_mismatch")
+    if (
         candidate_proof.get("predictionPayloadFingerprintVersion")
+        != PAYLOAD_FINGERPRINT_VERSION
     ):
-        errors.append("candidate_payload_fingerprint_version_unsupported")
+        errors.append("candidate_payload_fingerprint_version_mismatch")
     if row.get("modelOrSignalRecomputedAtLock") is not False:
         errors.append("row_lock_rescore_not_explicitly_disabled")
     if row.get("lastPrelockPromotionVersion") != PROMOTION_POLICY_VERSION:
