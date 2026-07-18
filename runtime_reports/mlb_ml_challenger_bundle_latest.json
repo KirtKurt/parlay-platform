@@ -1,7 +1,7 @@
 {
   "ok": true,
   "version": "MLB-ML-OPTIMIZATION-v3.2-90pct-rolling-slate-automatic-promotion",
-  "createdAtUtc": "2026-07-18T20:32:41.182157+00:00",
+  "createdAtUtc": "2026-07-18T21:36:09.638161+00:00",
   "sport": "mlb",
   "mode": "SHADOW_CHALLENGER",
   "cleanCohort": {
@@ -9,8 +9,8 @@
     "version": "MLB-ML-CLEAN-COHORT-v2-lock-safe-temporal-missingness+MLB-ML-CLEAN-COHORT-HARDENING-v7-lock-safe-temporal-missingness",
     "featureSnapshotVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness",
     "minimumLockAtUtc": "2026-07-13T00:20:03+00:00",
-    "inputRows": 14,
-    "cleanRowCount": 1,
+    "inputRows": 15,
+    "cleanRowCount": 2,
     "quarantinedRowCount": 13,
     "quarantineReasonCounts": {
       "feature_vector_not_proven_immutable": 13,
@@ -46,7 +46,7 @@
       "wrong_frozen_feature_vector_version": 13
     },
     "policy": "Only post-fix immutable locked rows with explicit modern probability semantics and pre-lock source timestamps may train ML.",
-    "deduplicatedIdentityCount": 14,
+    "deduplicatedIdentityCount": 15,
     "supersededValidDuplicateCount": 0,
     "validCandidateWinsDuplicateSelection": true,
     "hardeningVersion": "MLB-ML-CLEAN-COHORT-HARDENING-v7-lock-safe-temporal-missingness",
@@ -65,12 +65,12 @@
   "dualModel": {
     "ok": false,
     "version": "MLB-ML-DUAL-MODEL-v1.3-lock-safe-temporal-missingness-price-coverage-only",
-    "recordCount": 1,
+    "recordCount": 2,
     "split": {
       "ok": false,
       "version": "MLB-ML-WALK-FORWARD-v1-train-validation-untouched-test",
       "reason": "insufficient_clean_rows_for_three_way_chronological_split",
-      "rowCount": 1,
+      "rowCount": 2,
       "required": 140,
       "actualMinimumRequired": 140,
       "minimums": {
@@ -89,7 +89,7 @@
     },
     "status": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
     "dataQuality": {
-      "recordCount": 1,
+      "recordCount": 2,
       "averageFundamentalsCompletenessPct": 9.09,
       "rowsWithAtLeast75PctFundamentals": 0,
       "priceCoveragePct": 100.0,
@@ -100,7 +100,7 @@
   "promotionGate": {
     "ok": true,
     "version": "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion",
-    "evaluatedAtUtc": "2026-07-18T20:32:58.196305+00:00",
+    "evaluatedAtUtc": "2026-07-18T21:36:19.837524+00:00",
     "automaticPromotionEnabled": true,
     "automaticPromotionRequiresPassedApplicableGates": true,
     "promotionEligible": false,
@@ -110,7 +110,7 @@
     "directionAuthorityEnabled": false,
     "playabilityAuthorityEnabled": false,
     "directionChecks": {
-      "cleanOfficialCount": 1,
+      "cleanOfficialCount": 2,
       "minimumCleanOfficial": 500,
       "untouchedTestCount": 0,
       "minimumUntouchedTest": 100,
@@ -129,12 +129,12 @@
       "marketLogLoss": null,
       "outcomeCalibrationError": null,
       "maximumCalibrationError": 0.08,
-      "rolling24hSlateAccuracyPct": 0.0,
+      "rolling24hSlateAccuracyPct": 50.0,
       "minimumRolling24hSlateAccuracyPct": 90.0,
       "rolling24hSlateAccuracyAvailable": true
     },
     "playabilityChecks": {
-      "cleanOfficialCount": 1,
+      "cleanOfficialCount": 2,
       "minimumCleanOfficial": 500,
       "untouchedTestCount": 0,
       "minimumUntouchedTest": 100,
@@ -153,16 +153,16 @@
       "minimumSelectedExactOddsCoveragePct": 90.0,
       "selectedCalibrationError": null,
       "maximumSelectedCalibrationError": 0.1,
-      "rolling24hSlateAccuracyPct": 0.0,
+      "rolling24hSlateAccuracyPct": 50.0,
       "minimumRolling24hSlateAccuracyPct": 90.0,
       "rolling24hSlateAccuracyAvailable": true,
       "rolling24hSlateAccuracyProgress": {
         "reportingOnly": true,
-        "actualRolling24hSlateAccuracyPct": 0.0,
+        "actualRolling24hSlateAccuracyPct": 50.0,
         "milestones": [
           {
             "accuracyPct": 50.0,
-            "reached": false
+            "reached": true
           },
           {
             "accuracyPct": 60.0,
@@ -177,8 +177,8 @@
             "reached": false
           }
         ],
-        "highestReachedPct": null,
-        "nextMilestonePct": 50.0,
+        "highestReachedPct": 50.0,
+        "nextMilestonePct": 60.0,
         "promotionTargetPct": 90.0,
         "affectsPromotionEligibility": false
       }
@@ -191,7 +191,7 @@
       },
       {
         "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
-        "actual": 1,
+        "actual": 2,
         "required": 500
       },
       {
@@ -231,7 +231,7 @@
       },
       {
         "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
-        "actual": 0.0,
+        "actual": 50.0,
         "required": 90.0
       }
     ],
@@ -243,7 +243,7 @@
       },
       {
         "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
-        "actual": 1,
+        "actual": 2,
         "required": 500
       },
       {
@@ -289,7 +289,7 @@
       },
       {
         "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
-        "actual": 0.0,
+        "actual": 50.0,
         "required": 90.0
       }
     ],
@@ -301,7 +301,7 @@
       },
       {
         "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
-        "actual": 1,
+        "actual": 2,
         "required": 500
       },
       {
@@ -341,7 +341,7 @@
       },
       {
         "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
-        "actual": 0.0,
+        "actual": 50.0,
         "required": 90.0
       },
       {
@@ -389,11 +389,11 @@
     },
     "rolling24hSlateAccuracyProgress": {
       "reportingOnly": true,
-      "actualRolling24hSlateAccuracyPct": 0.0,
+      "actualRolling24hSlateAccuracyPct": 50.0,
       "milestones": [
         {
           "accuracyPct": 50.0,
-          "reached": false
+          "reached": true
         },
         {
           "accuracyPct": 60.0,
@@ -408,8 +408,8 @@
           "reached": false
         }
       ],
-      "highestReachedPct": null,
-      "nextMilestonePct": 50.0,
+      "highestReachedPct": 50.0,
+      "nextMilestonePct": 60.0,
       "promotionTargetPct": 90.0,
       "affectsPromotionEligibility": false
     },
@@ -438,7 +438,7 @@
   "automaticPromotionSupported": true,
   "automaticPromotionEnabled": true,
   "automaticPromotionRequiresPassedApplicableGates": true,
-  "rolling24hSlateAccuracyPct": 0.0,
+  "rolling24hSlateAccuracyPct": 50.0,
   "legacyTrainerAuthorityDisabled": true,
   "legacyTrainingArtifacts": "diagnostic_only_not_authoritative",
   "policy": "Only the exact stored post-fix lock-time feature vector may train the dual challenger. In the authoritative AWS audit, direction and playability promote independently and automatically only after their applicable gates pass; playability also requires a current rolling 24-hour MLB slate accuracy average of at least 90%.",
@@ -446,7 +446,7 @@
     "ok": true,
     "latestPk": "MLB_ML_OPTIMIZATION#V3",
     "latestSk": "CHALLENGER#LATEST",
-    "runSk": "CHALLENGER#2026-07-18T20:32:41.182157+00:00"
+    "runSk": "CHALLENGER#2026-07-18T21:36:09.638161+00:00"
   },
   "promotion": {
     "ok": true,
