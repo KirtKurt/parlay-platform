@@ -17,6 +17,15 @@ Parameters:
     Default: NONE
     Description: Payment-provider-neutral switch. Use NONE until final provider is selected.
 
+  DeployGitSha:
+    Type: String
+    Default: unknown
+    Description: Exact Git commit deployed to AWS
+  DeployTemplateSha256:
+    Type: String
+    Default: unknown
+    Description: SHA-256 of the canonical SAM template deployed to AWS
+
 Globals:
   Function:
     Runtime: python3.11
@@ -27,6 +36,8 @@ Globals:
         SNAPSHOTS_TABLE: !Ref SnapshotsTable
         SIGNALS_TABLE: !Ref SignalsTable
         ODDS_API_KEY: !Ref OddsApiKey
+        INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256
+        INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
         MLB_MIN_EV_FOR_PROMOTION: '0.0'
         MLB_PROMOTION_FALLBACK_EDGE_THRESHOLD: '0.0005'
         MLB_PROMOTION_EDGE_THRESHOLD: '0.0015'
