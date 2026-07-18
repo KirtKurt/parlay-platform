@@ -68,6 +68,27 @@ def set_global_env(s: str, key: str, value: str) -> str:
             return "".join(lines)
     return add_global_env(s, key, value)
 
+
+def ensure_deploy_identity_parameters(s: str) -> str:
+    required = ("  DeployGitSha:\n", "  DeployTemplateSha256:\n")
+    if all(token in s for token in required):
+        return s
+    marker = "Globals:\n"
+    if marker not in s:
+        raise RuntimeError("Globals marker missing")
+    block = """  DeployGitSha:
+    Type: String
+    Default: unknown
+    Description: Exact Git commit deployed to AWS
+  DeployTemplateSha256:
+    Type: String
+    Default: unknown
+    Description: SHA-256 of the canonical SAM template deployed to AWS
+
+"""
+    return s.replace(marker, block + marker, 1)
+
+
 def patch_mlb_hot_block(s: str) -> str:
     lines = s.splitlines(keepends=True)
     out = []
@@ -112,6 +133,8 @@ def block_for(s: str, name: str) -> str:
     return "".join(out)
 
 
+text = ensure_deploy_identity_parameters(text)
+
 # Remove old/dedicated MLB route functions that caused API Gateway/Lambda 502 on smoke tests.
 # The stable ApiFunction proxy handles /v1/mlb/* through usercustomize.py.
 text = remove_resource(text, "InqsiMLBV1CoreFunction")
@@ -123,6 +146,8 @@ text = patch_mlb_hot_block(text)
 text = text.replace('"days_ahead":1', '"days_ahead":0').replace('"days_ahead": 1', '"days_ahead": 0')
 
 for key, value in [
+    ("INQSI_DEPLOY_GIT_SHA", "!Ref DeployGitSha"),
+    ("INQSI_DEPLOY_TEMPLATE_SHA256", "!Ref DeployTemplateSha256"),
     ("MLB_PULL_START_AT_ET", "'01:00'"),
     ("MLB_SCHED_INTERVAL_MINUTES", "'15'"),
     ("ODDS_PRIMARY_BOOK", "'fanduel'"),
@@ -139,7 +164,7 @@ text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
       CodeUri: hello_world/
       Handler: mlb_daily_pick_lock.lambda_handler
       # A full-slate lock invocation performs fail-closed, strongly consistent
-      # readback of immutable pull manifests before any write.  A large MLB
+      # readback of immutable pull manifests before any write. A large MLB
       # pull history can legitimately exceed the 60-second global default.
       Timeout: 300
       MemorySize: 1024
@@ -186,9 +211,16 @@ text = text.replace('"includeFullMlbSnapshots":true', '"includeFullMlbSnapshots"
 
 hot = block_for(text, "MLBHotEvery15Min")
 violations = []
-for required in ["MLBDailyPickLockFunction:", "Path: /v1/mlb/locks/status"]:
+for required, message in [
+    ("  DeployGitSha:", "DeployGitSha parameter missing"),
+    ("  DeployTemplateSha256:", "DeployTemplateSha256 parameter missing"),
+    ("INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha", "deploy Git SHA environment missing"),
+    ("INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256", "deploy template SHA environment missing"),
+    ("MLBDailyPickLockFunction:", "daily lock function missing"),
+    ("Path: /v1/mlb/locks/status", "lock status route missing"),
+]:
     if required not in text:
-        violations.append(f"missing {required}")
+        violations.append(message)
 if "Schedule: cron(0/15 * * * ? *)" not in hot:
     violations.append("MLBHotEvery15Min is not quarter-hour cron")
 if '"days_ahead":1' in text or '"days_ahead": 1' in text:
@@ -200,4 +232,4 @@ if violations:
     raise RuntimeError("Unsafe MLB SAM template after patch: " + "; ".join(violations))
 
 TEMPLATE.write_text(text)
-print("Patched template.yaml: MLB uses stable proxy routes, quarter-hour MLB HOT schedule, and daily lock.")
+print("Patched template.yaml: canonical quarter-hour MLB ingest, exact deploy identity, and daily lock.")
