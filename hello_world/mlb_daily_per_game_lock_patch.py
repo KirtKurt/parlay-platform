@@ -991,6 +991,15 @@ def _prepare_row(
     fingerprint_version: Optional[str] = PAYLOAD_FINGERPRINT_VERSION,
 ) -> Dict[str, Any]:
     out = copy.deepcopy(row)
+    # Older persisted pre-lock rows may carry the selected-team probability
+    # under one of the already-authoritative probability aliases.  Promote that
+    # exact persisted value before freezing; this is field normalization only,
+    # never a model/signal recomputation.  _selection_material applies the same
+    # normalization so the candidate selection fingerprint remains unchanged.
+    team_probability = _team_win_probability_pct(out)
+    if team_probability in (None, ""):
+        raise RuntimeError("LAST_PRELOCK_TEAM_WIN_PROBABILITY_MISSING")
+    out["teamWinProbabilityPct"] = team_probability
     selection_fingerprint = _payload_fingerprint(
         _selection_material(out), fingerprint_version
     )
@@ -1240,7 +1249,7 @@ def _candidate_source_id(item: Dict[str, Any], row: Dict[str, Any]) -> str:
 
 
 def _selection_material(row: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    material = {
         key: copy.deepcopy(row.get(key))
         for key in (
             "predictedWinner",
@@ -1269,6 +1278,41 @@ def _selection_material(row: Dict[str, Any]) -> Dict[str, Any]:
             "fundamentalsSnapshot",
         )
     }
+    material["teamWinProbabilityPct"] = copy.deepcopy(
+        _team_win_probability_pct(row)
+    )
+    return material
+
+
+def _team_win_probability_pct(row: Dict[str, Any]) -> Any:
+    """Return an existing persisted selected-team probability as a percent.
+
+    The aliases are ordered from the explicit modern field to legacy fields.
+    Deriving percent from a 0..1 probability is a unit conversion, and the
+    chosen side's ``probLatest`` is used only when that exact persisted signal
+    is the sole available probability.  No scoring inputs are consulted.
+    """
+    direct = row.get("teamWinProbabilityPct")
+    if direct not in (None, ""):
+        return direct
+    legacy_pct = row.get("winProbabilityPct")
+    if legacy_pct not in (None, ""):
+        return legacy_pct
+
+    probability = row.get("winProbability")
+    if probability in (None, ""):
+        side = row.get("predictedSide")
+        signal = row.get("homeSignal") if side == "home" else row.get("awaySignal")
+        signal = signal if isinstance(signal, dict) else {}
+        probability = signal.get("probLatest")
+    if probability in (None, "") or isinstance(probability, bool):
+        return None
+    try:
+        if probability < 0 or probability > 1:
+            return None
+        return probability * 100
+    except (TypeError, ValueError):
+        return None
 
 
 def _payload_fingerprint(
@@ -1536,7 +1580,7 @@ def _validate_stage(
 ) -> List[str]:
     errors: List[str] = []
     row = (item.get("data") or {}).get("row") or {}
-    expected_manifest = [game_identity(entry) for entry in manifest]
+    expected_manifest = _canonical_manifest_identities(manifest)
     actual_manifest = list((item.get("data") or {}).get("manifestGameIdentities") or [])
     lock_at = _lock_at(module, game)
     start = _start(module, game)
@@ -1658,7 +1702,7 @@ def _provider_manifest_authority(
     if not isinstance(authority, dict) or not authority:
         raise RuntimeError("provider_manifest_authority_missing")
     out = copy.deepcopy(authority)
-    out["canonicalGameIdentities"] = [game_identity(entry) for entry in manifest]
+    out["canonicalGameIdentities"] = _canonical_manifest_identities(manifest)
     return out
 
 
@@ -1668,6 +1712,19 @@ def _provider_schedule_material(games: Iterable[Dict[str, Any]]) -> List[Dict[st
         [history_contract._provider_manifest_game("mlb", game) for game in games or []],
         key=history_contract._manifest_sort_key,
     )
+
+
+def _canonical_manifest_identities(games: Iterable[Dict[str, Any]]) -> List[str]:
+    """Canonical identities in the immutable provider manifest's exact order."""
+    # Sort the caller's original schedule rows rather than the normalized
+    # material: normalization intentionally synthesizes ``game_id`` from a
+    # fallback key, which would change ``key:...`` identities into
+    # ``provider:...`` for legacy provider rows without an ID.
+    ordered = sorted(
+        list(games or []),
+        key=history_contract._manifest_sort_key,
+    )
+    return [game_identity(game) for game in ordered]
 
 
 def _manifest_authority_identity(authority: Dict[str, Any]) -> Tuple[str, ...]:
@@ -1865,7 +1922,7 @@ def _generate_stage(
         "manifest_game_count": len(manifest),
         "data": {
             "row": row,
-            "manifestGameIdentities": [game_identity(entry) for entry in manifest],
+            "manifestGameIdentities": _canonical_manifest_identities(manifest),
         },
         "created_at": now.isoformat(),
     })
