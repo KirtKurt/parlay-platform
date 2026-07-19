@@ -636,7 +636,7 @@
         "slateTimezone": "America/New_York",
         "engine": "MLB-B1.0",
         "thresholdVersion": "MLB-B1.0-2026-06",
-        "pullCount": 186,
+        "pullCount": 200,
         "pullCoverage": {
           "policy": "MLB HOT pull history should start at 1:00 AM ET and continue every 15 minutes.",
           "startHourEt": 1,
@@ -645,13 +645,13 @@
           "expectedStartAtEt": "2026-07-19T01:00:00-04:00",
           "firstPullAtUtc": "2026-07-19T05:00:26.165507+00:00",
           "firstPullAtEt": "2026-07-19T01:00:26.165507-04:00",
-          "latestPullAtUtc": "2026-07-19T20:19:33.353928+00:00",
-          "latestPullAtEt": "2026-07-19T16:19:33.353928-04:00",
-          "actualPullCount": 186,
-          "actualPullCountSinceStart": 186,
-          "expectedPullCountSinceStart": 62,
+          "latestPullAtUtc": "2026-07-19T21:31:57.854667+00:00",
+          "latestPullAtEt": "2026-07-19T17:31:57.854667-04:00",
+          "actualPullCount": 200,
+          "actualPullCountSinceStart": 200,
+          "expectedPullCountSinceStart": 67,
           "missingPullCountSinceStart": 0,
-          "coverageRatio": 3.0,
+          "coverageRatio": 2.9851,
           "overnightCoverageComplete": true
         },
         "buildDeadline": {
@@ -662,8 +662,8 @@
           "buildDeadlineEt": "2026-07-19T10:16:00-04:00",
           "deadlineHoursBeforeFirstEvent": 2.0,
           "deadlinePassed": true,
-          "currentUtc": "2026-07-19T20:29:33.238449+00:00",
-          "currentEt": "2026-07-19T16:29:33.238449-04:00"
+          "currentUtc": "2026-07-19T21:33:08.331564+00:00",
+          "currentEt": "2026-07-19T17:33:08.331564-04:00"
         },
         "gameCount": 16,
         "gameHistoryStored": 16,
@@ -16043,14 +16043,14 @@
             "commenceTime": "2026-07-19T23:21:00Z",
             "slateDate": "2026-07-19",
             "providerSportKey": "baseball_mlb",
-            "status": "WAITING_FOR_FREEZE",
-            "frozen": false,
+            "status": "FROZEN",
+            "frozen": true,
             "cutoffTime": "2026-07-19T21:21:00+00:00",
-            "pointCount": 109,
+            "pointCount": 121,
             "selectedSide": "away",
             "selection": "Los Angeles Dodgers",
             "grade": "FRAGILE",
-            "score": 49.43,
+            "score": 47.91,
             "tags": [
               "BOOK_AGREEMENT",
               "REVERSAL",
@@ -16060,17 +16060,17 @@
             "homeSignal": {
               "side": "home",
               "grade": "FRAGILE",
-              "score": 1.83,
+              "score": 2.95,
               "probStart": 0.48468,
-              "probLatest": 0.46145,
-              "delta": -0.02323,
-              "velocityPpHr": -0.258,
-              "bookDivergenceAvg": 0.01196,
-              "bookAgreementAvg": 0.98804,
+              "probLatest": 0.4628,
+              "delta": -0.02188,
+              "velocityPpHr": -0.219,
+              "bookDivergenceAvg": 0.01278,
+              "bookAgreementAvg": 0.98722,
               "reversalCount": 3,
-              "lateInstability": 0.00059,
-              "totalMovement": 0.02323,
-              "runLineMovement": 13.773,
+              "lateInstability": 0.00038,
+              "totalMovement": 0.02188,
+              "runLineMovement": 15.5,
               "tags": [
                 "BOOK_AGREEMENT",
                 "RESISTANCE",
@@ -16078,29 +16078,29 @@
                 "RUN_LINE_MOVEMENT",
                 "TOTAL_MOVEMENT"
               ],
-              "pointCount": 109
+              "pointCount": 121
             },
             "awaySignal": {
               "side": "away",
               "grade": "FRAGILE",
-              "score": 49.43,
+              "score": 47.91,
               "probStart": 0.51532,
-              "probLatest": 0.53855,
-              "delta": 0.02323,
-              "velocityPpHr": 0.258,
-              "bookDivergenceAvg": 0.01196,
-              "bookAgreementAvg": 0.98804,
+              "probLatest": 0.5372,
+              "delta": 0.02188,
+              "velocityPpHr": 0.219,
+              "bookDivergenceAvg": 0.01278,
+              "bookAgreementAvg": 0.98722,
               "reversalCount": 3,
-              "lateInstability": 0.00059,
-              "totalMovement": 0.02323,
-              "runLineMovement": -8.5,
+              "lateInstability": 0.00038,
+              "totalMovement": 0.02188,
+              "runLineMovement": -9.682,
               "tags": [
                 "BOOK_AGREEMENT",
                 "REVERSAL",
                 "STEAM",
                 "TOTAL_MOVEMENT"
               ],
-              "pointCount": 109
+              "pointCount": 121
             },
             "points": [
               {
@@ -17408,6 +17408,150 @@
                 "bookAgreement": 0.97987,
                 "homeRunLinePrice": -150.72727272727272,
                 "awayRunLinePrice": 127.0,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T20:30:26.144276+00:00",
+                "home": 0.46061755114433195,
+                "away": 0.5393824488556681,
+                "bookCount": 11,
+                "bookDivergence": 0.020126470388250495,
+                "bookAgreement": 0.97987,
+                "homeRunLinePrice": -150.1818181818182,
+                "awayRunLinePrice": 126.63636363636364,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T20:31:56.319097+00:00",
+                "home": 0.46061755114433195,
+                "away": 0.5393824488556681,
+                "bookCount": 11,
+                "bookDivergence": 0.020126470388250495,
+                "bookAgreement": 0.97987,
+                "homeRunLinePrice": -149.27272727272728,
+                "awayRunLinePrice": 126.18181818181819,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T20:34:38.973437+00:00",
+                "home": 0.46105618500768136,
+                "away": 0.5389438149923187,
+                "bookCount": 11,
+                "bookDivergence": 0.020126470388250495,
+                "bookAgreement": 0.97987,
+                "homeRunLinePrice": -148.45454545454547,
+                "awayRunLinePrice": 125.27272727272727,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T20:45:26.237027+00:00",
+                "home": 0.46188528761809466,
+                "away": 0.5381147123819054,
+                "bookCount": 11,
+                "bookDivergence": 0.020126470388250495,
+                "bookAgreement": 0.97987,
+                "homeRunLinePrice": -150.1818181818182,
+                "awayRunLinePrice": 126.54545454545455,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T20:47:05.229224+00:00",
+                "home": 0.46188528761809466,
+                "away": 0.5381147123819054,
+                "bookCount": 11,
+                "bookDivergence": 0.020126470388250495,
+                "bookAgreement": 0.97987,
+                "homeRunLinePrice": -150.27272727272728,
+                "awayRunLinePrice": 126.63636363636364,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T20:49:38.499139+00:00",
+                "home": 0.46188528761809466,
+                "away": 0.5381147123819054,
+                "bookCount": 11,
+                "bookDivergence": 0.020126470388250495,
+                "bookAgreement": 0.97987,
+                "homeRunLinePrice": -150.27272727272728,
+                "awayRunLinePrice": 126.63636363636364,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T21:00:26.057896+00:00",
+                "home": 0.46188528761809466,
+                "away": 0.5381147123819054,
+                "bookCount": 11,
+                "bookDivergence": 0.020126470388250495,
+                "bookAgreement": 0.97987,
+                "homeRunLinePrice": -149.36363636363637,
+                "awayRunLinePrice": 126.18181818181819,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T21:02:04.738796+00:00",
+                "home": 0.46188528761809466,
+                "away": 0.5381147123819054,
+                "bookCount": 11,
+                "bookDivergence": 0.020126470388250495,
+                "bookAgreement": 0.97987,
+                "homeRunLinePrice": -149.36363636363637,
+                "awayRunLinePrice": 126.18181818181819,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T21:04:44.990373+00:00",
+                "home": 0.4625775037174702,
+                "away": 0.5374224962825299,
+                "bookCount": 11,
+                "bookDivergence": 0.020126470388250495,
+                "bookAgreement": 0.97987,
+                "homeRunLinePrice": -149.1818181818182,
+                "awayRunLinePrice": 126.0,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T21:15:26.249766+00:00",
+                "home": 0.4625775037174702,
+                "away": 0.5374224962825299,
+                "bookCount": 11,
+                "bookDivergence": 0.020126470388250495,
+                "bookAgreement": 0.97987,
+                "homeRunLinePrice": -149.0,
+                "awayRunLinePrice": 125.81818181818181,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T21:16:58.197340+00:00",
+                "home": 0.462416614342901,
+                "away": 0.537583385657099,
+                "bookCount": 11,
+                "bookDivergence": 0.020126470388250495,
+                "bookAgreement": 0.97987,
+                "homeRunLinePrice": -149.0,
+                "awayRunLinePrice": 125.81818181818181,
+                "homeRunLinePoint": 1.5,
+                "awayRunLinePoint": -1.5
+              },
+              {
+                "pulledAt": "2026-07-19T21:19:21.391466+00:00",
+                "home": 0.4627983503546295,
+                "away": 0.5372016496453704,
+                "bookCount": 11,
+                "bookDivergence": 0.022235062902747016,
+                "bookAgreement": 0.97776,
+                "homeRunLinePrice": -149.0,
+                "awayRunLinePrice": 125.81818181818181,
                 "homeRunLinePoint": 1.5,
                 "awayRunLinePoint": -1.5
               }
@@ -34207,8 +34351,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 62,
-          "missingPullCountSinceStart": 62,
+          "expectedPullCountSinceStart": 67,
+          "missingPullCountSinceStart": 67,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -34230,7 +34374,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#wnba#2026-07-19",
-          "sk": "BUILD#2026-07-19T20:29:37.503513+00:00",
+          "sk": "BUILD#2026-07-19T21:33:17.830581+00:00",
           "latestPk": "PARLAY_BUILDS#wnba#2026-07-19#LATEST",
           "latestSk": "LATEST"
         }
@@ -34254,8 +34398,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 62,
-          "missingPullCountSinceStart": 62,
+          "expectedPullCountSinceStart": 67,
+          "missingPullCountSinceStart": 67,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -34277,7 +34421,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nfl#2026-07-19",
-          "sk": "BUILD#2026-07-19T20:29:37.534781+00:00",
+          "sk": "BUILD#2026-07-19T21:33:18.175482+00:00",
           "latestPk": "PARLAY_BUILDS#nfl#2026-07-19#LATEST",
           "latestSk": "LATEST"
         }
@@ -34301,8 +34445,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 62,
-          "missingPullCountSinceStart": 62,
+          "expectedPullCountSinceStart": 67,
+          "missingPullCountSinceStart": 67,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -34324,7 +34468,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#cfb#2026-07-19",
-          "sk": "BUILD#2026-07-19T20:29:37.565963+00:00",
+          "sk": "BUILD#2026-07-19T21:33:18.521267+00:00",
           "latestPk": "PARLAY_BUILDS#cfb#2026-07-19#LATEST",
           "latestSk": "LATEST"
         }
@@ -34348,8 +34492,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 62,
-          "missingPullCountSinceStart": 62,
+          "expectedPullCountSinceStart": 67,
+          "missingPullCountSinceStart": 67,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -34371,7 +34515,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nba#2026-07-19",
-          "sk": "BUILD#2026-07-19T20:29:37.598132+00:00",
+          "sk": "BUILD#2026-07-19T21:33:18.864361+00:00",
           "latestPk": "PARLAY_BUILDS#nba#2026-07-19#LATEST",
           "latestSk": "LATEST"
         }
@@ -34395,8 +34539,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 62,
-          "missingPullCountSinceStart": 62,
+          "expectedPullCountSinceStart": 67,
+          "missingPullCountSinceStart": 67,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -34418,7 +34562,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#ncaam#2026-07-19",
-          "sk": "BUILD#2026-07-19T20:29:37.625770+00:00",
+          "sk": "BUILD#2026-07-19T21:33:19.212726+00:00",
           "latestPk": "PARLAY_BUILDS#ncaam#2026-07-19#LATEST",
           "latestSk": "LATEST"
         }
@@ -34442,8 +34586,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 62,
-          "missingPullCountSinceStart": 62,
+          "expectedPullCountSinceStart": 67,
+          "missingPullCountSinceStart": 67,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -34465,7 +34609,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#nhl#2026-07-19",
-          "sk": "BUILD#2026-07-19T20:29:37.667555+00:00",
+          "sk": "BUILD#2026-07-19T21:33:19.557691+00:00",
           "latestPk": "PARLAY_BUILDS#nhl#2026-07-19#LATEST",
           "latestSk": "LATEST"
         }
@@ -34489,8 +34633,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 62,
-          "missingPullCountSinceStart": 62,
+          "expectedPullCountSinceStart": 67,
+          "missingPullCountSinceStart": 67,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -34512,7 +34656,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#soccer#2026-07-19",
-          "sk": "BUILD#2026-07-19T20:29:37.706990+00:00",
+          "sk": "BUILD#2026-07-19T21:33:19.904301+00:00",
           "latestPk": "PARLAY_BUILDS#soccer#2026-07-19#LATEST",
           "latestSk": "LATEST"
         }
@@ -34536,8 +34680,8 @@
           "latestPullAtEt": null,
           "actualPullCount": 0,
           "actualPullCountSinceStart": 0,
-          "expectedPullCountSinceStart": 62,
-          "missingPullCountSinceStart": 62,
+          "expectedPullCountSinceStart": 67,
+          "missingPullCountSinceStart": 67,
           "coverageRatio": 0.0,
           "coverageComplete": false
         },
@@ -34559,7 +34703,7 @@
         "stored": {
           "ok": true,
           "pk": "PARLAY_BUILDS#tennis#2026-07-19",
-          "sk": "BUILD#2026-07-19T20:29:37.738073+00:00",
+          "sk": "BUILD#2026-07-19T21:33:20.268932+00:00",
           "latestPk": "PARLAY_BUILDS#tennis#2026-07-19#LATEST",
           "latestSk": "LATEST"
         }
@@ -34569,7 +34713,7 @@
   "pullDiagnostics": {
     "ok": true,
     "source": "diagnostic_provider_probe_no_snapshot_storage",
-    "createdAt": "2026-07-19T20:29:39.602895+00:00",
+    "createdAt": "2026-07-19T21:33:24.004665+00:00",
     "sportsRequested": [
       "mlb",
       "wnba",
@@ -34680,9 +34824,9 @@
       {
         "ok": true,
         "appSport": "mlb",
-        "rawGamesReturned": 28,
-        "rawGamesInWindow": 28,
-        "gamesConvertible": 28,
+        "rawGamesReturned": 21,
+        "rawGamesInWindow": 21,
+        "gamesConvertible": 21,
         "gamesStored": null,
         "diagnosticOnlyNoSnapshotStored": true,
         "activeStorageFailure": false,
@@ -34691,14 +34835,14 @@
             "ok": true,
             "appSport": "mlb",
             "providerSportKey": "baseball_mlb",
-            "rawGamesReturned": 28,
-            "rawGamesInWindow": 28,
-            "gamesConvertible": 28,
+            "rawGamesReturned": 21,
+            "rawGamesInWindow": 21,
+            "gamesConvertible": 21,
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-19T14:29:37.896746+00:00",
-            "activeWindowEnd": "2026-07-21T20:29:37.896746+00:00",
+            "activeWindowStart": "2026-07-19T15:33:20.757933+00:00",
+            "activeWindowEnd": "2026-07-21T21:33:20.757933+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -34724,8 +34868,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-19T14:29:37.994543+00:00",
-            "activeWindowEnd": "2026-07-21T20:29:37.994543+00:00",
+            "activeWindowStart": "2026-07-19T15:33:21.117494+00:00",
+            "activeWindowEnd": "2026-07-21T21:33:21.117494+00:00",
             "slateWindowDays": 2,
             "error": null
           }
@@ -34751,8 +34895,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-19T14:29:38.130418+00:00",
-            "activeWindowEnd": "2026-07-26T20:29:38.130418+00:00",
+            "activeWindowStart": "2026-07-19T15:33:21.481556+00:00",
+            "activeWindowEnd": "2026-07-26T21:33:21.481556+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -34778,8 +34922,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-19T14:29:38.403161+00:00",
-            "activeWindowEnd": "2026-07-26T20:29:38.403161+00:00",
+            "activeWindowStart": "2026-07-19T15:33:22.022660+00:00",
+            "activeWindowEnd": "2026-07-26T21:33:22.022660+00:00",
             "slateWindowDays": 7,
             "error": "active_slate_window_empty"
           }
@@ -34805,8 +34949,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-19T14:29:38.507429+00:00",
-            "activeWindowEnd": "2026-07-21T20:29:38.507429+00:00",
+            "activeWindowStart": "2026-07-19T15:33:22.213975+00:00",
+            "activeWindowEnd": "2026-07-21T21:33:22.213975+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -34832,8 +34976,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-19T14:29:38.646600+00:00",
-            "activeWindowEnd": "2026-07-21T20:29:38.646600+00:00",
+            "activeWindowStart": "2026-07-19T15:33:22.561772+00:00",
+            "activeWindowEnd": "2026-07-21T21:33:22.561772+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -34859,8 +35003,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-19T14:29:38.848739+00:00",
-            "activeWindowEnd": "2026-07-21T20:29:38.848739+00:00",
+            "activeWindowStart": "2026-07-19T15:33:22.727444+00:00",
+            "activeWindowEnd": "2026-07-21T21:33:22.727444+00:00",
             "slateWindowDays": 2,
             "error": "active_slate_window_empty"
           }
@@ -34886,8 +35030,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-19T14:29:38.996846+00:00",
-            "activeWindowEnd": "2026-08-02T20:29:38.996846+00:00",
+            "activeWindowStart": "2026-07-19T15:33:23.091518+00:00",
+            "activeWindowEnd": "2026-08-02T21:33:23.091518+00:00",
             "slateWindowDays": 14,
             "error": null
           },
@@ -34901,8 +35045,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-19T14:29:39.247401+00:00",
-            "activeWindowEnd": "2026-08-02T20:29:39.247401+00:00",
+            "activeWindowStart": "2026-07-19T15:33:23.272508+00:00",
+            "activeWindowEnd": "2026-08-02T21:33:23.272508+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           },
@@ -34916,8 +35060,8 @@
             "gamesDroppedDuringConversion": 0,
             "gamesStored": 0,
             "diagnosticOnlyNoSnapshotStored": true,
-            "activeWindowStart": "2026-07-19T14:29:39.322565+00:00",
-            "activeWindowEnd": "2026-08-02T20:29:39.322565+00:00",
+            "activeWindowStart": "2026-07-19T15:33:23.448635+00:00",
+            "activeWindowEnd": "2026-08-02T21:33:23.448635+00:00",
             "slateWindowDays": 14,
             "error": "active_slate_window_empty"
           }
