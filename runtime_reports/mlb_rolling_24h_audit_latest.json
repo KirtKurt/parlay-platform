@@ -1,15 +1,15 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-19T01:12:08.328859+00:00",
+  "createdAt": "2026-07-19T04:39:53.073038+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
     "windowHours": 24,
     "targetAccuracyPct": 90.0,
-    "completedFinalGames": 15,
+    "completedFinalGames": 13,
     "gradedPredictionCount": 2,
-    "missingPredictionCount": 13,
+    "missingPredictionCount": 11,
     "optimizedPickCount": 0,
     "optimizedCorrect": 0,
     "optimizedWrong": 0,
@@ -1040,170 +1040,6 @@
     "operationalTagFilterPolicy": "Final-gate, provider, model-discipline, ML signal-layer, and status tags are kept on audit rows for proof, but removed from signal-learning inputs so the model only learns from predictive market/fundamentals signals."
   },
   "rows": [
-    {
-      "id": "e047c3dd3d688fead07d77b8b32852af",
-      "gameKeyBase": "detroit tigers|los angeles angels",
-      "homeTeam": "Los Angeles Angels",
-      "awayTeam": "Detroit Tigers",
-      "matchup": "Detroit Tigers at Los Angeles Angels",
-      "commenceTime": "2026-07-18T01:39:00Z",
-      "slateDateEt": "2026-07-17",
-      "homeScore": 1,
-      "awayScore": 2,
-      "winner": "Detroit Tigers",
-      "margin": 1,
-      "totalRuns": 3,
-      "completed": true,
-      "status": "MISSING_CANONICAL_LOCK",
-      "canonicalLockEvidenceStatus": "MISSING",
-      "canonicalLockValidationErrors": [],
-      "canonicalLockAuthority": {
-        "version": "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1",
-        "verified": false,
-        "providerGameId": "e047c3dd3d688fead07d77b8b32852af",
-        "rejectionReasons": [
-          "canonical_lock_item_not_found"
-        ],
-        "officialAuditEligible": false,
-        "learningEligible": false
-      },
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
-        "missingReason": "no_exact_canonical_provider_game_id_match",
-        "doubleheaderSafe": true,
-        "finalProviderGameId": "e047c3dd3d688fead07d77b8b32852af"
-      }
-    },
-    {
-      "id": "2e309c8e4682895ea0516d055b78f53a",
-      "gameKeyBase": "st. louis cardinals|arizona diamondbacks",
-      "homeTeam": "Arizona Diamondbacks",
-      "awayTeam": "St. Louis Cardinals",
-      "matchup": "St. Louis Cardinals at Arizona Diamondbacks",
-      "commenceTime": "2026-07-18T01:41:00Z",
-      "slateDateEt": "2026-07-17",
-      "homeScore": 4,
-      "awayScore": 5,
-      "winner": "St. Louis Cardinals",
-      "margin": 1,
-      "totalRuns": 9,
-      "completed": true,
-      "status": "MISSING_CANONICAL_LOCK",
-      "canonicalLockEvidenceStatus": "MISSING",
-      "canonicalLockValidationErrors": [],
-      "canonicalLockAuthority": {
-        "version": "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1",
-        "verified": false,
-        "providerGameId": "2e309c8e4682895ea0516d055b78f53a",
-        "rejectionReasons": [
-          "canonical_lock_item_not_found"
-        ],
-        "officialAuditEligible": false,
-        "learningEligible": false
-      },
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
-        "missingReason": "no_exact_canonical_provider_game_id_match",
-        "doubleheaderSafe": true,
-        "finalProviderGameId": "2e309c8e4682895ea0516d055b78f53a"
-      }
-    },
-    {
-      "id": "e0989f5a2163779f2b0c456d7f844ce9",
-      "gameKeyBase": "washington nationals|athletics",
-      "homeTeam": "Athletics",
-      "awayTeam": "Washington Nationals",
-      "matchup": "Washington Nationals at Athletics",
-      "commenceTime": "2026-07-18T01:41:00Z",
-      "slateDateEt": "2026-07-17",
-      "homeScore": 4,
-      "awayScore": 23,
-      "winner": "Washington Nationals",
-      "margin": 19,
-      "totalRuns": 27,
-      "completed": true,
-      "status": "MISSING_CANONICAL_LOCK",
-      "canonicalLockEvidenceStatus": "MISSING",
-      "canonicalLockValidationErrors": [],
-      "canonicalLockAuthority": {
-        "version": "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1",
-        "verified": false,
-        "providerGameId": "e0989f5a2163779f2b0c456d7f844ce9",
-        "rejectionReasons": [
-          "canonical_lock_item_not_found"
-        ],
-        "officialAuditEligible": false,
-        "learningEligible": false
-      },
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
-        "missingReason": "no_exact_canonical_provider_game_id_match",
-        "doubleheaderSafe": true,
-        "finalProviderGameId": "e0989f5a2163779f2b0c456d7f844ce9"
-      }
-    },
-    {
-      "id": "25f714905d486c907ee2e0c1377097ea",
-      "gameKeyBase": "san francisco giants|seattle mariners",
-      "homeTeam": "Seattle Mariners",
-      "awayTeam": "San Francisco Giants",
-      "matchup": "San Francisco Giants at Seattle Mariners",
-      "commenceTime": "2026-07-18T02:11:00Z",
-      "slateDateEt": "2026-07-17",
-      "homeScore": 0,
-      "awayScore": 7,
-      "winner": "San Francisco Giants",
-      "margin": 7,
-      "totalRuns": 7,
-      "completed": true,
-      "status": "INVALID_CANONICAL_LOCK",
-      "canonicalLockEvidenceStatus": "INVALID",
-      "canonicalLockValidationErrors": [
-        "candidate_snapshot_version_mismatch",
-        "persisted_prelock_display_prediction_marker_missing",
-        "persisted_prelock_display_status_mismatch",
-        "persisted_prelock_display_surface_mismatch",
-        "persisted_prelock_public_authority_version_mismatch",
-        "persisted_prelock_signal_policy_version_missing",
-        "persisted_prelock_snapshot_role_mismatch",
-        "persisted_prelock_snapshot_signal_policy_version_missing",
-        "persisted_prelock_snapshot_version_mismatch",
-        "persisted_prelock_user_visible_marker_missing"
-      ],
-      "canonicalLockAuthority": {
-        "version": "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1",
-        "verified": false,
-        "providerGameId": "25f714905d486c907ee2e0c1377097ea",
-        "rejectionReasons": [
-          "candidate_snapshot_version_mismatch",
-          "persisted_prelock_display_prediction_marker_missing",
-          "persisted_prelock_display_status_mismatch",
-          "persisted_prelock_display_surface_mismatch",
-          "persisted_prelock_public_authority_version_mismatch",
-          "persisted_prelock_signal_policy_version_missing",
-          "persisted_prelock_snapshot_role_mismatch",
-          "persisted_prelock_snapshot_signal_policy_version_missing",
-          "persisted_prelock_snapshot_version_mismatch",
-          "persisted_prelock_user_visible_marker_missing"
-        ],
-        "officialAuditEligible": false,
-        "learningEligible": false
-      },
-      "lockedCardAudit": {
-        "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
-        "missingReason": "canonical_lock_failed_validation",
-        "doubleheaderSafe": true,
-        "finalProviderGameId": "25f714905d486c907ee2e0c1377097ea"
-      }
-    },
     {
       "id": "d8bf9cd37db11dd5e36f7b8d846883b4",
       "gameKeyBase": "pittsburgh pirates|cleveland guardians",
@@ -3558,6 +3394,78 @@
         "doubleheaderSafe": true,
         "finalProviderGameId": "698618fc0740b4cfa7a19834f721993e"
       }
+    },
+    {
+      "id": "fc2051a727661b285a4718bc4738966e",
+      "gameKeyBase": "san francisco giants|seattle mariners",
+      "homeTeam": "Seattle Mariners",
+      "awayTeam": "San Francisco Giants",
+      "matchup": "San Francisco Giants at Seattle Mariners",
+      "commenceTime": "2026-07-19T00:09:00Z",
+      "slateDateEt": "2026-07-18",
+      "homeScore": 4,
+      "awayScore": 3,
+      "winner": "Seattle Mariners",
+      "margin": 1,
+      "totalRuns": 7,
+      "completed": true,
+      "status": "MISSING_CANONICAL_LOCK",
+      "canonicalLockEvidenceStatus": "MISSING",
+      "canonicalLockValidationErrors": [],
+      "canonicalLockAuthority": {
+        "version": "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1",
+        "verified": false,
+        "providerGameId": "fc2051a727661b285a4718bc4738966e",
+        "rejectionReasons": [
+          "canonical_lock_item_not_found"
+        ],
+        "officialAuditEligible": false,
+        "learningEligible": false
+      },
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
+        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "missingReason": "no_exact_canonical_provider_game_id_match",
+        "doubleheaderSafe": true,
+        "finalProviderGameId": "fc2051a727661b285a4718bc4738966e"
+      }
+    },
+    {
+      "id": "1b7f4086b3b3d2a039917465354f741b",
+      "gameKeyBase": "pittsburgh pirates|cleveland guardians",
+      "homeTeam": "Cleveland Guardians",
+      "awayTeam": "Pittsburgh Pirates",
+      "matchup": "Pittsburgh Pirates at Cleveland Guardians",
+      "commenceTime": "2026-07-19T00:25:17Z",
+      "slateDateEt": "2026-07-18",
+      "homeScore": 5,
+      "awayScore": 3,
+      "winner": "Cleveland Guardians",
+      "margin": 2,
+      "totalRuns": 8,
+      "completed": true,
+      "status": "MISSING_CANONICAL_LOCK",
+      "canonicalLockEvidenceStatus": "MISSING",
+      "canonicalLockValidationErrors": [],
+      "canonicalLockAuthority": {
+        "version": "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1",
+        "verified": false,
+        "providerGameId": "1b7f4086b3b3d2a039917465354f741b",
+        "rejectionReasons": [
+          "canonical_lock_item_not_found"
+        ],
+        "officialAuditEligible": false,
+        "learningEligible": false
+      },
+      "lockedCardAudit": {
+        "applied": true,
+        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
+        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "missingReason": "no_exact_canonical_provider_game_id_match",
+        "doubleheaderSafe": true,
+        "finalProviderGameId": "1b7f4086b3b3d2a039917465354f741b"
+      }
     }
   ],
   "policy": "Audit every completed MLB game using the immutable locked prediction. Report official-card accuracy and playable-recommendation accuracy separately, with probability calibration, flat-unit ROI, and market-favorite baselines. Accumulate a permanent deduplicated settled-game ledger; never grade live games.",
@@ -4099,46 +4007,46 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-19T01:12:08.328859+00:00"
+    "runSk": "AUDIT#2026-07-19T04:39:53.073038+00:00"
   },
   "mlOptimizationV3": {
     "applied": true,
     "version": "MLB-ML-OPTIMIZATION-v3.2-90pct-rolling-slate-automatic-promotion",
     "mode": "SHADOW_CHALLENGER",
     "cleanRowCount": 2,
-    "quarantinedRowCount": 13,
+    "quarantinedRowCount": 11,
     "quarantineReasonCounts": {
-      "feature_vector_not_proven_immutable": 13,
-      "feature_vector_source_not_lock_time_prediction": 13,
-      "frozen_vector_away_temporal_history_missing": 13,
-      "frozen_vector_awayteam_mismatch": 13,
-      "frozen_vector_explicit_blank_labels_missing": 13,
-      "frozen_vector_features_missing": 13,
-      "frozen_vector_fundamental_masks_not_lock_safe": 13,
-      "frozen_vector_fundamental_source_after_or_missing_lock": 13,
-      "frozen_vector_fundamentals_snapshot_version_missing_or_wrong": 13,
-      "frozen_vector_game_identity_mismatch": 13,
-      "frozen_vector_home_temporal_history_missing": 13,
-      "frozen_vector_hometeam_mismatch": 13,
-      "frozen_vector_missingness_feature_version_missing_or_wrong": 13,
-      "frozen_vector_source_after_or_missing_lock": 13,
-      "frozen_vector_temporal_feature_version_missing_or_wrong": 13,
-      "frozen_vector_temporal_features_not_lock_safe": 13,
-      "frozen_vector_temporal_source_after_or_missing_lock": 13,
-      "incomplete_or_unproven_slate_coverage": 13,
-      "late_row_protection_not_proven": 13,
-      "legacy_probability_semantics": 13,
-      "missing_exact_stored_lock_time_feature_vector": 13,
-      "missing_frozen_vector_fingerprint_version": 13,
-      "missing_lock_timestamp": 13,
-      "missing_outcome_label": 13,
-      "missing_selected_side_locked_odds": 13,
-      "missing_source_pull_timestamp": 13,
-      "missing_team_win_probability": 13,
-      "not_graded": 13,
-      "not_immutable_locked_prediction": 13,
-      "selected_side_odds_source_not_proven": 13,
-      "wrong_frozen_feature_vector_version": 13
+      "feature_vector_not_proven_immutable": 11,
+      "feature_vector_source_not_lock_time_prediction": 11,
+      "frozen_vector_away_temporal_history_missing": 11,
+      "frozen_vector_awayteam_mismatch": 11,
+      "frozen_vector_explicit_blank_labels_missing": 11,
+      "frozen_vector_features_missing": 11,
+      "frozen_vector_fundamental_masks_not_lock_safe": 11,
+      "frozen_vector_fundamental_source_after_or_missing_lock": 11,
+      "frozen_vector_fundamentals_snapshot_version_missing_or_wrong": 11,
+      "frozen_vector_game_identity_mismatch": 11,
+      "frozen_vector_home_temporal_history_missing": 11,
+      "frozen_vector_hometeam_mismatch": 11,
+      "frozen_vector_missingness_feature_version_missing_or_wrong": 11,
+      "frozen_vector_source_after_or_missing_lock": 11,
+      "frozen_vector_temporal_feature_version_missing_or_wrong": 11,
+      "frozen_vector_temporal_features_not_lock_safe": 11,
+      "frozen_vector_temporal_source_after_or_missing_lock": 11,
+      "incomplete_or_unproven_slate_coverage": 11,
+      "late_row_protection_not_proven": 11,
+      "legacy_probability_semantics": 11,
+      "missing_exact_stored_lock_time_feature_vector": 11,
+      "missing_frozen_vector_fingerprint_version": 11,
+      "missing_lock_timestamp": 11,
+      "missing_outcome_label": 11,
+      "missing_selected_side_locked_odds": 11,
+      "missing_source_pull_timestamp": 11,
+      "missing_team_win_probability": 11,
+      "not_graded": 11,
+      "not_immutable_locked_prediction": 11,
+      "selected_side_odds_source_not_proven": 11,
+      "wrong_frozen_feature_vector_version": 11
     },
     "trainingStatus": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
     "recordCount": 2,
@@ -4167,7 +4075,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion",
-      "evaluatedAtUtc": "2026-07-19T01:12:39.778245+00:00",
+      "evaluatedAtUtc": "2026-07-19T04:40:53.841692+00:00",
       "automaticPromotionEnabled": true,
       "automaticPromotionRequiresPassedApplicableGates": true,
       "promotionEligible": false,
@@ -4503,7 +4411,7 @@
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-19T01:12:29.052784+00:00"
+      "runSk": "CHALLENGER#2026-07-19T04:40:33.298665+00:00"
     },
     "promotion": {
       "ok": true,
