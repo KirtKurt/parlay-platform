@@ -1,7 +1,7 @@
 {
   "ok": true,
   "version": "MLB-ML-OPTIMIZATION-v3.2-90pct-rolling-slate-automatic-promotion",
-  "createdAtUtc": "2026-07-20T00:16:33.209637+00:00",
+  "createdAtUtc": "2026-07-20T04:09:25.930872+00:00",
   "sport": "mlb",
   "mode": "SHADOW_CHALLENGER",
   "cleanCohort": {
@@ -9,44 +9,44 @@
     "version": "MLB-ML-CLEAN-COHORT-v2-lock-safe-temporal-missingness+MLB-ML-CLEAN-COHORT-HARDENING-v7-lock-safe-temporal-missingness",
     "featureSnapshotVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness",
     "minimumLockAtUtc": "2026-07-13T00:20:03+00:00",
-    "inputRows": 20,
-    "cleanRowCount": 2,
-    "quarantinedRowCount": 18,
+    "inputRows": 18,
+    "cleanRowCount": 3,
+    "quarantinedRowCount": 15,
     "quarantineReasonCounts": {
-      "feature_vector_not_proven_immutable": 18,
-      "feature_vector_source_not_lock_time_prediction": 18,
-      "frozen_vector_away_temporal_history_missing": 18,
-      "frozen_vector_awayteam_mismatch": 18,
-      "frozen_vector_explicit_blank_labels_missing": 18,
-      "frozen_vector_features_missing": 18,
-      "frozen_vector_fundamental_masks_not_lock_safe": 18,
-      "frozen_vector_fundamental_source_after_or_missing_lock": 18,
-      "frozen_vector_fundamentals_snapshot_version_missing_or_wrong": 18,
-      "frozen_vector_game_identity_mismatch": 18,
-      "frozen_vector_home_temporal_history_missing": 18,
-      "frozen_vector_hometeam_mismatch": 18,
-      "frozen_vector_missingness_feature_version_missing_or_wrong": 18,
-      "frozen_vector_source_after_or_missing_lock": 18,
-      "frozen_vector_temporal_feature_version_missing_or_wrong": 18,
-      "frozen_vector_temporal_features_not_lock_safe": 18,
-      "frozen_vector_temporal_source_after_or_missing_lock": 18,
-      "incomplete_or_unproven_slate_coverage": 18,
-      "late_row_protection_not_proven": 18,
-      "legacy_probability_semantics": 18,
-      "missing_exact_stored_lock_time_feature_vector": 18,
-      "missing_frozen_vector_fingerprint_version": 18,
-      "missing_lock_timestamp": 18,
-      "missing_outcome_label": 18,
-      "missing_selected_side_locked_odds": 18,
-      "missing_source_pull_timestamp": 18,
-      "missing_team_win_probability": 18,
-      "not_graded": 18,
-      "not_immutable_locked_prediction": 18,
-      "selected_side_odds_source_not_proven": 18,
-      "wrong_frozen_feature_vector_version": 18
+      "feature_vector_not_proven_immutable": 15,
+      "feature_vector_source_not_lock_time_prediction": 15,
+      "frozen_vector_away_temporal_history_missing": 15,
+      "frozen_vector_awayteam_mismatch": 15,
+      "frozen_vector_explicit_blank_labels_missing": 15,
+      "frozen_vector_features_missing": 15,
+      "frozen_vector_fundamental_masks_not_lock_safe": 15,
+      "frozen_vector_fundamental_source_after_or_missing_lock": 15,
+      "frozen_vector_fundamentals_snapshot_version_missing_or_wrong": 15,
+      "frozen_vector_game_identity_mismatch": 15,
+      "frozen_vector_home_temporal_history_missing": 15,
+      "frozen_vector_hometeam_mismatch": 15,
+      "frozen_vector_missingness_feature_version_missing_or_wrong": 15,
+      "frozen_vector_source_after_or_missing_lock": 15,
+      "frozen_vector_temporal_feature_version_missing_or_wrong": 15,
+      "frozen_vector_temporal_features_not_lock_safe": 15,
+      "frozen_vector_temporal_source_after_or_missing_lock": 15,
+      "incomplete_or_unproven_slate_coverage": 15,
+      "late_row_protection_not_proven": 15,
+      "legacy_probability_semantics": 15,
+      "missing_exact_stored_lock_time_feature_vector": 15,
+      "missing_frozen_vector_fingerprint_version": 15,
+      "missing_lock_timestamp": 15,
+      "missing_outcome_label": 15,
+      "missing_selected_side_locked_odds": 15,
+      "missing_source_pull_timestamp": 15,
+      "missing_team_win_probability": 15,
+      "not_graded": 15,
+      "not_immutable_locked_prediction": 15,
+      "selected_side_odds_source_not_proven": 15,
+      "wrong_frozen_feature_vector_version": 15
     },
     "policy": "Only post-fix immutable locked rows with explicit modern probability semantics and pre-lock source timestamps may train ML.",
-    "deduplicatedIdentityCount": 20,
+    "deduplicatedIdentityCount": 18,
     "supersededValidDuplicateCount": 0,
     "validCandidateWinsDuplicateSelection": true,
     "hardeningVersion": "MLB-ML-CLEAN-COHORT-HARDENING-v7-lock-safe-temporal-missingness",
@@ -65,12 +65,12 @@
   "dualModel": {
     "ok": false,
     "version": "MLB-ML-DUAL-MODEL-v1.3-lock-safe-temporal-missingness-price-coverage-only",
-    "recordCount": 2,
+    "recordCount": 3,
     "split": {
       "ok": false,
       "version": "MLB-ML-WALK-FORWARD-v1-train-validation-untouched-test",
       "reason": "insufficient_clean_rows_for_three_way_chronological_split",
-      "rowCount": 2,
+      "rowCount": 3,
       "required": 140,
       "actualMinimumRequired": 140,
       "minimums": {
@@ -89,7 +89,7 @@
     },
     "status": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
     "dataQuality": {
-      "recordCount": 2,
+      "recordCount": 3,
       "averageFundamentalsCompletenessPct": 9.09,
       "rowsWithAtLeast75PctFundamentals": 0,
       "priceCoveragePct": 100.0,
@@ -100,7 +100,7 @@
   "promotionGate": {
     "ok": true,
     "version": "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion",
-    "evaluatedAtUtc": "2026-07-20T00:16:58.241625+00:00",
+    "evaluatedAtUtc": "2026-07-20T04:09:46.524198+00:00",
     "automaticPromotionEnabled": true,
     "automaticPromotionRequiresPassedApplicableGates": true,
     "promotionEligible": false,
@@ -110,7 +110,7 @@
     "directionAuthorityEnabled": false,
     "playabilityAuthorityEnabled": false,
     "directionChecks": {
-      "cleanOfficialCount": 2,
+      "cleanOfficialCount": 3,
       "minimumCleanOfficial": 500,
       "untouchedTestCount": 0,
       "minimumUntouchedTest": 100,
@@ -129,12 +129,12 @@
       "marketLogLoss": null,
       "outcomeCalibrationError": null,
       "maximumCalibrationError": 0.08,
-      "rolling24hSlateAccuracyPct": null,
+      "rolling24hSlateAccuracyPct": 0.0,
       "minimumRolling24hSlateAccuracyPct": 90.0,
-      "rolling24hSlateAccuracyAvailable": false
+      "rolling24hSlateAccuracyAvailable": true
     },
     "playabilityChecks": {
-      "cleanOfficialCount": 2,
+      "cleanOfficialCount": 3,
       "minimumCleanOfficial": 500,
       "untouchedTestCount": 0,
       "minimumUntouchedTest": 100,
@@ -153,12 +153,12 @@
       "minimumSelectedExactOddsCoveragePct": 90.0,
       "selectedCalibrationError": null,
       "maximumSelectedCalibrationError": 0.1,
-      "rolling24hSlateAccuracyPct": null,
+      "rolling24hSlateAccuracyPct": 0.0,
       "minimumRolling24hSlateAccuracyPct": 90.0,
-      "rolling24hSlateAccuracyAvailable": false,
+      "rolling24hSlateAccuracyAvailable": true,
       "rolling24hSlateAccuracyProgress": {
         "reportingOnly": true,
-        "actualRolling24hSlateAccuracyPct": null,
+        "actualRolling24hSlateAccuracyPct": 0.0,
         "milestones": [
           {
             "accuracyPct": 50.0,
@@ -191,7 +191,7 @@
       },
       {
         "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
-        "actual": 2,
+        "actual": 3,
         "required": 500
       },
       {
@@ -230,9 +230,9 @@
         "required": 0.08
       },
       {
-        "code": "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE",
-        "actual": null,
-        "required": ">= 90.0"
+        "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
+        "actual": 0.0,
+        "required": 90.0
       }
     ],
     "playabilityBlockers": [
@@ -243,7 +243,7 @@
       },
       {
         "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
-        "actual": 2,
+        "actual": 3,
         "required": 500
       },
       {
@@ -288,9 +288,9 @@
         "required": 0.1
       },
       {
-        "code": "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE",
-        "actual": null,
-        "required": ">= 90.0"
+        "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
+        "actual": 0.0,
+        "required": 90.0
       }
     ],
     "blockers": [
@@ -301,7 +301,7 @@
       },
       {
         "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
-        "actual": 2,
+        "actual": 3,
         "required": 500
       },
       {
@@ -340,9 +340,9 @@
         "required": 0.08
       },
       {
-        "code": "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE",
-        "actual": null,
-        "required": ">= 90.0"
+        "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
+        "actual": 0.0,
+        "required": 90.0
       },
       {
         "code": "RELIABILITY_MODEL_NOT_TRAINED",
@@ -389,7 +389,7 @@
     },
     "rolling24hSlateAccuracyProgress": {
       "reportingOnly": true,
-      "actualRolling24hSlateAccuracyPct": null,
+      "actualRolling24hSlateAccuracyPct": 0.0,
       "milestones": [
         {
           "accuracyPct": 50.0,
@@ -438,7 +438,7 @@
   "automaticPromotionSupported": true,
   "automaticPromotionEnabled": true,
   "automaticPromotionRequiresPassedApplicableGates": true,
-  "rolling24hSlateAccuracyPct": null,
+  "rolling24hSlateAccuracyPct": 0.0,
   "legacyTrainerAuthorityDisabled": true,
   "legacyTrainingArtifacts": "diagnostic_only_not_authoritative",
   "policy": "Only the exact stored post-fix lock-time feature vector may train the dual challenger. In the authoritative AWS audit, direction and playability promote independently and automatically only after their applicable gates pass; playability also requires a current rolling 24-hour MLB slate accuracy average of at least 90%.",
@@ -446,7 +446,7 @@
     "ok": true,
     "latestPk": "MLB_ML_OPTIMIZATION#V3",
     "latestSk": "CHALLENGER#LATEST",
-    "runSk": "CHALLENGER#2026-07-20T00:16:33.209637+00:00"
+    "runSk": "CHALLENGER#2026-07-20T04:09:25.930872+00:00"
   },
   "promotion": {
     "ok": true,
