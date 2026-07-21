@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -66,6 +67,21 @@ def _canonical_features(features: Any) -> Dict[str, str]:
     }
 
 
+def _canonical_contract_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {
+            str(key): _canonical_contract_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (list, tuple)):
+        return [_canonical_contract_value(item) for item in value]
+    if isinstance(value, bool) or value is None or isinstance(value, str):
+        return value
+    if isinstance(value, (int, float, Decimal)):
+        return _canonical_decimal_text(value)
+    return str(value)
+
+
 def _legacy_fingerprint(vector: Dict[str, Any]) -> str:
     """Reproduce the original float JSON hash after a DynamoDB Decimal read."""
     legacy_features: Dict[str, Any] = {}
@@ -88,7 +104,7 @@ def _legacy_fingerprint(vector: Dict[str, Any]) -> str:
 
 def fingerprint_payload(vector: Dict[str, Any]) -> Dict[str, Any]:
     """Build the v2 immutable contract independent of DynamoDB numeric types."""
-    return {
+    payload = {
         "fingerprintVersion": FINGERPRINT_VERSION,
         "vectorVersion": vector.get("version"),
         "gameId": vector.get("gameId"),
@@ -115,6 +131,37 @@ def fingerprint_payload(vector: Dict[str, Any]) -> Dict[str, Any]:
         "pregameLabelContract": {"homeWon": None, "pickCorrect": None},
         "features": _canonical_features(vector.get("features")),
     }
+    # Fundamentals V2 starts a new prospective cohort without invalidating
+    # legacy vectors. New vectors bind the exact separately signed snapshot;
+    # old vectors omit this block and retain their original fingerprint.
+    if vector.get("fundamentalsSnapshotV2Version"):
+        payload["fundamentalsSnapshotV2Binding"] = {
+            "version": vector.get("fundamentalsSnapshotV2Version"),
+            "schemaCohort": vector.get("fundamentalsSnapshotV2SchemaCohort"),
+            "fingerprintVersion": vector.get(
+                "fundamentalsSnapshotV2FingerprintVersion"
+            ),
+            "fingerprint": vector.get("fundamentalsSnapshotV2Fingerprint"),
+            "evidenceCutoffUtc": vector.get(
+                "fundamentalsSnapshotV2EvidenceCutoffUtc"
+            ),
+            "atOrBeforeLock": vector.get("fundamentalsSnapshotV2AtOrBeforeLock"),
+            "reference": copy.deepcopy(
+                vector.get("fundamentalsSnapshotV2Ref") or {}
+            ),
+        }
+    # The pull-slot proof was added after the v3 fingerprint contract shipped.
+    # Include it for newly frozen rows while leaving existing vectors that do
+    # not carry the proof byte-for-byte compatible with their stored hash.
+    if (
+        vector.get("pullHistoryIntegrity") is not None
+        or vector.get("predictionSourceCanonicalSlot") is not None
+    ):
+        payload.update({
+            "pullHistoryIntegrity": _canonical_contract_value(vector.get("pullHistoryIntegrity")),
+            "predictionSourceCanonicalSlot": _canonical_contract_value(vector.get("predictionSourceCanonicalSlot")),
+        })
+    return payload
 
 
 def fingerprint_for_vector(vector: Dict[str, Any]) -> str:
@@ -334,6 +381,41 @@ def freeze_feature_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
     selected_price_source = row.get("priceSource") or selected_signal.get("priceSource")
     source_at = _source_at(row)
     lock_at = _lock_at(row)
+    fundamentals_v2: Dict[str, Any] = {}
+    fundamentals_v2_ref: Dict[str, Any] = {}
+    fundamentals_v2_safe = False
+    try:
+        import mlb_fundamentals_snapshot_v2 as snapshot_v2
+
+        # T-45 may bind only the V2 snapshot already persisted with the
+        # candidate. It must never retrieve or synthesize newer fundamentals
+        # while finalizing a lock. Legacy/missing-V2 rows remain gradeable but
+        # are excluded from the V2 training cohort.
+        fundamentals_v2 = copy.deepcopy(row.get("fundamentalsSnapshotV2") or {})
+        fundamentals_v2_ref = copy.deepcopy(
+            row.get("fundamentalsSnapshotV2Ref")
+            or row.get("fundamentalsSnapshotRefV2")
+            or {}
+        )
+        persisted_at = (
+            row.get("predictionPersistedAtUtc")
+            or row.get("createdAt")
+            or row.get("created_at")
+            or (source_at.isoformat() if source_at else None)
+        )
+        fundamentals_v2_safe = bool(
+            fundamentals_v2
+            and not snapshot_v2.validate(fundamentals_v2)
+            and snapshot_v2.provenance_is_lock_safe(
+                fundamentals_v2,
+                prediction_persisted_at=persisted_at,
+                lock_at=lock_at,
+            )
+        )
+    except Exception:
+        fundamentals_v2 = {}
+        fundamentals_v2_ref = {}
+        fundamentals_v2_safe = False
     temporal_values, temporal_safe, temporal_source = _temporal_vector_features(
         home.get("temporalFeatures") or {},
         away.get("temporalFeatures") or {},
@@ -345,6 +427,8 @@ def freeze_feature_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
         fundamentals, source_at, lock_at, _parse_dt
     )
     missingness_values = feature_missingness.build_masks(fundamentals)
+    pull_integrity = row.get("pullHistoryIntegrity") or {}
+    source_slot = row.get("predictionSourceCanonicalSlot") or {}
 
     features = {
         "homeMarketProb": home_prob,
@@ -431,6 +515,23 @@ def freeze_feature_snapshot(row: Dict[str, Any]) -> Dict[str, Any]:
         "fundamentalsSnapshotVersion": fundamentals.get("version") if isinstance(fundamentals, dict) else None,
         "fundamentalsSnapshotAsOfUtc": fundamentals.get("asOfUtc") if isinstance(fundamentals, dict) else None,
         "fundamentalMasksAtOrBeforeLock": fundamental_masks_safe,
+        "fundamentalsSnapshotV2Version": fundamentals_v2.get("version"),
+        "fundamentalsSnapshotV2SchemaCohort": fundamentals_v2.get("schemaCohort"),
+        "fundamentalsSnapshotV2FingerprintVersion": fundamentals_v2.get(
+            "fingerprintVersion"
+        ),
+        "fundamentalsSnapshotV2Fingerprint": fundamentals_v2.get("fingerprint"),
+        "fundamentalsSnapshotV2EvidenceCutoffUtc": fundamentals_v2.get(
+            "evidenceCutoffUtc"
+        ),
+        "fundamentalsSnapshotV2AtOrBeforeLock": fundamentals_v2_safe,
+        "fundamentalsSnapshotV2TrainingEligible": fundamentals_v2.get(
+            "trainingEligibleAtCapture"
+        )
+        is True,
+        "fundamentalsSnapshotV2Ref": fundamentals_v2_ref,
+        "pullHistoryIntegrity": copy.deepcopy(pull_integrity) if isinstance(pull_integrity, dict) else {},
+        "predictionSourceCanonicalSlot": copy.deepcopy(source_slot) if isinstance(source_slot, dict) else {},
         "fingerprintVersion": FINGERPRINT_VERSION,
     }
     payload["fingerprint"] = fingerprint_for_vector(payload)

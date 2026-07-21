@@ -1,99 +1,13 @@
-name: One-Time 12:50 AM ET Proof Run
+name: Retired - Proof Run 1250 ET
 
-on:
-  schedule:
-    # 12:50 AM America/New_York on 2026-06-28 is 04:50 UTC.
-    - cron: '50 4 28 6 *'
-  workflow_dispatch:
+# Retired permanently: proof workflows may not invoke production schedulers.
+on: []
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
-  proof:
+  retired:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install runtime dependencies
-        run: python -m pip install --upgrade boto3
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Run all-sports proof pull/build
-        env:
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
-          ODDS_REGIONS: us
-          ODDS_MARKETS: h2h,spreads,totals
-          ODDS_FORMAT: american
-          SNAPSHOTS_TABLE: parlay_platform_snapshots
-          INQSI_AUTO_BUILD_SPORTS: mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis
-        run: |
-          set -euo pipefail
-          mkdir -p runtime_reports
-          export PYTHONPATH="$GITHUB_WORKSPACE/hello_world:${PYTHONPATH:-}"
-          python - <<'PY'
-          import json
-          from datetime import datetime, timezone
-          from zoneinfo import ZoneInfo
-          import all_sports_live_scheduler
-          import auto_build_runner
-          import market_board
-
-          sports = ['mlb','wnba','nfl','cfb','nba','ncaam','nhl','soccer','tennis']
-          et_now = datetime.now(ZoneInfo('America/New_York')).isoformat()
-          scheduler_result = all_sports_live_scheduler.lambda_handler({
-              'sports': ','.join(sports),
-              'run': 'one_time_1250am_et_proof_run',
-          }, None)
-          scheduler_body = json.loads(scheduler_result.get('body') or '{}')
-
-          auto_build_runner.main()
-          parlay_report = json.load(open('runtime_reports/parlay_latest.json', encoding='utf-8'))
-          board = market_board.board_all({'sports': ','.join(sports)})
-
-          proof = {
-              'ok': True,
-              'proofRun': 'one_time_1250am_et',
-              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
-              'createdAtEt': et_now,
-              'sports': sports,
-              'schedulerResult': scheduler_body,
-              'builtSports': parlay_report.get('builtSports') or scheduler_body.get('builtSports') or [],
-              'parlayProof': parlay_report,
-              'marketBoard': board,
-          }
-          open('runtime_reports/proof_1250am_latest.json','w',encoding='utf-8').write(json.dumps(proof, indent=2, default=str)+'\n')
-          open('runtime_reports/live_odds_latest.json','w',encoding='utf-8').write(json.dumps({
-              'ok': True,
-              'createdAtUtc': proof['createdAtUtc'],
-              'createdAtEt': proof['createdAtEt'],
-              'sportsRequested': sports,
-              'builtSports': proof['builtSports'],
-              'mlbParlayBuilt': 'mlb' in proof['builtSports'],
-              'parlayProof': parlay_report,
-              'schedulerResult': scheduler_body,
-          }, indent=2, default=str)+'\n')
-          print(json.dumps({'ok': True, 'createdAtEt': et_now, 'builtSports': proof['builtSports']}, indent=2))
-          PY
-
-      - name: Commit proof reports
-        if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add runtime_reports/proof_1250am_latest.json runtime_reports/live_odds_latest.json runtime_reports/parlay_latest.json runtime_reports/pull_health_latest.json || true
-          git commit -m "Run 12:50 AM ET all-sports proof" || true
-          git pull --rebase --autostash origin main || true
-          git push || true
+      - run: exit 1

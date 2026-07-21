@@ -43,6 +43,16 @@ def pull_item(pulled_at: datetime):
     return {"SK": {"S": f"PULL#{value}#test_pull"}, "pulled_at": {"S": value}}
 
 
+def canonical_pull_item(pulled_at: datetime):
+    slot = pulled_at.astimezone(timezone.utc).replace(
+        minute=(pulled_at.minute // 15) * 15,
+        second=0,
+        microsecond=0,
+    )
+    value = slot.isoformat()
+    return {"SK": {"S": f"PULL#SLOT#{value}"}, "pulled_at": {"S": pulled_at.isoformat()}}
+
+
 def proof(*, schedule, pulls=None, aws_ok=True, schedule_error=None, pull_data_error=None):
     return build_pull_guard_proof(
         slate_date=SLATE,
@@ -144,6 +154,31 @@ def test_complete_quarter_hour_slots_pass_for_scheduled_game():
     assert result["cleanCountStatus"] == "PASS_CLEAN_EXPECTED_COUNT"
     assert result["fresh"] is True
     assert result["guardPassed"] is True
+
+
+def test_legacy_raw_duplicates_are_diagnostic_when_unique_slots_are_complete():
+    first = datetime(2026, 7, 13, 5, 0, 10, tzinfo=timezone.utc)
+    pulls = [pull_item(first + timedelta(minutes=15 * index)) for index in range(33)]
+    pulls.append(pull_item(first + timedelta(seconds=20)))
+
+    result = proof(schedule=official_schedule(official_game()), pulls=pulls)
+
+    assert result["guardPassed"] is True
+    assert result["cleanCountStatus"] == "PASS_CANONICALIZED_EXPECTED_SLOTS"
+    assert result["duplicateOrExtraPullsSinceStart"] == 1
+    assert result["scoringCanonicalizationRequired"] is True
+
+
+def test_duplicate_write_in_a_canonical_slot_fails():
+    first = datetime(2026, 7, 13, 5, 0, 10, tzinfo=timezone.utc)
+    pulls = [canonical_pull_item(first + timedelta(minutes=15 * index)) for index in range(33)]
+    pulls.append(pull_item(first + timedelta(seconds=20)))
+
+    result = proof(schedule=official_schedule(official_game()), pulls=pulls)
+
+    assert result["guardPassed"] is False
+    assert result["cleanCountStatus"] == "FAIL_DUPLICATE_AFTER_CANONICAL_WRITER"
+    assert result["duplicateAfterCanonicalWriterCount"] == 1
 
 
 def test_partial_slot_history_is_not_exempted_by_schedule_awareness():

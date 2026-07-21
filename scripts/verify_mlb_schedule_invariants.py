@@ -204,10 +204,31 @@ required_template_strings = {
     '/v1/mlb/locks/run': 'manual lock route missing',
     '/v1/mlb/locks/status': 'lock status route missing',
     '/v1/mlb/locks/today': 'lock today route missing',
+    'MLBMLArtifactsBucket': 'versioned MLB ML artifact bucket missing',
+    'MLBMLTrainingFunction': 'AWS-native MLB ML trainer missing',
+    'Handler: mlb_ml_aws_training_v1.lambda_handler': 'AWS-native MLB ML trainer handler missing',
+    'MLBMLTrainingEvery6Hours': 'AWS-native MLB ML full training schedule missing',
+    'Schedule: rate(6 hours)': 'AWS-native MLB ML full training is not scheduled every 6 hours',
+    'MLBMLSelectionCaptureEvery15Minutes': 'AWS-native MLB ML selection capture schedule missing',
+    'Input: \'{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}\'': 'AWS-native MLB ML full training event input is stale',
+    'Input: \'{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}\'': 'AWS-native MLB ML selection capture event input is stale',
+    'ReservedConcurrentExecutions: 1': 'AWS-native MLB ML trainer must not overlap',
+    's3:GetObjectVersion': 'AWS-native MLB ML trainer cannot read an exact frozen challenger version',
+    "MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-07-21-future-prospective-r2'": 'AWS-native MLB ML trainer experiment identity is stale',
+    "MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-07-21-future-prospective-r2'": 'AWS-native MLB ML trainer release contract is stale',
+    "MLB_ML_RELEASE_CUTOFF_UTC: '2026-07-22T04:00:00+00:00'": 'AWS-native MLB ML trainer release cutoff is stale',
+    "INQSI_MLB_ML_AUTO_PROMOTE: 'false'": 'automatic MLB ML promotion must be disabled',
+    "INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED: 'false'": 'legacy MLB V1 runtime authority must be disabled',
+    'MLBMLTrainingDeadLetterQueue': 'AWS-native MLB ML trainer dead-letter queue missing',
+    'MaximumRetryAttempts: 2': 'AWS-native MLB ML trainer retry policy missing',
+    'Arn: !GetAtt MLBMLTrainingDeadLetterQueue.Arn': 'AWS-native MLB ML trainer DLQ binding missing',
+    'Service: events.amazonaws.com': 'AWS-native MLB ML trainer DLQ send policy missing',
 }
 for needle, message in required_template_strings.items():
     if needle not in text:
         violations.append(message)
+if 'MLBMLTrainingEvery15Minutes' in text:
+    violations.append('obsolete full MLB training every-15-minutes schedule exists')
 
 lock_resource_marker = '\n  MLBDailyPickLockFunction:\n'
 lock_resource_start = text.find(lock_resource_marker)
@@ -258,6 +279,15 @@ for required_path in [
     Path('hello_world/mlb_ml_feature_missingness_v1.py'),
     Path('hello_world/mlb_ml_walk_forward_v1.py'),
     Path('hello_world/mlb_fundamentals_snapshot_v1.py'),
+    Path('hello_world/mlb_fundamentals_snapshot_v2.py'),
+    Path('hello_world/mlb_canonical_final_labels_v1.py'),
+    Path('hello_world/mlb_prediction_probability_contract_v1.py'),
+    Path('hello_world/mlb_ml_current_lock_authority_v1.py'),
+    Path('hello_world/mlb_ml_experiment_v2.py'),
+    Path('hello_world/mlb_ml_walk_forward_v2.py'),
+    Path('hello_world/mlb_ml_dual_model_v2.py'),
+    Path('hello_world/mlb_ml_promotion_policy_v2.py'),
+    Path('hello_world/mlb_ml_aws_training_v1.py'),
     Path('hello_world/mlb_ml_champion_challenger_v1.py'),
     Path('hello_world/mlb_ml_champion_runtime_v1.py'),
     Path('hello_world/mlb_ml_runtime_safety_patch.py'),
@@ -302,4 +332,4 @@ subprocess.run([sys.executable, str(ML_TRAINING_READINESS_VERIFY)], check=True)
 subprocess.run([sys.executable, str(YESTERDAY_AUDIT_IMMUTABLE_SOURCE_VERIFY)], check=True)
 subprocess.run([sys.executable, str(MLB_API_FUNCTION_IMPORT_VERIFY)], check=True)
 
-print('MLB production invariants PASS: complete-slate coverage, immutable write-once locked storage, exact ML lock vector preservation, 90% rolling official-card slate authority target, separate 90% untouched outcome and selected-playability gates, exact-odds coverage, calibration, source-honest fundamentals, independent automatic DDB authority promotion, fail-closed suspension below the rolling target, and single runtime authority are installed.')
+print('MLB production invariants PASS: canonical 15-minute evidence, persisted probability authority, immutable locks and official labels, source-honest Fundamentals V2, fixed 300/100/100 whole-slate experiments, AWS-native versioned shadow training, legacy V1 authority disabled, dashboard-only 90% aspiration, and manual-first V2 promotion are installed.')

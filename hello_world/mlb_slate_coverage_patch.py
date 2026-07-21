@@ -1017,6 +1017,16 @@ def _canonical_row(
         errors.extend(vector_contract.validate_selection_lock_vector_status(row))
     except Exception as exc:
         errors.append(f"selection_vector_status_validator_unavailable:{exc}")
+    try:
+        import mlb_prediction_probability_contract_v1 as probability_contract
+
+        version = row.get("probabilityContractVersion")
+        if version in (None, ""):
+            row = probability_contract.suppress_legacy_probability_authority(row)
+        else:
+            errors.extend(probability_contract.validation_errors(row))
+    except Exception as exc:
+        errors.append(f"probability_contract_read_validator_unavailable:{exc}")
     return (row if not errors else None), sorted(set(errors))
 
 
@@ -1143,6 +1153,67 @@ def _prelock_row(
     })
     out["lastPossiblePredictionGate"] = gate
     return out
+
+
+def _storage_request_active() -> bool:
+    try:
+        import mlb_locked_prediction_storage_finalizer_v1 as finalizer
+
+        return bool(finalizer.storage_request_active())
+    except Exception:
+        return False
+
+
+def _persisted_prelock_by_identity(
+    module: Any,
+    lock_module: Any,
+    pulls: List[Dict[str, Any]],
+    manifest: List[Dict[str, Any]],
+    slate: str,
+    now: datetime,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, List[str]]]:
+    """Read validated immutable pre-lock snapshots without invoking a scorer."""
+    try:
+        import mlb_daily_per_game_lock_patch as per_game
+    except Exception as exc:
+        return {}, {"__runtime__": [f"persisted_prelock_validator_unavailable:{exc}"]}
+
+    class Adapter:
+        history = module.history
+        # `_last_prelock_candidate` uses the installed engine attestation to
+        # require the canonical probability contract even if a malformed or
+        # legacy snapshot omitted its version field. Public persisted reads
+        # must enforce the same contract as the scheduled T-45 lock path.
+        mlb_game_winner_engine = module
+        LOCK_MINUTES = lock_module.LOCK_MINUTES
+        _parse_dt = staticmethod(lock_module._parse_dt)
+
+    current: Dict[str, Dict[str, Any]] = {}
+    invalid: Dict[str, List[str]] = {}
+    for game in manifest:
+        identity = game_identity(game)
+        try:
+            scoring = per_game._scoring_pulls(
+                Adapter,
+                pulls,
+                game,
+                at_or_before=now,
+            )
+            row, _proof, _bound, errors = per_game._last_prelock_candidate(
+                Adapter,
+                slate,
+                game,
+                scoring,
+                at_or_before=now,
+            )
+        except Exception as exc:
+            row = None
+            errors = [f"persisted_prelock_read_failed:{type(exc).__name__}:{exc}"]
+        if row and not errors:
+            current[identity] = _bind_row_to_manifest(row, game)
+        elif errors:
+            invalid[identity] = sorted(set(str(error) for error in errors if error))
+    return current, invalid
 
 
 def _pending_status(game: Dict[str, Any], now: datetime, cutoff: Optional[str]) -> str:
@@ -1558,13 +1629,38 @@ def apply(lock_module: Any):
             ],
         })
 
+        persisted_prelock_required = bool(
+            getattr(
+                module,
+                "_INQSI_MLB_PERSISTED_PRELOCK_PUBLIC_AUTHORITY_ENABLED",
+                False,
+            )
+            and not _storage_request_active()
+        )
+        persisted_prelock: Dict[str, Dict[str, Any]] = {}
+        persisted_prelock_invalid: Dict[str, List[str]] = {}
+        if persisted_prelock_required:
+            persisted_prelock, persisted_prelock_invalid = _persisted_prelock_by_identity(
+                module,
+                lock_module,
+                pulls,
+                manifest,
+                slate,
+                now,
+            )
+
         current_candidates: Dict[str, List[Tuple[bool, Dict[str, Any]]]] = {}
         extra_current: List[str] = []
         ambiguous_current: List[str] = []
         manifest_by_identity = {
             game_identity(game): game for game in manifest
         }
-        for row in (result or {}).get("predictions") or []:
+        source_rows = (
+            list(persisted_prelock.values())
+            if persisted_prelock_required
+            else (result or {}).get("predictions") or []
+        )
+        for row in source_rows:
             if not isinstance(row, dict):
                 continue
             identity = game_identity(row)
@@ -1708,6 +1804,13 @@ def apply(lock_module: Any):
             "ambiguousCurrentPredictionIdentities": sorted(set(ambiguous_current)),
             "storeRequested": bool(store),
             "canonicalReadAuthorityWriteCount": 0,
+            "prelockPredictionAuthority": (
+                "validated_immutable_pregame_snapshot"
+                if persisted_prelock_required
+                else "scheduled_candidate_generation"
+            ),
+            "publicPrelockRecomputed": False if persisted_prelock_required else None,
+            "invalidPersistedPrelockRows": persisted_prelock_invalid,
             **manifest_authority,
         })
         public["coverageComplete"] = winner_prediction_complete
@@ -1909,7 +2012,27 @@ def install_public_authority(module: Any, lock_module: Any) -> Any:
     original = module.predict_all
 
     def patched_predict_all(*args, **kwargs):
-        result = original(*args, **kwargs)
+        persisted_read = bool(
+            getattr(
+                module,
+                "_INQSI_MLB_PERSISTED_PRELOCK_PUBLIC_AUTHORITY_ENABLED",
+                False,
+            )
+            and not _storage_request_active()
+        )
+        if persisted_read:
+            slate = str(lock_module._slate_from_call(args, kwargs, module))
+            result = {
+                "ok": True,
+                "sport": "mlb",
+                "slate_date": slate,
+                "engine": getattr(module, "ENGINE", None),
+                "modelVersion": getattr(module, "MODEL_VERSION", None),
+                "predictions": [],
+                "readAuthority": "persisted_prelock_and_canonical_locked_only",
+            }
+        else:
+            result = original(*args, **kwargs)
         try:
             return lock_module._canonical_authority_result(
                 module,
@@ -1922,6 +2045,7 @@ def install_public_authority(module: Any, lock_module: Any) -> Any:
             return _fail_closed(result, str(exc))
 
     module.predict_all = patched_predict_all
+    module.read_persisted_predictions = patched_predict_all
     module.MLB_PUBLIC_PER_GAME_AUTHORITY_VERSION = AUTHORITY_VERSION
     module._INQSI_MLB_PUBLIC_PER_GAME_AUTHORITY_APPLIED = True
     return module

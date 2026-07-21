@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v10-90pct-automatic-gated-promotion"
-AUTHORITATIVE_TRAINER = "MLB-ML-OPTIMIZATION-v3-clean-dual-walk-forward-champion-challenger"
+VERSION = "MLB-ML-CRITICAL-BLOCKERS-PATCH-v11-aws-v2-shadow-manual-first"
+AUTHORITATIVE_TRAINER = "MLB-ML-AWS-TRAINING-v1-fixed-prospective-shadow"
 _INSTALLED = False
 
 
@@ -30,7 +30,7 @@ def install() -> dict:
         accuracy_policy = mlb_accuracy_target_policy_v1.install()
         if accuracy_policy.get("ok") is not True:
             raise RuntimeError(str(accuracy_policy.get("errors") or accuracy_policy))
-        applied.append("90pct_rolling_slate_and_untouched_playability_policy")
+        applied.append("dashboard_targets_and_v2_manual_first_policy")
     except Exception as exc:
         errors.append(f"accuracy_target_policy:{exc}")
 
@@ -57,17 +57,24 @@ def install() -> dict:
         "applied": applied,
         "errors": errors,
         "authoritativeTrainer": AUTHORITATIVE_TRAINER,
-        "authoritativeRuntime": "MLB-ML-CHAMPION-RUNTIME-v1-shadow-until-promotion",
-        "runtimeInstaller": "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority",
+        "authoritativeRuntime": "persisted_canonical_rules_market_prediction_v2_shadow_only",
+        "runtimeInstaller": (
+            "MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-"
+            "aws-v2-shadow-manual-first"
+        ),
         "runtimeInstallerCallSite": "explicit_each_lambda_entrypoint_before_route_or_writer_import",
         "singleRuntimeInstallCall": False,
         "idempotentAuthoritativeInstallerPerLambdaProcess": True,
         "duplicateTrainerAuthorityDisabled": True,
         "duplicateOutcomeRuntimeAuthorityDisabled": True,
-        "automaticPromotionSupported": True,
-        "automaticPromotionEnabledOnlyByAuthoritativeAwsAudit": True,
-        "automaticPromotionRequiresApplicableGate": True,
+        "automaticPromotionSupported": False,
+        "automaticPromotionEnabledOnlyByAuthoritativeAwsAudit": False,
+        "firstPromotionRequiresManualReview": True,
+        "legacyV1AuthorityEnabled": False,
+        "v2AwsNativeTraining": True,
         "rolling24hAllGamesAuditTargetPct": 90.0,
-        "rolling24hSlateAccuracyAuthorityTargetPct": 90.0,
-        "selectedUntouchedTestAccuracyTargetPct": 90.0,
+        "rolling24hAccuracyDashboardOnly": True,
+        "minimumV2CleanRows": 500,
+        "minimumV2ProspectiveTestRows": 100,
+        "minimumV2SelectedRecommendations": 100,
     }

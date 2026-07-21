@@ -26,16 +26,22 @@ def build_masks(snapshot: Any) -> Dict[str, float]:
     """Build masks from explicit source status, never from numeric zero values."""
     snapshot = snapshot if isinstance(snapshot, dict) else {}
     statuses = snapshot.get("sourceStatuses") if isinstance(snapshot.get("sourceStatuses"), dict) else {}
+    groups = dict(GROUP_NAMES)
+    # Preserve verification of already-locked legacy vectors, but ensure every
+    # new snapshot follows the corrected contract: CLV is postgame evaluation,
+    # never a T-45 completeness feature.
+    if snapshot.get("closingLineValueCountsTowardPregameCompleteness") is False:
+        groups.pop("closing_line_value", None)
     masks: Dict[str, float] = {}
     missing_count = 0
-    for group, label in GROUP_NAMES.items():
+    for group, label in groups.items():
         available = str(statuses.get(group) or "MISSING").upper() == "CONNECTED"
         missing = 0.0 if available else 1.0
         masks[f"fundamental{label}Missing"] = missing
         missing_count += int(missing)
 
     masks["fundamentalsMissingGroupCount"] = float(missing_count)
-    masks["fundamentalsMissingRatio"] = missing_count / float(len(GROUP_NAMES))
+    masks["fundamentalsMissingRatio"] = missing_count / float(len(groups))
     masks["fundamentalPitchingMissing"] = max(
         masks["fundamentalProbablePitchersMissing"],
         masks["fundamentalFipXfipMissing"],

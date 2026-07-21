@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ML_INSTALLATION_1_5",
-  "version": "MLB-ML-INSTALLATION-1-5-v1.2-90pct-automatic-gated",
+  "version": "MLB-ML-INSTALLATION-1-5-v2-aws-shadow-manual-first",
   "checks": {
     "1_cleanPostFixCohort": {
       "installed": true,
@@ -12,34 +12,37 @@
     },
     "2_separateOutcomeAndReliabilityModels": {
       "installed": true,
-      "outcomeModelVersion": "MLB-OUTCOME-MODEL-v2-temporal-home-win-probability",
-      "reliabilityModelVersion": "MLB-RELIABILITY-MODEL-v1.3-temporal-selected-pick-correctness",
+      "outcomeModelVersion": "MLB-OUTCOME-MODEL-v3-prospective-fundamentals-v2",
+      "reliabilityModelVersion": "MLB-RELIABILITY-MODEL-v2-prospective-selected-pick",
       "probabilitiesInterchangeable": false
     },
     "3_chronologicalValidation": {
       "installed": true,
-      "trainMinimum": 80,
-      "validationMinimum": 30,
-      "untouchedTestMinimum": 30,
-      "thresholdSelection": "validation_only"
+      "experimentId": "mlb-v2-2026-07-21-future-prospective-r2",
+      "releaseContractId": "mlb-v2-2026-07-21-future-prospective-r2",
+      "releaseCutoffUtc": "2026-07-22T04:00:00+00:00",
+      "trainMinimum": 300,
+      "validationMinimum": 100,
+      "prospectiveTestMinimum": 100,
+      "wholeSlatePartitions": true,
+      "futureCutoverOnly": true,
+      "thresholdSelection": "validation_only_before_sealed_prospective_test"
     },
     "4_baseballFundamentals": {
       "installed": true,
-      "snapshotVersion": "MLB-FUNDAMENTALS-SNAPSHOT-v1-timestamped-source-honest",
-      "connectedGroups": [
-        "confirmed_probable_pitchers"
-      ],
+      "snapshotVersion": "MLB-FUNDAMENTALS-SNAPSHOT-v2-immutable-source-provenance",
+      "connectedGroups": [],
       "missingGroups": [
-        "fip_xfip",
-        "wrc_plus",
-        "starter_handedness_splits",
-        "bullpen_fatigue",
-        "confirmed_lineups",
-        "weather_wind_roof",
         "ballpark_factors",
-        "injuries_late_scratches_news",
-        "public_betting_handle",
-        "closing_line_value"
+        "bullpen_availability",
+        "confirmed_lineups",
+        "confirmed_probable_pitchers",
+        "injuries_late_scratches",
+        "offense_quality",
+        "starter_handedness_splits",
+        "starter_quality",
+        "travel_rest",
+        "weather_roof"
       ],
       "missingInputsFabricated": false,
       "modelScopeUntilFeedsConnected": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS"
@@ -47,15 +50,20 @@
     "5_acceptanceAndPromotionGates": {
       "installed": true,
       "directionAndPlayabilityIndependent": true,
-      "automaticPromotion": true,
-      "automaticPromotionRequiresPassedApplicableGate": true,
+      "automaticPromotion": false,
+      "legacyV1AuthorityEnabled": false,
       "automaticPromotionBeforeGates": false,
+      "firstPromotionRequiresManualReview": true,
+      "experimentId": "mlb-v2-2026-07-21-future-prospective-r2",
+      "releaseCutoffUtc": "2026-07-22T04:00:00+00:00",
       "minimumCleanOfficial": 500,
-      "minimumUntouchedTest": 100,
-      "minimumSelectedUntouchedTest": 100,
-      "minimumRolling24hSlateAccuracyPct": 90.0
+      "minimumProspectiveTest": 100,
+      "minimumSelectedProspectiveRecommendations": 100,
+      "maximumCalibrationError": 0.08,
+      "minimumAccuracyLiftPctPoints": 1.0,
+      "ninetyPercentDashboardOnly": true
     }
   },
   "cleanSettlementJoinVerified": true,
-  "policy": "All five optimization components are installed. Production ML remains shadow-only until the 90% rolling official-card slate prerequisite and each authority's separate untouched-test gates pass; only the authoritative AWS audit may then promote automatically."
+  "policy": "All five optimization components are installed. Legacy V1 is diagnostic-only. AWS V2 remains shadow-only through fixed 300/100/100 whole-slate partitions, prospective market-skill gates, and a manually reviewed first promotion."
 }

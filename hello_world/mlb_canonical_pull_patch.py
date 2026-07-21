@@ -18,13 +18,6 @@ try:
 except Exception:
     pass
 
-try:
-    import pull_dedupe_guard
-    pull_dedupe_guard.apply(history)
-except Exception:
-    pass
-
-
 CANONICAL_SOURCE = "aws_eventbridge_mlb_hot_scheduler"
 PROVIDER_SPORT_KEY = "baseball_mlb"
 
@@ -96,6 +89,23 @@ def _store_canonical_pull(*, compact: Dict[str, Any], slate_date: str, asof: str
 def apply(mlb_manual_pull_module: Any) -> None:
     if mlb_manual_pull_module is None or getattr(mlb_manual_pull_module, "_inqsi_canonical_pull_patch_installed", False):
         return
+
+    # The current scheduler writes the authoritative canonical history itself.
+    # Retaining the legacy snapshot bridge would issue a second write from the
+    # same Lambda invocation and rely on downstream cleanup. Mark the patch as
+    # installed but do not wrap the scheduler a second time.
+    if callable(getattr(mlb_manual_pull_module, "_store_canonical_pull_history", None)):
+        mlb_manual_pull_module._inqsi_canonical_pull_patch_installed = True
+        mlb_manual_pull_module._inqsi_canonical_pull_native_writer = True
+        return
+
+    # Only legacy schedulers need the compatibility slot marker around the
+    # bridge's history write. The native scheduler owns its atomic slot write.
+    try:
+        import pull_dedupe_guard
+        pull_dedupe_guard.apply(history)
+    except Exception:
+        pass
 
     original_store_snapshot_item = mlb_manual_pull_module._store_snapshot_item
 

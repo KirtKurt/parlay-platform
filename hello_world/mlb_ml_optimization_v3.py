@@ -8,9 +8,10 @@ from typing import Any, Dict, List
 import mlb_fundamentals_snapshot_v1 as fundamentals
 import mlb_ml_champion_challenger_v1 as champion
 import mlb_ml_clean_cohort_v1 as cohort
+import mlb_ml_current_lock_authority_v1 as current_lock_authority
 import mlb_ml_dual_model_v1 as dual_model
 
-VERSION = "MLB-ML-OPTIMIZATION-v3.2-90pct-rolling-slate-automatic-promotion"
+VERSION = "MLB-ML-OPTIMIZATION-v3.3-retired-diagnostic-only"
 REPORT_PATH = "runtime_reports/mlb_ml_optimization_status_latest.json"
 CLEAN_PATH = "runtime_reports/mlb_ml_clean_cohort_latest.json"
 OUTCOME_PATH = "runtime_reports/mlb_ml_outcome_challenger_latest.json"
@@ -70,6 +71,8 @@ def _rolling_24h_slate_accuracy(report: Dict[str, Any]):
 def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: bool = True) -> Dict[str, Any]:
     created = datetime.now(timezone.utc).isoformat()
     rows = _all_rows(module, report)
+    revalidation = current_lock_authority.revalidate(rows, module)
+    rows = revalidation.get("rows") or []
     for row in rows:
         if isinstance(row, dict) and row.get("status") == "GRADED" and not row.get("fundamentalsSnapshot"):
             row["fundamentalsSnapshot"] = fundamentals.build(row)
@@ -89,25 +92,26 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
         "version": VERSION,
         "createdAtUtc": created,
         "sport": "mlb",
-        "mode": "AUTOMATIC_PROMOTION_GATE_PASSED" if gate.get("promotionDecision") == "PROMOTE" else "SHADOW_CHALLENGER",
+        "mode": "LEGACY_V1_DIAGNOSTIC_SHADOW",
         "cleanCohort": {key: value for key, value in clean.items() if key not in {"cleanRows", "quarantinedRows"}},
+        "currentLockAuthorityRevalidation": {key: value for key, value in revalidation.items() if key != "rows"},
         "dualModel": trained,
         "promotionGate": gate,
         "outcomeModel": trained.get("outcomeModel"),
         "reliabilityModel": trained.get("reliabilityModel"),
         "directionAuthorityEnabled": False,
         "playabilityAuthorityEnabled": False,
-        "automaticPromotionSupported": True,
-        "automaticPromotionEnabled": champion.AUTO_PROMOTE,
-        "automaticPromotionRequiresPassedApplicableGates": True,
+        "automaticPromotionSupported": False,
+        "automaticPromotionEnabled": False,
+        "automaticPromotionRequiresPassedApplicableGates": False,
         "rolling24hSlateAccuracyPct": rolling_slate_accuracy,
         "legacyTrainerAuthorityDisabled": True,
         "legacyTrainingArtifacts": "diagnostic_only_not_authoritative",
-        "policy": "Only the exact stored post-fix lock-time feature vector may train the dual challenger. In the authoritative AWS audit, direction and playability promote independently and automatically only after their applicable gates pass; playability also requires a current rolling 24-hour MLB slate accuracy average of at least 90%.",
+        "policy": "Legacy V1 output is diagnostic-only and cannot write or activate a champion. AWS V2 owns fixed prospective training and manual-first promotion; 90% remains dashboard-only.",
     }
 
-    store_result = champion.store_challenger(bundle) if store else {"ok": True, "stored": False}
-    promotion_result = champion.promote_if_allowed(bundle) if store else {"ok": True, "promoted": False, "reason": "store_disabled"}
+    store_result = {"ok": True, "stored": False, "reason": "legacy_v1_storage_retired"}
+    promotion_result = {"ok": True, "promoted": False, "reason": "legacy_v1_promotion_retired"}
     bundle["stored"] = store_result
     bundle["promotion"] = promotion_result
 
@@ -123,6 +127,7 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
             "cleanRowCount": clean.get("cleanRowCount"),
             "quarantinedRowCount": clean.get("quarantinedRowCount"),
             "quarantineReasonCounts": clean.get("quarantineReasonCounts"),
+            "currentLockAuthorityRevalidation": {key: value for key, value in revalidation.items() if key != "rows"},
             "trainingStatus": trained.get("status"),
             "recordCount": trained.get("recordCount"),
             "dataQuality": trained.get("dataQuality"),
@@ -130,8 +135,8 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
             "validation": trained.get("validation"),
             "untouchedTest": trained.get("untouchedTest"),
             "promotionGate": gate,
-            "automaticPromotionSupported": True,
-            "automaticPromotionEnabled": champion.AUTO_PROMOTE,
+            "automaticPromotionSupported": False,
+            "automaticPromotionEnabled": False,
             "rolling24hSlateAccuracyPct": rolling_slate_accuracy,
             "stored": store_result,
             "promotion": promotion_result,
@@ -144,6 +149,7 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
         "cleanRowCount": clean.get("cleanRowCount"),
         "quarantinedRowCount": clean.get("quarantinedRowCount"),
         "quarantineReasonCounts": clean.get("quarantineReasonCounts"),
+        "currentLockAuthorityRevalidation": {key: value for key, value in revalidation.items() if key != "rows"},
         "trainingStatus": trained.get("status"),
         "recordCount": trained.get("recordCount"),
         "dataQuality": trained.get("dataQuality"),
@@ -155,20 +161,21 @@ def build(module: Any, report: Dict[str, Any], write_files: bool = True, store: 
         "reliabilityModelVersion": (trained.get("reliabilityModel") or {}).get("version"),
         "testWasUntouched": trained.get("testWasUntouchedDuringFitAndThresholdSelection"),
         "legacyTrainerAuthorityDisabled": True,
-        "automaticPromotionSupported": True,
-        "automaticPromotionEnabled": champion.AUTO_PROMOTE,
+        "automaticPromotionSupported": False,
+        "automaticPromotionEnabled": False,
         "rolling24hSlateAccuracyPct": rolling_slate_accuracy,
         "stored": store_result,
         "promotion": promotion_result,
     }
     report["mlTrainingAuthority"] = {
-        "authoritative": "mlOptimizationV3_clean_dual_model_only",
+        "authoritative": "awsNativeV2_fixed_prospective_only",
         "legacyArtifactRole": "diagnostic_only",
         "automaticWeightMutation": False,
-        "automaticChampionPromotion": champion.AUTO_PROMOTE,
-        "automaticChampionPromotionSupported": True,
-        "automaticPromotionGateRequired": True,
-        "productionAuthoritySource": "gate_promoted_DynamoDB_champion_bundle_only",
+        "automaticChampionPromotion": False,
+        "automaticChampionPromotionSupported": False,
+        "automaticPromotionGateRequired": False,
+        "firstPromotionRequiresManualReview": True,
+        "productionAuthoritySource": "persisted_canonical_rules_market_prediction_v2_shadow_only",
     }
     return report
 

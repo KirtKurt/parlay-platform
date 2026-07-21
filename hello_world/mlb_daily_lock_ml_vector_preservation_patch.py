@@ -7,6 +7,24 @@ from typing import Any, Dict, List, Optional, Tuple
 VERSION = "MLB-DAILY-LOCK-ML-VECTOR-PRESERVATION-v2-selection-training-separated"
 EXPECTED_VECTOR_VERSION = "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness"
 TRAINING_EXCLUSION_PREFIX = "exact_lock_vector_validation:"
+VECTOR_STATUS_TRAINING_EXCLUSION_PREFIX = (
+    "selection_lock_vector_status_validation:"
+)
+GRADEABILITY_VECTOR_INTEGRITY_ERRORS = {
+    "frozen_vector_fingerprint_mismatch",
+    "frozen_vector_game_identity_mismatch",
+    "frozen_vector_hometeam_mismatch",
+    "frozen_vector_awayteam_mismatch",
+    "frozen_vector_predicted_side_mismatch",
+    "frozen_vector_predicted_winner_mismatch",
+    "frozen_vector_source_after_lock",
+    "frozen_vector_lock_timestamp_mismatch",
+    "frozen_vector_source_timestamp_mismatch",
+    "pregame_vector_contains_outcome_label",
+    "frozen_vector_selected_price_mismatch",
+    "frozen_vector_selected_price_book_mismatch",
+    "frozen_vector_selected_price_source_mismatch",
+}
 
 # These fields are intentionally retained in the write-once daily card because the
 # postgame outcome and reliability models must be trained from the exact pregame
@@ -20,6 +38,7 @@ PRESERVED_FIELDS: Tuple[str, ...] = (
     "officialPredictionStatus",
     "lockedPrediction",
     "lockedAtUtc",
+    "predictionPersistedAtUtc",
     "predictionSourcePullAt",
     "predictionSourcePullId",
     "lockedAmericanOdds",
@@ -32,6 +51,28 @@ PRESERVED_FIELDS: Tuple[str, ...] = (
     "frozenFeatureVectorVersion",
     "featureVectorFrozenAtLock",
     "fundamentalsSnapshot",
+    "fundamentalsSnapshotV2",
+    "fundamentalsSnapshotV2Ref",
+    "fundamentalsSnapshotRefV2",
+    "probabilityContractVersion",
+    "homeModelWinProbability",
+    "awayModelWinProbability",
+    "modelWinProbability",
+    "modelProbabilityVersion",
+    "modelProbabilitySource",
+    "homeMarketDeVigProbability",
+    "awayMarketDeVigProbability",
+    "marketProbability",
+    "marketProbabilitySourceAtUtc",
+    "marketProbabilityVersion",
+    "marketProbabilityFingerprint",
+    "signalScore",
+    "pickReliability",
+    "probabilityContract",
+    "probabilityCorrectionApplied",
+    "probabilityCorrectionReason",
+    "pullHistoryIntegrity",
+    "predictionSourceCanonicalSlot",
     "finalGuardedStored",
     "finalGuardedStoreRequested",
     "finalGateStored",
@@ -189,6 +230,47 @@ def _validate(row: Dict[str, Any], compact: Dict[str, Any]) -> List[str]:
         expected_masks = cohort.feature_missingness.build_masks(fundamentals)
         if any(_number(features.get(key)) != float(value) for key, value in expected_masks.items()):
             errors.append("frozen_vector_fundamental_mask_recalculation_mismatch")
+
+        fundamentals_v2 = (
+            compact.get("fundamentalsSnapshotV2")
+            or row.get("fundamentalsSnapshotV2")
+            or {}
+        )
+        if vector.get("fundamentalsSnapshotV2Version") or fundamentals_v2:
+            import mlb_fundamentals_snapshot_v2 as snapshot_v2
+
+            v2_ref = (
+                compact.get("fundamentalsSnapshotV2Ref")
+                or compact.get("fundamentalsSnapshotRefV2")
+                or row.get("fundamentalsSnapshotV2Ref")
+                or row.get("fundamentalsSnapshotRefV2")
+                or {}
+            )
+            if snapshot_v2.validate(fundamentals_v2):
+                errors.append("fundamentals_v2_snapshot_invalid")
+            if vector.get("fundamentalsSnapshotV2Version") != fundamentals_v2.get("version"):
+                errors.append("frozen_vector_fundamentals_v2_version_mismatch")
+            if vector.get("fundamentalsSnapshotV2Fingerprint") != fundamentals_v2.get("fingerprint"):
+                errors.append("frozen_vector_fundamentals_v2_fingerprint_mismatch")
+            if vector.get("fundamentalsSnapshotV2Ref") != v2_ref:
+                errors.append("frozen_vector_fundamentals_v2_reference_mismatch")
+            persisted_at = (
+                compact.get("predictionPersistedAtUtc")
+                or compact.get("createdAt")
+                or compact.get("created_at")
+                or row.get("predictionPersistedAtUtc")
+                or row.get("createdAt")
+                or row.get("created_at")
+            )
+            v2_safe = snapshot_v2.provenance_is_lock_safe(
+                fundamentals_v2,
+                prediction_persisted_at=persisted_at,
+                lock_at=lock_at,
+            )
+            if vector.get("fundamentalsSnapshotV2AtOrBeforeLock") is not v2_safe:
+                errors.append("frozen_vector_fundamentals_v2_provenance_mismatch")
+            if not v2_safe:
+                errors.append("fundamentals_v2_snapshot_not_lock_safe")
 
         required_features = set(dual.OUTCOME_FEATURES) | set(dual.RELIABILITY_FEATURES)
         if required_features - set(features):
@@ -414,6 +496,67 @@ def validate_selection_lock_vector_status(row: Dict[str, Any]) -> List[str]:
             errors.append("invalid_vector_training_exclusions_missing")
 
     return sorted(set(errors))
+
+
+def selection_lock_training_exclusions(
+    row: Dict[str, Any],
+    *,
+    vector_errors: Optional[List[str]] = None,
+    vector_status_errors: Optional[List[str]] = None,
+) -> List[str]:
+    """Return read-time ML exclusions without deciding winner-lock validity.
+
+    This is intentionally separate from ``validate_selection_lock_vector_status``:
+    an immutable pre-separation lock may be gradeable even when its newer ML
+    metadata is absent.  The same metadata defect must still fail closed for
+    cohort admission.  New canonical writes continue to call the strict
+    validator before storage.
+    """
+    source = row or {}
+    freeze = source.get("mlFeatureFreeze") or {}
+    reasons = {
+        str(reason)
+        for values in (
+            source.get("trainingExclusionReasons") or [],
+            freeze.get("trainingExclusionReasons") or []
+            if isinstance(freeze, dict)
+            else [],
+        )
+        for reason in values
+        if str(reason)
+    }
+    exact_errors = (
+        effective_selection_lock_vector_errors(source)
+        if vector_errors is None
+        else vector_errors
+    )
+    status_errors = (
+        validate_selection_lock_vector_status(source)
+        if vector_status_errors is None
+        else vector_status_errors
+    )
+    reasons.update(_vector_training_exclusions(exact_errors))
+    reasons.update(
+        f"{VECTOR_STATUS_TRAINING_EXCLUSION_PREFIX}{str(error).strip()}"
+        for error in status_errors
+        if str(error).strip()
+    )
+    return sorted(reasons)
+
+
+def selection_lock_gradeability_integrity_errors(row: Dict[str, Any]) -> List[str]:
+    """Reject internal vector tampering without requiring modern ML metadata.
+
+    Legacy immutable picks may lack a vector or newer feature/status fields and
+    remain gradeable.  If a vector is present, contradictions in its immutable
+    game, selection, price, timing, fingerprint, or outcome boundary are still
+    canonical-lock integrity defects rather than mere training exclusions.
+    """
+    return sorted(
+        error
+        for error in effective_selection_lock_vector_errors(row)
+        if error in GRADEABILITY_VECTOR_INTEGRITY_ERRORS
+    )
 
 
 def require_exact_locked_row(row: Dict[str, Any]) -> None:

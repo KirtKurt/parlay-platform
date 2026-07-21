@@ -1,9 +1,18 @@
 from __future__ import annotations
 
+from contextvars import ContextVar
 from typing import Any, Dict, List, Tuple
 
 VERSION = "MLB-LOCKED-PREDICTION-STORAGE-FINALIZER-v4-selection-vector-separated"
 UNAUTHORIZED_LOCKED_WRITE = "immutable_per_game_stage_authority_missing"
+_STORAGE_REQUEST_ACTIVE: ContextVar[bool] = ContextVar(
+    "inqsi_mlb_prediction_storage_request_active",
+    default=False,
+)
+
+
+def storage_request_active() -> bool:
+    return _STORAGE_REQUEST_ACTIVE.get()
 
 
 def _store_requested(args: Tuple[Any, ...], kwargs: Dict[str, Any]) -> bool:
@@ -161,7 +170,11 @@ def apply(module: Any) -> Any:
     def patched_predict_all(*args, **kwargs):
         requested = _store_requested(args, kwargs)
         inner_args, inner_kwargs = _without_store(args, kwargs)
-        result = original(*inner_args, **inner_kwargs)
+        token = _STORAGE_REQUEST_ACTIVE.set(requested)
+        try:
+            result = original(*inner_args, **inner_kwargs)
+        finally:
+            _STORAGE_REQUEST_ACTIVE.reset(token)
         return _store_final(module, result, requested)
 
     module.predict_all = patched_predict_all

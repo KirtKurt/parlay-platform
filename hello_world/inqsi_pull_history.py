@@ -47,6 +47,11 @@ MLB_EXHIBITION_MARKERS = ("all-star", "all star")
 PROVIDER_MANIFEST_VERSION = "INQSI-PROVIDER-SCHEDULE-MANIFEST-v1"
 PROVIDER_MANIFEST_RECORD_TYPE = "provider_schedule_manifest"
 CANONICAL_PAYLOAD_FINGERPRINT_VERSION = "INQSI-DDB-READ-EXACT-TYPED-JSON-SHA256-v1"
+PULL_SLOT_MINUTES = 15
+PULL_SLOT_VERSION = "INQSI-CANONICAL-PULL-SLOT-v1-earliest-integrity-valid"
+PULL_HISTORY_INTEGRITY_VERSION = "INQSI-PULL-HISTORY-INTEGRITY-v1-canonical-quarter-hour"
+INTRINSIC_PULL_IDEMPOTENCY_VERSION = "INQSI-PULL-STORE-v3-intrinsic-quarter-hour-idempotency"
+_INQSI_INTRINSIC_PULL_SLOT_IDEMPOTENCY = True
 
 
 def now() -> str:
@@ -63,13 +68,26 @@ def sport_key(s: Optional[str]) -> str:
     return ALIASES.get(raw, raw)
 
 
-def ddb_safe(x: Any) -> Any:
+def _ddb_safe(x: Any, *, preserve_nulls: bool = False) -> Any:
     if isinstance(x, float):
         return Decimal(str(x))
     if isinstance(x, list):
-        return [ddb_safe(i) for i in x]
+        return [_ddb_safe(i, preserve_nulls=preserve_nulls) for i in x]
     if isinstance(x, dict):
-        out = {k: ddb_safe(v) for k, v in x.items() if v is not None}
+        # A fundamentals-v2 snapshot is commonly nested inside a prediction or
+        # frozen vector.  Null is part of that snapshot's signed schema (it
+        # proves an unavailable source value was not fabricated), so switch the
+        # policy at the nested snapshot boundary as well as at the root.
+        preserve_nested_nulls = bool(
+            preserve_nulls
+            or x.get("version")
+            == "MLB-FUNDAMENTALS-SNAPSHOT-v2-immutable-source-provenance"
+        )
+        out = {
+            k: _ddb_safe(v, preserve_nulls=preserve_nested_nulls)
+            for k, v in x.items()
+            if preserve_nested_nulls or v is not None
+        }
         # DynamoDB supports explicit NULL values. Preserve the two target slots
         # only for the canonical pregame ML vector so readback can prove that
         # neither outcome was available at lock. Other None fields remain omitted.
@@ -84,6 +102,15 @@ def ddb_safe(x: Any) -> Any:
             out["labels"] = labels
         return out
     return x
+
+
+def ddb_safe(x: Any) -> Any:
+    preserve_nulls = bool(
+        isinstance(x, dict)
+        and x.get("version")
+        == "MLB-FUNDAMENTALS-SNAPSHOT-v2-immutable-source-provenance"
+    )
+    return _ddb_safe(x, preserve_nulls=preserve_nulls)
 
 
 def _exact_decimal_text(value: Decimal) -> str:
@@ -162,6 +189,243 @@ def slate_date(ts: str) -> str:
         return datetime.fromisoformat(ts.replace("Z", "+00:00")).astimezone(ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))).date().isoformat()
     except Exception:
         return today()
+
+
+def _parse_utc(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def pull_slot_start(value: Any) -> Optional[datetime]:
+    parsed = value if isinstance(value, datetime) else _parse_utc(value)
+    if parsed is None:
+        return None
+    parsed = parsed.astimezone(timezone.utc)
+    minute = (parsed.minute // PULL_SLOT_MINUTES) * PULL_SLOT_MINUTES
+    return parsed.replace(minute=minute, second=0, microsecond=0)
+
+
+def _pull_slot_key(sport: str, slate: str, slot: datetime) -> Dict[str, str]:
+    return {
+        "PK": f"PULLS#{sport}#{slate}",
+        "SK": f"PULL#SLOT#{slot.astimezone(timezone.utc).isoformat()}",
+    }
+
+
+def _pull_fingerprint_payload(pull: Dict[str, Any]) -> Dict[str, Any]:
+    payload = copy.deepcopy(pull or {})
+    payload.pop("canonicalPullSlot", None)
+    payload.pop("canonicalPullStorage", None)
+    payload.pop("_canonicalSlotRawPulls", None)
+    return payload
+
+
+def pull_payload_fingerprint(pull: Dict[str, Any]) -> str:
+    return canonical_payload_fingerprint(_pull_fingerprint_payload(pull))
+
+
+def _pull_integrity_errors(
+    pull: Dict[str, Any],
+    *,
+    sport: Optional[str] = None,
+    slate: Optional[str] = None,
+    require_manifest: bool = False,
+) -> List[str]:
+    errors: List[str] = []
+    if not isinstance(pull, dict):
+        return ["pull_not_object"]
+    if not str(pull.get("pull_id") or ""):
+        errors.append("pull_id_missing")
+    if pull_slot_start(pull.get("pulled_at")) is None:
+        errors.append("pulled_at_invalid")
+    if not isinstance(pull.get("games"), list):
+        errors.append("games_not_list")
+    if sport and sport_key(pull.get("sport")) != sport_key(sport):
+        errors.append("sport_mismatch")
+    if slate and str(pull.get("slate_date") or "") != str(slate):
+        errors.append("slate_mismatch")
+    has_manifest = isinstance(pull.get("provider_schedule_manifest"), dict)
+    has_binding = isinstance(pull.get("provider_manifest_binding"), dict)
+    if require_manifest and (not has_manifest or not has_binding):
+        errors.append("provider_manifest_missing")
+    elif has_manifest or has_binding:
+        errors.extend(validate_provider_schedule_manifest(pull, slate))
+    return sorted(set(errors))
+
+
+def _slot_input_metadata(pull: Dict[str, Any]) -> Dict[str, Any]:
+    metadata = pull.get("canonicalPullSlot") or {}
+    if metadata.get("version") != PULL_SLOT_VERSION:
+        fingerprint = pull_payload_fingerprint(pull)
+        return {
+            "rawPullCount": 1,
+            "validPullCount": 1,
+            "invalidPullCount": 0,
+            "rawPullIds": [str(pull.get("pull_id") or "")],
+            "rawPullFingerprints": [fingerprint],
+        }
+    return {
+        "rawPullCount": max(int(metadata.get("rawPullCount") or 1), 1),
+        "validPullCount": max(int(metadata.get("validPullCount") or 1), 0),
+        "invalidPullCount": max(int(metadata.get("invalidPullCount") or 0), 0),
+        "rawPullIds": [str(value) for value in (metadata.get("rawPullIds") or [])],
+        "rawPullFingerprints": [
+            str(value) for value in (metadata.get("rawPullFingerprints") or [])
+        ],
+    }
+
+
+def canonicalize_pull_slots(
+    pulls: Iterable[Dict[str, Any]],
+    *,
+    sport: Optional[str] = None,
+    slate: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Return one deterministic integrity-valid pull per UTC quarter-hour.
+
+    The earliest valid row wins. Raw rows remain immutable in DynamoDB; the
+    attached metadata makes any historical duplicate contamination explicit to
+    scorers and the T-minus-45 training gate.
+    """
+    grouped: Dict[
+        str,
+        List[Tuple[datetime, int, str, str, Dict[str, Any], Dict[str, Any]]],
+    ] = {}
+    invalid_by_slot: Dict[str, int] = {}
+    raw_count_by_slot: Dict[str, int] = {}
+    raw_ids_by_slot: Dict[str, List[str]] = {}
+    raw_fingerprints_by_slot: Dict[str, List[str]] = {}
+    raw_variants_by_slot: Dict[str, List[Dict[str, Any]]] = {}
+    for input_index, raw in enumerate(pulls or []):
+        if not isinstance(raw, dict):
+            continue
+        pulled_at = _parse_utc(raw.get("pulled_at"))
+        slot = pull_slot_start(pulled_at)
+        if pulled_at is None or slot is None:
+            continue
+        slot_text = slot.isoformat()
+        inherited = _slot_input_metadata(raw)
+        raw_count_by_slot[slot_text] = raw_count_by_slot.get(slot_text, 0) + int(
+            inherited["rawPullCount"]
+        )
+        raw_ids_by_slot.setdefault(slot_text, []).extend(inherited["rawPullIds"])
+        raw_fingerprints_by_slot.setdefault(slot_text, []).extend(
+            inherited["rawPullFingerprints"]
+        )
+        inherited_variants = raw.get("_canonicalSlotRawPulls")
+        variants = (
+            inherited_variants
+            if isinstance(inherited_variants, list) and inherited_variants
+            else [raw]
+        )
+        for variant in variants:
+            if not isinstance(variant, dict):
+                continue
+            raw_variant = copy.deepcopy(variant)
+            raw_variant.pop("canonicalPullSlot", None)
+            raw_variant.pop("_canonicalSlotRawPulls", None)
+            raw_variants_by_slot.setdefault(slot_text, []).append(raw_variant)
+        errors = _pull_integrity_errors(raw, sport=sport, slate=slate)
+        if errors:
+            invalid_by_slot[slot_text] = invalid_by_slot.get(slot_text, 0) + max(
+                int(inherited["invalidPullCount"]), 1
+            )
+            continue
+        fingerprint = pull_payload_fingerprint(raw)
+        grouped.setdefault(slot_text, []).append(
+            (
+                pulled_at,
+                input_index,
+                str(raw.get("pull_id") or ""),
+                fingerprint,
+                copy.deepcopy(raw),
+                inherited,
+            )
+        )
+
+    selected: List[Dict[str, Any]] = []
+    for slot_text in sorted(grouped):
+        # Exact timestamp ties keep immutable query/input order. In DynamoDB a
+        # fixed slot key prevents such ties for new writes; retaining order is
+        # the only truthful migration rule for legacy/fake histories because
+        # a lexical pull ID is not evidence that one observation came first.
+        candidates = sorted(grouped[slot_text], key=lambda value: value[:2])
+        pulled_at, _, pull_id, fingerprint, canonical, _ = candidates[0]
+        valid_count = sum(max(int(item[5]["validPullCount"]), 1) for item in candidates)
+        raw_count = max(raw_count_by_slot.get(slot_text, valid_count), valid_count)
+        invalid_count = invalid_by_slot.get(slot_text, 0)
+        duplicate_count = max(raw_count - 1, 0)
+        raw_ids = sorted(set(value for value in raw_ids_by_slot.get(slot_text, []) if value))
+        raw_fingerprints = sorted(
+            set(value for value in raw_fingerprints_by_slot.get(slot_text, []) if value)
+        )
+        canonical["canonicalPullSlot"] = {
+            "version": PULL_SLOT_VERSION,
+            "slotMinutes": PULL_SLOT_MINUTES,
+            "slotStartUtc": slot_text,
+            "canonical": True,
+            "selectionPolicy": "earliest_integrity_valid_pull_in_utc_quarter_hour",
+            "canonicalPullId": pull_id,
+            "canonicalPulledAtUtc": pulled_at.isoformat(),
+            "canonicalPullFingerprint": fingerprint,
+            "rawPullCount": raw_count,
+            "validPullCount": valid_count,
+            "invalidPullCount": invalid_count,
+            "duplicatePullCount": duplicate_count,
+            "contaminated": duplicate_count > 0 or invalid_count > 0,
+            "rawPullIds": raw_ids,
+            "rawPullFingerprints": raw_fingerprints,
+        }
+        canonical["_canonicalSlotRawPulls"] = sorted(
+            raw_variants_by_slot.get(slot_text, []),
+            key=lambda pull: (
+                _parse_utc(pull.get("pulled_at"))
+                or datetime.min.replace(tzinfo=timezone.utc),
+                str(pull.get("pull_id") or ""),
+                pull_payload_fingerprint(pull),
+            ),
+        )
+        selected.append(canonical)
+    return selected
+
+
+def pull_history_integrity(pulls: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    canonical = canonicalize_pull_slots(list(pulls or []))
+    slots = [copy.deepcopy(pull.get("canonicalPullSlot") or {}) for pull in canonical]
+    raw_count = sum(int(slot.get("rawPullCount") or 0) for slot in slots)
+    invalid_count = sum(int(slot.get("invalidPullCount") or 0) for slot in slots)
+    duplicate_count = sum(int(slot.get("duplicatePullCount") or 0) for slot in slots)
+    fingerprint_payload = [
+        {
+            "slotStartUtc": slot.get("slotStartUtc"),
+            "canonicalPullId": slot.get("canonicalPullId"),
+            "canonicalPulledAtUtc": slot.get("canonicalPulledAtUtc"),
+            "canonicalPullFingerprint": slot.get("canonicalPullFingerprint"),
+            "rawPullCount": slot.get("rawPullCount"),
+            "invalidPullCount": slot.get("invalidPullCount"),
+        }
+        for slot in slots
+    ]
+    return {
+        "version": PULL_HISTORY_INTEGRITY_VERSION,
+        "canonicalizationVersion": PULL_SLOT_VERSION,
+        "slotMinutes": PULL_SLOT_MINUTES,
+        "rawPullCount": raw_count,
+        "uniqueSlotCount": len(slots),
+        "duplicatePullCount": duplicate_count,
+        "invalidPullCount": invalid_count,
+        "contaminatedSlotCount": sum(1 for slot in slots if slot.get("contaminated") is True),
+        "duplicateContaminated": duplicate_count > 0 or invalid_count > 0,
+        "slotStartsUtc": [slot.get("slotStartUtc") for slot in slots],
+        "canonicalSlotFingerprint": canonical_payload_fingerprint(fingerprint_payload),
+    }
 
 
 def team_key(name: Optional[str]) -> str:
@@ -1114,6 +1378,138 @@ def normalize_pull(body: Dict[str, Any]) -> Dict[str, Any]:
     }}
 
 
+def _conditional_failure(exc: Exception) -> bool:
+    response = getattr(exc, "response", {}) or {}
+    return str((response.get("Error") or {}).get("Code") or "") == "ConditionalCheckFailedException"
+
+
+def _query_pull_items(sport: str, slate: str, limit: int = 500) -> List[Dict[str, Any]]:
+    if PULLS is None:
+        raise RuntimeError("SNAPSHOTS_TABLE is not configured")
+    out: List[Dict[str, Any]] = []
+    start_key = None
+    size = min(max(int(limit), 1), 500)
+    while len(out) < size:
+        args: Dict[str, Any] = {
+            "KeyConditionExpression": Key("PK").eq(f"PULLS#{sport}#{slate}"),
+            "ScanIndexForward": True,
+            "Limit": size - len(out),
+            "ConsistentRead": True,
+        }
+        if start_key:
+            args["ExclusiveStartKey"] = start_key
+        response = PULLS.query(**args)
+        for raw_item in response.get("Items", []):
+            if not isinstance(raw_item, dict) or raw_item.get("record_type") != "pull_run":
+                continue
+            item = copy.deepcopy(raw_item)
+            pull = item.get("data")
+            if not isinstance(pull, dict):
+                continue
+            pull["canonicalPullStorage"] = {
+                "pk": item.get("PK"),
+                "sk": item.get("SK"),
+                "recordType": item.get("record_type"),
+            }
+            out.append(item)
+        start_key = response.get("LastEvaluatedKey")
+        if not start_key:
+            break
+    return out[:size]
+
+
+def _provider_manifest_store_response(pull: Dict[str, Any], *, created: bool) -> Dict[str, Any]:
+    manifest = pull.get("provider_schedule_manifest") or {}
+    manifest_key = _provider_manifest_key(manifest)
+    schedule_authority = manifest.get("scheduleAuthority") or {}
+    return {
+        "pk": manifest_key["PK"],
+        "sk": manifest_key["SK"],
+        "version": PROVIDER_MANIFEST_VERSION,
+        "fingerprint": manifest.get("fingerprint"),
+        "game_count": len(pull.get("games") or []),
+        "immutable": True,
+        "full_provider_schedule": True,
+        "created": created,
+        "official_schedule_backed": bool(schedule_authority),
+        "official_schedule_authority_version": schedule_authority.get("version"),
+        "official_schedule_authority_fingerprint": schedule_authority.get("fingerprint"),
+        "official_schedule_game_count": schedule_authority.get("officialGameCount"),
+    }
+
+
+def _stored_pull_result(
+    pull: Dict[str, Any],
+    storage_key: Dict[str, Any],
+    *,
+    manifest_created: bool,
+    deduped: bool,
+) -> Dict[str, Any]:
+    result = {
+        "ok": True,
+        "stored": {
+            "pk": storage_key.get("PK") or storage_key.get("pk"),
+            "sk": storage_key.get("SK") or storage_key.get("sk"),
+            "pull_id": pull.get("pull_id"),
+            "game_count": len(pull.get("games") or []),
+            "provider_manifest": _provider_manifest_store_response(
+                pull,
+                created=manifest_created,
+            ),
+        },
+        "pull": copy.deepcopy(pull),
+        "deduped": bool(deduped),
+        "dedupeVersion": INTRINSIC_PULL_IDEMPOTENCY_VERSION,
+    }
+    slot = pull_slot_start(pull.get("pulled_at"))
+    result["canonicalSlot"] = {
+        "version": PULL_SLOT_VERSION,
+        "slotStartUtc": slot.isoformat() if slot else None,
+        "canonicalPullId": pull.get("pull_id"),
+        "canonicalPulledAtUtc": pull.get("pulled_at"),
+        "retryReturnedExistingCanonicalPull": bool(deduped),
+    }
+    return result
+
+
+def _existing_canonical_pull_for_slot(
+    sport: str,
+    slate: str,
+    slot: datetime,
+) -> Optional[Tuple[Dict[str, Any], Dict[str, str]]]:
+    try:
+        items = _query_pull_items(sport, slate, 500)
+    except Exception:
+        return None
+    candidates: List[Tuple[datetime, str, str, Dict[str, Any], Dict[str, str]]] = []
+    for item in items:
+        pull = copy.deepcopy(item.get("data") or {})
+        if pull_slot_start(pull.get("pulled_at")) != slot:
+            continue
+        if _pull_integrity_errors(
+            pull,
+            sport=sport,
+            slate=slate,
+            require_manifest=True,
+        ):
+            continue
+        pulled_at = _parse_utc(pull.get("pulled_at"))
+        if pulled_at is None:
+            continue
+        pull.pop("canonicalPullStorage", None)
+        candidates.append((
+            pulled_at,
+            str(pull.get("pull_id") or ""),
+            pull_payload_fingerprint(pull),
+            pull,
+            {"PK": str(item.get("PK") or ""), "SK": str(item.get("SK") or "")},
+        ))
+    if not candidates:
+        return None
+    _, _, _, pull, key = min(candidates, key=lambda value: value[:3])
+    return pull, key
+
+
 def store_pull(body: Dict[str, Any]) -> Dict[str, Any]:
     if PULLS is None:
         raise RuntimeError("SNAPSHOTS_TABLE is not configured")
@@ -1121,6 +1517,27 @@ def store_pull(body: Dict[str, Any]) -> Dict[str, Any]:
     if not n.get("ok"):
         return n
     p = n["pull"]
+    slot = pull_slot_start(p.get("pulled_at"))
+    if slot is None:
+        return {"ok": False, "error": "pulled_at_invalid_for_canonical_slot"}
+
+    # Migration-safe: if this quarter-hour already contains a legacy
+    # timestamp-keyed pull, return that exact earliest valid row. New writes use
+    # the deterministic slot key below, whose conditional put handles races.
+    existing_slot = _existing_canonical_pull_for_slot(
+        p["sport"],
+        p["slate_date"],
+        slot,
+    )
+    if existing_slot:
+        existing_pull, existing_key = existing_slot
+        return _stored_pull_result(
+            existing_pull,
+            existing_key,
+            manifest_created=False,
+            deduped=True,
+        )
+
     manifest = p["provider_schedule_manifest"]
     manifest_key = _provider_manifest_key(manifest)
     manifest_item = {
@@ -1143,8 +1560,7 @@ def store_pull(body: Dict[str, Any]) -> Dict[str, Any]:
             ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
         )
     except Exception as exc:
-        code = str(((getattr(exc, "response", {}) or {}).get("Error") or {}).get("Code") or "")
-        if code != "ConditionalCheckFailedException":
+        if not _conditional_failure(exc):
             raise
         existing = PULLS.get_item(Key=manifest_key, ConsistentRead=True).get("Item")
         if (
@@ -1155,8 +1571,59 @@ def store_pull(body: Dict[str, Any]) -> Dict[str, Any]:
         ):
             raise RuntimeError("IMMUTABLE_PROVIDER_MANIFEST_COLLISION") from exc
         manifest_created = False
-    item = {"PK": f"PULLS#{p['sport']}#{p['slate_date']}", "SK": f"PULL#{p['pulled_at']}#{p['pull_id']}", "record_type": "pull_run", "sport": p["sport"], "slate_date": p["slate_date"], "pulled_at": p["pulled_at"], "pull_id": p["pull_id"], "data": ddb_safe(p), "created_at": now()}
-    PULLS.put_item(Item=item)
+    slot_key = _pull_slot_key(p["sport"], p["slate_date"], slot)
+    item = {
+        **slot_key,
+        "record_type": "pull_run",
+        "pull_store_version": INTRINSIC_PULL_IDEMPOTENCY_VERSION,
+        "canonical_slot_version": PULL_SLOT_VERSION,
+        "slot_start_utc": slot.isoformat(),
+        "sport": p["sport"],
+        "slate_date": p["slate_date"],
+        "pulled_at": p["pulled_at"],
+        "pull_id": p["pull_id"],
+        "data": ddb_safe(p),
+        "created_at": now(),
+    }
+    try:
+        PULLS.put_item(
+            Item=item,
+            ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
+        )
+    except Exception as exc:
+        if not _conditional_failure(exc):
+            raise
+        existing_item = PULLS.get_item(Key=slot_key, ConsistentRead=True).get("Item")
+        existing_pull = (existing_item or {}).get("data")
+        if (
+            not isinstance(existing_item, dict)
+            or existing_item.get("record_type") != "pull_run"
+            or not isinstance(existing_pull, dict)
+            or _pull_integrity_errors(
+                existing_pull,
+                sport=p["sport"],
+                slate=p["slate_date"],
+                require_manifest=True,
+            )
+            or pull_slot_start(existing_pull.get("pulled_at")) != slot
+        ):
+            raise RuntimeError("CANONICAL_PULL_SLOT_COLLISION_INVALID_READBACK") from exc
+        authority_errors = validate_provider_schedule_manifest(
+            existing_pull,
+            p["slate_date"],
+            verify_immutable_storage=True,
+        )
+        if authority_errors:
+            raise RuntimeError(
+                "CANONICAL_PULL_SLOT_EXISTING_MANIFEST_INVALID:"
+                + ",".join(authority_errors)
+            ) from exc
+        return _stored_pull_result(
+            existing_pull,
+            slot_key,
+            manifest_created=False,
+            deduped=True,
+        )
     authority_errors = validate_provider_schedule_manifest(
         p,
         p["slate_date"],
@@ -1167,54 +1634,45 @@ def store_pull(body: Dict[str, Any]) -> Dict[str, Any]:
             "PROVIDER_SCHEDULE_MANIFEST_READBACK_INVALID:"
             + ",".join(authority_errors)
         )
-    return {"ok": True, "stored": {
-        "pk": item["PK"],
-        "sk": item["SK"],
-        "pull_id": p["pull_id"],
-        "game_count": len(p["games"]),
-        "provider_manifest": {
-            "pk": manifest_key["PK"],
-            "sk": manifest_key["SK"],
-            "version": PROVIDER_MANIFEST_VERSION,
-            "fingerprint": manifest["fingerprint"],
-            "game_count": len(p["games"]),
-            "immutable": True,
-            "full_provider_schedule": True,
-            "created": manifest_created,
-            "official_schedule_backed": bool(manifest.get("scheduleAuthority")),
-            "official_schedule_authority_version": (manifest.get("scheduleAuthority") or {}).get("version"),
-            "official_schedule_authority_fingerprint": (manifest.get("scheduleAuthority") or {}).get("fingerprint"),
-            "official_schedule_game_count": (manifest.get("scheduleAuthority") or {}).get("officialGameCount"),
-        },
-    }, "pull": p}
+    return _stored_pull_result(
+        p,
+        slot_key,
+        manifest_created=manifest_created,
+        deduped=False,
+    )
 
 
-def query_pulls(sport: str, date: Optional[str] = None, limit: int = 500) -> List[Dict[str, Any]]:
+def query_pulls_raw(sport: str, date: Optional[str] = None, limit: int = 500) -> List[Dict[str, Any]]:
     if PULLS is None:
         raise RuntimeError("SNAPSHOTS_TABLE is not configured")
     sport = sport_key(sport)
     date = date or today()
     limit = min(max(int(limit), 1), 500)
-    out: List[Dict[str, Any]] = []
-    start_key = None
-    while len(out) < limit:
-        args: Dict[str, Any] = {
-            "KeyConditionExpression": Key("PK").eq(f"PULLS#{sport}#{date}"),
-            "ScanIndexForward": True,
-            "Limit": limit - len(out),
-            "ConsistentRead": True,
-        }
-        if start_key:
-            args["ExclusiveStartKey"] = start_key
-        res = PULLS.query(**args)
-        rows = [i.get("data", {}) for i in res.get("Items", [])]
-        if sport == "mlb":
-            rows = [_filter_mlb_model_pull(row) for row in rows]
-        out.extend(rows)
-        start_key = res.get("LastEvaluatedKey")
-        if not start_key:
-            break
-    return out
+    rows = [copy.deepcopy(item.get("data") or {}) for item in _query_pull_items(sport, date, limit)]
+    if sport == "mlb":
+        rows = [_filter_mlb_model_pull(row) for row in rows]
+    return sorted(
+        rows,
+        key=lambda pull: (
+            _parse_utc(pull.get("pulled_at")) or datetime.min.replace(tzinfo=timezone.utc),
+            str(pull.get("pull_id") or ""),
+            pull_payload_fingerprint(pull),
+        ),
+    )
+
+
+def query_pulls(sport: str, date: Optional[str] = None, limit: int = 500) -> List[Dict[str, Any]]:
+    """Read canonical scoring pulls; raw duplicates require query_pulls_raw."""
+    requested_sport = sport_key(sport)
+    requested_date = date or today()
+    size = min(max(int(limit), 1), 500)
+    raw = query_pulls_raw(requested_sport, requested_date, 500)
+    canonical = canonicalize_pull_slots(
+        raw,
+        sport=requested_sport,
+        slate=requested_date,
+    )
+    return canonical[:size]
 
 
 def book_probs(game: Dict[str, Any]) -> Dict[str, Any]:

@@ -172,7 +172,7 @@ try:
             return _json_resp(200 if runtime_ready else 503, {
                 "ok": runtime_ready,
                 "sport": "mlb",
-                "model_version": "INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority",
+                "model_version": "INQSI-MLB-v4.0-canonical-probability-aws-v2-shadow-manual-first",
                 "game_winner_model": getattr(engine, "MODEL_VERSION", None) if engine is not None else None,
                 "game_winner_engine": getattr(engine, "ENGINE", None) if engine is not None else None,
                 "ml_optimization_version": optimization_version,
@@ -182,13 +182,21 @@ try:
                 "pick_type": "individual_game_moneyline",
                 "requiredWinnerPickPolicy": "one_official_locked_winner_prediction_for_every_mlb_game",
                 "playablePolicy": "playability_is_separate_and_may_be_false_for_an_official_prediction",
-                "mlDirectionPolicy": "outcome_model_requires_90pct_untouched_accuracy_and_90pct_rolling_official_card_slate_accuracy_before_automatic_authority",
+                "mlDirectionPolicy": "persisted_rules_market_direction_v2_shadow_only_no_v2_runtime_consumer",
                 "mlReliabilityPolicy": "reliability_model_probability_is_never_used_as_team_win_probability",
-                "productionAuthoritySource": "gate_promoted_DynamoDB_champion_bundle_only",
-                "automaticPromotionPolicy": "authoritative_AWS_audit_only_after_independent_90pct_authority_gates",
+                "productionAuthoritySource": "persisted_canonical_rules_market_prediction_v2_shadow_only",
+                "automaticPromotionPolicy": "disabled_manual_review_creates_shadow_pointer_only",
+                "legacyV1AuthorityEnabled": False,
+                "awsNativeTrainingInstalled": True,
+                "awsNativeTrainingAuthority": False,
+                "awsNativeTrainingHealthSource": "separate_mode_specific_status_contract",
+                "firstPromotionRequiresManualReview": True,
+                "manualReviewCreatesShadowApprovalOnly": True,
+                "v2InferenceConsumerInstalled": False,
+                "runtimeAuthorityActivationAvailable": False,
                 "parlaysEnabled": False,
                 "readOnly": True,
-                "sourcePolicy": "The Odds API stored pull history plus timestamped source-honest fundamentals snapshots.",
+                "sourcePolicy": "Canonical 15-minute market slots plus immutable pre-lock Fundamentals V2 snapshots and official FINAL labels.",
             })
 
         if path in {"/v1/mlb/today", "/v1/mlb/games", "/v1/mlb/predictions", "/v1/mlb/game-winners"}:
@@ -205,7 +213,10 @@ try:
                     "readOnly": True,
                 })
             try:
-                payload = engine.predict_all(
+                reader = getattr(engine, "read_persisted_predictions", None)
+                if not callable(reader):
+                    raise RuntimeError("persisted_prelock_prediction_reader_unavailable")
+                payload = reader(
                     date,
                     store=False,
                     limit=min(int(params.get("limit") or 500), 500),
@@ -217,7 +228,7 @@ try:
                     "ok": True,
                     "sport": "mlb",
                     "date": date,
-                    "model_version": "INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority",
+                    "model_version": "INQSI-MLB-v4.0-canonical-probability-aws-v2-shadow-manual-first",
                     "game_winner_model": payload.get("modelVersion"),
                     "count": payload.get("count", 0),
                     "requiredGameWinnerPredictionCount": payload.get("requiredGameWinnerPredictionCount"),

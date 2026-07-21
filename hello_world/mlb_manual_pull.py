@@ -261,7 +261,7 @@ def _transparent_cached_pre_start_response(payload: Dict[str, Any], live_pull_er
     try:
         from mlb_date_signal_api import hot_sides
         game_date = payload.get("game_date_et") or payload.get("slate_date_et") or _slate_date_et()
-        cached = hot_sides(game_date=game_date, limit=80, store=True, include_no_edge=True)
+        cached = hot_sides(game_date=game_date, limit=80, include_no_edge=True)
         return {
             **cached,
             "ok": True,
@@ -825,10 +825,10 @@ def _record_no_edge_predictions_safe(*, game_date: str, asof: str, date_compact:
         return {"ok": False, "error": str(exc)}
 
 
-def _build_and_store_hot_sides(*, game_date: str, limit: int = 80) -> Dict[str, Any]:
+def _build_read_only_hot_sides(*, game_date: str, limit: int = 80) -> Dict[str, Any]:
     try:
         from mlb_date_signal_api import hot_sides
-        return hot_sides(game_date=game_date, limit=limit, store=True, include_no_edge=True)
+        return hot_sides(game_date=game_date, limit=limit, include_no_edge=True)
     except Exception as exc:
         return {"ok": False, "sport": "mlb", "game_date_et": game_date, "error": str(exc)}
 
@@ -934,7 +934,7 @@ def lambda_handler(event, context):
             audit_results.append({"game_date_et": game_date, **_record_snapshot_audit_safe(game_date=game_date, asof=asof, t=t, run=run, date_compact=date_compact, raw_games=raw)})
             prediction_audit_results.append({"game_date_et": game_date, **_record_no_edge_predictions_safe(game_date=game_date, asof=asof, date_compact=date_compact)})
             hot_movement_feature_results.append({"game_date_et": game_date, **_store_hot_movement_features(game_date=game_date, asof=asof, run=run)})
-            hot_side_prediction_results.append({"game_date_et": game_date, **_build_and_store_hot_sides(game_date=game_date)})
+            hot_side_prediction_results.append({"game_date_et": game_date, **_build_read_only_hot_sides(game_date=game_date)})
             game_winner_prediction_results.append({"game_date_et": game_date, **_build_and_store_game_winners(game_date=game_date)})
 
         start_at = _parse_start_at_et()

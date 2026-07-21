@@ -12,17 +12,24 @@ REPORT_PATH = ROOT / "runtime_reports" / "mlb_ml_installation_1_5_latest.json"
 if str(HELLO_WORLD) not in sys.path:
     sys.path.insert(0, str(HELLO_WORLD))
 
-import mlb_fundamentals_snapshot_v1 as fundamentals
+import mlb_fundamentals_snapshot_v2 as fundamentals
+import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
+import mlb_accuracy_target_policy_v1 as accuracy_policy
 import mlb_ml_champion_challenger_v1 as champion
 import mlb_ml_clean_cohort_hardening_v1 as cohort_hardening
 import mlb_ml_clean_cohort_v1 as cohort
-import mlb_ml_dual_model_v1 as dual
+import mlb_ml_dual_model_v2 as dual
 import mlb_ml_exact_lock_vector_patch as exact_patch
 import mlb_ml_frozen_features as frozen_features
-import mlb_ml_walk_forward_v1 as walk_forward
+import mlb_ml_experiment_v2 as experiment_v2
+import mlb_ml_promotion_policy_v2 as promotion_v2
 import mlb_official_freeze_bridge as freeze_bridge
 import mlb_official_prediction_semantics as semantics
 from mlb_ml_feature_test_fixtures import attach_lock_safe_features
+
+
+R2_EXPERIMENT_ID = "mlb-v2-2026-07-21-future-prospective-r2"
+R2_RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
 
 
 def _fingerprint(vector):
@@ -127,7 +134,12 @@ def main() -> int:
     exact_patch.apply(frozen_features)
     freeze_bridge.apply(semantics)
     result = semantics.enhance_result(_locked_result())
-    row = result["predictions"][0]
+    row = frozen_features.freeze_row(
+        result["predictions"][0],
+        coverage_complete=True,
+    )
+    row = vector_contract.apply_exact_vector_training_status(row)
+    result["predictions"][0] = row
     vector = row.get("frozenFeatureVector") or {}
     freeze = row.get("mlFeatureFreeze") or {}
 
@@ -169,8 +181,8 @@ def main() -> int:
     assert clean.get("cleanRowCount") == 1, clean
 
     assert dual.OUTCOME_MODEL_VERSION != dual.RELIABILITY_MODEL_VERSION
-    assert "homeMarketProb" in dual.OUTCOME_FEATURES
-    assert "selectedMarketProb" in dual.RELIABILITY_FEATURES
+    assert "homeMarketDeVigProbability" in dual.OUTCOME_FEATURES
+    assert "selectedMarketDeVigProbability" in dual.RELIABILITY_FEATURES
     checks["2_separateOutcomeAndReliabilityModels"] = {
         "installed": True,
         "outcomeModelVersion": dual.OUTCOME_MODEL_VERSION,
@@ -178,19 +190,35 @@ def main() -> int:
         "probabilitiesInterchangeable": False,
     }
 
-    split = walk_forward.split_chronological([], min_train=80, min_validation=30, min_test=30)
-    assert split.get("reason") == "insufficient_clean_rows_for_three_way_chronological_split"
+    manifest = experiment_v2.new_manifest(
+        experiment_id=R2_EXPERIMENT_ID,
+        release_contract_id=R2_EXPERIMENT_ID,
+        release_cutoff_utc=R2_RELEASE_CUTOFF_UTC,
+        feature_vector_version=experiment_v2.REQUIRED_FUNDAMENTALS_VERSION,
+        model_feature_schemas={
+            "outcome": dual.OUTCOME_FEATURES,
+            "reliability": dual.RELIABILITY_FEATURES,
+        },
+        created_at_utc=R2_RELEASE_CUTOFF_UTC,
+    )
     checks["3_chronologicalValidation"] = {
         "installed": True,
-        "trainMinimum": 80,
-        "validationMinimum": 30,
-        "untouchedTestMinimum": 30,
-        "thresholdSelection": "validation_only",
+        "experimentId": manifest.get("experimentId"),
+        "releaseContractId": manifest.get("releaseContractId"),
+        "releaseCutoffUtc": manifest.get("releaseCutoffUtc"),
+        "trainMinimum": experiment_v2.PARTITION_MINIMUMS["train"],
+        "validationMinimum": experiment_v2.PARTITION_MINIMUMS["validation"],
+        "prospectiveTestMinimum": experiment_v2.PARTITION_MINIMUMS["prospectiveTest"],
+        "wholeSlatePartitions": True,
+        "futureCutoverOnly": True,
+        "thresholdSelection": "validation_only_before_sealed_prospective_test",
     }
 
-    snapshot = fundamentals.build(row)
-    assert snapshot.get("missingnessIsFeature") is True
-    assert isinstance(snapshot.get("sourceStatuses"), dict)
+    snapshot = fundamentals.build(
+        row, captured_at_utc=row.get("predictionSourcePullAt")
+    )
+    assert snapshot.get("missingValuesAreNull") is True
+    assert fundamentals.validate(snapshot) == []
     assert snapshot.get("sourceHonestyPolicy")
     checks["4_baseballFundamentals"] = {
         "installed": True,
@@ -201,36 +229,44 @@ def main() -> int:
         "modelScopeUntilFeedsConnected": "MARKET_MOVEMENT_ONLY_WITH_MISSINGNESS",
     }
 
-    champion.AUTO_PROMOTE = True
-    gate = champion.evaluate(
-        {"ok": False, "status": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE", "split": {}, "untouchedTest": {}},
-        clean_count=1,
-        playable_evidence_count=0,
-        rolling_slate_accuracy_pct=90.0,
+    installed_policy = accuracy_policy.install()
+    assert installed_policy.get("ok") is True, installed_policy
+    assert champion.AUTO_PROMOTE is False
+    assert experiment_v2.PARTITION_MINIMUMS == {
+        "train": 300,
+        "validation": 100,
+        "prospectiveTest": 100,
+    }
+    manual_first = promotion_v2.evaluate(
+        {}, manifest, current_champion=None, automatic_promotion_enabled=False
     )
-    automatic = champion.promote_if_allowed({"promotionGate": gate})
-    assert gate.get("directionPromotionEligible") is False
-    assert gate.get("playabilityPromotionEligible") is False
-    assert automatic.get("promoted") is False
+    assert manual_first.get("firstPromotionRequiresManualReview") is True
+    assert manual_first.get("automaticPromotionEnabled") is False
+    assert manual_first.get("runtimeAuthorityActivationEligible") is False
     checks["5_acceptanceAndPromotionGates"] = {
         "installed": True,
         "directionAndPlayabilityIndependent": True,
-        "automaticPromotion": True,
-        "automaticPromotionRequiresPassedApplicableGate": True,
+        "automaticPromotion": False,
+        "legacyV1AuthorityEnabled": False,
         "automaticPromotionBeforeGates": False,
-        "minimumCleanOfficial": champion.MIN_CLEAN_OFFICIAL,
-        "minimumUntouchedTest": champion.MIN_UNTOUCHED_TEST,
-        "minimumSelectedUntouchedTest": champion.MIN_SELECTED_RELIABILITY_TEST,
-        "minimumRolling24hSlateAccuracyPct": champion.MIN_ROLLING_24H_SLATE_ACCURACY_PCT,
+        "firstPromotionRequiresManualReview": True,
+        "experimentId": R2_EXPERIMENT_ID,
+        "releaseCutoffUtc": R2_RELEASE_CUTOFF_UTC,
+        "minimumCleanOfficial": promotion_v2.MIN_TOTAL_CLEAN_ROWS,
+        "minimumProspectiveTest": promotion_v2.MIN_PROSPECTIVE_TEST_ROWS,
+        "minimumSelectedProspectiveRecommendations": promotion_v2.MIN_PROSPECTIVE_SELECTED_RECOMMENDATIONS,
+        "maximumCalibrationError": promotion_v2.MAX_CALIBRATION_ERROR,
+        "minimumAccuracyLiftPctPoints": promotion_v2.MIN_ACCURACY_LIFT_PCT_POINTS,
+        "ninetyPercentDashboardOnly": True,
     }
 
     report = {
         "ok": all(item.get("installed") for item in checks.values()),
         "proofType": "MLB_ML_INSTALLATION_1_5",
-        "version": "MLB-ML-INSTALLATION-1-5-v1.2-90pct-automatic-gated",
+        "version": "MLB-ML-INSTALLATION-1-5-v2-aws-shadow-manual-first",
         "checks": checks,
         "cleanSettlementJoinVerified": clean.get("cleanRowCount") == 1,
-        "policy": "All five optimization components are installed. Production ML remains shadow-only until the 90% rolling official-card slate prerequisite and each authority's separate untouched-test gates pass; only the authoritative AWS audit may then promote automatically.",
+        "policy": "All five optimization components are installed. Legacy V1 is diagnostic-only. AWS V2 remains shadow-only through fixed 300/100/100 whole-slate partitions, prospective market-skill gates, and a manually reviewed first promotion.",
     }
     REPORT_PATH.parent.mkdir(parents=True, exist_ok=True)
     REPORT_PATH.write_text(json.dumps(report, indent=2, default=str) + "\n", encoding="utf-8")

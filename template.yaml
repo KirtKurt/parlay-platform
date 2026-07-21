@@ -7,6 +7,11 @@ Parameters:
     Type: String
     NoEcho: true
     Description: External odds feed key
+  SportsDataIoApiKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: Optional SportsDataIO MLB fundamentals feed key
   InqsiAdminApiToken:
     Type: String
     NoEcho: true
@@ -38,6 +43,9 @@ Globals:
         ODDS_API_KEY: !Ref OddsApiKey
         INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256
         INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
+        INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
+        INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED: 'false'
+        INQSI_MLB_ML_AUTO_PROMOTE: 'false'
         MLB_MIN_EV_FOR_PROMOTION: '0.0'
         MLB_PROMOTION_FALLBACK_EDGE_THRESHOLD: '0.0005'
         MLB_PROMOTION_EDGE_THRESHOLD: '0.0015'
@@ -128,6 +136,48 @@ Resources:
           KeyType: HASH
         - AttributeName: SK
           KeyType: RANGE
+
+  MLBMLArtifactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  MLBMLTrainingDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+
+  MLBMLTrainingDeadLetterQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref MLBMLTrainingDeadLetterQueue
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt MLBMLTrainingDeadLetterQueue.Arn
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnLike:
+                aws:SourceArn: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${AWS::StackName}-*'
 
   InqsiMembersTable:
     Type: AWS::DynamoDB::Table
@@ -543,6 +593,12 @@ Resources:
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Environment:
+        Variables:
+          SPORTSDATAIO_API_KEY: !Ref SportsDataIoApiKey
+          INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS: 'true'
+          INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE: 'false'
+          SPORTSDATAIO_TIMEOUT_SECONDS: '25'
       CodeUri: hello_world/
       Handler: frontend_app.lambda_handler
       Policies:
@@ -573,6 +629,10 @@ Resources:
     Properties:
       Environment:
         Variables:
+          SPORTSDATAIO_API_KEY: !Ref SportsDataIoApiKey
+          INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS: 'true'
+          INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE: 'false'
+          SPORTSDATAIO_TIMEOUT_SECONDS: '25'
           INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken
       CodeUri: hello_world/
       Handler: mlb_manual_pull_protected.lambda_handler
@@ -597,16 +657,22 @@ Resources:
   MLBSignalApiFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Environment:
+        Variables:
+          SPORTSDATAIO_API_KEY: !Ref SportsDataIoApiKey
+          INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS: 'true'
+          INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE: 'false'
+          SPORTSDATAIO_TIMEOUT_SECONDS: '25'
       CodeUri: hello_world/
       Handler: mlb_date_signal_api.lambda_handler
       Policies:
-        - DynamoDBCrudPolicy:
+        - DynamoDBReadPolicy:
             TableName: !Ref SnapshotsTable
-        - DynamoDBCrudPolicy:
+        - DynamoDBReadPolicy:
             TableName: !Ref SignalLedgerTable
-        - DynamoDBCrudPolicy:
+        - DynamoDBReadPolicy:
             TableName: !Ref PredictionsTable
-        - DynamoDBCrudPolicy:
+        - DynamoDBReadPolicy:
             TableName: !Ref OutcomesTable
       Events:
         AuditSnapshots:
@@ -711,6 +777,8 @@ Resources:
       CodeUri: hello_world/
       Handler: mlb_results_scheduler.lambda_handler
       Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref SnapshotsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref OutcomesTable
         - DynamoDBCrudPolicy:
@@ -751,6 +819,76 @@ Resources:
           Properties:
             Schedule: rate(15 minutes)
             Input: '{"sport":"mlb","days_from":3,"run":"results_pull_15m"}'
+
+  MLBMLTrainingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: hello_world/
+      Handler: mlb_ml_aws_training_v1.lambda_handler
+      Timeout: 900
+      MemorySize: 2048
+      ReservedConcurrentExecutions: 1
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 21600
+        MaximumRetryAttempts: 2
+        DestinationConfig:
+          OnFailure:
+            Type: SQS
+            Destination: !GetAtt MLBMLTrainingDeadLetterQueue.Arn
+      Environment:
+        Variables:
+          MLB_ML_ARTIFACTS_BUCKET: !Ref MLBMLArtifactsBucket
+          MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-07-21-future-prospective-r2'
+          MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-07-21-future-prospective-r2'
+          MLB_ML_RELEASE_CUTOFF_UTC: '2026-07-22T04:00:00+00:00'
+          MLB_ML_FEATURE_VECTOR_VERSION: 'MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness'
+          INQSI_MLB_ML_AUTO_PROMOTE: 'false'
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SnapshotsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref OutcomesTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:TransactWriteItems
+              Resource: !GetAtt SnapshotsTable.Arn
+            - Effect: Allow
+              Action:
+                - sqs:SendMessage
+              Resource: !GetAtt MLBMLTrainingDeadLetterQueue.Arn
+        - Statement:
+            - Effect: Allow
+              Action:
+                - s3:GetBucketVersioning
+              Resource: !GetAtt MLBMLArtifactsBucket.Arn
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetObjectVersion
+                - s3:PutObject
+              Resource: !Sub '${MLBMLArtifactsBucket.Arn}/mlb/experiments/*'
+      Events:
+        MLBMLTrainingEvery6Hours:
+          Type: Schedule
+          Properties:
+            Schedule: rate(6 hours)
+            Input: '{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 21600
+              MaximumRetryAttempts: 2
+            DeadLetterConfig:
+              Arn: !GetAtt MLBMLTrainingDeadLetterQueue.Arn
+        MLBMLSelectionCaptureEvery15Minutes:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Input: '{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 21600
+              MaximumRetryAttempts: 2
+            DeadLetterConfig:
+              Arn: !GetAtt MLBMLTrainingDeadLetterQueue.Arn
 
   SoccerSchedulerFunction:
     Type: AWS::Serverless::Function
@@ -912,3 +1050,12 @@ Outputs:
   InqsiBackendApiFunctionArn:
     Description: InQsi backend member/slip/social/admin Lambda function ARN
     Value: !GetAtt InqsiBackendApiFunction.Arn
+  MLBMLArtifactsBucketName:
+    Description: Versioned private MLB ML experiment artifacts bucket
+    Value: !Ref MLBMLArtifactsBucket
+  MLBMLTrainingFunctionArn:
+    Description: AWS-native MLB shadow trainer/evaluator Lambda ARN
+    Value: !GetAtt MLBMLTrainingFunction.Arn
+  MLBMLTrainingDeadLetterQueueArn:
+    Description: Dead-letter queue for failed AWS-native MLB training invocations
+    Value: !GetAtt MLBMLTrainingDeadLetterQueue.Arn

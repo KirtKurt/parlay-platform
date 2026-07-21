@@ -64,6 +64,35 @@ def ensure_results_event(logical_name: str, path: str, method: str = "GET") -> N
     text = text.replace(marker, block + marker, 1)
 
 
+def normalize_results_schedule(current: str) -> str:
+    lines = current.splitlines(keepends=True)
+    in_event = False
+    found = False
+    for index, line in enumerate(lines):
+        if line.startswith("        MLBResultsEvery6Hours:"):
+            in_event = True
+            found = True
+            continue
+        if in_event and (
+            (line.startswith("        ") and not line.startswith("          "))
+            or (line.startswith("  ") and not line.startswith("    "))
+            or line.startswith("Outputs:")
+        ):
+            break
+        if not in_event:
+            continue
+        if line.lstrip().startswith("Schedule:"):
+            lines[index] = line[: len(line) - len(line.lstrip())] + "Schedule: rate(15 minutes)\n"
+        elif line.lstrip().startswith("Input:"):
+            lines[index] = (
+                line[: len(line) - len(line.lstrip())]
+                + "Input: '{\"sport\":\"mlb\",\"days_from\":3,\"run\":\"results_pull_15m\"}'\n"
+            )
+    if not found:
+        raise RuntimeError("MLBResultsEvery6Hours marker not found in template.yaml")
+    return "".join(lines)
+
+
 def patch_proxy_route() -> None:
     api_text = API.read_text()
     seg = "".join([chr(x) for x in [109, 111, 100, 101, 114, 97, 116, 105, 111, 110]])
@@ -83,11 +112,7 @@ text = remove_top_level_resource(text, resource_name)
 text = remove_indented_event_block(text, event_name)
 patch_proxy_route()
 
-text = text.replace("Schedule: rate(6 hours)", "Schedule: rate(15 minutes)")
-text = text.replace(
-    "'{\"sport\":\"mlb\",\"days_from\":3,\"run\":\"results_pull\"}'",
-    "'{\"sport\":\"mlb\",\"days_from\":3,\"run\":\"results_pull_15m\"}'",
-)
+text = normalize_results_schedule(text)
 
 for alias_event in ["MLBResultSignalsAliasGet", "MLBResultSignalsAliasPost"]:
     text = remove_indented_event_block(text, alias_event)

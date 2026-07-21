@@ -143,10 +143,24 @@ def _pull_rows(items: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
             continue
         sk = _s_value(item, "SK")
         parts = sk.split("#")
-        pulled_at = parts[1] if len(parts) > 1 and parts[0] == "PULL" else _s_value(item, "pulled_at")
+        canonical = sk.startswith("PULL#SLOT#")
+        pulled_at = (
+            sk[len("PULL#SLOT#") :]
+            if canonical
+            else parts[1]
+            if len(parts) > 1 and parts[0] == "PULL"
+            else _s_value(item, "pulled_at")
+        )
         dt = _parse_dt(pulled_at)
         if dt:
-            pulls.append({"sk": sk, "dt": dt, "pulledAt": dt.isoformat()})
+            pulls.append(
+                {
+                    "sk": sk,
+                    "dt": dt,
+                    "pulledAt": dt.isoformat(),
+                    "canonicalSlotRecord": canonical,
+                }
+            )
     pulls.sort(key=lambda row: row["dt"])
     return pulls
 
@@ -178,7 +192,7 @@ def build_pull_guard_proof(
 
     items = pull_items if isinstance(pull_items, list) else []
     pulls = _pull_rows(items)
-    raw_count = len(items)
+    raw_count = len(pulls)
     latest = pulls[-1] if pulls else {"sk": "", "dt": None, "pulledAt": ""}
     latest_dt = latest.get("dt")
 
@@ -209,6 +223,19 @@ def build_pull_guard_proof(
         ]
 
     actual_slots = sorted({_floor_slot_et(row["dt"]).isoformat() for row in clean_window})
+    rows_by_slot: Dict[str, List[Dict[str, Any]]] = {}
+    for row in clean_window:
+        rows_by_slot.setdefault(_floor_slot_et(row["dt"]).isoformat(), []).append(row)
+    canonical_slots = sorted(
+        slot
+        for slot, rows in rows_by_slot.items()
+        if any(row.get("canonicalSlotRecord") is True for row in rows)
+    )
+    duplicate_after_canonical_slots = sorted(
+        slot
+        for slot, rows in rows_by_slot.items()
+        if any(row.get("canonicalSlotRecord") is True for row in rows) and len(rows) > 1
+    )
     expected_slot_values = [slot.isoformat() for slot in expected_slots]
     missing_slots = [slot for slot in expected_slot_values if slot not in actual_slots]
     duplicate_or_extra = max(len(clean_window) - len(actual_slots), 0)
@@ -228,8 +255,10 @@ def build_pull_guard_proof(
         clean_status = "PRE_START"
     elif len(actual_slots) < expected_count:
         clean_status = "FAIL_MISSING_PULLS"
+    elif duplicate_after_canonical_slots:
+        clean_status = "FAIL_DUPLICATE_AFTER_CANONICAL_WRITER"
     elif len(clean_window) > expected_count:
-        clean_status = "FAIL_EXTRA_OR_DUPLICATE_PULLS"
+        clean_status = "PASS_CANONICALIZED_EXPECTED_SLOTS"
     elif len(actual_slots) == expected_count:
         clean_status = "PASS_CLEAN_EXPECTED_COUNT"
     else:
@@ -242,7 +271,12 @@ def build_pull_guard_proof(
         age = int((now_utc - latest_dt).total_seconds() // 60) if latest_dt else 9999
         fresh = age <= 20
 
-    count_passed = clean_status in {"PASS_NO_GAMES_SCHEDULED", "PASS_CLEAN_EXPECTED_COUNT", "PRE_START"}
+    count_passed = clean_status in {
+        "PASS_NO_GAMES_SCHEDULED",
+        "PASS_CLEAN_EXPECTED_COUNT",
+        "PASS_CANONICALIZED_EXPECTED_SLOTS",
+        "PRE_START",
+    }
     freshness_passed = pulls_required is False or clean_status == "PRE_START" or fresh is True
     guard_passed = bool(count_passed and freshness_passed)
 
@@ -290,6 +324,12 @@ def build_pull_guard_proof(
         "cleanExpectedThroughEt": expected_end_et.isoformat() if expected_end_et else None,
         "cleanExpectedPullCount": expected_count,
         "cleanActualScheduledSlotCount": len(actual_slots),
+        "canonicalStoredSlotCount": len(canonical_slots),
+        "canonicalStoredSlots": canonical_slots,
+        "duplicateAfterCanonicalWriterCount": len(duplicate_after_canonical_slots),
+        "duplicateAfterCanonicalWriterSlots": duplicate_after_canonical_slots,
+        "scoringCanonicalizationRequired": duplicate_or_extra > 0,
+        "scoringCanonicalizationPolicy": "one earliest integrity-valid observation per UTC quarter-hour; raw history remains diagnostic only",
         "cleanRawPullCountSinceStart": len(clean_window),
         "cleanCountStatus": clean_status,
         "missingCleanScheduledSlots": missing_slots[:20],

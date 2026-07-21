@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
 from itertools import product
 from typing import Any, Dict, List, Optional, Tuple
@@ -22,13 +22,9 @@ signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE e
 predictions_tbl = dynamodb.Table(PREDICTIONS_TABLE) if PREDICTIONS_TABLE else None
 outcomes_tbl = dynamodb.Table(OUTCOMES_TABLE) if OUTCOMES_TABLE else None
 
-TARGET_SUCCESS_RATE = Decimal("75")
+MLB_HOT_SIDES_STORAGE_POLICY = "READ_ONLY_CANONICAL_PREDICTION_AUTHORITY_ONLY"
 HOT_DELTA_THRESHOLD = 0.006
 PUBLISH_DELTA_THRESHOLD = 0.018
-
-
-def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat()
 
 
 def _slate_date_et() -> str:
@@ -39,16 +35,6 @@ def _json_default(value: Any) -> Any:
     if isinstance(value, Decimal):
         return float(value)
     return str(value)
-
-
-def _to_ddb(value: Any) -> Any:
-    if isinstance(value, float):
-        return Decimal(str(round(value, 12)))
-    if isinstance(value, dict):
-        return {k: _to_ddb(v) for k, v in value.items() if v is not None}
-    if isinstance(value, list):
-        return [_to_ddb(v) for v in value if v is not None]
-    return value
 
 
 def _resp(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
@@ -460,58 +446,6 @@ def _enrich_attempted_winner(row: Dict[str, Any], latest_game: Optional[Dict[str
     return out
 
 
-def _prediction_item(row: Dict[str, Any], slate_date: str, now: str) -> Dict[str, Any]:
-    status = row.get("prediction_status") or "UNKNOWN"
-    return {
-        "PK": f"PRED#mlb#{slate_date}",
-        "SK": f"HOT_SIDE#{row.get('latest_asof')}#{row.get('game_key')}",
-        "sport": "mlb",
-        "slate_date_et": slate_date,
-        "created_at": now,
-        "asof": row.get("latest_asof"),
-        "previous_asof": row.get("previous_asof"),
-        "game_key": row.get("game_key"),
-        "game_id": row.get("game_id"),
-        "home_team": row.get("home_team"),
-        "away_team": row.get("away_team"),
-        "commence_time": row.get("commence_time"),
-        "market": "moneyline",
-        "prediction_type": "MLB_GAME_WINNER_ATTEMPT",
-        "prediction_status": status,
-        "status": "OPEN",
-        "predicted_team": row.get("attempted_winner"),
-        "predicted_side": row.get("attempted_winner_side"),
-        "attempted_winner_basis": row.get("attempted_winner_basis"),
-        "published_team": row.get("hot_team") if str(status).startswith("PUBLISHED") else None,
-        "hot_team": row.get("hot_team"),
-        "hot_side": row.get("hot_side"),
-        "hot_side_label": row.get("hot_side_label"),
-        "confidence_label": row.get("confidence_label"),
-        "confidence": row.get("confidence_score"),
-        "confidence_score": row.get("confidence_score"),
-        "display_confidence_scores": True,
-        "target_success_rate": TARGET_SUCCESS_RATE,
-        "reason_codes": row.get("reason_codes", []),
-        "market_intelligence_tags": row.get("public_market_language", {}).get("market_intelligence_tags", []),
-        "explanation": row.get("prediction"),
-        "public_prediction": row.get("public_prediction"),
-        "market_status": row.get("market_status"),
-        "best_use": row.get("best_use"),
-        "why": row.get("why"),
-        "public_market_language": row.get("public_market_language", {}),
-        "favorite": row.get("favorite", {}),
-        "book_agreement": row.get("book_agreement", {}),
-        "spread_signal": row.get("spread_signal", {}),
-        "total_signal": row.get("total_signal", {}),
-        "latest_consensus": row.get("latest_consensus", {}),
-        "previous_consensus": row.get("previous_consensus", {}),
-        "movement": {"home_delta": row.get("home_delta"), "away_delta": row.get("away_delta"), "hot_delta": row.get("hot_delta")},
-        "ml_training_row": True,
-        "ml_outcome_status": "PENDING_RESULT",
-        "evaluation": {},
-    }
-
-
 def _row_side_payload(row: Dict[str, Any], game: Dict[str, Any], side: str) -> Dict[str, Any]:
     team = game.get("home_team") if side == "home" else game.get("away_team")
     cp = _consensus_probs(game)
@@ -598,7 +532,7 @@ def _build_three_leg_parlay(rows: List[Dict[str, Any]], latest_games: Dict[str, 
     }
 
 
-def hot_sides(limit: int = 40, store: bool = False, include_no_edge: bool = True) -> Dict[str, Any]:
+def hot_sides(limit: int = 40, include_no_edge: bool = True) -> Dict[str, Any]:
     data = movement_deltas(limit=limit)
     snapshots = _recent_snapshots(limit=limit)
     latest_snapshot = snapshots[-1] if snapshots else {}
@@ -606,10 +540,6 @@ def hot_sides(limit: int = 40, store: bool = False, include_no_edge: bool = True
     rows_by_key: Dict[str, Dict[str, Any]] = {}
     rows = []
     actionable_rows = []
-    stored_count = 0
-    storage_errors: List[str] = []
-    now = _now_iso()
-    slate_date = latest_snapshot.get("slate_date_et") or _slate_date_et()
     status_counts: Dict[str, int] = {}
 
     for row in data.get("deltas", []):
@@ -635,16 +565,7 @@ def hot_sides(limit: int = 40, store: bool = False, include_no_edge: bool = True
         is_actionable = status != "NO_EDGE"
         if is_actionable:
             actionable_rows.append(row)
-        item = _prediction_item(row, slate_date, now)
-        stored_prediction_key = None
-        if store:
-            if predictions_tbl is None:
-                storage_errors.append("PREDICTIONS_TABLE not configured")
-            else:
-                predictions_tbl.put_item(Item=_to_ddb(item))
-                stored_count += 1
-                stored_prediction_key = item["SK"]
-        rows.append({**row, "stored_prediction_key": stored_prediction_key})
+        rows.append({**row, "stored_prediction_key": None})
 
     rows.sort(key=lambda x: (x.get("prediction_status") != "NO_EDGE", x.get("confidence_score") or 0, (x.get("favorite") or {}).get("gap") or 0), reverse=True)
     parlay = _build_three_leg_parlay(rows, latest_games)
@@ -652,10 +573,11 @@ def hot_sides(limit: int = 40, store: bool = False, include_no_edge: bool = True
     return {
         "ok": True,
         "sport": "mlb",
-        "stored": store,
-        "stored_count": stored_count,
-        "storage_status": "CONNECTED" if store and predictions_tbl is not None else ("NOT_REQUESTED" if not store else "NOT_CONFIGURED"),
-        "storage_errors": storage_errors,
+        "stored": False,
+        "stored_count": 0,
+        "storage_status": "READ_ONLY",
+        "storage_policy": MLB_HOT_SIDES_STORAGE_POLICY,
+        "storage_errors": [],
         "count": len(rows),
         "movement_count": data.get("count", 0),
         "individual_prediction_count": len(rows),
@@ -752,7 +674,11 @@ def lambda_handler(event, context):
             return _resp(200, movement_deltas(min(int(params.get("limit") or 40), 200)))
         if method == "GET" and path == "/v1/predictions/mlb/hot-sides":
             include_no_edge = params.get("include_no_edge", "true").lower() != "false"
-            return _resp(200, hot_sides(min(int(params.get("limit") or 40), 200), params.get("store", "false").lower() == "true", include_no_edge))
+            payload = hot_sides(
+                min(int(params.get("limit") or 40), 200), include_no_edge
+            )
+            payload["storage_requested"] = "store" in params
+            return _resp(200, payload)
         if method == "GET" and path == "/v1/results/mlb/status":
             return _resp(200, results_status(params.get("slate_date_et")))
         if method == "GET" and path == "/v1/sources/mlb/status":

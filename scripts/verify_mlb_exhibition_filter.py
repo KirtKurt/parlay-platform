@@ -22,7 +22,16 @@ class FakeTable:
         self.pull = pull
 
     def query(self, **_kwargs):
-        return {"Items": [{"data": self.pull}]}
+        return {
+            "Items": [
+                {
+                    "PK": f"PULLS#{self.pull['sport']}#{self.pull['slate_date']}",
+                    "SK": f"PULL#SLOT#{self.pull['pulled_at']}",
+                    "record_type": "pull_run",
+                    "data": self.pull,
+                }
+            ]
+        }
 
 
 def game(game_id: str, away: str, home: str, league: str = "MLB"):
@@ -69,7 +78,7 @@ def main() -> None:
     assert filtered[0]["meta"]["excludedNonModelGameCount"] == 1
     assert "ALL_STAR" in filtered[0]["meta"]["excludedNonModelGamePolicy"]
 
-    history.PULLS = FakeTable(pull)
+    history.PULLS = FakeTable({**pull, "sport": "nba"})
     untouched = history.query_pulls("nba", "2026-07-14")
     assert len(untouched[0]["games"]) == 2
 

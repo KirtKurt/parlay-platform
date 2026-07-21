@@ -18,17 +18,13 @@ from mlb_signal_api import (
     _delta_for_game,
     _enrich_attempted_winner,
     _game_index,
-    _prediction_item,
     _simple_no_edge_row,
-    _to_ddb,
     results_status as _base_results_status,
 )
 
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
 SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
-PREDICTIONS_TABLE = os.environ.get("PREDICTIONS_TABLE", "")
 
-TARGET_SUCCESS_RATE = Decimal("75")
 MLB_PULL_MODE = "ROLLING_15_MIN_ONLY"
 MLB_PULL_T = "HOT"
 
@@ -36,15 +32,11 @@ MLB_PULL_T = "HOT"
 dynamodb = boto3.resource("dynamodb")
 snapshots_tbl = dynamodb.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
 signal_ledger_tbl = dynamodb.Table(SIGNAL_LEDGER_TABLE) if SIGNAL_LEDGER_TABLE else None
-predictions_tbl = dynamodb.Table(PREDICTIONS_TABLE) if PREDICTIONS_TABLE else None
+MLB_HOT_SIDES_STORAGE_POLICY = "READ_ONLY_CANONICAL_PREDICTION_AUTHORITY_ONLY"
 
 
 def _today_et() -> str:
     return datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
-
-
-def _now_iso() -> str:
-    return datetime.utcnow().replace(tzinfo=None).isoformat() + "+00:00"
 
 
 def _json_default(value: Any) -> Any:
@@ -183,7 +175,7 @@ def _attach_parlay_advanced_context(parlay: Dict[str, Any], rows_by_key: Dict[st
     return parlay
 
 
-def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_edge: bool = True) -> Dict[str, Any]:
+def hot_sides(game_date: str, limit: int = 40, include_no_edge: bool = True) -> Dict[str, Any]:
     data = movement_deltas(game_date=game_date, limit=limit)
     snapshots = _recent_snapshots_for_date(game_date, limit=limit, t=MLB_PULL_T)
     latest_snapshot = snapshots[-1] if snapshots else {}
@@ -191,9 +183,6 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
     rows_by_key: Dict[str, Dict[str, Any]] = {}
     rows: List[Dict[str, Any]] = []
     actionable_rows: List[Dict[str, Any]] = []
-    stored_count = 0
-    storage_errors: List[str] = []
-    now = _now_iso()
     status_counts: Dict[str, int] = {}
 
     for row in data.get("deltas", []):
@@ -223,24 +212,7 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
         is_actionable = status != "NO_EDGE"
         if is_actionable:
             actionable_rows.append(row)
-        item = _prediction_item(row, game_date, now)
-        item["game_date_et"] = game_date
-        item["date_isolated"] = True
-        item["pull_mode"] = MLB_PULL_MODE
-        item["snapshot_t_filter"] = MLB_PULL_T
-        item["snapshot_partition"] = f"SPORT#mlb#DATE#{game_date}"
-        item["advanced_context"] = row.get("advanced_context")
-        item["advanced_eligible"] = row.get("advanced_eligible")
-        item["advanced_blockers"] = row.get("advanced_blockers")
-        stored_prediction_key = None
-        if store:
-            if predictions_tbl is None:
-                storage_errors.append("PREDICTIONS_TABLE not configured")
-            else:
-                predictions_tbl.put_item(Item=_to_ddb(item))
-                stored_count += 1
-                stored_prediction_key = item["SK"]
-        rows.append({**row, "stored_prediction_key": stored_prediction_key})
+        rows.append({**row, "stored_prediction_key": None})
 
     rows.sort(key=lambda x: (x.get("prediction_status") != "NO_EDGE", x.get("advanced_eligible") is True, x.get("confidence_score") or 0, (x.get("favorite") or {}).get("gap") or 0), reverse=True)
     parlay = _build_three_leg_parlay(rows, latest_games)
@@ -260,10 +232,11 @@ def hot_sides(game_date: str, limit: int = 40, store: bool = False, include_no_e
         "pull_mode": MLB_PULL_MODE,
         "snapshot_t_filter": MLB_PULL_T,
         "snapshot_partition": f"SPORT#mlb#DATE#{game_date}",
-        "stored": store,
-        "stored_count": stored_count,
-        "storage_status": "CONNECTED" if store and predictions_tbl is not None else ("NOT_REQUESTED" if not store else "NOT_CONFIGURED"),
-        "storage_errors": storage_errors,
+        "stored": False,
+        "stored_count": 0,
+        "storage_status": "READ_ONLY",
+        "storage_policy": MLB_HOT_SIDES_STORAGE_POLICY,
+        "storage_errors": [],
         "count": len(rows),
         "movement_count": data.get("count", 0),
         "individual_prediction_count": len(rows),
@@ -380,7 +353,13 @@ def lambda_handler(event, context):
             return _resp(200, movement_deltas(game_date, min(int(params.get("limit") or 40), 200)))
         if method == "GET" and path == "/v1/predictions/mlb/hot-sides":
             include_no_edge = params.get("include_no_edge", "true").lower() != "false"
-            return _resp(200, hot_sides(game_date, min(int(params.get("limit") or 40), 200), params.get("store", "false").lower() == "true", include_no_edge))
+            payload = hot_sides(
+                game_date,
+                min(int(params.get("limit") or 40), 200),
+                include_no_edge,
+            )
+            payload["storage_requested"] = "store" in params
+            return _resp(200, payload)
         if method == "GET" and path == "/v1/mlb/context/status":
             return _resp(200, advanced_context_status())
         if method == "GET" and path == "/v1/mlb/context/game":

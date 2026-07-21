@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import urllib.parse
 import urllib.request
+from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 SPORTSDATAIO_API_KEY = os.environ.get("SPORTSDATAIO_API_KEY", "")
@@ -17,6 +19,11 @@ def configured() -> bool:
 
 def _safe_error(exc: Exception) -> Dict[str, Any]:
     return {"ok": False, "error": type(exc).__name__, "message": str(exc)[:240]}
+
+
+def _fingerprint(payload: Any) -> str:
+    material = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 
 def _headers() -> Dict[str, str]:
@@ -48,6 +55,37 @@ def get_json(area: str, path: str, query: Optional[Dict[str, Any]] = None) -> An
         return _safe_error(exc)
 
 
+def get_json_with_provenance(area: str, path: str, query: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Fetch a payload with the immutable metadata required by pregame ML.
+
+    The returned endpoint never contains the subscription key.  Existing raw
+    client methods retain their response shape for compatibility.
+    """
+    endpoint = _url(area, path, query)
+    payload = get_json(area, path, query)
+    retrieved_at = datetime.now(timezone.utc).isoformat()
+    if isinstance(payload, dict) and payload.get("ok") is False:
+        return {
+            "ok": False,
+            "provider": "SportsDataIO",
+            "endpoint": endpoint,
+            "dataset": f"{area.strip('/')}/{path.strip('/')}",
+            "retrievedAtUtc": retrieved_at,
+            "payloadFingerprint": None,
+            "error": payload.get("error"),
+            "message": payload.get("message"),
+        }
+    return {
+        "ok": True,
+        "provider": "SportsDataIO",
+        "endpoint": endpoint,
+        "dataset": f"{area.strip('/')}/{path.strip('/')}",
+        "retrievedAtUtc": retrieved_at,
+        "payloadFingerprint": _fingerprint(payload),
+        "data": payload,
+    }
+
+
 def get_first_success(candidates: Iterable[Tuple[str, str]]) -> Dict[str, Any]:
     """Try endpoint candidates and return the first list/dict payload that is not an error.
 
@@ -56,11 +94,11 @@ def get_first_success(candidates: Iterable[Tuple[str, str]]) -> Dict[str, Any]:
     """
     attempts: List[Dict[str, Any]] = []
     for area, path in candidates:
-        result = get_json(area, path)
-        if isinstance(result, dict) and result.get("ok") is False:
+        result = get_json_with_provenance(area, path)
+        if result.get("ok") is False:
             attempts.append({"area": area, "path": path, "error": result.get("error"), "message": result.get("message")})
             continue
-        return {"ok": True, "area": area, "path": path, "data": result, "attempts": attempts}
+        return {**result, "area": area, "path": path, "attempts": attempts}
     return {"ok": False, "error": "no_candidate_endpoint_succeeded", "attempts": attempts}
 
 

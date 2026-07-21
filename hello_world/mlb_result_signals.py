@@ -10,7 +10,7 @@ import boto3
 from boto3.dynamodb.conditions import Key
 
 from mlb_audit import _outcomes_for_slate, pull_mlb_results
-from mlb_date_signal_api import MLB_PULL_MODE, MLB_PULL_T, hot_sides, movement_deltas
+from mlb_date_signal_api import MLB_PULL_MODE, MLB_PULL_T, movement_deltas
 
 SIGNAL_LEDGER_TABLE = os.environ.get("SIGNAL_LEDGER_TABLE", "")
 PREDICTIONS_TABLE = os.environ.get("PREDICTIONS_TABLE", "")
@@ -205,12 +205,6 @@ def build_result_signals(game_date: str, *, fetch_scores: bool = True, limit: in
     outcomes = _outcomes_for_slate(game_date)
     movement_by_game = _movement_row_by_game(game_date, limit=limit)
     prediction_by_game = _latest_prediction_by_game(game_date)
-    # Ensure current prediction rows can exist if missing; this does not force picks.
-    try:
-        hot_sides(game_date, limit=limit, store=True, include_no_edge=True)
-        prediction_by_game = _latest_prediction_by_game(game_date)
-    except Exception:
-        pass
     rows = []
     stored = 0
     for outcome in outcomes:

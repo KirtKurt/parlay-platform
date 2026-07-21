@@ -735,6 +735,25 @@ def persist_latest_prelock_candidates(module, pulls):
     }
 
 
+def test_real_candidate_selector_requires_contract_when_runtime_attests_installation():
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "missing-contract")
+    module = build_module([source], "2026-07-13T17:17:00+00:00", seed=False)
+    persist_candidate(module, G1, source)
+    module.mlb_game_winner_engine._INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED = True
+    scoring = patch._scoring_pulls(module, [source], G1)
+
+    row, proof, bound, errors = patch._last_prelock_candidate(
+        module,
+        SLATE,
+        G1,
+        scoring,
+    )
+
+    assert row is proof is None
+    assert bound == []
+    assert "probability_contract_version_missing_or_wrong" in errors
+
+
 def build_module(pulls, now, *, vectorless=False, tampered_provenance=False, seed=True):
     module = FakeModule(
         pulls,
@@ -1118,6 +1137,59 @@ def test_backdated_prediction_persisted_after_cutoff_is_not_authoritative():
     assert result["ok"] is True
     assert result["dailyCardComplete"] is True
     assert lock_outcome_items(module)[0]["lock_status"] == "LOCKED_NO_PREDICTION_DATA"
+
+
+def test_post_write_ack_timestamp_is_bound_into_promoted_and_canonical_rows():
+    source = pull("2026-07-13T17:14:00+00:00", [G1], "persisted-proof")
+    persisted_at = "2026-07-13T17:14:30+00:00"
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    persist_candidate(module, G1, source, persisted_at=persisted_at)
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    assert stage["candidate_proof"]["predictionPersistedAtUtc"] == persisted_at
+    assert stage["data"]["row"]["predictionPersistedAtUtc"] == persisted_at
+    canonical = next(
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == "mlb_immutable_locked_single_game_prediction"
+    )
+    assert canonical["data"]["predictionPersistedAtUtc"] == persisted_at
+
+
+def test_client_persistence_timestamp_cannot_override_post_write_ack():
+    source = pull("2026-07-13T17:14:00+00:00", [G1], "persisted-conflict")
+    module = build_module(
+        [source],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+
+    def inject_unproven_time(row):
+        row["predictionPersistedAtUtc"] = "2026-07-13T17:13:00+00:00"
+
+    persist_candidate(
+        module,
+        G1,
+        source,
+        mutate=inject_unproven_time,
+        persisted_at="2026-07-13T17:14:30+00:00",
+    )
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is False
+    assert (
+        "LAST_PRELOCK_PERSISTENCE_TIMESTAMP_CONFLICTS_WITH_POST_WRITE_ACK"
+        in str(result["failures"])
+    )
+    assert staged_items(module) == []
 
 
 def test_client_timestamp_without_post_write_ack_proof_is_not_authoritative():

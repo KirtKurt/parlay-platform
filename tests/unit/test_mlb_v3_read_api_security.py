@@ -26,6 +26,7 @@ def _load_read_api(monkeypatch, calls, *, runtime_ok=True):
         return {"ok": True, "predictions": [{"gameId": "game-1"}], "count": 1}
 
     engine.predict_all = predict_all
+    engine.read_persisted_predictions = predict_all
 
     optimization = ModuleType("mlb_ml_optimization_v3")
     optimization.VERSION = "test-optimization"
@@ -73,7 +74,7 @@ def test_public_read_api_ignores_store_query_parameter(monkeypatch):
     assert calls == [{"date": "2026-07-16", "store": False, "limit": 17}]
     body = json.loads(response["body"])
     assert body["readOnly"] is True
-    assert body["apiRuntimeVersion"] == "MLB-V3-READ-API-v3-read-only"
+    assert body["apiRuntimeVersion"] == "MLB-V3-READ-API-v4-persisted-canonical-v2-shadow"
 
 
 def test_public_read_api_fails_closed_when_runtime_install_is_not_ok(monkeypatch):
@@ -113,7 +114,10 @@ def test_legacy_public_mlb_surfaces_are_also_read_only_and_fail_closed(monkeypat
     calls = []
     engine = ModuleType("legacy_public_test_engine")
     engine.MLB_ML_RUNTIME_INSTALL_V3 = {"ok": True}
-    engine.predict_all = lambda date, *, store, limit: calls.append({
+    engine.predict_all = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("public legacy surface must not recompute predictions")
+    )
+    engine.read_persisted_predictions = lambda date, *, store, limit: calls.append({
         "date": date,
         "store": store,
         "limit": limit,
@@ -136,7 +140,8 @@ def test_legacy_public_mlb_surfaces_are_also_read_only_and_fail_closed(monkeypat
     assert calls == [{"date": "2026-07-16", "store": False, "limit": 9}]
 
     startup_source = (ROOT / "hello_world" / "usercustomize.py").read_text()
-    assert 'payload = engine.predict_all(\n                    date,\n                    store=False,' in startup_source
+    assert 'reader = getattr(engine, "read_persisted_predictions", None)' in startup_source
+    assert 'payload = reader(\n                    date,\n                    store=False,' in startup_source
     assert "MLB_PUBLIC_READ_RUNTIME_NOT_READY" in startup_source
 
 

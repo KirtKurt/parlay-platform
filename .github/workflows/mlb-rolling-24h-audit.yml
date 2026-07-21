@@ -78,7 +78,7 @@ concurrency:
   cancel-in-progress: true
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   audit:
@@ -128,9 +128,9 @@ jobs:
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           SNAPSHOTS_TABLE: parlay_platform_snapshots
-          # This AWS-backed audit is the sole automatic promotion authority.
-          # Local/ad-hoc imports retain the fail-safe false default.
-          INQSI_MLB_ML_AUTO_PROMOTE: 'true'
+          # Read-only monitoring only. EventBridge/AWS owns live learning.
+          INQSI_MLB_ML_AUTO_PROMOTE: 'false'
+          INQSI_MLB_ML_AUDIT_STORE: 'false'
           INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
           INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-13T00:20:03+00:00'
           PYTHONPATH: ${{ github.workspace }}/hello_world
@@ -180,26 +180,11 @@ jobs:
               raise SystemExit('MLB audit freshness failed: ' + json.dumps(freshness, default=str))
           PY
 
-      - name: Commit rolling audit proof and ML artifacts
+      - name: Upload read-only rolling audit proof
         if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add runtime_reports/mlb_ml_v3_validation_latest.json || true
-          git add runtime_reports/mlb_ml_installation_1_5_latest.json || true
-          git add runtime_reports/mlb_ml_v3_audit_execution_latest.json || true
-          git add runtime_reports/mlb_rolling_24h_audit_latest.json || true
-          git add runtime_reports/mlb_missing_settlement_diagnostics_latest.json || true
-          git add runtime_reports/mlb_audit_freshness_latest.json || true
-          git add runtime_reports/mlb_postdeploy_settlement_integrity_latest.json || true
-          git add runtime_reports/mlb_selected_side_odds_coverage_latest.json || true
-          git add runtime_reports/mlb_ml_training_dataset_latest.csv || true
-          git add runtime_reports/mlb_ml_model_latest.json || true
-          git add runtime_reports/mlb_ml_clean_cohort_latest.json || true
-          git add runtime_reports/mlb_ml_outcome_challenger_latest.json || true
-          git add runtime_reports/mlb_ml_reliability_challenger_latest.json || true
-          git add runtime_reports/mlb_ml_challenger_bundle_latest.json || true
-          git add runtime_reports/mlb_ml_optimization_status_latest.json || true
-          git commit -m "Update MLB rolling audit and ML optimization artifacts" || true
-          git pull --rebase --autostash origin main || true
-          git push || true
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-read-only-rolling-audit-${{ github.run_id }}
+          path: runtime_reports/
+          if-no-files-found: warn
+          retention-days: 14

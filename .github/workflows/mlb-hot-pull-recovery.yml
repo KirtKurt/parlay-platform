@@ -1,10 +1,9 @@
 name: MLB Hot Pull Recovery
 
-on:
-  workflow_dispatch:
+on: []
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: mlb-hot-pull-recovery
@@ -12,6 +11,7 @@ concurrency:
 
 jobs:
   recover:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout

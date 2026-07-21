@@ -224,6 +224,48 @@ def test_raw_engine_row_cannot_create_authoritative_pregame_snapshot(monkeypatch
     assert writes == []
 
 
+def test_installed_probability_contract_cannot_be_bypassed_by_omitting_version(
+    monkeypatch,
+):
+    import mlb_game_winner_engine as engine
+
+    writes = []
+
+    class Table:
+        def put_item(self, **kwargs):
+            writes.append(copy.deepcopy(kwargs))
+
+    monkeypatch.setattr(engine.history, "PULLS", Table())
+    monkeypatch.setattr(
+        engine,
+        "_INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED",
+        True,
+        raising=False,
+    )
+    row = _user_visible_prelock(
+        engine,
+        {
+            "slate_date": "2026-07-17",
+            "gameId": "missing-probability-contract",
+            "gameIdentity": "missing-probability-contract",
+            "commenceTime": "2026-07-17T18:00:00+00:00",
+            "homeTeam": "Home",
+            "awayTeam": "Away",
+            "predictedWinner": "Home",
+            "predictedSide": "home",
+            "createdAt": "2026-07-17T17:00:00+00:00",
+        },
+    )
+
+    result = engine._store_prediction(row)
+
+    assert result["ok"] is False
+    assert "probability_contract_version_missing_or_wrong" in result[
+        "authorityErrors"
+    ]
+    assert writes == []
+
+
 @pytest.mark.parametrize(
     ("mutation", "expected_error"),
     [
@@ -308,6 +350,52 @@ def test_direct_legacy_locked_write_is_suppressed_before_any_store():
     assert pre_lock_result["ok"] is True
     assert pre_lock_result["storageClass"] == "LIVE_MUTABLE"
     assert [row["gameId"] for row in original_calls] == ["visible-pre-lock"]
+
+
+def test_immutable_store_rejects_unmarked_vectorless_selection_lock(monkeypatch):
+    writes = []
+
+    class Table:
+        def put_item(self, **kwargs):
+            writes.append(copy.deepcopy(kwargs))
+
+    table = Table()
+    stage = {
+        "PK": "LOCKED_PICKS#mlb#2026-07-17",
+        "SK": "PER_GAME_LOCK#TMINUS45#test",
+        "stage_fingerprint": "stage-fingerprint",
+        "data": {"row": {}},
+    }
+    monkeypatch.setattr(
+        immutable_storage,
+        "_read_verified_stage",
+        lambda table, row, canonical_row: (stage, []),
+    )
+    module = SimpleNamespace(
+        _store_prediction=lambda row: {"ok": True},
+        history=SimpleNamespace(PULLS=table, ddb_safe=copy.deepcopy),
+    )
+    immutable_storage.apply(module)
+    row = {
+        "slate_date": "2026-07-17",
+        "gameId": "unmarked-vectorless",
+        "gameIdentity": "unmarked-vectorless",
+        "commenceTime": "2026-07-17T18:00:00+00:00",
+        "predictedWinner": "Home",
+        "predictedSide": "home",
+        "lockedPrediction": True,
+        "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
+        "immutablePerGameStage": True,
+        "mlFeatureFreeze": {"trainingEligible": True},
+    }
+
+    with pytest.raises(
+        RuntimeError,
+        match="MLB_IMMUTABLE_LOCKED_VECTOR_STATUS_REJECTED.*invalid_vector_not_explicitly_unverified",
+    ):
+        module._store_prediction(row)
+
+    assert writes == []
 
 
 def test_immutable_store_accepts_selection_lock_with_training_vector_exclusion(monkeypatch):

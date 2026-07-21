@@ -42,6 +42,8 @@ except ModuleNotFoundError:
     sys.modules["boto3.dynamodb.conditions"] = conditions_stub
 
 import mlb_fundamentals_snapshot_v1 as fundamentals
+import mlb_fundamentals_snapshot_v2 as fundamentals_v2
+import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 import mlb_daily_per_game_lock_patch as per_game
 import mlb_game_winner_engine as winner_engine
 import mlb_immutable_locked_storage_patch as immutable_storage
@@ -55,6 +57,7 @@ import mlb_official_prediction_semantics as semantics
 import mlb_slate_coverage_patch as slate_coverage
 import mlb_slate_prediction_lock as slate_lock
 import mlb_temporal_features_v1 as temporal
+from mlb_ml_feature_test_fixtures import attach_canonical_pull_proof
 
 
 def advanced_context():
@@ -149,6 +152,7 @@ def pregame_row():
         },
     }
     row["fundamentalsSnapshot"] = fundamentals.build(row)
+    attach_canonical_pull_proof(row)
     return row
 
 
@@ -248,7 +252,17 @@ def actual_locked_wrapper_result():
         },
     })
     canonical["teamWinProbabilityPct"] = canonical.get("winProbabilityPct")
+    attach_canonical_pull_proof(canonical)
     fundamentals.enhance_row(canonical)
+    # The scheduled candidate writer captures and persists Fundamentals V2
+    # before T-45. The lock writer may bind this snapshot into the vector, but
+    # it must never retrieve or synthesize newer evidence while finalizing.
+    canonical["predictionPersistedAtUtc"] = source_at.isoformat()
+    canonical["fundamentalsSnapshotV2"] = fundamentals_v2.build(
+        canonical,
+        captured_at_utc=source_at.isoformat(),
+    )
+    fundamentals_v2.enhance_row(canonical)
     exact_patch.apply(frozen_features)
     freeze_bridge.apply(semantics)
     canonical_result = semantics.enhance_result({
@@ -260,6 +274,17 @@ def actual_locked_wrapper_result():
         "predictions": [canonical],
     })
     canonical = canonical_result["predictions"][0]
+    # The explicit T-45 finalizer owns exact-vector creation. Public semantics
+    # and the generic freeze bridge intentionally cannot synthesize it.
+    original_v2_build = fundamentals_v2.build
+    fundamentals_v2.build = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("T-45 finalization attempted to synthesize Fundamentals V2")
+    )
+    try:
+        canonical = frozen_features.freeze_row(canonical, coverage_complete=True)
+        canonical = vector_contract.apply_exact_vector_training_status(canonical)
+    finally:
+        fundamentals_v2.build = original_v2_build
     stage = {
         **immutable_storage._stage_key(canonical),
         "record_type": per_game.STAGE_RECORD_TYPE,
@@ -476,6 +501,16 @@ def main() -> int:
     assert actual_vector["temporalFeaturesAtOrBeforeLock"] is True
     assert actual_vector["fundamentalMasksAtOrBeforeLock"] is True
     assert actual_row["mlFeatureFreeze"]["exactVectorCreated"] is True, actual_row["mlFeatureFreeze"]
+    assert actual_vector["fundamentalsSnapshotV2AtOrBeforeLock"] is True
+    assert (
+        actual_vector["fundamentalsSnapshotV2Fingerprint"]
+        == actual_row["fundamentalsSnapshotV2"]["fingerprint"]
+    )
+    assert (
+        actual_row["fundamentalsSnapshotV2"]["createdAtUtc"]
+        == actual_row["predictionPersistedAtUtc"]
+    )
+    assert actual_row["selectionTrainingSeparationVersion"] == vector_contract.VERSION
 
     exact_odds = dual._selected_reliability_test(
         [{"reliabilityProbability": 0.9, "lockedAmericanOdds": 120, "pickCorrect": 1}], 0.7

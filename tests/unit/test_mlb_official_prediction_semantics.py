@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -10,6 +11,7 @@ if str(HELLO_WORLD) not in sys.path:
     sys.path.insert(0, str(HELLO_WORLD))
 
 import mlb_official_prediction_semantics as semantics
+import mlb_official_freeze_bridge as freeze_bridge
 
 
 def _locked_row(**overrides):
@@ -153,6 +155,28 @@ def test_prelock_playability_does_not_create_official_accuracy_or_settlement_aut
     assert row["settlementEligible"] is False
     assert row["playableAccuracyEligible"] is False
     assert row["trainingEligible"] is True
+
+
+def test_freeze_bridge_never_synthesizes_vector_or_rewrites_training_status():
+    module = SimpleNamespace(enhance_result=semantics.enhance_result)
+    freeze_bridge.apply(module)
+    source = {
+        "predictions": [{
+            "gameId": "legacy-read-row",
+            "predictedWinner": "Home Club",
+            "predictedSide": "home",
+            "lockedPrediction": True,
+            "trainingEligible": True,
+            "mlFeatureFreeze": {"trainingEligible": True},
+        }]
+    }
+
+    result = module.enhance_result(source)
+    row = result["predictions"][0]
+
+    assert row["trainingEligible"] is True
+    assert "frozenFeatureVector" not in row
+    assert result["mlFeatureFreeze"]["readPathMayCreateOrRewriteVector"] is False
 
 
 def test_legacy_intentional_block_is_release_only_for_an_existing_lock():

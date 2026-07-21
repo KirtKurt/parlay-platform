@@ -133,9 +133,26 @@ def seed_stage(history, row):
         "pull_id": pull_id,
         "games": [copy.deepcopy(game)],
     }
-    history.PULLS.put_item(Item={
+    pull_key = {
         "PK": f"PULLS#mlb#{row['slate_date']}",
         "SK": f"PULL#{source_dt.isoformat()}#{pull_id}",
+    }
+    # Exercise the same canonical-slot proof that production stages bind.
+    # Without it the storage layer correctly rejects the stage before reaching
+    # the vector-status contract, which can make a verifier mistake one
+    # rejection mode for another.
+    pull = history_contract.canonicalize_pull_slots(
+        [pull],
+        sport="mlb",
+        slate=row["slate_date"],
+    )[0]
+    pull["canonicalPullStorage"] = {
+        "pk": pull_key["PK"],
+        "sk": pull_key["SK"],
+        "recordType": "pull_run",
+    }
+    history.PULLS.put_item(Item={
+        **pull_key,
         "record_type": "pull_run",
         "data": copy.deepcopy(pull),
     })
@@ -241,6 +258,12 @@ def seed_stage(history, row):
         "signalPolicyVersion": candidate["signalPolicyV13"]["version"],
         "predictionSourcePullAtUtc": source_dt.isoformat(),
         "predictionSourcePullId": pull_id,
+        "predictionSourcePullFingerprint": history_contract.pull_payload_fingerprint(pull),
+        "predictionSourcePullStoragePk": pull_key["PK"],
+        "predictionSourcePullStorageSk": pull_key["SK"],
+        "predictionSourceCanonicalSlotStartUtc": (
+            (pull.get("canonicalPullSlot") or {}).get("slotStartUtc")
+        ),
         "predictionCreatedAtUtc": created_at.isoformat(),
         "predictionPersistedAtUtc": persisted_at.isoformat(),
         "persistenceProofType": per_game.PREGAME_PERSISTENCE_PROOF_TYPE,
@@ -264,6 +287,24 @@ def seed_stage(history, row):
         "modelOrSignalRecomputedAtLock": False,
     }
     manifest_games = list(manifest.get("games") or [])
+    source_entry = {
+        "pullId": pull_id,
+        "pulledAtUtc": source_dt.isoformat(),
+        "gameSnapshotFingerprint": per_game._game_snapshot_fingerprint(game),
+        "pullStoragePk": pull_key["PK"],
+        "pullStorageSk": pull_key["SK"],
+        "canonicalSlotVersion": (pull.get("canonicalPullSlot") or {}).get("version"),
+        "slotStartUtc": (pull.get("canonicalPullSlot") or {}).get("slotStartUtc"),
+        "canonicalPullFingerprint": (
+            (pull.get("canonicalPullSlot") or {}).get("canonicalPullFingerprint")
+        ),
+        "rawPullCount": (pull.get("canonicalPullSlot") or {}).get("rawPullCount"),
+        "duplicatePullCount": (
+            (pull.get("canonicalPullSlot") or {}).get("duplicatePullCount")
+        ),
+        "slotContaminated": (pull.get("canonicalPullSlot") or {}).get("contaminated") is True,
+    }
+    source_integrity = per_game._source_window_integrity([pull])
     stage = {
         **patch._stage_key(row),
         "record_type": per_game.STAGE_RECORD_TYPE,
@@ -285,11 +326,17 @@ def seed_stage(history, row):
             "scheduledCutoffAtUtc": lock_at,
             "closedAtUtc": staged_at.isoformat(),
             "stabilizationSeconds": per_game.CUTOFF_STABILIZATION_SECONDS,
-            "pulls": [{
-                "pullId": pull_id,
-                "pulledAtUtc": source_dt.isoformat(),
-                "gameSnapshotFingerprint": per_game._game_snapshot_fingerprint(game),
-            }],
+            "pulls": [source_entry],
+            "canonicalTerminalPullAtUtc": source_dt.isoformat(),
+            "canonicalTerminalPullId": pull_id,
+            "rawPullCount": source_integrity["rawPullCount"],
+            "uniqueSlotCount": source_integrity["uniqueSlotCount"],
+            "duplicatePullCount": source_integrity["duplicatePullCount"],
+            "invalidPullCount": source_integrity["invalidPullCount"],
+            "contaminatedSlotCount": source_integrity["contaminatedSlotCount"],
+            "duplicateContaminated": source_integrity["duplicateContaminated"],
+            "canonicalSlotFingerprint": source_integrity["canonicalSlotFingerprint"],
+            "pullHistoryIntegrity": source_integrity,
         },
         "candidate_proof": candidate_proof,
         "provider_manifest_authority": {
@@ -499,6 +546,11 @@ def main() -> int:
     missing_freeze["trainingEligible"] = True
     missing_vector["mlFeatureFreeze"] = missing_freeze
     missing_stage = seed_stage(history, missing_vector)
+    missing_stage_errors = per_game.persisted_stage_authority_errors(
+        history.PULLS,
+        missing_stage,
+    )
+    assert missing_stage_errors == [], missing_stage_errors
     before_missing = copy.deepcopy(history.PULLS.items)
     try:
         module._store_prediction(missing_vector)

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import copy
 import math
 import os
 import hashlib
 import json
+import sys
 from datetime import datetime, timezone
 from statistics import mean
 from typing import Any, Dict, List, Optional, Tuple
@@ -167,6 +169,7 @@ def _market_fair(game: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _series_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any]) -> List[Dict[str, Any]]:
+    pulls = history.canonicalize_pull_slots(pulls, sport="mlb")
     rows = []
     for pull in pulls:
         pulled_at = pull.get("pulled_at")
@@ -179,6 +182,7 @@ def _series_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any]) -
                         "pulled_at": pulled_at,
                         "game": game,
                         "fair": fair,
+                        "canonicalPullSlot": copy.deepcopy(pull.get("canonicalPullSlot") or {}),
                     })
                 break
     return rows
@@ -326,15 +330,12 @@ def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any
     home = _side_score(series, "home")
     away = _side_score(series, "away")
 
-    def sort_key(row: Dict[str, Any]) -> Tuple[float, float, float, float]:
-        return (
-            1.0 if row.get("promoted") else 0.0,
-            float(row.get("expectedValue") or -9.0),
-            float(row.get("edgeVsBook") or -9.0),
-            float(row.get("score") or 0.0),
-        )
-
-    pick = home if sort_key(home) >= sort_key(away) else away
+    # Winner direction is a probability statement. EV and price determine
+    # whether that winner is playable; they must never make the lower model-
+    # probability side the displayed prediction.
+    pick = home if float(home.get("winProbability") or 0.0) >= float(
+        away.get("winProbability") or 0.0
+    ) else away
     opponent = away if pick["side"] == "home" else home
     source = series[-1]
     return {
@@ -383,6 +384,7 @@ def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any
         "temporalFeatureVersion": temporal_features.VERSION,
         "predictionSourcePullAt": source.get("pulled_at"),
         "predictionSourcePullId": source.get("pull_id"),
+        "predictionSourceCanonicalSlot": copy.deepcopy(source.get("canonicalPullSlot") or {}),
         "reason": "Single-game MLB moneyline pick ranked by de-vigged book probability, real bettable price, EV, edge, line movement, book agreement, reversals, and guardrails.",
         "createdAt": _now(),
     }
@@ -422,6 +424,20 @@ def _public_prelock_markers(row: Dict[str, Any]) -> Dict[str, Any]:
         errors.append("public_authority_canonical_flag_not_false")
     if not row.get("predictedWinner") or row.get("predictedSide") not in {"home", "away"}:
         errors.append("winner_or_side_missing")
+    contract_required = bool(
+        getattr(
+            sys.modules[__name__],
+            "_INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED",
+            False,
+        )
+    )
+    if contract_required or row.get("probabilityContractVersion"):
+        try:
+            import mlb_prediction_probability_contract_v1 as probability_contract
+
+            errors.extend(probability_contract.validation_errors(row))
+        except Exception as exc:
+            errors.append(f"probability_contract_validator_unavailable:{exc}")
     if errors:
         raise RuntimeError(
             "MLB_PREGAME_SNAPSHOT_REQUIRES_USER_VISIBLE_PLATFORM_PRELOCK:"
@@ -496,6 +512,12 @@ def _pregame_snapshot_item(row: Dict[str, Any], *, persisted_at: str) -> Dict[st
         "prediction_payload_fingerprint": prediction_payload_fingerprint,
         "prediction_source_pull_at_utc": source_at or None,
         "prediction_source_pull_id": row.get("predictionSourcePullId"),
+        "probability_contract_version": row.get("probabilityContractVersion"),
+        "home_market_devig_probability": row.get("homeMarketDeVigProbability"),
+        "away_market_devig_probability": row.get("awayMarketDeVigProbability"),
+        "market_probability_source_at_utc": row.get("marketProbabilitySourceAtUtc"),
+        "market_probability_version": row.get("marketProbabilityVersion"),
+        "market_probability_fingerprint": row.get("marketProbabilityFingerprint"),
         **markers,
         "immutable_pregame": True,
         "write_once": True,
@@ -534,6 +556,12 @@ def _put_pregame_snapshot(item: Dict[str, Any]) -> Dict[str, Any]:
             "signal_policy_version",
             "prediction_payload_fingerprint_version",
             "prediction_payload_fingerprint",
+            "probability_contract_version",
+            "home_market_devig_probability",
+            "away_market_devig_probability",
+            "market_probability_source_at_utc",
+            "market_probability_version",
+            "market_probability_fingerprint",
         )
         expected = json.dumps(
             {key: item.get(key) for key in collision_fields},
@@ -626,17 +654,23 @@ def _store_prediction(row: Dict[str, Any]) -> Dict[str, Any]:
 
 def predict_all(game_date: Optional[str] = None, store: bool = False, limit: int = 500) -> Dict[str, Any]:
     slate = game_date or _today_et()
-    pulls = history.query_pulls("mlb", slate, limit)
+    pulls = history.canonicalize_pull_slots(
+        history.query_pulls("mlb", slate, limit),
+        sport="mlb",
+        slate=slate,
+    )
     if not pulls:
         return {"ok": True, "sport": "mlb", "slate_date": slate, "engine": ENGINE, "count": 0, "predictions": [], "message": "No MLB pull history found for this slate."}
     latest_pull = pulls[-1]
     latest_games = [g for g in latest_pull.get("games") or [] if _game_day(g) == slate]
     predictions: List[Dict[str, Any]] = []
     stored = []
+    pull_integrity = history.pull_history_integrity(pulls)
     for game in latest_games:
         row = _prediction_for_game(pulls, game, slate)
         if not row:
             continue
+        row["pullHistoryIntegrity"] = copy.deepcopy(pull_integrity)
         predictions.append(row)
 
     if predictions and not any(row.get("promoted") for row in predictions):
@@ -670,6 +704,10 @@ def predict_all(game_date: Optional[str] = None, store: bool = False, limit: int
         "promotionThreshold": PROMOTION_THRESHOLD,
         "fallbackPromotionThreshold": FALLBACK_THRESHOLD,
         "pullCount": len(pulls),
+        "rawPullCount": pull_integrity.get("rawPullCount"),
+        "uniquePullSlotCount": pull_integrity.get("uniqueSlotCount"),
+        "duplicatePullCount": pull_integrity.get("duplicatePullCount"),
+        "pullHistoryIntegrity": pull_integrity,
         "latestPullAt": latest_pull.get("pulled_at"),
         "latestPullId": latest_pull.get("pull_id"),
         "gameCount": len(latest_games),
