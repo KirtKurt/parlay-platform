@@ -29,6 +29,14 @@ def main() -> int:
         },
     }
     try:
+        # Install the authority thresholds and official-lock quality classifier
+        # explicitly. The workflow adds hello_world to sys.path after Python
+        # startup, so relying on sitecustomize would leave the AWS audit using
+        # the pre-60%-gate official classification.
+        import mlb_accuracy_target_policy_v1
+
+        policy_install = mlb_accuracy_target_policy_v1.install()
+
         import mlb_rolling_24h_audit
         import mlb_locked_card_audit_v1
         import mlb_ml_audit_feature_bridge_v1
@@ -44,6 +52,10 @@ def main() -> int:
         authority = report.get("mlTrainingAuthority") or {}
         critical = accuracy.get("mlCriticalFixStatus") or {}
         failures = []
+        if policy_install.get("ok") is not True:
+            failures.append("accuracy_target_policy_install_failed")
+        if "official_lock_60pct_confirmed_direction_gate" not in (policy_install.get("patched") or []):
+            failures.append("official_lock_quality_gate_not_installed")
         if accuracy.get("applied") is not True:
             failures.append("real_world_accuracy_not_applied")
         if (report.get("accuracyLedger") or {}).get("immutable") is not True:
@@ -71,6 +83,7 @@ def main() -> int:
             "reportCreatedAt": report.get("createdAt"),
             "reportOk": report.get("ok"),
             "summary": report.get("summary"),
+            "accuracyTargetPolicyInstall": policy_install,
             "accuracyLedger": report.get("accuracyLedger"),
             "mlCriticalFixStatus": critical,
             "mlOptimizationV3": optimization,
