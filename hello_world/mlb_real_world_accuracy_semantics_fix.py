@@ -192,6 +192,7 @@ def apply(accuracy_module: Any):
         rwa["rolling24hOfficialCardSlateAuthorityTargetPct"] = all_games_audit_target
         rwa["rolling24hOfficialCardSlateAccuracyProgress"] = _rolling_slate_progress(official_accuracy)
         rwa["playableAccuracyTargetPct"] = playable_threshold
+        rwa["auditTargetDoesNotSuppressOfficialPredictions"] = True
         rwa["auditTargetDoesNotSuppressVisibleLockedPredictions"] = True
         rwa["officialQualityGateDoesNotSuppressStoredDiagnostics"] = True
         rwa["individualGameOfficialPickProbabilityFloorPct"] = 60.0
