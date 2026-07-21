@@ -200,6 +200,17 @@ jobs:
           DEPLOY_TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
         run: |
           set -euo pipefail
+          parameter_overrides=(
+            "OddsApiKey=${ODDS_API_KEY_VALUE}"
+            "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}"
+            "DeployGitSha=${GITHUB_SHA}"
+            "DeployTemplateSha256=${DEPLOY_TEMPLATE_SHA256}"
+          )
+          if [[ -n "${SPORTSDATAIO_API_KEY_VALUE:-}" ]]; then
+            parameter_overrides+=("SportsDataIoApiKey=${SPORTSDATAIO_API_KEY_VALUE}")
+          else
+            echo "SportsDataIO secret is not configured; the optional parameter override is omitted."
+          fi
           sam deploy \
             --template-file template.yaml \
             --stack-name parlay-platform-dev \
@@ -209,12 +220,7 @@ jobs:
             --force-upload \
             --no-confirm-changeset \
             --no-fail-on-empty-changeset \
-            --parameter-overrides \
-              OddsApiKey="${ODDS_API_KEY_VALUE}" \
-              InqsiAdminApiToken="${INQSI_ADMIN_API_TOKEN_VALUE}" \
-              SportsDataIoApiKey="${SPORTSDATAIO_API_KEY_VALUE}" \
-              DeployGitSha="${GITHUB_SHA}" \
-              DeployTemplateSha256="${DEPLOY_TEMPLATE_SHA256}"
+            --parameter-overrides "${parameter_overrides[@]}"
 
       - name: Read stack outputs
         id: stack

@@ -123,11 +123,28 @@ def verify_repository(root: Path = ROOT) -> List[str]:
         errors.append("canonical_deploy_workflow_missing")
     else:
         secret_binding = "SPORTSDATAIO_API_KEY_VALUE: ${{ secrets.SPORTSDATAIO_API_KEY }}"
-        parameter_override = 'SportsDataIoApiKey="${SPORTSDATAIO_API_KEY_VALUE}"'
+        parameter_override = (
+            'parameter_overrides+=("SportsDataIoApiKey=${SPORTSDATAIO_API_KEY_VALUE}")'
+        )
+        optional_guard = 'if [[ -n "${SPORTSDATAIO_API_KEY_VALUE:-}" ]]; then'
+        array_expansion = '--parameter-overrides "${parameter_overrides[@]}"'
         if deploy.count(secret_binding) != 1:
             errors.append("deploy_must_bind_optional_sportsdataio_secret_exactly_once")
         if deploy.count(parameter_override) != 1:
             errors.append("deploy_must_pass_sportsdataio_parameter_exactly_once")
+        if deploy.count(optional_guard) != 1:
+            errors.append("deploy_must_guard_optional_sportsdataio_parameter")
+        if deploy.count(array_expansion) != 1:
+            errors.append("deploy_must_expand_parameter_overrides_array_exactly_once")
+        if parameter_override in deploy and optional_guard in deploy:
+            guard_start = deploy.index(optional_guard)
+            override_index = deploy.index(parameter_override)
+            guard_else = deploy.find("\n          else\n", guard_start)
+            guard_end = deploy.find("\n          fi\n", guard_else)
+            if not (
+                guard_start < override_index < guard_else < guard_end
+            ):
+                errors.append("deploy_must_guard_optional_sportsdataio_parameter")
         forbidden_fragments = (
             'test -n "${SPORTSDATAIO_API_KEY_VALUE',
             "Missing SPORTSDATAIO_API_KEY",
