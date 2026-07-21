@@ -182,7 +182,10 @@ def verify(
     row_schema_mismatches: dict[str, int] = {}
     for row in match_data:
         if not isinstance(row, dict):
-            raise LiveContractError("BBS_MLB_MATCH_ROW_NOT_OBJECT")
+            row_schema_mismatches["ROW_NOT_OBJECT"] = (
+                row_schema_mismatches.get("ROW_NOT_OBJECT", 0) + 1
+            )
+            continue
         mismatches = _documented_row_mismatches(row)
         if not mismatches:
             documented_row_count += 1
@@ -192,7 +195,7 @@ def verify(
     documented_row_schema_validated = bool(match_data) and (
         documented_row_count == len(match_data)
     )
-    schema_review_required = not documented_row_schema_validated
+    row_schema_review_required = not documented_row_schema_validated
 
     meta = matches.get("meta") or {}
     allowed_source = {
@@ -205,8 +208,16 @@ def verify(
         "none",
         "unknown-source",
     }
-    if meta.get("source") not in allowed_source:
-        raise LiveContractError("BBS_MLB_SOURCE_ATTRIBUTION_INVALID")
+    source_attribution = str(meta.get("source") or "")
+    source_attribution_recognized = source_attribution in allowed_source
+    source_attribution_fingerprint = (
+        hashlib.sha256(source_attribution.encode("utf-8")).hexdigest()
+        if source_attribution
+        else None
+    )
+    provider_review_required = bool(
+        row_schema_review_required or not source_attribution_recognized
+    )
 
     rate_limit = match_headers.get("x-ratelimit-limit") or account_headers.get("x-ratelimit-limit")
     rate_remaining = match_headers.get("x-ratelimit-remaining") or account_headers.get("x-ratelimit-remaining")
@@ -232,14 +243,21 @@ def verify(
             "documentedRowCount": documented_row_count,
             "unmappedRowCount": len(match_data) - documented_row_count,
             "rowSchemaMismatches": dict(sorted(row_schema_mismatches.items())),
-            "schemaReviewRequired": schema_review_required,
+            "rowSchemaReviewRequired": row_schema_review_required,
+            "schemaReviewRequired": provider_review_required,
             "schemaDisposition": (
                 "DOCUMENTED_ROW_SHAPE_CONFIRMED"
                 if documented_row_schema_validated
                 else "UNMAPPED_RAW_SHADOW_ROWS_QUARANTINED"
             ),
             "providerOfficialGameIdentityDocumented": False,
-            "source": meta.get("source"),
+            "sourceAttributionRecognized": source_attribution_recognized,
+            "sourceAttributionCategory": (
+                source_attribution
+                if source_attribution_recognized
+                else "UNRECOGNIZED_REDACTED"
+            ),
+            "sourceAttributionFingerprint": source_attribution_fingerprint,
             "confidence": meta.get("confidence"),
             "schemaFingerprint": _schema_fingerprint(match_data),
         },
@@ -253,6 +271,7 @@ def verify(
             "completeSlateCoverageClaimed": False,
             "reviewMilestoneDefined": False,
             "schemaActivationEligible": False,
+            "sourceActivationEligible": False,
             "runtimeQuarantineRequired": True,
             "officialIdentityCredit": False,
             "providerIdentityGateSatisfied": False,
