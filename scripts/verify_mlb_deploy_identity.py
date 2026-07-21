@@ -88,6 +88,7 @@ RETIRED_PROVIDER_ENVIRONMENT = (
     "SPORTSDATAIO_MLB_GAMES_ENDPOINT",
     "SPORTSDATAIO_MLB_PBP_ENDPOINT",
 )
+_MISSING_ASYNC_DESTINATION_CONFIG = object()
 
 LEGACY_TOKENS = (
     "MLBBASEPULL",
@@ -108,6 +109,42 @@ MLB_WRITER_TOKENS = (
     "CHAMPION",
     "CHALLENGER",
 )
+
+
+def _normalize_async_destination_config(
+    value: Any,
+) -> Dict[str, Dict[str, str]]:
+    """Normalize Lambda destinations while rejecting unknown shapes."""
+
+    if value is _MISSING_ASYNC_DESTINATION_CONFIG:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("DestinationConfig must be an object")
+
+    allowed_outcomes = {"OnSuccess", "OnFailure"}
+    unexpected_outcomes = sorted(set(value) - allowed_outcomes)
+    if unexpected_outcomes:
+        raise ValueError(
+            f"DestinationConfig has unknown outcomes: {unexpected_outcomes}"
+        )
+
+    configured: Dict[str, Dict[str, str]] = {}
+    for outcome, raw_destination in value.items():
+        if not isinstance(raw_destination, dict):
+            raise ValueError(f"DestinationConfig.{outcome} must be an object")
+        if not raw_destination:
+            continue
+        if set(raw_destination) != {"Destination"}:
+            raise ValueError(
+                f"DestinationConfig.{outcome} has invalid fields"
+            )
+        destination = raw_destination.get("Destination")
+        if not isinstance(destination, str) or not destination.strip():
+            raise ValueError(
+                f"DestinationConfig.{outcome}.Destination must be a non-empty string"
+            )
+        configured[outcome] = {"Destination": destination}
+    return configured
 
 
 def _rule_names_for_target(events: Any, target_arn: str) -> List[str]:
@@ -399,7 +436,10 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                     f"{exc}"
                 )
             async_retry_policy: Dict[str, Any] = {}
-            async_destination_config: Dict[str, Any] = {}
+            async_destination_config: Any = None
+            async_destination_config_present = False
+            configured_async_destinations: Dict[str, Dict[str, str]] = {}
+            async_destination_config_valid = False
             try:
                 async_config = lambdas.get_function_event_invoke_config(
                     FunctionName=physical_id,
@@ -413,9 +453,32 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                         "MaximumRetryAttempts"
                     ),
                 }
-                async_destination_config = dict(
-                    async_config.get("DestinationConfig") or {}
+                raw_async_destination_config = async_config.get(
+                    "DestinationConfig",
+                    _MISSING_ASYNC_DESTINATION_CONFIG,
                 )
+                async_destination_config_present = (
+                    raw_async_destination_config
+                    is not _MISSING_ASYNC_DESTINATION_CONFIG
+                )
+                async_destination_config = (
+                    raw_async_destination_config
+                    if async_destination_config_present
+                    else None
+                )
+                try:
+                    configured_async_destinations = (
+                        _normalize_async_destination_config(
+                            raw_async_destination_config
+                        )
+                    )
+                    async_destination_config_valid = True
+                except ValueError as exc:
+                    configuration_matches = False
+                    blockers.append(
+                        "TRAINER_LAMBDA_ASYNC_DESTINATION_CONFIG_INVALID:"
+                        f"{exc}"
+                    )
                 if async_retry_policy != TRAINER_RETRY_POLICY:
                     configuration_matches = False
                     blockers.append(
@@ -423,7 +486,7 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                         f"expected={TRAINER_RETRY_POLICY}:"
                         f"actual={async_retry_policy}"
                     )
-                if async_destination_config:
+                if configured_async_destinations:
                     configuration_matches = False
                     blockers.append(
                         "TRAINER_LAMBDA_ASYNC_DESTINATION_CONFIG_PRESENT"
@@ -461,8 +524,18 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                     async_retry_policy == TRAINER_RETRY_POLICY
                 ),
                 "asyncDestinationConfig": async_destination_config,
-                "asyncDestinationConfigAbsent": not bool(
-                    async_destination_config
+                "asyncDestinationConfigPresent": (
+                    async_destination_config_present
+                ),
+                "asyncDestinationConfigValid": (
+                    async_destination_config_valid
+                ),
+                "configuredAsyncDestinations": (
+                    configured_async_destinations
+                ),
+                "asyncDestinationConfigAbsent": bool(
+                    async_destination_config_valid
+                    and not configured_async_destinations
                 ),
                 "environment": {
                     key: environment.get(key)

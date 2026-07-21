@@ -15,6 +15,7 @@ REGION = "us-east-1"
 GIT_SHA = "a" * 40
 TEMPLATE_SHA = "b" * 64
 ARTIFACT_BUCKET = "parlay-platform-test-mlb-artifacts"
+OMIT_DESTINATION_CONFIG = object()
 
 
 def _arn(role: str) -> str:
@@ -52,7 +53,10 @@ class FakeLambda:
     def __init__(self) -> None:
         self.reserved_concurrency = None
         self.async_retry_policy = dict(deploy_identity.TRAINER_RETRY_POLICY)
-        self.async_destination_config: dict[str, Any] = {}
+        self.async_destination_config: Any = {
+            "OnSuccess": {},
+            "OnFailure": {},
+        }
         self.configurations = {}
         for logical_id, role in deploy_identity.FUNCTIONS.items():
             environment = {
@@ -110,7 +114,7 @@ class FakeLambda:
             "Qualifier": "$LATEST",
         }
         response = dict(self.async_retry_policy)
-        if self.async_destination_config:
+        if self.async_destination_config is not OMIT_DESTINATION_CONFIG:
             response["DestinationConfig"] = copy.deepcopy(
                 self.async_destination_config
             )
@@ -287,6 +291,13 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
     assert result["trainerConfiguration"]["reservedConcurrencyAbsent"] is True
     assert result["trainerConfiguration"]["functionDeadLetterConfigAbsent"] is True
     assert result["trainerConfiguration"]["asyncRetryPolicyMatches"] is True
+    assert result["trainerConfiguration"]["asyncDestinationConfig"] == {
+        "OnSuccess": {},
+        "OnFailure": {},
+    }
+    assert result["trainerConfiguration"]["asyncDestinationConfigPresent"] is True
+    assert result["trainerConfiguration"]["asyncDestinationConfigValid"] is True
+    assert result["trainerConfiguration"]["configuredAsyncDestinations"] == {}
     assert result["trainerConfiguration"]["asyncDestinationConfigAbsent"] is True
     assert result["trainerConfiguration"]["sqsFailureDestinationRequired"] is False
     assert result["trainerConfiguration"]["handler"] == deploy_identity.TRAINER_HANDLER
@@ -405,10 +416,29 @@ def test_fails_closed_when_reserved_concurrency_absence_cannot_be_read(aws) -> N
     )
 
 
-def test_rejects_wrong_lambda_async_retry_and_any_destination_config(aws) -> None:
+@pytest.mark.parametrize(
+    "destination_config",
+    (
+        deploy_identity._MISSING_ASYNC_DESTINATION_CONFIG,
+        {},
+        {"OnSuccess": {}},
+        {"OnFailure": {}},
+        {"OnSuccess": {}, "OnFailure": {}},
+    ),
+)
+def test_normalizes_absent_lambda_async_destinations(destination_config) -> None:
+    assert deploy_identity._normalize_async_destination_config(
+        destination_config
+    ) == {}
+
+
+@pytest.mark.parametrize("outcome", ("OnSuccess", "OnFailure"))
+def test_rejects_wrong_lambda_async_retry_and_configured_destination(
+    aws, outcome
+) -> None:
     aws["lambda"].async_retry_policy["MaximumRetryAttempts"] = 0
     aws["lambda"].async_destination_config = {
-        "OnSuccess": {
+        outcome: {
             "Destination": "arn:aws:lambda:us-east-1:123456789012:function:unexpected"
         }
     }
@@ -417,7 +447,15 @@ def test_rejects_wrong_lambda_async_retry_and_any_destination_config(aws) -> Non
 
     assert result["ok"] is False
     assert result["trainerConfiguration"]["asyncRetryPolicyMatches"] is False
+    assert result["trainerConfiguration"]["asyncDestinationConfigValid"] is True
     assert result["trainerConfiguration"]["asyncDestinationConfigAbsent"] is False
+    assert result["trainerConfiguration"]["configuredAsyncDestinations"] == {
+        outcome: {
+            "Destination": (
+                "arn:aws:lambda:us-east-1:123456789012:function:unexpected"
+            )
+        }
+    }
     assert any(
         blocker.startswith("TRAINER_LAMBDA_ASYNC_RETRY_POLICY_MISMATCH:")
         for blocker in result["blockers"]
@@ -425,6 +463,45 @@ def test_rejects_wrong_lambda_async_retry_and_any_destination_config(aws) -> Non
     assert "TRAINER_LAMBDA_ASYNC_DESTINATION_CONFIG_PRESENT" in result[
         "blockers"
     ]
+
+
+@pytest.mark.parametrize(
+    "destination_config",
+    (
+        [],
+        "",
+        0,
+        None,
+        {"OnFailure": "invalid"},
+        {"OnSuccess": None},
+        {"OnFailure": []},
+        {"OnSuccess": {"Destination": 123}},
+        {"OnSuccess": {"Destination": ""}},
+        {"Unexpected": {}},
+        {
+            "OnFailure": {
+                "Destination": "arn:aws:sqs:us-east-1:123456789012:unexpected",
+                "Extra": True,
+            }
+        },
+    ),
+)
+def test_fails_closed_for_malformed_lambda_async_destination_config(
+    aws, destination_config
+) -> None:
+    aws["lambda"].async_destination_config = destination_config
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["trainerConfiguration"]["asyncDestinationConfigValid"] is False
+    assert result["trainerConfiguration"]["asyncDestinationConfigAbsent"] is False
+    assert any(
+        blocker.startswith(
+            "TRAINER_LAMBDA_ASYNC_DESTINATION_CONFIG_INVALID:"
+        )
+        for blocker in result["blockers"]
+    )
 
 
 def test_rejects_trainer_function_dead_letter_config(aws) -> None:
