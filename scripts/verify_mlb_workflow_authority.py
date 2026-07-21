@@ -228,9 +228,9 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             errors.append("canonical_deploy_does_not_verify_post_run_trainer_status")
         for required_capacity_token in (
             "Prove shared Lambda capacity recovered before trainer initialization",
+            "capacity_deadline=$((SECONDS + 360))",
             "AWS_MAX_ATTEMPTS: \"1\"",
-            "invoke_with_capacity_retry",
-            "ConcurrentInvocationLimitExceeded",
+            "python scripts/invoke_mlb_trainer_with_retry.py",
             "scripts/mlb_deploy_http_probe.py",
             "from scripts.mlb_deploy_http_probe import fetch_json_object",
             "deadline=deadline",
@@ -240,6 +240,10 @@ def verify_repository(root: Path = ROOT) -> List[str]:
                     "canonical_deploy_capacity_backpressure_missing:"
                     + required_capacity_token
                 )
+        if deploy.count("python scripts/invoke_mlb_trainer_with_retry.py") != 3:
+            errors.append(
+                "canonical_deploy_must_use_bounded_invoke_retry_exactly_three_times"
+            )
         if "python scripts/verify_mlb_workflow_authority.py" not in deploy:
             errors.append("canonical_deploy_does_not_verify_retired_workflows")
         if "python scripts/verify_mlb_bbs_sam_wiring.py" not in deploy:
@@ -281,6 +285,27 @@ def verify_repository(root: Path = ROOT) -> List[str]:
         }
         for token, error in shadow_runtime_tokens.items():
             if token not in deploy:
+                errors.append(error)
+
+        for token, error in (
+            (
+                "tests/unit/test_mlb_daily_pick_lock_runtime.py",
+                "production_source_contract_does_not_test_lock_runtime",
+            ),
+            (
+                "tests/unit/test_mlb_daily_per_game_lock.py",
+                "production_source_contract_does_not_test_per_game_lock",
+            ),
+            (
+                "tests/unit/test_mlb_trainer_invoke_retry.py",
+                "production_source_contract_does_not_test_trainer_invoke_retry",
+            ),
+            (
+                "python -m py_compile scripts/invoke_mlb_trainer_with_retry.py",
+                "production_source_contract_does_not_compile_trainer_invoke_retry",
+            ),
+        ):
+            if token not in contract:
                 errors.append(error)
 
     return sorted(set(errors))

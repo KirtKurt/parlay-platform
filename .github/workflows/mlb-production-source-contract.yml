@@ -165,8 +165,11 @@ jobs:
             tests/unit/test_mlb_ml_dual_model_v2.py \
             tests/unit/test_mlb_ml_promotion_policy_v2.py \
             tests/unit/test_mlb_ml_aws_training_v1.py \
+            tests/unit/test_mlb_daily_pick_lock_runtime.py \
+            tests/unit/test_mlb_daily_per_game_lock.py \
             tests/unit/test_mlb_deploy_identity.py \
             tests/unit/test_mlb_deploy_http_probe.py \
+            tests/unit/test_mlb_trainer_invoke_retry.py \
             tests/unit/test_mlb_trainer_deploy_response.py \
             tests/unit/test_mlb_workflow_authority.py \
             tests/unit/test_run_mlb_ml_v3_audit_report.py
@@ -176,6 +179,7 @@ jobs:
           python -m py_compile scripts/stabilize_mlb_deploy_source.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
           python -m py_compile scripts/mlb_deploy_http_probe.py
+          python -m py_compile scripts/invoke_mlb_trainer_with_retry.py
           python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
           python -m py_compile scripts/verify_mlb_workflow_authority.py
           python -m py_compile scripts/enforce_mlb_production_acceptance.py

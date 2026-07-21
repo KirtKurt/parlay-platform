@@ -106,6 +106,7 @@ jobs:
           python -m pytest -q tests/unit/test_mlb_production_acceptance.py
           python -m py_compile scripts/mlb_deploy_http_probe.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
+          python -m py_compile scripts/invoke_mlb_trainer_with_retry.py
           python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
 
       - name: Enforce MLB published prediction and immutable lock regressions
@@ -135,6 +136,7 @@ jobs:
             tests/unit/test_mlb_ml_aws_training_v1.py
             tests/unit/test_mlb_deploy_identity.py
             tests/unit/test_mlb_deploy_http_probe.py
+            tests/unit/test_mlb_trainer_invoke_retry.py
             tests/unit/test_mlb_trainer_deploy_response.py
             tests/unit/test_mlb_workflow_authority.py
             tests/unit/test_run_mlb_ml_v3_audit_report.py
@@ -281,7 +283,8 @@ jobs:
           set -euo pipefail
           base_url="${API_URL%/}"
           success_streak=0
-          for attempt in $(seq 1 30); do
+          capacity_deadline=$((SECONDS + 360))
+          while true; do
             health_ok=false
             model_ok=false
             curl --fail --silent --show-error \
@@ -301,7 +304,7 @@ jobs:
             else
               success_streak=0
             fi
-            if [ "$attempt" -eq 30 ]; then
+            if (( SECONDS >= capacity_deadline )); then
               echo "::error::Shared Lambda capacity did not recover after schedule backpressure deployment"
               exit 1
             fi
@@ -322,51 +325,24 @@ jobs:
           test -n "$TRAINER_ARN"
           test "$TRAINER_ARN" != "None"
           RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          invoke_with_capacity_retry() {
-            local payload="$1"
-            local response_path="$2"
-            local invocation_path="$3"
-            local error_path="${invocation_path}.error"
-            for attempt in $(seq 1 15); do
-              set +e
-              aws lambda invoke \
-                --function-name "$TRAINER_ARN" \
-                --region "${{ secrets.AWS_REGION }}" \
-                --cli-connect-timeout 10 \
-                --cli-read-timeout 1000 \
-                --cli-binary-format raw-in-base64-out \
-                --payload "$payload" \
-                "$response_path" >"$invocation_path" 2>"$error_path"
-              status=$?
-              set -e
-              if [ "$status" -eq 0 ]; then
-                return 0
-              fi
-              if ! grep -Eq \
-                'TooManyRequestsException|ConcurrentInvocationLimitExceeded|Rate Exceeded' \
-                "$error_path"; then
-                sed -n '1,20p' "$error_path"
-                return "$status"
-              fi
-              if [ "$attempt" -eq 15 ]; then
-                echo "::error::Lambda capacity remained exhausted after bounded trainer invoke retries"
-                return "$status"
-              fi
-              sleep 4
-            done
-          }
-          invoke_with_capacity_retry \
-            '{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}' \
-            /tmp/mlb-ml-v2-training.json \
-            /tmp/mlb-ml-v2-training-invoke.json
-          invoke_with_capacity_retry \
-            '{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}' \
-            /tmp/mlb-ml-v2-selection-capture.json \
-            /tmp/mlb-ml-v2-selection-capture-invoke.json
-          invoke_with_capacity_retry \
-            '{"mode":"status"}' \
-            /tmp/mlb-ml-v2-status-after.json \
-            /tmp/mlb-ml-v2-status-after-invoke.json
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}' \
+            --response /tmp/mlb-ml-v2-training.json \
+            --invocation /tmp/mlb-ml-v2-training-invoke.json
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}' \
+            --response /tmp/mlb-ml-v2-selection-capture.json \
+            --invocation /tmp/mlb-ml-v2-selection-capture-invoke.json
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"mode":"status"}' \
+            --response /tmp/mlb-ml-v2-status-after.json \
+            --invocation /tmp/mlb-ml-v2-status-after-invoke.json
           # Fail closed unless trainingHealth and selectionCaptureHealth both
           # attest deploymentIdentityMatches for the exact runs above.
           python scripts/verify_mlb_trainer_deploy_response.py \
