@@ -7,6 +7,7 @@ on:
       - 'template.yaml'
       - 'hello_world/api.py'
       - 'hello_world/mlb_*.py'
+      - 'hello_world/pull_dedupe_guard.py'
       - 'scripts/*mlb*.py'
       - 'tests/unit/test_mlb_*.py'
       - '.github/workflows/deploy.yml'
@@ -18,6 +19,7 @@ on:
       - 'template.yaml'
       - 'hello_world/api.py'
       - 'hello_world/mlb_*.py'
+      - 'hello_world/pull_dedupe_guard.py'
       - 'scripts/*mlb*.py'
       - 'tests/unit/test_mlb_*.py'
       - '.github/workflows/deploy.yml'
@@ -68,6 +70,11 @@ jobs:
       - name: Verify recurring 1 AM ET pull gate
         run: python scripts/verify_mlb_daily_pull_start_gate.py
 
+      - name: Verify official-lock and pull-slot quality gates
+        run: |
+          python tests/unit/test_mlb_official_lock_quality_gate.py
+          python tests/unit/test_mlb_pull_dedupe_guard.py
+
       - name: Verify slate-level production acceptance semantics
         run: python tests/unit/test_mlb_production_acceptance.py
 
@@ -76,3 +83,5 @@ jobs:
           python -m py_compile scripts/stabilize_mlb_deploy_source.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
           python -m py_compile scripts/enforce_mlb_production_acceptance.py
+          python -m py_compile hello_world/mlb_official_lock_quality_gate.py
+          python -m py_compile hello_world/pull_dedupe_guard.py
