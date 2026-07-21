@@ -21,7 +21,7 @@ from typing import Any, Callable
 
 
 BASE_URL = "https://api.bigballsdata.com"
-SCHEMA_VERSION = "MLB-BBS-LIVE-CONTRACT-v2-live-key-documented-row-shape"
+SCHEMA_VERSION = "MLB-BBS-LIVE-CONTRACT-v3-shadow-quarantine-schema-drift"
 LIVE_KEY_PATTERN = re.compile(r"^bbs_live_[A-Za-z0-9_-]{12,}$")
 TEST_KEY_PATTERN = re.compile(r"^bbs_test_[A-Za-z0-9_-]{12,}$")
 
@@ -108,6 +108,36 @@ def _request_json(
     return payload, headers
 
 
+def _documented_row_mismatches(row: dict[str, Any]) -> list[str]:
+    """Return value-free reason codes for documented-shape drift."""
+
+    mismatches: list[str] = []
+    if not str(row.get("match_id") or "").strip():
+        mismatches.append("MATCH_ID_MISSING")
+    kickoff = str(row.get("kickoff_utc") or "")
+    try:
+        parsed_kickoff = datetime.fromisoformat(kickoff.replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        parsed_kickoff = None
+    if parsed_kickoff is None or parsed_kickoff.tzinfo is None:
+        mismatches.append("KICKOFF_UTC_INVALID")
+    if str(row.get("sport") or "").lower() != "baseball":
+        mismatches.append("SPORT_FIELD_INVALID")
+    for side in ("home", "away"):
+        team = row.get(side)
+        if not isinstance(team, dict):
+            mismatches.append(f"{side.upper()}_TEAM_INVALID")
+            continue
+        if not str(
+            team.get("display_name")
+            or team.get("name")
+            or team.get("team_name")
+            or ""
+        ).strip():
+            mismatches.append(f"{side.upper()}_TEAM_NAME_MISSING")
+    return mismatches
+
+
 def verify(
     api_key: str,
     *,
@@ -148,31 +178,21 @@ def verify(
     match_data = matches.get("data")
     if not isinstance(match_data, list):
         raise LiveContractError("BBS_MLB_MATCH_DATA_NOT_ARRAY")
+    documented_row_count = 0
+    row_schema_mismatches: dict[str, int] = {}
     for row in match_data:
         if not isinstance(row, dict):
             raise LiveContractError("BBS_MLB_MATCH_ROW_NOT_OBJECT")
-        if not str(row.get("match_id") or "").strip():
-            raise LiveContractError("BBS_MLB_MATCH_ID_MISSING")
-        kickoff = str(row.get("kickoff_utc") or "")
-        try:
-            parsed_kickoff = datetime.fromisoformat(kickoff.replace("Z", "+00:00"))
-        except (TypeError, ValueError):
-            raise LiveContractError("BBS_MLB_KICKOFF_UTC_INVALID") from None
-        if parsed_kickoff.tzinfo is None:
-            raise LiveContractError("BBS_MLB_KICKOFF_UTC_INVALID")
-        if str(row.get("sport") or "").lower() != "baseball":
-            raise LiveContractError("BBS_MLB_SPORT_FIELD_INVALID")
-        for side in ("home", "away"):
-            team = row.get(side)
-            if not isinstance(team, dict):
-                raise LiveContractError(f"BBS_MLB_{side.upper()}_TEAM_INVALID")
-            if not str(
-                team.get("display_name")
-                or team.get("name")
-                or team.get("team_name")
-                or ""
-            ).strip():
-                raise LiveContractError(f"BBS_MLB_{side.upper()}_TEAM_NAME_MISSING")
+        mismatches = _documented_row_mismatches(row)
+        if not mismatches:
+            documented_row_count += 1
+        for reason in mismatches:
+            row_schema_mismatches[reason] = row_schema_mismatches.get(reason, 0) + 1
+
+    documented_row_schema_validated = bool(match_data) and (
+        documented_row_count == len(match_data)
+    )
+    schema_review_required = not documented_row_schema_validated
 
     meta = matches.get("meta") or {}
     allowed_source = {
@@ -208,7 +228,16 @@ def verify(
             "filters": {"sport": "baseball", "league": "mlb", "date": "today"},
             "rowCount": len(match_data),
             "dataType": "array",
-            "documentedRowSchemaValidated": bool(match_data),
+            "documentedRowSchemaValidated": documented_row_schema_validated,
+            "documentedRowCount": documented_row_count,
+            "unmappedRowCount": len(match_data) - documented_row_count,
+            "rowSchemaMismatches": dict(sorted(row_schema_mismatches.items())),
+            "schemaReviewRequired": schema_review_required,
+            "schemaDisposition": (
+                "DOCUMENTED_ROW_SHAPE_CONFIRMED"
+                if documented_row_schema_validated
+                else "UNMAPPED_RAW_SHADOW_ROWS_QUARANTINED"
+            ),
             "providerOfficialGameIdentityDocumented": False,
             "source": meta.get("source"),
             "confidence": meta.get("confidence"),
@@ -223,6 +252,8 @@ def verify(
             "captureCoverage": "PARTIAL_SINGLE_UTC_DATE_PROBE",
             "completeSlateCoverageClaimed": False,
             "reviewMilestoneDefined": False,
+            "schemaActivationEligible": False,
+            "runtimeQuarantineRequired": True,
             "officialIdentityCredit": False,
             "providerIdentityGateSatisfied": False,
         },
