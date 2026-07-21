@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict, Optional
 
-VERSION = "MLB-REAL-WORLD-ACCURACY-v2.1-canonical-lock-only"
+VERSION = "MLB-REAL-WORLD-ACCURACY-v2.2-60pct-official-quality-canonical-lock"
 ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT = 90.0
 MIN_PLAYABLE_TARGET_ACCURACY_PCT = 90.0
 RELIABILITY_PROGRESS_MILESTONES_PCT = (50.0, 60.0, 70.0, 80.0)
@@ -168,13 +168,14 @@ def apply(accuracy_module: Any):
             "seasonAccuracyPct": season_official.get("accuracyPct"),
             "seasonOfficialPredictionCount": season_official.get("count"),
             "seasonPlayablePredictionCount": season_playable.get("count"),
-            "accuracyTargetRowPolicy": "90pct_is_the_production_playability_accuracy_gate_and_the_rolling_24h_all_games_audit_target",
-            "actionabilityPolicy": "Playable metrics require explicit modern playability or ACTIONABLE_PICK/ML_CONFIRMED. officialPick is never a playability signal.",
-            "officialCardPolicy": "Every immutable locked winner is graded as an official prediction, regardless of playability.",
-            "optimizationTargetPolicy": "Production playability requires at least 100 selected untouched-test rows, 90% selected accuracy, 90% exact locked-odds coverage, calibration error no greater than 0.10, 500 clean rows, and 100 total untouched-test rows. Outcome direction has independent gates. Eligible authorities promote automatically only in the authoritative AWS audit.",
+            "accuracyTargetRowPolicy": "Canonical locked rows are visible; official accuracy includes only rows passing the 60% direction-integrity quality gate.",
+            "actionabilityPolicy": "Playable metrics require explicit modern playability or ACTIONABLE_PICK/ML_CONFIRMED. Official quality status is not playability.",
+            "officialCardPolicy": "Every canonical lock remains auditable, but sub-60%, integrity-corrected, unstable, or unconfirmed multi-reversal rows are locked diagnostics rather than official-target predictions.",
+            "optimizationTargetPolicy": "Production playability requires at least 100 selected untouched-test rows, 90% selected accuracy, 90% exact locked-odds coverage, calibration error no greater than 0.10, 500 clean rows, and 100 total untouched-test rows. Outcome direction has independent gates.",
             "rolling24hSlateAccuracyProgressMilestonesPct": list(RELIABILITY_PROGRESS_MILESTONES_PCT),
             "rolling24hSlateAccuracyProgressMilestonesReportingOnly": True,
             "accuracyClassificationVersion": VERSION,
+            "individualGameOfficialPickProbabilityFloorPct": 60.0,
         })
         out["summary"] = summary
         rwa = dict(out.get("realWorldAccuracy") or {})
@@ -192,6 +193,9 @@ def apply(accuracy_module: Any):
         rwa["rolling24hOfficialCardSlateAccuracyProgress"] = _rolling_slate_progress(official_accuracy)
         rwa["playableAccuracyTargetPct"] = playable_threshold
         rwa["auditTargetDoesNotSuppressOfficialPredictions"] = True
+        rwa["auditTargetDoesNotSuppressVisibleLockedPredictions"] = True
+        rwa["officialQualityGateDoesNotSuppressStoredDiagnostics"] = True
+        rwa["individualGameOfficialPickProbabilityFloorPct"] = 60.0
         rwa["below90SuspendsModelAuthority"] = True
         out["realWorldAccuracy"] = rwa
         return out
