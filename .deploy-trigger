@@ -12,3 +12,8 @@ Required ML policy: outcome and reliability models remain separate, recommendati
 Deployment request UTC: 2026-07-17T02:57:00Z
 Purpose: verify the MLB T-minus-45 last-prelock promotion runtime and the exact zero-game post-game provider-manifest cutover smoke on production main.
 Expected behavior: live nonzero pulls require complete immutable manifests; zero-game post-cutover history remains unbackfilled and fails closed without being misclassified as a runtime installation failure.
+
+Deployment request UTC: 2026-07-21T20:54:00Z
+Source merge SHA: 0329892d55d2d0e8004a1b5250516f1dd6c2b33c
+Purpose: trigger the exact-source AWS SAM deployment for the canonical MLB ML fixes 1-8 after the merge push event was not indexed.
+Required outcome: AWS-native V2 remains shadow-only; canonical pull, probability, immutable lock, official label, fixed prospective experiment, and milestone/status contracts must pass live verification.
