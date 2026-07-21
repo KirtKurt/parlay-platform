@@ -93,7 +93,7 @@ jobs:
           python-version: '3.11'
 
       - name: Install runtime dependencies
-        run: python -m pip install --upgrade boto3
+        run: python -m pip install --upgrade boto3 "pytest>=8,<9"
 
       - name: Verify settlement matching before AWS audit
         run: python scripts/verify_mlb_settlement_matching_v3.py
