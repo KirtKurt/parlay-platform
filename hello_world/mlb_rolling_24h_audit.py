@@ -5,7 +5,7 @@ import os
 import urllib.parse
 import urllib.request
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 from zoneinfo import ZoneInfo
 
 import inqsi_pull_history as history
@@ -17,6 +17,10 @@ WINDOW_HOURS = 24
 TARGET_ACCURACY_PCT = 90.0
 CANONICAL_LOCK_RECORD_TYPE = "mlb_immutable_locked_single_game_prediction"
 CANONICAL_LOCK_AUTHORITY_VERSION = "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1"
+EXACT_PROVIDER_MATCH_METHOD = "exact_provider_game_id_and_teams"
+VERIFIED_PROVIDER_ALIAS_MATCH_METHOD = (
+    "verified_immutable_pull_official_game_pk_provider_alias_and_teams"
+)
 _CANONICAL_REJECTIONS_BY_SLATE: Dict[str, Dict[str, List[str]]] = {}
 HISTORICAL_AUDIT_WINDOW_DAYS = max(
     1,
@@ -57,13 +61,198 @@ def normalize_team(name: Optional[str]) -> str:
 
 
 def _provider_game_id(row: Dict[str, Any]) -> str:
-    for key in ("gameId", "game_id", "providerGameId", "provider_game_id", "id"):
+    for key in (
+        "providerEventId",
+        "provider_event_id",
+        "providerGameId",
+        "provider_game_id",
+        "gameId",
+        "game_id",
+        "id",
+    ):
         value = row.get(key)
         if value not in (None, ""):
             text = str(value).strip()
             return text[len("provider:"):] if text.startswith("provider:") else text
     identity = str(row.get("gameIdentity") or "").strip()
     return identity[len("provider:"):] if identity.startswith("provider:") else ""
+
+
+def _canonical_game_id(row: Dict[str, Any]) -> str:
+    for key in ("gameId", "game_id", "id"):
+        value = row.get(key)
+        if value not in (None, ""):
+            text = str(value).strip()
+            return text[len("provider:"):] if text.startswith("provider:") else text
+    identity = str(row.get("gameIdentity") or "").strip()
+    return identity[len("provider:"):] if identity.startswith("provider:") else ""
+
+
+def _explicit_provider_event_id(row: Dict[str, Any]) -> str:
+    for key in (
+        "providerEventId",
+        "provider_event_id",
+        "providerGameId",
+        "provider_game_id",
+    ):
+        value = row.get(key)
+        if value not in (None, ""):
+            text = str(value).strip()
+            return text[len("provider:"):] if text.startswith("provider:") else text
+    return ""
+
+
+def _official_game_pk(row: Dict[str, Any]) -> str:
+    for key in ("officialGamePk", "official_game_pk"):
+        value = row.get(key)
+        if value not in (None, ""):
+            return str(value).strip()
+    for key in ("officialGameId", "official_game_id", "gameId", "game_id", "gameIdentity"):
+        value = str(row.get(key) or "").strip()
+        if value.startswith("mlb_statsapi:"):
+            return value.split(":", 1)[1]
+    return ""
+
+
+def _ordered_teams(row: Dict[str, Any]) -> Tuple[str, str]:
+    return (
+        normalize_team(row.get("awayTeam") or row.get("away_team")),
+        normalize_team(row.get("homeTeam") or row.get("home_team")),
+    )
+
+
+def _verified_provider_alias_crosswalk(slate_date: str) -> Dict[str, Dict[str, Any]]:
+    """Build a one-to-one official-pk/provider-id map from immutable manifests.
+
+    The settlement result must never supply this bridge.  Only same-slate pull
+    manifests whose write-once copy and fingerprint validate are considered.
+    Repeated identical evidence is allowed; any provider, official-pk, or team
+    ambiguity removes the affected mapping entirely.
+    """
+    try:
+        pulls = history.query_pulls("mlb", date=slate_date, limit=500)
+    except Exception:
+        return {}
+
+    evidence: Dict[Tuple[str, str, str, str], Dict[str, Any]] = {}
+    for pull in pulls or []:
+        if str(pull.get("slate_date") or slate_date) != str(slate_date):
+            continue
+        try:
+            errors = history.validate_provider_schedule_manifest(
+                pull,
+                slate_date,
+                verify_immutable_storage=True,
+            )
+        except Exception:
+            continue
+        if errors:
+            continue
+        manifest = pull.get("provider_schedule_manifest") or {}
+        fingerprint = str(manifest.get("fingerprint") or "")
+        if not fingerprint:
+            continue
+        for game in manifest.get("games") or []:
+            if not isinstance(game, dict):
+                continue
+            official_pk = _official_game_pk(game)
+            provider_id = _explicit_provider_event_id(game)
+            away, home = _ordered_teams(game)
+            if not official_pk or not provider_id or not away or not home:
+                continue
+            key = (official_pk, provider_id, away, home)
+            proof = evidence.setdefault(
+                key,
+                {
+                    "officialGamePk": official_pk,
+                    "providerEventId": provider_id,
+                    "awayTeamNormalized": away,
+                    "homeTeamNormalized": home,
+                    "manifestFingerprints": set(),
+                },
+            )
+            proof["manifestFingerprints"].add(fingerprint)
+
+    by_official: Dict[str, Set[Tuple[str, str, str]]] = {}
+    by_provider: Dict[str, Set[Tuple[str, str, str]]] = {}
+    for official_pk, provider_id, away, home in evidence:
+        by_official.setdefault(official_pk, set()).add((provider_id, away, home))
+        by_provider.setdefault(provider_id, set()).add((official_pk, away, home))
+
+    verified: Dict[str, Dict[str, Any]] = {}
+    for (official_pk, provider_id, away, home), proof in evidence.items():
+        if by_official.get(official_pk) != {(provider_id, away, home)}:
+            continue
+        if by_provider.get(provider_id) != {(official_pk, away, home)}:
+            continue
+        verified[official_pk] = {
+            **proof,
+            "manifestFingerprints": sorted(proof["manifestFingerprints"]),
+            "evidenceCount": len(proof["manifestFingerprints"]),
+            "slateDateEt": slate_date,
+            "immutableManifestValidated": True,
+            "uniqueBidirectionalCrosswalk": True,
+        }
+    return verified
+
+
+def _apply_verified_provider_aliases(
+    predictions: List[Dict[str, Any]],
+    slate_date: str,
+) -> List[Dict[str, Any]]:
+    crosswalk = _verified_provider_alias_crosswalk(slate_date)
+    if not crosswalk:
+        return predictions
+
+    fallback_by_official: Dict[str, List[Dict[str, Any]]] = {}
+    occupied_provider_ids: Set[str] = set()
+    for pred in predictions:
+        explicit_provider = _explicit_provider_event_id(pred)
+        canonical_id = _canonical_game_id(pred)
+        if explicit_provider:
+            occupied_provider_ids.add(explicit_provider)
+            continue
+        if canonical_id and not canonical_id.startswith("mlb_statsapi:"):
+            occupied_provider_ids.add(canonical_id)
+            continue
+        official_pk = _official_game_pk(pred)
+        if official_pk:
+            fallback_by_official.setdefault(official_pk, []).append(pred)
+
+    aliases: Dict[str, Dict[str, Any]] = {}
+    enriched_by_official: Dict[str, Dict[str, Any]] = {}
+    for official_pk, candidates in fallback_by_official.items():
+        proof = crosswalk.get(official_pk)
+        if len(candidates) != 1 or not proof:
+            continue
+        provider_id = str(proof["providerEventId"])
+        if provider_id in occupied_provider_ids or provider_id in aliases:
+            continue
+        pred = candidates[0]
+        if _ordered_teams(pred) != (
+            proof["awayTeamNormalized"],
+            proof["homeTeamNormalized"],
+        ):
+            continue
+        copied = dict(pred)
+        copied["providerEventId"] = provider_id
+        authority = dict(copied.get("canonicalLockAuthority") or {})
+        authority.update({
+            "providerGameId": provider_id,
+            "canonicalLockedGameId": _canonical_game_id(pred),
+            "officialGamePk": official_pk,
+            "providerIdentityMatchMethod": VERIFIED_PROVIDER_ALIAS_MATCH_METHOD,
+            "matchMethod": VERIFIED_PROVIDER_ALIAS_MATCH_METHOD,
+            "exactProviderIdentityMatched": False,
+            "verifiedProviderAliasCrosswalkMatched": True,
+            "providerAliasCrosswalk": proof,
+        })
+        copied["canonicalLockAuthority"] = authority
+        aliases[provider_id] = copied
+        enriched_by_official[official_pk] = copied
+        occupied_provider_ids.add(provider_id)
+
+    return [enriched_by_official.get(_official_game_pk(pred), pred) for pred in predictions]
 
 
 def _canonical_lock_item_errors(item: Dict[str, Any], slate_date: str) -> List[str]:
@@ -95,7 +284,7 @@ def _canonical_lock_item_errors(item: Dict[str, Any], slate_date: str) -> List[s
         errors.append("canonical_slate_mismatch")
     if item.get("game_identity") not in (None, "") and str(item.get("game_identity")) != identity:
         errors.append("canonical_envelope_game_identity_mismatch")
-    if item.get("game_id") not in (None, "") and str(item.get("game_id")) != _provider_game_id(data):
+    if item.get("game_id") not in (None, "") and str(item.get("game_id")) != _canonical_game_id(data):
         errors.append("canonical_envelope_provider_game_id_mismatch")
     if data.get("immutableLockedStorage") is not True:
         errors.append("immutable_locked_payload_flag_missing")
@@ -122,16 +311,28 @@ def _canonical_lock_item_errors(item: Dict[str, Any], slate_date: str) -> List[s
     except Exception as exc:
         errors.append(f"canonical_stage_authority_validator_failed:{type(exc).__name__}")
     try:
-        import mlb_daily_lock_ml_vector_preservation_patch as exact_vector
+        import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 
-        errors.extend(exact_vector.validate_exact_locked_row(data))
+        errors.extend(vector_contract.validate_selection_lock_vector_status(data))
     except Exception as exc:
-        errors.append(f"exact_lock_vector_validator_failed:{type(exc).__name__}")
+        errors.append(f"selection_vector_status_validator_failed:{type(exc).__name__}")
     return sorted(set(errors))
 
 
 def _canonical_lock_authority(item: Dict[str, Any], slate_date: str) -> Dict[str, Any]:
     data = item.get("data") or {}
+    try:
+        import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
+
+        vector_errors = vector_contract.effective_selection_lock_vector_errors(data)
+    except Exception as exc:
+        vector_errors = [f"exact_lock_vector_validator_failed:{type(exc).__name__}"]
+    training = data.get("mlFeatureFreeze") or {}
+    exact_vector_verified = not vector_errors
+    learning_eligible = bool(
+        exact_vector_verified
+        and data.get("trainingEligible", training.get("trainingEligible")) is True
+    )
     return {
         "version": CANONICAL_LOCK_AUTHORITY_VERSION,
         "verified": True,
@@ -144,10 +345,21 @@ def _canonical_lock_authority(item: Dict[str, Any], slate_date: str) -> Dict[str
         "stageAuthorityVersion": item.get("stage_authority_version"),
         "stageFingerprint": item.get("stage_fingerprint"),
         "persistedStageAuthorityValidated": True,
-        "exactLockVectorValidated": True,
+        "officialAuditEligible": True,
+        "learningEligible": learning_eligible,
+        "selectionLockIndependentOfTrainingVector": True,
+        "exactLockVectorValidated": exact_vector_verified,
+        "exactLockVectorValidationErrors": vector_errors,
+        "trainingExclusionReasons": list(
+            data.get("trainingExclusionReasons")
+            or training.get("trainingExclusionReasons")
+            or []
+        ),
         "slateDateEt": slate_date,
         "providerGameId": _provider_game_id(data),
         "exactProviderIdentityMatched": False,
+        "verifiedProviderAliasCrosswalkMatched": False,
+        "providerIdentityMatchMethod": None,
         "matchMethod": None,
         "legacyOrDailyCardFallbackUsed": False,
     }
@@ -176,6 +388,27 @@ def _canonical_rejection_diagnostics(final: Dict[str, Any]) -> Dict[str, Any]:
 def _is_canonical_graded_row(row: Dict[str, Any]) -> bool:
     authority = row.get("canonicalLockAuthority") or {}
     slate = str(row.get("slateDateEt") or "")
+    method = authority.get("providerIdentityMatchMethod") or authority.get("matchMethod")
+    exact_identity = bool(
+        method == EXACT_PROVIDER_MATCH_METHOD
+        and authority.get("exactProviderIdentityMatched") is True
+    )
+    crosswalk = authority.get("providerAliasCrosswalk") or {}
+    crosswalk_identity = bool(
+        method == VERIFIED_PROVIDER_ALIAS_MATCH_METHOD
+        and authority.get("verifiedProviderAliasCrosswalkMatched") is True
+        and isinstance(crosswalk, dict)
+        and crosswalk.get("immutableManifestValidated") is True
+        and crosswalk.get("uniqueBidirectionalCrosswalk") is True
+        and str(crosswalk.get("providerEventId") or "") == _provider_game_id(row)
+        and str(crosswalk.get("officialGamePk") or "")
+        == str(authority.get("officialGamePk") or "")
+        and (
+            str(crosswalk.get("awayTeamNormalized") or ""),
+            str(crosswalk.get("homeTeamNormalized") or ""),
+        )
+        == _ordered_teams(row)
+    )
     return bool(
         row.get("status") == "GRADED"
         and isinstance(authority, dict)
@@ -185,13 +418,27 @@ def _is_canonical_graded_row(row: Dict[str, Any]) -> bool:
         and authority.get("immutableLocked") is True
         and authority.get("stageAuthorityVerified") is True
         and authority.get("persistedStageAuthorityValidated") is True
-        and authority.get("exactLockVectorValidated") is True
-        and authority.get("exactProviderIdentityMatched") is True
-        and authority.get("matchMethod") == "exact_provider_game_id_and_teams"
+        and authority.get(
+            "officialAuditEligible",
+            authority.get("exactLockVectorValidated"),
+        ) is True
+        and (exact_identity or crosswalk_identity)
         and authority.get("legacyOrDailyCardFallbackUsed") is False
         and authority.get("sourcePk") == f"GAME_WINNERS#mlb#{slate}"
         and str(authority.get("sourceSk") or "").startswith("LOCKED#GAME#")
         and authority.get("recordType") == CANONICAL_LOCK_RECORD_TYPE
+    )
+
+
+def _is_learning_eligible_graded_row(row: Dict[str, Any]) -> bool:
+    authority = row.get("canonicalLockAuthority") or {}
+    return bool(
+        _is_canonical_graded_row(row)
+        and authority.get(
+            "learningEligible",
+            authority.get("exactLockVectorValidated"),
+        ) is True
+        and authority.get("exactLockVectorValidated") is True
     )
 
 
@@ -307,7 +554,7 @@ def _query_predictions_for_slate(slate_date: str) -> List[Dict[str, Any]]:
         start_key = resp.get("LastEvaluatedKey")
         if not start_key:
             break
-    return out
+    return _apply_verified_provider_aliases(out, slate_date)
 
 
 def predictions_index(finals: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
@@ -360,10 +607,21 @@ def audit_rows(finals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             })
             continue
         authority = dict(pred.get("canonicalLockAuthority") or {})
-        authority.update({
-            "exactProviderIdentityMatched": True,
-            "matchMethod": "exact_provider_game_id_and_teams",
-        })
+        method = authority.get("providerIdentityMatchMethod") or authority.get("matchMethod")
+        if method == VERIFIED_PROVIDER_ALIAS_MATCH_METHOD:
+            authority.update({
+                "exactProviderIdentityMatched": False,
+                "verifiedProviderAliasCrosswalkMatched": True,
+                "providerIdentityMatchMethod": VERIFIED_PROVIDER_ALIAS_MATCH_METHOD,
+                "matchMethod": VERIFIED_PROVIDER_ALIAS_MATCH_METHOD,
+            })
+        else:
+            authority.update({
+                "exactProviderIdentityMatched": True,
+                "verifiedProviderAliasCrosswalkMatched": False,
+                "providerIdentityMatchMethod": EXACT_PROVIDER_MATCH_METHOD,
+                "matchMethod": EXACT_PROVIDER_MATCH_METHOD,
+            })
         correct = normalize_team(pred.get("predictedWinner")) == normalize_team(final.get("winner"))
         rows.append({
             **final,
@@ -380,6 +638,10 @@ def audit_rows(finals: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "winnerOptimizer": pred.get("winnerOptimizer"),
             "homeSignal": pred.get("homeSignal"),
             "awaySignal": pred.get("awaySignal"),
+            "exactVectorVerified": authority.get("exactLockVectorValidated"),
+            "exactVectorValidationErrors": list(authority.get("exactLockVectorValidationErrors") or []),
+            "trainingEligible": authority.get("learningEligible") is True,
+            "trainingExclusionReasons": list(authority.get("trainingExclusionReasons") or []),
             "canonicalLockAuthority": authority,
             "correct": correct,
         })
@@ -404,6 +666,13 @@ def _dedupe_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if key not in seen:
             seen[key] = row
     return list(seen.values())
+
+
+def _dedupe_learning_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    return [
+        row for row in _dedupe_rows(rows)
+        if _is_learning_eligible_graded_row(row)
+    ]
 
 
 def historical_audit_rows(limit: Optional[int] = None) -> List[Dict[str, Any]]:
@@ -540,9 +809,10 @@ def _window_stat_package(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 def _build_learning_windows(current_rows: List[Dict[str, Any]], historical_rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
-    all_rows = _dedupe_rows((current_rows or []) + (historical_rows or []))
+    current_learning_rows = _dedupe_learning_rows(current_rows or [])
+    all_rows = _dedupe_learning_rows((current_rows or []) + (historical_rows or []))
     return {
-        "current24h": _window_stat_package(_rows_since(current_rows, 1)),
+        "current24h": _window_stat_package(_rows_since(current_learning_rows, 1)),
         "sevenDay": _window_stat_package(_rows_since(all_rows, 7)),
         "thirtyDay": _window_stat_package(_rows_since(all_rows, 30)),
         "season": _window_stat_package(_rows_since(all_rows, None)),
@@ -600,7 +870,7 @@ def score_learning(rows: List[Dict[str, Any]], historical_rows: Optional[List[Di
         # Backward-compatible current-window aliases for existing proof readers.
         "currentWindowStats": windows.get("current24h"),
         "historicalStats": {
-            "historicalRowsUsed": len(_dedupe_rows(historical_rows)),
+            "historicalRowsUsed": len(_dedupe_learning_rows(historical_rows)),
             "historicalWindowDays": HISTORICAL_AUDIT_WINDOW_DAYS,
             "historicalRunLimit": HISTORICAL_AUDIT_RUN_LIMIT or None,
             "historicalRunLimitMeaning": "explicit_circuit_breaker_only" if HISTORICAL_AUDIT_RUN_LIMIT else "uncapped_within_window",

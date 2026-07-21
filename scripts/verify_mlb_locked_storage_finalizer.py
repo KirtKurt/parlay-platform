@@ -17,6 +17,7 @@ if str(HELLO) not in sys.path:
 
 import mlb_immutable_locked_storage_patch as immutable_storage
 import mlb_daily_per_game_lock_patch as per_game
+import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 import mlb_last_possible_prediction_gate as final_gate
 import mlb_locked_prediction_storage_finalizer_v1 as finalizer
 import mlb_ml_clean_cohort_v1 as cohort
@@ -122,6 +123,7 @@ def locked_result(*, include_price=True, authorized=False):
         row["lastPrelockSelectionFingerprint"] = per_game._payload_fingerprint(
             per_game._selection_material(row)
         )
+        row = vector_contract.apply_exact_vector_training_status(row)
     return {
         "ok": True,
         "sport": "mlb",
@@ -238,7 +240,10 @@ def main() -> int:
         for _, sk in invalid_module.history.PULLS.items
     )
     errors = invalid["canonicalLockedStorageErrors"]["finalizer-game-1"]
-    assert "selected_side_locked_price_not_proven" in errors
+    assert any(
+        "selected_side_locked_price_not_proven" in str(error)
+        for error in errors
+    )
 
     # Mixed outputs are handled row by row.  A top-level locked flag must not
     # convert the pre-lock row, and the unauthorized locked row is suppressed

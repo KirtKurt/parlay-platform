@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Tuple
 
-VERSION = "MLB-LOCKED-PREDICTION-STORAGE-FINALIZER-v3-verified-per-game-stage-authority"
+VERSION = "MLB-LOCKED-PREDICTION-STORAGE-FINALIZER-v4-selection-vector-separated"
 UNAUTHORIZED_LOCKED_WRITE = "immutable_per_game_stage_authority_missing"
 
 
@@ -38,7 +38,10 @@ def _row_locked(row: Dict[str, Any]) -> bool:
 def _validate_row(row: Dict[str, Any]) -> List[str]:
     import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 
-    return vector_contract.validate_exact_locked_row(row)
+    validator = getattr(vector_contract, "validate_selection_lock_vector_status", None)
+    if not callable(validator):
+        return ["selection_vector_status_validator_unavailable"]
+    return validator(row)
 
 
 def _game_id(row: Dict[str, Any]) -> str:

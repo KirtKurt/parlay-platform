@@ -88,6 +88,8 @@ jobs:
             tests/unit/test_mlb_daily_per_game_lock.py
             tests/unit/test_mlb_storage_authority.py
             tests/unit/test_mlb_rolling_canonical_authority.py
+            tests/unit/test_mlb_official_schedule_authority.py
+            tests/unit/test_mlb_schedule_revision_authority.py
             tests/unit/test_mlb_ml_runtime_install_explicit.py
           )
 
@@ -266,26 +268,53 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import time
+          from datetime import datetime, timezone
+          import urllib.parse
           import urllib.request
 
-          url = os.environ['API_URL'].rstrip('/') + '/v1/mlb/locks/status'
-          request = urllib.request.Request(
-              url,
-              headers={
-                  'accept': 'application/json',
-                  'user-agent': 'inqsi-deploy-read-only-lock-status-smoke/1.0',
-              },
-              method='GET',
-          )
-          with urllib.request.urlopen(request, timeout=45) as response:
-              status = response.getcode()
-              payload = json.loads(response.read().decode('utf-8'))
+          def fetch(url, timeout=45):
+              request = urllib.request.Request(
+                  url,
+                  headers={
+                      'accept': 'application/json',
+                      'user-agent': 'inqsi-deploy-read-only-lock-lifecycle-smoke/2.0',
+                  },
+                  method='GET',
+              )
+              with urllib.request.urlopen(request, timeout=timeout) as response:
+                  status = response.getcode()
+                  payload = json.loads(response.read().decode('utf-8'))
+              if status != 200:
+                  raise SystemExit(f'Live MLB endpoint returned HTTP {status}: {url}')
+              if not isinstance(payload, dict):
+                  raise SystemExit(f'Live MLB endpoint response was not an object: {url}')
+              return payload
+
+          base_url = os.environ['API_URL'].rstrip('/')
+          status_url = base_url + '/v1/mlb/locks/status'
+          expected_schedule_version = 'MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date'
+          deadline = time.monotonic() + 20 * 60
+          attempt = 0
+          while True:
+              remaining = deadline - time.monotonic()
+              if remaining <= 0:
+                  raise SystemExit('No official-schedule-backed durable roster appeared within 20 minutes')
+              payload = fetch(status_url, timeout=max(1, min(45, remaining)))
+              if (
+                  payload.get('officialScheduleBacked') is True
+                  and payload.get('officialScheduleAuthorityVersion') == expected_schedule_version
+                  and payload.get('officialScheduleAuthoritativeStartTimes') is True
+              ):
+                  break
+              attempt += 1
+              remaining = deadline - time.monotonic()
+              if remaining <= 0:
+                  raise SystemExit('No official-schedule-backed durable roster appeared within 20 minutes')
+              print(f'Waiting for the next scheduled official MLB roster pull (attempt {attempt})')
+              time.sleep(min(30, remaining))
 
           print(json.dumps(payload, indent=2, default=str))
-          if status != 200:
-              raise SystemExit(f'Live MLB lock status returned HTTP {status}')
-          if not isinstance(payload, dict):
-              raise SystemExit('Live MLB lock status response was not an object')
 
           required = (
               'ok',
@@ -294,7 +323,21 @@ jobs:
               'modelVersion',
               'lockPolicy',
               'lockMinutesBeforeEachGame',
+              'readinessCheckpointsMinutesBeforeGame',
+              'playabilityCheckpointsMinutesBeforeGame',
               'gameCount',
+              'officialScheduleBacked',
+              'officialScheduleAuthorityVersion',
+              'officialScheduleGameCount',
+              'officialScheduleAuthoritativeStartTimes',
+              'lockedPredictionCount',
+              'lockedStatusCount',
+              'noPredictionDataCount',
+              'lockStatusComplete',
+              'canonicalPredictionComplete',
+              'operationalDefect',
+              'perGameLockInstallation',
+              'mlLockVectorPreservation',
               'perGameStatus',
           )
           missing = [name for name in required if name not in payload]
@@ -302,10 +345,185 @@ jobs:
               raise SystemExit(f'Live MLB lock status is missing fields: {missing}')
           if payload.get('ok') is not True or payload.get('sport') != 'mlb':
               raise SystemExit('Live MLB lock status is unhealthy')
+          if payload.get('modelVersion') != 'INQSI-MLB-DAILY-LOCK-v5-tminus45-readiness-release-status':
+              raise SystemExit(f"Live MLB lock model is stale: {payload.get('modelVersion')}")
           if payload.get('lockMinutesBeforeEachGame') != 45:
               raise SystemExit('Live MLB lock status does not retain T-minus-45')
+          if payload.get('readinessCheckpointsMinutesBeforeGame') != [60, 50]:
+              raise SystemExit('Live MLB readiness checkpoints are not T-minus-60 and T-minus-50')
+          if payload.get('playabilityCheckpointsMinutesBeforeGame') != [30, 15]:
+              raise SystemExit('Live MLB playability checkpoints are not T-minus-30 and T-minus-15')
+          installation = payload.get('perGameLockInstallation') or {}
+          if installation.get('ok') is not True:
+              raise SystemExit('Live MLB per-game lock installation is unhealthy')
+          if installation.get('fixVersion') != 'MLB-LOCK-RUNTIME-FIX-v5-official-schedule-lifecycle-vector-separation':
+              raise SystemExit(f"Live MLB lock fix is stale: {installation.get('fixVersion')}")
+          if installation.get('officialScheduleAuthorityRequired') is not True:
+              raise SystemExit('Live MLB lock runtime does not require official schedule authority')
+          if installation.get('selectionLockIndependentOfTrainingVector') is not True:
+              raise SystemExit('Live MLB selection lock still depends on training-vector eligibility')
+          vector_installation = payload.get('mlLockVectorPreservation') or {}
+          if vector_installation.get('selectionLockIndependentOfTrainingVector') is not True:
+              raise SystemExit('Live MLB vector separation runtime is stale')
           if not isinstance(payload.get('perGameStatus'), list):
               raise SystemExit('Live MLB per-game lock status is not a list')
+          game_count = int(payload.get('gameCount') or 0)
+          if payload.get('officialScheduleBacked') is not True:
+              raise SystemExit('Live MLB roster is not backed by the official exact-date schedule')
+          if payload.get('officialScheduleAuthorityVersion') != expected_schedule_version:
+              raise SystemExit('Live MLB official schedule authority version is stale')
+          if payload.get('officialScheduleAuthoritativeStartTimes') is not True:
+              raise SystemExit('Live MLB canonical start times are not official')
+          if int(payload.get('officialScheduleGameCount') or 0) != game_count:
+              raise SystemExit('Live MLB official schedule count differs from durable roster count')
+          locked_predictions = int(payload.get('lockedPredictionCount') or 0)
+          locked_statuses = int(payload.get('lockedStatusCount') or 0)
+          terminal_no_data = int(payload.get('noPredictionDataCount') or 0)
+          if locked_statuses != locked_predictions + terminal_no_data:
+              raise SystemExit('Lock-status counts conflate canonical predictions and terminal outcomes')
+          if not (0 <= locked_predictions <= locked_statuses <= game_count):
+              raise SystemExit('Live MLB lock-status counts exceed the full-slate game count')
+          if payload.get('canonicalPredictionComplete') != (bool(game_count) and locked_predictions == game_count):
+              raise SystemExit('canonicalPredictionComplete does not match immutable winner coverage')
+          if payload.get('lockStatusComplete') != (bool(game_count) and locked_statuses == game_count):
+              raise SystemExit('lockStatusComplete does not match terminal status coverage')
+
+          status_rows = payload.get('perGameStatus') or []
+          if len(status_rows) != game_count:
+              raise SystemExit('Per-game status does not cover the full durable slate manifest')
+          status_by_game = {}
+          official_schedule_query = urllib.parse.urlencode({
+              'sportId': '1',
+              'startDate': payload['slateDateEt'],
+              'endDate': payload['slateDateEt'],
+          })
+          official_schedule = fetch('https://statsapi.mlb.com/api/v1/schedule?' + official_schedule_query)
+          official_games = [
+              game
+              for date_row in official_schedule.get('dates') or []
+              for game in date_row.get('games') or []
+          ]
+          official_by_pk = {str(game.get('gamePk')): game for game in official_games}
+          current_schedule_drifts = []
+          seen_official_pks = set()
+          for row in status_rows:
+              if not isinstance(row, dict):
+                  raise SystemExit('Per-game lock status contains a non-object row')
+              game_id = str(row.get('gameId') or row.get('gameIdentity') or '')
+              if not game_id or game_id in status_by_game:
+                  raise SystemExit('Per-game lock status has a missing or duplicate game identity')
+              status_by_game[game_id] = row
+              official_pk = str(row.get('officialGamePk') or '')
+              if not official_pk or official_pk in seen_official_pks:
+                  raise SystemExit(f'Per-game lock status has a missing or duplicate official game identity: {game_id}')
+              seen_official_pks.add(official_pk)
+              official_game = official_by_pk.get(official_pk)
+              canonical_start = datetime.fromisoformat(str(row.get('commenceTime')).replace('Z', '+00:00')).astimezone(timezone.utc)
+              if official_game is not None:
+                  current_official_start = datetime.fromisoformat(str(official_game['gameDate']).replace('Z', '+00:00')).astimezone(timezone.utc)
+                  if canonical_start != current_official_start:
+                      current_schedule_drifts.append({
+                          'gameId': game_id,
+                          'officialGamePk': official_pk,
+                          'durableAuthorityStart': canonical_start.isoformat(),
+                          'currentStatsApiStart': current_official_start.isoformat(),
+                      })
+              if row.get('canonicalStartTimeSource') != 'MLB_STATS_API_EXACT_DATE':
+                  raise SystemExit(f'Per-game start-time authority is stale for {game_id}')
+              provider_event_id = row.get('providerEventId')
+              if (
+                  provider_event_id not in (None, '')
+                  and not game_id.startswith('mlb_statsapi:')
+                  and str(provider_event_id) != game_id
+              ):
+                  raise SystemExit(f'Provider event identity was not preserved for {game_id}')
+              if provider_event_id in (None, '') and not game_id.startswith('mlb_statsapi:'):
+                  raise SystemExit(f'Provider-missing official game lacks the Stats API fallback identity: {game_id}')
+              if row.get('lockStatus') == 'LOCKED_NO_PREDICTION_DATA':
+                  if row.get('lockedPrediction') is not False or row.get('predictedWinner') not in (None, ''):
+                      raise SystemExit('Terminal no-data status was counted as a canonical winner')
+                  if row.get('blocked') is not True or row.get('trainingEligible') is not False:
+                      raise SystemExit('Terminal no-data status is not release/training ineligible')
+          if len(seen_official_pks) != game_count:
+              raise SystemExit('Official game identities do not cover the durable roster')
+          if len(official_by_pk) != game_count or current_schedule_drifts:
+              print(json.dumps({
+                  'diagnostic': 'current_stats_api_differs_from_immutable_schedule_authority',
+                  'durableGameCount': game_count,
+                  'currentStatsApiGameCount': len(official_by_pk),
+                  'startTimeDrifts': current_schedule_drifts,
+              }, indent=2))
+
+          prediction_query = urllib.parse.urlencode({'date': payload['slateDateEt']})
+          predictions = fetch(base_url + '/v1/mlb/predictions?' + prediction_query)
+          print(json.dumps(predictions, indent=2, default=str))
+          prediction_required = (
+              'gameCount',
+              'lockedPredictionCount',
+              'officialPredictionCount',
+              'lockedStatusCount',
+              'noPredictionDataCount',
+              'lockStatusComplete',
+              'canonicalPredictionComplete',
+              'operationalDefect',
+              'predictions',
+          )
+          prediction_missing = [name for name in prediction_required if name not in predictions]
+          if prediction_missing:
+              raise SystemExit(f'Live MLB predictions is missing lifecycle fields: {prediction_missing}')
+          if predictions.get('sport') != 'mlb' or not isinstance(predictions.get('predictions'), list):
+              raise SystemExit('Live MLB predictions lifecycle response is malformed')
+          if int(predictions.get('gameCount') or 0) != game_count:
+              raise SystemExit('Predictions and lock status disagree on durable game count')
+          if len(predictions.get('predictions') or []) != game_count:
+              raise SystemExit('Prediction lifecycle rows do not cover the full durable slate')
+          if predictions.get('operationalDefect') is True:
+              raise SystemExit('Prediction lifecycle reports an operational defect after deployment')
+          prediction_locks = int(predictions.get('lockedPredictionCount') or 0)
+          prediction_statuses = int(predictions.get('lockedStatusCount') or 0)
+          prediction_terminal = int(predictions.get('noPredictionDataCount') or 0)
+          if prediction_locks != int(predictions.get('officialPredictionCount') or 0):
+              raise SystemExit('Official prediction count does not match canonical winner count')
+          if prediction_statuses != prediction_locks + prediction_terminal:
+              raise SystemExit('Prediction endpoint conflates canonical winners and terminal outcomes')
+
+          prediction_by_game = {
+              str(row.get('gameId') or row.get('gameIdentity') or ''): row
+              for row in predictions.get('predictions') or []
+              if isinstance(row, dict)
+          }
+          if len(prediction_by_game) != game_count or set(prediction_by_game) != set(status_by_game):
+              raise SystemExit('Prediction and lock-status lifecycle identities are not one-to-one')
+          for game_id, status_row in status_by_game.items():
+              prediction_row = prediction_by_game[game_id]
+              for field in (
+                  'officialGamePk',
+                  'officialGameId',
+                  'providerEventId',
+                  'canonicalStartTimeSource',
+              ):
+                  if prediction_row.get(field) != status_row.get(field):
+                      raise SystemExit(f'Identity authority {field} differs between endpoints for {game_id}')
+              if not (status_row.get('lockedPrediction') is True or status_row.get('lockStatus') == 'LOCKED_NO_PREDICTION_DATA'):
+                  continue
+              if status_row.get('lockStatus') == 'LOCKED_NO_PREDICTION_DATA':
+                  if prediction_row.get('lockStatus') != 'LOCKED_NO_PREDICTION_DATA':
+                      raise SystemExit(f'Terminal status mismatch between endpoints for {game_id}')
+                  if prediction_row.get('predictedWinner') not in (None, ''):
+                      raise SystemExit(f'Terminal prediction row exposes a winner for {game_id}')
+                  continue
+              for field in ('predictedWinner', 'predictedSide', 'selectionFingerprint'):
+                  if prediction_row.get(field) != status_row.get(field):
+                      raise SystemExit(f'Immutable {field} differs between endpoints for {game_id}')
+              prediction_assessment = prediction_row.get('playabilityAssessment') or {}
+              status_assessment = status_row.get('playabilityAssessment') or {}
+              if (
+                  prediction_row.get('requiredPlayabilityCheckpoint') == status_row.get('requiredPlayabilityCheckpoint')
+                  and prediction_assessment.get('assessment_fingerprint') == status_assessment.get('assessment_fingerprint')
+              ):
+                  for field in ('playable', 'blocked', 'playabilityAssessmentValidationErrors'):
+                      if prediction_row.get(field) != status_row.get(field):
+                          raise SystemExit(f'Playability {field} differs between endpoints for {game_id}')
           PY
 
       - name: Verify The Odds API without writing an unscheduled pull
@@ -317,6 +535,22 @@ jobs:
           import os
           import urllib.parse
           import urllib.request
+
+          event_params = urllib.parse.urlencode({
+              'apiKey': os.environ['ODDS_API_KEY_VALUE'],
+              'dateFormat': 'iso',
+          })
+          event_url = 'https://api.the-odds-api.com/v4/sports/baseball_mlb/events?' + event_params
+          event_request = urllib.request.Request(event_url, headers={'accept': 'application/json', 'user-agent': 'inqsi-deploy-read-only-events-smoke/1.0'})
+          with urllib.request.urlopen(event_request, timeout=45) as response:
+              events = json.loads(response.read().decode('utf-8'))
+          if not isinstance(events, list):
+              raise SystemExit('The Odds API MLB events response was not a list')
+          event_ids = set()
+          for game in events:
+              if not isinstance(game, dict) or not game.get('id') or not game.get('home_team') or not game.get('away_team') or not game.get('commence_time'):
+                  raise SystemExit('The Odds API returned an invalid MLB event row')
+              event_ids.add(str(game['id']))
 
           params = urllib.parse.urlencode({
               'apiKey': os.environ['ODDS_API_KEY_VALUE'],
@@ -335,10 +569,13 @@ jobs:
           for game in payload:
               if not isinstance(game, dict) or not game.get('id') or not game.get('home_team') or not game.get('away_team'):
                   raise SystemExit('The Odds API returned an invalid MLB game row')
+              if str(game['id']) not in event_ids:
+                  raise SystemExit('The Odds API odds row is absent from the independent events roster')
           print(json.dumps({
               'ok': True,
               'provider': 'the_odds_api',
               'writePerformed': False,
+              'returnedEventCount': len(events),
               'returnedGameCount': len(payload),
               'requestsRemaining': remaining,
           }, indent=2))

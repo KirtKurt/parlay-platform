@@ -34,6 +34,11 @@ try:
 except Exception:
     mlb_game_winner_engine = None
 
+try:
+    import mlb_official_schedule_authority as official_schedule
+except Exception:
+    official_schedule = None
+
 
 dynamodb = boto3.resource("dynamodb")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -183,11 +188,11 @@ def _merge_event_roster_with_odds(
     events: List[Dict[str, Any]],
     odds_games: List[Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Left-join odds onto the event roster using only the exact provider id.
+    """Left-join odds onto the provider event roster by exact opaque id.
 
-    The event endpoint is roster authority.  An event remains present with an
-    empty bookmaker list when no market has been posted.  Odds-only ids are
-    ignored; they are never team/name matched into the roster.
+    This establishes the provider-side market crosswalk; the official MLB
+    exact-date schedule later supplies canonical roster membership and time.
+    An event remains present with empty bookmakers when no market is posted.
     """
     events_by_id = _provider_rows_by_exact_id(events, label="EVENTS")
     odds_by_id = _provider_rows_by_exact_id(odds_games, label="ODDS")
@@ -342,7 +347,7 @@ def _filter_upcoming_et(games: List[Dict[str, Any]], *, start_date: str, days_ah
     allowed = {(start + timedelta(days=i)).strftime("%Y-%m-%d") for i in range(max(0, days_ahead) + 1)}
     out = []
     for game in games or []:
-        game_date = _game_date_et(game.get("commence_time"))
+        game_date = game.get("game_date_et") or _game_date_et(game.get("commence_time"))
         if game_date in allowed:
             out.append(game)
     return out
@@ -356,11 +361,14 @@ def _h2h(bookmaker: Dict[str, Any], home: str, away: str) -> Optional[Dict[str, 
     market = _market(bookmaker, "h2h")
     if not market:
         return None
+    home_key = official_schedule.normalize_team(home) if official_schedule else str(home).lower()
+    away_key = official_schedule.normalize_team(away) if official_schedule else str(away).lower()
     home_price = away_price = None
     for outcome in market.get("outcomes", []) or []:
-        if outcome.get("name") == home:
+        outcome_key = official_schedule.normalize_team(outcome.get("name")) if official_schedule else str(outcome.get("name") or "").lower()
+        if outcome_key == home_key:
             home_price = outcome.get("price")
-        elif outcome.get("name") == away:
+        elif outcome_key == away_key:
             away_price = outcome.get("price")
     if home_price is None or away_price is None:
         return None
@@ -371,12 +379,15 @@ def _spread(bookmaker: Dict[str, Any], home: str, away: str) -> Optional[Dict[st
     market = _market(bookmaker, "spreads")
     if not market:
         return None
+    home_key = official_schedule.normalize_team(home) if official_schedule else str(home).lower()
+    away_key = official_schedule.normalize_team(away) if official_schedule else str(away).lower()
     result: Dict[str, Any] = {}
     for outcome in market.get("outcomes", []) or []:
-        if outcome.get("name") == home:
+        outcome_key = official_schedule.normalize_team(outcome.get("name")) if official_schedule else str(outcome.get("name") or "").lower()
+        if outcome_key == home_key:
             result["home_point"] = outcome.get("point")
             result["home_price"] = outcome.get("price")
-        elif outcome.get("name") == away:
+        elif outcome_key == away_key:
             result["away_point"] = outcome.get("point")
             result["away_price"] = outcome.get("price")
     return result if len(result) == 4 else None
@@ -398,7 +409,10 @@ def _total(bookmaker: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     return result if len(result) == 4 else None
 
 
-def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _compact(
+    raw_games: List[Dict[str, Any]],
+    official_authority_by_date: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
     games_out = []
     books_seen = set()
     game_dates_seen = set()
@@ -407,7 +421,7 @@ def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
         away = raw_game.get("away_team")
         if not home or not away:
             continue
-        game_date = _game_date_et(raw_game.get("commence_time"))
+        game_date = raw_game.get("game_date_et") or _game_date_et(raw_game.get("commence_time"))
         if not game_date:
             continue
         game_dates_seen.add(game_date)
@@ -429,15 +443,17 @@ def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
             if payload:
                 books[book_key] = payload
                 books_seen.add(book_key)
-        game_key = f"mlb|{game_date}|{away.lower()}|{home.lower()}"
+        fallback_game_key = f"mlb|{game_date}|{away.lower()}|{home.lower()}"
+        game_key = str(raw_game.get("game_key") or fallback_game_key)
+        game_id = str(raw_game.get("game_id") or raw_game.get("id") or game_key)
         markets_stored = sorted({
             market
             for payload in books.values()
             for market in payload
         })
         games_out.append({
-            "id": raw_game.get("id") or game_key,
-            "game_id": raw_game.get("id") or game_key,
+            "id": raw_game.get("id") or game_id,
+            "game_id": game_id,
             "game_key": game_key,
             "internal_key": game_key,
             "game_date_et": game_date,
@@ -453,6 +469,20 @@ def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
             "provider_odds_payload": raw_game.get("_provider_odds_payload") is True,
             "odds_exact_id_match": raw_game.get("_odds_exact_id_match") is True,
             "provider_odds_only": raw_game.get("_provider_odds_only") is True,
+            "official_schedule_authority": raw_game.get("_official_schedule_authority") is True,
+            "official_game_pk": raw_game.get("official_game_pk"),
+            "official_game_id": raw_game.get("official_game_id"),
+            "official_commence_time": raw_game.get("official_commence_time"),
+            "official_game_type": raw_game.get("official_game_type"),
+            "official_game_number": raw_game.get("official_game_number"),
+            "official_double_header": raw_game.get("official_double_header"),
+            "official_status": copy.deepcopy(raw_game.get("official_status") or {}),
+            "provider_event_id": raw_game.get("provider_event_id"),
+            "provider_commence_time": raw_game.get("provider_commence_time"),
+            "provider_start_drift_seconds": raw_game.get("provider_start_drift_seconds"),
+            "canonical_start_time_source": raw_game.get("canonical_start_time_source"),
+            "schedule_authority": raw_game.get("schedule_authority"),
+            "schedule_authority_version": raw_game.get("schedule_authority_version"),
         })
     event_roster_count = len([game for game in games_out if game.get("provider_event_roster") is True])
     odds_payload_count = len([game for game in games_out if game.get("provider_odds_payload") is True])
@@ -463,21 +493,37 @@ def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
         and game.get("provider_odds_payload") is not True
     ])
     odds_only_count = len([game for game in games_out if game.get("provider_odds_only") is True])
+    official_authority_by_date = dict(official_authority_by_date or {})
+    official_game_count = len([
+        game for game in games_out if game.get("official_schedule_authority") is True
+    ])
+    provider_roster = {
+        "source": "the_odds_api_events_exact_id_merge",
+        "eventRosterCount": event_roster_count,
+        "oddsPayloadCount": odds_payload_count,
+        "eventsWithoutOddsCount": events_without_odds_count,
+        "oddsOnlyCount": odds_only_count,
+        "exactProviderIdMerge": True,
+        "quotaChargedForRosterRequest": False,
+    }
+    if official_authority_by_date:
+        provider_roster.update({
+            "source": "mlb_stats_api_exact_date_with_the_odds_api_event_crosswalk",
+            "officialScheduleAuthority": True,
+            "officialScheduleAuthorityVersion": official_schedule.VERSION if official_schedule else None,
+            "officialGameCount": official_game_count,
+            "providerMatchedGameCount": event_roster_count,
+            "missingProviderEventCount": max(official_game_count - event_roster_count, 0),
+            "exactTeamAndNearestStartCrosswalk": True,
+        })
     return {
         "games": games_out,
         "count": len(games_out),
         "game_dates_et": sorted(game_dates_seen),
         "available_book_keys": sorted(books_seen),
         "markets": ["ml", "spread", "total"],
-        "provider_roster": {
-            "source": "the_odds_api_events_exact_id_merge",
-            "eventRosterCount": event_roster_count,
-            "oddsPayloadCount": odds_payload_count,
-            "eventsWithoutOddsCount": events_without_odds_count,
-            "oddsOnlyCount": odds_only_count,
-            "exactProviderIdMerge": True,
-            "quotaChargedForRosterRequest": False,
-        },
+        "official_schedule_authority_by_date": official_authority_by_date,
+        "provider_roster": provider_roster,
     }
 
 
@@ -486,6 +532,9 @@ def _compact_for_game_date(compact: Dict[str, Any], game_date: str) -> Dict[str,
     books_seen = sorted({book for game in games for book in (game.get("books") or {}).keys()})
     provider_roster = dict(compact.get("provider_roster") or {})
     provider_roster.update({
+        "officialGameCount": len([game for game in games if game.get("official_schedule_authority") is True]),
+        "providerMatchedGameCount": len([game for game in games if game.get("provider_event_roster") is True]),
+        "missingProviderEventCount": len([game for game in games if game.get("provider_event_roster") is not True]),
         "eventRosterCount": len([game for game in games if game.get("provider_event_roster") is True]),
         "oddsPayloadCount": len([game for game in games if game.get("provider_odds_payload") is True]),
         "eventsWithoutOddsCount": len([
@@ -496,6 +545,8 @@ def _compact_for_game_date(compact: Dict[str, Any], game_date: str) -> Dict[str,
         ]),
         "oddsOnlyCount": len([game for game in games if game.get("provider_odds_only") is True]),
     })
+    authority_by_date = dict(compact.get("official_schedule_authority_by_date") or {})
+    authority = copy.deepcopy(authority_by_date.get(game_date))
     return {
         **compact,
         "games": games,
@@ -504,6 +555,8 @@ def _compact_for_game_date(compact: Dict[str, Any], game_date: str) -> Dict[str,
         "available_book_keys": books_seen,
         "date_isolated": True,
         "provider_roster": provider_roster,
+        "official_schedule_authority": authority,
+        "official_schedule_authority_by_date": ({game_date: authority} if authority else {}),
     }
 
 
@@ -531,6 +584,8 @@ def _store_snapshot_item(*, t: str, slate_date: str, game_date: str, asof: str, 
             "source": "theOddsAPI",
             "provider_sport_key": SPORT_KEY,
             "provider_roster": compact.get("provider_roster") or {},
+            "official_schedule_authority": compact.get("official_schedule_authority"),
+            "official_schedule_authority_by_date": compact.get("official_schedule_authority_by_date") or {},
             "run_type": run,
             "pulled_at": asof,
             "markets": ["h2h", "spreads", "totals"],
@@ -561,6 +616,19 @@ def _canonical_games(compact: Dict[str, Any]) -> List[Dict[str, Any]]:
             "level": "pro",
             "gender": "men",
             "provider_sport_key": SPORT_KEY,
+            "official_game_pk": game.get("official_game_pk"),
+            "official_game_id": game.get("official_game_id"),
+            "official_commence_time": game.get("official_commence_time"),
+            "official_game_type": game.get("official_game_type"),
+            "official_game_number": game.get("official_game_number"),
+            "official_double_header": game.get("official_double_header"),
+            "official_status": copy.deepcopy(game.get("official_status") or {}),
+            "provider_event_id": game.get("provider_event_id"),
+            "provider_commence_time": game.get("provider_commence_time"),
+            "provider_start_drift_seconds": game.get("provider_start_drift_seconds"),
+            "canonical_start_time_source": game.get("canonical_start_time_source"),
+            "schedule_authority": game.get("schedule_authority"),
+            "schedule_authority_version": game.get("schedule_authority_version"),
             "books": game.get("books") or {},
             "odds_available": bool(game.get("books")),
             "moneyline_available": bool(game.get("moneyline_available")),
@@ -600,6 +668,7 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
             "run": run,
             "provider_sport_key": SPORT_KEY,
             "provider_roster": compact.get("provider_roster") or {},
+            "official_schedule_authority": compact.get("official_schedule_authority"),
             "date_isolated": True,
             "line_movement_prediction": True,
         },
@@ -607,6 +676,16 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
     try:
         stored = pull_history.store_pull(body)
         manifest = ((stored.get("stored") or {}).get("provider_manifest") or {})
+        expected_authority = compact.get("official_schedule_authority") or {}
+        official_authority_bound = bool(
+            not expected_authority
+            or (
+                manifest.get("official_schedule_backed") is True
+                and manifest.get("official_schedule_authority_version") == expected_authority.get("version")
+                and manifest.get("official_schedule_authority_fingerprint") == expected_authority.get("fingerprint")
+                and int(manifest.get("official_schedule_game_count") or -1) == len(games)
+            )
+        )
         manifest_bound = bool(
             stored.get("ok") is True
             and manifest.get("immutable") is True
@@ -615,6 +694,7 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
             and manifest.get("fingerprint")
             and manifest.get("pk")
             and manifest.get("sk")
+            and official_authority_bound
         )
         return {
             "ok": bool(stored.get("ok")) and manifest_bound,
@@ -631,6 +711,11 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
             "providerManifestImmutable": manifest.get("immutable") is True,
             "providerManifestFullSchedule": manifest.get("full_provider_schedule") is True,
             "providerManifestBound": manifest_bound,
+            "officialScheduleBacked": manifest.get("official_schedule_backed") is True,
+            "officialScheduleAuthorityVersion": manifest.get("official_schedule_authority_version"),
+            "officialScheduleAuthorityFingerprint": manifest.get("official_schedule_authority_fingerprint"),
+            "officialScheduleGameCount": manifest.get("official_schedule_game_count"),
+            "officialScheduleAuthorityBound": official_authority_bound,
         }
     except Exception as exc:
         return {"ok": False, "games": len(games), "error": str(exc), "pull_id": body["pull_id"]}
@@ -757,18 +842,38 @@ def _build_and_store_game_winners(*, game_date: str) -> Dict[str, Any]:
         return {"ok": False, "sport": "mlb", "game_date_et": game_date, "error": str(exc)}
 
 
-def _fetch_odds_with_completion_timestamp() -> tuple[List[Dict[str, Any]], str]:
-    """Fetch quota-free roster plus odds, then timestamp the completed merge."""
+def _fetch_odds_with_completion_timestamp(
+    start_date: str,
+    days_ahead: int,
+) -> tuple[List[Dict[str, Any]], str, Dict[str, Dict[str, Any]]]:
+    """Fetch odds plus official exact-date rosters, then timestamp the completed read."""
+    if official_schedule is None:
+        raise RuntimeError("MLB_OFFICIAL_SCHEDULE_AUTHORITY_UNAVAILABLE")
     odds_games = _http_get_json(_odds_url())
-    # The roster payload is small; bound its wait separately so the two
-    # provider calls leave time for DynamoDB writes and prediction generation.
+    # The provider roster binds bookmaker payloads by exact opaque event id.
+    # It is not the canonical game roster or start-time authority.
     events = _http_get_json(_events_url(), timeout=10)
     if not isinstance(events, list):
         raise RuntimeError("ODDS_API_EVENTS_RESPONSE_NOT_LIST")
     if not isinstance(odds_games, list):
         raise RuntimeError("ODDS_API_ODDS_RESPONSE_NOT_LIST")
-    raw = _merge_event_roster_with_odds(events, odds_games)
-    return raw, _now_iso()
+    provider_games = _merge_event_roster_with_odds(events, odds_games)
+    schedules = {
+        slate: official_schedule.fetch_exact_date_schedule(slate, timeout=12)
+        for slate in official_schedule.slate_dates(start_date, days_ahead)
+    }
+    asof = _now_iso()
+    raw: List[Dict[str, Any]] = []
+    authority_by_date: Dict[str, Dict[str, Any]] = {}
+    for slate, schedule in schedules.items():
+        reconciled, proof = official_schedule.reconcile_official_schedule(
+            schedule,
+            provider_games,
+            observed_at_utc=asof,
+        )
+        raw.extend(reconciled)
+        authority_by_date[slate] = proof
+    return raw, asof, authority_by_date
 
 
 def lambda_handler(event, context):
@@ -797,9 +902,12 @@ def lambda_handler(event, context):
 
         days_ahead = int(payload.get("days_ahead", DEFAULT_DAYS_AHEAD))
         slate_date = payload.get("slate_date_et") or _slate_date_et()
-        raw_all, asof = _fetch_odds_with_completion_timestamp()
+        raw_all, asof, official_authority_by_date = _fetch_odds_with_completion_timestamp(
+            slate_date,
+            days_ahead,
+        )
         raw = _filter_upcoming_et(raw_all, start_date=slate_date, days_ahead=days_ahead)
-        compact = _compact(raw)
+        compact = _compact(raw, official_authority_by_date)
         if snapshots_tbl is None:
             raise RuntimeError("SNAPSHOTS_TABLE not configured")
 
@@ -841,6 +949,11 @@ def lambda_handler(event, context):
                 "immutable": row.get("providerManifestImmutable") is True,
                 "fullProviderSchedule": row.get("providerManifestFullSchedule") is True,
                 "boundToCanonicalPull": row.get("providerManifestBound") is True,
+                "officialScheduleBacked": row.get("officialScheduleBacked") is True,
+                "officialScheduleAuthorityVersion": row.get("officialScheduleAuthorityVersion"),
+                "officialScheduleAuthorityFingerprint": row.get("officialScheduleAuthorityFingerprint"),
+                "officialScheduleGameCount": row.get("officialScheduleGameCount"),
+                "officialScheduleAuthorityBound": row.get("officialScheduleAuthorityBound") is True,
                 "ok": row.get("ok") is True,
             }
             for row in canonical_pull_history
@@ -876,6 +989,7 @@ def lambda_handler(event, context):
             "canonical_pull_history": canonical_pull_history,
             "provider_schedule_manifests": provider_schedule_manifests,
             "provider_roster": compact.get("provider_roster") or {},
+            "official_schedule_authority_by_date": compact.get("official_schedule_authority_by_date") or {},
             "providerScheduleManifestComplete": bool(
                 compact["count"] == 0
                 or (

@@ -242,7 +242,18 @@ def _identity(row: Dict[str, Any]) -> str:
 
 
 def _game_id(row: Dict[str, Any]) -> str:
-    return str(row.get("gameId") or row.get("game_id") or row.get("id") or "")
+    value = (
+        row.get("providerEventId")
+        or row.get("provider_event_id")
+        or row.get("providerGameId")
+        or row.get("provider_game_id")
+        or row.get("gameId")
+        or row.get("game_id")
+        or row.get("id")
+        or ""
+    )
+    text = str(value)
+    return text[len("provider:"):] if text.startswith("provider:") else text
 
 
 def _commence(row: Dict[str, Any]) -> str:

@@ -65,6 +65,63 @@ def canonical_games():
     ]
 
 
+def official_backed_body(*, pull_id="official-full-manifest", pulled_at="2026-07-16T17:00:00+00:00"):
+    schedule = mlb_manual_pull.official_schedule.validate_exact_date_schedule({
+        "totalGames": 2,
+        "dates": [{
+            "date": "2026-07-16",
+            "games": [
+                {
+                    "gamePk": 880001,
+                    "gameDate": "2026-07-16T22:00:00Z",
+                    "gameType": "R",
+                    "teams": {
+                        "home": {"team": {"name": "Home One"}},
+                        "away": {"team": {"name": "Away One"}},
+                    },
+                },
+                {
+                    "gamePk": 880002,
+                    "gameDate": "2026-07-16T23:00:00Z",
+                    "gameType": "R",
+                    "teams": {
+                        "home": {"team": {"name": "Home Two"}},
+                        "away": {"team": {"name": "Away Two"}},
+                    },
+                },
+            ],
+        }],
+    }, "2026-07-16")
+    reconciled, proof = mlb_manual_pull.official_schedule.reconcile_official_schedule(
+        schedule,
+        [
+            {
+                "id": "provider-with-odds",
+                "commence_time": "2026-07-16T22:01:00Z",
+                "home_team": "Home One",
+                "away_team": "Away One",
+                "bookmakers": [],
+                "_provider_event_roster": True,
+            },
+        ],
+        observed_at_utc=pulled_at,
+    )
+    compact = mlb_manual_pull._compact(reconciled, {"2026-07-16": proof})
+    date_compact = mlb_manual_pull._compact_for_game_date(compact, "2026-07-16")
+    return {
+        "pull_id": pull_id,
+        "sport": "mlb",
+        "slate_date": "2026-07-16",
+        "pulled_at": pulled_at,
+        "source": "the_odds_api",
+        "games": mlb_manual_pull._canonical_games(date_compact),
+        "meta": {
+            "provider_roster": date_compact["provider_roster"],
+            "official_schedule_authority": proof,
+        },
+    }
+
+
 def test_provider_game_without_supported_odds_remains_in_slate_manifest():
     compact = mlb_manual_pull._compact([
         {
@@ -153,7 +210,7 @@ def test_quota_free_event_roster_exact_id_merge_keeps_games_missing_from_odds():
     }
 
 
-def test_fetch_uses_events_endpoint_and_timestamps_only_after_both_responses(monkeypatch):
+def test_fetch_timestamps_only_after_provider_and_official_schedule_responses(monkeypatch):
     calls = []
     events = [
         {
@@ -172,15 +229,41 @@ def test_fetch_uses_events_endpoint_and_timestamps_only_after_both_responses(mon
 
     monkeypatch.setattr(mlb_manual_pull, "ODDS_API_KEY", "test-key")
     monkeypatch.setattr(mlb_manual_pull, "_http_get_json", fake_get)
+    schedule = mlb_manual_pull.official_schedule.validate_exact_date_schedule({
+        "totalGames": 1,
+        "dates": [{
+            "date": "2026-07-16",
+            "games": [{
+                "gamePk": 777001,
+                "gameDate": "2026-07-16T22:00:00Z",
+                "gameType": "R",
+                "teams": {
+                    "home": {"team": {"name": "Home One"}},
+                    "away": {"team": {"name": "Away One"}},
+                },
+            }],
+        }],
+    }, "2026-07-16")
+    monkeypatch.setattr(
+        mlb_manual_pull.official_schedule,
+        "fetch_exact_date_schedule",
+        lambda slate, timeout=12: calls.append("official-schedule") or schedule,
+    )
     monkeypatch.setattr(mlb_manual_pull, "_now_iso", lambda: calls.append("timestamp") or "2026-07-16T20:00:00+00:00")
 
-    merged, asof = mlb_manual_pull._fetch_odds_with_completion_timestamp()
+    merged, asof, authority_by_date = mlb_manual_pull._fetch_odds_with_completion_timestamp(
+        "2026-07-16",
+        0,
+    )
 
     assert "/odds/?" in calls[0]
     assert "/events?" in calls[1]
-    assert calls[2] == "timestamp"
+    assert calls[2] == "official-schedule"
+    assert calls[3] == "timestamp"
     assert asof == "2026-07-16T20:00:00+00:00"
     assert [row["id"] for row in merged] == ["event-1"]
+    assert merged[0]["provider_event_id"] == "event-1"
+    assert authority_by_date["2026-07-16"]["authoritativeStartTimes"] is True
 
 
 def test_event_roster_merge_treats_provider_ids_as_opaque_and_fails_on_empty_roster():
@@ -241,6 +324,71 @@ def test_normalize_pull_builds_full_schedule_manifest_without_filtering_empty_bo
     assert binding["immutable"] is True
     assert binding["fullProviderSchedule"] is True
     assert inqsi_pull_history.validate_provider_schedule_manifest(pull, "2026-07-16") == []
+
+
+def test_official_schedule_proof_preserves_matched_provider_identity_and_falls_back_when_missing():
+    normalized = inqsi_pull_history.normalize_pull(official_backed_body())
+
+    assert normalized["ok"] is True
+    pull = normalized["pull"]
+    assert [game["game_id"] for game in pull["games"]] == [
+        "provider-with-odds",
+        "mlb_statsapi:880002",
+    ]
+    assert [game["commence_time"] for game in pull["games"]] == [
+        "2026-07-16T22:00:00+00:00",
+        "2026-07-16T23:00:00+00:00",
+    ]
+    manifest = pull["provider_schedule_manifest"]
+    binding = pull["provider_manifest_binding"]
+    assert manifest["scheduleAuthority"]["authoritativeStartTimes"] is True
+    assert manifest["scheduleAuthority"]["providerStartDriftSeconds"] == [60]
+    assert manifest["scheduleAuthority"]["missingProviderEventOfficialGameIds"] == ["880002"]
+    assert manifest["games"][1]["official_game_pk"] == "880002"
+    assert "provider_event_id" not in manifest["games"][1]
+    assert binding["officialScheduleBacked"] is True
+    assert binding["officialScheduleAuthorityFingerprint"] == manifest["scheduleAuthority"]["fingerprint"]
+    assert inqsi_pull_history.validate_provider_schedule_manifest(pull, "2026-07-16") == []
+
+
+def test_official_schedule_manifest_fingerprint_survives_dynamodb_numeric_roundtrip():
+    from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
+
+    pull = inqsi_pull_history.normalize_pull(official_backed_body())["pull"]
+    wire = TypeSerializer().serialize(inqsi_pull_history.ddb_safe(pull))
+    readback = TypeDeserializer().deserialize(wire)
+
+    assert inqsi_pull_history.validate_provider_schedule_manifest(
+        readback,
+        "2026-07-16",
+    ) == []
+
+
+def test_equal_size_official_roster_outranks_legacy_during_migration(monkeypatch):
+    table = FakeTable()
+    monkeypatch.setattr(inqsi_pull_history, "PULLS", table)
+    legacy = inqsi_pull_history.store_pull({
+        "pull_id": "legacy-full-prestart",
+        "sport": "mlb",
+        "slate_date": "2026-07-16",
+        "pulled_at": "2026-07-16T16:00:00+00:00",
+        "source": "the_odds_api",
+        "games": canonical_games(),
+    })["pull"]
+    official = inqsi_pull_history.store_pull(
+        official_backed_body(pulled_at="2026-07-16T17:00:00+00:00")
+    )["pull"]
+
+    resolved = inqsi_pull_history.verified_full_slate_manifest(
+        [legacy, official],
+        "2026-07-16",
+    )
+
+    assert resolved["fullSlateGameCount"] == 2
+    assert resolved["fullAuthorityPullId"] == "official-full-manifest"
+    assert resolved["rosterAuthorityMode"] == "MLB_STATS_API_EXACT_DATE"
+    assert resolved["officialScheduleBacked"] is True
+    assert resolved["officialScheduleAuthoritativeStartTimes"] is True
 
 
 def test_store_pull_persists_independent_write_once_manifest_and_lock_reads_it(monkeypatch):
@@ -350,7 +498,7 @@ def test_verified_full_slate_manifest_survives_post_start_feed_contraction(monke
     assert len(history_calls) == 1
 
 
-def test_verified_full_slate_manifest_rejects_future_game_omission(monkeypatch):
+def test_verified_full_slate_manifest_quarantines_future_game_omission(monkeypatch):
     table = FakeTable()
     monkeypatch.setattr(inqsi_pull_history, "PULLS", table)
     full = inqsi_pull_history.store_pull({
@@ -370,8 +518,52 @@ def test_verified_full_slate_manifest_rejects_future_game_omission(monkeypatch):
         "games": [canonical_games()[0]],
     })["pull"]
 
-    with pytest.raises(RuntimeError, match="MLB_PROVIDER_LATEST_FEED_FUTURE_GAME_OMITTED"):
-        inqsi_pull_history.verified_full_slate_manifest(
-            [full, invalid_subset],
-            "2026-07-16",
-        )
+    resolved = inqsi_pull_history.verified_full_slate_manifest(
+        [full, invalid_subset],
+        "2026-07-16",
+    )
+
+    assert resolved["fullSlateGameCount"] == 2
+    assert resolved["latestFeedGameCount"] == 1
+    assert resolved["durableRosterPreservedDespiteLatestFeedAnomaly"] is True
+    assert any(
+        anomaly.get("type") == "LATEST_FEED_FUTURE_GAME_OMITTED"
+        for anomaly in resolved["latestFeedAnomalies"]
+    )
+
+
+def test_same_day_migration_does_not_replace_larger_legacy_roster(monkeypatch):
+    table = FakeTable()
+    monkeypatch.setattr(inqsi_pull_history, "PULLS", table)
+    legacy_full = inqsi_pull_history.store_pull({
+        "pull_id": "legacy-full-prestart",
+        "sport": "mlb",
+        "slate_date": "2026-07-16",
+        "pulled_at": "2026-07-16T20:00:00+00:00",
+        "source": "the_odds_api",
+        "games": canonical_games(),
+    })["pull"]
+    first_events_pull = inqsi_pull_history.store_pull({
+        "pull_id": "events-contracted-prestart",
+        "sport": "mlb",
+        "slate_date": "2026-07-16",
+        "pulled_at": "2026-07-16T21:00:00+00:00",
+        "source": "the_odds_api",
+        "games": [canonical_games()[0]],
+        "meta": {
+            "provider_roster": {
+                "source": "the_odds_api_events_exact_id_merge",
+                "exactProviderIdMerge": True,
+            }
+        },
+    })["pull"]
+
+    resolved = inqsi_pull_history.verified_full_slate_manifest(
+        [legacy_full, first_events_pull],
+        "2026-07-16",
+    )
+
+    assert resolved["fullSlateGameCount"] == 2
+    assert resolved["fullAuthorityPullId"] == "legacy-full-prestart"
+    assert resolved["legacyMigrationFallback"] is True
+    assert resolved["latestFeedEventRosterBacked"] is True

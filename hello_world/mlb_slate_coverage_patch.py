@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import copy
+import hashlib
+import json
 from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from decimal import Decimal
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from boto3.dynamodb.conditions import Key
 
@@ -11,6 +14,20 @@ import inqsi_pull_history as history_contract
 VERSION = "MLB-SLATE-COVERAGE-v4-immutable-provider-manifest-authority"
 AUTHORITY_VERSION = "MLB-LAST-PRELOCK-PROMOTION-AUTHORITY-v1-canonical-read-overlay"
 CANONICAL_RECORD_TYPE = "mlb_immutable_locked_single_game_prediction"
+LOCK_OUTCOME_RECORD_TYPE = "mlb_immutable_per_game_lock_outcome"
+LOCK_OUTCOME_VERSION = "MLB-LOCK-OUTCOME-v1-explicit-terminal-status"
+PLAYABILITY_RECORD_TYPE = "mlb_immutable_playability_assessment"
+PLAYABILITY_VERSION = "MLB-PLAYABILITY-ASSESSMENT-v1-immutable-selection-bound"
+PLAYABILITY_CHECKPOINTS = (
+    "T_MINUS_30",
+    "T_MINUS_15",
+    "EVENT_GAME1_PENDING",
+    "EVENT_GAME1_FINAL",
+)
+SCHEDULED_PLAYABILITY_CHECKPOINTS = ((30, "T_MINUS_30"), (15, "T_MINUS_15"))
+READINESS_RECORD_TYPE = "mlb_per_game_lock_readiness_checkpoint"
+READINESS_VERSION = "MLB-LOCK-READINESS-v1-tminus60-tminus50"
+SCHEDULED_READINESS_CHECKPOINTS = ((60, "T_MINUS_60"), (50, "T_MINUS_50"))
 
 
 def _now_utc() -> datetime:
@@ -55,6 +72,615 @@ def game_identity(game: Dict[str, Any]) -> str:
     return f"teams:{away}|{home}|start:{start}"
 
 
+def _raw_game_identity(game: Dict[str, Any]) -> str:
+    identity = game_identity(game)
+    return identity[len("provider:"):] if identity.startswith("provider:") else identity
+
+
+def _official_game_pk(game: Dict[str, Any]) -> str:
+    return str(game.get("official_game_pk") or game.get("officialGamePk") or "")
+
+
+def _same_manifest_game(reference: Dict[str, Any], candidate: Dict[str, Any]) -> bool:
+    reference_pk = _official_game_pk(reference)
+    candidate_pk = _official_game_pk(candidate)
+    if reference_pk and candidate_pk:
+        return reference_pk == candidate_pk
+    return game_identity(reference) == game_identity(candidate)
+
+
+def _bind_row_to_manifest(
+    row: Dict[str, Any],
+    manifest_game: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Expose a provider-ID prediction under the durable official roster ID."""
+    out = copy.deepcopy(row)
+    has_source_identity = any(
+        row.get(key) not in (None, "")
+        for key in ("game_id", "gameId", "id", "gameIdentity", "game_key", "gameKey")
+    )
+    source_identity = _raw_game_identity(row) if has_source_identity else ""
+    canonical_identity = _raw_game_identity(manifest_game)
+    if source_identity and source_identity != canonical_identity:
+        out.setdefault("sourcePredictionGameId", source_identity)
+        out.setdefault(
+            "sourcePredictionGameIdentity",
+            row.get("gameIdentity") or source_identity,
+        )
+        if not out.get("providerEventId") and not source_identity.startswith("mlb_statsapi:"):
+            out["providerEventId"] = source_identity
+    out.update({
+        "gameId": canonical_identity,
+        "gameIdentity": canonical_identity,
+        "officialGamePk": (
+            manifest_game.get("official_game_pk")
+            or manifest_game.get("officialGamePk")
+            or row.get("officialGamePk")
+        ),
+        "officialGameId": (
+            manifest_game.get("official_game_id")
+            or manifest_game.get("officialGameId")
+            or row.get("officialGameId")
+        ),
+        "providerEventId": (
+            out.get("providerEventId")
+            or manifest_game.get("provider_event_id")
+            or manifest_game.get("providerEventId")
+        ),
+        "providerCommenceTime": (
+            out.get("providerCommenceTime")
+            or manifest_game.get("provider_commence_time")
+            or manifest_game.get("providerCommenceTime")
+        ),
+        "providerStartDriftSeconds": (
+            out.get("providerStartDriftSeconds")
+            if out.get("providerStartDriftSeconds") is not None
+            else manifest_game.get("provider_start_drift_seconds")
+            if manifest_game.get("provider_start_drift_seconds") is not None
+            else manifest_game.get("providerStartDriftSeconds")
+        ),
+        "canonicalStartTimeSource": (
+            manifest_game.get("canonical_start_time_source")
+            or manifest_game.get("canonicalStartTimeSource")
+            or out.get("canonicalStartTimeSource")
+        ),
+        "commenceTime": (
+            manifest_game.get("commence_time")
+            or manifest_game.get("commenceTime")
+            or out.get("commenceTime")
+        ),
+        "homeTeam": (
+            manifest_game.get("home_team")
+            or manifest_game.get("homeTeam")
+            or out.get("homeTeam")
+        ),
+        "awayTeam": (
+            manifest_game.get("away_team")
+            or manifest_game.get("awayTeam")
+            or out.get("awayTeam")
+        ),
+    })
+    return out
+
+
+def _is_doubleheader_game_two(
+    manifest: List[Dict[str, Any]],
+    game: Dict[str, Any],
+) -> bool:
+    teams = frozenset({
+        _norm_team(game.get("home_team") or game.get("homeTeam")),
+        _norm_team(game.get("away_team") or game.get("awayTeam")),
+    })
+    matches = [
+        entry
+        for entry in manifest
+        if frozenset({
+            _norm_team(entry.get("home_team") or entry.get("homeTeam")),
+            _norm_team(entry.get("away_team") or entry.get("awayTeam")),
+        }) == teams
+    ]
+    matches.sort(key=lambda entry: (_start_key(entry), game_identity(entry)))
+    return bool(
+        len(matches) >= 2
+        and game_identity(game) == game_identity(matches[-1])
+    )
+
+
+def _plain(value: Any) -> Any:
+    if isinstance(value, Decimal):
+        return int(value) if value % 1 == 0 else float(value)
+    if isinstance(value, dict):
+        return {str(key): _plain(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_plain(item) for item in value]
+    return value
+
+
+def _status_digest(game: Dict[str, Any]) -> str:
+    return hashlib.sha256(game_identity(game).encode("utf-8")).hexdigest()
+
+
+def _status_pk(lock_module: Any, slate: str) -> str:
+    builder = getattr(lock_module, "_lock_pk", None)
+    return builder(slate) if callable(builder) else f"LOCKED_PICKS#mlb#{slate}"
+
+
+def _status_record(
+    module: Any,
+    lock_module: Any,
+    slate: str,
+    sk: str,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    table = getattr(getattr(module, "history", None), "PULLS", None)
+    if table is None:
+        return None, "status_table_not_configured"
+    try:
+        item = table.get_item(
+            Key={"PK": _status_pk(lock_module, slate), "SK": sk},
+            ConsistentRead=True,
+        ).get("Item")
+        return (item if isinstance(item, dict) else None), None
+    except Exception as exc:
+        return None, f"status_read_failed:{type(exc).__name__}:{exc}"
+
+
+def _record_fingerprint(item: Dict[str, Any], field: str) -> str:
+    material = {
+        str(key): value
+        for key, value in _plain(item).items()
+        if key != field
+    }
+    return hashlib.sha256(
+        json.dumps(material, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+
+
+def _terminal_outcome_for_public(
+    module: Any,
+    lock_module: Any,
+    slate: str,
+    game: Dict[str, Any],
+    manifest_authority: Dict[str, Any],
+) -> Tuple[Optional[Dict[str, Any]], List[str]]:
+    sk = f"PER_GAME_LOCK_OUTCOME#TMINUS45#{_status_digest(game)}"
+    item, read_error = _status_record(module, lock_module, slate, sk)
+    if read_error:
+        return None, [read_error]
+    if not item:
+        return None, []
+    errors: List[str] = []
+    if item.get("record_type") != LOCK_OUTCOME_RECORD_TYPE or item.get("version") != LOCK_OUTCOME_VERSION:
+        errors.append("lock_outcome_contract_mismatch")
+    if str(item.get("slate_date") or "") != slate or str(item.get("game_identity") or "") != game_identity(game):
+        errors.append("lock_outcome_identity_mismatch")
+    if item.get("lock_outcome_fingerprint") != _record_fingerprint(item, "lock_outcome_fingerprint"):
+        errors.append("lock_outcome_fingerprint_mismatch")
+    if item.get("lock_status") != "LOCKED_NO_PREDICTION_DATA":
+        errors.append("lock_outcome_status_mismatch")
+    if str(item.get("provider_manifest_fingerprint") or "") != str(manifest_authority.get("providerManifestFingerprint") or ""):
+        errors.append("lock_outcome_manifest_fingerprint_mismatch")
+    if str(item.get("provider_manifest_pk") or "") != str(manifest_authority.get("providerManifestPk") or ""):
+        errors.append("lock_outcome_manifest_pk_mismatch")
+    if str(item.get("provider_manifest_sk") or "") != str(manifest_authority.get("providerManifestSk") or ""):
+        errors.append("lock_outcome_manifest_sk_mismatch")
+    try:
+        expected_count = int(manifest_authority.get("verifiedFullSlateGameCount"))
+        if int(item.get("manifest_game_count")) != expected_count:
+            errors.append("lock_outcome_manifest_count_mismatch")
+    except Exception:
+        errors.append("lock_outcome_manifest_count_invalid")
+    return (copy.deepcopy(item) if not errors else None), sorted(set(errors))
+
+
+def _probability_equal(left: Any, right: Any) -> bool:
+    if left in (None, "") or right in (None, ""):
+        return left in (None, "") and right in (None, "")
+    try:
+        return abs(Decimal(str(left)) - Decimal(str(right))) <= Decimal("0.000001")
+    except Exception:
+        return str(left) == str(right)
+
+
+def _canonical_probability(row: Dict[str, Any]) -> Any:
+    for field in ("teamWinProbabilityPct", "winProbabilityPct"):
+        if row.get(field) not in (None, ""):
+            return row.get(field)
+    return None
+
+
+def _readiness_for_public(
+    module: Any,
+    lock_module: Any,
+    slate: str,
+    game: Dict[str, Any],
+    now: datetime,
+) -> Dict[str, Any]:
+    """Read readiness diagnostics without making them lock prerequisites."""
+    start = _parse_dt(game.get("commence_time") or game.get("commenceTime"))
+    required_checkpoint: Optional[str] = None
+    if start:
+        for minutes, checkpoint in SCHEDULED_READINESS_CHECKPOINTS:
+            if now >= start - timedelta(minutes=minutes):
+                required_checkpoint = checkpoint
+
+    public: Dict[str, Dict[str, Any]] = {}
+    validation_errors: List[str] = []
+    for minutes, checkpoint in SCHEDULED_READINESS_CHECKPOINTS:
+        sk = f"PER_GAME_READINESS#TMINUS{minutes}#{_status_digest(game)}"
+        item, read_error = _status_record(module, lock_module, slate, sk)
+        key = f"tMinus{minutes}"
+        row_errors: List[str] = []
+        if read_error:
+            row_errors.append(str(read_error))
+        elif isinstance(item, dict):
+            if item.get("record_type") != READINESS_RECORD_TYPE or item.get("version") != READINESS_VERSION:
+                row_errors.append("contract_mismatch")
+            if str(item.get("slate_date") or "") != slate or str(item.get("game_identity") or "") != game_identity(game):
+                row_errors.append("identity_mismatch")
+            if str(item.get("checkpoint") or "") != checkpoint:
+                row_errors.append("checkpoint_mismatch")
+            if item.get("write_once") is not True:
+                row_errors.append("write_once_contract_mismatch")
+            if _parse_dt(item.get("scheduled_at_utc")) is None:
+                row_errors.append("scheduled_at_invalid")
+            if _parse_dt(item.get("evaluated_at_utc")) is None:
+                row_errors.append("evaluated_at_invalid")
+            if item.get("readiness_fingerprint") != _record_fingerprint(item, "readiness_fingerprint"):
+                row_errors.append("readiness_fingerprint_mismatch")
+        elif checkpoint == required_checkpoint or (
+            start and now >= start - timedelta(minutes=minutes)
+        ):
+            row_errors.append("required_checkpoint_missing")
+
+        if row_errors:
+            validation_errors.extend(f"{checkpoint}:{error}" for error in row_errors)
+        valid = isinstance(item, dict) and not row_errors
+        public[key] = {
+            "recorded": valid,
+            "status": item.get("status") if valid else None,
+            "timingStatus": item.get("checkpoint_timing_status") if valid else None,
+            "scheduledAtUtc": item.get("scheduled_at_utc") if valid else None,
+            "evaluatedAtUtc": item.get("evaluated_at_utc") if valid else None,
+            "candidateReady": item.get("candidate_ready") is True if valid else False,
+            "blockingReasons": list(item.get("blocking_reasons") or []) if valid else [],
+            "validationErrors": sorted(set(row_errors)),
+        }
+
+    if not start:
+        validation_errors.append("GAME:commence_time_invalid")
+    return {
+        "checkpoints": public,
+        "requiredCheckpoint": required_checkpoint,
+        "requiredCheckpointDue": required_checkpoint is not None,
+        "validationErrors": sorted(set(validation_errors)),
+    }
+
+
+def _assessment_errors(
+    item: Dict[str, Any],
+    *,
+    checkpoint: str,
+    slate: str,
+    game: Dict[str, Any],
+    locked_row: Dict[str, Any],
+) -> List[str]:
+    errors: List[str] = []
+    if item.get("record_type") != PLAYABILITY_RECORD_TYPE or item.get("version") != PLAYABILITY_VERSION:
+        errors.append("contract_mismatch")
+    if str(item.get("slate_date") or "") != slate or str(item.get("game_identity") or "") != game_identity(game):
+        errors.append("identity_mismatch")
+    if str(item.get("checkpoint") or "") != checkpoint:
+        errors.append("checkpoint_mismatch")
+    if item.get("selection_rewrite_allowed") is not False:
+        errors.append("selection_rewrite_contract_mismatch")
+    selection_fingerprint = str(locked_row.get("lastPrelockSelectionFingerprint") or "")
+    if not selection_fingerprint:
+        errors.append("canonical_selection_fingerprint_missing")
+    elif str(item.get("canonical_selection_fingerprint") or "") != selection_fingerprint:
+        errors.append("selection_fingerprint_mismatch")
+    if _norm_team(item.get("canonical_predicted_winner")) != _norm_team(locked_row.get("predictedWinner")):
+        errors.append("canonical_winner_mismatch")
+    if str(item.get("canonical_predicted_side") or "") != str(locked_row.get("predictedSide") or ""):
+        errors.append("canonical_side_mismatch")
+    if not _probability_equal(item.get("canonical_probability_pct"), _canonical_probability(locked_row)):
+        errors.append("canonical_probability_mismatch")
+    if _parse_dt(item.get("evaluated_at_utc")) is None:
+        errors.append("evaluated_at_invalid")
+    playable = item.get("playable") is True
+    blocked = item.get("blocked") is True
+    if playable == blocked:
+        errors.append("playable_blocked_contract_mismatch")
+    expected_status = "PLAYABLE" if playable else "BLOCKED"
+    if str(item.get("status") or "") != expected_status:
+        errors.append("status_mismatch")
+    if item.get("assessment_fingerprint") != _record_fingerprint(item, "assessment_fingerprint"):
+        errors.append("assessment_fingerprint_mismatch")
+    return sorted(set(errors))
+
+
+def resolve_playability_lifecycle(
+    *,
+    slate: str,
+    game: Dict[str, Any],
+    locked_row: Dict[str, Any],
+    now: datetime,
+    record_reader: Callable[[str], Tuple[Optional[Dict[str, Any]], Optional[str]]],
+    event_pending_required: bool = False,
+) -> Dict[str, Any]:
+    """Resolve the release-only lifecycle without ever changing the winner.
+
+    The newest scheduled checkpoint that is currently due is mandatory.  A
+    valid event-driven doubleheader assessment may supersede it, but cannot
+    hide a missing or invalid scheduled assessment.  Older scheduled records
+    remain diagnostic once a newer checkpoint is due.
+    """
+    now = now.astimezone(timezone.utc)
+    start = _parse_dt(game.get("commence_time") or game.get("commenceTime"))
+    required_checkpoint: Optional[str] = None
+    if start:
+        for minutes, checkpoint in SCHEDULED_PLAYABILITY_CHECKPOINTS:
+            if now >= start - timedelta(minutes=minutes):
+                required_checkpoint = checkpoint
+
+    records: Dict[str, Optional[Dict[str, Any]]] = {}
+    read_errors: Dict[str, str] = {}
+    record_errors: Dict[str, List[str]] = {}
+    valid: Dict[str, Dict[str, Any]] = {}
+    for checkpoint in PLAYABILITY_CHECKPOINTS:
+        item, read_error = record_reader(checkpoint)
+        records[checkpoint] = copy.deepcopy(item) if isinstance(item, dict) else None
+        if read_error:
+            read_errors[checkpoint] = str(read_error)
+            continue
+        if not isinstance(item, dict):
+            continue
+        errors = _assessment_errors(
+            item,
+            checkpoint=checkpoint,
+            slate=slate,
+            game=game,
+            locked_row=locked_row,
+        )
+        if errors:
+            record_errors[checkpoint] = errors
+        else:
+            valid[checkpoint] = copy.deepcopy(item)
+
+    release_errors: List[str] = []
+    if not start:
+        release_errors.append("GAME:commence_time_invalid")
+    if required_checkpoint:
+        if required_checkpoint in read_errors:
+            release_errors.append(f"{required_checkpoint}:{read_errors[required_checkpoint]}")
+        elif records.get(required_checkpoint) is None:
+            release_errors.append(f"{required_checkpoint}:required_assessment_missing")
+        else:
+            release_errors.extend(
+                f"{required_checkpoint}:{error}"
+                for error in record_errors.get(required_checkpoint, [])
+            )
+
+    # Game 2 receives an immediate immutable pending assessment at lock.  It
+    # keeps release blocked before T-30.  A final Game 1 event is optional until
+    # it exists, but once present it is a claimed newer release decision and
+    # therefore must validate or release fails closed.
+    pending_checkpoint = "EVENT_GAME1_PENDING"
+    final_checkpoint = "EVENT_GAME1_FINAL"
+    final_valid = final_checkpoint in valid
+    pending_required_now = bool(
+        event_pending_required and not required_checkpoint and not final_valid
+    )
+    if pending_required_now:
+        if pending_checkpoint in read_errors:
+            release_errors.append(f"{pending_checkpoint}:{read_errors[pending_checkpoint]}")
+        elif records.get(pending_checkpoint) is None:
+            release_errors.append(f"{pending_checkpoint}:required_assessment_missing")
+        else:
+            release_errors.extend(
+                f"{pending_checkpoint}:{error}"
+                for error in record_errors.get(pending_checkpoint, [])
+            )
+    if final_checkpoint in read_errors and (required_checkpoint or event_pending_required):
+        release_errors.append(f"{final_checkpoint}:{read_errors[final_checkpoint]}")
+    elif records.get(final_checkpoint) is not None:
+        release_errors.extend(
+            f"{final_checkpoint}:{error}"
+            for error in record_errors.get(final_checkpoint, [])
+        )
+
+    candidates: List[Dict[str, Any]] = []
+    if required_checkpoint in valid:
+        candidates.append(valid[required_checkpoint])
+    for event_checkpoint in (pending_checkpoint, final_checkpoint):
+        if event_checkpoint in valid:
+            candidates.append(valid[event_checkpoint])
+    assessment = max(
+        candidates,
+        key=lambda item: _parse_dt(item.get("evaluated_at_utc")) or datetime.min.replace(tzinfo=timezone.utc),
+        default=None,
+    )
+
+    historical_errors: List[str] = []
+    for checkpoint in PLAYABILITY_CHECKPOINTS:
+        if checkpoint == required_checkpoint or checkpoint == final_checkpoint:
+            continue
+        if checkpoint == pending_checkpoint and pending_required_now:
+            continue
+        if checkpoint in read_errors:
+            historical_errors.append(f"{checkpoint}:{read_errors[checkpoint]}")
+        historical_errors.extend(
+            f"{checkpoint}:{error}"
+            for error in record_errors.get(checkpoint, [])
+        )
+
+    base_playable = bool(
+        locked_row.get("playable") is True
+        or locked_row.get("playablePick") is True
+        or locked_row.get("actionablePick") is True
+    )
+    base_reasons = {
+        str(reason)
+        for field in (
+            "playabilityBlockReasons",
+            "releaseBlockReasons",
+            "wagerReleaseBlockReasons",
+            "blockedReasons",
+        )
+        for reason in (locked_row.get(field) or [])
+        if reason
+    }
+    if assessment and not release_errors:
+        playable = assessment.get("playable") is True
+        reasons = {str(reason) for reason in (assessment.get("reasons") or []) if reason}
+        status = str(assessment.get("status") or ("PLAYABLE" if playable else "BLOCKED"))
+    elif release_errors:
+        playable = False
+        reasons = base_reasons | {
+            f"PLAYABILITY_ASSESSMENT_INVALID:{error}" for error in release_errors
+        }
+        status = "BLOCKED"
+    else:
+        playable = base_playable
+        reasons = base_reasons
+        status = "PLAYABLE" if playable else "BLOCKED"
+
+    return {
+        "assessment": copy.deepcopy(assessment) if assessment else None,
+        "requiredCheckpoint": required_checkpoint,
+        "requiredCheckpointDue": required_checkpoint is not None,
+        "eventPendingRequired": event_pending_required,
+        "playable": playable,
+        "blocked": not playable,
+        "status": status,
+        "reasons": sorted(reasons),
+        "validationErrors": sorted(set(release_errors)),
+        "historicalValidationErrors": sorted(set(historical_errors)),
+    }
+
+
+def _playability_for_public(
+    module: Any,
+    lock_module: Any,
+    slate: str,
+    game: Dict[str, Any],
+    locked_row: Dict[str, Any],
+    now: datetime,
+    event_pending_required: bool = False,
+) -> Dict[str, Any]:
+    def read(checkpoint: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        sk = f"PER_GAME_PLAYABILITY#{checkpoint}#{_status_digest(game)}"
+        return _status_record(module, lock_module, slate, sk)
+
+    return resolve_playability_lifecycle(
+        slate=slate,
+        game=game,
+        locked_row=locked_row,
+        now=now,
+        record_reader=read,
+        event_pending_required=event_pending_required,
+    )
+
+
+def _overlay_playability(
+    row: Dict[str, Any],
+    lifecycle: Dict[str, Any],
+) -> Dict[str, Any]:
+    out = copy.deepcopy(row)
+    assessment = lifecycle.get("assessment")
+    validation_errors = list(lifecycle.get("validationErrors") or [])
+    playable = lifecycle.get("playable") is True
+    reasons = list(lifecycle.get("reasons") or [])
+    out.update({
+        "playable": playable,
+        "playablePick": playable,
+        "actionablePick": playable,
+        "blocked": not playable,
+        "releaseBlocked": not playable,
+        "wagerReleaseBlocked": not playable,
+        "playabilityStatus": lifecycle.get("status") or ("PLAYABLE" if playable else "BLOCKED"),
+        "playabilityBlockReasons": reasons,
+        "releaseBlockReasons": reasons,
+        "playabilityAssessment": copy.deepcopy(assessment) if assessment else None,
+        "playabilityAssessmentValidationErrors": validation_errors,
+        "historicalPlayabilityAssessmentValidationErrors": list(
+            lifecycle.get("historicalValidationErrors") or []
+        ),
+        "requiredPlayabilityCheckpoint": lifecycle.get("requiredCheckpoint"),
+        "requiredPlayabilityCheckpointDue": lifecycle.get("requiredCheckpointDue") is True,
+        "eventPlayabilityAssessmentRequired": lifecycle.get("eventPendingRequired") is True,
+    })
+    tags = {str(tag) for tag in (out.get("tags") or [])}
+    if playable:
+        tags.update({"ACTIONABLE_PICK", "PLAYABLE_PREDICTION"})
+        tags.difference_update({"NOT_PLAYABLE", "RELEASE_BLOCKED", "WAGER_RELEASE_BLOCKED"})
+    else:
+        tags.update({"NOT_PLAYABLE", "RELEASE_BLOCKED", "WAGER_RELEASE_BLOCKED"})
+        tags.difference_update({"ACTIONABLE_PICK", "PLAYABLE_PREDICTION"})
+    out["tags"] = sorted(tags)
+    return out
+
+
+def _overlay_readiness(
+    row: Dict[str, Any],
+    lifecycle: Dict[str, Any],
+) -> Dict[str, Any]:
+    out = copy.deepcopy(row)
+    out.update({
+        "readiness": copy.deepcopy(lifecycle.get("checkpoints") or {}),
+        "requiredReadinessCheckpoint": lifecycle.get("requiredCheckpoint"),
+        "requiredReadinessCheckpointDue": lifecycle.get("requiredCheckpointDue") is True,
+        "readinessValidationErrors": list(lifecycle.get("validationErrors") or []),
+    })
+    return out
+
+
+def _overlay_terminal_outcome(row: Dict[str, Any], outcome: Dict[str, Any]) -> Dict[str, Any]:
+    out = copy.deepcopy(row)
+    reasons = sorted(set(
+        list(outcome.get("playability_block_reasons") or [])
+        + list(outcome.get("reasons") or [])
+    ))
+    out.update({
+        "predictedWinner": None,
+        "predictedSide": None,
+        "opponent": None,
+        "winProbability": None,
+        "winProbabilityPct": None,
+        "teamWinProbabilityPct": None,
+        "confidenceTier": None,
+        "score": None,
+        "lockedPrediction": False,
+        "officialPrediction": False,
+        "officialPick": False,
+        "lockOutcomeRecorded": True,
+        "lockStatus": "LOCKED_NO_PREDICTION_DATA",
+        "officialPredictionStatus": "LOCKED_NO_PREDICTION_DATA",
+        "officialPredictionReason": "no_valid_immutable_pregame_prediction_at_tminus45",
+        "recommendationStatus": "LOCKED_NO_PREDICTION_DATA",
+        "displayGroup": "lock_outcome_no_prediction_data",
+        "playable": False,
+        "playablePick": False,
+        "actionablePick": False,
+        "blocked": True,
+        "releaseBlocked": True,
+        "wagerReleaseBlocked": True,
+        "playabilityStatus": "BLOCKED",
+        "playabilityBlockReasons": reasons,
+        "trainingEligible": False,
+        "trainingEligibilityStatus": "INELIGIBLE",
+        "trainingExclusionReasons": list(outcome.get("training_exclusion_reasons") or []),
+        "terminalLockOutcome": copy.deepcopy(outcome),
+        "accuracyTargetEligible": False,
+        "officialAccuracyEligible": False,
+        "settlementEligible": False,
+    })
+    tags = {str(tag) for tag in (out.get("tags") or [])}
+    tags.update({"LOCKED_NO_PREDICTION_DATA", "NOT_PLAYABLE", "RELEASE_BLOCKED"})
+    tags.difference_update({"FINAL_LOCKED", "OFFICIAL_PREDICTION", "OFFICIAL_LOCKED_PREDICTION", "ACTIONABLE_PICK", "PLAYABLE_PREDICTION"})
+    out["tags"] = sorted(tags)
+    return out
+
+
 def _latest_games(lock_module: Any, pulls: List[Dict[str, Any]], slate: str) -> List[Dict[str, Any]]:
     resolver = getattr(history_contract, "verified_full_slate_manifest", None)
     if callable(resolver):
@@ -88,13 +714,13 @@ def _provider_manifest_for_public(
     pulls: List[Dict[str, Any]],
     slate: str,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Read the verified durable full-slate provider schedule.
+    """Read the verified durable full-slate schedule.
 
     Public completeness must never be inferred from the odds-bearing ``games``
-    array.  The quota-free events roster preserves games without odds, while
-    the durable resolver retains already-started games after the live feed
-    contracts.  Both the full authority and newest feed receive strongly
-    consistent immutable readback before public status uses the roster.
+    array. Official MLB exact-date authority preserves games without provider
+    events, while the durable resolver retains the maximum prestart roster
+    through same-day migration. Immutable readback is required before status
+    uses the roster.
     """
     if not pulls:
         raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_MISSING:NO_PULL_HISTORY")
@@ -160,6 +786,8 @@ def _provider_manifest_for_public(
         "providerManifestFingerprint": fingerprint,
         "providerManifestObservedAtUtc": manifest.get("observedAtUtc"),
         "providerManifestPullId": manifest.get("pullId"),
+        "providerManifestPk": binding.get("pk"),
+        "providerManifestSk": binding.get("sk"),
         "providerManifestImmutable": binding.get("immutable") is True,
         "providerManifestFullProviderSchedule": binding.get("fullProviderSchedule") is True,
         "verifiedFullSlateManifestVersion": resolved.get("version"),
@@ -168,7 +796,88 @@ def _provider_manifest_for_public(
         "latestProviderFeedContracted": resolved.get("latestFeedContracted") is True,
         "latestProviderManifestFingerprint": resolved.get("latestFeedFingerprint"),
         "latestProviderManifestObservedAtUtc": resolved.get("latestFeedObservedAtUtc"),
+        "rosterAuthorityMode": resolved.get("rosterAuthorityMode"),
+        "officialScheduleBacked": resolved.get("officialScheduleBacked") is True,
+        "officialScheduleAuthorityVersion": resolved.get("officialScheduleAuthorityVersion"),
+        "officialScheduleAuthoritySource": resolved.get("officialScheduleAuthoritySource"),
+        "officialScheduleAuthorityFingerprint": resolved.get("officialScheduleAuthorityFingerprint"),
+        "officialScheduleGameCount": resolved.get("officialScheduleGameCount"),
+        "officialScheduleAuthoritativeStartTimes": resolved.get("officialScheduleAuthoritativeStartTimes") is True,
+        "officialScheduleMissingProviderEventGameIds": list(resolved.get("officialScheduleMissingProviderEventGameIds") or []),
+        "eventRosterBacked": resolved.get("eventRosterBacked") is True,
+        "legacyRosterMigrationFallback": resolved.get("legacyMigrationFallback") is True,
+        "latestProviderFeedAnomalyCount": int(resolved.get("latestFeedAnomalyCount") or 0),
+        "latestProviderFeedAnomalies": copy.deepcopy(resolved.get("latestFeedAnomalies") or []),
         "durableRosterImmutableReadbackVerified": resolved.get("immutableReadbackVerified") is True,
+    }
+
+
+def _manifest_lock_state(
+    lock_module: Any,
+    pulls: List[Dict[str, Any]],
+    manifest: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """Build timing observability directly from the verified durable roster.
+
+    During feed contraction or fallback-to-provider identity migration, the
+    verified roster can legitimately differ from the manifest embedded in the
+    latest odds pull. Replacing only that pull's ``games`` array produces a
+    mixed proof that must fail validation. The roster has already passed the
+    immutable authority check above, so timing is derived from it directly.
+    """
+    now = _now_utc()
+    starts = [
+        value
+        for value in (
+            _parse_dt(game.get("commence_time") or game.get("commenceTime"))
+            for game in manifest
+        )
+        if value is not None
+    ]
+    first_start = min(starts) if starts else None
+    last_start = max(starts) if starts else None
+    lock_minutes = int(getattr(lock_module, "LOCK_MINUTES", 45))
+    first_cutoff = (
+        first_start - timedelta(minutes=lock_minutes)
+        if first_start is not None
+        else None
+    )
+    last_cutoff = (
+        last_start - timedelta(minutes=lock_minutes)
+        if last_start is not None
+        else None
+    )
+    latest = pulls[-1] if pulls else {}
+    return {
+        "applied": bool(first_start),
+        "policyVersion": AUTHORITY_VERSION,
+        "authorityVersion": AUTHORITY_VERSION,
+        "slateWideLock": False,
+        "perGameLock": True,
+        "lockMinutesBeforeFirstGame": lock_minutes,
+        "lockMinutesBeforeEachGame": lock_minutes,
+        "firstGameStartUtc": first_start.isoformat() if first_start else None,
+        "lastGameStartUtc": last_start.isoformat() if last_start else None,
+        "firstPerGameLockAtUtc": (
+            first_cutoff.isoformat() if first_cutoff else None
+        ),
+        "lastPerGameLockAtUtc": last_cutoff.isoformat() if last_cutoff else None,
+        "lockAtUtc": None,
+        "locked": False,
+        "lockStatus": "AWAITING_CANONICAL_PER_GAME_ROWS",
+        "source": "verified_durable_official_roster_timing",
+        "minutesUntilFirstGameStart": (
+            round((first_start - now).total_seconds() / 60.0, 2)
+            if first_start else None
+        ),
+        "minutesUntilFirstPerGameLock": (
+            round((first_cutoff - now).total_seconds() / 60.0, 2)
+            if first_cutoff else None
+        ),
+        "totalPullCountAvailable": len(pulls),
+        "scoringPullCount": len(pulls),
+        "latestAvailablePullAt": latest.get("pulled_at"),
+        "latestScoringPullAt": latest.get("pulled_at"),
     }
 
 
@@ -303,11 +1012,11 @@ def _canonical_row(
     except Exception as exc:
         errors.append(f"stage_authority_validator_unavailable:{exc}")
     try:
-        import mlb_daily_lock_ml_vector_preservation_patch as exact_contract
+        import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 
-        errors.extend(exact_contract.validate_exact_locked_row(row))
+        errors.extend(vector_contract.validate_selection_lock_vector_status(row))
     except Exception as exc:
-        errors.append(f"exact_vector_validator_unavailable:{exc}")
+        errors.append(f"selection_vector_status_validator_unavailable:{exc}")
     return (row if not errors else None), sorted(set(errors))
 
 
@@ -383,7 +1092,11 @@ def _prelock_row(
         recommendation_status = pending_status
         display_group = "lock_failure"
     out.update({
+        "locked": False,
+        "canonical": False,
         "lockedPrediction": False,
+        "lockOutcomeRecorded": False,
+        "lockStatus": pending_status,
         "officialPrediction": False,
         "officialPick": False,
         "displayPrediction": True,
@@ -394,6 +1107,10 @@ def _prelock_row(
         "displayGroup": display_group,
         "fullDataFinalPick": False,
         "accuracyTargetEligible": False,
+        "trainingEligible": False,
+        "trainingEligibilityStatus": "PENDING_IMMUTABLE_LOCK",
+        "trainingExclusionReasons": ["immutable_tminus45_prediction_not_available"],
+        "scheduledLockAtUtc": cutoff,
         "slatePredictionLock": public,
         "perGameCanonicalLock": {
             "authorityVersion": AUTHORITY_VERSION,
@@ -443,21 +1160,53 @@ def _display_card(row: Dict[str, Any]) -> Dict[str, Any]:
         "gameId": row.get("gameId"),
         "gameIdentity": row.get("gameIdentity"),
         "gameKey": row.get("gameKey"),
+        "officialGamePk": row.get("officialGamePk"),
+        "officialGameId": row.get("officialGameId"),
+        "providerEventId": row.get("providerEventId"),
+        "providerCommenceTime": row.get("providerCommenceTime"),
+        "providerStartDriftSeconds": row.get("providerStartDriftSeconds"),
+        "canonicalStartTimeSource": row.get("canonicalStartTimeSource"),
+        "sourcePredictionGameId": row.get("sourcePredictionGameId"),
+        "sourcePredictionGameIdentity": row.get("sourcePredictionGameIdentity"),
         "homeTeam": row.get("homeTeam"),
         "awayTeam": row.get("awayTeam"),
         "commenceTime": row.get("commenceTime"),
         "predictedWinner": row.get("predictedWinner"),
         "predictedSide": row.get("predictedSide"),
+        "selectionFingerprint": row.get("selectionFingerprint") or row.get("lastPrelockSelectionFingerprint"),
         "confidenceTier": row.get("confidenceTier"),
         "teamWinProbabilityPct": row.get("teamWinProbabilityPct", row.get("winProbabilityPct")),
         "score": row.get("score"),
         "rank": row.get("rank"),
         "officialPrediction": bool(row.get("officialPrediction")),
         "officialPick": bool(row.get("officialPick")),
+        "locked": bool(row.get("locked") or row.get("lockedPrediction")),
+        "lockedPrediction": bool(row.get("lockedPrediction")),
+        "canonical": bool(row.get("canonical") or row.get("lockedPrediction")),
         "playable": bool(row.get("playable")),
         "playablePick": bool(row.get("playablePick")),
+        "blocked": bool(row.get("blocked")),
+        "playabilityBlockReasons": row.get("playabilityBlockReasons") or [],
+        "trainingEligible": row.get("trainingEligible", (row.get("mlFeatureFreeze") or {}).get("trainingEligible")),
+        "trainingEligibilityStatus": row.get("trainingEligibilityStatus"),
+        "trainingExclusionReasons": row.get("trainingExclusionReasons") or (row.get("mlFeatureFreeze") or {}).get("trainingExclusionReasons") or [],
+        "exactVectorVerified": row.get("exactVectorVerified"),
+        "exactVectorValidationErrors": row.get("exactVectorValidationErrors") or [],
+        "lockOutcomeRecorded": bool(row.get("lockOutcomeRecorded") or row.get("lockedPrediction")),
+        "lockStatus": row.get("lockStatus") or row.get("officialPredictionStatus"),
+        "scheduledLockAtUtc": row.get("scheduledLockAtUtc") or (row.get("perGameCanonicalLock") or {}).get("lockAtUtc"),
+        "perGameCanonicalLock": copy.deepcopy(row.get("perGameCanonicalLock") or {}),
         "officialPredictionStatus": row.get("officialPredictionStatus"),
         "playabilityStatus": row.get("playabilityStatus"),
+        "playabilityAssessment": copy.deepcopy(row.get("playabilityAssessment")),
+        "requiredPlayabilityCheckpoint": row.get("requiredPlayabilityCheckpoint"),
+        "requiredPlayabilityCheckpointDue": row.get("requiredPlayabilityCheckpointDue") is True,
+        "eventPlayabilityAssessmentRequired": row.get("eventPlayabilityAssessmentRequired") is True,
+        "playabilityAssessmentValidationErrors": row.get("playabilityAssessmentValidationErrors") or [],
+        "readiness": copy.deepcopy(row.get("readiness") or {}),
+        "requiredReadinessCheckpoint": row.get("requiredReadinessCheckpoint"),
+        "requiredReadinessCheckpointDue": row.get("requiredReadinessCheckpointDue") is True,
+        "readinessValidationErrors": row.get("readinessValidationErrors") or [],
         "recommendationStatus": row.get("recommendationStatus"),
         "tags": row.get("tags") or [],
     }
@@ -483,13 +1232,31 @@ def _official_row(row: Dict[str, Any], public: Dict[str, Any]) -> Dict[str, Any]
         "lockStatus": "OFFICIAL_LOCKED_PREDICTION",
         "lockAtUtc": lock_at,
     })
+    freeze = out.get("mlFeatureFreeze") if isinstance(out.get("mlFeatureFreeze"), dict) else {}
+    training_eligible = out.get("trainingEligible")
+    if training_eligible is None:
+        training_eligible = freeze.get("trainingEligible") is True
+    training_exclusions = list(
+        out.get("trainingExclusionReasons")
+        or freeze.get("trainingExclusionReasons")
+        or []
+    )
     out.update({
+        "locked": True,
+        "canonical": True,
         "lockedPrediction": True,
+        "lockOutcomeRecorded": True,
+        "lockStatus": "LOCKED_CANONICAL",
         "officialPrediction": True,
         "officialPick": True,
         "isOfficialDisplayPick": True,
         "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
         "officialPredictionReason": "validated_immutable_canonical_per_game_lock",
+        "selectionFingerprint": out.get("lastPrelockSelectionFingerprint"),
+        "scheduledLockAtUtc": lock_at,
+        "trainingEligible": bool(training_eligible),
+        "trainingEligibilityStatus": "ELIGIBLE" if training_eligible else "INELIGIBLE",
+        "trainingExclusionReasons": training_exclusions,
         "slatePredictionLock": row_lock,
         "perGameCanonicalLock": {
             "authorityVersion": AUTHORITY_VERSION,
@@ -530,7 +1297,17 @@ def _fail_closed(result: Dict[str, Any], error: str) -> Dict[str, Any]:
     out["slatePredictionLock"] = public
     out["locked"] = False
     out["operationalDefect"] = True
+    out["canonicalPredictionComplete"] = False
+    out["lockStatusComplete"] = False
+    out["lockedPredictionCount"] = 0
+    out["canonicalPredictionCount"] = 0
+    out["lockedStatusCount"] = 0
+    out["lockOutcomeCount"] = 0
+    out["noPredictionDataCount"] = 0
     out["allGamesPredicted"] = False
+    out["predictionCoverageComplete"] = False
+    out["displayStatusCoverageComplete"] = False
+    out["lifecycleCoverageComplete"] = False
     out["allGamesHaveDisplayedWinnerPrediction"] = False
     out["predictions"] = [_prelock_row(row, public, None) for row in (out.get("predictions") or []) if isinstance(row, dict)]
     cards = [_display_card(row) for row in out["predictions"]]
@@ -547,7 +1324,11 @@ def _fail_closed(result: Dict[str, Any], error: str) -> Dict[str, Any]:
         "version": VERSION,
         "strictCoverageRequired": True,
         "coverageComplete": False,
+        "predictionCoverageComplete": False,
+        "displayStatusCoverageComplete": False,
+        "lifecycleCoverageComplete": False,
         "canonicalCoverageComplete": False,
+        "canonicalPredictionComplete": False,
         "publicAccuracyEligible": False,
         "providerManifestValidated": False,
         "operationalStatus": "PROVIDER_MANIFEST_AUTHORITY_UNAVAILABLE_FAIL_CLOSED",
@@ -617,28 +1398,84 @@ def apply(lock_module: Any):
             slate,
         )
         # Derive every timing field from the verified full schedule rather than
-        # the odds-bearing pull.  Keep aggregate pull metadata for observability.
-        authority_pull = dict(pulls[-1])
-        authority_pull["games"] = copy.deepcopy(manifest)
-        state = original_lock_state([authority_pull], slate)
-        state.update({
-            "totalPullCountAvailable": len(pulls),
-            "scoringPullCount": len(pulls),
-            "latestAvailablePullAt": pulls[-1].get("pulled_at"),
-            "latestScoringPullAt": pulls[-1].get("pulled_at"),
-        })
+        # mixing that roster with the latest pull's older manifest proof.
+        state = _manifest_lock_state(lock_module, pulls, manifest)
         public = {key: value for key, value in state.items() if not key.startswith("_")}
         public.update(manifest_authority)
         canonical, invalid, query_error = _canonical_by_identity(module, slate, manifest)
         manifest_ids = [game_identity(game) for game in manifest]
         canonical_count = len(canonical)
         all_canonical = bool(manifest_ids) and canonical_count == len(manifest_ids)
+        terminal_outcomes: Dict[str, Dict[str, Any]] = {}
+        playability_lifecycles: Dict[str, Dict[str, Any]] = {}
+        readiness_lifecycles: Dict[str, Dict[str, Any]] = {}
+        lifecycle_validation_errors: Dict[str, List[str]] = {}
+        readiness_validation_warnings: Dict[str, List[str]] = {}
         now = _now_utc()
-        pending_states = {
-            game_identity(game): _pending_status(
+        for game in manifest:
+            identity = game_identity(game)
+            readiness = _readiness_for_public(
+                module,
+                lock_module,
+                slate,
                 game,
                 now,
-                _per_game_cutoff(lock_module, game),
+            )
+            readiness_lifecycles[identity] = readiness
+            if readiness.get("validationErrors"):
+                readiness_validation_warnings[identity] = sorted(set(
+                    readiness.get("validationErrors") or []
+                ))
+            if identity in canonical:
+                lifecycle = _playability_for_public(
+                    module,
+                    lock_module,
+                    slate,
+                    game,
+                    canonical[identity],
+                    now,
+                    event_pending_required=_is_doubleheader_game_two(manifest, game),
+                )
+                playability_lifecycles[identity] = lifecycle
+                lifecycle_errors = sorted(set(
+                    list(lifecycle.get("validationErrors") or [])
+                    + list(lifecycle.get("historicalValidationErrors") or [])
+                ))
+                if lifecycle_errors:
+                    lifecycle_validation_errors.setdefault(identity, []).extend(
+                        lifecycle_errors
+                    )
+                continue
+            outcome, outcome_errors = _terminal_outcome_for_public(
+                module,
+                lock_module,
+                slate,
+                game,
+                manifest_authority,
+            )
+            if outcome:
+                terminal_outcomes[identity] = outcome
+            if outcome_errors:
+                lifecycle_validation_errors.setdefault(identity, []).extend(
+                    outcome_errors
+                )
+        lifecycle_validation_errors = {
+            identity: sorted(set(errors))
+            for identity, errors in lifecycle_validation_errors.items()
+            if errors
+        }
+        no_prediction_data_count = len(terminal_outcomes)
+        locked_status_count = canonical_count + no_prediction_data_count
+        lock_status_complete = bool(manifest_ids) and locked_status_count == len(manifest_ids)
+        pending_states = {
+            game_identity(game): (
+                "LOCKED_NO_PREDICTION_DATA"
+                if game_identity(game) in terminal_outcomes
+                else _pending_status(
+                    game,
+                    now,
+                    _per_game_cutoff(lock_module, game),
+                )
             )
             for game in manifest
             if game_identity(game) not in canonical
@@ -658,6 +1495,8 @@ def apply(lock_module: Any):
         lock_times = [value for value in lock_times if value]
         if all_canonical:
             lock_status = "COMPLETE_MANIFEST_ALL_CANONICAL"
+        elif lock_status_complete:
+            lock_status = "COMPLETE_WITH_NO_PREDICTION_DATA"
         elif missed_lock_count:
             lock_status = "MISSED_LOCK"
         elif lock_due_count:
@@ -683,14 +1522,28 @@ def apply(lock_module: Any):
             "manifestGameCount": len(manifest_ids),
             "manifestGameIdentities": manifest_ids,
             "canonicalLockedGameCount": canonical_count,
+            "lockedPredictionCount": canonical_count,
+            "canonicalPredictionCount": canonical_count,
+            "lockedStatusCount": locked_status_count,
+            "lockOutcomeCount": locked_status_count,
+            "noPredictionDataCount": no_prediction_data_count,
+            "lockStatusComplete": lock_status_complete,
+            "lockOutcomeCoveragePct": round(
+                locked_status_count / len(manifest_ids) * 100.0, 2
+            ) if manifest_ids else 0.0,
             "pendingCanonicalGameCount": max(len(manifest_ids) - canonical_count, 0),
+            "pendingLockStatusGameCount": max(len(manifest_ids) - locked_status_count, 0),
             "lockDueCanonicalMissingCount": lock_due_count,
             "missedLockCount": missed_lock_count,
             "pendingCanonicalStatuses": pending_states,
             "canonicalCoverageComplete": all_canonical,
+            "canonicalPredictionComplete": all_canonical,
             "canonicalReadOperational": query_error is None,
             "canonicalReadError": query_error,
             "invalidCanonicalRows": invalid,
+            "invalidLifecycleStatusRows": lifecycle_validation_errors,
+            "readinessValidationWarnings": readiness_validation_warnings,
+            "readinessWarningGameCount": len(readiness_validation_warnings),
             "doubleheaderSafeIdentity": True,
             "rules": [
                 "Each game locks independently 45 minutes before its own scheduled start.",
@@ -698,21 +1551,47 @@ def apply(lock_module: Any):
                 "Canonical rows are overlaid on public reads and are never recomputed.",
                 "Games before their cutoff without a valid canonical row remain explicitly pre-lock.",
                 "A missing canonical row at or after cutoff is an operational lock failure, never pre-lock or official.",
+                "A game with no integrity-valid pregame prediction receives an immutable LOCKED_NO_PREDICTION_DATA outcome instead of a fabricated pick.",
+                "Late playability assessments can block wagering release but cannot rewrite the immutable winner.",
                 "The result is locked only after every manifest game has a canonical row.",
                 "The manifest is the independently stored full provider schedule, including games without supported odds.",
             ],
         })
 
-        current: Dict[str, Dict[str, Any]] = {}
+        current_candidates: Dict[str, List[Tuple[bool, Dict[str, Any]]]] = {}
         extra_current: List[str] = []
+        ambiguous_current: List[str] = []
+        manifest_by_identity = {
+            game_identity(game): game for game in manifest
+        }
         for row in (result or {}).get("predictions") or []:
             if not isinstance(row, dict):
                 continue
             identity = game_identity(row)
-            if identity in set(manifest_ids):
-                current[identity] = row
+            if identity in manifest_by_identity:
+                current_candidates.setdefault(identity, []).append((True, row))
+                continue
+            alias_matches = [
+                manifest_identity
+                for manifest_identity, manifest_game in manifest_by_identity.items()
+                if _same_manifest_game(manifest_game, row)
+            ]
+            if len(alias_matches) == 1:
+                current_candidates.setdefault(alias_matches[0], []).append((False, row))
             else:
                 extra_current.append(identity)
+
+        current: Dict[str, Dict[str, Any]] = {}
+        for identity, candidates in current_candidates.items():
+            exact = [row for is_exact, row in candidates if is_exact]
+            selected = exact if exact else [row for _, row in candidates]
+            if len(selected) != 1:
+                ambiguous_current.append(identity)
+                continue
+            current[identity] = _bind_row_to_manifest(
+                selected[0],
+                manifest_by_identity[identity],
+            )
 
         predictions: List[Dict[str, Any]] = []
         missing: List[str] = []
@@ -720,6 +1599,42 @@ def apply(lock_module: Any):
             identity = game_identity(game)
             if identity in canonical:
                 row = _official_row(canonical[identity], public)
+                row = _overlay_playability(
+                    row,
+                    playability_lifecycles.get(identity) or {},
+                )
+            elif identity in terminal_outcomes:
+                cutoff = _per_game_cutoff(lock_module, game)
+                base = current.get(identity) or {
+                    "sport": "mlb",
+                    "slate_date": slate,
+                    "slateDateEt": slate,
+                    "gameId": game.get("game_id") or game.get("gameId") or game.get("id"),
+                    "gameIdentity": game.get("game_id") or game.get("gameId") or game.get("id"),
+                    "gameKey": game.get("game_key") or game.get("gameKey"),
+                    "officialGamePk": game.get("official_game_pk") or game.get("officialGamePk"),
+                    "officialGameId": game.get("official_game_id") or game.get("officialGameId"),
+                    "providerEventId": game.get("provider_event_id") or game.get("providerEventId"),
+                    "providerCommenceTime": game.get("provider_commence_time") or game.get("providerCommenceTime"),
+                    "providerStartDriftSeconds": game.get("provider_start_drift_seconds") if game.get("provider_start_drift_seconds") is not None else game.get("providerStartDriftSeconds"),
+                    "canonicalStartTimeSource": game.get("canonical_start_time_source") or game.get("canonicalStartTimeSource"),
+                    "commenceTime": game.get("commence_time") or game.get("commenceTime"),
+                    "awayTeam": game.get("away_team") or game.get("awayTeam"),
+                    "homeTeam": game.get("home_team") or game.get("homeTeam"),
+                    "predictedWinner": None,
+                    "predictedSide": None,
+                    "tags": [],
+                }
+                row = _prelock_row(
+                    base,
+                    public,
+                    cutoff,
+                    "LOCKED_NO_PREDICTION_DATA",
+                )
+                row = _overlay_terminal_outcome(
+                    row,
+                    terminal_outcomes[identity],
+                )
             elif identity in current:
                 cutoff = _per_game_cutoff(lock_module, game)
                 row = _prelock_row(
@@ -729,41 +1644,107 @@ def apply(lock_module: Any):
                     pending_states.get(identity, "OPEN_PRE_LOCK"),
                 )
             else:
-                missing.append(identity)
-                continue
+                cutoff = _per_game_cutoff(lock_module, game)
+                base = _bind_row_to_manifest({
+                    "sport": "mlb",
+                    "slate_date": slate,
+                    "slateDateEt": slate,
+                    "predictedWinner": None,
+                    "predictedSide": None,
+                    "tags": [],
+                }, game)
+                row = _prelock_row(
+                    base,
+                    public,
+                    cutoff,
+                    pending_states.get(identity, "OPEN_PRE_LOCK"),
+                )
+            row = _overlay_readiness(
+                row,
+                readiness_lifecycles.get(identity) or {},
+            )
             row["slateCoverageVersion"] = VERSION
             predictions.append(row)
 
         displayed_complete = not missing and len(predictions) == len(manifest_ids)
+        winner_predictions = [row for row in predictions if row.get("predictedWinner")]
+        winner_prediction_complete = bool(manifest_ids) and (
+            len(winner_predictions) == len(manifest_ids)
+        )
         coverage = _coverage(manifest, predictions, [], False)
+        missing_winner_predictions = list(coverage.get("missingGameIdentities") or [])
         coverage.update({
-            "coverageComplete": displayed_complete,
+            "coverageComplete": winner_prediction_complete,
+            "predictionCoverageComplete": winner_prediction_complete,
+            "displayStatusCoverageComplete": displayed_complete,
+            "lifecycleCoverageComplete": displayed_complete,
             "operationalStatus": lock_status if query_error is None else "CANONICAL_READ_FAILED_FAIL_CLOSED",
             "publicAccuracyEligible": all_canonical,
             "canonicalAuthorityVersion": AUTHORITY_VERSION,
             "canonicalReadOperational": query_error is None,
             "canonicalReadError": query_error,
             "canonicalLockedGameCount": canonical_count,
+            "lockedPredictionCount": canonical_count,
+            "canonicalPredictionCount": canonical_count,
+            "lockedStatusCount": locked_status_count,
+            "lockOutcomeCount": locked_status_count,
+            "noPredictionDataCount": no_prediction_data_count,
+            "lockStatusComplete": lock_status_complete,
             "pendingCanonicalGameCount": max(len(manifest_ids) - canonical_count, 0),
+            "pendingLockStatusGameCount": max(len(manifest_ids) - locked_status_count, 0),
             "lockDueCanonicalMissingCount": lock_due_count,
             "missedLockCount": missed_lock_count,
             "pendingCanonicalStatuses": pending_states,
             "canonicalCoverageComplete": all_canonical,
+            "canonicalPredictionComplete": all_canonical,
             "invalidCanonicalRows": invalid,
-            "missingGameIdentities": missing,
+            "invalidLifecycleStatusRows": lifecycle_validation_errors,
+            "readinessValidationWarnings": readiness_validation_warnings,
+            "readinessWarningGameCount": len(readiness_validation_warnings),
+            "missingGameIdentities": missing_winner_predictions,
+            "missingWinnerPredictionGameIdentities": missing_winner_predictions,
+            "missingLifecycleDisplayGameIdentities": missing,
             "extraCurrentPredictionIdentities": sorted(set(extra_current)),
+            "ambiguousCurrentPredictionIdentities": sorted(set(ambiguous_current)),
             "storeRequested": bool(store),
             "canonicalReadAuthorityWriteCount": 0,
             **manifest_authority,
         })
-        public["coverageComplete"] = displayed_complete
+        public["coverageComplete"] = winner_prediction_complete
+        public["predictionCoverageComplete"] = winner_prediction_complete
+        public["displayStatusCoverageComplete"] = displayed_complete
+        public["lifecycleCoverageComplete"] = displayed_complete
         public["coverageStatus"] = coverage["operationalStatus"]
 
         official = [row for row in predictions if row.get("lockedPrediction") is True]
-        prelock = [row for row in predictions if row.get("lockedPrediction") is not True]
+        exact_vector_verified_count = sum(
+            row.get("exactVectorVerified") is True for row in official
+        )
+        vector_training_excluded_count = sum(
+            row.get("exactVectorVerified") is False for row in official
+        )
+        public.update({
+            "exactVectorVerifiedCount": exact_vector_verified_count,
+            "vectorTrainingExcludedCount": vector_training_excluded_count,
+            "selectionLockIndependentOfTrainingVector": True,
+        })
+        coverage.update({
+            "exactVectorVerifiedCount": exact_vector_verified_count,
+            "vectorTrainingExcludedCount": vector_training_excluded_count,
+            "selectionLockIndependentOfTrainingVector": True,
+        })
+        terminal_no_data = [
+            row for row in predictions
+            if row.get("lockStatus") == "LOCKED_NO_PREDICTION_DATA"
+        ]
+        prelock = [
+            row for row in predictions
+            if row.get("lockedPrediction") is not True and row not in terminal_no_data
+        ]
         playable = [row for row in predictions if row.get("playable") is True or row.get("playablePick") is True]
         non_playable_official = [row for row in official if row not in playable]
-        cards = [_display_card(row) for row in predictions]
+        cards = [_display_card(row) for row in winner_predictions]
+        lifecycle_cards = [_display_card(row) for row in predictions]
         official_cards = [_display_card(row) for row in official]
         prelock_cards = [_display_card(row) for row in prelock]
         playable_cards = [_display_card(row) for row in playable]
@@ -772,29 +1753,56 @@ def apply(lock_module: Any):
             "sport": "mlb",
             "slate_date": slate,
             "locked": all_canonical,
+            "canonicalPredictionComplete": all_canonical,
+            "lockStatusComplete": lock_status_complete,
+            "lockedPredictionCount": canonical_count,
+            "canonicalPredictionCount": canonical_count,
+            "lockedStatusCount": locked_status_count,
+            "lockOutcomeCount": locked_status_count,
+            "noPredictionDataCount": no_prediction_data_count,
             "gameCount": len(manifest_ids),
             "count": len(predictions),
-            "allGamesPredicted": displayed_complete,
+            "allGamesPredicted": winner_prediction_complete,
             "totalPullCountAvailable": len(pulls),
             "scoringPullCount": len(pulls),
             "latestPullAt": (pulls[-1].get("pulled_at") if pulls else None),
             "latestScoringPullAt": (pulls[-1].get("pulled_at") if pulls else None),
             "officialPredictionCount": len(official),
             "officialPickCount": len(official),
+            "exactVectorVerifiedCount": exact_vector_verified_count,
+            "vectorTrainingExcludedCount": vector_training_excluded_count,
             "preLockPredictionCount": len(prelock),
+            "terminalNoPredictionDataDisplayCount": len(terminal_no_data),
             "playablePredictionCount": len(playable),
             "actionablePickCount": len(playable),
             "nonPlayableOfficialPredictionCount": len(non_playable_official),
-            "requiredGameWinnerPredictionCount": len(predictions),
+            "requiredGameWinnerPredictionCount": len(winner_predictions),
+            "winnerPredictionCount": len(winner_predictions),
             "displayPredictionCount": len(predictions),
-            "allGamesHaveDisplayedWinnerPrediction": displayed_complete,
+            "lifecycleDisplayCount": len(predictions),
+            "predictionCoverageComplete": winner_prediction_complete,
+            "displayStatusCoverageComplete": displayed_complete,
+            "lifecycleCoverageComplete": displayed_complete,
+            "allGamesHaveDisplayedWinnerPrediction": winner_prediction_complete,
+            "readinessValidationWarnings": readiness_validation_warnings,
+            "readinessWarningGameCount": len(readiness_validation_warnings),
             "slatePredictionLock": public,
             "slateCoverage": coverage,
             "publicPerGameAuthority": {
                 "applied": query_error is None,
                 "version": AUTHORITY_VERSION,
                 "canonicalLockedGameCount": canonical_count,
+                "exactVectorVerifiedCount": exact_vector_verified_count,
+                "vectorTrainingExcludedCount": vector_training_excluded_count,
+                "selectionLockIndependentOfTrainingVector": True,
+                "lockedPredictionCount": canonical_count,
+                "canonicalPredictionCount": canonical_count,
+                "canonicalPredictionComplete": all_canonical,
+                "lockedStatusCount": locked_status_count,
+                "noPredictionDataCount": no_prediction_data_count,
+                "lockStatusComplete": lock_status_complete,
                 "pendingCanonicalGameCount": max(len(manifest_ids) - canonical_count, 0),
+                "pendingLockStatusGameCount": max(len(manifest_ids) - locked_status_count, 0),
                 "lockDueCanonicalMissingCount": lock_due_count,
                 "missedLockCount": missed_lock_count,
                 "resultLocked": all_canonical,
@@ -803,14 +1811,20 @@ def apply(lock_module: Any):
             "operationalDefect": bool(
                 query_error
                 or invalid
+                or lifecycle_validation_errors
+                or ambiguous_current
                 or not displayed_complete
                 or lock_due_count
                 or missed_lock_count
             ),
             "predictions": predictions,
+            "perGameStatus": lifecycle_cards,
             "requiredWinnerPredictionDisplay": cards,
+            "requiredGameLifecycleDisplay": lifecycle_cards,
             "officialPredictionDisplay": official_cards,
-            "nonOfficialPredictionDisplay": prelock_cards,
+            "nonOfficialPredictionDisplay": prelock_cards + [
+                _display_card(row) for row in terminal_no_data
+            ],
             "playablePredictionDisplay": playable_cards,
             "nonPlayableOfficialPredictionDisplay": [
                 _display_card(row) for row in non_playable_official
@@ -823,7 +1837,11 @@ def apply(lock_module: Any):
             "slateWideLock": False,
             "perGameLock": True,
             "finalLockedCount": canonical_count,
+            "lockedStatusCount": locked_status_count,
+            "noPredictionDataCount": no_prediction_data_count,
+            "lockStatusComplete": lock_status_complete,
             "pendingCanonicalGameCount": max(len(manifest_ids) - canonical_count, 0),
+            "pendingLockStatusGameCount": max(len(manifest_ids) - locked_status_count, 0),
             "lockDueCanonicalMissingCount": lock_due_count,
             "missedLockCount": missed_lock_count,
             "resultLocked": all_canonical,

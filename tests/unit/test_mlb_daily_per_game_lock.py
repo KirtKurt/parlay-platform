@@ -5,7 +5,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -20,6 +20,7 @@ import mlb_daily_lock_coverage_patch as coverage_patch
 import mlb_daily_lock_audit_fallback_patch as audit_fallback
 import inqsi_pull_history as history_contract
 import mlb_ml_clean_cohort_v1 as cohort
+import mlb_official_schedule_authority as official_schedule
 from scripts.mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 
@@ -315,10 +316,26 @@ class FakeEngine:
             self.canonical_failures_remaining -= 1
             raise RuntimeError("injected canonical write failure")
         import mlb_daily_lock_ml_vector_preservation_patch as contract
+        import mlb_immutable_locked_storage_patch as immutable_storage
 
-        errors = contract.validate_exact_locked_row(row)
-        if errors:
-            raise RuntimeError("invalid canonical row: " + ",".join(errors))
+        status_errors = contract.validate_selection_lock_vector_status(row)
+        if status_errors:
+            raise RuntimeError("invalid canonical row status: " + ",".join(status_errors))
+        vector_errors = contract.effective_selection_lock_vector_errors(row)
+        stage, stage_errors = immutable_storage._read_verified_stage(
+            self.history.PULLS,
+            row,
+            canonical_row=False,
+        )
+        if not stage or stage_errors:
+            raise RuntimeError("invalid stage authority: " + ",".join(stage_errors))
+        canonical_row = copy.deepcopy(row)
+        canonical_row.update({
+            "canonicalPerGameStageAuthority": immutable_storage._authority_proof(stage),
+            "immutableLockedStorageVersion": immutable_storage.VERSION,
+            "immutableLockedStorage": True,
+            "immutableLockedStorageKeyspace": "LOCKED#GAME",
+        })
         key = (
             f"GAME_WINNERS#mlb#{row['slate_date']}",
             f"LOCKED#GAME#{row['commenceTime']}#{row['gameIdentity']}",
@@ -326,15 +343,15 @@ class FakeEngine:
         existing = self.history.PULLS.items.get(key)
         if existing:
             current = existing["data"]
-            if current["frozenFeatureVector"]["fingerprint"] != row["frozenFeatureVector"]["fingerprint"]:
-                raise RuntimeError("immutable vector collision")
+            if patch._payload_fingerprint(current) != patch._payload_fingerprint(canonical_row):
+                raise RuntimeError("immutable selection payload collision")
             created = False
         else:
             self.history.PULLS.items[key] = {
                 "PK": key[0],
                 "SK": key[1],
                 "record_type": "mlb_immutable_locked_single_game_prediction",
-                "data": copy.deepcopy(row),
+                "data": canonical_row,
             }
             self.canonical_new_writes += 1
             created = True
@@ -344,7 +361,11 @@ class FakeEngine:
             "sk": key[1],
             "storageClass": "LOCKED_IMMUTABLE",
             "writeOnce": True,
-            "exactVectorVerified": True,
+            "selectionLockVerified": True,
+            "exactVectorVerified": not vector_errors,
+            "exactVectorValidationErrors": vector_errors,
+            "trainingEligible": (row.get("mlFeatureFreeze") or {}).get("trainingEligible") is True,
+            "trainingExclusionReasons": list((row.get("mlFeatureFreeze") or {}).get("trainingExclusionReasons") or []),
             "created": created,
         }
 
@@ -443,9 +464,73 @@ G2 = game("g2", "2026-07-13T20:00:00+00:00")
 G3 = game("g3", "2026-07-13T22:00:00+00:00")
 
 
+def official_schedule_proof(games, observed_at: str):
+    official_games = [
+        game_row for game_row in games
+        if game_row.get("official_game_pk") not in (None, "")
+    ]
+    if not official_games:
+        return None
+    assert len(official_games) == len(games)
+
+    raw_schedule = {
+        "totalGames": len(official_games),
+        "dates": [{
+            "date": SLATE,
+            "games": [
+                {
+                    "gamePk": game_row["official_game_pk"],
+                    "gameDate": (
+                        game_row.get("official_commence_time")
+                        or game_row["commence_time"]
+                    ),
+                    "gameType": game_row.get("official_game_type") or "R",
+                    "gameNumber": game_row.get("official_game_number") or 1,
+                    "doubleHeader": game_row.get("official_double_header") or "N",
+                    "status": game_row.get("official_status") or {
+                        "abstractGameState": "Preview"
+                    },
+                    "teams": {
+                        "home": {"team": {"name": game_row["home_team"]}},
+                        "away": {"team": {"name": game_row["away_team"]}},
+                    },
+                }
+                for game_row in official_games
+            ],
+        }],
+    }
+    schedule = official_schedule.validate_exact_date_schedule(raw_schedule, SLATE)
+    provider_games = []
+    for game_row in official_games:
+        provider_id = game_row.get("provider_event_id")
+        canonical_id = str(game_row.get("game_id") or "")
+        fallback_id = f"mlb_statsapi:{game_row['official_game_pk']}"
+        if not provider_id and canonical_id and canonical_id != fallback_id:
+            provider_id = canonical_id
+        if not provider_id:
+            continue
+        provider_games.append({
+            "id": provider_id,
+            "game_id": provider_id,
+            "commence_time": (
+                game_row.get("provider_commence_time")
+                or game_row["commence_time"]
+            ),
+            "home_team": game_row["home_team"],
+            "away_team": game_row["away_team"],
+        })
+    _, proof = official_schedule.reconcile_official_schedule(
+        schedule,
+        provider_games,
+        observed_at_utc=observed_at,
+    )
+    return proof
+
+
 def pull(at: str, games, suffix: str):
     pull_id = f"pull-{suffix}"
     games = copy.deepcopy(games)
+    schedule_authority = official_schedule_proof(games, at)
     manifest = history_contract._build_provider_schedule_manifest(
         sport="mlb",
         slate=SLATE,
@@ -453,6 +538,7 @@ def pull(at: str, games, suffix: str):
         pull_id=pull_id,
         source="test_provider",
         games=games,
+        schedule_authority=schedule_authority,
     )
     # Preserve the shared game-key fallback exercised by the legacy no-ID
     # regression. Odds API production rows carry provider IDs.
@@ -483,6 +569,13 @@ def pull(at: str, games, suffix: str):
             "sk": key["SK"],
             "immutable": True,
             "fullProviderSchedule": True,
+            "officialScheduleBacked": bool(schedule_authority),
+            "officialScheduleAuthorityVersion": (
+                schedule_authority or {}
+            ).get("version"),
+            "officialScheduleAuthorityFingerprint": (
+                schedule_authority or {}
+            ).get("fingerprint"),
         },
     }
 
@@ -683,7 +776,8 @@ def test_manual_pull_timestamp_is_captured_after_provider_response():
     helper = source[start:end]
 
     assert helper.index("_http_get_json(_odds_url())") < helper.index("_now_iso()")
-    assert "raw_all, asof = _fetch_odds_with_completion_timestamp()" in source
+    assert helper.index("official_schedule.fetch_exact_date_schedule") < helper.index("_now_iso()")
+    assert "raw_all, asof, official_authority_by_date = _fetch_odds_with_completion_timestamp(" in source
 
 
 def test_cutoff_finalizes_at_tminus45_without_hidden_stabilization_delay():
@@ -1178,6 +1272,87 @@ def test_no_provider_id_uses_shared_fallback_identity_for_candidate_lookup():
     assert stage["source_pull_id"] == "pull-fallback-identity"
 
 
+def _fallback_to_provider_transition(*, candidate_has_official_identity: bool):
+    official_pk = "991001" if candidate_has_official_identity else "991002"
+    start = "2026-07-13T18:00:00+00:00"
+    canonical = {
+        "game_id": f"mlb_statsapi:{official_pk}",
+        "game_key": f"mlb|statsapi|{official_pk}",
+        "official_game_pk": official_pk,
+        "official_game_id": f"mlb_statsapi:{official_pk}",
+        "canonical_start_time_source": "MLB_STATS_API_EXACT_DATE",
+        "commence_time": start,
+        "home_team": "Transition Home",
+        "away_team": "Transition Away",
+        "books": {},
+    }
+    provider = {
+        **copy.deepcopy(canonical),
+        "game_id": f"late-provider-{official_pk}",
+        "game_key": f"mlb|provider|{official_pk}",
+        "provider_event_id": f"late-provider-{official_pk}",
+        "provider_commence_time": "2026-07-13T18:01:00+00:00",
+        "provider_start_drift_seconds": 60,
+        "books": {"fanduel": {"ml": {"home": -125, "away": 115}}},
+    }
+    early = pull("2026-07-13T17:00:00+00:00", [canonical], f"official-{official_pk}")
+    later = pull("2026-07-13T17:15:00+00:00", [provider], f"provider-{official_pk}")
+    module = build_module(
+        [early, later],
+        "2026-07-13T17:17:00+00:00",
+        seed=False,
+    )
+    module._latest_games_for_date = lambda slate, pulls: [copy.deepcopy(canonical)]
+
+    def identity_metadata(row):
+        row["providerEventId"] = provider["provider_event_id"]
+        row["providerCommenceTime"] = provider["provider_commence_time"]
+        row["providerStartDriftSeconds"] = provider["provider_start_drift_seconds"]
+        if candidate_has_official_identity:
+            row["officialGamePk"] = official_pk
+            row["officialGameId"] = f"mlb_statsapi:{official_pk}"
+
+    persist_candidate(module, provider, later, mutate=identity_metadata)
+    return module, canonical, provider
+
+
+def test_stats_fallback_manifest_locks_later_provider_candidate_by_official_game_pk():
+    module, canonical, provider = _fallback_to_provider_transition(
+        candidate_has_official_identity=True,
+    )
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    assert result["perGameLockProgress"]["noPredictionDataCount"] == 0
+    stage = staged_items(module)[0]
+    locked = stage["data"]["row"]
+    assert stage["candidate_proof"]["identityBindingMode"] == "official_game_pk"
+    assert locked["gameId"] == canonical["game_id"]
+    assert locked["sourcePredictionGameId"] == provider["game_id"]
+    assert locked["providerEventId"] == provider["provider_event_id"]
+    status = module._status_payload(SLATE)["perGameStatus"][0]
+    assert status["gameId"] == canonical["game_id"]
+    assert status["providerEventId"] == provider["provider_event_id"]
+    assert status["lockStatus"] == "LOCKED_CANONICAL"
+
+
+def test_stats_fallback_manifest_accepts_unique_legacy_team_start_crosswalk():
+    module, canonical, provider = _fallback_to_provider_transition(
+        candidate_has_official_identity=False,
+    )
+
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    stage = staged_items(module)[0]
+    locked = stage["data"]["row"]
+    assert stage["candidate_proof"]["identityBindingMode"] == "legacy_team_start_crosswalk"
+    assert locked["gameId"] == canonical["game_id"]
+    assert locked["sourcePredictionGameId"] == provider["game_id"]
+    assert locked["providerEventId"] == provider["provider_event_id"]
+
+
 def test_schedule_shift_promotes_same_game_candidate_from_old_commence_key():
     old = copy.deepcopy(G1)
     shifted = copy.deepcopy(G1)
@@ -1431,7 +1606,7 @@ def test_contracted_latest_feed_selects_prior_full_manifest_authority():
     assert module.TABLE.items[_manifest_item_key(full_pull)] == full_manifest_item
 
 
-def test_contracted_feed_future_game_omission_fails_closed_without_shrinking_slate():
+def test_contracted_feed_future_game_omission_preserves_roster_and_locks_other_games():
     full_slate = _fifteen_game_contracted_feed_slate()
     full_pull = pull(
         "2026-07-13T17:15:00+00:00",
@@ -1459,39 +1634,24 @@ def test_contracted_feed_future_game_omission_fails_closed_without_shrinking_sla
 
     result = module.run_lock(SLATE)
 
-    assert result["ok"] is False
-    assert result["locked"] is False
-    assert result["reason"] == "PER_GAME_LOCK_DUE_BUT_NOT_CANONICAL"
+    assert result["ok"] is True
+    assert result["locked"] is True
     assert len(result["perGameLockProgress"]["games"]) == 15
-    # The contracted pull itself is rejected as manifest authority because it
-    # omitted a still-future game. No game from that pull may advance, even
-    # though its other 13 due games are present and fresh.
-    assert result["perGameLockProgress"]["stagedCount"] == 1
-    assert result["perGameLockProgress"]["canonicalCount"] == 1
-    assert result["perGameLockProgress"]["dueMissingCount"] == 14
+    # The durable 15-game roster remains authoritative. The 13 present games
+    # can use fresh evidence, while the omitted game still locks its older
+    # integrity-valid pre-cutoff prediction with reliability gates applied.
+    assert result["perGameLockProgress"]["stagedCount"] == 15
+    assert result["perGameLockProgress"]["canonicalCount"] == 15
+    assert result["perGameLockProgress"]["dueMissingCount"] == 0
     missing = next(
         row
         for row in result["perGameLockProgress"]["games"]
         if row["gameId"] == "contracted-15"
     )
-    assert missing["state"] == "DUE_NOT_STAGED"
-    assert not any(
-        item["game_id"] == "contracted-15" for item in staged_items(module)
-    )
-    assert not any(
-        item["game_id"] == "contracted-02" for item in staged_items(module)
-    )
-    assert any(
-        failure.get("gameIdentity") == patch.game_identity(full_slate[1])
-        and failure.get("reason") == "PROVIDER_MANIFEST_AUTHORITY_NOT_STAGED"
-        for failure in result["failures"]
-    )
-    assert any(
-        failure.get("gameIdentity") == patch.game_identity(full_slate[-1])
-        and failure.get("reason") == "PROVIDER_MANIFEST_AUTHORITY_NOT_STAGED"
-        for failure in result["failures"]
-    )
-    assert daily_item(module) is None
+    assert missing["state"] == "LOCKED_CANONICAL"
+    assert any(item["game_id"] == "contracted-15" for item in staged_items(module))
+    assert any(item["game_id"] == "contracted-02" for item in staged_items(module))
+    assert daily_item(module) is not None
 
 
 def test_missing_full_manifest_authority_blocks_later_contracted_feed():
@@ -1620,6 +1780,80 @@ def test_vectorless_prelock_candidate_is_frozen_at_lock_without_rescoring():
     assert module.mlb_game_winner_engine.prediction_calls == 0
 
 
+def test_exact_vector_freeze_failure_still_locks_selection_but_never_trains(monkeypatch):
+    import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
+    import mlb_ml_clean_cohort_hardening_v1 as cohort_hardening
+    import mlb_ml_frozen_features
+
+    pulls = [pull("2026-07-13T17:15:00+00:00", [G1], "freeze-failure")]
+    module = build_module(
+        pulls,
+        "2026-07-13T17:17:00+00:00",
+        vectorless=True,
+    )
+
+    def fail_freeze(*args, **kwargs):
+        raise RuntimeError("injected exact-vector freeze failure")
+
+    monkeypatch.setattr(mlb_ml_frozen_features, "freeze_row", fail_freeze)
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    assert result["perGameLockProgress"]["canonicalCount"] == 1
+    row = staged_items(module)[0]["data"]["row"]
+    assert row["predictedWinner"] == G1["home_team"]
+    assert row["exactVectorVerified"] is False
+    assert row["trainingEligible"] is False
+    assert row["trainingEligibilityStatus"] == "INELIGIBLE"
+    assert row["exactVectorValidationErrors"]
+    assert "exact_lock_vector_freeze_failed" in row["trainingExclusionReasons"]
+    assert any(
+        reason.startswith(vector_contract.TRAINING_EXCLUSION_PREFIX)
+        for reason in row["trainingExclusionReasons"]
+    )
+    assert vector_contract.validate_selection_lock_vector_status(row) == []
+    assert vector_contract.validate_exact_locked_row(row)
+    assert module.mlb_game_winner_engine.prediction_calls == 0
+
+    # Exercise the hardened cohort contract without mutating the shared module.
+    cohort_clone = ModuleType("cohort_clone")
+    cohort_clone.__dict__.update(cohort.__dict__)
+    cohort_hardening.apply(cohort_clone)
+    graded = copy.deepcopy(row)
+    graded.update({"status": "GRADED", "winner": G1["home_team"], "correct": True})
+    eligible, reasons = cohort_clone.eligibility(graded)
+    assert eligible is False
+    assert "missing_exact_stored_lock_time_feature_vector" in reasons
+
+
+def test_vector_status_helper_failure_is_nonfatal_and_training_fail_closed(monkeypatch):
+    import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
+
+    pulls = [pull("2026-07-13T17:15:00+00:00", [G1], "status-failure")]
+    module = build_module(pulls, "2026-07-13T17:17:00+00:00")
+
+    def fail_status(*args, **kwargs):
+        raise RuntimeError("injected vector-status failure")
+
+    monkeypatch.setattr(
+        vector_contract,
+        "apply_exact_vector_training_status",
+        fail_status,
+    )
+    result = module.run_lock(SLATE)
+
+    assert result["locked"] is True
+    row = staged_items(module)[0]["data"]["row"]
+    assert row["exactVectorStatusUnavailableAtLock"] is True
+    assert row["exactVectorVerified"] is False
+    assert row["trainingEligible"] is False
+    assert row["trainingEligibilityStatus"] == "INELIGIBLE"
+    assert row["exactVectorValidationErrors"]
+    assert row["trainingExclusionReasons"]
+    assert vector_contract.validate_selection_lock_vector_status(row) == []
+    assert vector_contract.effective_selection_lock_vector_errors(row)
+
+
 def test_invalid_persisted_candidate_records_failed_attempt_then_can_retry():
     pulls = [pull("2026-07-13T17:15:00+00:00", [G1], "invalid")]
     module = build_module(
@@ -1737,7 +1971,7 @@ def test_status_exposes_newer_orphaned_start_after_older_completed_attempt():
     assert latest["outcome"] is None
 
 
-def test_failed_lock_raises_if_durable_outcome_diagnostic_cannot_persist():
+def test_failed_lock_reports_diagnostic_failure_without_interrupting_lock_path():
     pulls = [pull("2026-07-13T17:15:00+00:00", [G1], "diagnostic-failure")]
     module = build_module(
         pulls,
@@ -1746,13 +1980,11 @@ def test_failed_lock_raises_if_durable_outcome_diagnostic_cannot_persist():
     )
     module.TABLE.diagnostic_write_failures_remaining = 10
 
-    try:
-        module.run_lock(SLATE)
-    except RuntimeError as exc:
-        assert "LOCK_ATTEMPT_DIAGNOSTIC_PERSIST_FAILED" in str(exc)
-    else:
-        raise AssertionError("failed lock returned without durable outcome diagnostics")
+    result = module.run_lock(SLATE)
 
+    assert result["ok"] is False
+    assert result["reason"] == "PER_GAME_LOCK_DUE_BUT_NOT_CANONICAL"
+    assert result["perGameLockAttemptDiagnostics"]["attempts"][0]["outcomeWrite"]["ok"] is False
     assert diagnostic_items(module) == []
     assert staged_items(module) == []
     assert daily_item(module) is None

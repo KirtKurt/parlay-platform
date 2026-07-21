@@ -3,8 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
-VERSION = "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only"
+VERSION = "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation"
 CANONICAL_LOCK_AUTHORITY_VERSION = "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1"
+EXACT_PROVIDER_MATCH_METHOD = "exact_provider_game_id_and_teams"
+VERIFIED_PROVIDER_ALIAS_MATCH_METHOD = (
+    "verified_immutable_pull_official_game_pk_provider_alias_and_teams"
+)
 MAX_TIME_DRIFT_MINUTES = 45.0
 MIN_NEAREST_SEPARATION_MINUTES = 10.0
 
@@ -62,7 +66,15 @@ def _provider_ids(row: Dict[str, Any]) -> Set[str]:
 
 
 def _provider_id(row: Dict[str, Any]) -> str:
-    for key in ("gameId", "game_id", "providerGameId", "provider_game_id", "id"):
+    for key in (
+        "providerEventId",
+        "provider_event_id",
+        "providerGameId",
+        "provider_game_id",
+        "gameId",
+        "game_id",
+        "id",
+    ):
         value = row.get(key)
         if value not in (None, ""):
             text = str(value).strip()
@@ -74,6 +86,13 @@ def _provider_id(row: Dict[str, Any]) -> str:
 def _canonical_authority(row: Dict[str, Any], authority_version: str) -> bool:
     authority = row.get("canonicalLockAuthority") or {}
     slate = str(row.get("slateDateEt") or row.get("slate_date") or "")
+    vector_audit_authorized = bool(
+        authority.get("exactLockVectorValidated") is True
+        or (
+            authority.get("officialAuditEligible") is True
+            and authority.get("selectionLockIndependentOfTrainingVector") is True
+        )
+    )
     return bool(
         isinstance(authority, dict)
         and authority.get("version") == authority_version
@@ -82,12 +101,53 @@ def _canonical_authority(row: Dict[str, Any], authority_version: str) -> bool:
         and authority.get("immutableLocked") is True
         and authority.get("stageAuthorityVerified") is True
         and authority.get("persistedStageAuthorityValidated") is True
-        and authority.get("exactLockVectorValidated") is True
+        and vector_audit_authorized
         and authority.get("legacyOrDailyCardFallbackUsed") is False
         and authority.get("sourcePk") == f"GAME_WINNERS#mlb#{slate}"
         and str(authority.get("sourceSk") or "").startswith("LOCKED#GAME#")
         and authority.get("recordType")
         == "mlb_immutable_locked_single_game_prediction"
+    )
+
+
+def _verified_provider_alias_authority(row: Dict[str, Any]) -> bool:
+    authority = row.get("canonicalLockAuthority") or {}
+    proof = authority.get("providerAliasCrosswalk") or {}
+    official_pk = str(authority.get("officialGamePk") or "")
+    provider_id = _provider_id(row)
+    fingerprints = proof.get("manifestFingerprints") or []
+    row_teams = (
+        " ".join(str(row.get("awayTeam") or row.get("away_team") or "").lower().strip().split()),
+        " ".join(str(row.get("homeTeam") or row.get("home_team") or "").lower().strip().split()),
+    )
+    return bool(
+        isinstance(authority, dict)
+        and official_pk
+        and provider_id
+        and authority.get("providerIdentityMatchMethod")
+        == VERIFIED_PROVIDER_ALIAS_MATCH_METHOD
+        and authority.get("matchMethod") == VERIFIED_PROVIDER_ALIAS_MATCH_METHOD
+        and authority.get("verifiedProviderAliasCrosswalkMatched") is True
+        and authority.get("exactProviderIdentityMatched") is False
+        and isinstance(proof, dict)
+        and proof.get("immutableManifestValidated") is True
+        and proof.get("uniqueBidirectionalCrosswalk") is True
+        and str(proof.get("officialGamePk") or "") == official_pk
+        and str(proof.get("providerEventId") or "") == provider_id
+        and str(authority.get("providerGameId") or "") == provider_id
+        and str(authority.get("canonicalLockedGameId") or "")
+        == f"mlb_statsapi:{official_pk}"
+        and isinstance(fingerprints, list)
+        and bool(fingerprints)
+        and all(str(value).strip() for value in fingerprints)
+        and len({str(value) for value in fingerprints}) == len(fingerprints)
+        and proof.get("evidenceCount") == len(fingerprints)
+        and (
+            str(proof.get("awayTeamNormalized") or ""),
+            str(proof.get("homeTeamNormalized") or ""),
+        )
+        == row_teams
+        and all(row_teams)
     )
 
 
@@ -202,7 +262,34 @@ def apply(module: Any):
             if final_time and predicted_time
             else None
         )
-        return pred, "exact_provider_game_id_and_teams", {
+        authority = pred.get("canonicalLockAuthority") or {}
+        provider_method = authority.get("providerIdentityMatchMethod")
+        match_method = authority.get("matchMethod")
+        if provider_method and match_method and provider_method != match_method:
+            return None, "canonical_provider_identity_method_conflict", {
+                "finalProviderGameId": provider_id,
+                "providerIdentityMatchMethod": provider_method,
+                "matchMethod": match_method,
+            }
+        declared_method = provider_method or match_method
+        if declared_method == VERIFIED_PROVIDER_ALIAS_MATCH_METHOD:
+            if not _verified_provider_alias_authority(pred):
+                return None, "canonical_provider_alias_authority_invalid", {
+                    "finalProviderGameId": provider_id,
+                }
+            method = VERIFIED_PROVIDER_ALIAS_MATCH_METHOD
+        elif declared_method in (None, "", EXACT_PROVIDER_MATCH_METHOD):
+            if authority.get("verifiedProviderAliasCrosswalkMatched") is True:
+                return None, "canonical_exact_provider_authority_conflict", {
+                    "finalProviderGameId": provider_id,
+                }
+            method = EXACT_PROVIDER_MATCH_METHOD
+        else:
+            return None, "canonical_provider_identity_method_invalid", {
+                "finalProviderGameId": provider_id,
+                "declaredMatchMethod": declared_method,
+            }
+        return pred, method, {
             "matchedProviderId": provider_id,
             "commenceTimeDriftMinutes": round(drift, 2) if drift is not None else None,
         }
@@ -230,7 +317,7 @@ def apply(module: Any):
                     "lockedCardAudit": {
                         "applied": True,
                         "version": VERSION,
-                        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+                        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
                         "missingReason": "canonical_lock_failed_validation" if invalid else method,
                         "doubleheaderSafe": True,
                         **diagnostics,
@@ -245,15 +332,25 @@ def apply(module: Any):
                 "matchMethod": method,
                 "providerGameId": _provider_id(final),
                 "doubleheaderSafe": True,
-                "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+                "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
                 **diagnostics,
             })
             copied["lockedCardAudit"] = audit
             authority = dict(copied.get("canonicalLockAuthority") or {})
-            authority.update({
-                "exactProviderIdentityMatched": True,
-                "matchMethod": "exact_provider_game_id_and_teams",
-            })
+            if method == VERIFIED_PROVIDER_ALIAS_MATCH_METHOD:
+                authority.update({
+                    "exactProviderIdentityMatched": False,
+                    "verifiedProviderAliasCrosswalkMatched": True,
+                    "providerIdentityMatchMethod": VERIFIED_PROVIDER_ALIAS_MATCH_METHOD,
+                    "matchMethod": VERIFIED_PROVIDER_ALIAS_MATCH_METHOD,
+                })
+            else:
+                authority.update({
+                    "exactProviderIdentityMatched": True,
+                    "verifiedProviderAliasCrosswalkMatched": False,
+                    "providerIdentityMatchMethod": EXACT_PROVIDER_MATCH_METHOD,
+                    "matchMethod": EXACT_PROVIDER_MATCH_METHOD,
+                })
             copied["canonicalLockAuthority"] = authority
             rows.append({**final, "status": "GRADED", **copied, "correct": correct})
         return rows

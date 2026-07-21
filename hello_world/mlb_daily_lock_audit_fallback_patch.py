@@ -35,8 +35,7 @@ def _authoritative(item: Dict[str, Any]) -> bool:
     prediction_count = _as_int(item.get("prediction_count"))
     if item.get("per_game_lock") is True or item.get("lock_policy") == "each_mlb_game_minus_45_minutes":
         try:
-            import mlb_daily_lock_ml_vector_preservation_patch as exact_contract
-            import mlb_ml_clean_cohort_v1 as cohort
+            import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
         except Exception:
             return False
         proof = data.get("perGameLockProof") if isinstance(data.get("perGameLockProof"), list) else []
@@ -78,8 +77,7 @@ def _authoritative(item: Dict[str, Any]) -> bool:
                 and staged_at < start_at
                 and labels.get("homeWon") is None
                 and labels.get("pickCorrect") is None
-                and vector.get("fingerprint") == cohort.fingerprint_for_vector(vector)
-                and not exact_contract.validate_exact_locked_row(row)
+                and not vector_contract.validate_selection_lock_vector_status(row)
             ):
                 return False
         return True

@@ -7,6 +7,8 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
+from mlb_official_schedule_authority import normalize_team as _official_normalize_team
+
 
 ADVANCED_CONTEXT_VERSION = "MLB-B1.0-advanced-context-v1"
 STATSAPI_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
@@ -29,21 +31,7 @@ _STATSAPI_CACHE: Dict[str, Dict[str, Any]] = {}
 
 
 def _normalize_team(name: Optional[str]) -> str:
-    text = " ".join((name or "").lower().strip().split())
-    replacements = {
-        "az diamondbacks": "arizona diamondbacks",
-        "chi cubs": "chicago cubs",
-        "chi white sox": "chicago white sox",
-        "la angels": "los angeles angels",
-        "la dodgers": "los angeles dodgers",
-        "ny mets": "new york mets",
-        "ny yankees": "new york yankees",
-        "sf giants": "san francisco giants",
-        "sd padres": "san diego padres",
-        "tb rays": "tampa bay rays",
-        "washington nationals": "washington nationals",
-    }
-    return replacements.get(text, text)
+    return _official_normalize_team(name)
 
 
 def _http_get_json(url: str, timeout: int = 12) -> Any:

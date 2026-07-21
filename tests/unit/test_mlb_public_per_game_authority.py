@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import importlib
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
@@ -100,7 +100,8 @@ def _live(game, winner, side):
 
 
 def _canonical_item(game, winner, side, score):
-    lock_at = "2026-07-17T22:15:00+00:00" if game["game_id"] == "game-1" else "2026-07-18T01:15:00+00:00"
+    start = datetime.fromisoformat(game["commence_time"].replace("Z", "+00:00"))
+    lock_at = (start - timedelta(minutes=45)).astimezone(timezone.utc).isoformat()
     row = {
         "slate_date": SLATE,
         "gameId": game["game_id"],
@@ -172,8 +173,94 @@ def _canonical_item(game, winner, side, score):
     }
 
 
+def _playability_item(
+    game,
+    canonical,
+    checkpoint,
+    evaluated_at,
+    *,
+    playable,
+    reasons=None,
+):
+    locked = canonical["data"]
+    digest = coverage._status_digest(game)
+    item = {
+        "PK": f"LOCKED_PICKS#mlb#{SLATE}",
+        "SK": f"PER_GAME_PLAYABILITY#{checkpoint}#{digest}",
+        "record_type": coverage.PLAYABILITY_RECORD_TYPE,
+        "version": coverage.PLAYABILITY_VERSION,
+        "sport": "mlb",
+        "slate_date": SLATE,
+        "game_identity": coverage.game_identity(game),
+        "game_id": game["game_id"],
+        "commence_time": game["commence_time"],
+        "checkpoint": checkpoint,
+        "checkpoint_timing_status": "ON_TIME",
+        "evaluated_at_utc": evaluated_at,
+        "canonical_selection_fingerprint": locked["lastPrelockSelectionFingerprint"],
+        "canonical_predicted_winner": locked["predictedWinner"],
+        "canonical_predicted_side": locked["predictedSide"],
+        "canonical_probability_pct": locked.get(
+            "teamWinProbabilityPct",
+            locked.get("winProbabilityPct"),
+        ),
+        "selection_rewrite_allowed": False,
+        "playable": playable,
+        "blocked": not playable,
+        "status": "PLAYABLE" if playable else "BLOCKED",
+        "reasons": list(reasons or []),
+        "write_once": True,
+        "created_at": evaluated_at,
+    }
+    item["assessment_fingerprint"] = coverage._record_fingerprint(
+        item,
+        "assessment_fingerprint",
+    )
+    return item
+
+
+def _terminal_outcome_item(game, *, reasons=None):
+    authority_pull = PULLS[0]
+    manifest = authority_pull["provider_schedule_manifest"]
+    binding = authority_pull["provider_manifest_binding"]
+    digest = coverage._status_digest(game)
+    item = {
+        "PK": f"LOCKED_PICKS#mlb#{SLATE}",
+        "SK": f"PER_GAME_LOCK_OUTCOME#TMINUS45#{digest}",
+        "record_type": coverage.LOCK_OUTCOME_RECORD_TYPE,
+        "version": coverage.LOCK_OUTCOME_VERSION,
+        "sport": "mlb",
+        "slate_date": SLATE,
+        "game_identity": coverage.game_identity(game),
+        "game_id": game["game_id"],
+        "commence_time": game["commence_time"],
+        "lock_status": "LOCKED_NO_PREDICTION_DATA",
+        "lock_outcome_recorded": True,
+        "locked_prediction": False,
+        "canonical": False,
+        "official_prediction": False,
+        "playable": False,
+        "blocked": True,
+        "playability_block_reasons": ["NO_VALID_PREGAME_PREDICTION"],
+        "training_eligible": False,
+        "training_exclusion_reasons": ["missing_immutable_prediction"],
+        "reasons": list(reasons or ["no_valid_user_visible_platform_prelock_prediction"]),
+        "provider_manifest_fingerprint": manifest["fingerprint"],
+        "provider_manifest_pk": binding["pk"],
+        "provider_manifest_sk": binding["sk"],
+        "manifest_game_count": manifest["gameCount"],
+        "write_once": True,
+        "created_at": "2026-07-18T01:15:00+00:00",
+    }
+    item["lock_outcome_fingerprint"] = coverage._record_fingerprint(
+        item,
+        "lock_outcome_fingerprint",
+    )
+    return item
+
+
 class _Table:
-    def __init__(self, items, pulls=None):
+    def __init__(self, items, pulls=None, status_items=None):
         self.items = []
         self.by_key = {}
         for raw in items:
@@ -195,6 +282,9 @@ class _Table:
                 "data": copy.deepcopy(manifest),
             }
             self.by_key[(key["PK"], key["SK"])] = stored
+        for raw in status_items or []:
+            item = copy.deepcopy(raw)
+            self.by_key[(item["PK"], item["SK"])] = item
 
     def query(self, **kwargs):
         return {"Items": copy.deepcopy(self.items)}
@@ -204,14 +294,15 @@ class _Table:
         return {"Item": copy.deepcopy(item)} if item else {}
 
 
-def _engine(items):
-    current = [
-        _live(G1, G1["away_team"], "away"),
-        _live(G2, G2["away_team"], "away"),
-    ]
+def _engine(items, *, current=None, status_items=None):
+    if current is None:
+        current = [
+            _live(G1, G1["away_team"], "away"),
+            _live(G2, G2["away_team"], "away"),
+        ]
 
     class History:
-        PULLS = _Table(items, PULLS)
+        PULLS = _Table(items, PULLS, status_items)
 
         @staticmethod
         def query_pulls(sport, slate, limit):
@@ -247,6 +338,115 @@ def _install(engine):
     coverage.apply(slate_lock)
     slate_lock.apply(engine)
     coverage.install_public_authority(engine, slate_lock)
+
+
+def _fallback_manifest_game():
+    return {
+        "game_id": "mlb_statsapi:880002",
+        "game_key": "mlb|statsapi|880002",
+        "official_game_pk": "880002",
+        "official_game_id": "mlb_statsapi:880002",
+        "canonical_start_time_source": "MLB_STATS_API_EXACT_DATE",
+        "commence_time": "2026-07-17T23:00:00Z",
+        "away_team": "Alias Away",
+        "home_team": "Alias Home",
+    }
+
+
+def _fallback_manifest_authority():
+    return {
+        "providerManifestValidated": True,
+        "providerManifestFingerprint": "official-fallback-fixture",
+        "providerManifestPk": "PROVIDER_SCHEDULE#mlb#2026-07-17",
+        "providerManifestSk": "MANIFEST#fixture",
+        "verifiedFullSlateGameCount": 1,
+        "officialScheduleBacked": True,
+        "officialScheduleAuthorityVersion": "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date",
+        "officialScheduleAuthoritySource": "MLB_STATS_API_EXACT_DATE",
+        "officialScheduleGameCount": 1,
+        "officialScheduleAuthoritativeStartTimes": True,
+    }
+
+
+def test_public_prelock_provider_alias_is_bound_to_durable_stats_identity(monkeypatch):
+    manifest_game = _fallback_manifest_game()
+    provider_row = {
+        **_live(
+            {
+                "game_id": "late-provider-880002",
+                "game_key": "mlb|provider|880002",
+                "commence_time": "2026-07-17T23:00:00Z",
+                "away_team": "Alias Away",
+                "home_team": "Alias Home",
+            },
+            "Alias Home",
+            "home",
+        ),
+        "officialGamePk": "880002",
+        "officialGameId": "mlb_statsapi:880002",
+        "providerEventId": "late-provider-880002",
+        "providerCommenceTime": "2026-07-17T23:01:00Z",
+        "providerStartDriftSeconds": 60,
+    }
+    engine = _engine([], current=[provider_row])
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_provider_manifest_for_public",
+        lambda module, lock_module, pulls, slate: (
+            [copy.deepcopy(manifest_game)],
+            _fallback_manifest_authority(),
+        ),
+    )
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 17, 21, 0, tzinfo=timezone.utc),
+    )
+
+    result = engine.predict_all(SLATE, store=False)
+
+    assert result["gameCount"] == 1
+    assert result["lifecycleDisplayCount"] == 1
+    assert result["operationalDefect"] is False
+    assert result["slateCoverage"]["missingLifecycleDisplayGameIdentities"] == []
+    row = result["predictions"][0]
+    assert row["gameId"] == "mlb_statsapi:880002"
+    assert row["sourcePredictionGameId"] == "late-provider-880002"
+    assert row["providerEventId"] == "late-provider-880002"
+    assert row["officialGamePk"] == "880002"
+    assert row["lockedPrediction"] is False
+
+
+def test_public_lifecycle_synthesizes_manifest_row_without_current_prediction(monkeypatch):
+    manifest_game = _fallback_manifest_game()
+    engine = _engine([], current=[])
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_provider_manifest_for_public",
+        lambda module, lock_module, pulls, slate: (
+            [copy.deepcopy(manifest_game)],
+            _fallback_manifest_authority(),
+        ),
+    )
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 17, 21, 0, tzinfo=timezone.utc),
+    )
+
+    result = engine.predict_all(SLATE, store=False)
+
+    assert result["gameCount"] == result["lifecycleDisplayCount"] == 1
+    assert result["displayStatusCoverageComplete"] is True
+    assert result["predictionCoverageComplete"] is False
+    assert result["operationalDefect"] is False
+    row = result["predictions"][0]
+    assert row["gameId"] == "mlb_statsapi:880002"
+    assert row["officialGamePk"] == "880002"
+    assert row["predictedWinner"] is None
+    assert row["lockStatus"] == "OPEN_PRE_LOCK"
 
 
 def test_partial_canonical_overlay_preserves_lock_and_clears_legacy_official_flags(monkeypatch):
@@ -333,9 +533,43 @@ def test_invalid_canonical_row_is_ignored_and_live_row_remains_prelock(monkeypat
     assert result["locked"] is False
     assert result["officialPredictionCount"] == 0
     assert result["slatePredictionLock"]["canonicalLockedGameCount"] == 0
-    assert result["slatePredictionLock"]["invalidCanonicalRows"]["provider:game-1"] == ["fingerprint_mismatch"]
+    assert "invalid_vector_not_explicitly_unverified" in (
+        result["slatePredictionLock"]["invalidCanonicalRows"]["provider:game-1"]
+    )
     assert all(row["lockedPrediction"] is False for row in result["predictions"])
     assert result["operationalDefect"] is True
+
+
+def test_explicit_vector_exclusion_does_not_hide_canonical_selection(monkeypatch):
+    vector_errors = ["missing_frozen_feature_vector"]
+    monkeypatch.setattr(
+        exact_contract,
+        "validate_exact_locked_row",
+        lambda row: vector_errors,
+    )
+    monkeypatch.setattr(
+        immutable_storage,
+        "validate_canonical_stage_authority",
+        lambda table, row: [],
+    )
+    canonical = _canonical_item(G1, G1["home_team"], "home", 71)
+    canonical["data"] = exact_contract.apply_exact_vector_training_status(
+        canonical["data"],
+        vector_errors,
+    )
+    engine = _engine([canonical])
+    _install(engine)
+
+    result = engine.predict_all(SLATE, store=False)
+
+    row = next(item for item in result["predictions"] if item["gameId"] == "game-1")
+    assert row["lockedPrediction"] is True
+    assert row["officialPrediction"] is True
+    assert row["exactVectorVerified"] is False
+    assert row["trainingEligible"] is False
+    card = next(item for item in result["officialPredictionDisplay"] if item["gameId"] == "game-1")
+    assert card["exactVectorVerified"] is False
+    assert card["trainingEligible"] is False
 
 
 def test_canonical_query_failure_keeps_every_live_row_prelock(monkeypatch):
@@ -499,3 +733,250 @@ def test_public_authority_retains_full_roster_after_started_game_contracts(monke
     assert result["slateCoverage"]["verifiedFullSlateGameCount"] == 2
     assert result["slateCoverage"]["latestProviderFeedGameCount"] == 1
     assert result["slateCoverage"]["latestProviderFeedContracted"] is True
+
+
+def test_latest_due_playability_assessment_controls_release_without_rewriting_winner(monkeypatch):
+    monkeypatch.setattr(exact_contract, "validate_exact_locked_row", lambda row: [])
+    monkeypatch.setattr(immutable_storage, "validate_canonical_stage_authority", lambda table, row: [])
+    canonical = _canonical_item(G1, G1["home_team"], "home", 71)
+    t30 = _playability_item(
+        G1,
+        canonical,
+        "T_MINUS_30",
+        "2026-07-17T22:30:05+00:00",
+        playable=True,
+    )
+    t15 = _playability_item(
+        G1,
+        canonical,
+        "T_MINUS_15",
+        "2026-07-17T22:45:05+00:00",
+        playable=False,
+        reasons=["CONFIRMED_IMPACT_PLAYER_ABSENCE"],
+    )
+    engine = _engine([canonical], status_items=[t30, t15])
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 17, 22, 46, tzinfo=timezone.utc),
+    )
+
+    result = engine.predict_all(SLATE, store=False)
+    row = next(item for item in result["predictions"] if item["gameId"] == "game-1")
+
+    assert row["predictedWinner"] == G1["home_team"]
+    assert row["predictedSide"] == "home"
+    assert row["lockedPrediction"] is True
+    assert row["officialPrediction"] is True
+    assert row["playable"] is False
+    assert row["blocked"] is True
+    assert row["wagerReleaseBlocked"] is True
+    assert row["requiredPlayabilityCheckpoint"] == "T_MINUS_15"
+    assert row["playabilityAssessment"]["checkpoint"] == "T_MINUS_15"
+    assert row["playabilityAssessmentValidationErrors"] == []
+    assert "CONFIRMED_IMPACT_PLAYER_ABSENCE" in row["playabilityBlockReasons"]
+    assert result["operationalDefect"] is False
+
+
+def test_missing_latest_due_playability_assessment_fails_release_closed(monkeypatch):
+    monkeypatch.setattr(exact_contract, "validate_exact_locked_row", lambda row: [])
+    monkeypatch.setattr(immutable_storage, "validate_canonical_stage_authority", lambda table, row: [])
+    canonical = _canonical_item(G1, G1["home_team"], "home", 71)
+    t30 = _playability_item(
+        G1,
+        canonical,
+        "T_MINUS_30",
+        "2026-07-17T22:30:05+00:00",
+        playable=True,
+    )
+    engine = _engine([canonical], status_items=[t30])
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 17, 22, 46, tzinfo=timezone.utc),
+    )
+
+    result = engine.predict_all(SLATE, store=False)
+    row = next(item for item in result["predictions"] if item["gameId"] == "game-1")
+
+    assert row["predictedWinner"] == G1["home_team"]
+    assert row["predictedSide"] == "home"
+    assert row["lockedPrediction"] is True
+    assert row["playable"] is False
+    assert row["blocked"] is True
+    assert row["playabilityAssessment"] is None
+    assert row["playabilityAssessmentValidationErrors"] == [
+        "T_MINUS_15:required_assessment_missing"
+    ]
+    assert (
+        "PLAYABILITY_ASSESSMENT_INVALID:T_MINUS_15:required_assessment_missing"
+        in row["playabilityBlockReasons"]
+    )
+    assert result["operationalDefect"] is True
+
+
+def test_terminal_no_prediction_status_displays_without_current_prediction_row(monkeypatch):
+    monkeypatch.setattr(exact_contract, "validate_exact_locked_row", lambda row: [])
+    monkeypatch.setattr(immutable_storage, "validate_canonical_stage_authority", lambda table, row: [])
+    canonical = _canonical_item(G1, G1["home_team"], "home", 71)
+    assessment = _playability_item(
+        G1,
+        canonical,
+        "T_MINUS_15",
+        "2026-07-17T22:45:05+00:00",
+        playable=True,
+    )
+    terminal = _terminal_outcome_item(G2)
+    engine = _engine(
+        [canonical],
+        current=[_live(G1, G1["away_team"], "away")],
+        status_items=[assessment, terminal],
+    )
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 18, 2, 1, tzinfo=timezone.utc),
+    )
+
+    result = engine.predict_all(SLATE, store=False)
+    by_id = {row["gameId"]: row for row in result["predictions"]}
+    terminal_row = by_id["game-2"]
+
+    assert result["gameCount"] == 2
+    assert result["displayPredictionCount"] == 2
+    assert result["lifecycleDisplayCount"] == 2
+    assert result["lockedPredictionCount"] == 1
+    assert result["officialPredictionCount"] == 1
+    assert result["lockedStatusCount"] == 2
+    assert result["noPredictionDataCount"] == 1
+    assert result["lockStatusComplete"] is True
+    assert result["canonicalPredictionComplete"] is False
+    assert result["allGamesPredicted"] is False
+    assert result["predictionCoverageComplete"] is False
+    assert result["displayStatusCoverageComplete"] is True
+    assert result["operationalDefect"] is False
+    assert len(result["requiredWinnerPredictionDisplay"]) == 1
+    assert len(result["requiredGameLifecycleDisplay"]) == 2
+    assert result["slateCoverage"]["missingWinnerPredictionGameIdentities"] == [
+        "provider:game-2"
+    ]
+
+    assert terminal_row["lockStatus"] == "LOCKED_NO_PREDICTION_DATA"
+    assert terminal_row["lockOutcomeRecorded"] is True
+    assert terminal_row["lockedPrediction"] is False
+    assert terminal_row["officialPrediction"] is False
+    assert terminal_row["predictedWinner"] is None
+    assert terminal_row["predictedSide"] is None
+    assert terminal_row["playable"] is False
+    assert terminal_row["blocked"] is True
+    assert terminal_row["trainingEligible"] is False
+
+
+def test_public_doubleheader_game2_pending_then_final_event_changes_release_only(monkeypatch):
+    monkeypatch.setattr(exact_contract, "validate_exact_locked_row", lambda row: [])
+    monkeypatch.setattr(immutable_storage, "validate_canonical_stage_authority", lambda table, row: [])
+    dh1 = _game("dh-1", "2026-07-17T20:00:00Z", "Same Away", "Same Home")
+    dh2 = _game("dh-2", "2026-07-17T22:00:00Z", "Same Away", "Same Home")
+    pull = _provider_pull(
+        [dh1, dh2],
+        [dh1, dh2],
+        pull_id="doubleheader-full",
+        pulled_at="2026-07-17T19:00:00Z",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "PULLS", [pull])
+
+    canonical_one = _canonical_item(dh1, dh1["home_team"], "home", 70)
+    canonical_two = _canonical_item(dh2, dh2["home_team"], "home", 68)
+    game_one_t15 = _playability_item(
+        dh1,
+        canonical_one,
+        "T_MINUS_15",
+        "2026-07-17T19:45:05+00:00",
+        playable=True,
+    )
+    pending = _playability_item(
+        dh2,
+        canonical_two,
+        "EVENT_GAME1_PENDING",
+        "2026-07-17T21:15:05+00:00",
+        playable=False,
+        reasons=["DOUBLEHEADER_GAME1_NOT_FINAL"],
+    )
+    engine = _engine(
+        [canonical_one, canonical_two],
+        current=[
+            _live(dh1, dh1["away_team"], "away"),
+            _live(dh2, dh2["away_team"], "away"),
+        ],
+        status_items=[game_one_t15, pending],
+    )
+    _install(engine)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 17, 21, 16, tzinfo=timezone.utc),
+    )
+
+    pending_result = engine.predict_all(SLATE, store=False)
+    pending_row = next(
+        row for row in pending_result["predictions"] if row["gameId"] == "dh-2"
+    )
+    immutable_selection = (
+        pending_row["predictedWinner"],
+        pending_row["predictedSide"],
+        pending_row["lastPrelockSelectionFingerprint"],
+    )
+
+    assert pending_row["lockedPrediction"] is True
+    assert pending_row["selectionFingerprint"] == pending_row["lastPrelockSelectionFingerprint"]
+    assert pending_row["eventPlayabilityAssessmentRequired"] is True
+    assert pending_row["requiredPlayabilityCheckpoint"] is None
+    assert pending_row["playabilityAssessment"]["checkpoint"] == "EVENT_GAME1_PENDING"
+    assert pending_row["playable"] is False
+    assert pending_row["blocked"] is True
+    assert "DOUBLEHEADER_GAME1_NOT_FINAL" in pending_row["playabilityBlockReasons"]
+    assert pending_result["operationalDefect"] is False
+
+    t30 = _playability_item(
+        dh2,
+        canonical_two,
+        "T_MINUS_30",
+        "2026-07-17T21:30:05+00:00",
+        playable=False,
+        reasons=["DOUBLEHEADER_GAME1_NOT_FINAL"],
+    )
+    final = _playability_item(
+        dh2,
+        canonical_two,
+        "EVENT_GAME1_FINAL",
+        "2026-07-17T21:31:05+00:00",
+        playable=True,
+    )
+    for item in (t30, final):
+        engine.history.PULLS.by_key[(item["PK"], item["SK"])] = copy.deepcopy(item)
+    monkeypatch.setattr(
+        coverage,
+        "_now_utc",
+        lambda: datetime(2026, 7, 17, 21, 31, 5, tzinfo=timezone.utc),
+    )
+
+    final_result = engine.predict_all(SLATE, store=False)
+    final_row = next(
+        row for row in final_result["predictions"] if row["gameId"] == "dh-2"
+    )
+
+    assert final_row["playabilityAssessment"]["checkpoint"] == "EVENT_GAME1_FINAL"
+    assert final_row["requiredPlayabilityCheckpoint"] == "T_MINUS_30"
+    assert final_row["playabilityAssessmentValidationErrors"] == []
+    assert final_row["playable"] is True
+    assert final_row["blocked"] is False
+    assert final_row["selectionFingerprint"] == final_row["lastPrelockSelectionFingerprint"]
+    assert (
+        final_row["predictedWinner"],
+        final_row["predictedSide"],
+        final_row["lastPrelockSelectionFingerprint"],
+    ) == immutable_selection
+    assert final_result["operationalDefect"] is False

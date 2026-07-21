@@ -73,7 +73,7 @@ import mlb_daily_lock_coverage_patch
 import mlb_daily_lock_ml_vector_preservation_patch
 import mlb_daily_per_game_lock_patch
 
-LOCK_RUNTIME_FIX_VERSION = "MLB-LOCK-RUNTIME-FIX-v4-roster-readiness-release-status"
+LOCK_RUNTIME_FIX_VERSION = "MLB-LOCK-RUNTIME-FIX-v5-official-schedule-lifecycle-vector-separation"
 
 mlb_daily_lock_coverage_patch.apply(mlb_daily_pick_lock)
 ML_VECTOR_PRESERVATION_STATUS = mlb_daily_lock_ml_vector_preservation_patch.apply(mlb_daily_pick_lock)
@@ -135,6 +135,19 @@ _lifecycle_ready = bool(
     and _playability_version == _expected_playability_version
     and _source_window_stabilization_seconds == 0
 )
+_selection_vector_separation_ready = bool(
+    ML_VECTOR_PRESERVATION_STATUS.get("selectionLockIndependentOfTrainingVector") is True
+)
+_official_schedule_authority_version = getattr(
+    mlb_daily_per_game_lock_patch,
+    "OFFICIAL_SCHEDULE_AUTHORITY_VERSION",
+    None,
+)
+_official_schedule_authority_ready = bool(
+    _official_schedule_authority_version
+    == "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date"
+    and callable(getattr(_history_contract, "verified_full_slate_manifest", None))
+)
 PER_GAME_LOCK_STATUS = {
     "ok": bool(
         getattr(mlb_daily_pick_lock, "_INQSI_MLB_DAILY_PER_GAME_LOCK_V1", False)
@@ -142,6 +155,8 @@ PER_GAME_LOCK_STATUS = {
         and _promotion_ready
         and _payload_fingerprint_ready
         and _lifecycle_ready
+        and _selection_vector_separation_ready
+        and _official_schedule_authority_ready
     ),
     "version": getattr(mlb_daily_pick_lock, "MLB_DAILY_PER_GAME_LOCK_VERSION", None),
     "policy": getattr(mlb_daily_pick_lock, "LOCK_POLICY", None),
@@ -168,6 +183,9 @@ PER_GAME_LOCK_STATUS = {
     "playabilityAssessmentVersion": _playability_version,
     "sourceWindowStabilizationSeconds": _source_window_stabilization_seconds,
     "doubleheaderGame2EventDrivenPlayabilityRecheck": _lifecycle_ready,
+    "officialScheduleAuthorityRequired": _official_schedule_authority_ready,
+    "officialScheduleAuthorityVersion": _official_schedule_authority_version,
+    "selectionLockIndependentOfTrainingVector": _selection_vector_separation_ready,
 }
 ADMIN_TOKEN = os.environ.get("INQSI_ADMIN_API_TOKEN", "")
 

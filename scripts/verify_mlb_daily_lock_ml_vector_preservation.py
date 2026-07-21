@@ -172,6 +172,7 @@ def main() -> int:
     status = patch.apply(module)
     assert status["ok"] is True
     assert status["failClosed"] is True
+    assert status["selectionLockIndependentOfTrainingVector"] is True
 
     source = valid_row()
     compact = module._compact_pick(source)
@@ -197,26 +198,27 @@ def main() -> int:
     source["frozenFeatureVector"]["features"]["homeMarketProb"] = 0.01
     assert compact["frozenFeatureVector"]["features"]["homeMarketProb"] == original_probability
 
-    # Fail closed when the exact vector is missing.
+    # A missing exact vector does not erase a valid winner selection. It is
+    # retained with an explicit fail-closed ML/training verdict.
     missing = valid_row()
     missing.pop("frozenFeatureVector")
     missing.pop("frozenFeatureVectorVersion")
-    try:
-        module._compact_pick(missing)
-    except RuntimeError as exc:
-        assert "missing_frozen_feature_vector" in str(exc)
-    else:
-        raise AssertionError("daily lock accepted a pick without the exact frozen vector")
+    missing_compact = module._compact_pick(missing)
+    assert missing_compact["lockedPrediction"] is True
+    assert missing_compact["exactVectorVerified"] is False
+    assert missing_compact["trainingEligible"] is False
+    assert "missing_frozen_feature_vector" in missing_compact["exactVectorValidationErrors"]
+    assert missing_compact["trainingExclusionReasons"]
 
-    # Fail closed when a fingerprint does not match the immutable features.
+    # A fingerprint mismatch is likewise isolated from winner selection and
+    # remains fail closed for every ML cohort.
     altered = valid_row()
     altered["frozenFeatureVector"]["features"]["homeMarketProb"] = 0.99
-    try:
-        module._compact_pick(altered)
-    except RuntimeError as exc:
-        assert "frozen_vector_fingerprint_mismatch" in str(exc)
-    else:
-        raise AssertionError("daily lock accepted a mutated frozen vector")
+    altered_compact = module._compact_pick(altered)
+    assert altered_compact["lockedPrediction"] is True
+    assert altered_compact["exactVectorVerified"] is False
+    assert altered_compact["trainingEligible"] is False
+    assert "frozen_vector_fingerprint_mismatch" in altered_compact["exactVectorValidationErrors"]
 
     # Full production-order proof: the complete-slate patch is installed first by
     # sitecustomize, then the protected Lambda installs this preservation wrapper.
@@ -232,25 +234,27 @@ def main() -> int:
     assert stored_pick["frozenFeatureVector"]["labels"] == {"homeWon": None, "pickCorrect": None}
     assert clean_module.TABLE.puts[0]["ConditionExpression"] == "attribute_not_exists(PK) AND attribute_not_exists(SK)"
 
-    # Full fail-closed proof: an invalid row aborts card construction before the
-    # DynamoDB write call. No partial or vectorless daily card can be persisted.
+    # Full production-order proof: a vectorless row still persists its winner
+    # selection, but the stored card is explicitly excluded from training.
     invalid_source = valid_row()
     invalid_source.pop("frozenFeatureVector")
     invalid_source.pop("frozenFeatureVectorVersion")
     invalid_module = full_lock_module(invalid_source)
-    try:
-        invalid_module.run_lock("2026-07-13", force=False)
-    except RuntimeError as exc:
-        assert "missing_frozen_feature_vector" in str(exc)
-    else:
-        raise AssertionError("full lock path accepted a vectorless prediction")
-    assert invalid_module.TABLE.puts == []
+    invalid_result = invalid_module.run_lock("2026-07-13", force=False)
+    assert invalid_result["locked"] is True
+    assert len(invalid_module.TABLE.puts) == 1
+    invalid_pick = invalid_module.TABLE.puts[0]["Item"]["data"]["picks"][0]
+    assert invalid_pick["lockedPrediction"] is True
+    assert invalid_pick["exactVectorVerified"] is False
+    assert invalid_pick["trainingEligible"] is False
+    assert "missing_frozen_feature_vector" in invalid_pick["exactVectorValidationErrors"]
+    assert invalid_pick["trainingExclusionReasons"]
 
     print(
         "MLB daily lock ML vector preservation verified: exact vector, fingerprint, "
         "timestamps, semantics, selected price, and blank pregame labels survive compaction; "
-        "invalid cards fail before storage, and the full complete-slate lock path "
-        "cannot reach DynamoDB without the exact vector."
+        "invalid vectors remain explicit training exclusions while valid winner "
+        "selections retain immutable storage authority."
     )
     return 0
 

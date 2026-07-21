@@ -1,11 +1,16 @@
-import os, uuid, json, hashlib
+import copy, os, uuid, json, hashlib
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import boto3
 from boto3.dynamodb.conditions import Key
+
+try:
+    import mlb_official_schedule_authority as official_schedule
+except Exception:
+    official_schedule = None
 
 DDB = boto3.resource("dynamodb")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -179,7 +184,7 @@ def provider_game_identity(sport: str, game: Dict[str, Any]) -> str:
 
 def _provider_manifest_game(sport: str, game: Dict[str, Any]) -> Dict[str, Any]:
     identity = provider_game_identity(sport, game)
-    return {
+    row = {
         "game_id": identity,
         "id": str(game.get("id") or identity),
         "game_key": str(game.get("game_key") or game_key(sport, game)),
@@ -191,6 +196,30 @@ def _provider_manifest_game(sport: str, game: Dict[str, Any]) -> Dict[str, Any]:
         "gender": game.get("gender") or SUPPORTED[sport].get("gender"),
         "provider_sport_key": game.get("provider_sport_key"),
     }
+    official_fields = (
+        "official_game_pk",
+        "official_game_id",
+        "official_commence_time",
+        "official_game_type",
+        "official_game_number",
+        "official_double_header",
+        "official_status",
+        "provider_event_id",
+        "provider_commence_time",
+        "provider_start_drift_seconds",
+        "canonical_start_time_source",
+        "schedule_authority",
+        "schedule_authority_version",
+    )
+    # Preserve the exact legacy v1 fingerprint material for old manifests.
+    # Official fields are added only to Stats-API-backed MLB rows.
+    if game.get("official_game_pk") not in (None, ""):
+        row.update({
+            field: _legacy_payload_value(game.get(field))
+            for field in official_fields
+            if game.get(field) is not None
+        })
+    return row
 
 
 def _manifest_sort_key(game: Dict[str, Any]) -> tuple:
@@ -207,7 +236,7 @@ def _provider_manifest_material(manifest: Dict[str, Any]) -> Dict[str, Any]:
         [_provider_manifest_game(str(manifest.get("sport") or "mlb"), game) for game in manifest.get("games") or []],
         key=_manifest_sort_key,
     )
-    return {
+    material = {
         "version": str(manifest.get("version") or ""),
         "recordType": str(manifest.get("recordType") or ""),
         "sport": str(manifest.get("sport") or ""),
@@ -219,6 +248,11 @@ def _provider_manifest_material(manifest: Dict[str, Any]) -> Dict[str, Any]:
         "gameIdentities": [provider_game_identity(str(manifest.get("sport") or "mlb"), game) for game in games],
         "games": games,
     }
+    # New official proof is bound into the immutable manifest fingerprint;
+    # manifests written before this field retain their original fingerprint.
+    if "scheduleAuthority" in manifest:
+        material["scheduleAuthority"] = _legacy_payload_value(manifest.get("scheduleAuthority"))
+    return material
 
 
 def provider_manifest_fingerprint(manifest: Dict[str, Any]) -> str:
@@ -234,6 +268,7 @@ def _build_provider_schedule_manifest(
     pull_id: str,
     source: str,
     games: List[Dict[str, Any]],
+    schedule_authority: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     schedule_games = sorted([_provider_manifest_game(sport, game) for game in games], key=_manifest_sort_key)
     manifest: Dict[str, Any] = {
@@ -248,6 +283,8 @@ def _build_provider_schedule_manifest(
         "gameIdentities": [provider_game_identity(sport, game) for game in schedule_games],
         "games": schedule_games,
     }
+    if schedule_authority is not None:
+        manifest["scheduleAuthority"] = schedule_authority
     manifest["fingerprint"] = provider_manifest_fingerprint(manifest)
     return manifest
 
@@ -298,6 +335,40 @@ def validate_provider_schedule_manifest(
         errors.append("provider_manifest_duplicate_game_identity")
     if pull_identities != identities:
         errors.append("provider_manifest_pull_membership_mismatch")
+    schedule_authority = manifest.get("scheduleAuthority")
+    authority_claimed = bool(
+        schedule_authority is not None
+        or binding.get("officialScheduleBacked") is True
+        or binding.get("officialScheduleAuthorityFingerprint")
+        or any(game.get("official_game_pk") not in (None, "") for game in schedule_games)
+    )
+    if schedule_authority is not None:
+        if not isinstance(schedule_authority, dict):
+            errors.append("official_schedule_authority_proof_invalid")
+        else:
+            if official_schedule is None:
+                errors.append("official_schedule_authority_validator_unavailable")
+            else:
+                errors.extend(
+                    official_schedule.validate_authority_proof(
+                        schedule_authority,
+                        schedule_games,
+                    )
+                )
+            if str(schedule_authority.get("slateDate") or "") != str(manifest.get("slateDate") or ""):
+                errors.append("official_schedule_authority_slate_mismatch")
+            if str(schedule_authority.get("observedAtUtc") or "") != str(manifest.get("observedAtUtc") or ""):
+                errors.append("official_schedule_authority_observed_at_mismatch")
+            if (
+                binding.get("officialScheduleBacked") is not True
+                or str(binding.get("officialScheduleAuthorityVersion") or "")
+                != str(schedule_authority.get("version") or "")
+                or str(binding.get("officialScheduleAuthorityFingerprint") or "")
+                != str(schedule_authority.get("fingerprint") or "")
+            ):
+                errors.append("official_schedule_authority_binding_mismatch")
+    elif authority_claimed:
+        errors.append("official_schedule_authority_proof_missing")
     expected_key = _provider_manifest_key(manifest)
     try:
         bound_count = int(binding.get("gameCount"))
@@ -378,25 +449,145 @@ def _event_roster_backed(pull: Dict[str, Any]) -> bool:
     """
     roster = (pull.get("meta") or {}).get("provider_roster") or {}
     return bool(
-        roster.get("source") == "the_odds_api_events_exact_id_merge"
+        roster.get("source") in {
+            "the_odds_api_events_exact_id_merge",
+            "mlb_stats_api_exact_date_with_the_odds_api_event_crosswalk",
+        }
         and roster.get("exactProviderIdMerge") is True
     )
+
+
+def _official_schedule_backed(pull: Dict[str, Any]) -> bool:
+    authority = (pull.get("provider_schedule_manifest") or {}).get("scheduleAuthority")
+    return bool(
+        isinstance(authority, dict)
+        and official_schedule is not None
+        and authority.get("version") == official_schedule.VERSION
+        and authority.get("source") == official_schedule.SOURCE
+        and authority.get("verified") is True
+        and authority.get("authoritativeRoster") is True
+        and authority.get("authoritativeStartTimes") is True
+    )
+
+
+def _schedule_comparison_game(sport: str, game: Dict[str, Any]) -> Dict[str, Any]:
+    """Compare schedule facts without treating mutable status as roster drift."""
+    row = _provider_manifest_game(sport, game)
+    return {
+        field: row.get(field)
+        for field in (
+            "game_id",
+            "game_key",
+            "home_team",
+            "away_team",
+            "commence_time",
+            "league",
+            "level",
+            "gender",
+            "provider_sport_key",
+            "official_game_pk",
+            "official_game_id",
+            "official_commence_time",
+        )
+        if field in row
+    }
+
+
+def _official_membership_by_pk(
+    games: Iterable[Dict[str, Any]],
+) -> Tuple[Dict[str, Dict[str, Any]], List[str]]:
+    """Index one official roster without letting mutable provider IDs define it."""
+    by_pk: Dict[str, Dict[str, Any]] = {}
+    errors: List[str] = []
+    for game in games or []:
+        official_pk = str(game.get("official_game_pk") or "").strip()
+        if not official_pk:
+            errors.append("official_game_pk_missing")
+            continue
+        if official_pk in by_pk:
+            errors.append(f"duplicate_official_game_pk:{official_pk}")
+            continue
+        by_pk[official_pk] = game
+    return by_pk, sorted(set(errors))
+
+
+def _official_ordered_teams(game: Dict[str, Any]) -> Tuple[str, str]:
+    normalizer = (
+        official_schedule.normalize_team
+        if official_schedule is not None
+        else team_key
+    )
+    return (
+        normalizer(game.get("away_team") or game.get("awayTeam")),
+        normalizer(game.get("home_team") or game.get("homeTeam")),
+    )
+
+
+def _compatible_official_schedule_revision(
+    membership_games: Iterable[Dict[str, Any]],
+    revision_games: Iterable[Dict[str, Any]],
+) -> Tuple[bool, List[str]]:
+    """Require an exact official-PK/team roster before accepting new times."""
+    membership_by_pk, membership_errors = _official_membership_by_pk(
+        membership_games
+    )
+    revision_by_pk, revision_errors = _official_membership_by_pk(revision_games)
+    errors = [*membership_errors, *revision_errors]
+    if set(membership_by_pk) != set(revision_by_pk):
+        errors.append("official_game_pk_membership_changed")
+    for official_pk in sorted(set(membership_by_pk) & set(revision_by_pk)):
+        if _official_ordered_teams(membership_by_pk[official_pk]) != (
+            _official_ordered_teams(revision_by_pk[official_pk])
+        ):
+            errors.append(f"ordered_teams_changed:{official_pk}")
+    return not errors, sorted(set(errors))
+
+
+def _overlay_official_schedule_revision(
+    membership_games: Iterable[Dict[str, Any]],
+    revision_games: Iterable[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Apply official schedule facts while preserving roster/provider identity."""
+    revision_by_pk, errors = _official_membership_by_pk(revision_games)
+    if errors:
+        raise RuntimeError(
+            "MLB_OFFICIAL_SCHEDULE_REVISION_INVALID:" + ",".join(errors)
+        )
+    schedule_fields = (
+        "commence_time",
+        "official_commence_time",
+        "official_game_type",
+        "official_game_number",
+        "official_double_header",
+        "official_status",
+        "canonical_start_time_source",
+        "schedule_authority",
+        "schedule_authority_version",
+    )
+    effective: List[Dict[str, Any]] = []
+    for membership_game in membership_games or []:
+        official_pk = str(membership_game.get("official_game_pk") or "")
+        revision = revision_by_pk[official_pk]
+        row = copy.deepcopy(membership_game)
+        for field in schedule_fields:
+            if field in revision:
+                row[field] = copy.deepcopy(revision.get(field))
+        effective.append(row)
+    return sorted(effective, key=_manifest_sort_key)
 
 
 def verified_full_slate_manifest(
     pulls: List[Dict[str, Any]],
     slate: str,
 ) -> Dict[str, Any]:
-    """Resolve a durable pre-start roster across contracted provider feeds.
+    """Resolve a durable pre-start roster across official and legacy feeds.
 
-    The quota-free events endpoint supplies games even when no odds exist, but
-    the provider may still remove events after they begin.  The earliest
-    maximum-cardinality manifest observed before its own first game is the
-    durable roster. A later response may contract only after omitted games
-    have started; malformed, unknown, changed, or prematurely contracted
-    responses fail closed and can never redefine the durable roster.
+    Maximum-cardinality prestart proof protects same-day migration from a
+    contracted feed. At equal coverage, an MLB Stats API exact-date manifest
+    outranks the provider events roster, which outranks legacy odds-derived
+    membership. Later anomalies cannot erase the selected durable roster.
     """
-    candidates: List[Tuple[int, datetime, Dict[str, Any], bool]] = []
+    candidates: List[Tuple[int, datetime, Dict[str, Any], bool, bool]] = []
     missing_provider_proofs: List[Tuple[Optional[datetime], str]] = []
     invalid_provider_proofs: List[Dict[str, Any]] = []
     for pull in pulls or []:
@@ -429,7 +620,15 @@ def verified_full_slate_manifest(
             count = int((manifest or {}).get("gameCount"))
         except Exception:
             count = -1
-        candidates.append((count, observed_at, pull, _event_roster_backed(pull)))
+        candidates.append(
+            (
+                count,
+                observed_at,
+                pull,
+                _event_roster_backed(pull),
+                _official_schedule_backed(pull),
+            )
+        )
 
     if not candidates:
         if invalid_provider_proofs:
@@ -449,42 +648,22 @@ def verified_full_slate_manifest(
             )
         raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_MISSING:NO_PROVIDER_PULLS")
 
-    # Once a quota-free events-roster pull exists, legacy odds-derived
-    # manifests are no longer eligible to define the slate.  This makes the
-    # same-day deployment migration deterministic without retroactively
-    # invalidating the pre-deployment rows used for diagnostics.
-    event_candidates = [item for item in candidates if item[3]]
-    active_candidates = event_candidates or candidates
-    authority_mode = (
-        "EVENTS_ROSTER_EXACT_PROVIDER_ID"
-        if event_candidates
-        else "LEGACY_ODDS_MANIFEST_MIGRATION_FALLBACK"
-    )
-
-    first_proven_at = min(item[1] for item in active_candidates)
+    # Before an official schedule exists, migration must not let the first
+    # post-deploy events response redefine a larger prestart legacy roster.
+    # Once an exact-date MLB schedule is present it owns roster membership even
+    # if a mutable legacy/provider feed previously contained more rows.
+    first_proven_at = min(item[1] for item in candidates)
     unproved_current = sorted(
         pull_id
         for observed_at, pull_id in missing_provider_proofs
         if observed_at is None or observed_at >= first_proven_at
     )
-    if unproved_current:
-        raise RuntimeError(
-            "MLB_PROVIDER_SCHEDULE_MANIFEST_MISSING:CURRENT_PROVIDER_PULLS:"
-            + ",".join(unproved_current)
-        )
-    if invalid_provider_proofs:
-        errors = sorted({
-            error
-            for proof in invalid_provider_proofs
-            for error in (proof.get("errors") or [])
-        })
-        raise RuntimeError(
-            "MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:" + ",".join(errors)
-        )
+    # Once a valid write-once roster exists, missing or invalid later mutable
+    # pulls are anomalies. They cannot globally invalidate that roster.
 
-    anchor_candidates: List[Tuple[int, datetime, Dict[str, Any], bool]] = []
-    for candidate in active_candidates:
-        _count, observed_at, pull, _event_backed = candidate
+    anchor_candidates: List[Tuple[int, datetime, Dict[str, Any], bool, bool]] = []
+    for candidate in candidates:
+        _count, observed_at, pull, _event_backed, _official_backed = candidate
         starts = [
             _manifest_game_start(game)
             for game in ((pull.get("provider_schedule_manifest") or {}).get("games") or [])
@@ -495,14 +674,29 @@ def verified_full_slate_manifest(
     if not anchor_candidates:
         raise RuntimeError("MLB_PROVIDER_FULL_SLATE_PRESTART_AUTHORITY_MISSING")
 
-    full_count = max(item[0] for item in anchor_candidates)
-    _full_count, _full_at, full_pull, full_event_backed = min(
-        (item for item in anchor_candidates if item[0] == full_count),
+    official_anchor_candidates = [item for item in anchor_candidates if item[4]]
+    authority_candidates = official_anchor_candidates or anchor_candidates
+    full_count = max(item[0] for item in authority_candidates)
+    full_pool = [item for item in authority_candidates if item[0] == full_count]
+    preferred_pool = (
+        [item for item in full_pool if item[4]]
+        or [item for item in full_pool if item[3]]
+        or full_pool
+    )
+    _full_count, _full_at, full_pull, full_event_backed, full_official_backed = min(
+        preferred_pool,
         key=lambda item: item[1],
     )
-    _latest_count, latest_at, latest_pull, latest_event_backed = max(
-        active_candidates,
+    _latest_count, latest_at, latest_pull, latest_event_backed, latest_official_backed = max(
+        candidates,
         key=lambda item: item[1],
+    )
+    authority_mode = (
+        "MLB_STATS_API_EXACT_DATE"
+        if full_official_backed
+        else "EVENTS_ROSTER_EXACT_PROVIDER_ID"
+        if full_event_backed
+        else "LEGACY_ODDS_MANIFEST_MIGRATION_FALLBACK"
     )
 
     full_games = provider_manifest_games_for_lock(full_pull, slate)
@@ -520,21 +714,14 @@ def verified_full_slate_manifest(
         raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_DUPLICATE_IDENTITY")
 
     unknown = sorted(set(latest_by_id) - set(full_by_id))
-    if unknown:
-        raise RuntimeError(
-            "MLB_PROVIDER_LATEST_FEED_UNKNOWN_GAME_IDENTITY:" + ",".join(unknown)
-        )
 
     changed = sorted(
         identity
         for identity, latest_game in latest_by_id.items()
-        if _provider_manifest_game("mlb", latest_game)
-        != _provider_manifest_game("mlb", full_by_id[identity])
+        if identity in full_by_id
+        if _schedule_comparison_game("mlb", latest_game)
+        != _schedule_comparison_game("mlb", full_by_id[identity])
     )
-    if changed:
-        raise RuntimeError(
-            "MLB_PROVIDER_LATEST_FEED_SCHEDULE_CHANGED:" + ",".join(changed)
-        )
     prematurely_omitted = sorted(
         identity
         for identity, game in full_by_id.items()
@@ -544,29 +731,123 @@ def verified_full_slate_manifest(
             or _manifest_game_start(game) > latest_at
         )
     )
+    schedule_pull = full_pull
+    schedule_games = full_games
+    rejected_schedule_revisions: List[Dict[str, Any]] = []
+    if full_official_backed:
+        compatible_revisions: List[
+            Tuple[int, datetime, Dict[str, Any], bool, bool]
+        ] = []
+        for candidate in candidates:
+            count, _observed_at, candidate_pull, _event_backed, official_backed = candidate
+            if not official_backed or count != full_count:
+                continue
+            # Every candidate manifest was fingerprint-validated in memory
+            # above. Use that immutable payload for compatibility screening;
+            # only the selected membership/schedule records need additional
+            # strongly consistent DynamoDB readback.
+            candidate_games = list(
+                (candidate_pull.get("provider_schedule_manifest") or {}).get("games")
+                or []
+            )
+            compatible, revision_errors = _compatible_official_schedule_revision(
+                full_games,
+                candidate_games,
+            )
+            if compatible:
+                compatible_revisions.append(candidate)
+            elif _observed_at > _full_at:
+                rejected_schedule_revisions.append({
+                    "type": "OFFICIAL_SCHEDULE_REVISION_MEMBERSHIP_REJECTED",
+                    "pullId": str(candidate_pull.get("pull_id") or "unknown"),
+                    "errors": revision_errors,
+                })
+        if compatible_revisions:
+            (
+                _schedule_count,
+                _schedule_at,
+                schedule_pull,
+                _schedule_event_backed,
+                _schedule_official_backed,
+            ) = max(compatible_revisions, key=lambda item: item[1])
+            schedule_games = (
+                full_games
+                if schedule_pull is full_pull
+                else latest_games
+                if schedule_pull is latest_pull
+                else provider_manifest_games_for_lock(schedule_pull, slate)
+            )
+
+    effective_games = (
+        _overlay_official_schedule_revision(full_games, schedule_games)
+        if schedule_pull is not full_pull
+        else list(full_games)
+    )
+
+    anomalies: List[Dict[str, Any]] = [
+        *invalid_provider_proofs,
+        *rejected_schedule_revisions,
+    ]
+    if unproved_current:
+        anomalies.append({
+            "type": "CURRENT_PROVIDER_PULL_MANIFEST_MISSING",
+            "pullIds": unproved_current,
+        })
+    if unknown:
+        anomalies.append({
+            "type": "LATEST_FEED_UNKNOWN_GAME_IDENTITY",
+            "gameIdentities": unknown,
+        })
+    if changed:
+        anomalies.append({
+            "type": "LATEST_FEED_SCHEDULE_CHANGED",
+            "gameIdentities": changed,
+        })
     if prematurely_omitted:
-        raise RuntimeError(
-            "MLB_PROVIDER_LATEST_FEED_FUTURE_GAME_OMITTED:"
-            + ",".join(prematurely_omitted)
-        )
+        anomalies.append({
+            "type": "LATEST_FEED_FUTURE_GAME_OMITTED",
+            "gameIdentities": prematurely_omitted,
+        })
 
     full_manifest = full_pull.get("provider_schedule_manifest") or {}
+    schedule_manifest = schedule_pull.get("provider_schedule_manifest") or {}
     latest_manifest = latest_pull.get("provider_schedule_manifest") or {}
+    full_schedule_authority = full_manifest.get("scheduleAuthority") or {}
+    schedule_revision_authority = schedule_manifest.get("scheduleAuthority") or {}
+    latest_schedule_authority = latest_manifest.get("scheduleAuthority") or {}
     return {
-        "version": "MLB-VERIFIED-FULL-SLATE-ROSTER-v2-events-authority",
+        "version": "MLB-VERIFIED-FULL-SLATE-ROSTER-v4-membership-and-schedule-revision-authority",
         "slateDate": slate,
-        "games": list(full_games),
-        "fullSlateGameCount": len(full_games),
+        "games": list(effective_games),
+        "fullSlateGameCount": len(effective_games),
         "latestFeedGameCount": len(latest_games),
         "latestFeedContracted": len(latest_games) < len(full_games),
         "rosterAuthorityMode": authority_mode,
+        "officialScheduleBacked": bool(full_official_backed),
+        "latestFeedOfficialScheduleBacked": bool(latest_official_backed),
+        "officialScheduleAuthorityVersion": schedule_revision_authority.get("version"),
+        "officialScheduleAuthoritySource": schedule_revision_authority.get("source"),
+        "officialScheduleAuthorityFingerprint": schedule_revision_authority.get("fingerprint"),
+        "officialScheduleGameCount": schedule_revision_authority.get("officialGameCount"),
+        "officialScheduleAuthoritativeStartTimes": schedule_revision_authority.get("authoritativeStartTimes") is True,
+        "officialScheduleMissingProviderEventGameIds": list(schedule_revision_authority.get("missingProviderEventOfficialGameIds") or []),
+        "latestOfficialScheduleAuthorityFingerprint": latest_schedule_authority.get("fingerprint"),
         "eventRosterBacked": bool(full_event_backed),
         "latestFeedEventRosterBacked": bool(latest_event_backed),
-        "legacyMigrationFallback": not bool(full_event_backed),
-        "latestFeedAnomalies": [],
-        "latestFeedAnomalyCount": 0,
-        "durableRosterPreservedDespiteLatestFeedAnomaly": False,
+        "legacyMigrationFallback": not bool(full_official_backed or full_event_backed),
+        "latestFeedAnomalies": anomalies,
+        "latestFeedAnomalyCount": len(anomalies),
+        "durableRosterPreservedDespiteLatestFeedAnomaly": bool(anomalies),
         "fullAuthorityPull": full_pull,
+        "membershipAuthorityPull": full_pull,
+        "membershipAuthorityFingerprint": full_manifest.get("fingerprint"),
+        "membershipAuthorityPullId": full_manifest.get("pullId"),
+        "membershipOfficialScheduleAuthorityFingerprint": full_schedule_authority.get("fingerprint"),
+        "scheduleAuthorityPull": schedule_pull,
+        "scheduleAuthorityFingerprint": schedule_manifest.get("fingerprint"),
+        "scheduleAuthorityPullId": schedule_manifest.get("pullId"),
+        "scheduleAuthorityObservedAtUtc": schedule_manifest.get("observedAtUtc"),
+        "scheduleRevisionApplied": schedule_pull is not full_pull,
         "latestFeedPull": latest_pull,
         "fullAuthorityFingerprint": full_manifest.get("fingerprint"),
         "fullAuthorityPullId": full_manifest.get("pullId"),
@@ -615,6 +896,7 @@ def provider_manifest_authority_for_lock(
             "MLB_PROVIDER_SCHEDULE_MANIFEST_AUTHORITY_INVALID:"
             + ",".join(sorted(set(errors)))
         )
+    schedule_authority = manifest.get("scheduleAuthority") or {}
     return {
         "version": PROVIDER_MANIFEST_VERSION,
         "recordType": PROVIDER_MANIFEST_RECORD_TYPE,
@@ -630,6 +912,14 @@ def provider_manifest_authority_for_lock(
         "writeOnce": True,
         "fullProviderSchedule": True,
         "consistentReadVerified": True,
+        "officialScheduleBacked": bool(schedule_authority),
+        "officialScheduleAuthorityVersion": schedule_authority.get("version"),
+        "officialScheduleAuthoritySource": schedule_authority.get("source"),
+        "officialScheduleAuthorityFingerprint": schedule_authority.get("fingerprint"),
+        "officialScheduleGameCount": schedule_authority.get("officialGameCount"),
+        "officialScheduleAuthoritativeRoster": schedule_authority.get("authoritativeRoster") is True,
+        "officialScheduleAuthoritativeStartTimes": schedule_authority.get("authoritativeStartTimes") is True,
+        "officialScheduleMissingProviderEventGameIds": list(schedule_authority.get("missingProviderEventOfficialGameIds") or []),
     }
 
 
@@ -698,6 +988,8 @@ def normalize_pull(body: Dict[str, Any]) -> Dict[str, Any]:
     pull_id = str(body.get("pull_id") or f"pull_{uuid.uuid4().hex[:16]}")
     slate = str(body.get("slate_date") or slate_date(pulled_at))
     source = str(body.get("source") or "manual_or_provider_payload")
+    meta = dict(body.get("meta") or {})
+    schedule_authority = meta.get("official_schedule_authority")
     games = []
     for raw in raw_games if isinstance(raw_games, list) else []:
         if not isinstance(raw, dict):
@@ -736,6 +1028,19 @@ def normalize_pull(body: Dict[str, Any]) -> Dict[str, Any]:
                 "level": raw.get("level") or SUPPORTED[sport].get("level"),
                 "gender": raw.get("gender") or SUPPORTED[sport].get("gender"),
                 "provider_sport_key": raw.get("provider_sport_key"),
+                "official_game_pk": raw.get("official_game_pk"),
+                "official_game_id": raw.get("official_game_id"),
+                "official_commence_time": raw.get("official_commence_time"),
+                "official_game_type": raw.get("official_game_type"),
+                "official_game_number": raw.get("official_game_number"),
+                "official_double_header": raw.get("official_double_header"),
+                "official_status": raw.get("official_status") or {},
+                "provider_event_id": raw.get("provider_event_id"),
+                "provider_commence_time": raw.get("provider_commence_time"),
+                "provider_start_drift_seconds": raw.get("provider_start_drift_seconds"),
+                "canonical_start_time_source": raw.get("canonical_start_time_source"),
+                "schedule_authority": raw.get("schedule_authority"),
+                "schedule_authority_version": raw.get("schedule_authority_version"),
                 "books": books,
                 "odds_available": bool(books),
                 "moneyline_available": any((payload or {}).get("ml") for payload in books.values()),
@@ -743,6 +1048,27 @@ def normalize_pull(body: Dict[str, Any]) -> Dict[str, Any]:
     if not games:
         return {"ok": False, "error": "games_required", "message": "Provide at least one provider game with home and away teams."}
     games = sorted(games, key=_manifest_sort_key)
+    if schedule_authority is not None:
+        if sport != "mlb":
+            return {"ok": False, "error": "official_schedule_authority_only_supported_for_mlb"}
+        if not isinstance(schedule_authority, dict):
+            return {"ok": False, "error": "official_schedule_authority_invalid", "errors": ["official_schedule_authority_missing"]}
+        if official_schedule is None:
+            return {"ok": False, "error": "official_schedule_authority_validator_unavailable"}
+        authority_errors = official_schedule.validate_authority_proof(
+            schedule_authority,
+            games,
+        )
+        if str((schedule_authority or {}).get("slateDate") or "") != slate:
+            authority_errors.append("official_schedule_authority_slate_mismatch")
+        if str((schedule_authority or {}).get("observedAtUtc") or "") != str(pulled_at):
+            authority_errors.append("official_schedule_authority_observed_at_mismatch")
+        if authority_errors:
+            return {
+                "ok": False,
+                "error": "official_schedule_authority_invalid",
+                "errors": sorted(set(authority_errors)),
+            }
     manifest = _build_provider_schedule_manifest(
         sport=sport,
         slate=slate,
@@ -750,15 +1076,18 @@ def normalize_pull(body: Dict[str, Any]) -> Dict[str, Any]:
         pull_id=pull_id,
         source=source,
         games=games,
+        schedule_authority=schedule_authority,
     )
     manifest_key = _provider_manifest_key(manifest)
-    meta = dict(body.get("meta") or {})
     meta.update({
         "oddsApiOperational": source == "the_odds_api",
         "architecture": "15_min_pull_history",
         "providerManifestVersion": PROVIDER_MANIFEST_VERSION,
         "providerManifestFingerprint": manifest["fingerprint"],
         "providerManifestGameCount": len(games),
+        "officialScheduleBacked": bool(schedule_authority),
+        "officialScheduleAuthorityVersion": (schedule_authority or {}).get("version"),
+        "officialScheduleAuthorityFingerprint": (schedule_authority or {}).get("fingerprint"),
     })
     return {"ok": True, "pull": {
         "pull_id": pull_id,
@@ -777,6 +1106,9 @@ def normalize_pull(body: Dict[str, Any]) -> Dict[str, Any]:
             "sk": manifest_key["SK"],
             "immutable": True,
             "fullProviderSchedule": True,
+            "officialScheduleBacked": bool(schedule_authority),
+            "officialScheduleAuthorityVersion": (schedule_authority or {}).get("version"),
+            "officialScheduleAuthorityFingerprint": (schedule_authority or {}).get("fingerprint"),
         },
         "meta": meta,
     }}
@@ -849,6 +1181,10 @@ def store_pull(body: Dict[str, Any]) -> Dict[str, Any]:
             "immutable": True,
             "full_provider_schedule": True,
             "created": manifest_created,
+            "official_schedule_backed": bool(manifest.get("scheduleAuthority")),
+            "official_schedule_authority_version": (manifest.get("scheduleAuthority") or {}).get("version"),
+            "official_schedule_authority_fingerprint": (manifest.get("scheduleAuthority") or {}).get("fingerprint"),
+            "official_schedule_game_count": (manifest.get("scheduleAuthority") or {}).get("officialGameCount"),
         },
     }, "pull": p}
 

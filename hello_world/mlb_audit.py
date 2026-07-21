@@ -185,6 +185,17 @@ def pull_mlb_results(days_from: int = 3) -> Dict[str, Any]:
             "updated_at": now,
         }
         outcomes_tbl.put_item(Item=_ddb_safe(item))
+        # Team/date keys collide for same-day doubleheaders. Preserve the
+        # legacy lookup while also writing a provider-game-id authority row so
+        # Game 2 playability can react to the exact Game 1 final.
+        if score.get("id") not in (None, ""):
+            unique_item = {
+                **item,
+                "SK": f"GAME_ID#{score.get('id')}",
+                "record_type": "mlb_final_outcome_by_provider_game_id",
+                "identity_write_once": False,
+            }
+            outcomes_tbl.put_item(Item=_ddb_safe(unique_item))
         stored.append(item)
 
     return {

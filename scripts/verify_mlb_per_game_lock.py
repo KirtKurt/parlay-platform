@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import importlib.util
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -10,20 +11,12 @@ TEST = ROOT / "tests" / "unit" / "test_mlb_daily_per_game_lock.py"
 
 
 def main() -> int:
-    spec = importlib.util.spec_from_file_location("inqsi_mlb_per_game_lock_tests", TEST)
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load {TEST}")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    tests = sorted(
-        (name, value)
-        for name, value in vars(module).items()
-        if name.startswith("test_") and callable(value)
+    completed = subprocess.run(
+        [sys.executable, "-m", "pytest", "-q", str(TEST)],
+        check=False,
     )
-    if not tests:
-        raise RuntimeError("No per-game lock tests discovered")
-    for _, test in tests:
-        test()
+    if completed.returncode != 0:
+        return completed.returncode
     print(
         "MLB per-game T-minus-45 lock verified: own-cutoff pulls, immediate "
         "canonical write-once game rows with no hidden post-cutoff delay, "
