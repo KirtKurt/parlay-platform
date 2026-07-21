@@ -104,6 +104,18 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
 
     probability.apply = apply_probability
 
+    actionability = _module("mlb_probability_actionability_guard")
+    actionability.PATCH_VERSION = "test-provider-neutral-actionability"
+
+    def apply_actionability(module: ModuleType) -> None:
+        events.append("probability_actionability_apply")
+        module._INQSI_MLB_PROVIDER_NEUTRAL_CALIBRATION_APPLIED = True
+        module.MLB_PROBABILITY_ACTIONABILITY_GUARD_VERSION = (
+            actionability.PATCH_VERSION
+        )
+
+    actionability.apply = apply_actionability
+
     slate_lock = _module("mlb_slate_prediction_lock")
     slate_lock.apply = lambda module: events.append("slate_lock_apply")
 
@@ -138,6 +150,7 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
             finalizer,
             legacy_gate,
             probability,
+            actionability,
             coverage,
             slate_lock,
         )
@@ -162,6 +175,9 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
         assert status["steps"]["v2ShadowManualFirst"] is True
         assert status["steps"]["legacyFinalGateDisabled"] is True
         assert status["steps"]["lastPrelockPromotionAuthority"] is True
+        assert status["steps"][
+            "providerNeutralCalibrationAndActionability"
+        ] is True
         assert events.count("legacy_gate_apply") == 1
         assert events.index("fundamentals_v2_apply") < events.index(
             "storage_finalizer_apply"
@@ -173,6 +189,9 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
             "public_authority_apply"
         )
         assert events.index("probability_contract_apply") < events.index(
+            "probability_actionability_apply"
+        )
+        assert events.index("probability_actionability_apply") < events.index(
             "public_authority_apply"
         )
         assert engine.read_persisted_predictions is not engine.predict_all

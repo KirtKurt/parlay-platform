@@ -29,6 +29,7 @@ REQUIRED_RUNTIME_STEPS = {
     "canonicalLockedStorageFinalizer",
     "lastPrelockPromotionAuthority",
     "canonicalProbabilityAndPersistedPrelockAuthority",
+    "providerNeutralCalibrationAndActionability",
     "legacyFinalGateDisabled",
 }
 STUB_MODULE_NAMES = (

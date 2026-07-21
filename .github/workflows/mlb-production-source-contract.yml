@@ -26,6 +26,8 @@ on:
       - '.github/workflows/mlb-production-source-contract.yml'
       - '.github/workflows/mlb-production-acceptance.yml'
       - '.github/workflows/mlb-rolling-24h-audit.yml'
+      - '.github/workflows/install-dedicated-mlb-v3-read.yml'
+      - '.github/workflows/install-pull-history-contract.yml'
       - '.github/workflows/mlb-v1-direct-lambda-hotfix.yml'
       - '.github/workflows/mlb-v1-emergency-deploy.yml'
       - '.github/workflows/mlb-v1-pull-guard.yml'
@@ -61,6 +63,8 @@ on:
       - '.github/workflows/mlb-production-source-contract.yml'
       - '.github/workflows/mlb-production-acceptance.yml'
       - '.github/workflows/mlb-rolling-24h-audit.yml'
+      - '.github/workflows/install-dedicated-mlb-v3-read.yml'
+      - '.github/workflows/install-pull-history-contract.yml'
       - '.github/workflows/mlb-v1-direct-lambda-hotfix.yml'
       - '.github/workflows/mlb-v1-emergency-deploy.yml'
       - '.github/workflows/mlb-v1-pull-guard.yml'
@@ -150,6 +154,7 @@ jobs:
         run: |
           python -m pytest -q \
             tests/unit/test_mlb_pull_guard_status.py \
+            tests/unit/test_mlb_probability_actionability_guard.py \
             tests/unit/test_mlb_advanced_context_travel_rest.py \
             tests/unit/test_mlb_bbs_status.py \
             tests/unit/test_mlb_fundamentals_snapshot_v2.py \
@@ -161,6 +166,7 @@ jobs:
             tests/unit/test_mlb_ml_promotion_policy_v2.py \
             tests/unit/test_mlb_ml_aws_training_v1.py \
             tests/unit/test_mlb_deploy_identity.py \
+            tests/unit/test_mlb_deploy_http_probe.py \
             tests/unit/test_mlb_trainer_deploy_response.py \
             tests/unit/test_mlb_workflow_authority.py \
             tests/unit/test_run_mlb_ml_v3_audit_report.py
@@ -169,6 +175,7 @@ jobs:
         run: |
           python -m py_compile scripts/stabilize_mlb_deploy_source.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
+          python -m py_compile scripts/mlb_deploy_http_probe.py
           python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
           python -m py_compile scripts/verify_mlb_workflow_authority.py
           python -m py_compile scripts/enforce_mlb_production_acceptance.py
@@ -176,5 +183,6 @@ jobs:
           python -m py_compile hello_world/pull_dedupe_guard.py
           python -m py_compile hello_world/bigballsdata_client.py
           python -m py_compile hello_world/mlb_bbs_context_v1.py
+          python -m py_compile hello_world/mlb_probability_actionability_guard.py
           python -m py_compile scripts/verify_bbs_api_live_contract.py
           python -m py_compile scripts/verify_mlb_bbs_sam_wiring.py

@@ -44,6 +44,7 @@ def install() -> Dict[str, Any]:
         import mlb_immutable_locked_storage_patch
         import mlb_locked_prediction_storage_finalizer_v1
         import mlb_last_possible_prediction_gate
+        import mlb_probability_actionability_guard
         import mlb_prediction_probability_contract_v1
         import mlb_slate_coverage_patch
         import mlb_slate_prediction_lock
@@ -81,6 +82,10 @@ def install() -> Dict[str, Any]:
         # storage writer. V2 was installed before semantics/freezing above, so
         # its exact fingerprint is part of the frozen T-45 vector.
         mlb_prediction_probability_contract_v1.apply(engine)
+        # Calibration and actionability consume the already-normalized
+        # selected side.  They expose a separate calibrated estimate and must
+        # never rewrite the canonical complementary model probabilities.
+        mlb_probability_actionability_guard.apply(engine)
         engine._INQSI_MLB_PERSISTED_PRELOCK_PUBLIC_AUTHORITY_ENABLED = True
 
         exact_vector = getattr(mlb_ml_frozen_features, "_INQSI_MLB_EXACT_LOCK_VECTOR_PATCH_APPLIED", False)
@@ -140,6 +145,22 @@ def install() -> Dict[str, Any]:
             and callable(getattr(engine, "read_persisted_predictions", None))
         )
         status["probabilityContractVersion"] = mlb_prediction_probability_contract_v1.VERSION
+        status["steps"]["providerNeutralCalibrationAndActionability"] = bool(
+            getattr(
+                engine,
+                "_INQSI_MLB_PROVIDER_NEUTRAL_CALIBRATION_APPLIED",
+                False,
+            )
+            and getattr(
+                engine,
+                "MLB_PROBABILITY_ACTIONABILITY_GUARD_VERSION",
+                None,
+            )
+            == mlb_probability_actionability_guard.PATCH_VERSION
+        )
+        status["probabilityActionabilityGuardVersion"] = (
+            mlb_probability_actionability_guard.PATCH_VERSION
+        )
         # V2 is installed before semantics/freezing, so the exact signed
         # snapshot is bound into the T-45 vector. The public persisted-read
         # alias remains inside the final storage wrapper and never recomputes.

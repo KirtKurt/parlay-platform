@@ -604,6 +604,11 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       Timeout: 120
+      # A missing canonical evidence slot is material, so ingestion keeps one
+      # bounded retry. Slot-conditional storage makes that retry idempotent.
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 300
+        MaximumRetryAttempts: 1
       Environment:
         Variables:
           INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken
@@ -641,6 +646,9 @@ Resources:
           Properties:
             Schedule: cron(0/15 * * * ? *)
             Input: '{"sport":"mlb","t":"HOT","run":"hot_pull_audited","days_ahead":0}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 300
+              MaximumRetryAttempts: 1
   MLBSignalApiFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -703,6 +711,11 @@ Resources:
       # pull history can legitimately exceed the 60-second global default.
       Timeout: 300
       MemorySize: 1024
+      # The next one-minute tick is the retry. Lambda/EventBridge retries would
+      # overlap a slow full-slate verification and exhaust the shared account.
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 60
+        MaximumRetryAttempts: 0
       Environment:
         Variables:
           INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken
@@ -721,6 +734,9 @@ Resources:
           Properties:
             Schedule: rate(1 minute)
             Input: '{"sport":"mlb","run":"daily_lock_check","auto_ingest":false}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 60
+              MaximumRetryAttempts: 0
         MLBDailyPickLockRun:
           Type: Api
           Properties:
@@ -743,8 +759,11 @@ Resources:
     Properties:
       CodeUri: hello_world/
       Handler: mlb_production_verifier.lambda_handler
-      Timeout: 60
+      Timeout: 30
       MemorySize: 1024
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 300
+        MaximumRetryAttempts: 0
       Environment:
         Variables:
           MLB_VERIFY_MAX_PULL_AGE_MINUTES: '20'
@@ -755,13 +774,20 @@ Resources:
         MLBProductionVerifierEvery5Min:
           Type: Schedule
           Properties:
-            Schedule: rate(5 minutes)
+            Schedule: cron(2/5 * * * ? *)
+            Enabled: false
             Input: '{"sport":"mlb","mode":"continuous","run":"aws_production_verifier_5m"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 300
+              MaximumRetryAttempts: 0
   MLBResultsSchedulerFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: hello_world/
       Handler: mlb_results_scheduler.lambda_handler
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 300
+        MaximumRetryAttempts: 0
       Policies:
         - DynamoDBReadPolicy:
             TableName: !Ref SnapshotsTable
@@ -803,8 +829,11 @@ Resources:
         MLBResultsEvery6Hours:
           Type: Schedule
           Properties:
-            Schedule: rate(15 minutes)
+            Schedule: cron(6/15 * * * ? *)
             Input: '{"sport":"mlb","days_from":3,"run":"results_pull_15m"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 300
+              MaximumRetryAttempts: 0
 
   MLBMLTrainingFunction:
     Type: AWS::Serverless::Function
@@ -814,8 +843,8 @@ Resources:
       Timeout: 900
       MemorySize: 2048
       EventInvokeConfig:
-        MaximumEventAgeInSeconds: 21600
-        MaximumRetryAttempts: 2
+        MaximumEventAgeInSeconds: 300
+        MaximumRetryAttempts: 0
       Environment:
         Variables:
           MLB_ML_ARTIFACTS_BUCKET: !Ref MLBMLArtifactsBucket
@@ -850,25 +879,28 @@ Resources:
         MLBMLTrainingEvery6Hours:
           Type: Schedule
           Properties:
-            Schedule: rate(6 hours)
+            Schedule: cron(11 1/6 * * ? *)
             Input: '{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}'
             RetryPolicy:
-              MaximumEventAgeInSeconds: 21600
-              MaximumRetryAttempts: 2
+              MaximumEventAgeInSeconds: 3600
+              MaximumRetryAttempts: 0
         MLBMLSelectionCaptureEvery15Minutes:
           Type: Schedule
           Properties:
-            Schedule: rate(15 minutes)
+            Schedule: cron(4/15 * * * ? *)
             Input: '{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}'
             RetryPolicy:
-              MaximumEventAgeInSeconds: 21600
-              MaximumRetryAttempts: 2
+              MaximumEventAgeInSeconds: 300
+              MaximumRetryAttempts: 0
 
   SoccerSchedulerFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: hello_world/
       Handler: soccer_scheduler.lambda_handler
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 300
+        MaximumRetryAttempts: 0
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
@@ -885,8 +917,11 @@ Resources:
         SoccerHotEvery15Min:
           Type: Schedule
           Properties:
-            Schedule: rate(15 minutes)
+            Schedule: cron(9/15 * * * ? *)
             Input: '{"sport":"soccer","t":"HOT","run":"hot_pull_audited"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 300
+              MaximumRetryAttempts: 0
 
   SoccerSignalApiFunction:
     Type: AWS::Serverless::Function
@@ -1003,6 +1038,9 @@ Resources:
       CodeUri: hello_world/
       Handler: inqsi_autopsy_scheduler.lambda_handler
       Timeout: 300
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 3600
+        MaximumRetryAttempts: 0
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SignalLedgerTable
@@ -1014,8 +1052,11 @@ Resources:
         InqsiNightlyAutopsyAt1AM:
           Type: Schedule
           Properties:
-            Schedule: cron(0 6 * * ? *)
+            Schedule: cron(13 6 * * ? *)
             Input: '{"sport_key":"all","mode":"grade","run":"nightly_autopsy_1am_et"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 3600
+              MaximumRetryAttempts: 0
 
 Outputs:
   ApiUrl:

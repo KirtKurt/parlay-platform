@@ -38,6 +38,19 @@ engine = ENGINE.read_text() if ENGINE.exists() else ''
 violations = []
 
 
+def _resource_block(resource_name: str) -> str:
+    marker = f'\n  {resource_name}:\n'
+    start = text.find(marker)
+    if start < 0:
+        return ''
+    body_start = start + len(marker)
+    next_resource = re.search(
+        r'(?m)^  [A-Za-z][A-Za-z0-9]*:\s*$', text[body_start:]
+    )
+    end = body_start + next_resource.start() if next_resource else len(text)
+    return text[start:end]
+
+
 def _verify_explicit_lock_runtime_install() -> None:
     if not LOCK_HANDLER.exists():
         return
@@ -177,11 +190,16 @@ if 'MLBHotEvery15Min:' not in text:
     violations.append('MLBHotEvery15Min schedule missing')
 if 'cron(0/15 * * * ? *)' not in text:
     violations.append('MLBHotEvery15Min is not quarter-hour cron')
+ingest_resource = _resource_block('MLBAuditedPullFunction')
+if ingest_resource.count('MaximumEventAgeInSeconds: 300') != 2:
+    violations.append('canonical MLB pull must bound Lambda and EventBridge retry age to five minutes')
+if ingest_resource.count('MaximumRetryAttempts: 1') != 2:
+    violations.append('canonical MLB pull must retain exactly one bounded idempotent retry')
 if '"days_ahead":0' not in text and '"days_ahead": 0' not in text:
     violations.append('same-day days_ahead=0 input missing')
 if "MLB_PULL_START_AT_ET: '01:00'" not in text:
     violations.append('recurring daily 1 AM ET pull gate missing')
-if "Schedule: rate(15 minutes)" not in text or "results_pull_15m" not in text:
+if "Schedule: cron(6/15 * * * ? *)" not in text or "results_pull_15m" not in text:
     violations.append('MLB result settlement is not scheduled every 15 minutes')
 for obsolete in ['MLBProductionIngestVerifyDaily435Et', 'MLBProductionLockVerifyDaily556Et']:
     if obsolete in text:
@@ -208,7 +226,7 @@ required_template_strings = {
     'MLBMLTrainingFunction': 'AWS-native MLB ML trainer missing',
     'Handler: mlb_ml_aws_training_v1.lambda_handler': 'AWS-native MLB ML trainer handler missing',
     'MLBMLTrainingEvery6Hours': 'AWS-native MLB ML full training schedule missing',
-    'Schedule: rate(6 hours)': 'AWS-native MLB ML full training is not scheduled every 6 hours',
+    'Schedule: cron(11 1/6 * * ? *)': 'AWS-native MLB ML full training is not staggered every 6 hours',
     'MLBMLSelectionCaptureEvery15Minutes': 'AWS-native MLB ML selection capture schedule missing',
     'Input: \'{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}\'': 'AWS-native MLB ML full training event input is stale',
     'Input: \'{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}\'': 'AWS-native MLB ML selection capture event input is stale',
@@ -221,8 +239,10 @@ required_template_strings = {
     "MLB_ML_RELEASE_CUTOFF_UTC: '2026-07-22T04:00:00+00:00'": 'AWS-native MLB ML trainer release cutoff is stale',
     "INQSI_MLB_ML_AUTO_PROMOTE: 'false'": 'automatic MLB ML promotion must be disabled',
     "INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED: 'false'": 'legacy MLB V1 runtime authority must be disabled',
-    'MaximumEventAgeInSeconds: 21600': 'AWS-native MLB ML trainer retry age policy missing',
-    'MaximumRetryAttempts: 2': 'AWS-native MLB ML trainer retry policy missing',
+    'Schedule: cron(4/15 * * * ? *)': 'AWS-native MLB ML selection capture is not staggered every 15 minutes',
+    'Schedule: cron(13 6 * * ? *)': 'daily autopsy is not staggered away from minute-zero pulls',
+    'MaximumEventAgeInSeconds: 3600': 'AWS-native MLB ML training event age policy missing',
+    'MaximumRetryAttempts: 0': 'recurring MLB workloads must disable overlapping async retries',
 }
 for needle, message in required_template_strings.items():
     if needle not in text:
@@ -249,13 +269,17 @@ if trainer_resource_start >= 0:
         else len(text)
     )
     trainer_resource = text[trainer_resource_start:trainer_resource_end]
-    if trainer_resource.count('MaximumEventAgeInSeconds: 21600') != 3:
+    if trainer_resource.count('MaximumEventAgeInSeconds: 3600') != 1:
         violations.append(
-            'AWS-native MLB ML trainer must retain Lambda plus two EventBridge maximum-age policies'
+            'AWS-native MLB ML full-training EventBridge delivery must expire after one hour'
         )
-    if trainer_resource.count('MaximumRetryAttempts: 2') != 3:
+    if trainer_resource.count('MaximumEventAgeInSeconds: 300') != 2:
         violations.append(
-            'AWS-native MLB ML trainer must retain Lambda plus two EventBridge retry policies'
+            'shared trainer Lambda and selection delivery must expire before the next capture slot'
+        )
+    if trainer_resource.count('MaximumRetryAttempts: 0') != 3:
+        violations.append(
+            'AWS-native MLB ML trainer must disable Lambda plus EventBridge retry overlap'
         )
     if 'DeadLetterConfig:' in trainer_resource or 'DestinationConfig:' in trainer_resource:
         violations.append(
@@ -263,6 +287,32 @@ if trainer_resource_start >= 0:
         )
 if 'MLBMLTrainingEvery15Minutes' in text:
     violations.append('obsolete full MLB training every-15-minutes schedule exists')
+
+verifier_resource = _resource_block('MLBProductionVerifierFunction')
+for token, message in (
+    ('\n      Timeout: 30\n', 'production verifier timeout must be capped at 30 seconds'),
+    ('Schedule: cron(2/5 * * * ? *)', 'production verifier staggered cron is missing'),
+    ('Enabled: false', 'production verifier schedule must remain disabled until summary-only'),
+):
+    if token not in verifier_resource:
+        violations.append(message)
+if verifier_resource.count('MaximumEventAgeInSeconds: 300') != 2:
+    violations.append('disabled production verifier must retain five-minute expiry at both retry layers')
+if verifier_resource.count('MaximumRetryAttempts: 0') != 2:
+    violations.append('disabled production verifier must not regain async retry fan-out')
+
+for resource_name, schedule, age, label in (
+    ('MLBResultsSchedulerFunction', 'cron(6/15 * * * ? *)', 300, 'MLB settlement'),
+    ('SoccerSchedulerFunction', 'cron(9/15 * * * ? *)', 300, 'soccer pull'),
+    ('InqsiAutopsySchedulerFunction', 'cron(13 6 * * ? *)', 3600, 'daily autopsy'),
+):
+    resource = _resource_block(resource_name)
+    if f'Schedule: {schedule}' not in resource:
+        violations.append(f'{label} staggered schedule is missing')
+    if resource.count(f'MaximumEventAgeInSeconds: {age}') != 2:
+        violations.append(f'{label} must expire at both async retry layers before its next run')
+    if resource.count('MaximumRetryAttempts: 0') != 2:
+        violations.append(f'{label} must not fan out asynchronous retries')
 
 lock_resource_marker = '\n  MLBDailyPickLockFunction:\n'
 lock_resource_start = text.find(lock_resource_marker)
@@ -277,6 +327,10 @@ if lock_resource_start >= 0:
     lock_resource = text[lock_resource_start:lock_resource_end]
     if '\n      Timeout: 300\n' not in lock_resource:
         violations.append('daily lock function timeout must allow full immutable-manifest verification')
+    if lock_resource.count('MaximumEventAgeInSeconds: 60') != 2:
+        violations.append('daily lock retry age must expire before the next one-minute tick')
+    if lock_resource.count('MaximumRetryAttempts: 0') != 2:
+        violations.append('daily lock Lambda and EventBridge retries must be disabled')
 if not ('MLB_MIN_PULLS_FOR_LOCK' in text or 'MLB_MIN_PULLS_PER_GAME_FOR_LOCK' in text):
     violations.append('minimum pull-depth lock guardrail missing')
 if not ('MLB_MAX_LOCK_SNAPSHOT_AGE_MINUTES' in text or 'MLB_MAX_LATEST_PULL_AGE_MINUTES_FOR_LOCK' in text):

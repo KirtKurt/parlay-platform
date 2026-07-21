@@ -1,15 +1,30 @@
 from __future__ import annotations
 
 import copy
+from pathlib import Path
+import sys
 
 import pytest
 
 from scripts import verify_mlb_trainer_deploy_response as verifier
 
 
+HELLO_WORLD = Path(__file__).resolve().parents[2] / "hello_world"
+if str(HELLO_WORLD) not in sys.path:
+    sys.path.insert(0, str(HELLO_WORLD))
+
+import mlb_ml_aws_training_v1 as aws_training
+
+
 GIT_SHA = "a" * 40
 TEMPLATE_SHA = "b" * 64
 STARTED = "2026-07-22T12:00:00+00:00"
+
+
+def test_deploy_lease_contract_exactly_matches_runtime_attestation() -> None:
+    assert verifier.EXECUTION_CONCURRENCY_CONTROL == (
+        aws_training.execution_concurrency_control(acquired_for_run=True)
+    )
 
 
 def _payloads():

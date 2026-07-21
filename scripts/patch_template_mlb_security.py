@@ -156,8 +156,11 @@ verifier = """
     Properties:
       CodeUri: hello_world/
       Handler: mlb_production_verifier.lambda_handler
-      Timeout: 60
+      Timeout: 30
       MemorySize: 1024
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 300
+        MaximumRetryAttempts: 0
       Environment:
         Variables:
           MLB_VERIFY_MAX_PULL_AGE_MINUTES: '20'
@@ -168,8 +171,12 @@ verifier = """
         MLBProductionVerifierEvery5Min:
           Type: Schedule
           Properties:
-            Schedule: rate(5 minutes)
+            Schedule: cron(2/5 * * * ? *)
+            Enabled: false
             Input: '{"sport":"mlb","mode":"continuous","run":"aws_production_verifier_5m"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 300
+              MaximumRetryAttempts: 0
 
 """
 text = insert_once(text, "  MLBResultsSchedulerFunction:\n", verifier, "  MLBProductionVerifierFunction:\n")

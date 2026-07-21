@@ -36,7 +36,7 @@ def _patch_invariants() -> None:
 """
     checks = anchor + """if "MLB_PULL_START_AT_ET: '01:00'" not in text:
     violations.append('recurring daily 1 AM ET pull gate missing')
-if "Schedule: rate(15 minutes)" not in text or "results_pull_15m" not in text:
+if "Schedule: cron(6/15 * * * ? *)" not in text or "results_pull_15m" not in text:
     violations.append('MLB result settlement is not scheduled every 15 minutes')
 for obsolete in ['MLBProductionIngestVerifyDaily435Et', 'MLBProductionLockVerifyDaily556Et']:
     if obsolete in text:

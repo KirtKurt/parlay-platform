@@ -51,6 +51,9 @@ READINESS_CHECKPOINT_MINUTES = (60, 50)
 RELEASE_CHECKPOINT_MINUTES = (30, 15)
 CHECKPOINT_MAX_LATE_SECONDS = 120
 PLAYABILITY_EVIDENCE_MAX_AGE_MINUTES = 20
+SCHEDULED_SINGLE_FLIGHT_VERSION = "MLB-LOCK-SCHEDULED-SINGLE-FLIGHT-v1"
+SCHEDULED_SINGLE_FLIGHT_LEASE_SECONDS = 330
+POST_WINDOW_RECONCILIATION_VERSION = "MLB-LOCK-POST-WINDOW-RECONCILIATION-v1"
 
 _DIAGNOSTIC_STATES = {
     "WAITING_FOR_CUTOFF_STABILIZATION",
@@ -158,6 +161,249 @@ def _start(module: Any, game: Dict[str, Any]) -> Optional[datetime]:
 def _lock_at(module: Any, game: Dict[str, Any]) -> Optional[datetime]:
     start = _start(module, game)
     return start - timedelta(minutes=module.LOCK_MINUTES) if start else None
+
+
+def _scheduled_single_flight_key(slate: str) -> Dict[str, str]:
+    return {
+        "PK": f"MLB_LOCK_RUNTIME#{slate}",
+        "SK": f"SCHEDULED_SINGLE_FLIGHT#{SCHEDULED_SINGLE_FLIGHT_VERSION}",
+    }
+
+
+def _post_window_manifest_fingerprint(
+    module: Any,
+    manifest: List[Dict[str, Any]],
+) -> str:
+    material = sorted(
+        (
+            game_identity(game),
+            (_start(module, game) or datetime.min.replace(tzinfo=timezone.utc)).isoformat(),
+        )
+        for game in manifest
+    )
+    return hashlib.sha256(
+        json.dumps(material, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _post_window_reconciliation_key(
+    slate: str,
+    manifest_fingerprint: str,
+) -> Dict[str, str]:
+    return {
+        "PK": f"MLB_LOCK_RUNTIME#{slate}",
+        "SK": (
+            f"POST_WINDOW_RECONCILIATION#{POST_WINDOW_RECONCILIATION_VERSION}"
+            f"#{manifest_fingerprint}"
+        ),
+    }
+
+
+def _acquire_scheduled_single_flight(
+    module: Any,
+    slate: str,
+    now: datetime,
+) -> Dict[str, Any]:
+    owner = uuid4().hex
+    now_epoch = int(now.timestamp())
+    expires_epoch = now_epoch + SCHEDULED_SINGLE_FLIGHT_LEASE_SECONDS
+    key = _scheduled_single_flight_key(slate)
+    item = module.history.ddb_safe({
+        **key,
+        "record_type": "mlb_lock_scheduled_single_flight_lease",
+        "version": SCHEDULED_SINGLE_FLIGHT_VERSION,
+        "sport": "mlb",
+        "slate_date": slate,
+        "lease_owner": owner,
+        "lease_acquired_at_utc": now.isoformat(),
+        "lease_expires_at_utc": datetime.fromtimestamp(
+            expires_epoch,
+            tz=timezone.utc,
+        ).isoformat(),
+        "lease_expires_at_epoch": expires_epoch,
+        "ttl": expires_epoch,
+    })
+    try:
+        module.TABLE.put_item(
+            Item=item,
+            ConditionExpression=(
+                "attribute_not_exists(PK) OR lease_expires_at_epoch <= :now_epoch"
+            ),
+            ExpressionAttributeValues={":now_epoch": now_epoch},
+        )
+        return {
+            "acquired": True,
+            "owner": owner,
+            "expiresAtUtc": item["lease_expires_at_utc"],
+            "key": key,
+        }
+    except Exception as exc:
+        if not _conditional_collision(exc):
+            raise
+        existing = module.TABLE.get_item(
+            Key=key,
+            ConsistentRead=True,
+        ).get("Item") or {}
+        return {
+            "acquired": False,
+            "owner": owner,
+            "expiresAtUtc": existing.get("lease_expires_at_utc"),
+            "key": key,
+        }
+
+
+def _release_scheduled_single_flight(
+    module: Any,
+    lease: Dict[str, Any],
+) -> bool:
+    if lease.get("acquired") is not True:
+        return False
+    try:
+        module.TABLE.delete_item(
+            Key=lease["key"],
+            ConditionExpression="lease_owner = :owner",
+            ExpressionAttributeValues={":owner": lease["owner"]},
+        )
+        return True
+    except Exception as exc:
+        if _conditional_collision(exc):
+            return False
+        raise
+
+
+def _get_post_window_reconciliation(
+    module: Any,
+    slate: str,
+    manifest_fingerprint: str,
+) -> Optional[Dict[str, Any]]:
+    return module.TABLE.get_item(
+        Key=_post_window_reconciliation_key(slate, manifest_fingerprint),
+        ConsistentRead=True,
+    ).get("Item")
+
+
+def _put_post_window_reconciliation(
+    module: Any,
+    slate: str,
+    now: datetime,
+    manifest: List[Dict[str, Any]],
+    progress: Dict[str, Any],
+    *,
+    daily_lock_present: bool,
+) -> Dict[str, Any]:
+    manifest_fingerprint = _post_window_manifest_fingerprint(module, manifest)
+    key = _post_window_reconciliation_key(slate, manifest_fingerprint)
+    item = module.history.ddb_safe({
+        **key,
+        "record_type": "mlb_lock_post_window_terminal_reconciliation",
+        "version": POST_WINDOW_RECONCILIATION_VERSION,
+        "sport": "mlb",
+        "slate_date": slate,
+        "reconciled_at_utc": now.isoformat(),
+        "manifest_game_count": len(manifest),
+        "manifest_fingerprint": manifest_fingerprint,
+        "lock_outcome_count": int(progress.get("lockOutcomeCount") or 0),
+        "canonical_count": int(progress.get("canonicalCount") or 0),
+        "missed_count": int(progress.get("missedCount") or 0),
+        "daily_lock_present": bool(daily_lock_present),
+        "terminal_status_reconciled": True,
+        "post_start_prediction_creation_allowed": False,
+        "write_once": True,
+        "created_at": now.isoformat(),
+    })
+    try:
+        module.TABLE.put_item(
+            Item=item,
+            ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
+        )
+        return item
+    except Exception as exc:
+        if not _conditional_collision(exc):
+            raise
+        existing = _get_post_window_reconciliation(
+            module,
+            slate,
+            manifest_fingerprint,
+        )
+        if not existing:
+            raise RuntimeError(
+                "POST_WINDOW_RECONCILIATION_COLLISION_WITHOUT_READBACK"
+            ) from exc
+        return existing
+
+
+def _cached_post_window_response(item: Dict[str, Any]) -> Dict[str, Any]:
+    game_count = int(item.get("manifest_game_count") or 0)
+    outcome_count = int(item.get("lock_outcome_count") or 0)
+    missed_count = int(item.get("missed_count") or 0)
+    return {
+        "ok": True,
+        "sport": "mlb",
+        "modelVersion": VERSION,
+        "slateDateEt": item.get("slate_date"),
+        "locked": item.get("daily_lock_present") is True,
+        "dailyCardComplete": bool(game_count and outcome_count == game_count),
+        "lockStatusComplete": bool(
+            game_count and outcome_count + missed_count == game_count
+        ),
+        "scheduledInvocation": True,
+        "skipped": True,
+        "reason": "POST_WINDOW_TERMINAL_STATUS_ALREADY_RECONCILED",
+        "postWindowTerminalReconciliation": True,
+        "postStartPredictionCreationAllowed": False,
+        "manifestGameCount": game_count,
+        "lockOutcomeCount": outcome_count,
+        "missedGameCount": missed_count,
+        "reconciledAtUtc": item.get("reconciled_at_utc"),
+    }
+
+
+def _scheduled_lifecycle_timing(
+    module: Any,
+    manifest: List[Dict[str, Any]],
+    now: datetime,
+) -> Dict[str, Any]:
+    """Return the conservative minute-scheduler action envelope.
+
+    T-60 is the first lifecycle write and game start is the final point at
+    which a missing T-45 lock must be observed.  The small late allowance
+    absorbs EventBridge delivery jitter without creating a lease that could
+    suppress a cutoff.  Keeping the whole first-to-last envelope active also
+    preserves doubleheader/event-driven playability behavior between named
+    checkpoints.
+    """
+    starts = sorted(
+        start
+        for start in (_start(module, game) for game in manifest)
+        if start is not None
+    )
+    if not starts:
+        return {
+            "active": False,
+            "opensAtUtc": None,
+            "closesAtUtc": None,
+            "nextCheckpointAtUtc": None,
+        }
+    first_action = starts[0] - timedelta(minutes=max(READINESS_CHECKPOINT_MINUTES))
+    last_action = starts[-1] + timedelta(seconds=CHECKPOINT_MAX_LATE_SECONDS)
+    checkpoints = sorted(
+        {
+            start - timedelta(minutes=minutes)
+            for start in starts
+            for minutes in (
+                *READINESS_CHECKPOINT_MINUTES,
+                REQUIRED_LOCK_MINUTES,
+                *RELEASE_CHECKPOINT_MINUTES,
+            )
+        }
+    )
+    next_checkpoint = next((value for value in checkpoints if value >= now), None)
+    return {
+        "active": first_action <= now <= last_action,
+        "opensAtUtc": first_action.isoformat(),
+        "closesAtUtc": last_action.isoformat(),
+        "nextCheckpointAtUtc": next_checkpoint.isoformat() if next_checkpoint else None,
+    }
 
 
 def _pull_at(module: Any, pull: Dict[str, Any]) -> Optional[datetime]:
@@ -4047,6 +4293,22 @@ def _canonical_readback(module: Any, row: Dict[str, Any]) -> Optional[Dict[str, 
     }
 
 
+def _canonical_store_before_game_start(
+    module: Any,
+    row: Dict[str, Any],
+    game: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Return existing authority, but never create it at/after game start."""
+    existing = _canonical_readback(module, row)
+    if existing:
+        return existing
+    start = _start(module, game)
+    evaluated_at = module._now_utc().astimezone(timezone.utc)
+    if not start or evaluated_at >= start:
+        raise RuntimeError("canonical_creation_blocked_game_already_started")
+    return _canonical_store(module, row)
+
+
 def _late_backfill_count(module: Any, stage: Optional[Dict[str, Any]], scoring: List[Dict[str, Any]], game: Dict[str, Any]) -> int:
     if not stage:
         return 0
@@ -4128,8 +4390,16 @@ def _progress(
             valid_stages[identity] = stage
             try:
                 stage_row = (stage.get("data") or {}).get("row") or {}
-                stored = _canonical_store(module, stage_row) if ensure_canonical else _canonical_readback(module, stage_row)
+                stored = (
+                    _canonical_store_before_game_start(module, stage_row, game)
+                    if ensure_canonical
+                    else _canonical_readback(module, stage_row)
+                )
                 if not stored:
+                    if start and now >= start:
+                        raise RuntimeError(
+                            "canonical_creation_blocked_game_already_started"
+                        )
                     raise RuntimeError("canonical_immutable_game_row_missing_or_invalid")
                 canonical[identity] = stored
                 state = "LOCKED_CANONICAL"
@@ -4717,7 +4987,12 @@ def apply(module: Any) -> Any:
             "dailyLockAuthorityErrors": daily_authority_errors,
         }
 
-    def run_lock(slate_date: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
+    def _run_lock_once(
+        slate_date: Optional[str] = None,
+        force: bool = False,
+        *,
+        scheduled: bool = False,
+    ) -> Dict[str, Any]:
         slate = slate_date or module._today_et()
         if module.TABLE is None:
             return {"ok": False, "sport": "mlb", "modelVersion": VERSION, "error": "SNAPSHOTS_TABLE not configured"}
@@ -4737,6 +5012,108 @@ def apply(module: Any) -> Any:
 
         now = module._now_utc().astimezone(timezone.utc)
         lifecycle_diagnostic_errors: List[Dict[str, Any]] = []
+
+        lifecycle_timing = _scheduled_lifecycle_timing(module, manifest, now)
+        if scheduled and not force and lifecycle_timing.get("active") is not True:
+            closes_at = _parse_iso(lifecycle_timing.get("closesAtUtc"))
+            if closes_at is not None and now > closes_at:
+                manifest_fingerprint = _post_window_manifest_fingerprint(
+                    module,
+                    manifest,
+                )
+                cached_reconciliation = _get_post_window_reconciliation(
+                    module,
+                    slate,
+                    manifest_fingerprint,
+                )
+                if (
+                    cached_reconciliation
+                    and cached_reconciliation.get("version")
+                    == POST_WINDOW_RECONCILIATION_VERSION
+                    and cached_reconciliation.get("slate_date") == slate
+                    and cached_reconciliation.get("manifest_fingerprint")
+                    == manifest_fingerprint
+                    and cached_reconciliation.get("terminal_status_reconciled")
+                    is True
+                    and cached_reconciliation.get(
+                        "post_start_prediction_creation_allowed"
+                    )
+                    is False
+                ):
+                    return _cached_post_window_response(cached_reconciliation)
+                # Reconciliation is read-only with respect to predictions. A
+                # missing stage is recorded only as MISSED_NOT_BACKFILLED, and
+                # even a valid pre-start stage cannot be promoted to canonical
+                # storage after the game has started.
+                reconciled = _progress(
+                    module,
+                    slate,
+                    pulls,
+                    manifest,
+                    now,
+                    ensure_canonical=False,
+                )
+                authority_errors = (
+                    _daily_authority_errors(
+                        module,
+                        slate,
+                        raw_existing,
+                        manifest,
+                        reconciled,
+                    )
+                    if raw_existing
+                    else []
+                )
+                terminal_count = int(reconciled.get("lockOutcomeCount") or 0)
+                missed_count = int(reconciled.get("missedCount") or 0)
+                reconciliation_complete = bool(
+                    not authority_errors
+                    and not reconciled.get("dueMissingCount")
+                    and not reconciled.get("stabilizingCount")
+                    and terminal_count + missed_count == len(manifest)
+                )
+                if not reconciliation_complete:
+                    return {
+                        "ok": False,
+                        "sport": "mlb",
+                        "modelVersion": VERSION,
+                        "slateDateEt": slate,
+                        "locked": False,
+                        "reason": "POST_WINDOW_TERMINAL_RECONCILIATION_INCOMPLETE",
+                        "failClosed": True,
+                        "scheduledInvocation": True,
+                        "postWindowTerminalReconciliation": True,
+                        "postStartPredictionCreationAllowed": False,
+                        "dailyLockAuthorityErrors": authority_errors,
+                        "perGameLockProgress": reconciled,
+                    }
+                marker = _put_post_window_reconciliation(
+                    module,
+                    slate,
+                    now,
+                    manifest,
+                    reconciled,
+                    daily_lock_present=bool(raw_existing),
+                )
+                return {
+                    **_cached_post_window_response(marker),
+                    "skipped": False,
+                    "reason": "POST_WINDOW_TERMINAL_STATUS_RECONCILED",
+                    "singleProgressSnapshot": True,
+                    "perGameLockProgress": reconciled,
+                }
+            return {
+                "ok": True,
+                "sport": "mlb",
+                "modelVersion": VERSION,
+                "slateDateEt": slate,
+                "locked": False,
+                "skipped": True,
+                "reason": "OUTSIDE_PER_GAME_LIFECYCLE_ACTION_WINDOW",
+                "scheduledInvocation": True,
+                "manifestGameCount": len(manifest),
+                "lifecycleTiming": lifecycle_timing,
+            }
 
         def record_lifecycle_diagnostics(
             progress: Dict[str, Any],
@@ -4798,22 +5175,90 @@ def apply(module: Any) -> Any:
                     "perGameLockProgress": observed,
                 }
             record_lifecycle_diagnostics(observed, now)
-            try:
-                observed = _progress(
-                    module,
-                    slate,
-                    pulls,
-                    manifest,
-                    now,
-                    ensure_canonical=False,
-                )
-            except Exception as exc:
-                lifecycle_diagnostic_errors.append({
-                    "checkpoint": "POST_DIAGNOSTIC_PROGRESS_READ",
-                    "error": f"{type(exc).__name__}:{exc}",
-                })
+            single_progress_snapshot = bool(scheduled and not force)
+            if not single_progress_snapshot:
+                try:
+                    observed = _progress(
+                        module,
+                        slate,
+                        pulls,
+                        manifest,
+                        now,
+                        ensure_canonical=False,
+                    )
+                except Exception as exc:
+                    lifecycle_diagnostic_errors.append({
+                        "checkpoint": "POST_DIAGNOSTIC_PROGRESS_READ",
+                        "error": f"{type(exc).__name__}:{exc}",
+                    })
             existing = module._lock_response(raw_existing)
-            return {"ok": True, "sport": "mlb", "modelVersion": VERSION, "slateDateEt": slate, "locked": True, "alreadyLocked": True, "lock": existing, "perGameLockProgress": observed, "lifecycleDiagnosticErrors": lifecycle_diagnostic_errors}
+            return {
+                "ok": True,
+                "sport": "mlb",
+                "modelVersion": VERSION,
+                "slateDateEt": slate,
+                "locked": True,
+                "alreadyLocked": True,
+                "lock": existing,
+                "scheduledInvocation": bool(scheduled),
+                "singleProgressSnapshot": single_progress_snapshot,
+                "perGameLockProgress": observed,
+                "lifecycleDiagnosticErrors": lifecycle_diagnostic_errors,
+            }
+
+        # Most active-envelope minutes do not own a lock write.  A single
+        # authoritative progress snapshot is enough to run any due readiness
+        # or playability checkpoint.  Avoid the canonicalizing pre-pass, pull
+        # history re-read, and two final full-slate progress passes until a
+        # cutoff/repair or daily-card finalization actually requires them.
+        terminal_count = int(observed.get("lockOutcomeCount") or 0)
+        canonical_count = int(observed.get("canonicalCount") or 0)
+        if (
+            scheduled
+            and not force
+            and terminal_count == len(manifest)
+            and canonical_count < len(manifest)
+        ):
+            # A mixed/no-prediction terminal slate has no daily canonical item
+            # to write. Re-running the canonicalizing completion path every
+            # minute cannot change those immutable terminal outcomes and can
+            # starve the shared Lambda account after the final cutoff.
+            record_lifecycle_diagnostics(observed, now)
+            return {
+                "ok": True,
+                "sport": "mlb",
+                "modelVersion": VERSION,
+                "slateDateEt": slate,
+                "locked": False,
+                "dailyCardComplete": True,
+                "lockStatusComplete": True,
+                "reason": "ALL_GAME_LOCK_OUTCOMES_RECORDED_WITH_NO_PREDICTION_DATA",
+                "scheduledInvocation": True,
+                "singleProgressSnapshot": True,
+                "perGameLockProgress": observed,
+                "lifecycleDiagnosticErrors": lifecycle_diagnostic_errors,
+            }
+        lock_work_due = bool(
+            observed.get("dueMissingCount")
+            or observed.get("missedCount")
+            or observed.get("stabilizingCount")
+            or terminal_count >= len(manifest)
+        )
+        if scheduled and not force and not lock_work_due:
+            record_lifecycle_diagnostics(observed, now)
+            return {
+                "ok": True,
+                "sport": "mlb",
+                "modelVersion": VERSION,
+                "slateDateEt": slate,
+                "locked": False,
+                "skipped": True,
+                "reason": "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER",
+                "scheduledInvocation": True,
+                "singleProgressSnapshot": True,
+                "perGameLockProgress": observed,
+                "lifecycleDiagnosticErrors": lifecycle_diagnostic_errors,
+            }
         try:
             attempts = _begin_attempt_diagnostics(
                 module,
@@ -5073,7 +5518,11 @@ def apply(module: Any) -> Any:
                     failures.append({"gameIdentity": identity, "reason": "PER_GAME_STAGE_READBACK_INVALID", "errors": stored_errors})
                     continue
                 try:
-                    _canonical_store(module, (stored.get("data") or {}).get("row") or {})
+                    _canonical_store_before_game_start(
+                        module,
+                        (stored.get("data") or {}).get("row") or {},
+                        game,
+                    )
                 except Exception as exc:
                     failures.append({"gameIdentity": identity, "reason": "CANONICAL_IMMUTABLE_GAME_WRITE_FAILED", "errors": [str(exc)]})
 
@@ -5159,6 +5608,83 @@ def apply(module: Any) -> Any:
             except Exception:
                 pass
             raise
+
+    def run_lock(
+        slate_date: Optional[str] = None,
+        force: bool = False,
+        *,
+        scheduled: bool = False,
+    ) -> Dict[str, Any]:
+        slate = slate_date or module._today_et()
+        if not scheduled or force or module.TABLE is None:
+            return _run_lock_once(
+                slate_date=slate,
+                force=force,
+                scheduled=scheduled,
+            )
+
+        lease_now = module._now_utc().astimezone(timezone.utc)
+        try:
+            lease = _acquire_scheduled_single_flight(
+                module,
+                slate,
+                lease_now,
+            )
+        except Exception as exc:
+            return {
+                "ok": False,
+                "sport": "mlb",
+                "modelVersion": VERSION,
+                "slateDateEt": slate,
+                "locked": False,
+                "reason": "SCHEDULED_SINGLE_FLIGHT_ACQUIRE_FAILED",
+                "failClosed": True,
+                "scheduledInvocation": True,
+                "error": f"{type(exc).__name__}:{exc}",
+            }
+        if lease.get("acquired") is not True:
+            return {
+                "ok": True,
+                "sport": "mlb",
+                "modelVersion": VERSION,
+                "slateDateEt": slate,
+                "locked": False,
+                "skipped": True,
+                "reason": "SCHEDULED_SINGLE_FLIGHT_ALREADY_RUNNING",
+                "scheduledInvocation": True,
+                "eventualCutoffRepairPreserved": True,
+                "retryAfterUtc": lease.get("expiresAtUtc"),
+            }
+
+        result: Optional[Dict[str, Any]] = None
+        run_error: Optional[BaseException] = None
+        try:
+            result = _run_lock_once(
+                slate_date=slate,
+                force=False,
+                scheduled=True,
+            )
+        except BaseException as exc:
+            run_error = exc
+
+        release_error: Optional[str] = None
+        released = False
+        try:
+            released = _release_scheduled_single_flight(module, lease)
+        except Exception as exc:
+            release_error = f"{type(exc).__name__}:{exc}"
+
+        if run_error is not None:
+            raise run_error
+        assert result is not None
+        result["scheduledSingleFlight"] = {
+            "version": SCHEDULED_SINGLE_FLIGHT_VERSION,
+            "acquired": True,
+            "released": released,
+            "releaseError": release_error,
+            "leaseExpiresAtUtc": lease.get("expiresAtUtc"),
+        }
+        return result
 
     module.MODEL_VERSION = VERSION
     module.LOCK_POLICY = LOCK_POLICY

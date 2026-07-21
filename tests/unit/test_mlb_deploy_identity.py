@@ -52,7 +52,12 @@ class FakeCloudFormation:
 class FakeLambda:
     def __init__(self) -> None:
         self.reserved_concurrency = None
-        self.async_retry_policy = dict(deploy_identity.TRAINER_RETRY_POLICY)
+        self.async_retry_policies = {
+            role: dict(policy)
+            for role, policy in deploy_identity.FUNCTION_ASYNC_RETRY_POLICIES.items()
+        }
+        # Preserve the focused trainer mutation interface used by older tests.
+        self.async_retry_policy = self.async_retry_policies["trainer"]
         self.async_destination_config: Any = {
             "OnSuccess": {},
             "OnFailure": {},
@@ -109,11 +114,9 @@ class FakeLambda:
         return {"ReservedConcurrentExecutions": self.reserved_concurrency}
 
     def get_function_event_invoke_config(self, **kwargs: Any) -> dict[str, Any]:
-        assert kwargs == {
-            "FunctionName": "physical-trainer",
-            "Qualifier": "$LATEST",
-        }
-        response = dict(self.async_retry_policy)
+        assert kwargs["Qualifier"] == "$LATEST"
+        role = str(kwargs["FunctionName"]).removeprefix("physical-")
+        response = dict(self.async_retry_policies[role])
         if self.async_destination_config is not OMIT_DESTINATION_CONFIG:
             response["DestinationConfig"] = copy.deepcopy(
                 self.async_destination_config
@@ -144,10 +147,13 @@ class FakeEvents:
                     "ScheduleExpression": schedule,
                     "Arn": _arn(role),
                 }
-                if role == "trainer":
+                expected_invocations = deploy_identity.SCHEDULE_EXPECTED_INVOCATIONS.get(
+                    role
+                )
+                if expected_invocations is not None:
                     invocation = next(
                         item
-                        for item in deploy_identity.TRAINER_EXPECTED_INVOCATIONS
+                        for item in expected_invocations
                         if item["schedule"] == schedule
                     )
                     rule["Input"] = json.dumps(invocation["input"])
@@ -174,13 +180,26 @@ class FakeEvents:
     def list_targets_by_rule(self, **kwargs: Any) -> dict[str, Any]:
         rule_name = kwargs["Rule"]
         target = {"Arn": self.rules[rule_name]["Arn"]}
-        if rule_name.startswith("rule-trainer-"):
+        role = (
+            rule_name.split("-", 1)[1].split("-", 1)[0]
+            if "-" in rule_name
+            else ""
+        )
+        expected_policies = deploy_identity.SCHEDULE_RETRY_POLICIES.get(role)
+        if expected_policies is not None:
+            schedule = self.rules[rule_name]["ScheduleExpression"]
             target.update(
                 {
-                    "Input": self.rules[rule_name]["Input"],
-                    "RetryPolicy": dict(deploy_identity.TRAINER_RETRY_POLICY),
+                    "RetryPolicy": dict(
+                        expected_policies.get(
+                            schedule,
+                            next(iter(expected_policies.values())),
+                        )
+                    ),
                 }
             )
+        if "Input" in self.rules[rule_name]:
+            target["Input"] = self.rules[rule_name]["Input"]
         return {"Targets": [target]}
 
     def list_rules(self, **kwargs: Any) -> dict[str, Any]:
@@ -250,8 +269,8 @@ def _verify() -> dict[str, Any]:
 
 def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> None:
     assert deploy_identity.EXPECTED_SCHEDULES["trainer"] == [
-        "rate(6 hours)",
-        "rate(15 minutes)",
+        "cron(11 1/6 * * ? *)",
+        "cron(4/15 * * * ? *)",
     ]
     assert deploy_identity.TRAINER_EXPECTED_ENVIRONMENT["MLB_ML_EXPERIMENT_ID"] == (
         "mlb-v2-2026-07-22-future-prospective-r3"
@@ -309,6 +328,27 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
     assert result["schedules"]["trainer"]["deliveryPolicyMatches"] is True
     assert result["schedules"]["trainer"]["sqsFailureDestinationRequired"] is False
     assert result["schedules"]["trainer"]["invocationInputsMatch"] is True
+    for role in ("ingest", "lock", "trainer", "settlement", "soccer", "autopsy"):
+        assert result["schedules"][role]["exactMatch"] is True
+        assert result["schedules"][role]["targetTopologyMatches"] is True
+        assert result["schedules"][role]["retryPolicyMatches"] is True
+        assert result["schedules"][role]["deadLetterQueueAbsent"] is True
+        assert result["schedules"][role]["deliveryPolicyMatches"] is True
+        assert result["schedules"][role]["invocationInputsMatch"] is True
+    assert result["schedules"]["verifier"]["expectedSchedules"] == []
+    assert result["schedules"]["verifier"]["enabledRules"] == []
+    assert result["schedules"]["verifier"]["exactMatch"] is True
+    assert result["schedules"]["verifier"]["targetTopologyMatches"] is True
+    for logical_id, role in deploy_identity.FUNCTIONS.items():
+        proof = result["functions"][logical_id]["asyncDeliveryPolicy"]
+        expected = deploy_identity.FUNCTION_ASYNC_RETRY_POLICIES.get(role)
+        if expected is None:
+            assert proof["retryPolicyMatches"] is None
+            continue
+        assert proof["expectedRetryPolicy"] == expected
+        assert proof["actualRetryPolicy"] == expected
+        assert proof["retryPolicyMatches"] is True
+        assert proof["destinationConfigAbsent"] is True
     assert result["artifactBucket"] == {
         "stackOutputKey": deploy_identity.TRAINER_ARTIFACT_BUCKET_OUTPUT,
         "bucketName": ARTIFACT_BUCKET,
@@ -436,7 +476,7 @@ def test_normalizes_absent_lambda_async_destinations(destination_config) -> None
 def test_rejects_wrong_lambda_async_retry_and_configured_destination(
     aws, outcome
 ) -> None:
-    aws["lambda"].async_retry_policy["MaximumRetryAttempts"] = 0
+    aws["lambda"].async_retry_policy["MaximumRetryAttempts"] = 2
     aws["lambda"].async_destination_config = {
         outcome: {
             "Destination": "arn:aws:lambda:us-east-1:123456789012:function:unexpected"
@@ -594,6 +634,136 @@ def test_rejects_wrong_trainer_schedule(aws) -> None:
     assert any(item.startswith("SCHEDULE_MISMATCH:trainer:") for item in result["blockers"])
 
 
+@pytest.mark.parametrize("role", ("ingest", "lock", "settlement", "soccer", "autopsy"))
+def test_rejects_wrong_nontrainer_schedule_input(aws, role) -> None:
+    rule_name = next(
+        name for name in aws["events"].rules if name.startswith(f"rule-{role}")
+    )
+    aws["events"].rules[rule_name]["Input"] = json.dumps({"wrong": role})
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["schedules"][role]["invocationInputsMatch"] is False
+    assert f"EVENTBRIDGE_INVOCATION_INPUT_MISMATCH:{role}" in result["blockers"]
+
+
+def test_rejects_wrong_nontrainer_lambda_async_retry_policy(aws) -> None:
+    aws["lambda"].async_retry_policies["soccer"]["MaximumRetryAttempts"] = 2
+
+    result = _verify()
+
+    proof = result["functions"]["SoccerSchedulerFunction"]["asyncDeliveryPolicy"]
+    assert result["ok"] is False
+    assert proof["retryPolicyMatches"] is False
+    assert any(
+        blocker.startswith("LAMBDA_ASYNC:SOCCER_ASYNC_RETRY_POLICY_MISMATCH:")
+        for blocker in result["blockers"]
+    )
+
+
+def test_rejects_duplicate_same_arn_target(aws) -> None:
+    original = aws["events"].list_targets_by_rule
+
+    def duplicate_target(**kwargs: Any) -> dict[str, Any]:
+        response = original(**kwargs)
+        if kwargs["Rule"] == "rule-lock":
+            response["Targets"].append(copy.deepcopy(response["Targets"][0]))
+        return response
+
+    aws["events"].list_targets_by_rule = duplicate_target
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["schedules"]["lock"]["targetTopologyMatches"] is False
+    assert "EVENTBRIDGE_TARGET_TOPOLOGY_MISMATCH:lock" in result["blockers"]
+
+
+def test_rejects_extra_unrelated_target_on_canonical_rule(aws) -> None:
+    original = aws["events"].list_targets_by_rule
+
+    def extra_target(**kwargs: Any) -> dict[str, Any]:
+        response = original(**kwargs)
+        if kwargs["Rule"] == "rule-settlement":
+            response["Targets"].append({"Arn": _arn("unexpected")})
+        return response
+
+    aws["events"].list_targets_by_rule = extra_target
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["schedules"]["settlement"]["targetTopologyMatches"] is False
+    assert "EVENTBRIDGE_TARGET_TOPOLOGY_MISMATCH:settlement" in result["blockers"]
+
+
+def test_rejects_qualified_alias_target_on_canonical_rule(aws) -> None:
+    aws["events"].rules["rule-lock"]["Arn"] = _arn("lock") + ":live"
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["schedules"]["lock"]["exactMatch"] is True
+    assert result["schedules"]["lock"]["targetTopologyMatches"] is False
+    assert "EVENTBRIDGE_TARGET_TOPOLOGY_MISMATCH:lock" in result["blockers"]
+
+
+def test_rejects_extra_qualified_alias_schedule_for_canonical_function(aws) -> None:
+    aws["events"].rules["rule-lock-alias"] = {
+        "State": "ENABLED",
+        "ScheduleExpression": "rate(2 minutes)",
+        "Arn": _arn("lock") + ":live",
+        "Input": json.dumps(
+            {
+                "sport": "mlb",
+                "run": "aws_immutable_t45_lock_v1",
+            }
+        ),
+    }
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert sorted(
+        rule["name"] for rule in result["schedules"]["lock"]["enabledRules"]
+    ) == ["rule-lock", "rule-lock-alias"]
+    assert result["schedules"]["lock"]["exactMatch"] is False
+    assert result["schedules"]["lock"]["targetTopologyMatches"] is False
+    assert "EVENTBRIDGE_TARGET_TOPOLOGY_MISMATCH:lock" in result["blockers"]
+
+
+def test_disabled_verifier_rule_remains_allowed_but_enabled_rule_is_rejected(aws) -> None:
+    aws["events"].rules["rule-verifier-disabled"] = {
+        "State": "DISABLED",
+        "ScheduleExpression": "cron(2/5 * * * ? *)",
+        "Arn": _arn("verifier") + ":diagnostic",
+        "Input": json.dumps(
+            {
+                "sport": "mlb",
+                "mode": "continuous",
+                "run": "aws_production_verifier_5m",
+            }
+        ),
+    }
+
+    disabled = _verify()
+
+    assert disabled["ok"] is True
+    assert disabled["schedules"]["verifier"]["enabledRules"] == []
+    assert disabled["schedules"]["verifier"]["targetTopologyMatches"] is True
+
+    aws["events"].rules["rule-verifier-disabled"]["State"] = "ENABLED"
+    enabled = _verify()
+
+    assert enabled["ok"] is False
+    assert enabled["schedules"]["verifier"]["targetTopologyMatches"] is False
+    assert any(
+        blocker.startswith("SCHEDULE_MISMATCH:verifier:")
+        for blocker in enabled["blockers"]
+    )
+
+
 def test_rejects_artifact_bucket_without_enabled_versioning(aws) -> None:
     aws["s3"].versioning_status = "Suspended"
 
@@ -655,8 +825,18 @@ def test_template_preserves_retries_without_requiring_sqs_create() -> None:
     assert "AWS::SQS::Queue" not in template
     assert "MLBMLTrainingDeadLetterQueue" not in template
     assert "sqs:SendMessage" not in template
-    assert template.count("MaximumEventAgeInSeconds: 21600") >= 3
-    assert template.count("MaximumRetryAttempts: 2") >= 3
+    assert "ReservedConcurrentExecutions:" not in template
+    assert "MLB_ML_EXECUTION_LEASE_SECONDS: '960'" in template
+    assert template.count("MaximumEventAgeInSeconds: 3600") >= 2
+    assert template.count("MaximumEventAgeInSeconds: 300") >= 2
+    assert template.count("MaximumEventAgeInSeconds: 60") >= 2
+    assert template.count("MaximumRetryAttempts: 0") >= 8
+
+    trainer = template.split("  MLBMLTrainingFunction:\n", 1)[1].split(
+        "\n  SoccerSchedulerFunction:\n", 1
+    )[0]
+    assert trainer.count("MaximumEventAgeInSeconds: 3600") == 1
+    assert trainer.count("MaximumEventAgeInSeconds: 300") == 2
 
 
 def test_rejects_trainer_schedule_with_swapped_invocation_modes(aws) -> None:
@@ -676,20 +856,21 @@ def test_deploy_initializes_both_trainer_modes_before_status_acceptance() -> Non
         Path(__file__).resolve().parents[2] / ".github" / "workflows" / "deploy.yml"
     ).read_text(encoding="utf-8")
     training_payload = (
-        "--payload "
         "'{\"sport\":\"mlb\",\"mode\":\"scheduled\","
         "\"run\":\"aws_native_fixed_prospective_shadow_training\"}'"
     )
     capture_payload = (
-        "--payload "
         "'{\"sport\":\"mlb\",\"mode\":\"selection_capture\","
         "\"run\":\"aws_native_prospective_selection_capture\"}'"
     )
-    status_payload = "--payload '{\"mode\":\"status\"}'"
+    status_payload = "'{\"mode\":\"status\"}'"
 
     assert workflow.index(training_payload) < workflow.index(capture_payload)
     assert workflow.index(capture_payload) < workflow.index(status_payload)
-    assert workflow.count("--cli-read-timeout 1000") >= 3
+    assert workflow.count("--cli-read-timeout 1000") >= 1
+    assert 'AWS_MAX_ATTEMPTS: "1"' in workflow
+    assert "invoke_with_capacity_retry" in workflow
+    assert "Prove shared Lambda capacity recovered before trainer initialization" in workflow
     assert "trainingHealth" in workflow
     assert "selectionCaptureHealth" in workflow
     assert "deploymentIdentityMatches" in workflow

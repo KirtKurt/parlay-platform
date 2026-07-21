@@ -82,7 +82,7 @@ def normalize_results_schedule(current: str) -> str:
         if not in_event:
             continue
         if line.lstrip().startswith("Schedule:"):
-            lines[index] = line[: len(line) - len(line.lstrip())] + "Schedule: rate(15 minutes)\n"
+            lines[index] = line[: len(line) - len(line.lstrip())] + "Schedule: cron(6/15 * * * ? *)\n"
         elif line.lstrip().startswith("Input:"):
             lines[index] = (
                 line[: len(line) - len(line.lstrip())]
@@ -124,7 +124,7 @@ ensure_results_event("MLBSignalLearningGet", "/v1/results/mlb/signal-learning")
 ensure_results_event("MLBResultSignalsGet", "/v1/results/mlb/result-signals")
 ensure_results_event("MLBResultSignalsPost", "/v1/results/mlb/result-signals", "POST")
 
-if "Schedule: rate(15 minutes)" not in text or "results_pull_15m" not in text:
+if "Schedule: cron(6/15 * * * ? *)" not in text or "results_pull_15m" not in text:
     raise RuntimeError("MLB results scheduler must run every 15 minutes")
 
 TEMPLATE.write_text(text)

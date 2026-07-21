@@ -294,7 +294,12 @@ def _status_payload(slate_date: Optional[str] = None) -> Dict[str, Any]:
         return {**base, "ok": False, "error": str(exc)}
 
 
-def run_lock(slate_date: Optional[str] = None, force: bool = False) -> Dict[str, Any]:
+def run_lock(
+    slate_date: Optional[str] = None,
+    force: bool = False,
+    *,
+    scheduled: bool = False,
+) -> Dict[str, Any]:
     slate = slate_date or _today_et()
     if TABLE is None:
         return {"ok": False, "sport": "mlb", "error": "SNAPSHOTS_TABLE not configured"}
@@ -391,7 +396,15 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         if method == "GET" and path.endswith("/today"):
             return _resp(200, _status_payload(slate_date))
         if method == "POST" or not method:
-            return _resp(200, run_lock(slate_date=slate_date, force=_truthy(payload.get("force"))))
+            scheduled = not bool(event.get("httpMethod") or event.get("requestContext"))
+            return _resp(
+                200,
+                run_lock(
+                    slate_date=slate_date,
+                    force=_truthy(payload.get("force")),
+                    scheduled=scheduled,
+                ),
+            )
         return _resp(404, {"ok": False, "error": f"Route not found: {method} {path}"})
     except Exception as exc:
         return _resp(500, {"ok": False, "sport": "mlb", "modelVersion": MODEL_VERSION, "error": str(exc)})

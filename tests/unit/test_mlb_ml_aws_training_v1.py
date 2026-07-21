@@ -297,7 +297,18 @@ class FakeStore:
                 "leaseSeconds": lease_seconds,
             }
         )
-        return {"lease_owner": owner_token}
+        expires = acquired_at + aws_training.timedelta(seconds=lease_seconds)
+        return {
+            "PK": aws_training.EXECUTION_LEASE_PK,
+            "SK": aws_training.EXECUTION_LEASE_SK,
+            "record_type": aws_training.EXECUTION_LEASE_RECORD_TYPE,
+            "experiment_id": experiment_id,
+            "lease_owner": owner_token,
+            "execution_mode": execution_mode,
+            "acquired_at": acquired_at.isoformat(),
+            "lease_expires_at": expires.isoformat(),
+            "lease_expires_at_epoch": int(expires.timestamp()),
+        }
 
     def release_execution_lease(self, experiment_id, *, owner_token):
         if self.lease_owner != owner_token:
@@ -369,12 +380,38 @@ class FakeStore:
         return copy.deepcopy(self.champion)
 
 
-def service(store, auto=False):
-    return aws_training.TrainingService(
+def attest_test_execution_lease(training, execution_mode="training"):
+    owner_token = f"test:{execution_mode}"
+    expires = NOW + aws_training.timedelta(
+        seconds=aws_training.EXECUTION_LEASE_SECONDS
+    )
+    training.attest_execution_lease_acquired(
+        {
+            "PK": aws_training.EXECUTION_LEASE_PK,
+            "SK": aws_training.EXECUTION_LEASE_SK,
+            "record_type": aws_training.EXECUTION_LEASE_RECORD_TYPE,
+            "experiment_id": experiment.PRODUCTION_EXPERIMENT_ID,
+            "lease_owner": owner_token,
+            "execution_mode": execution_mode,
+            "lease_expires_at_epoch": int(expires.timestamp()),
+        },
+        owner_token=owner_token,
+        execution_mode=execution_mode,
+    )
+    return training
+
+
+def service(store, auto=False, lease_mode="training"):
+    training = aws_training.TrainingService(
         store,
         config(auto=auto),
         row_loader=lambda _config: [],
         now=lambda: NOW,
+    )
+    return (
+        attest_test_execution_lease(training, lease_mode)
+        if lease_mode is not None
+        else training
     )
 
 
@@ -437,6 +474,71 @@ def test_accumulation_registers_no_model_or_champion():
     assert store.candidates == {}
     assert store.champion is None
     assert store.artifact_calls == 0
+
+
+@pytest.mark.parametrize(
+    "operation",
+    ("training", "selection_capture", "manual_review"),
+)
+def test_direct_mutating_service_entrypoints_require_attested_lease(operation):
+    store = FakeStore()
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: [],
+        now=lambda: NOW,
+    )
+
+    with pytest.raises(
+        aws_training.ExecutionLeaseRequired,
+        match="active attested execution lease is required",
+    ):
+        if operation == "training":
+            training.run()
+        elif operation == "selection_capture":
+            training.capture_selections()
+        else:
+            training.manual_review(
+                artifact_digest="candidate",
+                reviewer="reviewer@example.com",
+                requested_authorities=["direction"],
+                stable_champion=False,
+            )
+
+    assert store.manifest is None
+    assert store.selections == []
+    assert store.statuses == []
+    assert store.candidates == {}
+    assert store.champion is None
+
+
+@pytest.mark.parametrize(
+    ("operation", "lease_mode"),
+    (("training", "selection_capture"), ("manual_review", "training")),
+)
+def test_mutating_service_entrypoints_reject_the_wrong_lease_mode(
+    operation, lease_mode
+):
+    store = FakeStore()
+    training = service(store, lease_mode=lease_mode)
+
+    with pytest.raises(
+        aws_training.ExecutionLeaseRequired,
+        match="active attested execution lease is required",
+    ):
+        if operation == "training":
+            training.run()
+        else:
+            training.manual_review(
+                artifact_digest="candidate",
+                reviewer="reviewer@example.com",
+                requested_authorities=["direction"],
+                stable_champion=False,
+            )
+
+    assert store.manifest is None
+    assert store.statuses == []
+    assert store.champion is None
 
 
 def test_r2_cutoff_rejects_july20_and_every_pre_boundary_lock():
@@ -613,6 +715,7 @@ def test_repeated_selection_capture_is_idempotent_and_preserves_first_timestamp(
         ),
         now=lambda: clock[0],
     )
+    attest_test_execution_lease(capture, "selection_capture")
 
     first = capture.capture_selections()
     first_timestamp = store.selections[0]["capturedAtUtc"]
@@ -835,7 +938,7 @@ def test_lambda_mutating_modes_share_lease_and_release_after_success(
     monkeypatch, mode, expected_execution_mode
 ):
     store = FakeStore()
-    training = service(store)
+    training = service(store, lease_mode=None)
     monkeypatch.setattr(aws_training, "_service", lambda: training)
     context = type(
         "Context",
@@ -853,7 +956,11 @@ def test_lambda_mutating_modes_share_lease_and_release_after_success(
     assert result["executionConcurrencyControl"] == {
         "version": aws_training.EXECUTION_LEASE_VERSION,
         "strategy": "dynamodb_conditional_lease",
-        "scope": "one_shared_lease_per_experiment",
+        "scope": "one_global_lease_across_experiments_and_modes",
+        "leasePartitionKey": aws_training.EXECUTION_LEASE_PK,
+        "migrationAnchorExperimentId": (
+            aws_training.EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
+        ),
         "leaseKey": aws_training.EXECUTION_LEASE_SK,
         "leaseSeconds": aws_training.EXECUTION_LEASE_SECONDS,
         "protectedExecutionModes": [
@@ -868,6 +975,104 @@ def test_lambda_mutating_modes_share_lease_and_release_after_success(
     }
     assert store.lease_acquisitions[0]["executionMode"] == expected_execution_mode
     assert store.lease_owner is None
+    assert len(store.lease_releases) == 1
+
+
+def test_scheduled_training_captures_before_a_colliding_capture_invocation(
+    monkeypatch,
+):
+    import mlb_canonical_final_labels_v1 as labels
+
+    store = FakeStore(new_manifest(sealed=True))
+    row = {
+        "gameId": "mlb_statsapi:training-collision",
+        "officialGamePk": "training-collision",
+        "slateDateEt": "2026-09-01",
+        "commenceTime": "2026-09-01T14:00:00+00:00",
+        "featureSnapshot": {"fingerprint": "c" * 64},
+        "canonicalLockAuthority": {"learningEligible": True},
+    }
+    monkeypatch.setattr(
+        labels,
+        "load_canonical_locked_rows_without_labels",
+        lambda **kwargs: {"ok": True, "rows": [copy.deepcopy(row)]},
+    )
+    monkeypatch.setattr(
+        aws_training.dual_model,
+        "score_unlabeled_lock",
+        lambda row, challenger: {"reliabilityProbability": 0.72},
+    )
+    scheduled_service = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: [],
+        now=lambda: NOW,
+    )
+    colliding_capture_service = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: [],
+        now=lambda: NOW,
+    )
+    services = iter((scheduled_service, colliding_capture_service))
+    monkeypatch.setattr(aws_training, "_service", lambda: next(services))
+    collision_observed = []
+
+    def training_after_capture():
+        assert len(store.selections) == 1
+        inner_context = type(
+            "Context",
+            (),
+            {
+                "aws_request_id": "colliding-capture",
+                "get_remaining_time_in_millis": lambda self: 900_000,
+            },
+        )()
+        with pytest.raises(aws_training.ExecutionLeaseUnavailable):
+            aws_training.lambda_handler(
+                {"mode": "selection_capture"}, inner_context
+            )
+        collision_observed.append(True)
+        return scheduled_service._save_run_status(
+            {
+                "ok": True,
+                "status": "TEST_TRAINING_COMPLETE",
+                "executionMode": "training",
+                "modelTrained": False,
+                "championChanged": False,
+            }
+        )
+
+    monkeypatch.setattr(scheduled_service, "run", training_after_capture)
+    outer_context = type(
+        "Context",
+        (),
+        {
+            "aws_request_id": "scheduled-training",
+            "get_remaining_time_in_millis": lambda self: 900_000,
+        },
+    )()
+
+    result = aws_training.lambda_handler({"mode": "scheduled"}, outer_context)
+
+    assert collision_observed == [True]
+    assert len(store.selections) == 1
+    assert result["selectionCaptureBeforeTraining"] == {
+        "ok": True,
+        "status": "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE",
+        "capturedCount": 1,
+        "existingCount": 0,
+        "selectedCount": 1,
+        "skippedCount": 0,
+        "collisionPolicy": (
+            "capture_before_training_under_shared_execution_lease"
+        ),
+        "selectionWritesIdempotent": True,
+    }
+    assert result["statusFingerprint"] == aws_training._status_fingerprint(result)
+    assert store.latest_statuses["training"] == result
+    assert store.lease_owner is None
+    assert len(store.lease_acquisitions) == 1
     assert len(store.lease_releases) == 1
 
 
@@ -910,7 +1115,9 @@ def test_ambiguous_lease_acquire_failure_makes_no_unlocked_status_write(
         raise RuntimeError("DynamoDB connection closed after request")
 
     store.acquire_execution_lease = ambiguous_failure
-    monkeypatch.setattr(aws_training, "_service", lambda: service(store))
+    monkeypatch.setattr(
+        aws_training, "_service", lambda: service(store, lease_mode=None)
+    )
     context = type("Context", (), {"aws_request_id": "ambiguous-request"})()
 
     with pytest.raises(RuntimeError, match="connection closed"):
@@ -938,7 +1145,9 @@ def test_ambiguous_successful_lease_write_makes_no_unlocked_state_write(
         raise RuntimeError("DynamoDB response lost after conditional write")
 
     store.acquire_execution_lease = response_lost_after_write
-    monkeypatch.setattr(aws_training, "_service", lambda: service(store))
+    monkeypatch.setattr(
+        aws_training, "_service", lambda: service(store, lease_mode=None)
+    )
     context = type("Context", (), {"aws_request_id": "ambiguous-success"})()
 
     with pytest.raises(RuntimeError, match="response lost"):
@@ -960,7 +1169,9 @@ def test_release_failure_turns_success_into_retryable_invocation_failure(
         raise RuntimeError("lease release response lost")
 
     store.release_execution_lease = release_failed
-    monkeypatch.setattr(aws_training, "_service", lambda: service(store))
+    monkeypatch.setattr(
+        aws_training, "_service", lambda: service(store, lease_mode=None)
+    )
     context = type("Context", (), {"aws_request_id": "release-failure"})()
 
     with pytest.raises(RuntimeError, match="lease release response lost"):
@@ -1009,7 +1220,9 @@ def test_lambda_rejects_unsafe_lease_runtime_boundaries_before_acquire(
     monkeypatch, configured_seconds, remaining_milliseconds, message
 ):
     store = FakeStore()
-    monkeypatch.setattr(aws_training, "_service", lambda: service(store))
+    monkeypatch.setattr(
+        aws_training, "_service", lambda: service(store, lease_mode=None)
+    )
     monkeypatch.setenv(
         "MLB_ML_EXECUTION_LEASE_SECONDS", str(configured_seconds)
     )
@@ -1080,14 +1293,14 @@ def test_manual_review_requires_exact_digest_and_only_eligible_authorities(
         aws_training.TrainingContractError,
         match="reviewed candidate digest was not found",
     ):
-        service(store).manual_review(
+        service(store, lease_mode="manual_review").manual_review(
             artifact_digest="wrong",
             reviewer="reviewer@example.com",
             requested_authorities=["direction"],
             stable_champion=True,
         )
 
-    approved = service(store).manual_review(
+    approved = service(store, lease_mode="manual_review").manual_review(
         artifact_digest=result["artifactDigest"],
         reviewer="reviewer@example.com",
         requested_authorities=["direction", "playability"],
@@ -1114,7 +1327,7 @@ def test_lambda_manual_review_uses_the_same_execution_lease(monkeypatch):
     patch_sealed_training(monkeypatch)
     store = FakeStore(new_manifest(sealed=True))
     candidate = service(store).run()
-    handler_service = service(store)
+    handler_service = service(store, lease_mode=None)
     monkeypatch.setattr(aws_training, "_service", lambda: handler_service)
     context = type(
         "Context",
@@ -1264,6 +1477,7 @@ def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest(monkeypatch):
         ),
         now=lambda: after_midnight_et,
     )
+    attest_test_execution_lease(training, "training")
     partial = training.run()
 
     assert requested == ["2026-07-22"]
@@ -1408,18 +1622,28 @@ def execution_lease_store():
     return store, table
 
 
-def test_execution_lease_serializes_training_and_selection_capture_on_one_key():
+def test_global_lease_reuses_live_r2_key_and_serializes_new_r3_runtime():
     store, table = execution_lease_store()
 
     acquired = store.acquire_execution_lease(
-        experiment.PRODUCTION_EXPERIMENT_ID,
-        owner_token="training-owner",
+        aws_training.EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID,
+        owner_token="live-r2-training-owner",
         execution_mode="training",
         acquired_at=NOW,
         lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
     )
 
+    assert aws_training.EXECUTION_LEASE_PK == aws_training._experiment_pk(
+        "mlb-v2-2026-07-21-future-prospective-r2"
+    )
+    assert acquired["PK"] == aws_training.EXECUTION_LEASE_PK
     assert acquired["SK"] == aws_training.EXECUTION_LEASE_SK
+    assert acquired["experiment_id"] == (
+        aws_training.EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
+    )
+    assert experiment.PRODUCTION_EXPERIMENT_ID != (
+        aws_training.EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
+    )
     assert acquired["execution_mode"] == "training"
     assert acquired["lease_expires_at_epoch"] == int(
         (NOW + aws_training.timedelta(seconds=aws_training.EXECUTION_LEASE_SECONDS)).timestamp()
@@ -1429,19 +1653,61 @@ def test_execution_lease_serializes_training_and_selection_capture_on_one_key():
     ):
         store.acquire_execution_lease(
             experiment.PRODUCTION_EXPERIMENT_ID,
-            owner_token="capture-owner",
+            owner_token="new-r3-capture-owner",
             execution_mode="selection_capture",
             acquired_at=NOW + aws_training.timedelta(minutes=1),
             lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
         )
     assert len(table.items) == 1
-    assert next(iter(table.items.values()))["lease_owner"] == "training-owner"
+    assert next(iter(table.items.values()))["lease_owner"] == (
+        "live-r2-training-owner"
+    )
+
+
+def test_real_store_r3_lease_attests_against_global_migration_key():
+    store, _table = execution_lease_store()
+    owner = "new-r3-training-owner"
+    lease = store.acquire_execution_lease(
+        experiment.PRODUCTION_EXPERIMENT_ID,
+        owner_token=owner,
+        execution_mode="training",
+        acquired_at=NOW,
+        lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
+    )
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: [],
+        now=lambda: NOW,
+    )
+
+    training.attest_execution_lease_acquired(
+        lease,
+        owner_token=owner,
+        execution_mode="training",
+    )
+
+    assert training._require_execution_lease("training") == {
+        "PK": aws_training.EXECUTION_LEASE_PK,
+        "SK": aws_training.EXECUTION_LEASE_SK,
+        "experimentId": experiment.PRODUCTION_EXPERIMENT_ID,
+        "leaseOwner": owner,
+        "executionMode": "training",
+        "leaseExpiresAtEpoch": int(
+            (
+                NOW
+                + aws_training.timedelta(
+                    seconds=aws_training.EXECUTION_LEASE_SECONDS
+                )
+            ).timestamp()
+        ),
+    }
 
 
 def test_expired_execution_lease_is_reclaimed_and_stale_owner_cannot_release_it():
     store, table = execution_lease_store()
     store.acquire_execution_lease(
-        experiment.PRODUCTION_EXPERIMENT_ID,
+        aws_training.EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID,
         owner_token="expired-owner",
         execution_mode="training",
         acquired_at=NOW,

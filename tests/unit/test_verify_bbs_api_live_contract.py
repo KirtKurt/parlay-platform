@@ -136,6 +136,7 @@ def test_live_schema_drift_is_quarantined_without_blocking_shadow_deploy() -> No
     assert report["mlbMatches"]["documentedRowSchemaValidated"] is False
     assert report["mlbMatches"]["documentedRowCount"] == 0
     assert report["mlbMatches"]["unmappedRowCount"] == 1
+    assert report["mlbMatches"]["rowSchemaReviewRequired"] is True
     assert report["mlbMatches"]["schemaReviewRequired"] is True
     assert report["mlbMatches"]["schemaDisposition"] == (
         "UNMAPPED_RAW_SHADOW_ROWS_QUARANTINED"
@@ -151,6 +152,46 @@ def test_live_schema_drift_is_quarantined_without_blocking_shadow_deploy() -> No
     assert report["activation"]["runtimeQuarantineRequired"] is True
     assert report["activation"]["officialIdentityCredit"] is False
     assert "provider-shape-not-persisted-in-report" not in rendered
+
+
+def test_unknown_source_attribution_is_redacted_and_quarantined() -> None:
+    calls = 0
+    undocumented_source = "provider-live-value-not-in-published-enum"
+
+    def opener(_request, *, timeout):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return FakeResponse(_envelope({"plan": "free", "paused": False}))
+        return FakeResponse(
+            _envelope(
+                [
+                    {
+                        "match_id": "bb_match_abc123def456",
+                        "kickoff_utc": "2026-07-22T23:05:00Z",
+                        "sport": "baseball",
+                        "home": {"display_name": "New York Yankees"},
+                        "away": {"display_name": "Boston Red Sox"},
+                    }
+                ],
+                source=undocumented_source,
+            )
+        )
+
+    report = live.verify(API_KEY, opener=opener)
+    rendered = json.dumps(report)
+
+    assert report["ok"] is True
+    assert report["mlbMatches"]["documentedRowSchemaValidated"] is True
+    assert report["mlbMatches"]["rowSchemaReviewRequired"] is False
+    assert report["mlbMatches"]["sourceAttributionRecognized"] is False
+    assert report["mlbMatches"]["sourceAttributionCategory"] == "UNRECOGNIZED_REDACTED"
+    assert len(report["mlbMatches"]["sourceAttributionFingerprint"]) == 64
+    assert report["mlbMatches"]["schemaReviewRequired"] is True
+    assert report["activation"]["sourceActivationEligible"] is False
+    assert report["activation"]["trainingEligibility"] is False
+    assert report["activation"]["officialIdentityCredit"] is False
+    assert undocumented_source not in rendered
 
 
 def test_non_object_match_row_is_quarantined_as_unmapped_shadow_evidence() -> None:
@@ -171,46 +212,6 @@ def test_non_object_match_row_is_quarantined_as_unmapped_shadow_evidence() -> No
     assert report["mlbMatches"]["unmappedRowCount"] == 1
     assert report["mlbMatches"]["schemaReviewRequired"] is True
     assert report["activation"]["runtimeQuarantineRequired"] is True
-
-
-def test_unknown_source_attribution_is_redacted_and_quarantined() -> None:
-    calls = 0
-    undocumented_source = "provider-live-label-not-persisted"
-
-    def opener(_request, *, timeout):
-        nonlocal calls
-        calls += 1
-        if calls == 1:
-            return FakeResponse(_envelope({"plan": "free", "paused": False}))
-        return FakeResponse(
-            _envelope(
-                [
-                    {
-                        "match_id": "bb_match_abc123def456",
-                        "kickoff_utc": "2026-07-22T23:05:00Z",
-                        "sport": "baseball",
-                        "home": {"display_name": "Home"},
-                        "away": {"display_name": "Away"},
-                    }
-                ],
-                source=undocumented_source,
-            )
-        )
-
-    report = live.verify(API_KEY, opener=opener)
-    rendered = json.dumps(report)
-
-    assert report["ok"] is True
-    assert report["mlbMatches"]["documentedRowSchemaValidated"] is True
-    assert report["mlbMatches"]["rowSchemaReviewRequired"] is False
-    assert report["mlbMatches"]["sourceAttributionRecognized"] is False
-    assert report["mlbMatches"]["sourceAttributionCategory"] == (
-        "UNRECOGNIZED_REDACTED"
-    )
-    assert len(report["mlbMatches"]["sourceAttributionFingerprint"]) == 64
-    assert report["mlbMatches"]["schemaReviewRequired"] is True
-    assert report["activation"]["sourceActivationEligible"] is False
-    assert undocumented_source not in rendered
 
 
 def test_rejects_wrong_secret_name_value_shape_before_network() -> None:
