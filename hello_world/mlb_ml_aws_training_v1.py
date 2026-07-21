@@ -2064,7 +2064,8 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
             service._save_run_status(failure_status)
         except Exception:
             # Preserve the original invocation failure. Lambda async failure
-            # handling and the trainer DLQ cover cases where status storage is
-            # unavailable too.
+            # handling and EventBridge's bounded retry policy cover transient
+            # cases where status storage is unavailable too; CloudWatch retains
+            # the terminal invocation error without an SQS deployment dependency.
             pass
         raise

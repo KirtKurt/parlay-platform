@@ -219,14 +219,45 @@ required_template_strings = {
     "MLB_ML_RELEASE_CUTOFF_UTC: '2026-07-22T04:00:00+00:00'": 'AWS-native MLB ML trainer release cutoff is stale',
     "INQSI_MLB_ML_AUTO_PROMOTE: 'false'": 'automatic MLB ML promotion must be disabled',
     "INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED: 'false'": 'legacy MLB V1 runtime authority must be disabled',
-    'MLBMLTrainingDeadLetterQueue': 'AWS-native MLB ML trainer dead-letter queue missing',
+    'MaximumEventAgeInSeconds: 21600': 'AWS-native MLB ML trainer retry age policy missing',
     'MaximumRetryAttempts: 2': 'AWS-native MLB ML trainer retry policy missing',
-    'Arn: !GetAtt MLBMLTrainingDeadLetterQueue.Arn': 'AWS-native MLB ML trainer DLQ binding missing',
-    'Service: events.amazonaws.com': 'AWS-native MLB ML trainer DLQ send policy missing',
 }
 for needle, message in required_template_strings.items():
     if needle not in text:
         violations.append(message)
+for forbidden, message in {
+    'MLBMLTrainingDeadLetterQueue': 'AWS-native MLB ML trainer still requires an SQS dead-letter queue',
+    'AWS::SQS::Queue': 'SAM deployment still requires SQS queue creation',
+    'sqs:SendMessage': 'AWS-native MLB ML trainer still carries SQS send authority',
+}.items():
+    if forbidden in text:
+        violations.append(message)
+
+trainer_resource_marker = '\n  MLBMLTrainingFunction:\n'
+trainer_resource_start = text.find(trainer_resource_marker)
+if trainer_resource_start >= 0:
+    trainer_tail_start = trainer_resource_start + len(trainer_resource_marker)
+    trainer_next_resource = re.search(
+        r'(?m)^  [A-Za-z][A-Za-z0-9]*:\s*$', text[trainer_tail_start:]
+    )
+    trainer_resource_end = (
+        trainer_tail_start + trainer_next_resource.start()
+        if trainer_next_resource is not None
+        else len(text)
+    )
+    trainer_resource = text[trainer_resource_start:trainer_resource_end]
+    if trainer_resource.count('MaximumEventAgeInSeconds: 21600') != 3:
+        violations.append(
+            'AWS-native MLB ML trainer must retain Lambda plus two EventBridge maximum-age policies'
+        )
+    if trainer_resource.count('MaximumRetryAttempts: 2') != 3:
+        violations.append(
+            'AWS-native MLB ML trainer must retain Lambda plus two EventBridge retry policies'
+        )
+    if 'DeadLetterConfig:' in trainer_resource or 'DestinationConfig:' in trainer_resource:
+        violations.append(
+            'AWS-native MLB ML trainer still binds an external failure destination'
+        )
 if 'MLBMLTrainingEvery15Minutes' in text:
     violations.append('obsolete full MLB training every-15-minutes schedule exists')
 
