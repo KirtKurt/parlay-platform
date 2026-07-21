@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ML_V3_AWS_AUDIT_EXECUTION",
-  "createdAtUtc": "2026-07-21T00:15:23.848670+00:00",
+  "createdAtUtc": "2026-07-21T03:50:28.761368+00:00",
   "environment": {
     "snapshotsTableConfigured": true,
     "oddsApiKeyConfigured": true,
@@ -9,29 +9,29 @@
     "allowLocalFileChampion": "false"
   },
   "failures": [],
-  "reportCreatedAt": "2026-07-21T00:15:33.610193+00:00",
+  "reportCreatedAt": "2026-07-21T03:51:48.327906+00:00",
   "reportOk": true,
   "summary": {
     "windowHours": 24,
     "targetAccuracyPct": 90.0,
-    "completedFinalGames": 0,
-    "gradedPredictionCount": 0,
-    "missingPredictionCount": 0,
+    "completedFinalGames": 11,
+    "gradedPredictionCount": 2,
+    "missingPredictionCount": 9,
     "optimizedPickCount": 0,
     "optimizedCorrect": 0,
     "optimizedWrong": 0,
     "rolling24hOptimizedAccuracyPct": null,
-    "rolling24hTargetMet": null,
+    "rolling24hTargetMet": false,
     "winnerOptimizerAppliedCount": 0,
     "winnerOptimizerFlipCount": 0,
-    "allScoredPickAccuracyPct": null,
-    "historicalRowsUsedForLearning": 3,
-    "sevenDayRowsUsedForLearning": 3,
-    "sevenDayAccuracyPct": 33.33,
-    "thirtyDayRowsUsedForLearning": 3,
-    "thirtyDayAccuracyPct": 33.33,
-    "seasonRowsUsedForLearning": 3,
-    "seasonAccuracyPct": 33.33,
+    "allScoredPickAccuracyPct": 0.0,
+    "historicalRowsUsedForLearning": 5,
+    "sevenDayRowsUsedForLearning": 5,
+    "sevenDayAccuracyPct": 20.0,
+    "thirtyDayRowsUsedForLearning": 5,
+    "thirtyDayAccuracyPct": 20.0,
+    "seasonRowsUsedForLearning": 5,
+    "seasonAccuracyPct": 20.0,
     "multiWindowWeights": {
       "current24h": 0.5,
       "sevenDay": 0.25,
@@ -43,36 +43,36 @@
     "actionableWrong": 0,
     "rolling24hActionableAccuracyPct": null,
     "accuracyTargetRowPolicy": "90pct_is_the_production_playability_accuracy_gate_and_the_rolling_24h_all_games_audit_target",
-    "excludedNoPickOptimizedRows": 0,
+    "excludedNoPickOptimizedRows": 2,
     "actionabilityPolicy": "Playable metrics require explicit modern playability or ACTIONABLE_PICK/ML_CONFIRMED. officialPick is never a playability signal.",
-    "officialPredictionCount": 0,
+    "officialPredictionCount": 2,
     "officialCorrect": 0,
-    "officialWrong": 0,
-    "rolling24hOfficialAccuracyPct": null,
+    "officialWrong": 2,
+    "rolling24hOfficialAccuracyPct": 0.0,
     "officialAccuracyConfidenceInterval95Pct": {
-      "lowPct": null,
-      "highPct": null
+      "lowPct": 0.0,
+      "highPct": 65.76
     },
     "playablePredictionCount": 0,
     "playableCorrect": 0,
     "playableWrong": 0,
     "rolling24hPlayableAccuracyPct": null,
-    "playableCoveragePct": null,
-    "marketFavoriteBaselineAccuracyPct": null,
-    "modelAccuracyLiftVsMarketPct": null,
-    "officialBrierScore": null,
-    "officialLogLoss": null,
-    "officialFlatUnitRoiPct": null,
+    "playableCoveragePct": 0.0,
+    "marketFavoriteBaselineAccuracyPct": 0.0,
+    "modelAccuracyLiftVsMarketPct": 0.0,
+    "officialBrierScore": 0.330511,
+    "officialLogLoss": 0.855971,
+    "officialFlatUnitRoiPct": -100.0,
     "playableFlatUnitRoiPct": null,
-    "seasonOfficialPredictionCount": 3,
+    "seasonOfficialPredictionCount": 5,
     "seasonPlayablePredictionCount": 0,
     "accuracyClassificationVersion": "MLB-REAL-WORLD-ACCURACY-v2.1-canonical-lock-only",
-    "rolling24hAllGamesAccuracyPct": null,
-    "rolling24hOfficialCardSlateAccuracyPct": null,
+    "rolling24hAllGamesAccuracyPct": 0.0,
+    "rolling24hOfficialCardSlateAccuracyPct": 0.0,
     "rolling24hOfficialCardSlateAuthorityTargetPct": 90.0,
     "rolling24hOfficialCardSlateAccuracyProgress": {
       "reportingOnlyBelow90Pct": true,
-      "actualRolling24hOfficialCardSlateAccuracyPct": null,
+      "actualRolling24hOfficialCardSlateAccuracyPct": 0.0,
       "milestones": [
         {
           "accuracyPct": 50.0,
@@ -109,10 +109,10 @@
   "accuracyLedger": {
     "ok": true,
     "inserted": 0,
-    "existing": 3,
+    "existing": 5,
     "errors": [],
     "ledgerPk": "MLB_CANONICAL_LOCK_ACCURACY#LEDGER#v2",
-    "queriedRowCount": 3,
+    "queriedRowCount": 5,
     "immutable": true,
     "dedupeKey": "slate_date + provider_game_id_or_matchup",
     "version": "MLB-REAL-WORLD-ACCURACY-v2.1-canonical-lock-only"
@@ -145,13 +145,45 @@
     "applied": true,
     "version": "MLB-ML-OPTIMIZATION-v3.2-90pct-rolling-slate-automatic-promotion",
     "mode": "SHADOW_CHALLENGER",
-    "cleanRowCount": 3,
-    "quarantinedRowCount": 0,
-    "quarantineReasonCounts": {},
+    "cleanRowCount": 5,
+    "quarantinedRowCount": 9,
+    "quarantineReasonCounts": {
+      "feature_vector_not_proven_immutable": 9,
+      "feature_vector_source_not_lock_time_prediction": 9,
+      "frozen_vector_away_temporal_history_missing": 9,
+      "frozen_vector_awayteam_mismatch": 9,
+      "frozen_vector_explicit_blank_labels_missing": 9,
+      "frozen_vector_features_missing": 9,
+      "frozen_vector_fundamental_masks_not_lock_safe": 9,
+      "frozen_vector_fundamental_source_after_or_missing_lock": 9,
+      "frozen_vector_fundamentals_snapshot_version_missing_or_wrong": 9,
+      "frozen_vector_game_identity_mismatch": 9,
+      "frozen_vector_home_temporal_history_missing": 9,
+      "frozen_vector_hometeam_mismatch": 9,
+      "frozen_vector_missingness_feature_version_missing_or_wrong": 9,
+      "frozen_vector_source_after_or_missing_lock": 9,
+      "frozen_vector_temporal_feature_version_missing_or_wrong": 9,
+      "frozen_vector_temporal_features_not_lock_safe": 9,
+      "frozen_vector_temporal_source_after_or_missing_lock": 9,
+      "incomplete_or_unproven_slate_coverage": 9,
+      "late_row_protection_not_proven": 9,
+      "legacy_probability_semantics": 9,
+      "missing_exact_stored_lock_time_feature_vector": 9,
+      "missing_frozen_vector_fingerprint_version": 9,
+      "missing_lock_timestamp": 9,
+      "missing_outcome_label": 9,
+      "missing_selected_side_locked_odds": 9,
+      "missing_source_pull_timestamp": 9,
+      "missing_team_win_probability": 9,
+      "not_graded": 9,
+      "not_immutable_locked_prediction": 9,
+      "selected_side_odds_source_not_proven": 9,
+      "wrong_frozen_feature_vector_version": 9
+    },
     "trainingStatus": "ACCUMULATING_CLEAN_POST_FIX_EVIDENCE",
-    "recordCount": 3,
+    "recordCount": 5,
     "dataQuality": {
-      "recordCount": 3,
+      "recordCount": 5,
       "averageFundamentalsCompletenessPct": 9.09,
       "rowsWithAtLeast75PctFundamentals": 0,
       "priceCoveragePct": 100.0,
@@ -161,7 +193,7 @@
       "ok": false,
       "version": "MLB-ML-WALK-FORWARD-v1-train-validation-untouched-test",
       "reason": "insufficient_clean_rows_for_three_way_chronological_split",
-      "rowCount": 3,
+      "rowCount": 5,
       "required": 140,
       "actualMinimumRequired": 140,
       "minimums": {
@@ -175,7 +207,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion",
-      "evaluatedAtUtc": "2026-07-21T00:16:01.796786+00:00",
+      "evaluatedAtUtc": "2026-07-21T03:52:59.654135+00:00",
       "automaticPromotionEnabled": true,
       "automaticPromotionRequiresPassedApplicableGates": true,
       "promotionEligible": false,
@@ -185,7 +217,7 @@
       "directionAuthorityEnabled": false,
       "playabilityAuthorityEnabled": false,
       "directionChecks": {
-        "cleanOfficialCount": 3,
+        "cleanOfficialCount": 5,
         "minimumCleanOfficial": 500,
         "untouchedTestCount": 0,
         "minimumUntouchedTest": 100,
@@ -204,12 +236,12 @@
         "marketLogLoss": null,
         "outcomeCalibrationError": null,
         "maximumCalibrationError": 0.08,
-        "rolling24hSlateAccuracyPct": null,
+        "rolling24hSlateAccuracyPct": 0.0,
         "minimumRolling24hSlateAccuracyPct": 90.0,
-        "rolling24hSlateAccuracyAvailable": false
+        "rolling24hSlateAccuracyAvailable": true
       },
       "playabilityChecks": {
-        "cleanOfficialCount": 3,
+        "cleanOfficialCount": 5,
         "minimumCleanOfficial": 500,
         "untouchedTestCount": 0,
         "minimumUntouchedTest": 100,
@@ -228,12 +260,12 @@
         "minimumSelectedExactOddsCoveragePct": 90.0,
         "selectedCalibrationError": null,
         "maximumSelectedCalibrationError": 0.1,
-        "rolling24hSlateAccuracyPct": null,
+        "rolling24hSlateAccuracyPct": 0.0,
         "minimumRolling24hSlateAccuracyPct": 90.0,
-        "rolling24hSlateAccuracyAvailable": false,
+        "rolling24hSlateAccuracyAvailable": true,
         "rolling24hSlateAccuracyProgress": {
           "reportingOnly": true,
-          "actualRolling24hSlateAccuracyPct": null,
+          "actualRolling24hSlateAccuracyPct": 0.0,
           "milestones": [
             {
               "accuracyPct": 50.0,
@@ -266,7 +298,7 @@
         },
         {
           "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
-          "actual": 3,
+          "actual": 5,
           "required": 500
         },
         {
@@ -305,9 +337,9 @@
           "required": 0.08
         },
         {
-          "code": "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE",
-          "actual": null,
-          "required": ">= 90.0"
+          "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
+          "actual": 0.0,
+          "required": 90.0
         }
       ],
       "playabilityBlockers": [
@@ -318,7 +350,7 @@
         },
         {
           "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
-          "actual": 3,
+          "actual": 5,
           "required": 500
         },
         {
@@ -363,9 +395,9 @@
           "required": 0.1
         },
         {
-          "code": "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE",
-          "actual": null,
-          "required": ">= 90.0"
+          "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
+          "actual": 0.0,
+          "required": 90.0
         }
       ],
       "blockers": [
@@ -376,7 +408,7 @@
         },
         {
           "code": "INSUFFICIENT_CLEAN_OFFICIAL_EVIDENCE",
-          "actual": 3,
+          "actual": 5,
           "required": 500
         },
         {
@@ -415,9 +447,9 @@
           "required": 0.08
         },
         {
-          "code": "ROLLING_24H_SLATE_ACCURACY_UNAVAILABLE",
-          "actual": null,
-          "required": ">= 90.0"
+          "code": "ROLLING_24H_SLATE_ACCURACY_BELOW_TARGET",
+          "actual": 0.0,
+          "required": 90.0
         },
         {
           "code": "RELIABILITY_MODEL_NOT_TRAINED",
@@ -464,7 +496,7 @@
       },
       "rolling24hSlateAccuracyProgress": {
         "reportingOnly": true,
-        "actualRolling24hSlateAccuracyPct": null,
+        "actualRolling24hSlateAccuracyPct": 0.0,
         "milestones": [
           {
             "accuracyPct": 50.0,
@@ -506,12 +538,12 @@
     "legacyTrainerAuthorityDisabled": true,
     "automaticPromotionSupported": true,
     "automaticPromotionEnabled": true,
-    "rolling24hSlateAccuracyPct": null,
+    "rolling24hSlateAccuracyPct": 0.0,
     "stored": {
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-21T00:15:52.361445+00:00"
+      "runSk": "CHALLENGER#2026-07-21T03:52:36.456212+00:00"
     },
     "promotion": {
       "ok": true,
@@ -539,7 +571,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-21T00:15:33.610193+00:00"
+    "runSk": "AUDIT#2026-07-21T03:51:48.327906+00:00"
   },
   "storeError": null
 }
