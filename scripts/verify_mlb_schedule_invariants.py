@@ -212,7 +212,7 @@ required_template_strings = {
     'MLBMLSelectionCaptureEvery15Minutes': 'AWS-native MLB ML selection capture schedule missing',
     'Input: \'{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}\'': 'AWS-native MLB ML full training event input is stale',
     'Input: \'{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}\'': 'AWS-native MLB ML selection capture event input is stale',
-    'ReservedConcurrentExecutions: 1': 'AWS-native MLB ML trainer must not overlap',
+    "MLB_ML_EXECUTION_LEASE_SECONDS: '960'": 'AWS-native MLB ML trainer execution lease is missing',
     's3:GetObjectVersion': 'AWS-native MLB ML trainer cannot read an exact frozen challenger version',
     "MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-07-21-future-prospective-r2'": 'AWS-native MLB ML trainer experiment identity is stale',
     "MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-07-21-future-prospective-r2'": 'AWS-native MLB ML trainer release contract is stale',
@@ -229,6 +229,7 @@ for forbidden, message in {
     'MLBMLTrainingDeadLetterQueue': 'AWS-native MLB ML trainer still requires an SQS dead-letter queue',
     'AWS::SQS::Queue': 'SAM deployment still requires SQS queue creation',
     'sqs:SendMessage': 'AWS-native MLB ML trainer still carries SQS send authority',
+    'ReservedConcurrentExecutions:': 'AWS-native MLB ML trainer still requires unavailable account-level reserved concurrency',
 }.items():
     if forbidden in text:
         violations.append(message)

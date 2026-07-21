@@ -152,6 +152,10 @@ def _read_v2_training_state(*, now_utc=None, deployed_identity=None) -> dict:
             errors.append("status_fingerprint_version_mismatch")
         if present and status.get("statusFingerprint") != trainer._status_fingerprint(status):
             errors.append("status_fingerprint_mismatch")
+        if present and status.get("executionConcurrencyControl") != (
+            trainer.execution_concurrency_control(acquired_for_run=True)
+        ):
+            errors.append("status_execution_lease_contract_mismatch")
         if not manifest_valid:
             errors.append("current_manifest_missing_or_invalid")
         elif not manifest_read_stable:
@@ -184,6 +188,9 @@ def _read_v2_training_state(*, now_utc=None, deployed_identity=None) -> dict:
             "experimentId": status.get("experimentId"),
             "manifestDigest": status.get("manifestDigest"),
             "statusFingerprintVersion": status.get("statusFingerprintVersion"),
+            "executionConcurrencyControl": status.get(
+                "executionConcurrencyControl"
+            ),
             "latestRun": status,
             "errors": errors,
         }

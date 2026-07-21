@@ -61,6 +61,9 @@ def audit(summary=None, optimization=None, **updates):
             "createdAtUtc": NOW.isoformat(),
             "deploymentIdentity": deployment,
             "statusFingerprintVersion": trainer.STATUS_FINGERPRINT_VERSION,
+            "executionConcurrencyControl": trainer.execution_concurrency_control(
+                acquired_for_run=True
+            ),
         }
         latest["statusFingerprint"] = trainer._status_fingerprint(latest)
         return {
@@ -401,6 +404,24 @@ def test_acceptance_recomputes_status_fingerprint_and_exact_version():
     assert "status_fingerprint_mismatch" in result["mlDisposition"]["v2Training"][
         "trainingHealth"
     ]["contractErrors"]
+
+
+def test_acceptance_rejects_status_without_acquired_shared_lease():
+    payload = audit()
+    latest = payload["mlTrainingV2"]["trainingHealth"]["latestRun"]
+    latest["executionConcurrencyControl"] = trainer.execution_concurrency_control(
+        acquired_for_run=False
+    )
+    latest["statusFingerprint"] = trainer._status_fingerprint(latest)
+
+    result = build_acceptance(
+        pull_guard=pull_guard(), verifier=verifier(), audit=payload, now_utc=NOW
+    )
+
+    assert result["ok"] is False
+    assert "status_execution_lease_contract_mismatch" in result[
+        "mlDisposition"
+    ]["v2Training"]["trainingHealth"]["contractErrors"]
 
 
 def test_manifest_advance_invalidates_selection_heartbeat_until_recaptured():

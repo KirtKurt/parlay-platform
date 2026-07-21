@@ -181,6 +181,9 @@ def _status(
             "templateSha256": "b" * 64,
         },
         "statusFingerprintVersion": trainer.STATUS_FINGERPRINT_VERSION,
+        "executionConcurrencyControl": trainer.execution_concurrency_control(
+            acquired_for_run=True
+        ),
     }
     value["statusFingerprint"] = trainer._status_fingerprint(value)
     return value
@@ -289,6 +292,32 @@ def test_status_contract_tamper_and_manifest_advance_fail_closed(monkeypatch) ->
     assert "status_version_mismatch" in result["trainingHealth"]["errors"]
     assert "status_fingerprint_mismatch" in result["trainingHealth"]["errors"]
     assert "status_manifest_mismatch" in result["selectionCaptureHealth"]["errors"]
+
+
+def test_status_without_acquired_shared_lease_fails_audit_even_with_valid_fingerprint(
+    monkeypatch,
+) -> None:
+    training = _status("training", 1)
+    training["executionConcurrencyControl"] = trainer.execution_concurrency_control(
+        acquired_for_run=False
+    )
+    training["statusFingerprint"] = trainer._status_fingerprint(training)
+    _install_table(
+        monkeypatch,
+        {
+            (PK, "STATUS#LATEST#TRAINING"): training,
+            (PK, "STATUS#LATEST#SELECTION_CAPTURE"): _status(
+                "selection_capture", 1
+            ),
+        },
+    )
+
+    result = audit_report._read_v2_training_state(now_utc=NOW)
+
+    assert result["ok"] is False
+    assert "status_execution_lease_contract_mismatch" in result[
+        "trainingHealth"
+    ]["errors"]
 
 
 def test_manifest_advance_during_status_reads_fails_closed(monkeypatch) -> None:

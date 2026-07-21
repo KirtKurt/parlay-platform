@@ -46,7 +46,9 @@ TRAINER_EXPECTED_INVOCATIONS = (
 )
 
 TRAINER_HANDLER = "mlb_ml_aws_training_v1.lambda_handler"
-TRAINER_RESERVED_CONCURRENT_EXECUTIONS = 1
+TRAINER_TIMEOUT_SECONDS = 900
+TRAINER_EXECUTION_CONCURRENCY_STRATEGY = "dynamodb_conditional_lease"
+TRAINER_EXECUTION_LEASE_SECONDS = "960"
 TRAINER_ARTIFACT_BUCKET_OUTPUT = "MLBMLArtifactsBucketName"
 TRAINER_FUNCTION_ARN_OUTPUT = "MLBMLTrainingFunctionArn"
 TRAINER_FORBIDDEN_DLQ_ARN_OUTPUT = "MLBMLTrainingDeadLetterQueueArn"
@@ -61,6 +63,7 @@ TRAINER_EXPECTED_ENVIRONMENT = {
     "MLB_ML_FEATURE_VECTOR_VERSION": (
         "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness"
     ),
+    "MLB_ML_EXECUTION_LEASE_SECONDS": TRAINER_EXECUTION_LEASE_SECONDS,
     "INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION": "false",
     "INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED": "false",
     "INQSI_MLB_ML_AUTO_PROMOTE": "false",
@@ -206,6 +209,9 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
         "expectedEnvironment": dict(TRAINER_EXPECTED_ENVIRONMENT),
         "requiredEnvironmentKeys": list(TRAINER_REQUIRED_ENVIRONMENT),
         "expectedAsyncRetryPolicy": dict(TRAINER_RETRY_POLICY),
+        "expectedTimeoutSeconds": TRAINER_TIMEOUT_SECONDS,
+        "executionConcurrencyStrategy": TRAINER_EXECUTION_CONCURRENCY_STRATEGY,
+        "reservedLambdaConcurrencyRequired": False,
         "sqsFailureDestinationRequired": False,
         "matches": False,
     }
@@ -271,6 +277,13 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                     "TRAINER_HANDLER_MISMATCH:"
                     f"expected={TRAINER_HANDLER}:actual={actual_handler}"
                 )
+            actual_timeout = config.get("Timeout")
+            if actual_timeout != TRAINER_TIMEOUT_SECONDS:
+                configuration_matches = False
+                blockers.append(
+                    "TRAINER_TIMEOUT_MISMATCH:"
+                    f"expected={TRAINER_TIMEOUT_SECONDS}:actual={actual_timeout}"
+                )
             for key, expected_value in TRAINER_EXPECTED_ENVIRONMENT.items():
                 actual_value = str(environment.get(key) or "")
                 if actual_value != expected_value:
@@ -304,17 +317,17 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                 reserved_concurrency = concurrency.get(
                     "ReservedConcurrentExecutions"
                 )
-                if reserved_concurrency != TRAINER_RESERVED_CONCURRENT_EXECUTIONS:
+                if reserved_concurrency is not None:
                     configuration_matches = False
                     blockers.append(
-                        "TRAINER_RESERVED_CONCURRENCY_MISMATCH:"
-                        f"expected={TRAINER_RESERVED_CONCURRENT_EXECUTIONS}:"
-                        f"actual={reserved_concurrency if reserved_concurrency is not None else 'MISSING'}"
+                        "TRAINER_RESERVED_CONCURRENCY_PRESENT:"
+                        f"actual={reserved_concurrency}"
                     )
             except Exception as exc:
                 configuration_matches = False
                 blockers.append(
-                    f"TRAINER_RESERVED_CONCURRENCY_CHECK_FAILED:{exc}"
+                    "TRAINER_RESERVED_CONCURRENCY_ABSENCE_CHECK_FAILED:"
+                    f"{exc}"
                 )
             async_retry_policy: Dict[str, Any] = {}
             async_destination_config: Dict[str, Any] = {}
@@ -361,13 +374,15 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                 "handler": actual_handler,
                 "functionArn": arn,
                 "stackOutputFunctionArn": expected_trainer_arn or None,
+                "timeoutSeconds": actual_timeout,
+                "timeoutMatches": actual_timeout == TRAINER_TIMEOUT_SECONDS,
                 "reservedConcurrentExecutions": reserved_concurrency,
-                "expectedReservedConcurrentExecutions": (
-                    TRAINER_RESERVED_CONCURRENT_EXECUTIONS
+                "reservedConcurrencyAbsent": reserved_concurrency is None,
+                "executionConcurrencyStrategy": (
+                    TRAINER_EXECUTION_CONCURRENCY_STRATEGY
                 ),
-                "reservedConcurrencyMatches": (
-                    reserved_concurrency == TRAINER_RESERVED_CONCURRENT_EXECUTIONS
-                ),
+                "executionLeaseSeconds": int(TRAINER_EXECUTION_LEASE_SECONDS),
+                "reservedLambdaConcurrencyRequired": False,
                 "functionDeadLetterConfig": function_dead_letter_config,
                 "functionDeadLetterConfigAbsent": not bool(
                     function_dead_letter_config

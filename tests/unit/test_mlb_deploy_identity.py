@@ -50,7 +50,7 @@ class FakeCloudFormation:
 
 class FakeLambda:
     def __init__(self) -> None:
-        self.reserved_concurrency = deploy_identity.TRAINER_RESERVED_CONCURRENT_EXECUTIONS
+        self.reserved_concurrency = None
         self.async_retry_policy = dict(deploy_identity.TRAINER_RETRY_POLICY)
         self.async_destination_config: dict[str, Any] = {}
         self.configurations = {}
@@ -74,6 +74,11 @@ class FakeLambda:
             self.configurations[f"physical-{role}"] = {
                 "FunctionArn": _arn(role),
                 "Handler": handler,
+                "Timeout": (
+                    deploy_identity.TRAINER_TIMEOUT_SECONDS
+                    if role == "trainer"
+                    else 30
+                ),
                 "Runtime": "python3.11",
                 "LastModified": "2026-07-21T00:00:00.000+0000",
                 "CodeSha256": f"code-{logical_id}",
@@ -251,8 +256,15 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
     assert result["blockers"] == []
     assert result["functions"]["MLBMLTrainingFunction"]["configurationMatches"] is True
     assert result["trainerConfiguration"]["matches"] is True
-    assert result["trainerConfiguration"]["reservedConcurrentExecutions"] == 1
-    assert result["trainerConfiguration"]["reservedConcurrencyMatches"] is True
+    assert result["trainerConfiguration"]["executionConcurrencyStrategy"] == (
+        "dynamodb_conditional_lease"
+    )
+    assert result["trainerConfiguration"]["executionLeaseSeconds"] == 960
+    assert result["trainerConfiguration"]["reservedLambdaConcurrencyRequired"] is False
+    assert result["trainerConfiguration"]["timeoutSeconds"] == 900
+    assert result["trainerConfiguration"]["timeoutMatches"] is True
+    assert result["trainerConfiguration"]["reservedConcurrentExecutions"] is None
+    assert result["trainerConfiguration"]["reservedConcurrencyAbsent"] is True
     assert result["trainerConfiguration"]["functionDeadLetterConfigAbsent"] is True
     assert result["trainerConfiguration"]["asyncRetryPolicyMatches"] is True
     assert result["trainerConfiguration"]["asyncDestinationConfigAbsent"] is True
@@ -292,8 +304,21 @@ def test_rejects_wrong_trainer_handler(aws) -> None:
     assert any(value.startswith("TRAINER_HANDLER_MISMATCH:") for value in result["blockers"])
 
 
-@pytest.mark.parametrize("reserved_concurrency", (0, None))
-def test_rejects_wrong_or_missing_trainer_reserved_concurrency(
+def test_rejects_wrong_trainer_timeout(aws) -> None:
+    aws["lambda"].configurations["physical-trainer"]["Timeout"] = 960
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["trainerConfiguration"]["timeoutMatches"] is False
+    assert any(
+        value.startswith("TRAINER_TIMEOUT_MISMATCH:")
+        for value in result["blockers"]
+    )
+
+
+@pytest.mark.parametrize("reserved_concurrency", (0, 1))
+def test_rejects_present_trainer_reserved_concurrency(
     aws, reserved_concurrency
 ) -> None:
     aws["lambda"].reserved_concurrency = reserved_concurrency
@@ -301,15 +326,14 @@ def test_rejects_wrong_or_missing_trainer_reserved_concurrency(
     result = _verify()
 
     assert result["ok"] is False
-    assert result["trainerConfiguration"]["matches"] is False
-    assert result["trainerConfiguration"]["reservedConcurrencyMatches"] is False
+    assert result["trainerConfiguration"]["reservedConcurrencyAbsent"] is False
     assert any(
-        blocker.startswith("TRAINER_RESERVED_CONCURRENCY_MISMATCH:")
+        blocker.startswith("TRAINER_RESERVED_CONCURRENCY_PRESENT:")
         for blocker in result["blockers"]
     )
 
 
-def test_fails_closed_when_trainer_reserved_concurrency_cannot_be_read(aws) -> None:
+def test_fails_closed_when_reserved_concurrency_absence_cannot_be_read(aws) -> None:
     def denied(**kwargs: Any) -> dict[str, Any]:
         raise RuntimeError("lambda concurrency inventory denied")
 
@@ -319,9 +343,10 @@ def test_fails_closed_when_trainer_reserved_concurrency_cannot_be_read(aws) -> N
 
     assert result["ok"] is False
     assert result["trainerConfiguration"]["matches"] is False
-    assert result["trainerConfiguration"]["reservedConcurrencyMatches"] is False
     assert any(
-        blocker.startswith("TRAINER_RESERVED_CONCURRENCY_CHECK_FAILED:")
+        blocker.startswith(
+            "TRAINER_RESERVED_CONCURRENCY_ABSENCE_CHECK_FAILED:"
+        )
         for blocker in result["blockers"]
     )
 
@@ -397,6 +422,11 @@ def test_rejects_legacy_trainer_sqs_stack_output(aws) -> None:
             "MLB_ML_RELEASE_CONTRACT_ID",
             "stale-contract",
             "TRAINER_ENVIRONMENT_MISMATCH:MLB_ML_RELEASE_CONTRACT_ID:",
+        ),
+        (
+            "MLB_ML_EXECUTION_LEASE_SECONDS",
+            "1200",
+            "TRAINER_ENVIRONMENT_MISMATCH:MLB_ML_EXECUTION_LEASE_SECONDS:",
         ),
         (
             "SNAPSHOTS_TABLE",

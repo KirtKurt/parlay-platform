@@ -21,7 +21,7 @@ or wagering playability.
 | 5. Fundamentals V2 | Each persisted candidate carries an immutable, fingerprinted pregame snapshot with per-group source identity, retrieval time, applicable effective time, and explicit missingness. The T-45 vector binds that already-persisted snapshot; it does not fetch or reconstruct fundamentals while locking. | No neutral zero fill, postgame reconstruction, or closing-line value in pregame features; T-30/T-15 news can block release but cannot rewrite T-45. Unavailable or incomplete source groups make the row training-ineligible without suppressing its winner lock. |
 | 6. Fixed experiment | Whole slate dates are assigned once to 300 training, 100 validation, and 100 future prospective-test games. | The first model uses ten prespecified features, regularization, frozen missingness masks, and no cross-date leakage. |
 | 7. Realistic promotion | Challenger must beat the same-time de-vigged market on Brier score and log loss, remain calibrated, and avoid accuracy regression. | Minimum 500 clean games, 100 prospective-test games, calibration error <= 0.08, at least +1 percentage-point accuracy lift, and 100 prospectively selected recommendations before playability authority. |
-| 8. AWS-native learning | EventBridge runs the full trainer/evaluator every six hours and a lightweight immutable pre-outcome selection capture every 15 minutes, both with single-run concurrency; versioned datasets and models live in S3, while experiment state and approved shadow pointers live in DynamoDB. Lambda and both EventBridge targets retain bounded two-attempt, six-hour retry-age policies without requiring an SQS deployment resource. Official labels are written separately after FINAL. | GitHub tests and deploys code only. The first candidate approval is manual and shadow-only; live authority requires a separately reviewed V2 inference integration. |
+| 8. AWS-native learning | EventBridge runs the full trainer/evaluator every six hours and a lightweight immutable pre-outcome selection capture every 15 minutes. Training, selection capture, and manual shadow review share one atomic, expiring, owner-checked DynamoDB execution lease; versioned datasets and models live in S3, while experiment state and approved shadow pointers live in DynamoDB. Lambda and both EventBridge targets retain bounded two-retry, six-hour retry-age policies without requiring SQS or account-level reserved concurrency. Official labels are written separately after FINAL. | GitHub tests and deploys code only. The first candidate approval is manual and shadow-only; live authority requires a separately reviewed V2 inference integration. |
 
 ## Realistic data milestones
 
@@ -80,9 +80,23 @@ milestone has already been earned:
   EventBridge retries. If both retry policies are exhausted, the failed event
   payload is not archived; stale or missing health therefore blocks promotion
   until a later scheduled run succeeds. Adding a durable failure archive is an
-  explicit future IAM-expansion milestone. Removing SQS does not change S3
-  versioning, single-run concurrency, partition gates, promotion controls, or
-  shadow-only runtime authority.
+  explicit future IAM-expansion milestone. The account cannot allocate another
+  reserved Lambda concurrency slot while retaining AWS's required unreserved
+  pool, so all three mutating modes instead share a 960-second DynamoDB lease.
+  That lease outlives the 900-second Lambda timeout, allows the bounded async
+  retry window to recover a timed-out owner, reclaims expired owners,
+  and can be released only by its current owner. This preserves single-writer
+  execution without a new AWS resource or IAM permission. Removing SQS and the
+  account-level reservation does not change S3 versioning, partition gates,
+  promotion controls, or shadow-only runtime authority.
+- The lease safety proof is bound to the deployed 900-second Lambda timeout,
+  which the live deployment verifier checks together with the 960-second lease
+  and the absence of reserved concurrency. Authoritative writes retain their
+  existing compare-and-swap/transaction conditions; they do not add a separate
+  fencing token to every write. An early crash may therefore leave the lease
+  until expiry and consume both immediate Lambda retries. The next 15-minute
+  capture or six-hour training schedule recovers it, while stale mode-specific
+  health keeps audit and promotion authority fail-closed in the interim.
 
 Any prediction policy, feature definition, label rule, cohort schema, partition
 boundary, or threshold change creates a new experiment version and a new future

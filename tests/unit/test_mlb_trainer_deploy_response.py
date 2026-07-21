@@ -30,6 +30,9 @@ def _payloads():
     }
     training = {
         **common,
+        "executionConcurrencyControl": copy.deepcopy(
+            verifier.EXECUTION_CONCURRENCY_CONTROL
+        ),
         "ok": True,
         "status": "ACCUMULATING_TRAIN",
         "executionMode": "training",
@@ -41,6 +44,9 @@ def _payloads():
     }
     selection = {
         **common,
+        "executionConcurrencyControl": copy.deepcopy(
+            verifier.EXECUTION_CONCURRENCY_CONTROL
+        ),
         "ok": True,
         "status": "WAITING_FOR_PERSISTED_CHALLENGER",
         "executionMode": "selection_capture",
@@ -156,6 +162,24 @@ def test_accepts_fresh_split_run_and_status_health() -> None:
         (
             lambda training, selection, after: training.pop("milestones"),
             "training_run_milestones_missing",
+        ),
+        (
+            lambda training, selection, after: training.pop(
+                "executionConcurrencyControl"
+            ),
+            "training_execution_lease_evidence_missing",
+        ),
+        (
+            lambda training, selection, after: selection[
+                "executionConcurrencyControl"
+            ].update({"acquiredForRun": False}),
+            "selection_capture_execution_lease_acquiredForRun_mismatch",
+        ),
+        (
+            lambda training, selection, after: training[
+                "executionConcurrencyControl"
+            ].update({"protectedExecutionModes": ["training"]}),
+            "training_execution_lease_protectedExecutionModes_mismatch",
         ),
         (
             lambda training, selection, after: after[
