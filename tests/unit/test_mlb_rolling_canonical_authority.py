@@ -15,6 +15,7 @@ import mlb_daily_lock_ml_vector_preservation_patch as exact_contract
 import mlb_ml_clean_cohort_v1 as cohort
 import mlb_real_world_accuracy_patch as accuracy
 import mlb_rolling_24h_audit as audit
+import mlb_doubleheader_safe_audit_patch as doubleheader_audit
 from scripts.mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 
@@ -129,6 +130,28 @@ def _install_table(monkeypatch, items):
     return table
 
 
+def _provider_alias_pull(
+    *,
+    official_pk="991004",
+    provider_id="late-provider-id",
+    away="San Francisco Giants",
+    home="Seattle Mariners",
+    fingerprint="manifest-proof-1",
+):
+    return {
+        "slate_date": SLATE,
+        "provider_schedule_manifest": {
+            "fingerprint": fingerprint,
+            "games": [{
+                "official_game_pk": official_pk,
+                "provider_event_id": provider_id,
+                "away_team": away,
+                "home_team": home,
+            }],
+        },
+    }
+
+
 def test_query_rejects_mutable_and_spoofed_lock_rows(monkeypatch):
     canonical = _item()
     later_mutable = {
@@ -175,10 +198,13 @@ def test_mutable_row_without_lock_is_missing_not_invalid(monkeypatch):
     assert audited["canonicalLockValidationErrors"] == []
 
 
-def test_query_rejects_missing_or_tampered_exact_lock_vectors(monkeypatch):
+def test_query_accepts_explicit_training_exclusion_but_rejects_unmarked_vector_tamper(monkeypatch):
     valid = _item()
     missing_vector = _item(_row(game_id="game-missing-vector"))
     missing_vector["data"].pop("frozenFeatureVector")
+    missing_vector["data"] = exact_contract.apply_exact_vector_training_status(
+        missing_vector["data"]
+    )
     tampered_vector = _item(_row(game_id="game-tampered-vector"))
     tampered_vector["data"]["frozenFeatureVector"]["labels"]["homeWon"] = True
     _install_table(monkeypatch, [missing_vector, tampered_vector, valid])
@@ -189,13 +215,166 @@ def test_query_rejects_missing_or_tampered_exact_lock_vectors(monkeypatch):
 
     rows = audit._query_predictions_for_slate(SLATE)
 
-    assert len(rows) == 1
-    assert rows[0]["gameId"] == "game-1"
+    assert {row["gameId"] for row in rows} == {"game-1", "game-missing-vector"}
+    vectorless = next(row for row in rows if row["gameId"] == "game-missing-vector")
+    assert vectorless["canonicalLockAuthority"]["officialAuditEligible"] is True
+    assert vectorless["canonicalLockAuthority"]["exactLockVectorValidated"] is False
+    assert vectorless["canonicalLockAuthority"]["learningEligible"] is False
+
+    graded_vectorless = audit.audit_rows([_final(game_id="game-missing-vector")])[0]
+    assert graded_vectorless["status"] == "GRADED"
+    assert audit._is_canonical_graded_row(graded_vectorless) is True
+    assert audit._is_learning_eligible_graded_row(graded_vectorless) is False
+    assert accuracy._has_canonical_lock_authority(graded_vectorless) is True
+    learning = audit.score_learning([graded_vectorless])
+    assert learning["multiWindowStats"]["season"]["rowCount"] == 0
+
     rejected = audit.audit_rows([_final(game_id="game-tampered-vector")])[0]
     assert rejected["status"] == "INVALID_CANONICAL_LOCK"
     assert rejected["canonicalLockEvidenceStatus"] == "INVALID"
     assert rejected["canonicalLockValidationErrors"]
-    assert "pregame_vector_contains_outcome_label" in rejected["canonicalLockAuthority"]["rejectionReasons"]
+    assert "invalid_vector_not_explicitly_unverified" in (
+        rejected["canonicalLockAuthority"]["rejectionReasons"]
+    )
+
+
+def test_stats_fallback_lock_settles_by_provider_event_alias_when_vector_excluded(monkeypatch):
+    row = _row(game_id="mlb_statsapi:991004")
+    row["providerEventId"] = "late-provider-id"
+    row["officialGamePk"] = "991004"
+    row.pop("frozenFeatureVector")
+    row = exact_contract.apply_exact_vector_training_status(row)
+    item = _item(row)
+    _install_table(monkeypatch, [item])
+
+    audited = audit.audit_rows([_final(game_id="late-provider-id")])[0]
+
+    assert audited["status"] == "GRADED"
+    assert audited["canonicalLockAuthority"]["providerGameId"] == "late-provider-id"
+    assert audited["canonicalLockAuthority"]["exactLockVectorValidated"] is False
+    assert audited["canonicalLockAuthority"]["officialAuditEligible"] is True
+    assert audited["canonicalLockAuthority"]["learningEligible"] is False
+    assert doubleheader_audit._provider_id(row) == "late-provider-id"
+    assert doubleheader_audit._canonical_authority(
+        audited,
+        audit.CANONICAL_LOCK_AUTHORITY_VERSION,
+    ) is True
+
+
+def test_post_lock_provider_alias_from_immutable_pull_history_is_official_and_learning_eligible(
+    monkeypatch,
+):
+    row = _row(game_id="mlb_statsapi:991004")
+    row["officialGamePk"] = "991004"
+    item = _item(row)
+    _install_table(monkeypatch, [item])
+    monkeypatch.setattr(
+        audit.history,
+        "query_pulls",
+        lambda sport, date, limit: [_provider_alias_pull()],
+    )
+    monkeypatch.setattr(
+        audit.history,
+        "validate_provider_schedule_manifest",
+        lambda pull, slate, verify_immutable_storage: [],
+    )
+
+    audited = audit.audit_rows([_final(game_id="late-provider-id")])[0]
+
+    assert audited["status"] == "GRADED"
+    authority = audited["canonicalLockAuthority"]
+    assert authority["providerIdentityMatchMethod"] == (
+        audit.VERIFIED_PROVIDER_ALIAS_MATCH_METHOD
+    )
+    assert authority["matchMethod"] == audit.VERIFIED_PROVIDER_ALIAS_MATCH_METHOD
+    assert authority["exactProviderIdentityMatched"] is False
+    assert authority["verifiedProviderAliasCrosswalkMatched"] is True
+    assert authority["providerAliasCrosswalk"]["immutableManifestValidated"] is True
+    assert authority["providerAliasCrosswalk"]["uniqueBidirectionalCrosswalk"] is True
+    assert authority["providerAliasCrosswalk"]["officialGamePk"] == "991004"
+    assert authority["providerAliasCrosswalk"]["providerEventId"] == "late-provider-id"
+    assert audit._is_canonical_graded_row(audited) is True
+    assert audit._is_learning_eligible_graded_row(audited) is True
+    assert accuracy._has_canonical_lock_authority(audited) is True
+    assert audit._dedupe_learning_rows([audited]) == [audited]
+
+
+def test_provider_alias_authority_tamper_is_not_official_or_learning_eligible(
+    monkeypatch,
+):
+    row = _row(game_id="mlb_statsapi:991004")
+    row["officialGamePk"] = "991004"
+    _install_table(monkeypatch, [_item(row)])
+    monkeypatch.setattr(
+        audit.history,
+        "query_pulls",
+        lambda sport, date, limit: [_provider_alias_pull()],
+    )
+    monkeypatch.setattr(
+        audit.history,
+        "validate_provider_schedule_manifest",
+        lambda pull, slate, verify_immutable_storage: [],
+    )
+    audited = audit.audit_rows([_final(game_id="late-provider-id")])[0]
+    tampered = copy.deepcopy(audited)
+    tampered["canonicalLockAuthority"]["providerAliasCrosswalk"][
+        "providerEventId"
+    ] = "different-provider-id"
+
+    assert audit._is_canonical_graded_row(tampered) is False
+    assert audit._is_learning_eligible_graded_row(tampered) is False
+    assert accuracy._has_canonical_lock_authority(tampered) is False
+
+
+def test_post_lock_provider_alias_crosswalk_fails_closed_on_ambiguity(monkeypatch):
+    row = _row(game_id="mlb_statsapi:991004")
+    row["officialGamePk"] = "991004"
+    _install_table(monkeypatch, [_item(row)])
+    monkeypatch.setattr(
+        audit.history,
+        "query_pulls",
+        lambda sport, date, limit: [
+            _provider_alias_pull(),
+            _provider_alias_pull(
+                provider_id="different-provider-id",
+                fingerprint="manifest-proof-2",
+            ),
+        ],
+    )
+    monkeypatch.setattr(
+        audit.history,
+        "validate_provider_schedule_manifest",
+        lambda pull, slate, verify_immutable_storage: [],
+    )
+
+    audited = audit.audit_rows([_final(game_id="late-provider-id")])[0]
+
+    assert audited["status"] == "MISSING_CANONICAL_LOCK"
+
+
+def test_post_lock_provider_alias_crosswalk_rejects_wrong_ordered_teams(monkeypatch):
+    row = _row(game_id="mlb_statsapi:991004")
+    row["officialGamePk"] = "991004"
+    _install_table(monkeypatch, [_item(row)])
+    monkeypatch.setattr(
+        audit.history,
+        "query_pulls",
+        lambda sport, date, limit: [
+            _provider_alias_pull(
+                away="Seattle Mariners",
+                home="San Francisco Giants",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        audit.history,
+        "validate_provider_schedule_manifest",
+        lambda pull, slate, verify_immutable_storage: [],
+    )
+
+    audited = audit.audit_rows([_final(game_id="late-provider-id")])[0]
+
+    assert audited["status"] == "MISSING_CANONICAL_LOCK"
 
 
 def test_query_rejects_wrong_storage_version_and_stage_fingerprint_binding(monkeypatch):
@@ -237,6 +416,12 @@ def test_official_audit_requires_exact_provider_id_and_teams(monkeypatch):
     assert exact["correct"] is True
     assert audit._is_canonical_graded_row(exact) is True
     assert exact["canonicalLockAuthority"]["matchMethod"] == "exact_provider_game_id_and_teams"
+    assert exact["canonicalLockAuthority"]["providerIdentityMatchMethod"] == (
+        "exact_provider_game_id_and_teams"
+    )
+    assert exact["canonicalLockAuthority"]["exactProviderIdentityMatched"] is True
+    assert exact["canonicalLockAuthority"]["verifiedProviderAliasCrosswalkMatched"] is False
+    assert accuracy._has_canonical_lock_authority(exact) is True
     assert wrong_id["status"] == "MISSING_CANONICAL_LOCK"
     assert wrong_teams["status"] in {"MISSING_CANONICAL_LOCK", "CANONICAL_LOCK_IDENTITY_MISMATCH"}
     assert wrong_teams["status"] != "GRADED"

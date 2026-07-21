@@ -81,6 +81,10 @@ def _game_identity(game: Dict[str, Any]) -> str:
 
 
 def _same_game(a: Dict[str, Any], b: Dict[str, Any]) -> bool:
+    a_official = a.get("official_game_pk") or a.get("officialGamePk")
+    b_official = b.get("official_game_pk") or b.get("officialGamePk")
+    if a_official not in (None, "") and b_official not in (None, ""):
+        return str(a_official) == str(b_official)
     aid = a.get("game_id") or a.get("id")
     bid = b.get("game_id") or b.get("id")
     if aid and bid and str(aid) == str(bid):
@@ -341,6 +345,12 @@ def _prediction_for_game(pulls: List[Dict[str, Any]], latest_game: Dict[str, Any
         "slate_date": slate_date,
         "gameId": latest_game.get("game_id") or latest_game.get("id") or _game_identity(latest_game),
         "gameIdentity": _game_identity(latest_game),
+        "officialGamePk": latest_game.get("official_game_pk"),
+        "officialGameId": latest_game.get("official_game_id"),
+        "providerEventId": latest_game.get("provider_event_id"),
+        "providerCommenceTime": latest_game.get("provider_commence_time"),
+        "providerStartDriftSeconds": latest_game.get("provider_start_drift_seconds"),
+        "canonicalStartTimeSource": latest_game.get("canonical_start_time_source"),
         "gameKey": latest_game.get("game_key"),
         "homeTeam": latest_game.get("home_team"),
         "awayTeam": latest_game.get("away_team"),

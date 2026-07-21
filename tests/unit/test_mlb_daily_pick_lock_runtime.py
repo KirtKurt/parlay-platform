@@ -79,6 +79,7 @@ def _load_handler(
         "test-ddb-canonical-fingerprint-version"
     )
     daily_lock.history.canonical_payload_fingerprint = lambda value: str(value)
+    daily_lock.history.verified_full_slate_manifest = lambda pulls, slate: {}
 
     def delegate(event, context):
         delegate_calls.append((event, context))
@@ -107,6 +108,7 @@ def _load_handler(
             "ok": True,
             "failClosed": True,
             "expectedVectorVersion": "test-vector-version",
+            "selectionLockIndependentOfTrainingVector": True,
         }
 
     preservation.apply = apply_preservation
@@ -115,6 +117,9 @@ def _load_handler(
     per_game.ATTEMPT_DIAGNOSTICS_VERSION = "test-diagnostics-version"
     per_game.PROMOTION_POLICY_VERSION = "test-promotion-version"
     per_game.PAYLOAD_FINGERPRINT_VERSION = "test-ddb-canonical-fingerprint-version"
+    per_game.OFFICIAL_SCHEDULE_AUTHORITY_VERSION = (
+        "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date"
+    )
     per_game.READINESS_VERSION = "test-readiness-version"
     per_game.LOCK_OUTCOME_VERSION = "test-lock-outcome-version"
     per_game.RELEASE_ASSESSMENT_VERSION = "test-playability-version"
@@ -193,7 +198,7 @@ def test_installs_exact_runtime_before_lock_patches_and_delegates():
             name: True for name in REQUIRED_RUNTIME_STEPS
         }
         assert payload["perGameLockInstallation"]["fixVersion"] == (
-            "MLB-LOCK-RUNTIME-FIX-v4-roster-readiness-release-status"
+            "MLB-LOCK-RUNTIME-FIX-v5-official-schedule-lifecycle-vector-separation"
         )
         assert payload["perGameLockInstallation"]["lastPrelockAtCutoffBecomesFinal"] is True
         assert payload["perGameLockInstallation"]["modelOrSignalRecomputedAtLock"] is False
@@ -213,6 +218,11 @@ def test_installs_exact_runtime_before_lock_patches_and_delegates():
         assert payload["perGameLockInstallation"]["lockOutcomeStatusSeparateFromPrediction"] is True
         assert payload["perGameLockInstallation"]["latePlayabilityAssessmentCannotRewriteSelection"] is True
         assert payload["perGameLockInstallation"]["sourceWindowStabilizationSeconds"] == 0
+        assert payload["perGameLockInstallation"]["officialScheduleAuthorityRequired"] is True
+        assert payload["perGameLockInstallation"]["officialScheduleAuthorityVersion"] == (
+            "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date"
+        )
+        assert payload["perGameLockInstallation"]["selectionLockIndependentOfTrainingVector"] is True
         assert len(delegate_calls) == 1
 
 

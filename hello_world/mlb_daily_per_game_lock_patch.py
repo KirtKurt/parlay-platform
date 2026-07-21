@@ -11,12 +11,17 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import uuid4
 
 import inqsi_pull_history as history_contract
+import mlb_official_schedule_authority as official_schedule_contract
 from mlb_slate_coverage_patch import (
     AUTHORITY_VERSION as PREGAME_PUBLIC_AUTHORITY_VERSION,
     game_identity,
+    resolve_playability_lifecycle,
 )
 
 PAYLOAD_FINGERPRINT_VERSION = history_contract.CANONICAL_PAYLOAD_FINGERPRINT_VERSION
+OFFICIAL_SCHEDULE_AUTHORITY_VERSION = official_schedule_contract.VERSION
+OFFICIAL_SCHEDULE_AUTHORITY_SOURCE = official_schedule_contract.SOURCE
+LEGACY_IDENTITY_CROSSWALK_MAX_DRIFT_SECONDS = 15 * 60
 
 
 VERSION = "INQSI-MLB-DAILY-LOCK-v5-tminus45-readiness-release-status"
@@ -44,6 +49,8 @@ RELEASE_ASSESSMENT_VERSION = "MLB-PLAYABILITY-ASSESSMENT-v1-immutable-selection-
 RELEASE_ASSESSMENT_RECORD_TYPE = "mlb_immutable_playability_assessment"
 READINESS_CHECKPOINT_MINUTES = (60, 50)
 RELEASE_CHECKPOINT_MINUTES = (30, 15)
+CHECKPOINT_MAX_LATE_SECONDS = 120
+PLAYABILITY_EVIDENCE_MAX_AGE_MINUTES = 20
 
 _DIAGNOSTIC_STATES = {
     "WAITING_FOR_CUTOFF_STABILIZATION",
@@ -154,21 +161,106 @@ def _has_moneyline(game: Dict[str, Any]) -> bool:
     return False
 
 
-def _matching_game(pull: Dict[str, Any], identity: str) -> Optional[Dict[str, Any]]:
-    for game in pull.get("games") or []:
-        if game_identity(game) == identity and _has_moneyline(game):
-            return game
-    return None
+def _official_game_pk(game: Dict[str, Any]) -> str:
+    return str(game.get("official_game_pk") or game.get("officialGamePk") or "")
+
+
+def _identity_start(game: Dict[str, Any]) -> Optional[datetime]:
+    value = game.get("commence_time") or game.get("commenceTime")
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _exact_game_match(reference: Dict[str, Any], candidate: Dict[str, Any]) -> bool:
+    reference_official = _official_game_pk(reference)
+    candidate_official = _official_game_pk(candidate)
+    if reference_official and candidate_official:
+        return reference_official == candidate_official
+    return game_identity(reference) == game_identity(candidate)
+
+
+def _legacy_identity_crosswalk_match(
+    reference: Dict[str, Any],
+    candidate: Dict[str, Any],
+) -> bool:
+    # This migration-only bridge is used when exactly one side predates the
+    # official-game-pk fields. Exact ordered teams plus a tight start window
+    # keep same-team doubleheaders distinct and fail closed on ambiguity.
+    if bool(_official_game_pk(reference)) == bool(_official_game_pk(candidate)):
+        return False
+    if (
+        _norm(reference.get("home_team") or reference.get("homeTeam"))
+        != _norm(candidate.get("home_team") or candidate.get("homeTeam"))
+        or _norm(reference.get("away_team") or reference.get("awayTeam"))
+        != _norm(candidate.get("away_team") or candidate.get("awayTeam"))
+    ):
+        return False
+    reference_start = _identity_start(reference)
+    candidate_start = _identity_start(candidate)
+    return bool(
+        reference_start
+        and candidate_start
+        and abs((reference_start - candidate_start).total_seconds())
+        <= LEGACY_IDENTITY_CROSSWALK_MAX_DRIFT_SECONDS
+    )
+
+
+def _same_game(reference: Dict[str, Any], candidate: Dict[str, Any]) -> bool:
+    return _exact_game_match(reference, candidate) or _legacy_identity_crosswalk_match(
+        reference,
+        candidate,
+    )
+
+
+def _matching_game(pull: Dict[str, Any], reference: Any) -> Optional[Dict[str, Any]]:
+    games = [game for game in pull.get("games") or [] if _has_moneyline(game)]
+    if not isinstance(reference, dict):
+        matches = [game for game in games if game_identity(game) == str(reference or "")]
+        return matches[0] if len(matches) == 1 else None
+    exact = [game for game in games if _exact_game_match(reference, game)]
+    if exact:
+        return exact[0] if len(exact) == 1 else None
+    fallback = [
+        game for game in games if _legacy_identity_crosswalk_match(reference, game)
+    ]
+    if not fallback:
+        return None
+    reference_start = _identity_start(reference)
+    ranked = sorted(
+        (
+            abs(((_identity_start(game) or reference_start) - reference_start).total_seconds()),
+            _raw_game_identity(game),
+            game,
+        )
+        for game in fallback
+        if reference_start is not None and _identity_start(game) is not None
+    )
+    if not ranked or (len(ranked) > 1 and ranked[0][0] == ranked[1][0]):
+        return None
+    return ranked[0][2]
 
 
 def _scoring_pulls(
     module: Any,
     pulls: Iterable[Dict[str, Any]],
     game: Dict[str, Any],
+    *,
+    at_or_before: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
     """Return only valid snapshots for one game at/before its scheduled cutoff."""
-    identity = game_identity(game)
-    cutoff = _lock_at(module, game)
+    lock_at = _lock_at(module, game)
+    cutoff = (
+        min(lock_at, at_or_before.astimezone(timezone.utc))
+        if lock_at and at_or_before is not None
+        else lock_at
+    )
     if not cutoff:
         return []
     selected: List[Dict[str, Any]] = []
@@ -176,7 +268,7 @@ def _scoring_pulls(
         pulled_at = _pull_at(module, pull)
         if not pulled_at or pulled_at > cutoff:
             continue
-        matching = _matching_game(pull, identity)
+        matching = _matching_game(pull, game)
         if not matching:
             continue
         scoped = copy.deepcopy(pull)
@@ -191,7 +283,7 @@ def _game_snapshot_fingerprint(game: Dict[str, Any]) -> str:
 
 
 def _source_window_entry(module: Any, pull: Dict[str, Any], game: Dict[str, Any]) -> Dict[str, Any]:
-    matching = _matching_game(pull, game_identity(game))
+    matching = _matching_game(pull, game)
     pulled_at = _pull_at(module, pull)
     return {
         "pullId": str(pull.get("pull_id") or ""),
@@ -313,7 +405,38 @@ def _put_write_once_record(
         if not _conditional_collision(exc):
             raise
         existing = _get_record(module, key)
-        if not existing or existing.get(fingerprint_field) != prepared.get(fingerprint_field):
+        if existing and existing.get(fingerprint_field) == prepared.get(fingerprint_field):
+            return existing
+        # Readiness and playability rows are diagnostics bound to a semantic
+        # checkpoint. Overlapping one-minute invocations can legitimately race
+        # with different evaluation timestamps. The first immutable row wins as
+        # long as it is for the exact same game/checkpoint contract; a race must
+        # never bubble up into the T-45 lock path.
+        same_checkpoint = bool(
+            existing
+            and existing.get("record_type") == prepared.get("record_type")
+            and existing.get("version") == prepared.get("version")
+            and existing.get("slate_date") == prepared.get("slate_date")
+            and existing.get("game_identity") == prepared.get("game_identity")
+            and existing.get("checkpoint") == prepared.get("checkpoint")
+            and (
+                str(prepared.get("checkpoint") or "").startswith("EVENT_GAME1_")
+                or (
+                    existing.get("scheduled_at_utc") == prepared.get("scheduled_at_utc")
+                    and existing.get("evidence_cutoff_at_utc")
+                    == prepared.get("evidence_cutoff_at_utc")
+                )
+            )
+            and (
+                prepared.get("record_type") == READINESS_RECORD_TYPE
+                or (
+                    prepared.get("record_type") == RELEASE_ASSESSMENT_RECORD_TYPE
+                    and existing.get("canonical_selection_fingerprint")
+                    == prepared.get("canonical_selection_fingerprint")
+                )
+            )
+        )
+        if not same_checkpoint:
             raise RuntimeError("write_once_record_collision_mismatch") from exc
         return existing
 
@@ -326,6 +449,8 @@ def _readiness_checkpoint(
     game: Dict[str, Any],
     minutes: int,
     evaluated_at: datetime,
+    *,
+    timing_status: str = "ON_TIME",
 ) -> Dict[str, Any]:
     key = _readiness_key(module, slate, game, minutes)
     existing = _get_record(module, key)
@@ -333,7 +458,17 @@ def _readiness_checkpoint(
         return existing
     lock_at = _lock_at(module, game)
     start = _start(module, game)
-    scoring = _scoring_pulls(module, pulls, game)
+    scheduled_at = start - timedelta(minutes=minutes) if start else None
+    scoring = (
+        _scoring_pulls(
+            module,
+            pulls,
+            game,
+            at_or_before=scheduled_at,
+        )
+        if timing_status == "ON_TIME" and scheduled_at
+        else []
+    )
     source = scoring[-1] if scoring else None
     source_at = _pull_at(module, source or {})
     candidate = None
@@ -345,8 +480,11 @@ def _readiness_checkpoint(
             slate,
             game,
             scoring,
+            at_or_before=scheduled_at,
         )
     reasons: List[str] = []
+    if timing_status != "ON_TIME":
+        reasons.append("checkpoint_window_missed")
     if game_identity(game) not in {game_identity(entry) for entry in manifest}:
         reasons.append("game_not_in_durable_manifest")
     if not start or not lock_at:
@@ -355,15 +493,23 @@ def _readiness_checkpoint(
         reasons.append("no_moneyline_pull_available")
     if len(scoring) < module.MIN_PULLS_PER_GAME_FOR_LOCK:
         reasons.append("insufficient_pull_depth")
-    if source_at and evaluated_at > source_at:
-        source_age = round((evaluated_at - source_at).total_seconds() / 60.0, 2)
+    if source_at and scheduled_at and scheduled_at >= source_at:
+        source_age = round((scheduled_at - source_at).total_seconds() / 60.0, 2)
         if source_age > module.MAX_LATEST_PULL_AGE_MINUTES:
             reasons.append("latest_candidate_source_stale")
     else:
         source_age = None
     reasons.extend(str(reason) for reason in candidate_errors)
     candidate_ready = bool(candidate and candidate_proof and not candidate_errors)
-    status = "READY" if candidate_ready and not reasons else "AT_RISK" if scoring else "NOT_READY"
+    status = (
+        "MISSED"
+        if timing_status != "ON_TIME"
+        else "READY"
+        if candidate_ready and not reasons
+        else "AT_RISK"
+        if scoring
+        else "NOT_READY"
+    )
     item = {
         **key,
         "record_type": READINESS_RECORD_TYPE,
@@ -374,8 +520,10 @@ def _readiness_checkpoint(
         "game_id": game.get("game_id") or game.get("id"),
         "commence_time": start.isoformat() if start else None,
         "checkpoint": f"T_MINUS_{minutes}",
-        "scheduled_at_utc": (start - timedelta(minutes=minutes)).isoformat() if start else None,
+        "checkpoint_timing_status": timing_status,
+        "scheduled_at_utc": scheduled_at.isoformat() if scheduled_at else None,
         "evaluated_at_utc": evaluated_at.isoformat(),
+        "evidence_cutoff_at_utc": scheduled_at.isoformat() if scheduled_at else None,
         "scheduled_lock_at_utc": lock_at.isoformat() if lock_at else None,
         "schedule_authority_ready": bool(manifest and start and lock_at),
         "candidate_ready": candidate_ready,
@@ -398,15 +546,40 @@ def _ensure_readiness_checkpoints(
     pulls: List[Dict[str, Any]],
     manifest: List[Dict[str, Any]],
     now: datetime,
-) -> None:
+) -> List[Dict[str, Any]]:
+    errors: List[Dict[str, Any]] = []
     for game in manifest:
         start = _start(module, game)
         lock_at = _lock_at(module, game)
-        if not start or not lock_at or now >= lock_at:
+        if not start or not lock_at:
             continue
         for minutes in READINESS_CHECKPOINT_MINUTES:
-            if now >= start - timedelta(minutes=minutes):
-                _readiness_checkpoint(module, slate, pulls, manifest, game, minutes, now)
+            scheduled = start - timedelta(minutes=minutes)
+            if now < scheduled:
+                continue
+            timing_status = (
+                "ON_TIME"
+                if now <= scheduled + timedelta(seconds=CHECKPOINT_MAX_LATE_SECONDS)
+                else "MISSED_WINDOW"
+            )
+            try:
+                _readiness_checkpoint(
+                    module,
+                    slate,
+                    pulls,
+                    manifest,
+                    game,
+                    minutes,
+                    now,
+                    timing_status=timing_status,
+                )
+            except Exception as exc:
+                errors.append({
+                    "gameIdentity": game_identity(game),
+                    "checkpoint": f"T_MINUS_{minutes}",
+                    "error": f"{type(exc).__name__}:{exc}",
+                })
+    return errors
 
 
 def _readiness_status(module: Any, slate: str, game: Dict[str, Any]) -> Dict[str, Any]:
@@ -416,6 +589,7 @@ def _readiness_status(module: Any, slate: str, game: Dict[str, Any]) -> Dict[str
         result[f"tMinus{minutes}"] = {
             "recorded": bool(item),
             "status": (item or {}).get("status"),
+            "timingStatus": (item or {}).get("checkpoint_timing_status"),
             "evaluatedAtUtc": (item or {}).get("evaluated_at_utc"),
             "candidateReady": (item or {}).get("candidate_ready") is True,
             "blockingReasons": list((item or {}).get("blocking_reasons") or []),
@@ -512,22 +686,35 @@ def _is_no_prediction_candidate_failure(errors: Iterable[str]) -> bool:
     return values in (
         {"no_persisted_user_visible_platform_prelock_prediction_at_or_before_cutoff"},
         {"no_valid_user_visible_platform_prelock_prediction"},
-        {
-            "no_valid_user_visible_platform_prelock_prediction",
-            "persisted_prelock_prediction_source_stale_at_cutoff",
-        },
     )
 
 
-def _norm_team(value: Any) -> str:
-    return " ".join(str(value or "").strip().lower().split())
+def _ordered_team_identity(game: Dict[str, Any]) -> Tuple[str, str]:
+    """Return the provider-normalized away/home identity without swapping sides."""
+    return (
+        official_schedule_contract.normalize_team(
+            game.get("away_team") or game.get("awayTeam")
+        ),
+        official_schedule_contract.normalize_team(
+            game.get("home_team") or game.get("homeTeam")
+        ),
+    )
+
+
+def _ordered_teams_match(
+    reference: Dict[str, Any],
+    candidate: Dict[str, Any],
+) -> bool:
+    expected = _ordered_team_identity(reference)
+    actual = _ordered_team_identity(candidate)
+    return bool(all(expected) and expected == actual)
 
 
 def _doubleheader_game_one(manifest: List[Dict[str, Any]], game: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    teams = frozenset({_norm_team(game.get("home_team") or game.get("homeTeam")), _norm_team(game.get("away_team") or game.get("awayTeam"))})
+    teams = _ordered_team_identity(game)
     matches = [
         entry for entry in manifest
-        if frozenset({_norm_team(entry.get("home_team") or entry.get("homeTeam")), _norm_team(entry.get("away_team") or entry.get("awayTeam"))}) == teams
+        if _ordered_team_identity(entry) == teams
     ]
     matches.sort(key=lambda entry: (str(entry.get("commence_time") or entry.get("commenceTime") or ""), game_identity(entry)))
     if len(matches) < 2 or game_identity(game) != game_identity(matches[-1]):
@@ -535,27 +722,307 @@ def _doubleheader_game_one(manifest: List[Dict[str, Any]], game: Dict[str, Any])
     return matches[0]
 
 
+def _stage_outcome_alias(
+    module: Any,
+    slate: str,
+    game: Dict[str, Any],
+) -> Tuple[Optional[str], bool]:
+    """Read a provider alias only from the exact immutable Game 1 stage proof."""
+    official_pk = _official_game_pk(game)
+    if not official_pk:
+        return None, True
+    stage = _get_record(module, _stage_key(module, slate, game))
+    if not stage:
+        return None, True
+    row = ((stage.get("data") or {}).get("row") or {})
+    proof = stage.get("candidate_proof") or {}
+    try:
+        persisted_errors = persisted_stage_authority_errors(module.TABLE, stage)
+        fingerprint_valid = stage.get("stage_fingerprint") == _stage_fingerprint(stage)
+    except Exception:
+        return None, False
+    if (
+        persisted_errors
+        or stage.get("record_type") != STAGE_RECORD_TYPE
+        or str(stage.get("slate_date") or "") != slate
+        or str(stage.get("game_identity") or "") != game_identity(game)
+        or not fingerprint_valid
+        or not _ordered_teams_match(game, row)
+        or _official_game_pk(stage) != official_pk
+        or _official_game_pk(row) != official_pk
+        or str(proof.get("stageOfficialGamePk") or "") != official_pk
+        or str(proof.get("candidateOfficialGamePk") or "") != official_pk
+    ):
+        return None, False
+
+    canonical_id = _raw_game_identity(game)
+    proof_alias = str(proof.get("candidateGameIdentity") or "")
+    explicit_aliases = {
+        str(value)
+        for value in (
+            stage.get("provider_event_id"),
+            row.get("providerEventId"),
+            row.get("sourcePredictionGameId"),
+            row.get("sourcePredictionGameIdentity"),
+        )
+        if value not in (None, "") and str(value) != canonical_id
+    }
+    if not proof_alias or proof_alias == canonical_id:
+        return None, bool(
+            proof_alias == canonical_id
+            and proof.get("identityBindingMode") == "exact_identity"
+            and not explicit_aliases
+        )
+    if proof.get("identityBindingMode") != "official_game_pk":
+        return None, False
+    if explicit_aliases and explicit_aliases != {proof_alias}:
+        return None, False
+    return proof_alias, True
+
+
+def _current_official_crosswalk_alias(
+    module: Any,
+    slate: str,
+    game: Dict[str, Any],
+) -> Tuple[Optional[str], bool]:
+    """Resolve one immutable whole-history official-PK/provider-ID mapping."""
+    official_pk = _official_game_pk(game)
+    if not official_pk:
+        return None, True
+    try:
+        pulls = sorted(
+            module._pulls_for_date(slate),
+            key=lambda pull: _pull_at(module, pull)
+            or datetime.min.replace(tzinfo=timezone.utc),
+        )
+    except Exception:
+        return None, False
+
+    authority_reader = getattr(
+        module.history,
+        "provider_manifest_authority_for_lock",
+        None,
+    )
+    if not callable(authority_reader):
+        return None, False
+
+    pk_to_aliases: Dict[str, set[str]] = {}
+    alias_to_pks: Dict[str, set[str]] = {}
+    target_seen = False
+    for pull in pulls:
+        manifest = pull.get("provider_schedule_manifest")
+        if not isinstance(manifest, dict):
+            continue
+        manifest_games = list(manifest.get("games") or [])
+        try:
+            # This authority reader calls validate_provider_schedule_manifest
+            # with verify_immutable_storage=True before returning its proof.
+            authority = authority_reader(pull, slate, manifest_games)
+        except Exception:
+            return None, False
+        if (
+            not isinstance(authority, dict)
+            or authority.get("immutable") is not True
+            or authority.get("writeOnce") is not True
+            or authority.get("consistentReadVerified") is not True
+        ):
+            return None, False
+
+        for candidate in manifest_games:
+            candidate_pk = _official_game_pk(candidate)
+            if not candidate_pk:
+                continue
+            if candidate_pk == official_pk:
+                target_seen = True
+                if not _ordered_teams_match(game, candidate):
+                    return None, False
+            official_id = str(
+                candidate.get("official_game_id")
+                or f"mlb_statsapi:{candidate_pk}"
+            )
+            canonical_id = _raw_game_identity(candidate)
+            explicit_provider_id = str(
+                candidate.get("provider_event_id")
+                or candidate.get("providerEventId")
+                or ""
+            )
+            provider_ids = {
+                value
+                for value in (explicit_provider_id, canonical_id)
+                if value and value != official_id
+            }
+            if len(provider_ids) > 1:
+                return None, False
+            if not provider_ids:
+                # A later provider-missing/fallback manifest does not erase an
+                # earlier immutable provider alias for this official game.
+                continue
+            provider_id = next(iter(provider_ids))
+            pk_to_aliases.setdefault(candidate_pk, set()).add(provider_id)
+            alias_to_pks.setdefault(provider_id, set()).add(candidate_pk)
+
+    if not target_seen:
+        return None, True
+    if any(len(values) > 1 for values in pk_to_aliases.values()):
+        return None, False
+    if any(len(values) > 1 for values in alias_to_pks.values()):
+        return None, False
+    aliases = pk_to_aliases.get(official_pk) or set()
+    return (next(iter(aliases)) if aliases else None), True
+
+
+def _game_outcome_aliases(
+    module: Any,
+    slate: str,
+    game: Dict[str, Any],
+) -> Optional[List[str]]:
+    canonical_id = str(game.get("game_id") or game.get("id") or "")
+    caller_aliases = {
+        str(value)
+        for value in (
+            game.get("provider_event_id"),
+            game.get("providerEventId"),
+        )
+        if value not in (None, "") and str(value) != canonical_id
+    }
+    stage_alias, stage_valid = _stage_outcome_alias(module, slate, game)
+    current_alias, current_valid = _current_official_crosswalk_alias(
+        module,
+        slate,
+        game,
+    )
+    if not stage_valid or not current_valid:
+        return None
+    provider_aliases = {
+        alias for alias in (stage_alias, current_alias) if alias
+    }
+    # Caller fields are consistency assertions only. They can never create an
+    # outcome alias without an immutable stage or manifest crosswalk proof.
+    if caller_aliases and caller_aliases != provider_aliases:
+        return None
+    # Provider event IDs are stable. Conflicting aliases for one official PK
+    # are ambiguous (especially in a same-team doubleheader), so never guess.
+    if len(provider_aliases) > 1:
+        return None
+    return [
+        alias
+        for alias in (canonical_id, *sorted(provider_aliases))
+        if alias
+    ]
+
+
+def _outcome_matches_alias(
+    item: Any,
+    alias: str,
+    game: Dict[str, Any],
+) -> bool:
+    if not isinstance(item, dict):
+        return False
+    if item.get("completed") is not True or str(item.get("game_id") or "") != alias:
+        return False
+    if item.get("home_team") not in (None, "") or item.get("away_team") not in (None, ""):
+        if not _ordered_teams_match(game, item):
+            return False
+    item_official_pk = _official_game_pk(item)
+    return not item_official_pk or item_official_pk == _official_game_pk(game)
+
+
 def _game_final(module: Any, slate: str, game: Dict[str, Any]) -> bool:
     table = getattr(module, "OUTCOMES", None)
     if table is None:
         return False
     game_key = game.get("game_key") or game.get("gameKey")
-    if not game_key:
+    canonical_id = str(game.get("game_id") or game.get("id") or "")
+    if canonical_id:
+        try:
+            canonical = table.get_item(
+                Key={
+                    "PK": f"OUTCOME#mlb#{slate}",
+                    "SK": f"GAME_ID#{canonical_id}",
+                },
+                ConsistentRead=True,
+            ).get("Item")
+        except Exception:
+            return False
+        if canonical is not None:
+            return _outcome_matches_alias(canonical, canonical_id, game)
+    aliases = _game_outcome_aliases(module, slate, game)
+    if aliases is None or (not game_key and not aliases):
         return False
     try:
-        item = table.get_item(
-            Key={"PK": f"OUTCOME#mlb#{slate}", "SK": f"GAME#{game_key}"},
-            ConsistentRead=True,
-        ).get("Item")
+        found: List[Tuple[str, Dict[str, Any]]] = []
+        for alias in aliases:
+            item = table.get_item(
+                Key={
+                    "PK": f"OUTCOME#mlb#{slate}",
+                    "SK": f"GAME_ID#{alias}",
+                },
+                ConsistentRead=True,
+            ).get("Item")
+            if item is not None:
+                found.append((alias, item))
+        if not found and game_key:
+            item = table.get_item(
+                Key={"PK": f"OUTCOME#mlb#{slate}", "SK": f"GAME#{game_key}"},
+                ConsistentRead=True,
+            ).get("Item")
+            if isinstance(item, dict):
+                item_id = str(item.get("game_id") or "")
+                if item_id in aliases:
+                    found.append((item_id, item))
     except Exception:
         return False
-    expected_id = str(game.get("game_id") or game.get("id") or "")
-    return bool(
-        isinstance(item, dict)
-        and item.get("completed") is True
-        and expected_id
-        and str(item.get("game_id") or "") == expected_id
+    return bool(found) and all(
+        _outcome_matches_alias(item, alias, game)
+        for alias, item in found
     )
+
+
+def _latest_candidate_evidence_before(
+    module: Any,
+    slate: str,
+    game: Dict[str, Any],
+    before: datetime,
+) -> Optional[Tuple[datetime, Dict[str, Any]]]:
+    selected: Optional[Tuple[datetime, Dict[str, Any]]] = None
+    pulls = sorted(
+        module._pulls_for_date(slate),
+        key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc),
+    )
+    scoring = _scoring_pulls(module, pulls, game, at_or_before=before)
+    aliases = {_raw_game_identity(game)}
+    for pull in scoring:
+        for candidate_game in pull.get("games") or []:
+            if _same_game(game, candidate_game):
+                aliases.add(_raw_game_identity(candidate_game))
+    expected_home = _norm(game.get("home_team") or game.get("homeTeam"))
+    expected_away = _norm(game.get("away_team") or game.get("awayTeam"))
+    for item in _candidate_items(module, slate, game, scoring):
+        row = (item.get("data") or {}).get("row") or item.get("data") or {}
+        if not isinstance(row, dict):
+            continue
+        if not _same_game(game, row) and _raw_game_identity(row) not in aliases:
+            continue
+        if (
+            _norm(row.get("homeTeam") or row.get("home_team")) != expected_home
+            or _norm(row.get("awayTeam") or row.get("away_team")) != expected_away
+        ):
+            continue
+        created_at = _candidate_created_at(item, row)
+        persisted_at = _candidate_persisted_at(item)
+        source_at = _candidate_source_at(item, row)
+        if (
+            not created_at
+            or not persisted_at
+            or not source_at
+            or created_at > before
+            or persisted_at > before
+            or source_at > before
+        ):
+            continue
+        if selected is None or persisted_at > selected[0]:
+            selected = (persisted_at, copy.deepcopy(row))
+    return selected
 
 
 def _latest_candidate_row_before(
@@ -564,17 +1031,8 @@ def _latest_candidate_row_before(
     game: Dict[str, Any],
     before: datetime,
 ) -> Optional[Dict[str, Any]]:
-    selected: Optional[Tuple[datetime, Dict[str, Any]]] = None
-    for item in _candidate_items(module, slate, game):
-        row = (item.get("data") or {}).get("row") or item.get("data") or {}
-        if not isinstance(row, dict):
-            continue
-        observed = _candidate_created_at(item, row) or _candidate_persisted_at(item)
-        if not observed or observed > before:
-            continue
-        if selected is None or observed > selected[0]:
-            selected = (observed, copy.deepcopy(row))
-    return selected[1] if selected else None
+    evidence = _latest_candidate_evidence_before(module, slate, game, before)
+    return evidence[1] if evidence else None
 
 
 def _release_block_reasons(row: Dict[str, Any]) -> List[str]:
@@ -600,6 +1058,58 @@ def _release_block_reasons(row: Dict[str, Any]) -> List[str]:
     return sorted(reasons)
 
 
+def _source_status(row: Dict[str, Any], name: str) -> str:
+    snapshot = row.get("fundamentalsSnapshot") or {}
+    statuses = snapshot.get("sourceStatuses") if isinstance(snapshot, dict) else {}
+    value = statuses.get(name) if isinstance(statuses, dict) else None
+    if value in (None, ""):
+        context = row.get("advanced_context") or row.get("advancedContext") or {}
+        group = context.get(name) if isinstance(context, dict) else {}
+        value = group.get("source_status") if isinstance(group, dict) else None
+    return str(value or "NOT_CONNECTED_SOURCE_REQUIRED").strip().upper()
+
+
+def _late_source_block_reasons(row: Dict[str, Any]) -> List[str]:
+    """Verify late safety inputs without pretending missing feeds exist."""
+    reasons: set[str] = set()
+    lineup_status = _source_status(row, "confirmed_lineups")
+    injury_status = _source_status(row, "injuries_late_scratches_news")
+    context = row.get("advanced_context") or row.get("advancedContext") or {}
+    lineups = context.get("confirmed_lineups") if isinstance(context, dict) else {}
+    injuries = context.get("injuries_late_scratches_news") if isinstance(context, dict) else {}
+    snapshot = row.get("fundamentalsSnapshot") or {}
+    injury_flags = snapshot.get("injuryFlags") if isinstance(snapshot, dict) else {}
+
+    if lineup_status != "CONNECTED":
+        reasons.add("CONFIRMED_LINEUPS_SOURCE_UNVERIFIED")
+    elif not (
+        isinstance(lineups, dict)
+        and lineups.get("home_lineup_confirmed") is True
+        and lineups.get("away_lineup_confirmed") is True
+    ):
+        reasons.add("BOTH_STARTING_LINEUPS_NOT_CONFIRMED")
+
+    if injury_status != "CONNECTED":
+        reasons.add("INJURIES_LATE_SCRATCHES_SOURCE_UNVERIFIED")
+    else:
+        combined: List[Any] = []
+        if isinstance(injuries, dict):
+            combined.extend(injuries.get("home_key_injuries") or [])
+            combined.extend(injuries.get("away_key_injuries") or [])
+            combined.extend(injuries.get("late_scratch_flags") or [])
+            if injuries.get("pitcher_change_flag"):
+                combined.append(injuries.get("pitcher_change_flag"))
+        if isinstance(injury_flags, dict):
+            combined.extend(injury_flags.get("home") or [])
+            combined.extend(injury_flags.get("away") or [])
+            combined.extend(injury_flags.get("lateScratches") or [])
+            if injury_flags.get("pitcherChange"):
+                combined.append(injury_flags.get("pitcherChange"))
+        if combined:
+            reasons.add("CONFIRMED_INJURY_LATE_SCRATCH_OR_PITCHER_CHANGE")
+    return sorted(reasons)
+
+
 def _playability_assessment(
     module: Any,
     slate: str,
@@ -608,6 +1118,8 @@ def _playability_assessment(
     stage: Dict[str, Any],
     checkpoint: str,
     evaluated_at: datetime,
+    *,
+    timing_status: str = "ON_TIME",
 ) -> Dict[str, Any]:
     key = _release_key(module, slate, game, checkpoint)
     existing = _get_record(module, key)
@@ -617,10 +1129,49 @@ def _playability_assessment(
     selection_fingerprint = str(locked_row.get("lastPrelockSelectionFingerprint") or "")
     if not selection_fingerprint:
         raise RuntimeError("playability_assessment_missing_locked_selection_fingerprint")
-    latest = _latest_candidate_row_before(module, slate, game, evaluated_at) or locked_row
+    lock_at = _lock_at(module, game)
+    start = _start(module, game)
+    scheduled_at: Optional[datetime] = None
+    if checkpoint.startswith("T_MINUS_") and start:
+        try:
+            scheduled_at = start - timedelta(minutes=int(checkpoint.rsplit("_", 1)[-1]))
+        except (TypeError, ValueError):
+            scheduled_at = None
+    evidence_cutoff = scheduled_at or evaluated_at
+    evidence = (
+        _latest_candidate_evidence_before(module, slate, game, evidence_cutoff)
+        if timing_status == "ON_TIME"
+        else None
+    )
+    evidence_at = evidence[0] if evidence else None
+    latest = evidence[1] if evidence else locked_row
+    evidence_source_at = _parse_iso(
+        latest.get("predictionSourcePullAt")
+        or (latest.get("slatePredictionLock") or {}).get("latestScoringPullAt")
+        or (latest.get("fundamentalsSnapshot") or {}).get("asOfUtc")
+    )
     reasons = set(_release_block_reasons(locked_row)) | set(_release_block_reasons(latest))
+    evidence_age = (
+        round((evidence_cutoff - evidence_source_at).total_seconds() / 60.0, 2)
+        if evidence_source_at
+        else None
+    )
+    if timing_status != "ON_TIME":
+        reasons.add("PLAYABILITY_CHECKPOINT_WINDOW_MISSED")
+    elif (
+        not evidence_at
+        or not evidence_source_at
+        or not lock_at
+        or evidence_at <= lock_at
+        or evidence_source_at <= lock_at
+    ):
+        reasons.add("NO_POST_LOCK_PLAYABILITY_EVIDENCE")
+    elif evidence_age is None or evidence_age > PLAYABILITY_EVIDENCE_MAX_AGE_MINUTES:
+        reasons.add("PLAYABILITY_EVIDENCE_STALE")
+    else:
+        reasons.update(_late_source_block_reasons(latest))
     game_one = _doubleheader_game_one(manifest, game)
-    event_driven = checkpoint == "EVENT_GAME1_FINAL"
+    event_driven = checkpoint in {"EVENT_GAME1_PENDING", "EVENT_GAME1_FINAL"}
     if game_one is not None and not _game_final(module, slate, game_one):
         reasons.add("DOUBLEHEADER_GAME1_NOT_FINAL")
     canonical_playable = bool(
@@ -629,7 +1180,6 @@ def _playability_assessment(
         or locked_row.get("actionablePick") is True
     )
     playable = bool(canonical_playable and not reasons)
-    start = _start(module, game)
     item = {
         **key,
         "record_type": RELEASE_ASSESSMENT_RECORD_TYPE,
@@ -640,7 +1190,15 @@ def _playability_assessment(
         "game_id": game.get("game_id") or game.get("id"),
         "commence_time": start.isoformat() if start else None,
         "checkpoint": checkpoint,
+        "checkpoint_timing_status": timing_status,
+        "scheduled_at_utc": scheduled_at.isoformat() if scheduled_at else None,
         "evaluated_at_utc": evaluated_at.isoformat(),
+        "evidence_cutoff_at_utc": evidence_cutoff.isoformat(),
+        "evidence_at_utc": evidence_at.isoformat() if evidence_at else None,
+        "evidence_source_at_utc": evidence_source_at.isoformat() if evidence_source_at else None,
+        "evidence_age_minutes": evidence_age,
+        "lineup_source_status": _source_status(latest, "confirmed_lineups"),
+        "injury_source_status": _source_status(latest, "injuries_late_scratches_news"),
         "canonical_selection_fingerprint": selection_fingerprint,
         "canonical_predicted_winner": locked_row.get("predictedWinner"),
         "canonical_predicted_side": locked_row.get("predictedSide"),
@@ -666,14 +1224,23 @@ def _ensure_playability_assessments(
     manifest: List[Dict[str, Any]],
     stages: Dict[str, Dict[str, Any]],
     now: datetime,
-) -> None:
+) -> List[Dict[str, Any]]:
+    errors: List[Dict[str, Any]] = []
     for game in manifest:
         stage = stages.get(game_identity(game))
         start = _start(module, game)
         if not stage or not start or now >= start:
             continue
         for minutes in RELEASE_CHECKPOINT_MINUTES:
-            if now >= start - timedelta(minutes=minutes):
+            scheduled = start - timedelta(minutes=minutes)
+            if now < scheduled:
+                continue
+            timing_status = (
+                "ON_TIME"
+                if now <= scheduled + timedelta(seconds=CHECKPOINT_MAX_LATE_SECONDS)
+                else "MISSED_WINDOW"
+            )
+            try:
                 _playability_assessment(
                     module,
                     slate,
@@ -682,18 +1249,37 @@ def _ensure_playability_assessments(
                     stage,
                     f"T_MINUS_{minutes}",
                     now,
+                    timing_status=timing_status,
                 )
+            except Exception as exc:
+                errors.append({
+                    "gameIdentity": game_identity(game),
+                    "checkpoint": f"T_MINUS_{minutes}",
+                    "error": f"{type(exc).__name__}:{exc}",
+                })
         game_one = _doubleheader_game_one(manifest, game)
-        if game_one is not None and _game_final(module, slate, game_one):
-            _playability_assessment(
-                module,
-                slate,
-                manifest,
-                game,
-                stage,
-                "EVENT_GAME1_FINAL",
-                now,
+        if game_one is not None:
+            game_one_final = _game_final(module, slate, game_one)
+            event_checkpoint = (
+                "EVENT_GAME1_FINAL" if game_one_final else "EVENT_GAME1_PENDING"
             )
+            try:
+                _playability_assessment(
+                    module,
+                    slate,
+                    manifest,
+                    game,
+                    stage,
+                    event_checkpoint,
+                    now,
+                )
+            except Exception as exc:
+                errors.append({
+                    "gameIdentity": game_identity(game),
+                    "checkpoint": event_checkpoint,
+                    "error": f"{type(exc).__name__}:{exc}",
+                })
+    return errors
 
 
 def _latest_playability_assessment(
@@ -704,7 +1290,12 @@ def _latest_playability_assessment(
 ) -> Optional[Dict[str, Any]]:
     candidates = [
         _get_record(module, _release_key(module, slate, game, checkpoint))
-        for checkpoint in ("T_MINUS_30", "T_MINUS_15", "EVENT_GAME1_FINAL")
+        for checkpoint in (
+            "T_MINUS_30",
+            "T_MINUS_15",
+            "EVENT_GAME1_PENDING",
+            "EVENT_GAME1_FINAL",
+        )
     ]
     valid: List[Dict[str, Any]] = []
     for item in candidates:
@@ -732,6 +1323,32 @@ def _latest_playability_assessment(
     if not valid:
         return None
     return max(valid, key=lambda item: str(item.get("evaluated_at_utc") or ""))
+
+
+def _resolved_playability_lifecycle(
+    module: Any,
+    slate: str,
+    game: Dict[str, Any],
+    locked_row: Dict[str, Any],
+    now: datetime,
+    event_pending_required: bool = False,
+) -> Dict[str, Any]:
+    def read(checkpoint: str) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+        key = _release_key(module, slate, game, checkpoint)
+        try:
+            item = module.TABLE.get_item(Key=key, ConsistentRead=True).get("Item")
+            return (item if isinstance(item, dict) else None), None
+        except Exception as exc:
+            return None, f"status_read_failed:{type(exc).__name__}:{exc}"
+
+    return resolve_playability_lifecycle(
+        slate=slate,
+        game=game,
+        locked_row=locked_row,
+        now=now,
+        record_reader=read,
+        event_pending_required=event_pending_required,
+    )
 
 
 def _plain(value: Any) -> Any:
@@ -857,6 +1474,127 @@ def _provider_manifest_authority_errors(table: Any, item: Dict[str, Any]) -> Lis
     if len(set(canonical_identities)) != len(canonical_identities):
         errors.append("provider_manifest_stage_duplicate_identity")
 
+    membership_authority = authority.get("membershipAuthority") or {}
+    if membership_authority:
+        for key in (
+            "version",
+            "recordType",
+            "pk",
+            "sk",
+            "fingerprint",
+            "slateDate",
+            "pullId",
+            "gameCount",
+            "gameIdentities",
+            "canonicalGameIdentities",
+        ):
+            if membership_authority.get(key) != authority.get(key):
+                errors.append(f"membership_authority_{key}_mismatch")
+
+    schedule_authority = authority.get("scheduleRevisionAuthority") or {}
+    schedule_manifest = manifest
+    schedule_games = games
+    if schedule_authority:
+        for key in required_true:
+            if schedule_authority.get(key) is not True:
+                errors.append(f"schedule_revision_authority_{key}_missing")
+        if schedule_authority.get("version") != history_contract.PROVIDER_MANIFEST_VERSION:
+            errors.append("schedule_revision_authority_version_mismatch")
+        if schedule_authority.get("recordType") != history_contract.PROVIDER_MANIFEST_RECORD_TYPE:
+            errors.append("schedule_revision_authority_record_type_mismatch")
+        schedule_pk = str(schedule_authority.get("pk") or "")
+        schedule_sk = str(schedule_authority.get("sk") or "")
+        schedule_stored = (
+            _consistent_item(table, {"PK": schedule_pk, "SK": schedule_sk})
+            if schedule_pk and schedule_sk
+            else None
+        )
+        if not schedule_pk or not schedule_sk:
+            errors.append("schedule_revision_authority_key_missing")
+        elif not schedule_stored:
+            errors.append("immutable_schedule_revision_manifest_readback_missing")
+        else:
+            schedule_manifest = schedule_stored.get("data") or {}
+            schedule_fingerprint = (
+                history_contract.provider_manifest_fingerprint(schedule_manifest)
+                if isinstance(schedule_manifest, dict) and schedule_manifest
+                else ""
+            )
+            if (
+                schedule_stored.get("record_type")
+                != history_contract.PROVIDER_MANIFEST_RECORD_TYPE
+                or schedule_stored.get("write_once") is not True
+                or schedule_stored.get("PK") != schedule_pk
+                or schedule_stored.get("SK") != schedule_sk
+                or str(schedule_stored.get("manifest_fingerprint") or "")
+                != schedule_fingerprint
+                or str(schedule_manifest.get("fingerprint") or "")
+                != schedule_fingerprint
+                or str(schedule_authority.get("fingerprint") or "")
+                != schedule_fingerprint
+            ):
+                errors.append("immutable_schedule_revision_manifest_readback_mismatch")
+            if (
+                str(schedule_manifest.get("slateDate") or "")
+                != str(item.get("slate_date") or "")
+                or str(schedule_authority.get("slateDate") or "")
+                != str(item.get("slate_date") or "")
+            ):
+                errors.append("schedule_revision_stage_slate_mismatch")
+            schedule_games = list(schedule_manifest.get("games") or [])
+            schedule_raw_identities = [
+                history_contract.provider_game_identity("mlb", game)
+                for game in schedule_games
+            ]
+            schedule_canonical_identities = [
+                game_identity(game) for game in schedule_games
+            ]
+            if (
+                list(schedule_authority.get("gameIdentities") or [])
+                != schedule_raw_identities
+                or list(schedule_authority.get("canonicalGameIdentities") or [])
+                != schedule_canonical_identities
+            ):
+                errors.append("schedule_revision_authority_identity_mismatch")
+            try:
+                schedule_count = int(schedule_authority.get("gameCount"))
+            except (TypeError, ValueError):
+                schedule_count = -1
+            if schedule_count != len(schedule_games) or len(schedule_games) != len(games):
+                errors.append("schedule_revision_authority_game_count_mismatch")
+            schedule_proof = schedule_manifest.get("scheduleAuthority") or {}
+            if (
+                schedule_proof.get("fingerprint")
+                != schedule_authority.get("officialScheduleAuthorityFingerprint")
+                or authority.get("officialScheduleAuthorityFingerprint")
+                != schedule_authority.get("officialScheduleAuthorityFingerprint")
+            ):
+                errors.append("schedule_revision_official_authority_fingerprint_mismatch")
+
+    membership_by_pk: Dict[str, Dict[str, Any]] = {}
+    schedule_by_pk: Dict[str, Dict[str, Any]] = {}
+    if schedule_authority:
+        for label, source_games, target in (
+            ("membership", games, membership_by_pk),
+            ("schedule_revision", schedule_games, schedule_by_pk),
+        ):
+            for source_game in source_games:
+                official_pk = _official_game_pk(source_game)
+                if not official_pk:
+                    errors.append(f"{label}_official_game_pk_missing")
+                elif official_pk in target:
+                    errors.append(f"{label}_duplicate_official_game_pk:{official_pk}")
+                else:
+                    target[official_pk] = source_game
+        if set(membership_by_pk) != set(schedule_by_pk):
+            errors.append("schedule_revision_official_membership_mismatch")
+        for official_pk in sorted(set(membership_by_pk) & set(schedule_by_pk)):
+            if not _ordered_teams_match(
+                membership_by_pk[official_pk],
+                schedule_by_pk[official_pk],
+            ):
+                errors.append(f"schedule_revision_ordered_teams_mismatch:{official_pk}")
+
     stage_identity = str(item.get("game_identity") or "")
     try:
         index = canonical_identities.index(stage_identity)
@@ -866,7 +1604,17 @@ def _provider_manifest_authority_errors(table: Any, item: Dict[str, Any]) -> Lis
         errors.append("stage_game_missing_from_provider_manifest")
     row = ((item.get("data") or {}).get("row") or {})
     if manifest_game:
-        if _parse_iso(manifest_game.get("commence_time")) != _parse_iso(item.get("commence_time")):
+        stage_official_pk = (
+            _official_game_pk(item)
+            or _official_game_pk(row)
+            or _official_game_pk(manifest_game)
+        )
+        schedule_game = schedule_by_pk.get(stage_official_pk) if schedule_authority else manifest_game
+        if (
+            not schedule_game
+            or _parse_iso(schedule_game.get("commence_time"))
+            != _parse_iso(item.get("commence_time"))
+        ):
             errors.append("provider_manifest_stage_commence_mismatch")
         if _norm(manifest_game.get("home_team")) != _norm(row.get("homeTeam") or row.get("home_team")):
             errors.append("provider_manifest_stage_home_team_mismatch")
@@ -891,10 +1639,45 @@ def _candidate_snapshot_authority_errors(table: Any, item: Dict[str, Any]) -> Li
         return ["candidate_snapshot_row_missing"]
     stage_row = ((item.get("data") or {}).get("row") or {})
     expected_pk = f"GAME_WINNERS#mlb#{item.get('slate_date')}"
-    raw_identity = _raw_game_identity(stage_row)
+    stage_identity = _raw_game_identity(stage_row)
+    candidate_identity = str(
+        candidate.get("game_identity")
+        or _raw_game_identity(candidate_row)
+        or ""
+    )
+    candidate_row_identity = _raw_game_identity(candidate_row)
+    stage_official_game_pk = _official_game_pk(stage_row)
+    candidate_official_game_pk = _official_game_pk(candidate_row)
+    exact_identity_binding = bool(
+        candidate_identity
+        and candidate_identity == candidate_row_identity == stage_identity
+    )
+    official_identity_binding = bool(
+        candidate_identity
+        and candidate_identity == candidate_row_identity
+        and stage_official_game_pk
+        and candidate_official_game_pk
+        and stage_official_game_pk == candidate_official_game_pk
+    )
+    legacy_identity_binding = bool(
+        candidate_identity
+        and candidate_identity == candidate_row_identity
+        and _legacy_identity_crosswalk_match(stage_row, candidate_row)
+    )
+    expected_binding_mode = (
+        "exact_identity"
+        if exact_identity_binding
+        else "official_game_pk"
+        if official_identity_binding
+        else "legacy_team_start_crosswalk"
+        if legacy_identity_binding
+        else "unverified"
+    )
     if candidate.get("PK") != expected_pk or candidate.get("SK") != sk:
         errors.append("candidate_snapshot_key_mismatch")
-    if not sk.startswith(f"PREGAME#GAME#{raw_identity}#"):
+    if not candidate_identity or not sk.startswith(
+        f"PREGAME#GAME#{candidate_identity}#"
+    ):
         errors.append("candidate_snapshot_sk_identity_mismatch")
     if (
         candidate.get("record_type") != PREGAME_SNAPSHOT_RECORD_TYPE
@@ -905,10 +1688,23 @@ def _candidate_snapshot_authority_errors(table: Any, item: Dict[str, Any]) -> Li
         errors.append("candidate_snapshot_not_immutable_write_once")
     if (
         str(candidate.get("slate_date") or "") != str(item.get("slate_date") or "")
-        or str(candidate.get("game_identity") or "") != raw_identity
-        or game_identity(candidate_row) != str(item.get("game_identity") or "")
+        or not (
+            exact_identity_binding
+            or official_identity_binding
+            or legacy_identity_binding
+        )
     ):
         errors.append("candidate_snapshot_game_binding_mismatch")
+    identity_proof_fields = {
+        "candidateGameIdentity": candidate_identity,
+        "stageGameIdentity": stage_identity,
+        "candidateOfficialGamePk": candidate_official_game_pk or None,
+        "stageOfficialGamePk": stage_official_game_pk or None,
+        "identityBindingMode": expected_binding_mode,
+    }
+    for proof_key, expected_value in identity_proof_fields.items():
+        if proof.get(proof_key) != expected_value:
+            errors.append(f"candidate_snapshot_{proof_key}_proof_mismatch")
     timestamp_fields = (
         ("prediction_created_at_utc", "predictionCreatedAtUtc"),
         ("prediction_persisted_at_utc", "predictionPersistedAtUtc"),
@@ -1038,7 +1834,17 @@ def _source_window_authority_errors(table: Any, item: Dict[str, Any]) -> List[st
         ):
             errors.append(f"bound_source_window_pull_readback_mismatch:{index}")
             continue
-        matching = _matching_game(pull, str(item.get("game_identity") or ""))
+        staged_row = (item.get("data") or {}).get("row") or {}
+        matching = _matching_game(
+            pull,
+            {
+                "game_id": item.get("game_id") or item.get("game_identity"),
+                "official_game_pk": item.get("official_game_pk"),
+                "commence_time": item.get("commence_time"),
+                "home_team": staged_row.get("homeTeam") or staged_row.get("home_team"),
+                "away_team": staged_row.get("awayTeam") or staged_row.get("away_team"),
+            },
+        )
         if not matching or _game_snapshot_fingerprint(matching) != fingerprint:
             errors.append(f"bound_source_window_game_fingerprint_mismatch:{index}")
     if timestamps != sorted(timestamps):
@@ -1050,6 +1856,27 @@ def _source_window_authority_errors(table: Any, item: Dict[str, Any]) -> List[st
         or int(item.get("pull_depth") or 0) != len(entries)
     ):
         errors.append("bound_source_window_terminal_pull_mismatch")
+    return sorted(set(errors))
+
+
+def _selection_lock_authority_errors(row: Dict[str, Any]) -> List[str]:
+    """Validate winner-selection facts independently of ML-vector eligibility."""
+    errors: List[str] = []
+    side = row.get("predictedSide")
+    if side not in {"home", "away"} or not row.get("predictedWinner"):
+        errors.append("selected_side_or_winner_missing")
+    else:
+        expected_winner = (
+            (row.get("homeTeam") or row.get("home_team"))
+            if side == "home"
+            else (row.get("awayTeam") or row.get("away_team"))
+        )
+        if _norm(row.get("predictedWinner")) != _norm(expected_winner):
+            errors.append("selected_winner_side_team_mismatch")
+    if not _selected_price_proven(row):
+        errors.append("selected_side_locked_price_not_proven")
+    if _team_win_probability_pct(row) in (None, ""):
+        errors.append("selected_team_win_probability_missing")
     return sorted(set(errors))
 
 
@@ -1086,6 +1913,8 @@ def persisted_stage_authority_errors(table: Any, item: Dict[str, Any]) -> List[s
     errors.extend(_provider_manifest_authority_errors(table, item))
     errors.extend(_candidate_snapshot_authority_errors(table, item))
     errors.extend(_source_window_authority_errors(table, item))
+    stage_row = ((item.get("data") or {}).get("row") or {})
+    errors.extend(_selection_lock_authority_errors(stage_row))
     return sorted(set(errors))
 
 
@@ -1560,8 +2389,12 @@ def _prepare_row(
     manifest: List[Dict[str, Any]],
     locked_count: int,
     fingerprint_version: Optional[str] = PAYLOAD_FINGERPRINT_VERSION,
+    reliability_block_reasons: Optional[Iterable[str]] = None,
 ) -> Dict[str, Any]:
     out = copy.deepcopy(row)
+    reliability_reasons = sorted({
+        str(reason) for reason in (reliability_block_reasons or []) if reason
+    })
     # Older persisted pre-lock rows may carry the selected-team probability
     # under one of the already-authoritative probability aliases.  Promote that
     # exact persisted value before freezing; this is field normalization only,
@@ -1574,13 +2407,39 @@ def _prepare_row(
     selection_fingerprint = _payload_fingerprint(
         _selection_material(out), fingerprint_version
     )
+    source_game = _matching_game(source_pull, game) or {}
+    canonical_game_id = _raw_game_identity(game)
+    source_prediction_game_id = str(
+        out.get("gameId") or out.get("gameIdentity") or _raw_game_identity(source_game) or ""
+    )
+    provider_event_id = (
+        game.get("provider_event_id")
+        or source_game.get("provider_event_id")
+        or (
+            _raw_game_identity(source_game)
+            if source_game and _raw_game_identity(source_game) != canonical_game_id
+            else None
+        )
+    )
     lock = _per_game_lock(module, slate, game, source_pull, staged_at, manifest, locked_count)
     coverage = _manifest_coverage(manifest, locked_count)
     out.update({
         "slate_date": slate,
         "slateDateEt": slate,
-        "gameIdentity": out.get("gameIdentity") or game_identity(game).replace("provider:", "", 1),
-        "gameId": out.get("gameId") or game.get("game_id") or game.get("id"),
+        "gameIdentity": canonical_game_id,
+        "gameId": canonical_game_id,
+        "sourcePredictionGameId": source_prediction_game_id or None,
+        "sourcePredictionGameIdentity": out.get("gameIdentity") or source_prediction_game_id or None,
+        "officialGamePk": game.get("official_game_pk") or game.get("officialGamePk"),
+        "officialGameId": game.get("official_game_id") or game.get("officialGameId"),
+        "providerEventId": provider_event_id,
+        "providerCommenceTime": game.get("provider_commence_time") or source_game.get("provider_commence_time"),
+        "providerStartDriftSeconds": (
+            game.get("provider_start_drift_seconds")
+            if game.get("provider_start_drift_seconds") is not None
+            else source_game.get("provider_start_drift_seconds")
+        ),
+        "canonicalStartTimeSource": game.get("canonical_start_time_source"),
         "commenceTime": game.get("commence_time") or game.get("commenceTime") or out.get("commenceTime"),
         "homeTeam": game.get("home_team") or game.get("homeTeam") or out.get("homeTeam"),
         "awayTeam": game.get("away_team") or game.get("awayTeam") or out.get("awayTeam"),
@@ -1629,6 +2488,30 @@ def _prepare_row(
         if str(tag) not in {"SLATE_WIDE_45_MIN_LOCK_POLICY", "SLATE_LOCKED"}
     }
     tags.update({"FINAL_LOCKED", "PER_GAME_TMINUS45_LOCKED", "COMPLETE_SLATE_MANIFEST_BOUND"})
+    if reliability_reasons:
+        existing_release_reasons = {
+            str(reason)
+            for reason in (
+                out.get("playabilityBlockReasons")
+                or out.get("releaseBlockReasons")
+                or []
+            )
+            if reason
+        }
+        existing_release_reasons.update(reliability_reasons)
+        out.update({
+            "playable": False,
+            "playablePick": False,
+            "actionablePick": False,
+            "blocked": True,
+            "releaseBlocked": True,
+            "wagerReleaseBlocked": True,
+            "playabilityStatus": "BLOCKED",
+            "playabilityBlockReasons": sorted(existing_release_reasons),
+            "releaseBlockReasons": sorted(existing_release_reasons),
+        })
+        tags.update({"NOT_PLAYABLE", "RELEASE_BLOCKED", "WAGER_RELEASE_BLOCKED"})
+        tags.difference_update({"ACTIONABLE_PICK", "PLAYABLE_PREDICTION"})
     out["tags"] = sorted(tags)
     freeze = dict(out.get("mlFeatureFreeze") or {})
     freeze.update({
@@ -1658,12 +2541,91 @@ def _prepare_row(
         normalized_rows = normalized.get("predictions") or []
         if len(normalized_rows) != 1:
             raise RuntimeError("official_semantics_did_not_return_one_row")
+        out = normalized_rows[0]
+    except Exception as exc:
+        raise RuntimeError(f"LAST_PRELOCK_FINALIZATION_FAILED:{exc}") from exc
+
+    try:
         out = mlb_ml_frozen_features.freeze_row(
-            normalized_rows[0],
+            out,
             coverage_complete=True,
         )
     except Exception as exc:
-        raise RuntimeError(f"LAST_PRELOCK_FINALIZATION_FAILED:{exc}") from exc
+        # Exact-vector creation is ML preparation, not selection authority. Keep
+        # the source-authentic persisted winner and record the failure so the row
+        # can never enter the training cohort.
+        freeze = dict(out.get("mlFeatureFreeze") or {})
+        exclusions = {
+            str(reason)
+            for reason in (freeze.get("trainingExclusionReasons") or [])
+            if reason
+        }
+        exclusions.add("exact_lock_vector_freeze_failed")
+        freeze.update({
+            "exactVectorApplied": False,
+            "exactVectorCreated": False,
+            "exactVectorError": f"{type(exc).__name__}:{exc}",
+            "trainingEligible": False,
+            "trainingExclusionReasons": sorted(exclusions),
+        })
+        out["mlFeatureFreeze"] = freeze
+        out["trainingEligible"] = False
+        out["trainingEligibilityStatus"] = "INELIGIBLE"
+    if reliability_reasons:
+        freeze = dict(out.get("mlFeatureFreeze") or {})
+        exclusions = {
+            str(reason)
+            for reason in (freeze.get("trainingExclusionReasons") or [])
+            if reason
+        }
+        exclusions.update(
+            f"lock_reliability:{reason.lower()}" for reason in reliability_reasons
+        )
+        freeze["trainingEligible"] = False
+        freeze["trainingExclusionReasons"] = sorted(exclusions)
+        out["mlFeatureFreeze"] = freeze
+        out["trainingEligible"] = False
+        out["trainingEligibilityStatus"] = "INELIGIBLE"
+    try:
+        import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
+
+        out = vector_contract.apply_exact_vector_training_status(out)
+    except Exception as exc:
+        # Vector-status tooling is not selection authority. Persist an explicit
+        # fail-closed training exclusion and allow the immutable stage checks to
+        # continue validating the winner, source window, and write-once proof.
+        vector_status_error = (
+            f"exact_vector_status_unavailable:{type(exc).__name__}:{exc}"
+        )
+        vector_exclusion = f"exact_lock_vector_validation:{vector_status_error}"
+        freeze = dict(out.get("mlFeatureFreeze") or {})
+        exclusions = {
+            str(reason)
+            for reason in (freeze.get("trainingExclusionReasons") or [])
+            if reason
+        }
+        exclusions.add(vector_exclusion)
+        freeze.update({
+            "exactVectorVerified": False,
+            "exactVectorValidationErrors": [vector_status_error],
+            "trainingEligible": False,
+            "trainingExclusionReasons": sorted(exclusions),
+            "selectionLockIndependentOfTrainingVector": True,
+        })
+        out.update({
+            "exactVectorVerified": False,
+            "exactVectorValidationErrors": [vector_status_error],
+            "exactVectorStatusUnavailableAtLock": True,
+            "trainingEligible": False,
+            "trainingEligibilityStatus": "INELIGIBLE",
+            "trainingExclusionReasons": sorted(exclusions),
+            "selectionTrainingSeparationVersion": getattr(
+                locals().get("vector_contract"),
+                "VERSION",
+                "MLB-SELECTION-TRAINING-SEPARATION-FALLBACK-v1",
+            ),
+            "mlFeatureFreeze": freeze,
+        })
     if _payload_fingerprint(_selection_material(out), fingerprint_version) != selection_fingerprint:
         raise RuntimeError("LAST_PRELOCK_SELECTION_CHANGED_DURING_FINALIZATION")
     out["lastPrelockSelectionFingerprint"] = selection_fingerprint
@@ -1933,13 +2895,31 @@ def _payload_fingerprint(
     raise ValueError(f"unsupported payload fingerprint version: {version}")
 
 
-def _candidate_items(module: Any, slate: str, game: Dict[str, Any]) -> List[Dict[str, Any]]:
-    raw_identity = _raw_game_identity(game)
-    return _query_prediction_items(
-        module,
-        slate,
-        f"PREGAME#GAME#{raw_identity}#",
-    )
+def _candidate_items(
+    module: Any,
+    slate: str,
+    game: Dict[str, Any],
+    scoring: Optional[Iterable[Dict[str, Any]]] = None,
+) -> List[Dict[str, Any]]:
+    # A game initially absent from the market feed is rostered under its stable
+    # Stats API fallback ID. If the provider later adds it, query both immutable
+    # identities and bind them through official_game_pk rather than orphaning
+    # the valid provider-ID prediction snapshots.
+    aliases = {_raw_game_identity(game)}
+    for pull in scoring or []:
+        for candidate in pull.get("games") or []:
+            if _same_game(game, candidate):
+                aliases.add(_raw_game_identity(candidate))
+    items: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    for raw_identity in sorted(alias for alias in aliases if alias):
+        for item in _query_prediction_items(
+            module,
+            slate,
+            f"PREGAME#GAME#{raw_identity}#",
+        ):
+            key = (str(item.get("PK") or ""), str(item.get("SK") or ""))
+            items[key] = item
+    return list(items.values())
 
 
 def _source_pull_for_candidate(
@@ -1988,7 +2968,7 @@ def _candidate_price_matches_source(
     price = row.get("lockedAmericanOdds")
     if price in (None, "", 0, 0.0):
         price = row.get("americanOdds") or selected_signal.get("americanOdds")
-    source_game = _matching_game(source_pull, game_identity(game))
+    source_game = _matching_game(source_pull, game)
     book_payload = ((source_game or {}).get("books") or {}).get(book) or {}
     market = book_payload.get("ml") or book_payload.get("moneyline") or {}
     source_price = market.get(side) if side in {"home", "away"} else None
@@ -2003,20 +2983,37 @@ def _last_prelock_candidate(
     slate: str,
     game: Dict[str, Any],
     scoring: List[Dict[str, Any]],
+    *,
+    at_or_before: Optional[datetime] = None,
 ) -> Tuple[Optional[Dict[str, Any]], Optional[Dict[str, Any]], List[Dict[str, Any]], List[str]]:
     lock_at = _lock_at(module, game)
     if not lock_at:
         return None, None, [], ["scheduled_lock_missing"]
+    selection_cutoff = (
+        min(lock_at, at_or_before.astimezone(timezone.utc))
+        if at_or_before is not None
+        else lock_at
+    )
     expected_identity = game_identity(game)
+    candidate_aliases = {_raw_game_identity(game)}
+    for pull in scoring:
+        for candidate_game in pull.get("games") or []:
+            if _same_game(game, candidate_game):
+                candidate_aliases.add(_raw_game_identity(candidate_game))
     expected_home = _norm(game.get("home_team") or game.get("homeTeam"))
     expected_away = _norm(game.get("away_team") or game.get("awayTeam"))
     eligible: List[Tuple[datetime, datetime, datetime, Dict[str, Any], Dict[str, Any]]] = []
     observed_prelock = 0
-    for item in _candidate_items(module, slate, game):
+    for item in _candidate_items(module, slate, game, scoring):
         if item.get("record_type") != PREGAME_SNAPSHOT_RECORD_TYPE:
             continue
         row = item.get("data") or {}
-        if not isinstance(row, dict) or game_identity(row) != expected_identity:
+        if not isinstance(row, dict):
+            continue
+        if (
+            not _same_game(game, row)
+            and _raw_game_identity(row) not in candidate_aliases
+        ):
             continue
         if (
             _norm(row.get("homeTeam") or row.get("home_team")) != expected_home
@@ -2030,9 +3027,9 @@ def _last_prelock_candidate(
             not created_at
             or not persisted_at
             or not source_at
-            or created_at > lock_at
-            or persisted_at > lock_at
-            or source_at > lock_at
+            or created_at > selection_cutoff
+            or persisted_at > selection_cutoff
+            or source_at > selection_cutoff
         ):
             continue
         observed_prelock += 1
@@ -2100,9 +3097,30 @@ def _last_prelock_candidate(
             errors.append("persisted_prelock_created_before_source_pull")
         if persisted_at < created_at:
             errors.append("persisted_prelock_written_before_prediction_creation")
-        source_age = (lock_at - source_at).total_seconds() / 60.0
-        if source_age > module.MAX_LATEST_PULL_AGE_MINUTES:
-            errors.append("persisted_prelock_prediction_source_stale_at_cutoff")
+        candidate_identity = str(
+            item.get("game_identity")
+            or _raw_game_identity(row)
+            or ""
+        )
+        stage_identity = _raw_game_identity(game)
+        candidate_official_game_pk = _official_game_pk(row)
+        stage_official_game_pk = _official_game_pk(game)
+        if candidate_identity == stage_identity:
+            identity_binding_mode = "exact_identity"
+        elif (
+            candidate_official_game_pk
+            and stage_official_game_pk
+            and candidate_official_game_pk == stage_official_game_pk
+        ):
+            identity_binding_mode = "official_game_pk"
+        elif _legacy_identity_crosswalk_match(game, row):
+            identity_binding_mode = "legacy_team_start_crosswalk"
+        else:
+            identity_binding_mode = "unverified"
+            errors.append("persisted_prelock_official_identity_binding_missing")
+        source_age = (selection_cutoff - source_at).total_seconds() / 60.0
+        # Age is a release/training reliability gate, not an integrity error.
+        # A source-authentic pre-cutoff winner still receives its T-45 lock.
         for key in ("winner", "correct", "success", "homeWon", "pickCorrect", "outcome", "finalScore"):
             if key in row:
                 errors.append(f"persisted_prelock_contains_{key}")
@@ -2127,7 +3145,6 @@ def _last_prelock_candidate(
                 errors.append("persisted_prelock_fundamentals_provenance_not_lock_safe")
         except Exception as exc:
             errors.append(f"persisted_prelock_provenance_verifier_unavailable:{exc}")
-
         if errors:
             rejected.append({
                 "sk": item.get("SK"),
@@ -2159,14 +3176,21 @@ def _last_prelock_candidate(
             "candidateSnapshotFingerprint": _payload_fingerprint(item, fingerprint_version),
             "predictionSourcePullAtUtc": source_at.isoformat(),
             "predictionSourcePullId": source_pull.get("pull_id") if source_pull else source_id or None,
-            "sourceAtOrBeforeCutoff": source_at <= lock_at,
-            "createdAtOrBeforeCutoff": created_at <= lock_at,
-            "persistedAtOrBeforeCutoff": persisted_at <= lock_at,
+            "sourceAgeAtCutoffMinutes": round(source_age, 4),
+            "evaluationCutoffAtUtc": selection_cutoff.isoformat(),
+            "sourceAtOrBeforeCutoff": source_at <= selection_cutoff,
+            "createdAtOrBeforeCutoff": created_at <= selection_cutoff,
+            "persistedAtOrBeforeCutoff": persisted_at <= selection_cutoff,
             "candidateRowFingerprint": _payload_fingerprint(row, fingerprint_version),
             "candidateSelectionFingerprint": _payload_fingerprint(
                 _selection_material(row), fingerprint_version
             ),
             "candidateVectorFingerprint": (row.get("frozenFeatureVector") or {}).get("fingerprint"),
+            "candidateGameIdentity": candidate_identity,
+            "stageGameIdentity": stage_identity,
+            "candidateOfficialGamePk": candidate_official_game_pk or None,
+            "stageOfficialGamePk": stage_official_game_pk or None,
+            "identityBindingMode": identity_binding_mode,
             "rejectedNewerCandidateCount": len(rejected),
             "rejectedNewerCandidates": rejected,
             "promotionRule": "last_valid_persisted_prediction_at_or_before_own_tminus45_becomes_final_lock",
@@ -2197,11 +3221,19 @@ def _validate_stage(
     row = (item.get("data") or {}).get("row") or {}
     expected_manifest = _canonical_manifest_identities(manifest)
     actual_manifest = list((item.get("data") or {}).get("manifestGameIdentities") or [])
-    lock_at = _lock_at(module, game)
-    start = _start(module, game)
+    # Once a stage exists, its own immutable schedule revision remains the
+    # temporal authority for validation. A later official reschedule may
+    # change pending-game lifecycle timing, but cannot rewrite or invalidate
+    # an already locked winner.
+    start = _parse_iso(item.get("commence_time"))
+    lock_at = _parse_iso(item.get("scheduled_lock_at_utc"))
     staged_at = _parse_iso(item.get("staged_at_utc"))
     source_at = _parse_iso(item.get("source_pull_at_utc"))
-    stable_at = _cutoff_stable_at(module, game)
+    stable_at = (
+        lock_at + timedelta(seconds=CUTOFF_STABILIZATION_SECONDS)
+        if lock_at
+        else None
+    )
     source_window = item.get("source_window") or {}
     candidate_proof = item.get("candidate_proof") or {}
     raw_bound_entries = source_window.get("pulls") or []
@@ -2263,7 +3295,7 @@ def _validate_stage(
         errors.append("stage_game_identity_mismatch")
     if actual_manifest != expected_manifest:
         errors.append("manifest_changed_after_game_lock")
-    if not lock_at or _parse_iso(item.get("scheduled_lock_at_utc")) != lock_at:
+    if not start or not lock_at or lock_at != start - timedelta(minutes=REQUIRED_LOCK_MINUTES):
         errors.append("scheduled_lock_mismatch")
     if not start or not staged_at or staged_at >= start:
         errors.append("late_stage_at_or_after_game_start")
@@ -2301,19 +3333,17 @@ def _validate_stage(
     if item.get("stage_fingerprint") != _stage_fingerprint(item):
         errors.append("stage_fingerprint_mismatch")
     errors.extend(persisted_stage_authority_errors(module.TABLE, item))
-    if lock_at and source_at:
-        errors.extend(_vector_errors(row, game, lock_at, source_at))
     if not _selected_price_proven(row):
         errors.append("selected_side_real_book_price_missing")
     for key in ("winner", "correct", "success", "homeWon", "pickCorrect", "outcome", "finalScore"):
         if key in row:
             errors.append(f"pregame_stage_contains_{key}")
     try:
-        import mlb_daily_lock_ml_vector_preservation_patch as exact_contract
+        import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 
-        errors.extend(exact_contract.validate_exact_locked_row(row))
+        errors.extend(vector_contract.validate_selection_lock_vector_status(row))
     except Exception as exc:
-        errors.append(f"exact_locked_row_validator_unavailable:{exc}")
+        errors.append(f"selection_vector_status_validator_unavailable:{exc}")
     return sorted(set(errors))
 
 
@@ -2356,8 +3386,12 @@ def _canonical_manifest_identities(games: Iterable[Dict[str, Any]]) -> List[str]
 
 
 def _manifest_authority_identity(authority: Dict[str, Any]) -> Tuple[str, ...]:
+    schedule_authority = authority.get("scheduleRevisionAuthority") or {}
     return tuple(
         str(authority.get(key) or "")
+        for key in ("version", "pk", "sk", "fingerprint", "pullId", "observedAtUtc")
+    ) + tuple(
+        str(schedule_authority.get(key) or "")
         for key in ("version", "pk", "sk", "fingerprint", "pullId", "observedAtUtc")
     )
 
@@ -2381,14 +3415,7 @@ def _select_provider_manifest_authority(
     slate: str,
     manifest: List[Dict[str, Any]],
 ) -> Dict[str, Any]:
-    """Select the newest immutable pull that proves the complete daily slate.
-
-    The provider legitimately stops returning games after they start.  That
-    makes the newest response a valid *contracted* response, but not the
-    full-slate authority for later locks.  The selected authority may therefore
-    be older than the scoring pull.  It is schedule proof only; candidate and
-    price selection remain bound to the last persisted pre-cutoff prediction.
-    """
+    """Bind a lock to the resolver's durable immutable full-slate pull."""
     ordered_pulls = sorted(
         list(pulls or []),
         key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc),
@@ -2397,83 +3424,127 @@ def _select_provider_manifest_authority(
         raise RuntimeError("provider_manifest_pull_history_missing")
     if not manifest:
         raise RuntimeError("provider_manifest_complete_slate_missing")
+    resolver = getattr(module.history, "verified_full_slate_manifest", None)
+    if not callable(resolver):
+        # Narrow compatibility path for injected/test adapters. Production's
+        # history module always exposes the durable resolver.
+        expected_material = _provider_schedule_material(manifest)
+        for candidate_pull in reversed(ordered_pulls):
+            candidate_games = list(
+                (candidate_pull.get("provider_schedule_manifest") or {}).get("games") or []
+            )
+            if _provider_schedule_material(candidate_games) == expected_material:
+                return _provider_manifest_authority(
+                    module,
+                    candidate_pull,
+                    slate,
+                    manifest,
+                )
+        raise RuntimeError("verified_full_slate_manifest_resolver_unavailable")
 
-    manifest_reader = getattr(module.history, "provider_manifest_games_for_lock", None)
-    if not callable(manifest_reader):
-        raise RuntimeError("provider_manifest_games_reader_unavailable")
-
-    expected_material = _provider_schedule_material(manifest)
-    expected_by_identity = {game_identity(game): game for game in expected_material}
-    if len(expected_by_identity) != len(expected_material):
-        raise RuntimeError("provider_manifest_complete_slate_duplicate_game_identity")
-
-    # The latest response must itself be authentic.  A contraction is accepted
-    # only when it omits games that had already begun when that response was
-    # observed; unknown, mutated, or prematurely omitted games fail closed.
-    latest_pull = ordered_pulls[-1]
-    latest_games = manifest_reader(latest_pull, slate)
-    latest_material = _provider_schedule_material(latest_games)
-    latest_identities = [game_identity(game) for game in latest_material]
-    if len(set(latest_identities)) != len(latest_identities):
-        raise RuntimeError("provider_manifest_latest_feed_duplicate_game_identity")
-    unknown = sorted(set(latest_identities) - set(expected_by_identity))
-    if unknown:
+    resolved = resolver(ordered_pulls, slate)
+    full_pull = resolved.get("fullAuthorityPull") if isinstance(resolved, dict) else None
+    schedule_pull = (
+        resolved.get("scheduleAuthorityPull")
+        if isinstance(resolved, dict)
+        else None
+    ) or full_pull
+    resolved_games = list((resolved or {}).get("games") or [])
+    if not isinstance(full_pull, dict) or not isinstance(schedule_pull, dict):
+        raise RuntimeError("provider_manifest_full_slate_authority_pull_missing")
+    if _provider_schedule_material(resolved_games) != _provider_schedule_material(manifest):
+        raise RuntimeError("provider_manifest_resolved_slate_membership_mismatch")
+    official_errors: List[str] = []
+    if resolved.get("officialScheduleBacked") is not True:
+        official_errors.append("official_schedule_not_backed")
+    if resolved.get("rosterAuthorityMode") != "MLB_STATS_API_EXACT_DATE":
+        official_errors.append("official_schedule_roster_mode_mismatch")
+    if resolved.get("officialScheduleAuthorityVersion") != OFFICIAL_SCHEDULE_AUTHORITY_VERSION:
+        official_errors.append("official_schedule_version_mismatch")
+    if resolved.get("officialScheduleAuthoritySource") != OFFICIAL_SCHEDULE_AUTHORITY_SOURCE:
+        official_errors.append("official_schedule_source_mismatch")
+    if resolved.get("officialScheduleAuthoritativeStartTimes") is not True:
+        official_errors.append("official_schedule_start_authority_missing")
+    try:
+        official_count = int(resolved.get("officialScheduleGameCount"))
+    except (TypeError, ValueError):
+        official_count = -1
+    if official_count != len(manifest):
+        official_errors.append("official_schedule_game_count_mismatch")
+    if not resolved.get("officialScheduleAuthorityFingerprint"):
+        official_errors.append("official_schedule_fingerprint_missing")
+    for resolved_game in resolved_games:
+        if not _official_game_pk(resolved_game):
+            official_errors.append("official_schedule_game_pk_missing")
+        if resolved_game.get("canonical_start_time_source") != "MLB_STATS_API_EXACT_DATE":
+            official_errors.append("official_schedule_game_start_source_mismatch")
+        if _parse_iso(resolved_game.get("official_commence_time")) != _parse_iso(
+            resolved_game.get("commence_time")
+        ):
+            official_errors.append("official_schedule_game_start_mismatch")
+    if official_errors:
         raise RuntimeError(
-            "provider_manifest_latest_feed_unknown_game_identity:" + ",".join(unknown)
+            "official_schedule_authority_required:"
+            + ",".join(sorted(set(official_errors)))
         )
-    latest_by_identity = {game_identity(game): game for game in latest_material}
-    changed = sorted(
-        identity
-        for identity, game in latest_by_identity.items()
-        if game != expected_by_identity.get(identity)
+    authority = _provider_manifest_authority(module, full_pull, slate, manifest)
+    schedule_manifest_games = list(
+        (schedule_pull.get("provider_schedule_manifest") or {}).get("games") or []
     )
-    if changed:
-        raise RuntimeError(
-            "provider_manifest_latest_feed_schedule_changed:" + ",".join(changed)
-        )
-    latest_manifest = latest_pull.get("provider_schedule_manifest") or {}
-    observed_at = _parse_iso(latest_manifest.get("observedAtUtc"))
-    if not observed_at:
-        raise RuntimeError("provider_manifest_latest_feed_observed_at_invalid")
-    prematurely_omitted = sorted(
-        identity
-        for identity, game in expected_by_identity.items()
-        if identity not in latest_by_identity
-        and (not _parse_iso(game.get("commence_time")) or _parse_iso(game.get("commence_time")) > observed_at)
+    schedule_revision_authority = _provider_manifest_authority(
+        module,
+        schedule_pull,
+        slate,
+        schedule_manifest_games,
     )
-    if prematurely_omitted:
-        raise RuntimeError(
-            "provider_manifest_latest_feed_future_game_omitted:"
-            + ",".join(prematurely_omitted)
+    membership_authority = {
+        key: copy.deepcopy(authority.get(key))
+        for key in (
+            "version",
+            "recordType",
+            "pk",
+            "sk",
+            "fingerprint",
+            "slateDate",
+            "observedAtUtc",
+            "pullId",
+            "gameCount",
+            "gameIdentities",
+            "canonicalGameIdentities",
+            "immutable",
+            "writeOnce",
+            "fullProviderSchedule",
+            "consistentReadVerified",
+            "officialScheduleBacked",
+            "officialScheduleAuthorityVersion",
+            "officialScheduleAuthoritySource",
+            "officialScheduleAuthorityFingerprint",
+            "officialScheduleGameCount",
+            "officialScheduleAuthoritativeRoster",
+            "officialScheduleAuthoritativeStartTimes",
         )
-
-    authority_failures: List[str] = []
-    for candidate_pull in reversed(ordered_pulls):
-        candidate_manifest = candidate_pull.get("provider_schedule_manifest") or {}
-        candidate_games = list(candidate_manifest.get("games") or [])
-        candidate_material = _provider_schedule_material(candidate_games)
-        candidate_identities = [game_identity(game) for game in candidate_material]
-        if candidate_identities != [game_identity(game) for game in expected_material]:
-            continue
-        if candidate_material != expected_material:
-            authority_failures.append(
-                f"{candidate_pull.get('pull_id') or 'unknown'}:schedule_material_mismatch"
-            )
-            continue
-        try:
-            return _provider_manifest_authority(
-                module,
-                candidate_pull,
-                slate,
-                manifest,
-            )
-        except Exception as exc:
-            authority_failures.append(
-                f"{candidate_pull.get('pull_id') or 'unknown'}:{exc}"
-            )
-
-    suffix = ":" + "|".join(authority_failures) if authority_failures else ""
-    raise RuntimeError("provider_manifest_full_slate_authority_missing" + suffix)
+    }
+    authority.update({
+        "membershipAuthority": membership_authority,
+        "scheduleRevisionAuthority": schedule_revision_authority,
+        "scheduleRevisionApplied": (
+            _manifest_authority_identity(authority)
+            != _manifest_authority_identity(schedule_revision_authority)
+        ),
+        "verifiedFullSlateManifestVersion": resolved.get("version"),
+        "rosterAuthorityMode": resolved.get("rosterAuthorityMode"),
+        "officialScheduleBacked": resolved.get("officialScheduleBacked") is True,
+        "officialScheduleAuthorityVersion": resolved.get("officialScheduleAuthorityVersion"),
+        "officialScheduleAuthoritySource": resolved.get("officialScheduleAuthoritySource"),
+        "officialScheduleAuthorityFingerprint": resolved.get("officialScheduleAuthorityFingerprint"),
+        "officialScheduleGameCount": resolved.get("officialScheduleGameCount"),
+        "officialScheduleAuthoritativeStartTimes": resolved.get("officialScheduleAuthoritativeStartTimes") is True,
+        "officialScheduleMissingProviderEventGameIds": list(resolved.get("officialScheduleMissingProviderEventGameIds") or []),
+        "eventRosterBacked": resolved.get("eventRosterBacked") is True,
+        "legacyMigrationFallback": resolved.get("legacyMigrationFallback") is True,
+        "latestFeedAnomalyCount": int(resolved.get("latestFeedAnomalyCount") or 0),
+    })
+    return authority
 
 
 def _generate_stage(
@@ -2501,6 +3572,18 @@ def _generate_stage(
     if candidate_errors or not candidate or not candidate_proof or not bound_scoring:
         return None, candidate_errors or ["persisted_prelock_prediction_missing"]
     source = bound_scoring[-1]
+    source_at = _pull_at(module, source)
+    lock_at = _lock_at(module, game)
+    reliability_block_reasons: List[str] = []
+    if len(bound_scoring) < module.MIN_PULLS_PER_GAME_FOR_LOCK:
+        reliability_block_reasons.append("INSUFFICIENT_PULL_DEPTH_AT_LOCK")
+    if (
+        source_at is None
+        or lock_at is None
+        or (lock_at - source_at).total_seconds() / 60.0
+        > module.MAX_LATEST_PULL_AGE_MINUTES
+    ):
+        reliability_block_reasons.append("STALE_OR_MISSING_SOURCE_AT_LOCK")
     try:
         row = _prepare_row(
             module,
@@ -2512,6 +3595,7 @@ def _generate_stage(
             manifest,
             locked_count,
             candidate_proof.get("predictionPayloadFingerprintVersion") or None,
+            reliability_block_reasons,
         )
     except Exception as exc:
         return None, [str(exc)]
@@ -2538,6 +3622,8 @@ def _generate_stage(
         "write_once": True,
         "game_identity": game_identity(game),
         "game_id": row.get("gameId"),
+        "official_game_pk": game.get("official_game_pk") or game.get("officialGamePk"),
+        "provider_event_id": row.get("providerEventId"),
         "commence_time": row.get("commenceTime"),
         "scheduled_lock_at_utc": (_lock_at(module, game) or now).isoformat(),
         "staged_at_utc": now.isoformat(),
@@ -2577,12 +3663,25 @@ def _put_stage(module: Any, item: Dict[str, Any], slate: str, game: Dict[str, An
 
 def _canonical_store(module: Any, row: Dict[str, Any]) -> Dict[str, Any]:
     response = module.mlb_game_winner_engine._store_prediction(copy.deepcopy(row))
+    vector_status_explicit = isinstance(response, dict) and isinstance(
+        response.get("exactVectorVerified"), bool
+    )
+    vector_training_safe = bool(
+        response.get("exactVectorVerified") is True
+        or (
+            response.get("exactVectorVerified") is False
+            and response.get("trainingEligible") is False
+            and response.get("trainingExclusionReasons")
+        )
+    ) if isinstance(response, dict) else False
     required = bool(
         isinstance(response, dict)
         and response.get("ok") is True
         and response.get("storageClass") == "LOCKED_IMMUTABLE"
         and response.get("writeOnce") is True
-        and response.get("exactVectorVerified") is True
+        and response.get("selectionLockVerified") is True
+        and vector_status_explicit
+        and vector_training_safe
     )
     if not required:
         raise RuntimeError(f"CANONICAL_PER_GAME_WRITE_NOT_PROVEN:{response}")
@@ -2605,27 +3704,35 @@ def _canonical_readback(module: Any, row: Dict[str, Any]) -> Optional[Dict[str, 
     if not stored:
         return None
     try:
-        import mlb_daily_lock_ml_vector_preservation_patch as exact_contract
+        import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
+        import mlb_immutable_locked_storage_patch as immutable_storage
 
-        if exact_contract.validate_exact_locked_row(stored):
+        if immutable_storage.validate_canonical_stage_authority(module.history.PULLS, stored):
             return None
+        if vector_contract.validate_selection_lock_vector_status(stored):
+            return None
+        vector_errors = vector_contract.effective_selection_lock_vector_errors(stored)
     except Exception:
         return None
-    incoming_vector = row.get("frozenFeatureVector") or {}
-    stored_vector = stored.get("frozenFeatureVector") or {}
     if (
-        incoming_vector.get("fingerprint") != stored_vector.get("fingerprint")
+        row.get("lastPrelockSelectionFingerprint")
+        != stored.get("lastPrelockSelectionFingerprint")
         or row.get("predictedWinner") != stored.get("predictedWinner")
         or row.get("predictedSide") != stored.get("predictedSide")
     ):
         return None
+    training = stored.get("mlFeatureFreeze") or {}
     return {
         "ok": True,
         "pk": (item or {}).get("PK"),
         "sk": (item or {}).get("SK"),
         "storageClass": "LOCKED_IMMUTABLE",
         "writeOnce": True,
-        "exactVectorVerified": True,
+        "selectionLockVerified": True,
+        "exactVectorVerified": not vector_errors,
+        "exactVectorValidationErrors": vector_errors,
+        "trainingEligible": bool(training.get("trainingEligible")),
+        "trainingExclusionReasons": list(training.get("trainingExclusionReasons") or []),
         "immutableExisting": True,
     }
 
@@ -2666,11 +3773,35 @@ def _progress(
         identity = game_identity(game)
         start = _start(module, game)
         lock_at = _lock_at(module, game)
-        scoring = _scoring_pulls(module, pulls, game)
-        stage = _get_stage(module, slate, game)
-        outcome = _get_lock_outcome(module, slate, game)
-        errors = _validate_stage(module, stage, slate, game, manifest, scoring) if stage else []
-        late_backfill_count = _late_backfill_count(module, stage, scoring, game)
+        errors: List[str] = []
+        try:
+            scoring = _scoring_pulls(module, pulls, game)
+        except Exception as exc:
+            scoring = []
+            errors.append(f"scoring_pull_read_failed:{type(exc).__name__}:{exc}")
+        try:
+            stage = _get_stage(module, slate, game)
+        except Exception as exc:
+            stage = None
+            errors.append(f"stage_read_failed:{type(exc).__name__}:{exc}")
+        try:
+            outcome = _get_lock_outcome(module, slate, game)
+        except Exception as exc:
+            outcome = None
+            errors.append(f"lock_outcome_read_failed:{type(exc).__name__}:{exc}")
+        if stage:
+            try:
+                errors.extend(
+                    _validate_stage(module, stage, slate, game, manifest, scoring)
+                )
+            except Exception as exc:
+                errors.append(f"stage_validation_failed:{type(exc).__name__}:{exc}")
+        try:
+            late_backfill_count = _late_backfill_count(module, stage, scoring, game)
+        except Exception as exc:
+            late_backfill_count = 0
+            errors.append(f"late_backfill_check_failed:{type(exc).__name__}:{exc}")
+        errors = sorted(set(errors))
         state = "LOCKED_STAGED" if stage and not errors else "PENDING"
         if errors:
             state = "INVALID_STAGE_BLOCKED"
@@ -2696,12 +3827,6 @@ def _progress(
                 errors = [f"canonical_write_failed:{exc}"]
                 state = "STAGED_CANONICAL_WRITE_BLOCKED"
         stage_row = copy.deepcopy((stage.get("data") or {}).get("row") or {}) if stage else {}
-        assessment = _latest_playability_assessment(
-            module,
-            slate,
-            game,
-            str(stage_row.get("lastPrelockSelectionFingerprint") or ""),
-        ) if stage else None
         locked_prediction = identity in canonical
         lock_outcome_recorded = bool(locked_prediction or outcome)
         base_playable = bool(
@@ -2709,12 +3834,71 @@ def _progress(
             or stage_row.get("playablePick") is True
             or stage_row.get("actionablePick") is True
         )
-        playable = bool((assessment or {}).get("playable") is True) if assessment else base_playable
-        blocked = bool((assessment or {}).get("blocked") is True) if assessment else bool(lock_outcome_recorded and not playable)
+        lifecycle = (
+            _resolved_playability_lifecycle(
+                module,
+                slate,
+                game,
+                stage_row,
+                now,
+                event_pending_required=_doubleheader_game_one(manifest, game) is not None,
+            )
+            if locked_prediction
+            else {}
+        )
+        assessment = lifecycle.get("assessment")
+        playable = (
+            lifecycle.get("playable") is True
+            if locked_prediction
+            else base_playable
+        )
+        blocked = (
+            lifecycle.get("blocked") is True
+            if locked_prediction
+            else bool(lock_outcome_recorded and not playable)
+        )
+        playability_reasons = (
+            list(lifecycle.get("reasons") or [])
+            if locked_prediction
+            else list((outcome or {}).get("playability_block_reasons") or [])
+        )
         training = stage_row.get("mlFeatureFreeze") or {}
+        latest_scoring_game = (
+            _matching_game(scoring[-1], game)
+            if scoring
+            else None
+        ) or {}
+        latest_scoring_identity = (
+            _raw_game_identity(latest_scoring_game)
+            if latest_scoring_game
+            else ""
+        )
+        latest_provider_event_id = (
+            latest_scoring_game.get("provider_event_id")
+            or latest_scoring_game.get("providerEventId")
+            or (
+                latest_scoring_identity
+                if latest_scoring_identity
+                and latest_scoring_identity != _raw_game_identity(game)
+                and not latest_scoring_identity.startswith("mlb_statsapi:")
+                else None
+            )
+        )
         rows.append({
             "gameIdentity": identity,
             "gameId": game.get("game_id") or game.get("gameId") or game.get("id"),
+            "officialGamePk": stage_row.get("officialGamePk") or game.get("official_game_pk"),
+            "officialGameId": stage_row.get("officialGameId") or game.get("official_game_id"),
+            "providerEventId": stage_row.get("providerEventId") or latest_provider_event_id or game.get("provider_event_id"),
+            "providerCommenceTime": stage_row.get("providerCommenceTime") or latest_scoring_game.get("provider_commence_time") or game.get("provider_commence_time"),
+            "providerStartDriftSeconds": (
+                stage_row.get("providerStartDriftSeconds")
+                if stage_row.get("providerStartDriftSeconds") is not None
+                else latest_scoring_game.get("provider_start_drift_seconds")
+                if latest_scoring_game.get("provider_start_drift_seconds") is not None
+                else game.get("provider_start_drift_seconds")
+            ),
+            "canonicalStartTimeSource": stage_row.get("canonicalStartTimeSource") or game.get("canonical_start_time_source"),
             "commenceTime": (start.isoformat() if start else None),
             "scheduledLockAtUtc": (lock_at.isoformat() if lock_at else None),
             "state": state,
@@ -2728,12 +3912,26 @@ def _progress(
             "predictedSide": stage_row.get("predictedSide") if locked_prediction else None,
             "selectionFingerprint": stage_row.get("lastPrelockSelectionFingerprint") if locked_prediction else None,
             "playable": playable,
+            "playablePick": playable,
+            "actionablePick": playable,
             "blocked": blocked,
-            "playabilityStatus": (assessment or {}).get("status") or ("PLAYABLE" if playable else "BLOCKED" if lock_outcome_recorded else "PENDING"),
-            "playabilityBlockReasons": list((assessment or {}).get("reasons") or (outcome or {}).get("playability_block_reasons") or []),
+            "releaseBlocked": blocked,
+            "wagerReleaseBlocked": blocked,
+            "playabilityStatus": lifecycle.get("status") or ("PLAYABLE" if playable else "BLOCKED" if lock_outcome_recorded else "PENDING"),
+            "playabilityBlockReasons": playability_reasons,
+            "releaseBlockReasons": playability_reasons,
             "playabilityAssessment": copy.deepcopy(assessment) if assessment else None,
+            "playabilityAssessmentValidationErrors": list(lifecycle.get("validationErrors") or []),
+            "historicalPlayabilityAssessmentValidationErrors": list(
+                lifecycle.get("historicalValidationErrors") or []
+            ),
+            "requiredPlayabilityCheckpoint": lifecycle.get("requiredCheckpoint"),
+            "requiredPlayabilityCheckpointDue": lifecycle.get("requiredCheckpointDue") is True,
+            "eventPlayabilityAssessmentRequired": lifecycle.get("eventPendingRequired") is True,
             "trainingEligible": bool(training.get("trainingEligible")) if locked_prediction else False,
             "trainingExclusionReasons": list(training.get("trainingExclusionReasons") or (outcome or {}).get("training_exclusion_reasons") or []),
+            "exactVectorVerified": stage_row.get("exactVectorVerified") if locked_prediction else None,
+            "exactVectorValidationErrors": list(stage_row.get("exactVectorValidationErrors") or []),
             "readiness": _readiness_status(module, slate, game),
             "sourcePullAtUtc": stage.get("source_pull_at_utc") if stage else None,
             "actualStagedAtUtc": stage.get("staged_at_utc") if stage else None,
@@ -2757,6 +3955,17 @@ def _progress(
         "playableCount": len([row for row in rows if row.get("playable") is True]),
         "blockedCount": len([row for row in rows if row.get("blocked") is True]),
         "trainingEligibleCount": len([row for row in rows if row.get("trainingEligible") is True]),
+        "playabilityValidationErrorCount": len([
+            row
+            for row in rows
+            if row.get("playabilityAssessmentValidationErrors")
+        ]),
+        "playabilityLifecycleErrorCount": len([
+            row
+            for row in rows
+            if row.get("playabilityAssessmentValidationErrors")
+            or row.get("historicalPlayabilityAssessmentValidationErrors")
+        ]),
         "pendingCount": len([row for row in rows if row["state"] in {"PENDING", "WAITING_FOR_CUTOFF_STABILIZATION"}]),
         "stabilizingCount": len([row for row in rows if row["state"] == "WAITING_FOR_CUTOFF_STABILIZATION"]),
         "dueMissingCount": len([row for row in rows if row["state"] in {"DUE_NOT_STAGED", "STAGED_CANONICAL_WRITE_BLOCKED", "INVALID_STAGE_BLOCKED"}]),
@@ -3063,8 +4272,46 @@ def apply(module: Any) -> Any:
         raw_existing = module._get_lock_item(slate)
         pulls = sorted(module._pulls_for_date(slate), key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc))
         manifest = module._latest_games_for_date(slate, pulls)
+        roster_observability: Dict[str, Any] = {
+            "verifiedFullSlateManifestVersion": None,
+            "rosterAuthorityMode": "INJECTED_ADAPTER_OR_LEGACY",
+            "officialScheduleBacked": False,
+            "officialScheduleAuthorityVersion": None,
+            "officialScheduleAuthoritySource": None,
+            "officialScheduleAuthorityFingerprint": None,
+            "officialScheduleGameCount": None,
+            "officialScheduleAuthoritativeStartTimes": False,
+            "officialScheduleMissingProviderEventGameIds": [],
+            "eventRosterBacked": False,
+            "legacyRosterMigrationFallback": True,
+            "latestProviderFeedGameCount": len(manifest),
+            "latestProviderFeedAnomalyCount": 0,
+            "latestProviderFeedAnomalies": [],
+        }
+        resolver = getattr(module.history, "verified_full_slate_manifest", None)
+        if callable(resolver) and pulls:
+            try:
+                resolved_roster = resolver(pulls, slate)
+                roster_observability.update({
+                    "verifiedFullSlateManifestVersion": resolved_roster.get("version"),
+                    "rosterAuthorityMode": resolved_roster.get("rosterAuthorityMode"),
+                    "officialScheduleBacked": resolved_roster.get("officialScheduleBacked") is True,
+                    "officialScheduleAuthorityVersion": resolved_roster.get("officialScheduleAuthorityVersion"),
+                    "officialScheduleAuthoritySource": resolved_roster.get("officialScheduleAuthoritySource"),
+                    "officialScheduleAuthorityFingerprint": resolved_roster.get("officialScheduleAuthorityFingerprint"),
+                    "officialScheduleGameCount": resolved_roster.get("officialScheduleGameCount"),
+                    "officialScheduleAuthoritativeStartTimes": resolved_roster.get("officialScheduleAuthoritativeStartTimes") is True,
+                    "officialScheduleMissingProviderEventGameIds": list(resolved_roster.get("officialScheduleMissingProviderEventGameIds") or []),
+                    "eventRosterBacked": resolved_roster.get("eventRosterBacked") is True,
+                    "legacyRosterMigrationFallback": resolved_roster.get("legacyMigrationFallback") is True,
+                    "latestProviderFeedGameCount": resolved_roster.get("latestFeedGameCount"),
+                    "latestProviderFeedAnomalyCount": int(resolved_roster.get("latestFeedAnomalyCount") or 0),
+                    "latestProviderFeedAnomalies": copy.deepcopy(resolved_roster.get("latestFeedAnomalies") or []),
+                })
+            except Exception as exc:
+                roster_observability["rosterAuthorityReadError"] = f"{type(exc).__name__}:{exc}"
         now = module._now_utc().astimezone(timezone.utc)
-        progress = _progress(module, slate, pulls, manifest, now, ensure_canonical=False) if manifest else {"games": [], "stagedCount": 0, "canonicalCount": 0, "lockedPredictionCount": 0, "lockOutcomeCount": 0, "noPredictionDataCount": 0, "playableCount": 0, "blockedCount": 0, "trainingEligibleCount": 0, "pendingCount": 0, "stabilizingCount": 0, "dueMissingCount": 0, "missedCount": 0}
+        progress = _progress(module, slate, pulls, manifest, now, ensure_canonical=False) if manifest else {"games": [], "stagedCount": 0, "canonicalCount": 0, "lockedPredictionCount": 0, "lockOutcomeCount": 0, "noPredictionDataCount": 0, "playableCount": 0, "blockedCount": 0, "trainingEligibleCount": 0, "playabilityValidationErrorCount": 0, "playabilityLifecycleErrorCount": 0, "pendingCount": 0, "stabilizingCount": 0, "dueMissingCount": 0, "missedCount": 0}
         daily_authority_errors = (
             _daily_authority_errors(module, slate, raw_existing, manifest, progress)
             if raw_existing
@@ -3092,8 +4339,22 @@ def apply(module: Any) -> Any:
         outcome_count = int(progress.get("lockOutcomeCount") or 0)
         locked_prediction_count = int(progress.get("lockedPredictionCount") or 0)
         daily_complete = bool(game_count and outcome_count == game_count)
+        canonical_prediction_complete = bool(
+            game_count and locked_prediction_count == game_count
+        )
+        playability_lifecycle_error_count = int(
+            progress.get("playabilityLifecycleErrorCount") or 0
+        )
+        operational_defect = bool(
+            roster_observability.get("rosterAuthorityReadError")
+            or daily_authority_errors
+            or progress.get("dueMissingCount")
+            or progress.get("missedCount")
+            or playability_lifecycle_error_count
+            or len(per_game_status) != game_count
+        )
         slate_status = (
-            "COMPLETE" if daily_complete and locked_prediction_count == game_count
+            "COMPLETE" if daily_complete and canonical_prediction_complete
             else "COMPLETE_WITH_NO_PREDICTION_DATA" if daily_complete
             else "MISSED" if progress.get("missedCount")
             else "PARTIAL" if outcome_count
@@ -3101,9 +4362,12 @@ def apply(module: Any) -> Any:
         )
         return {
             **base,
+            **roster_observability,
             "locked": bool(existing),
             "dailyCardComplete": daily_complete,
             "lockStatusComplete": daily_complete,
+            "canonicalPredictionComplete": canonical_prediction_complete,
+            "allGamesPredicted": canonical_prediction_complete,
             "lockedAny": locked_prediction_count > 0,
             "partiallyLocked": bool(0 < locked_prediction_count < game_count),
             "slateLockStatus": slate_status,
@@ -3121,6 +4385,8 @@ def apply(module: Any) -> Any:
             "playablePredictionCount": progress.get("playableCount"),
             "blockedPredictionCount": progress.get("blockedCount"),
             "trainingEligibleCount": progress.get("trainingEligibleCount"),
+            "playabilityValidationErrorCount": progress.get("playabilityValidationErrorCount"),
+            "playabilityLifecycleErrorCount": playability_lifecycle_error_count,
             "lockOutcomeCoveragePct": round(outcome_count / game_count * 100.0, 2) if game_count else 0.0,
             "officialPredictionCoveragePct": round(locked_prediction_count / game_count * 100.0, 2) if game_count else 0.0,
             "pendingGameCount": progress.get("pendingCount"),
@@ -3134,6 +4400,8 @@ def apply(module: Any) -> Any:
             "nextGameLockAtUtc": future[0].isoformat() if future else None,
             "nowEt": now.astimezone(module.EASTERN).isoformat(),
             "lockDue": bool(not existing and (progress.get("dueMissingCount") or progress.get("missedCount"))),
+            "predictionDataUnavailable": bool(progress.get("noPredictionDataCount")),
+            "operationalDefect": operational_defect,
             "minutesUntilLock": round((future[0] - now).total_seconds() / 60.0, 2) if future else 0,
             "invalidExistingDailyLock": bool(raw_existing and daily_authority_errors),
             "dailyLockAuthorityErrors": daily_authority_errors,
@@ -3158,17 +4426,46 @@ def apply(module: Any) -> Any:
             return {"ok": True, "sport": "mlb", "modelVersion": VERSION, "slateDateEt": slate, "locked": False, "skipped": True, "reason": "NO_MLB_GAMES_FOR_SLATE_DATE", "pullCount": len(pulls)}
 
         now = module._now_utc().astimezone(timezone.utc)
-        _ensure_readiness_checkpoints(module, slate, pulls, manifest, now)
-        # Observe actionability without repairing anything, then durably record the
-        # invocation before any stage/canonical write is attempted.
-        observed = _progress(module, slate, pulls, manifest, now, ensure_canonical=False)
-        _ensure_playability_assessments(
-            module,
-            slate,
-            manifest,
-            observed.get("stages") or {},
-            now,
-        )
+        lifecycle_diagnostic_errors: List[Dict[str, Any]] = []
+
+        def record_lifecycle_diagnostics(
+            progress: Dict[str, Any],
+            evaluated_at: datetime,
+        ) -> None:
+            """Best-effort diagnostics that can never interrupt lock writes."""
+            try:
+                lifecycle_diagnostic_errors.extend(
+                    _ensure_readiness_checkpoints(
+                        module,
+                        slate,
+                        pulls,
+                        manifest,
+                        evaluated_at,
+                    )
+                )
+            except Exception as exc:
+                lifecycle_diagnostic_errors.append({
+                    "checkpoint": "READINESS_ALL_GAMES",
+                    "error": f"{type(exc).__name__}:{exc}",
+                })
+            try:
+                lifecycle_diagnostic_errors.extend(
+                    _ensure_playability_assessments(
+                        module,
+                        slate,
+                        manifest,
+                        progress.get("stages") or {},
+                        evaluated_at,
+                    )
+                )
+            except Exception as exc:
+                lifecycle_diagnostic_errors.append({
+                    "checkpoint": "PLAYABILITY_ALL_GAMES",
+                    "error": f"{type(exc).__name__}:{exc}",
+                })
+
+        # Read current authority before any write. Readiness and release
+        # diagnostics run only after the immutable lock path has had its chance.
         observed = _progress(module, slate, pulls, manifest, now, ensure_canonical=False)
         if raw_existing:
             authority_errors = _daily_authority_errors(
@@ -3190,17 +4487,39 @@ def apply(module: Any) -> Any:
                     "dailyLockAuthorityErrors": authority_errors,
                     "perGameLockProgress": observed,
                 }
+            record_lifecycle_diagnostics(observed, now)
+            try:
+                observed = _progress(
+                    module,
+                    slate,
+                    pulls,
+                    manifest,
+                    now,
+                    ensure_canonical=False,
+                )
+            except Exception as exc:
+                lifecycle_diagnostic_errors.append({
+                    "checkpoint": "POST_DIAGNOSTIC_PROGRESS_READ",
+                    "error": f"{type(exc).__name__}:{exc}",
+                })
             existing = module._lock_response(raw_existing)
-            return {"ok": True, "sport": "mlb", "modelVersion": VERSION, "slateDateEt": slate, "locked": True, "alreadyLocked": True, "lock": existing, "perGameLockProgress": observed}
-        attempts = _begin_attempt_diagnostics(
-            module,
-            slate,
-            pulls,
-            manifest,
-            observed.get("games") or [],
-            now,
-            force,
-        )
+            return {"ok": True, "sport": "mlb", "modelVersion": VERSION, "slateDateEt": slate, "locked": True, "alreadyLocked": True, "lock": existing, "perGameLockProgress": observed, "lifecycleDiagnosticErrors": lifecycle_diagnostic_errors}
+        try:
+            attempts = _begin_attempt_diagnostics(
+                module,
+                slate,
+                pulls,
+                manifest,
+                observed.get("games") or [],
+                now,
+                force,
+            )
+        except Exception as exc:
+            attempts = []
+            lifecycle_diagnostic_errors.append({
+                "checkpoint": "LOCK_ATTEMPT_DIAGNOSTIC_START",
+                "error": f"{type(exc).__name__}:{exc}",
+            })
         failures: List[Dict[str, Any]] = []
         terminal_outcomes: List[Dict[str, Any]] = []
         latest_progress = observed
@@ -3225,25 +4544,29 @@ def apply(module: Any) -> Any:
 
         def respond(payload: Dict[str, Any], progress: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             out = dict(payload)
-            diagnostics = _finish_attempt_diagnostics(
-                module,
-                attempts,
-                progress or latest_progress,
-                failures,
-            )
+            try:
+                diagnostics = _finish_attempt_diagnostics(
+                    module,
+                    attempts,
+                    progress or latest_progress,
+                    failures,
+                )
+            except Exception as exc:
+                diagnostics = {
+                    "version": ATTEMPT_DIAGNOSTICS_VERSION,
+                    "appendOnly": True,
+                    "writeOnce": True,
+                    "attemptedGameCount": len(attempts),
+                    "attempts": [],
+                    "error": f"{type(exc).__name__}:{exc}",
+                }
+                lifecycle_diagnostic_errors.append({
+                    "checkpoint": "LOCK_ATTEMPT_DIAGNOSTIC_FINISH",
+                    "error": diagnostics["error"],
+                })
             out["perGameLockAttemptDiagnostics"] = diagnostics
             out["terminalLockOutcomes"] = copy.deepcopy(terminal_outcomes)
-            if out.get("ok") is False:
-                failed_outcomes = [
-                    attempt
-                    for attempt in diagnostics.get("attempts") or []
-                    if (attempt.get("outcomeWrite") or {}).get("ok") is not True
-                ]
-                if failed_outcomes:
-                    raise RuntimeError(
-                        "LOCK_ATTEMPT_DIAGNOSTIC_PERSIST_FAILED:"
-                        + json.dumps(failed_outcomes, sort_keys=True, default=str)
-                    )
+            out["lifecycleDiagnosticErrors"] = copy.deepcopy(lifecycle_diagnostic_errors)
             return out
 
         try:
@@ -3253,14 +4576,19 @@ def apply(module: Any) -> Any:
                 if game_status.get("state") != "DUE_NOT_STAGED":
                     continue
                 identity = game_status["gameIdentity"]
-                game = next(entry for entry in manifest if game_identity(entry) == identity)
-                scoring = _scoring_pulls(module, pulls, game)
+                try:
+                    game = next(entry for entry in manifest if game_identity(entry) == identity)
+                    scoring = _scoring_pulls(module, pulls, game)
+                except Exception as exc:
+                    failures.append({
+                        "gameIdentity": identity,
+                        "reason": "PER_GAME_LOCK_PREPARATION_FAILED",
+                        "errors": [f"{type(exc).__name__}:{exc}"],
+                    })
+                    continue
                 stable_item: Optional[Dict[str, Any]] = None
                 failed = False
                 for _attempt in range(3):
-                    lock_at = _lock_at(module, game)
-                    source_at = _pull_at(module, scoring[-1]) if scoring else None
-                    source_age = ((lock_at - source_at).total_seconds() / 60.0) if lock_at and source_at else None
                     try:
                         manifest_authority = manifest_authority_for(
                             pulls,
@@ -3274,63 +4602,47 @@ def apply(module: Any) -> Any:
                         })
                         failed = True
                         break
-                    if len(scoring) < module.MIN_PULLS_PER_GAME_FOR_LOCK:
-                        outcome = _put_no_prediction_outcome(
-                            module,
-                            slate,
-                            game,
-                            now,
-                            ["INSUFFICIENT_PULL_DEPTH", f"pull_depth:{len(scoring)}"],
-                            manifest_authority,
-                        )
-                        terminal_outcomes.append({
-                            "gameIdentity": identity,
-                            "lockStatus": outcome.get("lock_status"),
-                            "reasons": outcome.get("reasons") or [],
-                        })
-                        failed = True
-                        break
-                    if source_age is None or source_age > module.MAX_LATEST_PULL_AGE_MINUTES:
-                        outcome = _put_no_prediction_outcome(
-                            module,
-                            slate,
-                            game,
-                            now,
-                            ["STALE_OR_MISSING_CUTOFF_PULL", f"source_age_minutes:{source_age}"],
-                            manifest_authority,
-                        )
-                        terminal_outcomes.append({
-                            "gameIdentity": identity,
-                            "lockStatus": outcome.get("lock_status"),
-                            "reasons": outcome.get("reasons") or [],
-                        })
-                        failed = True
-                        break
 
-                    item, errors = _generate_stage(
-                        module,
-                        slate,
-                        game,
-                        manifest,
-                        scoring,
-                        pre.get("stagedCount", 0) + 1,
-                        manifest_authority,
-                    )
+                    try:
+                        item, errors = _generate_stage(
+                            module,
+                            slate,
+                            game,
+                            manifest,
+                            scoring,
+                            pre.get("stagedCount", 0) + 1,
+                            manifest_authority,
+                        )
+                    except Exception as exc:
+                        failures.append({
+                            "gameIdentity": identity,
+                            "reason": "PER_GAME_STAGE_GENERATION_FAILED",
+                            "errors": [f"{type(exc).__name__}:{exc}"],
+                        })
+                        failed = True
+                        break
                     if errors or not item:
                         if _is_no_prediction_candidate_failure(errors):
-                            outcome = _put_no_prediction_outcome(
-                                module,
-                                slate,
-                                game,
-                                now,
-                                errors or ["PERSISTED_PRELOCK_PREDICTION_MISSING"],
-                                manifest_authority,
-                            )
-                            terminal_outcomes.append({
-                                "gameIdentity": identity,
-                                "lockStatus": outcome.get("lock_status"),
-                                "reasons": outcome.get("reasons") or [],
-                            })
+                            try:
+                                outcome = _put_no_prediction_outcome(
+                                    module,
+                                    slate,
+                                    game,
+                                    now,
+                                    errors or ["PERSISTED_PRELOCK_PREDICTION_MISSING"],
+                                    manifest_authority,
+                                )
+                                terminal_outcomes.append({
+                                    "gameIdentity": identity,
+                                    "lockStatus": outcome.get("lock_status"),
+                                    "reasons": outcome.get("reasons") or [],
+                                })
+                            except Exception as exc:
+                                failures.append({
+                                    "gameIdentity": identity,
+                                    "reason": "TERMINAL_LOCK_OUTCOME_WRITE_FAILED",
+                                    "errors": [f"{type(exc).__name__}:{exc}"],
+                                })
                         else:
                             failures.append({"gameIdentity": identity, "reason": "PER_GAME_STAGE_VALIDATION_FAILED", "errors": errors})
                         failed = True
@@ -3339,19 +4651,37 @@ def apply(module: Any) -> Any:
                     # Close the source window against a consistent re-read immediately
                     # before the immutable stage write. If an in-flight pull appeared,
                     # regenerate from that newer at-or-before-cutoff window.
-                    refreshed_pulls = sorted(
-                        module._pulls_for_date(slate),
-                        key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc),
-                    )
+                    try:
+                        refreshed_pulls = sorted(
+                            module._pulls_for_date(slate),
+                            key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc),
+                        )
+                    except Exception as exc:
+                        failures.append({
+                            "gameIdentity": identity,
+                            "reason": "SOURCE_WINDOW_REFRESH_FAILED",
+                            "errors": [f"{type(exc).__name__}:{exc}"],
+                        })
+                        failed = True
+                        break
                     pull_history_unchanged = (
                         _pull_history_identity(module, refreshed_pulls)
                         == _pull_history_identity(module, pulls)
                     )
-                    refreshed_manifest = (
-                        manifest
-                        if pull_history_unchanged
-                        else module._latest_games_for_date(slate, refreshed_pulls)
-                    )
+                    try:
+                        refreshed_manifest = (
+                            manifest
+                            if pull_history_unchanged
+                            else module._latest_games_for_date(slate, refreshed_pulls)
+                        )
+                    except Exception as exc:
+                        failures.append({
+                            "gameIdentity": identity,
+                            "reason": "SOURCE_WINDOW_MANIFEST_REFRESH_FAILED",
+                            "errors": [f"{type(exc).__name__}:{exc}"],
+                        })
+                        failed = True
+                        break
                     if [game_identity(entry) for entry in refreshed_manifest] != [game_identity(entry) for entry in manifest]:
                         failures.append({"gameIdentity": identity, "reason": "MANIFEST_CHANGED_DURING_SOURCE_WINDOW_CLOSE_NOT_STAGED"})
                         failed = True
@@ -3364,7 +4694,16 @@ def apply(module: Any) -> Any:
                         failures.append({"gameIdentity": identity, "reason": "GAME_MISSING_DURING_SOURCE_WINDOW_CLOSE_NOT_STAGED"})
                         failed = True
                         break
-                    refreshed_scoring = _scoring_pulls(module, refreshed_pulls, refreshed_game)
+                    try:
+                        refreshed_scoring = _scoring_pulls(module, refreshed_pulls, refreshed_game)
+                    except Exception as exc:
+                        failures.append({
+                            "gameIdentity": identity,
+                            "reason": "SOURCE_WINDOW_SCORING_REFRESH_FAILED",
+                            "errors": [f"{type(exc).__name__}:{exc}"],
+                        })
+                        failed = True
+                        break
                     try:
                         refreshed_manifest_authority = manifest_authority_for(
                             refreshed_pulls,
@@ -3381,14 +4720,23 @@ def apply(module: Any) -> Any:
                     pulls = refreshed_pulls
                     manifest = refreshed_manifest
                     game = refreshed_game
-                    source_window_unchanged = (
-                        _source_window_entries(module, scoring, game)
-                        == _source_window_entries(module, refreshed_scoring, game)
-                    )
-                    authority_unchanged = (
-                        _manifest_authority_identity(item.get("provider_manifest_authority") or {})
-                        == _manifest_authority_identity(refreshed_manifest_authority)
-                    )
+                    try:
+                        source_window_unchanged = (
+                            _source_window_entries(module, scoring, game)
+                            == _source_window_entries(module, refreshed_scoring, game)
+                        )
+                        authority_unchanged = (
+                            _manifest_authority_identity(item.get("provider_manifest_authority") or {})
+                            == _manifest_authority_identity(refreshed_manifest_authority)
+                        )
+                    except Exception as exc:
+                        failures.append({
+                            "gameIdentity": identity,
+                            "reason": "SOURCE_WINDOW_COMPARISON_FAILED",
+                            "errors": [f"{type(exc).__name__}:{exc}"],
+                        })
+                        failed = True
+                        break
                     if source_window_unchanged and authority_unchanged:
                         scoring = refreshed_scoring
                         stable_item = item
@@ -3401,8 +4749,16 @@ def apply(module: Any) -> Any:
                     failures.append({"gameIdentity": identity, "reason": "SOURCE_WINDOW_CHANGED_REPEATEDLY_NOT_STAGED"})
                     continue
 
-                stored = _put_stage(module, stable_item, slate, game)
-                stored_errors = _validate_stage(module, stored, slate, game, manifest, scoring)
+                try:
+                    stored = _put_stage(module, stable_item, slate, game)
+                    stored_errors = _validate_stage(module, stored, slate, game, manifest, scoring)
+                except Exception as exc:
+                    failures.append({
+                        "gameIdentity": identity,
+                        "reason": "PER_GAME_STAGE_WRITE_OR_READBACK_FAILED",
+                        "errors": [f"{type(exc).__name__}:{exc}"],
+                    })
+                    continue
                 if stored_errors:
                     failures.append({"gameIdentity": identity, "reason": "PER_GAME_STAGE_READBACK_INVALID", "errors": stored_errors})
                     continue
@@ -3421,14 +4777,21 @@ def apply(module: Any) -> Any:
                 manifest = module._latest_games_for_date(slate, pulls)
             final_now = module._now_utc().astimezone(timezone.utc)
             progress = _progress(module, slate, pulls, manifest, final_now, ensure_canonical=True)
-            _ensure_playability_assessments(
-                module,
-                slate,
-                manifest,
-                progress.get("stages") or {},
-                final_now,
-            )
-            progress = _progress(module, slate, pulls, manifest, final_now, ensure_canonical=False)
+            record_lifecycle_diagnostics(progress, final_now)
+            try:
+                progress = _progress(
+                    module,
+                    slate,
+                    pulls,
+                    manifest,
+                    final_now,
+                    ensure_canonical=False,
+                )
+            except Exception as exc:
+                lifecycle_diagnostic_errors.append({
+                    "checkpoint": "POST_DIAGNOSTIC_PROGRESS_READ",
+                    "error": f"{type(exc).__name__}:{exc}",
+                })
             latest_progress = progress
             if progress.get("missedCount"):
                 return respond({"ok": False, "sport": "mlb", "modelVersion": VERSION, "slateDateEt": slate, "locked": False, "reason": "MISSED_PER_GAME_LOCK_NOT_BACKFILLED", "failClosed": True, "forceIgnoredForSafety": bool(force), "failures": failures, "perGameLockProgress": progress}, progress)
@@ -3475,13 +4838,16 @@ def apply(module: Any) -> Any:
                     return respond({"ok": False, "sport": "mlb", "modelVersion": VERSION, "slateDateEt": slate, "locked": False, "reason": "EXISTING_DAILY_LOCK_NOT_PER_GAME_AUTHORITY", "failClosed": True, "dailyLockAuthorityErrors": authority_errors, "perGameLockProgress": progress}, progress)
                 raise
         except Exception as exc:
-            _finish_attempt_diagnostics(
-                module,
-                attempts,
-                latest_progress,
-                failures,
-                exception=exc,
-            )
+            try:
+                _finish_attempt_diagnostics(
+                    module,
+                    attempts,
+                    latest_progress,
+                    failures,
+                    exception=exc,
+                )
+            except Exception:
+                pass
             raise
 
     module.MODEL_VERSION = VERSION

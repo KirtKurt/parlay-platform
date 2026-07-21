@@ -16,6 +16,7 @@ if str(HELLO) not in sys.path:
 
 import mlb_immutable_locked_storage_patch as patch
 import mlb_daily_per_game_lock_patch as per_game
+import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 import inqsi_pull_history as history_contract
 import mlb_ml_clean_cohort_v1 as cohort
 import mlb_slate_coverage_patch as coverage
@@ -101,7 +102,7 @@ def locked_row(base, *, game_id="provider-123", winner="Home Team"):
     row["lastPrelockSelectionFingerprint"] = per_game._payload_fingerprint(
         per_game._selection_material(row)
     )
-    return row
+    return vector_contract.apply_exact_vector_training_status(row)
 
 
 def seed_stage(history, row):
@@ -254,6 +255,11 @@ def seed_stage(history, row):
         "candidateRowFingerprint": per_game._payload_fingerprint(candidate),
         "candidateSelectionFingerprint": selection,
         "candidateVectorFingerprint": (candidate.get("frozenFeatureVector") or {}).get("fingerprint"),
+        "candidateGameIdentity": raw_identity,
+        "stageGameIdentity": raw_identity,
+        "candidateOfficialGamePk": candidate.get("officialGamePk") or None,
+        "stageOfficialGamePk": row.get("officialGamePk") or None,
+        "identityBindingMode": "exact_identity",
         "promotionRule": "last_valid_persisted_prediction_at_or_before_own_tminus45_becomes_final_lock",
         "modelOrSignalRecomputedAtLock": False,
     }
@@ -467,25 +473,53 @@ def main() -> int:
         "immutable_provider_manifest_readback_mismatch",
     )
 
-    # An authorized per-game stage still fails closed until the exact
-    # fingerprinted ML vector exists.
-    missing_vector = locked_row(base)
+    # A vectorless winner must be explicitly marked training-ineligible. An
+    # unmarked row remains invalid, while the same persisted selection may be
+    # stored after the vector verdict is bound into its immutable stage.
+    missing_vector = locked_row(base, game_id="provider-vectorless")
     missing_vector.pop("frozenFeatureVector", None)
     missing_vector.pop("frozenFeatureVectorVersion", None)
-    seed_stage(history, missing_vector)
+    for field in (
+        "exactVectorVerified",
+        "exactVectorValidationErrors",
+        "trainingEligible",
+        "trainingEligibilityStatus",
+        "trainingExclusionReasons",
+        "selectionTrainingSeparationVersion",
+    ):
+        missing_vector.pop(field, None)
+    missing_freeze = dict(missing_vector.get("mlFeatureFreeze") or {})
+    for field in (
+        "exactVectorVerified",
+        "exactVectorValidationErrors",
+        "trainingExclusionReasons",
+        "selectionLockIndependentOfTrainingVector",
+    ):
+        missing_freeze.pop(field, None)
+    missing_freeze["trainingEligible"] = True
+    missing_vector["mlFeatureFreeze"] = missing_freeze
+    missing_stage = seed_stage(history, missing_vector)
     before_missing = copy.deepcopy(history.PULLS.items)
     try:
         module._store_prediction(missing_vector)
     except RuntimeError as exc:
-        assert "missing_frozen_feature_vector" in str(exc)
+        assert "invalid_vector_not_explicitly_unverified" in str(exc)
     else:
-        raise AssertionError("locked storage accepted a vectorless row")
+        raise AssertionError("locked storage accepted an unmarked vectorless row")
     assert history.PULLS.items == before_missing
+
+    history.PULLS.items.pop((missing_stage["PK"], missing_stage["SK"]))
+    vector_excluded = vector_contract.apply_exact_vector_training_status(missing_vector)
+    seed_stage(history, vector_excluded)
+    vector_excluded_result = module._store_prediction(vector_excluded)
+    assert vector_excluded_result["storageClass"] == "LOCKED_IMMUTABLE"
+    assert vector_excluded_result["created"] is True
+    assert vector_excluded_result["exactVectorVerified"] is False
+    assert vector_excluded_result["trainingEligible"] is False
+    assert vector_excluded_result["trainingExclusionReasons"]
 
     locked = locked_row(base)
     locked_stage_row = copy.deepcopy(locked)
-    # Replace the vectorless fixture stage with the exact valid staged row.
-    history.PULLS.items.pop((patch._stage_key(locked)["PK"], patch._stage_key(locked)["SK"]))
     seed_stage(history, locked)
     locked_result = module._store_prediction(locked)
     assert locked_result["storageClass"] == "LOCKED_IMMUTABLE"
@@ -523,9 +557,12 @@ def main() -> int:
     try:
         module._store_prediction(tampered)
     except RuntimeError as exc:
-        assert "frozen_vector_fingerprint_mismatch" in str(exc)
+        message = str(exc)
+        assert "MLB_IMMUTABLE_LOCKED_VECTOR_STATUS_REJECTED" in message
+        assert "row_exact_vector_verified_mismatch" in message
+        assert "invalid_vector_not_explicitly_unverified" in message
     else:
-        raise AssertionError("locked storage accepted a tampered fingerprint")
+        raise AssertionError("locked storage accepted a tampered vector with a stale exact verdict")
     assert history.PULLS.items == before_tampered
 
     # A legacy/vectorless row already occupying the write-once key is never
@@ -552,11 +589,23 @@ def main() -> int:
         item for item in history.PULLS.items.values()
         if str(item.get("SK") or "").startswith("LOCKED#GAME#")
     ]
-    assert len(canonical_items) == 2
+    valid_canonical_items = [
+        item for item in canonical_items
+        if item.get("record_type") == coverage.CANONICAL_RECORD_TYPE
+        and item.get("immutable_locked") is True
+        and item.get("selection_lock_verified") is True
+    ]
+    corrupt_legacy_collisions = [
+        item for item in canonical_items
+        if item not in valid_canonical_items
+    ]
+    assert len(canonical_items) == 3
+    assert len(valid_canonical_items) == 2
+    assert len(corrupt_legacy_collisions) == 1
     print(
         "MLB immutable locked storage verified: live rows remain mutable; legacy locked writes are suppressed; "
-        "only immutable per-game stages may enter LOCKED#GAME; authorized stages require an exact vector; and "
-        "tampered, changed, or vectorless collisions fail closed."
+        "only immutable per-game stages may enter LOCKED#GAME; selection locks either verify an exact vector or "
+        "carry an explicit training exclusion; and tampered, changed, or corrupt legacy collisions fail closed."
     )
     return 0
 

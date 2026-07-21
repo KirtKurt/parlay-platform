@@ -310,9 +310,63 @@ def test_direct_legacy_locked_write_is_suppressed_before_any_store():
     assert [row["gameId"] for row in original_calls] == ["visible-pre-lock"]
 
 
+def test_immutable_store_accepts_selection_lock_with_training_vector_exclusion(monkeypatch):
+    import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
+
+    writes = []
+
+    class Table:
+        def put_item(self, **kwargs):
+            writes.append(copy.deepcopy(kwargs))
+
+    table = Table()
+    stage = {
+        "PK": "LOCKED_PICKS#mlb#2026-07-17",
+        "SK": "PER_GAME_LOCK#TMINUS45#test",
+        "stage_fingerprint": "stage-fingerprint",
+        "data": {"row": {}},
+    }
+    monkeypatch.setattr(
+        immutable_storage,
+        "_read_verified_stage",
+        lambda table, row, canonical_row: (stage, []),
+    )
+    module = SimpleNamespace(
+        _store_prediction=lambda row: {"ok": True},
+        history=SimpleNamespace(PULLS=table, ddb_safe=copy.deepcopy),
+    )
+    immutable_storage.apply(module)
+    row = vector_contract.apply_exact_vector_training_status({
+        "slate_date": "2026-07-17",
+        "gameId": "vector-excluded",
+        "gameIdentity": "vector-excluded",
+        "commenceTime": "2026-07-17T18:00:00+00:00",
+        "predictedWinner": "Home",
+        "predictedSide": "home",
+        "lockedPrediction": True,
+        "officialPredictionStatus": "OFFICIAL_LOCKED_PREDICTION",
+        "immutablePerGameStage": True,
+        "mlFeatureFreeze": {"trainingEligible": True},
+    })
+
+    result = module._store_prediction(row)
+
+    assert result["ok"] is True
+    assert result["selectionLockVerified"] is True
+    assert result["exactVectorVerified"] is False
+    assert result["trainingEligible"] is False
+    assert result["trainingExclusionReasons"]
+    assert len(writes) == 1
+    stored = writes[0]["Item"]
+    assert stored["selection_lock_verified"] is True
+    assert stored["exact_vector_verified"] is False
+    assert stored["training_eligible"] is False
+
+
 def test_finalizer_handles_mixed_rows_without_promoting_legacy_rows(monkeypatch):
     validator = ModuleType("mlb_daily_lock_ml_vector_preservation_patch")
     validator.validate_exact_locked_row = lambda row: []
+    validator.validate_selection_lock_vector_status = lambda row: []
     monkeypatch.setitem(sys.modules, validator.__name__, validator)
 
     pre_lock = {
@@ -378,9 +432,10 @@ def test_finalizer_handles_mixed_rows_without_promoting_legacy_rows(monkeypatch)
     assert rows["authorized-stage"]["canonicalLockedStore"]["ok"] is True
 
 
-def test_invalid_authorized_stage_does_not_block_pre_lock_storage(monkeypatch):
+def test_invalid_authorized_stage_status_does_not_block_pre_lock_storage(monkeypatch):
     validator = ModuleType("mlb_daily_lock_ml_vector_preservation_patch")
     validator.validate_exact_locked_row = lambda row: ["bad_exact_vector"]
+    validator.validate_selection_lock_vector_status = lambda row: ["bad_vector_status"]
     monkeypatch.setitem(sys.modules, validator.__name__, validator)
 
     result_template = {
@@ -407,7 +462,7 @@ def test_invalid_authorized_stage_does_not_block_pre_lock_storage(monkeypatch):
     assert stored_ids == ["pre-lock"]
     assert result["preLockStoredCount"] == 1
     assert result["canonicalLockedStoredCount"] == 0
-    assert result["canonicalLockedStorageErrors"] == {"invalid-stage": ["bad_exact_vector"]}
+    assert result["canonicalLockedStorageErrors"] == {"invalid-stage": ["bad_vector_status"]}
     assert result["ok"] is False
     assert result["operationalDefect"] is True
 

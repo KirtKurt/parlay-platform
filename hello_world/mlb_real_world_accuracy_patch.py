@@ -9,6 +9,10 @@ from typing import Any, Dict, Iterable, List, Optional
 VERSION = "MLB-REAL-WORLD-ACCURACY-v2-canonical-lock-authority-ledger"
 LEDGER_PK = "MLB_CANONICAL_LOCK_ACCURACY#LEDGER#v2"
 CANONICAL_LOCK_AUTHORITY_VERSION = "MLB-ROLLING-AUDIT-CANONICAL-LOCK-AUTHORITY-v1"
+EXACT_PROVIDER_MATCH_METHOD = "exact_provider_game_id_and_teams"
+VERIFIED_PROVIDER_ALIAS_MATCH_METHOD = (
+    "verified_immutable_pull_official_game_pk_provider_alias_and_teams"
+)
 OFFICIAL_CREDIBLE_TARGET = int(os.environ.get("INQSI_MLB_OFFICIAL_CREDIBLE_SAMPLE", "500"))
 PLAYABLE_CREDIBLE_TARGET = int(os.environ.get("INQSI_MLB_PLAYABLE_CREDIBLE_SAMPLE", "200"))
 PROVISIONAL_TARGET = int(os.environ.get("INQSI_MLB_PROVISIONAL_SAMPLE", "300"))
@@ -38,6 +42,69 @@ def _parse_dt(value: Any) -> Optional[datetime]:
 
 def _normalize_team(value: Any) -> str:
     return " ".join(str(value or "").lower().strip().split())
+
+
+def _provider_game_id(row: Dict[str, Any]) -> str:
+    for key in (
+        "providerEventId",
+        "provider_event_id",
+        "providerGameId",
+        "provider_game_id",
+        "gameId",
+        "game_id",
+        "id",
+    ):
+        value = row.get(key)
+        if value not in (None, ""):
+            text = str(value).strip()
+            return text[len("provider:"):] if text.startswith("provider:") else text
+    return ""
+
+
+def _provider_identity_authorized(row: Dict[str, Any], authority: Dict[str, Any]) -> bool:
+    method = authority.get("providerIdentityMatchMethod") or authority.get("matchMethod")
+    if method == EXACT_PROVIDER_MATCH_METHOD:
+        return bool(
+            authority.get("exactProviderIdentityMatched") is True
+            and authority.get("matchMethod") == EXACT_PROVIDER_MATCH_METHOD
+            and authority.get("verifiedProviderAliasCrosswalkMatched") is not True
+        )
+    if method != VERIFIED_PROVIDER_ALIAS_MATCH_METHOD:
+        return False
+    proof = authority.get("providerAliasCrosswalk") or {}
+    fingerprints = proof.get("manifestFingerprints") or []
+    official_pk = str(authority.get("officialGamePk") or "")
+    provider_id = _provider_game_id(row)
+    row_teams = (
+        _normalize_team(row.get("awayTeam") or row.get("away_team")),
+        _normalize_team(row.get("homeTeam") or row.get("home_team")),
+    )
+    return bool(
+        official_pk
+        and provider_id
+        and authority.get("exactProviderIdentityMatched") is False
+        and authority.get("verifiedProviderAliasCrosswalkMatched") is True
+        and authority.get("matchMethod") == VERIFIED_PROVIDER_ALIAS_MATCH_METHOD
+        and isinstance(proof, dict)
+        and proof.get("immutableManifestValidated") is True
+        and proof.get("uniqueBidirectionalCrosswalk") is True
+        and str(proof.get("officialGamePk") or "") == official_pk
+        and str(proof.get("providerEventId") or "") == provider_id
+        and str(authority.get("providerGameId") or "") == provider_id
+        and str(authority.get("canonicalLockedGameId") or "")
+        == f"mlb_statsapi:{official_pk}"
+        and isinstance(fingerprints, list)
+        and bool(fingerprints)
+        and all(str(value).strip() for value in fingerprints)
+        and len({str(value) for value in fingerprints}) == len(fingerprints)
+        and proof.get("evidenceCount") == len(fingerprints)
+        and (
+            str(proof.get("awayTeamNormalized") or ""),
+            str(proof.get("homeTeamNormalized") or ""),
+        )
+        == row_teams
+        and all(row_teams)
+    )
 
 
 def _tags(row: Dict[str, Any]) -> set[str]:
@@ -70,9 +137,11 @@ def _has_canonical_lock_authority(row: Dict[str, Any]) -> bool:
         and authority.get("immutableLocked") is True
         and authority.get("stageAuthorityVerified") is True
         and authority.get("persistedStageAuthorityValidated") is True
-        and authority.get("exactLockVectorValidated") is True
-        and authority.get("exactProviderIdentityMatched") is True
-        and authority.get("matchMethod") == "exact_provider_game_id_and_teams"
+        and authority.get(
+            "officialAuditEligible",
+            authority.get("exactLockVectorValidated"),
+        ) is True
+        and _provider_identity_authorized(row, authority)
         and authority.get("legacyOrDailyCardFallbackUsed") is False
         and authority.get("sourcePk") == f"GAME_WINNERS#mlb#{slate}"
         and str(authority.get("sourceSk") or "").startswith("LOCKED#GAME#")
@@ -581,7 +650,7 @@ def enhance_report(module: Any, report: Dict[str, Any], historical_rows: Optiona
         "applied": True,
         "version": VERSION,
         "classification": {
-            "officialPrediction": "winner selected in an exact canonical immutable LOCKED#GAME row",
+            "officialPrediction": "winner selected in a canonical immutable LOCKED#GAME row joined by exact provider identity or a verified immutable official-game-PK/provider alias crosswalk",
             "playableRecommendation": "higher-confidence wagering recommendation; official status is excluded",
         },
         "windows": windows,
@@ -592,7 +661,7 @@ def enhance_report(module: Any, report: Dict[str, Any], historical_rows: Optiona
             "market_favorite_baseline", "model_lift_vs_market", "brier_skill_vs_market",
         ],
         "immutableLedgerPk": LEDGER_PK,
-        "policy": "Only completed games with exact canonical immutable LOCKED#GAME authority are graded. Daily-card, legacy, fuzzy-match, and displayed-forecast rows are excluded.",
+        "policy": "Only completed games with canonical immutable LOCKED#GAME authority and exact or verified immutable provider identity are graded. Daily-card, legacy, fuzzy-match, and displayed-forecast rows are excluded.",
     }
     out["summary"] = _enhance_summary(out.get("summary") or {}, windows["current24h"], windows["season"])
     out["policy"] = (

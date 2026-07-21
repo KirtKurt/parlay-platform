@@ -75,8 +75,8 @@ def _verify_explicit_lock_runtime_install() -> None:
         violations.append('protected MLB lock handler does not fail closed when ML runtime installation is incomplete')
     if 'mlRuntimeInstallation' not in source:
         violations.append('protected MLB lock handler does not expose ML runtime installation status')
-    if 'MLB-LOCK-RUNTIME-FIX-v4-roster-readiness-release-status' not in source:
-        violations.append('protected MLB lock handler is missing the roster/readiness/release status fix marker')
+    if 'MLB-LOCK-RUNTIME-FIX-v5-official-schedule-lifecycle-vector-separation' not in source:
+        violations.append('protected MLB lock handler is missing the official-schedule lifecycle/vector-separation fix marker')
     if 'MLB_PER_GAME_LOCK_ATTEMPT_DIAGNOSTICS_VERSION' not in source:
         violations.append('protected MLB lock handler does not require durable lock-attempt diagnostics')
     if 'lastPrelockAtCutoffBecomesFinal' not in source or 'modelOrSignalRecomputedAtLock' not in source:
@@ -88,6 +88,8 @@ def _verify_explicit_lock_runtime_install() -> None:
         'lockOutcomeStatusSeparateFromPrediction',
         'latePlayabilityAssessmentCannotRewriteSelection',
         'doubleheaderGame2EventDrivenPlayabilityRecheck',
+        'officialScheduleAuthorityRequired',
+        'selectionLockIndependentOfTrainingVector',
     ):
         if token not in source:
             violations.append(f'protected MLB lock handler missing lifecycle attestation: {token}')
@@ -241,6 +243,7 @@ for required_path in [
     Path('hello_world/mlb_immutable_locked_storage_patch.py'),
     Path('hello_world/mlb_daily_lock_ml_vector_preservation_patch.py'),
     Path('hello_world/mlb_daily_per_game_lock_patch.py'),
+    Path('hello_world/mlb_official_schedule_authority.py'),
     LOCK_HANDLER,
     MANUAL_PULL_HANDLER,
     Path('hello_world/mlb_accuracy_target_policy_v1.py'),

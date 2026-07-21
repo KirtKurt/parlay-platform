@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from botocore.exceptions import ClientError
 
 VERSION = "MLB-IMMUTABLE-LOCKED-STORAGE-v5-persisted-stage-authority-chain"
+SELECTION_TRAINING_SEPARATION_VERSION = "MLB-SELECTION-TRAINING-SEPARATION-v1"
 AUTHORITY_VERSION = "MLB-CANONICAL-PER-GAME-STAGE-AUTHORITY-v2-persisted-chain"
 UNAUTHORIZED_LOCKED_WRITE = "LOCKED_WRITE_REQUIRES_VERIFIED_IMMUTABLE_PER_GAME_STAGE"
 REQUIRED_LOCK_MINUTES = 45
@@ -249,6 +250,8 @@ def _locked_item(module: Any, row: Dict[str, Any]) -> Dict[str, Any]:
     row["immutableLockedStorageVersion"] = VERSION
     row["immutableLockedStorage"] = True
     row["immutableLockedStorageKeyspace"] = "LOCKED#GAME"
+    vector_errors = _vector_errors(row)
+    training = row.get("mlFeatureFreeze") or {}
     return module.history.ddb_safe({
         "PK": f"GAME_WINNERS#mlb#{_slate(row)}",
         "SK": f"LOCKED#GAME#{_commence(row)}#{_identity(row)}",
@@ -272,6 +275,10 @@ def _locked_item(module: Any, row: Dict[str, Any]) -> Dict[str, Any]:
         "stage_authority_version": AUTHORITY_VERSION,
         "stage_fingerprint": (row.get("canonicalPerGameStageAuthority") or {}).get("stageFingerprint"),
         "immutable_locked_storage_version": VERSION,
+        "selection_lock_verified": True,
+        "exact_vector_verified": not vector_errors,
+        "training_eligible": bool(training.get("trainingEligible")),
+        "training_exclusion_reasons": list(training.get("trainingExclusionReasons") or []),
         "data": row,
     })
 
@@ -279,19 +286,25 @@ def _locked_item(module: Any, row: Dict[str, Any]) -> Dict[str, Any]:
 def _vector_errors(row: Dict[str, Any]) -> List[str]:
     try:
         import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
-        return vector_contract.validate_exact_locked_row(row)
+        return vector_contract.effective_selection_lock_vector_errors(row)
     except Exception as exc:
         return [f"exact_vector_validator_unavailable:{exc}"]
 
 
-def _require_vector(row: Dict[str, Any], *, context: str) -> None:
-    errors = _vector_errors(row)
-    if errors:
+def _require_vector_status(row: Dict[str, Any], *, context: str) -> List[str]:
+    try:
+        import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
+
+        status_errors = vector_contract.validate_selection_lock_vector_status(row)
+    except Exception as exc:
+        status_errors = [f"selection_vector_status_validator_unavailable:{exc}"]
+    if status_errors:
         game_id = _identity(row)
         raise RuntimeError(
-            f"MLB_IMMUTABLE_LOCKED_VECTOR_REJECTED:{context}:{game_id}:"
-            + ",".join(sorted(set(errors)))
+            f"MLB_IMMUTABLE_LOCKED_VECTOR_STATUS_REJECTED:{context}:{game_id}:"
+            + ",".join(sorted(set(status_errors)))
         )
+    return _vector_errors(row)
 
 
 def _stored_row(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -369,9 +382,10 @@ def apply(module: Any):
                 "version": VERSION,
             }
 
-        _require_vector(row, context="new_write")
+        vector_errors = _require_vector_status(row, context="new_write")
         row["canonicalPerGameStageAuthority"] = _authority_proof(stage)
         item = _locked_item(module, row)
+        training = row.get("mlFeatureFreeze") or {}
         try:
             module.history.PULLS.put_item(
                 Item=item,
@@ -384,7 +398,11 @@ def apply(module: Any):
                 "storageClass": "LOCKED_IMMUTABLE",
                 "writeOnce": True,
                 "created": True,
-                "exactVectorVerified": True,
+                "selectionLockVerified": True,
+                "exactVectorVerified": not vector_errors,
+                "exactVectorValidationErrors": vector_errors,
+                "trainingEligible": bool(training.get("trainingEligible")),
+                "trainingExclusionReasons": list(training.get("trainingExclusionReasons") or []),
                 "stageAuthorityVerified": True,
                 "stageAuthorityVersion": AUTHORITY_VERSION,
                 "stageFingerprint": stage.get("stage_fingerprint"),
@@ -402,7 +420,10 @@ def apply(module: Any):
             if not existing:
                 raise
             existing_row = _stored_row(existing)
-            _require_vector(existing_row, context="existing_collision")
+            existing_vector_errors = _require_vector_status(
+                existing_row,
+                context="existing_collision",
+            )
             existing_authority_errors = validate_canonical_stage_authority(
                 module.history.PULLS,
                 existing_row,
@@ -412,20 +433,13 @@ def apply(module: Any):
                     "MLB_IMMUTABLE_LOCKED_EXISTING_STAGE_AUTHORITY_REJECTED:"
                     + ",".join(existing_authority_errors)
                 )
-            incoming_fingerprint = _fingerprint(row)
             existing_fingerprint = _fingerprint(existing_row)
-            if (
-                not incoming_fingerprint
-                or incoming_fingerprint != existing_fingerprint
-                or _vector_identity(row) != _vector_identity(existing_row)
-                or _payload_fingerprint(item.get("data") or {})
-                != _payload_fingerprint(existing_row)
-            ):
+            if _payload_fingerprint(item.get("data") or {}) != _payload_fingerprint(existing_row):
                 raise RuntimeError(
-                    "MLB_IMMUTABLE_LOCKED_VECTOR_COLLISION_MISMATCH:"
-                    f"{_identity(row)}:{existing_fingerprint or 'missing'}:"
-                    f"{incoming_fingerprint or 'missing'}"
+                    "MLB_IMMUTABLE_LOCKED_PAYLOAD_COLLISION_MISMATCH:"
+                    f"{_identity(row)}"
                 )
+            existing_training = existing_row.get("mlFeatureFreeze") or {}
             return {
                 "ok": True,
                 "pk": item["PK"],
@@ -434,7 +448,11 @@ def apply(module: Any):
                 "writeOnce": True,
                 "created": False,
                 "immutableExisting": True,
-                "exactVectorVerified": True,
+                "selectionLockVerified": True,
+                "exactVectorVerified": not existing_vector_errors,
+                "exactVectorValidationErrors": existing_vector_errors,
+                "trainingEligible": bool(existing_training.get("trainingEligible")),
+                "trainingExclusionReasons": list(existing_training.get("trainingExclusionReasons") or []),
                 "stageAuthorityVerified": True,
                 "stageAuthorityVersion": AUTHORITY_VERSION,
                 "stageFingerprint": stage.get("stage_fingerprint"),

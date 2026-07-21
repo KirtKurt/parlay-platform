@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-VERSION = "MLB-DAILY-LOCK-ML-VECTOR-PRESERVATION-v1-fail-closed"
+VERSION = "MLB-DAILY-LOCK-ML-VECTOR-PRESERVATION-v2-selection-training-separated"
 EXPECTED_VECTOR_VERSION = "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness"
+TRAINING_EXCLUSION_PREFIX = "exact_lock_vector_validation:"
 
 # These fields are intentionally retained in the write-once daily card because the
 # postgame outcome and reliability models must be trained from the exact pregame
@@ -259,11 +260,160 @@ def _validate(row: Dict[str, Any], compact: Dict[str, Any]) -> List[str]:
 def validate_exact_locked_row(row: Dict[str, Any]) -> List[str]:
     """Return exact-vector contract errors for any locked prediction row.
 
-    The daily-card compactor and the game-level immutable store share this one
-    fail-closed validator so neither keyspace can accept a weaker row.
+    ML cohort admission remains fail-closed on every error returned here. The
+    immutable selection store records these errors but does not use them as
+    winner-lock authority.
     """
     source = copy.deepcopy(row or {})
     return _validate(source, source)
+
+
+def effective_selection_lock_vector_errors(row: Dict[str, Any]) -> List[str]:
+    """Return the immutable lock-time vector verdict without reconstructing it."""
+    source = row or {}
+    if source.get("exactVectorStatusUnavailableAtLock") is True:
+        stored = source.get("exactVectorValidationErrors") or []
+        return sorted(set(str(error) for error in stored if str(error))) or [
+            "exact_vector_status_unavailable_at_lock"
+        ]
+    return validate_exact_locked_row(source)
+
+
+def _vector_training_exclusions(errors: List[str]) -> List[str]:
+    return [
+        f"{TRAINING_EXCLUSION_PREFIX}{str(error).strip()}"
+        for error in sorted(set(errors))
+        if str(error).strip()
+    ]
+
+
+def apply_exact_vector_training_status(
+    row: Dict[str, Any],
+    validation_errors: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Persist ML-vector eligibility without making it lock authority.
+
+    The winner is authorized by its persisted pre-cutoff stage chain. The exact
+    vector is a separate, stricter contract used only for ML cohort admission.
+    """
+    out = copy.deepcopy(row or {})
+    out.pop("exactVectorStatusUnavailableAtLock", None)
+    if validation_errors is None:
+        try:
+            validation_errors = validate_exact_locked_row(out)
+        except Exception as exc:
+            validation_errors = [
+                f"exact_vector_validator_unavailable:{type(exc).__name__}:{exc}"
+            ]
+    errors = sorted(set(str(error) for error in validation_errors if str(error)))
+    exact = not errors
+    freeze = dict(out.get("mlFeatureFreeze") or {})
+    existing_reasons = {
+        str(reason)
+        for reason in (
+            freeze.get("trainingExclusionReasons")
+            or out.get("trainingExclusionReasons")
+            or []
+        )
+        if str(reason)
+    }
+    if errors:
+        existing_reasons.update(_vector_training_exclusions(errors))
+        freeze["trainingEligible"] = False
+        out["trainingEligible"] = False
+        out["trainingEligibilityStatus"] = "INELIGIBLE"
+    else:
+        eligible = bool(freeze.get("trainingEligible") is True and not existing_reasons)
+        freeze["trainingEligible"] = eligible
+        out["trainingEligible"] = eligible
+        out["trainingEligibilityStatus"] = "ELIGIBLE" if eligible else "INELIGIBLE"
+
+    reasons = sorted(existing_reasons)
+    freeze.update({
+        "exactVectorVerified": exact,
+        "exactVectorValidationErrors": errors,
+        "trainingExclusionReasons": reasons,
+        "selectionLockIndependentOfTrainingVector": True,
+    })
+    out.update({
+        "exactVectorVerified": exact,
+        "exactVectorValidationErrors": errors,
+        "trainingExclusionReasons": reasons,
+        "selectionTrainingSeparationVersion": VERSION,
+        "mlFeatureFreeze": freeze,
+    })
+    return out
+
+
+def validate_selection_lock_vector_status(row: Dict[str, Any]) -> List[str]:
+    """Validate separation metadata while allowing an invalid training vector."""
+    source = copy.deepcopy(row or {})
+    if source.get("exactVectorStatusUnavailableAtLock") is True:
+        freeze = source.get("mlFeatureFreeze") or {}
+        errors = []
+        if source.get("exactVectorVerified") is not False:
+            errors.append("fallback_vector_status_not_explicitly_unverified")
+        if source.get("trainingEligible") is not False:
+            errors.append("fallback_vector_status_not_training_ineligible")
+        if source.get("trainingEligibilityStatus") != "INELIGIBLE":
+            errors.append("fallback_vector_training_status_missing")
+        if not isinstance(freeze, dict) or freeze.get("trainingEligible") is not False:
+            errors.append("fallback_vector_freeze_not_training_ineligible")
+        if not source.get("exactVectorValidationErrors"):
+            errors.append("fallback_vector_validation_error_missing")
+        if not source.get("trainingExclusionReasons") or not freeze.get("trainingExclusionReasons"):
+            errors.append("fallback_vector_training_exclusion_missing")
+        return sorted(set(errors))
+    try:
+        vector_errors = validate_exact_locked_row(source)
+    except Exception as exc:
+        vector_errors = [
+            f"exact_vector_validator_unavailable:{type(exc).__name__}:{exc}"
+        ]
+    exact = not vector_errors
+    errors: List[str] = []
+    freeze = source.get("mlFeatureFreeze") or {}
+    stored_errors = source.get("exactVectorValidationErrors")
+    freeze_errors = freeze.get("exactVectorValidationErrors") if isinstance(freeze, dict) else None
+
+    for label, value in (("row", stored_errors), ("freeze", freeze_errors)):
+        if value is not None and sorted(set(str(item) for item in (value or []))) != vector_errors:
+            errors.append(f"{label}_exact_vector_validation_errors_mismatch")
+
+    row_exact = source.get("exactVectorVerified")
+    freeze_exact = freeze.get("exactVectorVerified") if isinstance(freeze, dict) else None
+    if row_exact is not None and row_exact is not exact:
+        errors.append("row_exact_vector_verified_mismatch")
+    if freeze_exact is not None and freeze_exact is not exact:
+        errors.append("freeze_exact_vector_verified_mismatch")
+
+    if vector_errors:
+        required_reasons = set(_vector_training_exclusions(vector_errors))
+        row_reasons = set(str(reason) for reason in (source.get("trainingExclusionReasons") or []))
+        freeze_reasons = (
+            set(str(reason) for reason in (freeze.get("trainingExclusionReasons") or []))
+            if isinstance(freeze, dict)
+            else set()
+        )
+        if row_exact is not False or freeze_exact is not False:
+            errors.append("invalid_vector_not_explicitly_unverified")
+        if (
+            source.get("trainingEligible") is not False
+            or not isinstance(freeze, dict)
+            or freeze.get("trainingEligible") is not False
+        ):
+            errors.append("invalid_vector_not_training_ineligible")
+        if source.get("trainingEligibilityStatus") != "INELIGIBLE":
+            errors.append("invalid_vector_training_status_missing")
+        if source.get("selectionTrainingSeparationVersion") != VERSION:
+            errors.append("invalid_vector_selection_training_separation_version_missing")
+        if (
+            not required_reasons.issubset(row_reasons)
+            or not required_reasons.issubset(freeze_reasons)
+        ):
+            errors.append("invalid_vector_training_exclusions_missing")
+
+    return sorted(set(errors))
 
 
 def require_exact_locked_row(row: Dict[str, Any]) -> None:
@@ -283,6 +433,7 @@ def apply(daily_lock_module: Any) -> Dict[str, Any]:
             "expectedVectorVersion": EXPECTED_VECTOR_VERSION,
             "alreadyApplied": True,
             "failClosed": True,
+            "selectionLockIndependentOfTrainingVector": True,
         }
 
     original_compact_pick = daily_lock_module._compact_pick
@@ -320,13 +471,9 @@ def apply(daily_lock_module: Any) -> Dict[str, Any]:
             compact.pop(forbidden, None)
 
         errors = _validate(source, compact)
+        compact = apply_exact_vector_training_status(compact, errors)
         compact["mlLockVectorStorageVerified"] = not errors
         compact["mlLockVectorStorageErrors"] = errors
-        if errors:
-            game_id = compact.get("gameId") or "unknown"
-            raise RuntimeError(
-                f"MLB_DAILY_LOCK_ML_VECTOR_INVALID:{game_id}:" + ",".join(errors)
-            )
         return compact
 
     daily_lock_module._compact_pick = compact_pick_with_ml_contract
@@ -339,4 +486,7 @@ def apply(daily_lock_module: Any) -> Dict[str, Any]:
         "preservedFields": list(PRESERVED_FIELDS),
         "failClosed": True,
         "outcomeLabelsForbiddenAtLock": True,
+        "selectionLockFailClosed": True,
+        "mlTrainingFailClosed": True,
+        "selectionLockIndependentOfTrainingVector": True,
     }
