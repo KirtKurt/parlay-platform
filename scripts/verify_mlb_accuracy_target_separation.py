@@ -84,9 +84,11 @@ def main() -> int:
     assert installed.get("rolling24hSlateAccuracyProgressMilestonesReportingOnly") is True
     assert installed.get("automaticPromotionAfterApplicableGates") is True
     assert installed.get("roiPromotionGateRequired") is False
-    assert installed.get("everyGameRetainsOfficialPick") is True
+    assert installed.get("everyGameRetainsOfficialPick") is False
+    assert installed.get("everyGameRetainsVisibleLockedPrediction") is True
     assert installed.get("playabilitySeparateFromOfficialPick") is True
-    assert installed.get("individualGameOfficialPickProbabilityFloorPct") is None
+    assert installed.get("individualGameOfficialPickProbabilityFloorPct") == 60.0
+    assert installed.get("multipleReversalsRequireIndependentConfirmationForOfficialStatus") is True
 
     assert os.environ.get("INQSI_MLB_ML_TARGET_ACCURACY") == "90.0"
     assert os.environ.get("INQSI_MLB_ML_PLAYABLE_TARGET_ACCURACY") == "90.0"
@@ -96,11 +98,13 @@ def main() -> int:
     assert os.environ.get("INQSI_MLB_ML_MIN_PRODUCTION_SELECTED_TEST_ROWS") == "100"
     assert os.environ.get("INQSI_MLB_ROLLING_24H_ALL_GAMES_TARGET_ACCURACY") == "90.0"
     assert os.environ.get("INQSI_MLB_ROLLING_24H_SLATE_AUTHORITY_TARGET_ACCURACY") == "90.0"
+    assert os.environ.get("INQSI_MLB_INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT") == "60.0"
 
     import mlb_ml_runtime_safety_patch as runtime_safety
     import mlb_ml_champion_challenger_v1 as champion
     import mlb_ml_optimization_v3 as optimization
     import mlb_real_world_accuracy_semantics_fix as semantics
+    import mlb_official_lock_quality_gate as official_gate
 
     assert runtime_safety.MIN_ACCURACY_TARGET_PCT == 90.0
     assert runtime_safety.MIN_PRODUCTION_TEST_ROWS == 100
@@ -116,6 +120,7 @@ def main() -> int:
     assert "v1.5" in champion.VERSION and "90pct" in champion.VERSION
     assert semantics.ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT == 90.0
     assert semantics.MIN_PLAYABLE_TARGET_ACCURACY_PCT == 90.0
+    assert official_gate.MIN_OFFICIAL_PROBABILITY_PCT == 60.0
     assert optimization._rolling_24h_slate_accuracy({
         "summary": {"rolling24hOfficialCardSlateAccuracyPct": 90.0}
     }) == 90.0
@@ -218,8 +223,8 @@ def main() -> int:
     assert "INQSI_MLB_ML_AUTO_PROMOTE: 'true'" in audit_workflow
 
     print(
-        "MLB authority targets verified: the rolling 24-hour official-card slate average and the separate "
-        "untouched outcome/selected-playability populations must each reach 90%; 50-80 are reporting-only."
+        "MLB authority targets verified: official quality begins at 60%, while the rolling 24-hour slate and "
+        "untouched outcome/selected-playability populations must each reach 90%."
     )
     return 0
 
