@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
@@ -34,6 +35,17 @@ EXECUTION_CONCURRENCY_CONTROL = {
     "ownerConditionalRelease": True,
     "reservedLambdaConcurrencyRequired": False,
 }
+MAX_DIAGNOSTIC_MESSAGE_CHARS = 1600
+_SECRET_PATTERNS = (
+    re.compile(r"\bbbs_(?:live|test)_[A-Za-z0-9._-]+", re.IGNORECASE),
+    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
+    re.compile(
+        r"(?i)(authorization|x-api-key|api[_-]?key|bearer)"
+        r"(\s*[:=]\s*|\s+)([^\s,;]+)"
+    ),
+    re.compile(r"arn:aws(?:-[a-z]+)?:[A-Za-z0-9_./:=+@-]+"),
+    re.compile(r"(?<!\d)\d{12}(?!\d)"),
+)
 
 
 def _parse_time(value: Any) -> Optional[datetime]:
@@ -253,6 +265,37 @@ def _read(path: str) -> Dict[str, Any]:
     return value
 
 
+def _safe_diagnostic_text(value: Any) -> str:
+    text = str(value or "").replace("\r", " ").replace("\n", " ")
+    for pattern in _SECRET_PATTERNS:
+        if pattern.pattern.startswith("(?i)(authorization"):
+            text = pattern.sub(lambda match: f"{match.group(1)}=[REDACTED]", text)
+        else:
+            text = pattern.sub("[REDACTED]", text)
+    text = " ".join(text.split())
+    if len(text) > MAX_DIAGNOSTIC_MESSAGE_CHARS:
+        text = text[:MAX_DIAGNOSTIC_MESSAGE_CHARS] + "...[truncated]"
+    return text
+
+
+def invocation_failure_diagnostic(
+    *,
+    label: str,
+    response: Dict[str, Any],
+    invocation: Dict[str, Any],
+) -> Optional[Dict[str, str]]:
+    function_error = invocation.get("FunctionError")
+    if not function_error:
+        return None
+    return {
+        "label": _safe_diagnostic_text(label),
+        "functionError": _safe_diagnostic_text(function_error),
+        "errorType": _safe_diagnostic_text(response.get("errorType")),
+        "errorMessage": _safe_diagnostic_text(response.get("errorMessage")),
+        "requestId": _safe_diagnostic_text(response.get("requestId")),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--training", required=True)
@@ -266,17 +309,35 @@ def main() -> int:
     parser.add_argument("--expected-template-sha256", required=True)
     args = parser.parse_args()
 
+    training = _read(args.training)
+    selection_capture = _read(args.selection_capture)
     status_after = _read(args.status_after)
+    invocations = (
+        _read(args.training_invocation),
+        _read(args.selection_capture_invocation),
+        _read(args.status_after_invocation),
+    )
     print(json.dumps(status_after, indent=2, sort_keys=True, default=str))
+    for label, response, invocation in (
+        ("training", training, invocations[0]),
+        ("selection_capture", selection_capture, invocations[1]),
+        ("status_after", status_after, invocations[2]),
+    ):
+        diagnostic = invocation_failure_diagnostic(
+            label=label,
+            response=response,
+            invocation=invocation,
+        )
+        if diagnostic is not None:
+            print(
+                "lambda_failure_diagnostic="
+                + json.dumps(diagnostic, sort_keys=True, separators=(",", ":"))
+            )
     errors = verify(
-        training=_read(args.training),
-        selection_capture=_read(args.selection_capture),
+        training=training,
+        selection_capture=selection_capture,
         status_after=status_after,
-        invocation_metadata=(
-            _read(args.training_invocation),
-            _read(args.selection_capture_invocation),
-            _read(args.status_after_invocation),
-        ),
+        invocation_metadata=invocations,
         run_started_at=args.run_started_at,
         expected_git_sha=args.expected_git_sha,
         expected_template_sha256=args.expected_template_sha256,

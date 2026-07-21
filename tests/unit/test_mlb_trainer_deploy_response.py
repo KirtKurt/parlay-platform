@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 from pathlib import Path
 import sys
 
@@ -232,4 +233,80 @@ def test_rejects_lambda_function_error() -> None:
     assert "lambda_invocation_failed:1" in _verify(
         *payloads,
         invocation_metadata=invocation_metadata,
+    )
+
+
+def test_function_error_diagnostic_allowlists_exact_safe_fields() -> None:
+    diagnostic = verifier.invocation_failure_diagnostic(
+        label="training",
+        response={
+            "errorType": "ValidationException",
+            "errorMessage": "Invalid lease condition",
+            "requestId": "request-123",
+            "stackTrace": ["must-not-appear"],
+            "unknown": "must-not-appear",
+        },
+        invocation={"StatusCode": 200, "FunctionError": "Unhandled"},
+    )
+
+    assert diagnostic == {
+        "label": "training",
+        "functionError": "Unhandled",
+        "errorType": "ValidationException",
+        "errorMessage": "Invalid lease condition",
+        "requestId": "request-123",
+    }
+    assert "stackTrace" not in diagnostic
+    assert "unknown" not in diagnostic
+
+
+def test_function_error_diagnostic_redacts_secrets_and_log_injection() -> None:
+    diagnostic = verifier.invocation_failure_diagnostic(
+        label="selection_capture\nforged",
+        response={
+            "errorType": "RuntimeError",
+            "errorMessage": (
+                "x-api-key: bbs_live_secret Authorization=Bearer-token "
+                "apiKey=query-secret AKIAABCDEFGHIJKLMNOP "
+                "arn:aws:lambda:us-east-1:123456789012:function:name\r\nforged"
+            ),
+            "requestId": "123456789012",
+        },
+        invocation={"StatusCode": 200, "FunctionError": "Unhandled"},
+    )
+
+    rendered = json.dumps(diagnostic, sort_keys=True)
+    for secret in (
+        "bbs_live_secret",
+        "Bearer-token",
+        "query-secret",
+        "AKIAABCDEFGHIJKLMNOP",
+        "123456789012",
+        "arn:aws",
+    ):
+        assert secret not in rendered
+    assert "\n" not in diagnostic["label"]
+    assert "\n" not in diagnostic["errorMessage"]
+    assert "\r" not in diagnostic["errorMessage"]
+
+
+def test_function_error_diagnostic_truncates_long_messages() -> None:
+    diagnostic = verifier.invocation_failure_diagnostic(
+        label="training",
+        response={"errorMessage": "x" * 5000},
+        invocation={"FunctionError": "Unhandled"},
+    )
+
+    assert diagnostic["errorMessage"].endswith("...[truncated]")
+    assert len(diagnostic["errorMessage"]) < 1700
+
+
+def test_successful_invocation_emits_no_failure_diagnostic() -> None:
+    assert (
+        verifier.invocation_failure_diagnostic(
+            label="training",
+            response={"ok": True},
+            invocation={"StatusCode": 200},
+        )
+        is None
     )

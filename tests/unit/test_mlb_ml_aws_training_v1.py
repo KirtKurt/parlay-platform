@@ -1,5 +1,6 @@
 import copy
 from datetime import datetime, timezone
+import json
 from pathlib import Path
 import sys
 
@@ -16,6 +17,10 @@ import mlb_ml_experiment_v2 as experiment
 
 
 NOW = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+
+
+class CapturedDynamoRequest(RuntimeError):
+    pass
 
 
 def frozen_challenger(manifest):
@@ -1620,6 +1625,103 @@ def execution_lease_store():
         s3_client=FakeS3(),
     )
     return store, table
+
+
+def real_resource_transaction_store():
+    import boto3
+    from botocore.config import Config
+
+    resource = boto3.resource(
+        "dynamodb",
+        region_name="us-east-1",
+        endpoint_url="http://127.0.0.1:9",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+        config=Config(
+            connect_timeout=1,
+            read_timeout=1,
+            retries={"total_max_attempts": 1, "mode": "standard"},
+        ),
+    )
+    store = aws_training.AwsTrainingStore(
+        table_name="table",
+        artifacts_bucket="bucket",
+        dynamodb_resource=resource,
+        s3_client=FakeS3(),
+    )
+    captured = {}
+
+    def capture_request(*, params, **_kwargs):
+        captured["body"] = json.loads(params["body"].decode("utf-8"))
+        raise CapturedDynamoRequest("request captured before network I/O")
+
+    store.table.meta.client.meta.events.register(
+        "before-call.dynamodb.TransactWriteItems",
+        capture_request,
+    )
+    return store, captured
+
+
+def test_real_boto_resource_serializes_training_status_transaction_once():
+    store, captured = real_resource_transaction_store()
+    store._get_data = lambda _key: None
+    status = {
+        "ok": True,
+        "status": "WAITING_FOR_EXPERIMENT_MANIFEST",
+        "executionMode": "selection_capture",
+        "runId": "status-request-shape",
+        "experimentId": experiment.PRODUCTION_EXPERIMENT_ID,
+        "createdAtUtc": NOW.isoformat(),
+        "statusFingerprintVersion": aws_training.STATUS_FINGERPRINT_VERSION,
+    }
+    status["statusFingerprint"] = aws_training._status_fingerprint(status)
+
+    with pytest.raises(CapturedDynamoRequest, match="before network I/O"):
+        store.save_status(experiment.PRODUCTION_EXPERIMENT_ID, status)
+
+    puts = [entry["Put"] for entry in captured["body"]["TransactItems"]]
+    assert len(puts) == 3
+    expected_pk = aws_training._experiment_pk(experiment.PRODUCTION_EXPERIMENT_ID)
+    assert all(put["Item"]["PK"] == {"S": expected_pk} for put in puts)
+    assert all(put["Item"]["SK"].keys() == {"S"} for put in puts)
+    assert puts[0]["Item"]["data"]["M"]["ok"] == {"BOOL": True}
+    assert puts[1]["ExpressionAttributeValues"][":created"] == {
+        "S": NOW.isoformat()
+    }
+
+
+def test_real_boto_resource_serializes_candidate_transaction_once():
+    store, captured = real_resource_transaction_store()
+    manifest = {
+        "experimentId": experiment.PRODUCTION_EXPERIMENT_ID,
+        "revision": 1,
+        "manifestDigest": "new-manifest-digest",
+        "updatedAtUtc": NOW.isoformat(),
+    }
+    candidate = {
+        "artifactDigest": "candidate-digest",
+        "createdAtUtc": NOW.isoformat(),
+    }
+
+    with pytest.raises(CapturedDynamoRequest, match="before network I/O"):
+        store.commit_candidate(
+            manifest,
+            candidate,
+            expected_revision=0,
+            expected_digest="old-manifest-digest",
+        )
+
+    puts = [entry["Put"] for entry in captured["body"]["TransactItems"]]
+    assert len(puts) == 3
+    assert puts[0]["Item"]["revision"] == {"N": "1"}
+    assert puts[0]["Item"]["PK"] == {
+        "S": aws_training._experiment_pk(experiment.PRODUCTION_EXPERIMENT_ID)
+    }
+    assert puts[0]["ExpressionAttributeValues"] == {
+        ":revision": {"N": "0"},
+        ":digest": {"S": "old-manifest-digest"},
+    }
+    assert puts[1]["Item"]["artifactDigest"] == {"S": "candidate-digest"}
 
 
 def test_global_lease_reuses_live_r2_key_and_serializes_new_r3_runtime():

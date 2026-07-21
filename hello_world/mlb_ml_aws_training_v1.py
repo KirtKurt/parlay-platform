@@ -771,7 +771,7 @@ class AwsTrainingStore:
                     {
                         "Put": {
                             "TableName": self.table_name,
-                            "Item": self._serialize({**base, "SK": run_sk}),
+                            "Item": _ddb_safe({**base, "SK": run_sk}),
                             "ConditionExpression": (
                                 "attribute_not_exists(PK) AND attribute_not_exists(SK)"
                             ),
@@ -787,11 +787,11 @@ class AwsTrainingStore:
                     {
                         "Put": {
                             "TableName": self.table_name,
-                            "Item": self._serialize({**base, "SK": latest_sk}),
+                            "Item": _ddb_safe({**base, "SK": latest_sk}),
                             "ConditionExpression": (
                                 "attribute_not_exists(PK) OR created_at <= :created"
                             ),
-                            "ExpressionAttributeValues": self._serialize(
+                            "ExpressionAttributeValues": _ddb_safe(
                                 {":created": status["createdAtUtc"]}
                             ),
                         }
@@ -829,15 +829,6 @@ class AwsTrainingStore:
             "selection_capture": STATUS_LATEST_SELECTION_CAPTURE_SK,
         }.get(mode, STATUS_LATEST_SK)
         return self._get_data({"PK": _experiment_pk(experiment_id), "SK": sk})
-
-    def _serialize(self, value: Dict[str, Any]) -> Dict[str, Any]:
-        from boto3.dynamodb.types import TypeSerializer
-
-        serializer = TypeSerializer()
-        return {
-            key: serializer.serialize(item)
-            for key, item in _ddb_safe(value).items()
-        }
 
     def commit_candidate(
         self,
@@ -881,11 +872,11 @@ class AwsTrainingStore:
                     {
                         "Put": {
                             "TableName": self.table_name,
-                            "Item": self._serialize(manifest_item),
+                            "Item": _ddb_safe(manifest_item),
                             "ConditionExpression": (
                                 "revision = :revision AND manifestDigest = :digest"
                             ),
-                            "ExpressionAttributeValues": self._serialize(
+                            "ExpressionAttributeValues": _ddb_safe(
                                 {
                                     ":revision": expected_revision,
                                     ":digest": expected_digest,
@@ -896,7 +887,7 @@ class AwsTrainingStore:
                     {
                         "Put": {
                             "TableName": self.table_name,
-                            "Item": self._serialize(candidate_item),
+                            "Item": _ddb_safe(candidate_item),
                             "ConditionExpression": (
                                 "attribute_not_exists(PK) AND attribute_not_exists(SK)"
                             ),
@@ -905,7 +896,7 @@ class AwsTrainingStore:
                     {
                         "Put": {
                             "TableName": self.table_name,
-                            "Item": self._serialize(latest_item),
+                            "Item": _ddb_safe(latest_item),
                         }
                     },
                 ]
