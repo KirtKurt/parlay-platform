@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -28,6 +29,15 @@ STATUS_LATEST_SK = "STATUS#LATEST"
 STATUS_LATEST_TRAINING_SK = "STATUS#LATEST#TRAINING"
 STATUS_LATEST_SELECTION_CAPTURE_SK = "STATUS#LATEST#SELECTION_CAPTURE"
 STATUS_RUN_SK_PREFIX = "STATUS#RUN#"
+EXECUTION_LEASE_SK = "EXECUTION_LEASE"
+EXECUTION_LEASE_RECORD_TYPE = "mlb_ml_execution_lease_v1"
+EXECUTION_LEASE_VERSION = "MLB-ML-EXECUTION-LEASE-v1-shared-ddb-conditional"
+EXECUTION_LEASE_SECONDS = 960
+EXECUTION_LEASE_PROTECTED_MODES = (
+    "manual_review",
+    "selection_capture",
+    "training",
+)
 STATUS_FINGERPRINT_VERSION = "MLB-ML-AWS-TRAINING-STATUS-SHA256-v1"
 TRAINING_STATUS_MAX_AGE = timedelta(hours=8)
 SELECTION_CAPTURE_STATUS_MAX_AGE = timedelta(minutes=45)
@@ -39,6 +49,10 @@ class TrainingContractError(RuntimeError):
 
 
 class ConditionalStateConflict(TrainingContractError):
+    pass
+
+
+class ExecutionLeaseUnavailable(ConditionalStateConflict):
     pass
 
 
@@ -59,6 +73,18 @@ class TrainingStore(Protocol):
     def load_latest_status(
         self, experiment_id: str, execution_mode: Optional[str] = None
     ) -> Optional[Dict[str, Any]]: ...
+    def acquire_execution_lease(
+        self,
+        experiment_id: str,
+        *,
+        owner_token: str,
+        execution_mode: str,
+        acquired_at: datetime,
+        lease_seconds: int,
+    ) -> Dict[str, Any]: ...
+    def release_execution_lease(
+        self, experiment_id: str, *, owner_token: str
+    ) -> None: ...
     def commit_candidate(
         self,
         manifest: Dict[str, Any],
@@ -204,6 +230,21 @@ def _status_fingerprint(status: Mapping[str, Any]) -> str:
     )
 
 
+def execution_concurrency_control(*, acquired_for_run: bool) -> Dict[str, Any]:
+    return {
+        "version": EXECUTION_LEASE_VERSION,
+        "strategy": "dynamodb_conditional_lease",
+        "scope": "one_shared_lease_per_experiment",
+        "leaseKey": EXECUTION_LEASE_SK,
+        "leaseSeconds": EXECUTION_LEASE_SECONDS,
+        "protectedExecutionModes": list(EXECUTION_LEASE_PROTECTED_MODES),
+        "acquiredForRun": bool(acquired_for_run),
+        "expiredLeaseReclaimEnabled": True,
+        "ownerConditionalRelease": True,
+        "reservedLambdaConcurrencyRequired": False,
+    }
+
+
 def _parse_status_datetime(value: Any) -> Optional[datetime]:
     if not value:
         return None
@@ -288,6 +329,88 @@ class AwsTrainingStore:
         self.s3 = s3_client
         self.bucket = artifacts_bucket
         self._versioning_verified = False
+
+    def acquire_execution_lease(
+        self,
+        experiment_id: str,
+        *,
+        owner_token: str,
+        execution_mode: str,
+        acquired_at: datetime,
+        lease_seconds: int,
+    ) -> Dict[str, Any]:
+        mode = str(execution_mode or "").strip().lower()
+        owner = str(owner_token or "").strip()
+        if mode not in EXECUTION_LEASE_PROTECTED_MODES:
+            raise TrainingContractError("execution lease mode is invalid")
+        if not owner:
+            raise TrainingContractError("execution lease owner is required")
+        if acquired_at.tzinfo is None:
+            acquired_at = acquired_at.replace(tzinfo=timezone.utc)
+        acquired = acquired_at.astimezone(timezone.utc)
+        if lease_seconds != EXECUTION_LEASE_SECONDS:
+            raise TrainingContractError(
+                "execution lease duration does not match the production contract"
+            )
+        expires = acquired + timedelta(seconds=lease_seconds)
+        item = _ddb_safe(
+            {
+                "PK": _experiment_pk(experiment_id),
+                "SK": EXECUTION_LEASE_SK,
+                "record_type": EXECUTION_LEASE_RECORD_TYPE,
+                "lease_owner": owner,
+                "execution_mode": mode,
+                "acquired_at": acquired.isoformat(),
+                "lease_expires_at": expires.isoformat(),
+                "lease_expires_at_epoch": int(expires.timestamp()),
+            }
+        )
+        try:
+            self.table.put_item(
+                Item=item,
+                ConditionExpression=(
+                    "attribute_not_exists(PK) OR lease_expires_at_epoch <= :now"
+                ),
+                ExpressionAttributeValues={":now": int(acquired.timestamp())},
+            )
+        except Exception as exc:
+            code = str(
+                ((getattr(exc, "response", {}) or {}).get("Error") or {}).get(
+                    "Code"
+                )
+                or ""
+            )
+            if code == "ConditionalCheckFailedException":
+                raise ExecutionLeaseUnavailable(
+                    "another MLB ML trainer invocation holds the execution lease"
+                ) from exc
+            raise
+        return _plain(item)
+
+    def release_execution_lease(
+        self, experiment_id: str, *, owner_token: str
+    ) -> None:
+        owner = str(owner_token or "").strip()
+        if not owner:
+            raise TrainingContractError("execution lease owner is required")
+        try:
+            self.table.delete_item(
+                Key={"PK": _experiment_pk(experiment_id), "SK": EXECUTION_LEASE_SK},
+                ConditionExpression="lease_owner = :owner",
+                ExpressionAttributeValues={":owner": owner},
+            )
+        except Exception as exc:
+            code = str(
+                ((getattr(exc, "response", {}) or {}).get("Error") or {}).get(
+                    "Code"
+                )
+                or ""
+            )
+            if code == "ConditionalCheckFailedException":
+                raise ConditionalStateConflict(
+                    "execution lease ownership changed before release"
+                ) from exc
+            raise
 
     def _get_data(self, key: Dict[str, str]) -> Optional[Dict[str, Any]]:
         item = self.table.get_item(Key=key, ConsistentRead=True).get("Item") or {}
@@ -1118,6 +1241,10 @@ class TrainingService:
         self.config = config
         self.row_loader = row_loader
         self.now = now
+        self._execution_lease_acquired_for_run = False
+
+    def attest_execution_lease_acquired(self) -> None:
+        self._execution_lease_acquired_for_run = True
 
     def _new_manifest(self) -> Dict[str, Any]:
         return experiment.new_manifest(
@@ -1323,6 +1450,10 @@ class TrainingService:
             errors.append("latest_status_fingerprint_version_mismatch")
         if latest and latest.get("statusFingerprint") != _status_fingerprint(latest):
             errors.append("latest_status_fingerprint_mismatch")
+        if latest and latest.get("executionConcurrencyControl") != (
+            execution_concurrency_control(acquired_for_run=True)
+        ):
+            errors.append("latest_status_execution_lease_contract_mismatch")
         if manifest and latest and latest.get("manifestDigest") != manifest.get(
             "manifestDigest"
         ):
@@ -1501,6 +1632,12 @@ class TrainingService:
         }
         result.setdefault(
             "automaticPromotionEnabled", self.config.automatic_promotion_enabled
+        )
+        result.setdefault(
+            "executionConcurrencyControl",
+            execution_concurrency_control(
+                acquired_for_run=self._execution_lease_acquired_for_run
+            ),
         )
         result.setdefault("championChanged", False)
         result.setdefault("liveInferenceAuthority", False)
@@ -2021,25 +2158,63 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     service = _service()
     if mode == "status":
         return service.status()
-    if mode == "manual_review":
-        requested = request.get("authorities") or ["direction", "playability"]
-        if not isinstance(requested, list):
-            raise TrainingContractError("manual review authorities must be a list")
-        return service.manual_review(
-            artifact_digest=str(request.get("artifactDigest") or ""),
-            reviewer=str(request.get("reviewer") or ""),
-            requested_authorities=requested,
-            stable_champion=request.get("stableChampion") is True,
-        )
-    if mode not in {"scheduled", "selection_capture"}:
+    if mode not in {"scheduled", "selection_capture", "manual_review"}:
         raise TrainingContractError(f"unsupported training mode: {mode}")
-    execution_mode = "training" if mode == "scheduled" else "selection_capture"
-    try:
-        result = (
-            service.run()
-            if execution_mode == "training"
-            else service.capture_selections()
+    execution_mode = {
+        "scheduled": "training",
+        "selection_capture": "selection_capture",
+        "manual_review": "manual_review",
+    }[mode]
+    configured_lease_seconds = int(
+        os.environ.get(
+            "MLB_ML_EXECUTION_LEASE_SECONDS", str(EXECUTION_LEASE_SECONDS)
         )
+    )
+    if configured_lease_seconds != EXECUTION_LEASE_SECONDS:
+        raise TrainingContractError(
+            "configured execution lease duration does not match the production contract"
+        )
+    remaining_time = getattr(context, "get_remaining_time_in_millis", None)
+    if callable(remaining_time):
+        remaining_seconds = max(0, int(remaining_time())) / 1000
+        if configured_lease_seconds < remaining_seconds + 60:
+            raise TrainingContractError(
+                "execution lease must outlive the Lambda invocation timeout"
+            )
+    request_id = str(getattr(context, "aws_request_id", "") or "").strip()
+    lease_owner = f"{execution_mode}:{request_id or uuid.uuid4().hex}"
+    lease_acquired = False
+    primary_error: Optional[BaseException] = None
+    try:
+        service.store.acquire_execution_lease(
+            service.config.experiment_id,
+            owner_token=lease_owner,
+            execution_mode=execution_mode,
+            acquired_at=service.now(),
+            lease_seconds=configured_lease_seconds,
+        )
+        lease_acquired = True
+        service.attest_execution_lease_acquired()
+        if execution_mode == "training":
+            result = service.run()
+        elif execution_mode == "selection_capture":
+            result = service.capture_selections()
+        else:
+            requested = request.get("authorities") or ["direction", "playability"]
+            if not isinstance(requested, list):
+                raise TrainingContractError(
+                    "manual review authorities must be a list"
+                )
+            result = service.manual_review(
+                artifact_digest=str(request.get("artifactDigest") or ""),
+                reviewer=str(request.get("reviewer") or ""),
+                requested_authorities=requested,
+                stable_champion=request.get("stableChampion") is True,
+            )
+            result.setdefault(
+                "executionConcurrencyControl",
+                execution_concurrency_control(acquired_for_run=True),
+            )
         if result.get("ok") is not True:
             raise TrainingContractError(
                 f"{execution_mode} returned an unhealthy status: "
@@ -2047,25 +2222,42 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
             )
         return result
     except Exception as exc:
-        try:
-            failure_status = {
-                "ok": False,
-                "status": f"{execution_mode.upper()}_INVOCATION_FAILED",
-                "executionMode": execution_mode,
-                "failure": {
-                    "type": type(exc).__name__,
-                    "message": str(exc),
-                },
-                "liveInferenceAuthority": False,
-            }
-            request_id = str(getattr(context, "aws_request_id", "") or "")
-            if request_id:
-                failure_status["runId"] = request_id
-            service._save_run_status(failure_status)
-        except Exception:
-            # Preserve the original invocation failure. Lambda async failure
-            # handling and EventBridge's bounded retry policy cover transient
-            # cases where status storage is unavailable too; CloudWatch retains
-            # the terminal invocation error without an SQS deployment dependency.
-            pass
+        primary_error = exc
+        if not lease_acquired:
+            # Fail so the bounded async retry policy can try again. Any acquire
+            # error (contention, permission, network, or ambiguous success)
+            # must make zero unlocked status writes.
+            raise
+        if execution_mode != "manual_review":
+            try:
+                failure_status = {
+                    "ok": False,
+                    "status": f"{execution_mode.upper()}_INVOCATION_FAILED",
+                    "executionMode": execution_mode,
+                    "failure": {
+                        "type": type(exc).__name__,
+                        "message": str(exc),
+                    },
+                    "liveInferenceAuthority": False,
+                }
+                request_id = str(getattr(context, "aws_request_id", "") or "")
+                if request_id:
+                    failure_status["runId"] = request_id
+                service._save_run_status(failure_status)
+            except Exception:
+                # Preserve the original invocation failure. Lambda async failure
+                # handling and EventBridge's bounded retry policy cover transient
+                # cases where status storage is unavailable too; CloudWatch retains
+                # the terminal invocation error without an SQS deployment dependency.
+                pass
         raise
+    finally:
+        if lease_acquired:
+            try:
+                service.store.release_execution_lease(
+                    service.config.experiment_id,
+                    owner_token=lease_owner,
+                )
+            except Exception:
+                if primary_error is None:
+                    raise

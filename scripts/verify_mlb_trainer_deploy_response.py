@@ -12,6 +12,22 @@ TRAINER_VERSION = "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-sha
 EXPERIMENT_VERSION = "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
 EXPERIMENT_ID = "mlb-v2-2026-07-21-future-prospective-r2"
 RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
+EXECUTION_CONCURRENCY_CONTROL = {
+    "version": "MLB-ML-EXECUTION-LEASE-v1-shared-ddb-conditional",
+    "strategy": "dynamodb_conditional_lease",
+    "scope": "one_shared_lease_per_experiment",
+    "leaseKey": "EXECUTION_LEASE",
+    "leaseSeconds": 960,
+    "protectedExecutionModes": [
+        "manual_review",
+        "selection_capture",
+        "training",
+    ],
+    "acquiredForRun": True,
+    "expiredLeaseReclaimEnabled": True,
+    "ownerConditionalRelease": True,
+    "reservedLambdaConcurrencyRequired": False,
+}
 
 
 def _parse_time(value: Any) -> Optional[datetime]:
@@ -65,6 +81,17 @@ def _contract_errors(
         )
     )
     return errors
+
+
+def _execution_lease_errors(payload: Dict[str, Any], *, prefix: str) -> List[str]:
+    actual = payload.get("executionConcurrencyControl")
+    if not isinstance(actual, dict):
+        return [f"{prefix}_execution_lease_evidence_missing"]
+    return [
+        f"{prefix}_execution_lease_{key}_mismatch"
+        for key, expected in EXECUTION_CONCURRENCY_CONTROL.items()
+        if actual.get(key) != expected
+    ]
 
 
 def verify(
@@ -136,6 +163,7 @@ def verify(
         ("training", training),
         ("selection_capture", selection_capture),
     ):
+        errors.extend(_execution_lease_errors(payload, prefix=prefix))
         created = _parse_time(payload.get("createdAtUtc"))
         if created is None or started is None or created < started:
             errors.append(f"{prefix}_run_not_fresh_for_deploy")

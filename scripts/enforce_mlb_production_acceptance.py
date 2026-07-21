@@ -92,6 +92,10 @@ def _mode_status_health(
         contract_errors.append("status_fingerprint_version_mismatch")
     if latest.get("statusFingerprint") != trainer._status_fingerprint(latest):
         contract_errors.append("status_fingerprint_mismatch")
+    if latest.get("executionConcurrencyControl") != (
+        trainer.execution_concurrency_control(acquired_for_run=True)
+    ):
+        contract_errors.append("status_execution_lease_contract_mismatch")
     if not current_manifest_digest or latest.get("manifestDigest") != current_manifest_digest:
         contract_errors.append("status_manifest_mismatch")
     if not manifest_read_stable:
@@ -127,6 +131,9 @@ def _mode_status_health(
         "experimentId": latest.get("experimentId"),
         "manifestDigest": latest.get("manifestDigest"),
         "statusFingerprintVersion": latest.get("statusFingerprintVersion"),
+        "executionConcurrencyControl": latest.get(
+            "executionConcurrencyControl"
+        ),
     }
 
 

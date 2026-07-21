@@ -802,7 +802,6 @@ Resources:
       Handler: mlb_ml_aws_training_v1.lambda_handler
       Timeout: 900
       MemorySize: 2048
-      ReservedConcurrentExecutions: 1
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 21600
         MaximumRetryAttempts: 2
@@ -813,6 +812,7 @@ Resources:
           MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-07-21-future-prospective-r2'
           MLB_ML_RELEASE_CUTOFF_UTC: '2026-07-22T04:00:00+00:00'
           MLB_ML_FEATURE_VECTOR_VERSION: 'MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness'
+          MLB_ML_EXECUTION_LEASE_SECONDS: '960'
           INQSI_MLB_ML_AUTO_PROMOTE: 'false'
       Policies:
         - DynamoDBCrudPolicy:

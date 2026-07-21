@@ -71,6 +71,9 @@ def healthy_status(execution_mode, *, created_at=NOW, status="HEALTHY"):
             "templateSha256": "b" * 64,
         },
         "statusFingerprintVersion": aws_training.STATUS_FINGERPRINT_VERSION,
+        "executionConcurrencyControl": aws_training.execution_concurrency_control(
+            acquired_for_run=True
+        ),
     }
     value["statusFingerprint"] = aws_training._status_fingerprint(value)
     return value
@@ -190,6 +193,9 @@ class FakeStore:
         self.selections = []
         self.statuses = []
         self.latest_statuses = {}
+        self.lease_owner = None
+        self.lease_acquisitions = []
+        self.lease_releases = []
 
     def load_manifest(self, experiment_id):
         return copy.deepcopy(self.manifest)
@@ -269,6 +275,37 @@ class FakeStore:
 
     def load_latest_status(self, experiment_id, execution_mode=None):
         return copy.deepcopy(self.latest_statuses.get(execution_mode))
+
+    def acquire_execution_lease(
+        self,
+        experiment_id,
+        *,
+        owner_token,
+        execution_mode,
+        acquired_at,
+        lease_seconds,
+    ):
+        if self.lease_owner is not None:
+            raise aws_training.ExecutionLeaseUnavailable("active lease")
+        self.lease_owner = owner_token
+        self.lease_acquisitions.append(
+            {
+                "experimentId": experiment_id,
+                "ownerToken": owner_token,
+                "executionMode": execution_mode,
+                "acquiredAt": acquired_at,
+                "leaseSeconds": lease_seconds,
+            }
+        )
+        return {"lease_owner": owner_token}
+
+    def release_execution_lease(self, experiment_id, *, owner_token):
+        if self.lease_owner != owner_token:
+            raise aws_training.ConditionalStateConflict("stale lease owner")
+        self.lease_owner = None
+        self.lease_releases.append(
+            {"experimentId": experiment_id, "ownerToken": owner_token}
+        )
 
     def commit_candidate(
         self,
@@ -504,6 +541,27 @@ def test_status_fails_closed_when_training_or_capture_heartbeat_is_missing():
     assert "latest_status_missing" in result["trainingHealth"]["errors"]
     assert result["selectionCaptureHealth"]["ok"] is False
     assert "latest_status_missing" in result["selectionCaptureHealth"]["errors"]
+
+
+def test_status_rejects_a_fingerprint_valid_run_without_acquired_lease_evidence():
+    store = FakeStore()
+    training = healthy_status("training")
+    training["executionConcurrencyControl"] = (
+        aws_training.execution_concurrency_control(acquired_for_run=False)
+    )
+    training["statusFingerprint"] = aws_training._status_fingerprint(training)
+    store.latest_statuses["training"] = training
+    store.latest_statuses["selection_capture"] = healthy_status(
+        "selection_capture"
+    )
+
+    result = service(store).status()
+
+    assert result["ok"] is False
+    assert "latest_status_execution_lease_contract_mismatch" in result[
+        "trainingHealth"
+    ]["errors"]
+    assert result["selectionCaptureHealth"]["ok"] is True
 
 
 def test_selection_capture_mode_records_a_healthy_waiting_heartbeat():
@@ -763,6 +821,214 @@ def test_lambda_failure_records_unhealthy_mode_status_before_reraising(monkeypat
         "type": "RuntimeError",
         "message": "canonical label read failed",
     }
+    assert latest["executionConcurrencyControl"]["acquiredForRun"] is True
+    assert store.lease_owner is None
+    assert len(store.lease_acquisitions) == 1
+    assert len(store.lease_releases) == 1
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected_execution_mode"),
+    (("scheduled", "training"), ("selection_capture", "selection_capture")),
+)
+def test_lambda_mutating_modes_share_lease_and_release_after_success(
+    monkeypatch, mode, expected_execution_mode
+):
+    store = FakeStore()
+    training = service(store)
+    monkeypatch.setattr(aws_training, "_service", lambda: training)
+    context = type(
+        "Context",
+        (),
+        {
+            "aws_request_id": f"request-{mode}",
+            "get_remaining_time_in_millis": lambda self: 900_000,
+        },
+    )()
+
+    result = aws_training.lambda_handler({"mode": mode}, context)
+
+    assert result["ok"] is True
+    assert result["executionMode"] == expected_execution_mode
+    assert result["executionConcurrencyControl"] == {
+        "version": aws_training.EXECUTION_LEASE_VERSION,
+        "strategy": "dynamodb_conditional_lease",
+        "scope": "one_shared_lease_per_experiment",
+        "leaseKey": aws_training.EXECUTION_LEASE_SK,
+        "leaseSeconds": aws_training.EXECUTION_LEASE_SECONDS,
+        "protectedExecutionModes": [
+            "manual_review",
+            "selection_capture",
+            "training",
+        ],
+        "acquiredForRun": True,
+        "expiredLeaseReclaimEnabled": True,
+        "ownerConditionalRelease": True,
+        "reservedLambdaConcurrencyRequired": False,
+    }
+    assert store.lease_acquisitions[0]["executionMode"] == expected_execution_mode
+    assert store.lease_owner is None
+    assert len(store.lease_releases) == 1
+
+
+@pytest.mark.parametrize("mode", ("scheduled", "selection_capture", "manual_review"))
+def test_lambda_lease_contention_is_retryable_without_overwriting_health(
+    monkeypatch, mode
+):
+    store = FakeStore()
+    store.lease_owner = "training:active-owner"
+    existing = healthy_status("training", status="ACTIVE_TRAINING_HEALTH")
+    store.latest_statuses["training"] = copy.deepcopy(existing)
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: (_ for _ in ()).throw(
+            AssertionError("contending invocation must not execute")
+        ),
+        now=lambda: NOW,
+    )
+    monkeypatch.setattr(aws_training, "_service", lambda: training)
+    context = type("Context", (), {"aws_request_id": "contender"})()
+
+    with pytest.raises(aws_training.ExecutionLeaseUnavailable, match="active lease"):
+        aws_training.lambda_handler({"mode": mode}, context)
+
+    assert store.latest_statuses["training"] == existing
+    assert store.statuses == []
+    assert store.lease_owner == "training:active-owner"
+    assert store.lease_releases == []
+
+
+def test_ambiguous_lease_acquire_failure_makes_no_unlocked_status_write(
+    monkeypatch,
+):
+    store = FakeStore()
+    existing = healthy_status("training", status="PREVIOUS_HEALTH")
+    store.latest_statuses["training"] = copy.deepcopy(existing)
+
+    def ambiguous_failure(*args, **kwargs):
+        raise RuntimeError("DynamoDB connection closed after request")
+
+    store.acquire_execution_lease = ambiguous_failure
+    monkeypatch.setattr(aws_training, "_service", lambda: service(store))
+    context = type("Context", (), {"aws_request_id": "ambiguous-request"})()
+
+    with pytest.raises(RuntimeError, match="connection closed"):
+        aws_training.lambda_handler({"mode": "scheduled"}, context)
+
+    assert store.latest_statuses["training"] == existing
+    assert store.statuses == []
+    assert store.lease_releases == []
+
+
+def test_ambiguous_successful_lease_write_makes_no_unlocked_state_write(
+    monkeypatch,
+):
+    store = FakeStore()
+
+    def response_lost_after_write(
+        experiment_id,
+        *,
+        owner_token,
+        execution_mode,
+        acquired_at,
+        lease_seconds,
+    ):
+        store.lease_owner = owner_token
+        raise RuntimeError("DynamoDB response lost after conditional write")
+
+    store.acquire_execution_lease = response_lost_after_write
+    monkeypatch.setattr(aws_training, "_service", lambda: service(store))
+    context = type("Context", (), {"aws_request_id": "ambiguous-success"})()
+
+    with pytest.raises(RuntimeError, match="response lost"):
+        aws_training.lambda_handler({"mode": "scheduled"}, context)
+
+    assert store.lease_owner == "training:ambiguous-success"
+    assert store.manifest is None
+    assert store.statuses == []
+    assert store.artifact_calls == 0
+    assert store.lease_releases == []
+
+
+def test_release_failure_turns_success_into_retryable_invocation_failure(
+    monkeypatch,
+):
+    store = FakeStore()
+
+    def release_failed(*args, **kwargs):
+        raise RuntimeError("lease release response lost")
+
+    store.release_execution_lease = release_failed
+    monkeypatch.setattr(aws_training, "_service", lambda: service(store))
+    context = type("Context", (), {"aws_request_id": "release-failure"})()
+
+    with pytest.raises(RuntimeError, match="lease release response lost"):
+        aws_training.lambda_handler({"mode": "scheduled"}, context)
+
+    assert store.latest_statuses["training"]["ok"] is True
+    assert store.latest_statuses["training"]["executionConcurrencyControl"][
+        "acquiredForRun"
+    ] is True
+    assert store.lease_owner == "training:release-failure"
+
+
+def test_release_failure_does_not_mask_primary_training_failure(monkeypatch):
+    store = FakeStore()
+    failing = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: (_ for _ in ()).throw(
+            RuntimeError("primary canonical read failure")
+        ),
+        now=lambda: NOW,
+    )
+
+    def release_failed(*args, **kwargs):
+        raise RuntimeError("secondary release failure")
+
+    store.release_execution_lease = release_failed
+    monkeypatch.setattr(aws_training, "_service", lambda: failing)
+    context = type("Context", (), {"aws_request_id": "primary-failure"})()
+
+    with pytest.raises(RuntimeError, match="primary canonical read failure"):
+        aws_training.lambda_handler({"mode": "scheduled"}, context)
+
+    assert store.latest_statuses["training"]["ok"] is False
+    assert store.lease_owner == "training:primary-failure"
+
+
+@pytest.mark.parametrize(
+    ("configured_seconds", "remaining_milliseconds", "message"),
+    (
+        (900, 900_000, "configured execution lease duration"),
+        (960, 901_000, "execution lease must outlive"),
+    ),
+)
+def test_lambda_rejects_unsafe_lease_runtime_boundaries_before_acquire(
+    monkeypatch, configured_seconds, remaining_milliseconds, message
+):
+    store = FakeStore()
+    monkeypatch.setattr(aws_training, "_service", lambda: service(store))
+    monkeypatch.setenv(
+        "MLB_ML_EXECUTION_LEASE_SECONDS", str(configured_seconds)
+    )
+    context = type(
+        "Context",
+        (),
+        {
+            "aws_request_id": "unsafe-boundary",
+            "get_remaining_time_in_millis": (
+                lambda self: remaining_milliseconds
+            ),
+        },
+    )()
+
+    with pytest.raises(aws_training.TrainingContractError, match=message):
+        aws_training.lambda_handler({"mode": "scheduled"}, context)
+
+    assert store.lease_acquisitions == []
+    assert store.statuses == []
 
 
 def test_artifact_failure_never_advances_candidate_or_champion(monkeypatch):
@@ -842,6 +1108,41 @@ def test_manual_review_requires_exact_digest_and_only_eligible_authorities(
     assert approved["champion"]["stableChampion"] is False
     assert approved["champion"]["shadowOnly"] is True
     assert approved["champion"]["reviewer"] == "reviewer@example.com"
+
+
+def test_lambda_manual_review_uses_the_same_execution_lease(monkeypatch):
+    patch_sealed_training(monkeypatch)
+    store = FakeStore(new_manifest(sealed=True))
+    candidate = service(store).run()
+    handler_service = service(store)
+    monkeypatch.setattr(aws_training, "_service", lambda: handler_service)
+    context = type(
+        "Context",
+        (),
+        {
+            "aws_request_id": "manual-review-request",
+            "get_remaining_time_in_millis": lambda self: 900_000,
+        },
+    )()
+
+    result = aws_training.lambda_handler(
+        {
+            "mode": "manual_review",
+            "artifactDigest": candidate["artifactDigest"],
+            "reviewer": "reviewer@example.com",
+            "authorities": ["direction", "playability"],
+            "stableChampion": True,
+        },
+        context,
+    )
+
+    assert result["status"] == "MANUALLY_REVIEWED_SHADOW_CHAMPION_APPROVED"
+    assert result["executionConcurrencyControl"] == (
+        aws_training.execution_concurrency_control(acquired_for_run=True)
+    )
+    assert store.lease_acquisitions[-1]["executionMode"] == "manual_review"
+    assert store.lease_owner is None
+    assert len(store.lease_releases) == 1
 
 
 def test_auto_promotion_requires_preexisting_stable_champion(monkeypatch):
@@ -1044,10 +1345,31 @@ class MemoryTable:
 
     def put_item(self, *, Item, ConditionExpression=None, **kwargs):
         key = (Item["PK"], Item["SK"])
-        if ConditionExpression and "attribute_not_exists" in ConditionExpression:
+        if ConditionExpression == (
+            "attribute_not_exists(PK) OR lease_expires_at_epoch <= :now"
+        ):
+            existing = self.items.get(key)
+            now = kwargs["ExpressionAttributeValues"][":now"]
+            if existing and existing.get("lease_expires_at_epoch", now + 1) > now:
+                raise ConditionalWriteError("active execution lease")
+        elif ConditionExpression and "attribute_not_exists" in ConditionExpression:
             if key in self.items:
                 raise ConditionalWriteError("conditional write failed")
         self.items[key] = copy.deepcopy(Item)
+        return {}
+
+    def delete_item(
+        self, *, Key, ConditionExpression=None, ExpressionAttributeValues=None
+    ):
+        key = (Key["PK"], Key["SK"])
+        existing = self.items.get(key)
+        if ConditionExpression == "lease_owner = :owner" and (
+            not existing
+            or existing.get("lease_owner")
+            != (ExpressionAttributeValues or {}).get(":owner")
+        ):
+            raise ConditionalWriteError("stale execution lease owner")
+        self.items.pop(key, None)
         return {}
 
     def get_item(self, *, Key, ConsistentRead):
@@ -1073,6 +1395,101 @@ class MemoryDdbResource:
     def Table(self, name):
         assert name == "table"
         return self.table
+
+
+def execution_lease_store():
+    table = MemoryTable()
+    store = aws_training.AwsTrainingStore(
+        table_name="table",
+        artifacts_bucket="bucket",
+        dynamodb_resource=MemoryDdbResource(table),
+        s3_client=FakeS3(),
+    )
+    return store, table
+
+
+def test_execution_lease_serializes_training_and_selection_capture_on_one_key():
+    store, table = execution_lease_store()
+
+    acquired = store.acquire_execution_lease(
+        experiment.PRODUCTION_EXPERIMENT_ID,
+        owner_token="training-owner",
+        execution_mode="training",
+        acquired_at=NOW,
+        lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
+    )
+
+    assert acquired["SK"] == aws_training.EXECUTION_LEASE_SK
+    assert acquired["execution_mode"] == "training"
+    assert acquired["lease_expires_at_epoch"] == int(
+        (NOW + aws_training.timedelta(seconds=aws_training.EXECUTION_LEASE_SECONDS)).timestamp()
+    )
+    with pytest.raises(
+        aws_training.ExecutionLeaseUnavailable, match="holds the execution lease"
+    ):
+        store.acquire_execution_lease(
+            experiment.PRODUCTION_EXPERIMENT_ID,
+            owner_token="capture-owner",
+            execution_mode="selection_capture",
+            acquired_at=NOW + aws_training.timedelta(minutes=1),
+            lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
+        )
+    assert len(table.items) == 1
+    assert next(iter(table.items.values()))["lease_owner"] == "training-owner"
+
+
+def test_expired_execution_lease_is_reclaimed_and_stale_owner_cannot_release_it():
+    store, table = execution_lease_store()
+    store.acquire_execution_lease(
+        experiment.PRODUCTION_EXPERIMENT_ID,
+        owner_token="expired-owner",
+        execution_mode="training",
+        acquired_at=NOW,
+        lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
+    )
+    reclaimed_at = NOW + aws_training.timedelta(
+        seconds=aws_training.EXECUTION_LEASE_SECONDS
+    )
+
+    replacement = store.acquire_execution_lease(
+        experiment.PRODUCTION_EXPERIMENT_ID,
+        owner_token="replacement-owner",
+        execution_mode="selection_capture",
+        acquired_at=reclaimed_at,
+        lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
+    )
+
+    assert replacement["lease_owner"] == "replacement-owner"
+    with pytest.raises(
+        aws_training.ConditionalStateConflict,
+        match="ownership changed before release",
+    ):
+        store.release_execution_lease(
+            experiment.PRODUCTION_EXPERIMENT_ID,
+            owner_token="expired-owner",
+        )
+    assert next(iter(table.items.values()))["lease_owner"] == "replacement-owner"
+    store.release_execution_lease(
+        experiment.PRODUCTION_EXPERIMENT_ID,
+        owner_token="replacement-owner",
+    )
+    assert table.items == {}
+
+
+def test_execution_lease_duration_must_match_timeout_safe_retry_contract():
+    store, _table = execution_lease_store()
+
+    with pytest.raises(
+        aws_training.TrainingContractError,
+        match="duration does not match the production contract",
+    ):
+        store.acquire_execution_lease(
+            experiment.PRODUCTION_EXPERIMENT_ID,
+            owner_token="owner",
+            execution_mode="training",
+            acquired_at=NOW,
+            lease_seconds=900,
+        )
 
 
 def selection_store_and_entry(*, probability=0.72, captured_at=NOW):
