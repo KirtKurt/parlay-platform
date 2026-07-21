@@ -154,31 +154,6 @@ Resources:
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
 
-  MLBMLTrainingDeadLetterQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      MessageRetentionPeriod: 1209600
-      SqsManagedSseEnabled: true
-
-  MLBMLTrainingDeadLetterQueuePolicy:
-    Type: AWS::SQS::QueuePolicy
-    Properties:
-      Queues:
-        - !Ref MLBMLTrainingDeadLetterQueue
-      PolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: events.amazonaws.com
-            Action: sqs:SendMessage
-            Resource: !GetAtt MLBMLTrainingDeadLetterQueue.Arn
-            Condition:
-              StringEquals:
-                aws:SourceAccount: !Ref AWS::AccountId
-              ArnLike:
-                aws:SourceArn: !Sub 'arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/${AWS::StackName}-*'
-
   InqsiMembersTable:
     Type: AWS::DynamoDB::Table
     Properties:
@@ -831,10 +806,6 @@ Resources:
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 21600
         MaximumRetryAttempts: 2
-        DestinationConfig:
-          OnFailure:
-            Type: SQS
-            Destination: !GetAtt MLBMLTrainingDeadLetterQueue.Arn
       Environment:
         Variables:
           MLB_ML_ARTIFACTS_BUCKET: !Ref MLBMLArtifactsBucket
@@ -853,10 +824,6 @@ Resources:
               Action:
                 - dynamodb:TransactWriteItems
               Resource: !GetAtt SnapshotsTable.Arn
-            - Effect: Allow
-              Action:
-                - sqs:SendMessage
-              Resource: !GetAtt MLBMLTrainingDeadLetterQueue.Arn
         - Statement:
             - Effect: Allow
               Action:
@@ -877,8 +844,6 @@ Resources:
             RetryPolicy:
               MaximumEventAgeInSeconds: 21600
               MaximumRetryAttempts: 2
-            DeadLetterConfig:
-              Arn: !GetAtt MLBMLTrainingDeadLetterQueue.Arn
         MLBMLSelectionCaptureEvery15Minutes:
           Type: Schedule
           Properties:
@@ -887,8 +852,6 @@ Resources:
             RetryPolicy:
               MaximumEventAgeInSeconds: 21600
               MaximumRetryAttempts: 2
-            DeadLetterConfig:
-              Arn: !GetAtt MLBMLTrainingDeadLetterQueue.Arn
 
   SoccerSchedulerFunction:
     Type: AWS::Serverless::Function
@@ -1056,6 +1019,3 @@ Outputs:
   MLBMLTrainingFunctionArn:
     Description: AWS-native MLB shadow trainer/evaluator Lambda ARN
     Value: !GetAtt MLBMLTrainingFunction.Arn
-  MLBMLTrainingDeadLetterQueueArn:
-    Description: Dead-letter queue for failed AWS-native MLB training invocations
-    Value: !GetAtt MLBMLTrainingDeadLetterQueue.Arn

@@ -15,7 +15,6 @@ REGION = "us-east-1"
 GIT_SHA = "a" * 40
 TEMPLATE_SHA = "b" * 64
 ARTIFACT_BUCKET = "parlay-platform-test-mlb-artifacts"
-TRAINER_DLQ_ARN = f"arn:aws:sqs:{REGION}:123456789012:trainer-dlq"
 
 
 def _arn(role: str) -> str:
@@ -27,7 +26,6 @@ class FakeCloudFormation:
         self.outputs = {
             deploy_identity.TRAINER_ARTIFACT_BUCKET_OUTPUT: ARTIFACT_BUCKET,
             deploy_identity.TRAINER_FUNCTION_ARN_OUTPUT: _arn("trainer"),
-            deploy_identity.TRAINER_DLQ_ARN_OUTPUT: TRAINER_DLQ_ARN,
         }
 
     def describe_stacks(self, **kwargs: Any) -> dict[str, Any]:
@@ -53,6 +51,8 @@ class FakeCloudFormation:
 class FakeLambda:
     def __init__(self) -> None:
         self.reserved_concurrency = deploy_identity.TRAINER_RESERVED_CONCURRENT_EXECUTIONS
+        self.async_retry_policy = dict(deploy_identity.TRAINER_RETRY_POLICY)
+        self.async_destination_config: dict[str, Any] = {}
         self.configurations = {}
         for logical_id, role in deploy_identity.FUNCTIONS.items():
             environment = {
@@ -89,6 +89,18 @@ class FakeLambda:
         if self.reserved_concurrency is None:
             return {}
         return {"ReservedConcurrentExecutions": self.reserved_concurrency}
+
+    def get_function_event_invoke_config(self, **kwargs: Any) -> dict[str, Any]:
+        assert kwargs == {
+            "FunctionName": "physical-trainer",
+            "Qualifier": "$LATEST",
+        }
+        response = dict(self.async_retry_policy)
+        if self.async_destination_config:
+            response["DestinationConfig"] = copy.deepcopy(
+                self.async_destination_config
+            )
+        return response
 
     def list_functions(self, **kwargs: Any) -> dict[str, Any]:
         assert kwargs == {"MaxItems": 50}
@@ -148,7 +160,6 @@ class FakeEvents:
             target.update(
                 {
                     "Input": self.rules[rule_name]["Input"],
-                    "DeadLetterConfig": {"Arn": TRAINER_DLQ_ARN},
                     "RetryPolicy": dict(deploy_identity.TRAINER_RETRY_POLICY),
                 }
             )
@@ -242,11 +253,18 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
     assert result["trainerConfiguration"]["matches"] is True
     assert result["trainerConfiguration"]["reservedConcurrentExecutions"] == 1
     assert result["trainerConfiguration"]["reservedConcurrencyMatches"] is True
+    assert result["trainerConfiguration"]["functionDeadLetterConfigAbsent"] is True
+    assert result["trainerConfiguration"]["asyncRetryPolicyMatches"] is True
+    assert result["trainerConfiguration"]["asyncDestinationConfigAbsent"] is True
+    assert result["trainerConfiguration"]["sqsFailureDestinationRequired"] is False
     assert result["trainerConfiguration"]["handler"] == deploy_identity.TRAINER_HANDLER
     assert result["trainerConfiguration"]["environment"]["MLB_ML_ARTIFACTS_BUCKET"] == ARTIFACT_BUCKET
     assert "ODDS_API_KEY" not in result["trainerConfiguration"]["environment"]
     assert result["schedules"]["trainer"]["exactMatch"] is True
-    assert result["schedules"]["trainer"]["retryAndDlqMatches"] is True
+    assert result["schedules"]["trainer"]["retryPolicyMatches"] is True
+    assert result["schedules"]["trainer"]["deadLetterQueueAbsent"] is True
+    assert result["schedules"]["trainer"]["deliveryPolicyMatches"] is True
+    assert result["schedules"]["trainer"]["sqsFailureDestinationRequired"] is False
     assert result["schedules"]["trainer"]["invocationInputsMatch"] is True
     assert result["artifactBucket"] == {
         "stackOutputKey": deploy_identity.TRAINER_ARTIFACT_BUCKET_OUTPUT,
@@ -308,6 +326,70 @@ def test_fails_closed_when_trainer_reserved_concurrency_cannot_be_read(aws) -> N
     )
 
 
+def test_rejects_wrong_lambda_async_retry_and_any_destination_config(aws) -> None:
+    aws["lambda"].async_retry_policy["MaximumRetryAttempts"] = 0
+    aws["lambda"].async_destination_config = {
+        "OnSuccess": {
+            "Destination": "arn:aws:lambda:us-east-1:123456789012:function:unexpected"
+        }
+    }
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["trainerConfiguration"]["asyncRetryPolicyMatches"] is False
+    assert result["trainerConfiguration"]["asyncDestinationConfigAbsent"] is False
+    assert any(
+        blocker.startswith("TRAINER_LAMBDA_ASYNC_RETRY_POLICY_MISMATCH:")
+        for blocker in result["blockers"]
+    )
+    assert "TRAINER_LAMBDA_ASYNC_DESTINATION_CONFIG_PRESENT" in result[
+        "blockers"
+    ]
+
+
+def test_rejects_trainer_function_dead_letter_config(aws) -> None:
+    aws["lambda"].configurations["physical-trainer"]["DeadLetterConfig"] = {
+        "TargetArn": "arn:aws:sqs:us-east-1:123456789012:unexpected"
+    }
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["trainerConfiguration"]["functionDeadLetterConfigAbsent"] is False
+    assert "TRAINER_FUNCTION_DEAD_LETTER_CONFIG_PRESENT" in result["blockers"]
+
+
+def test_fails_closed_when_lambda_async_retry_config_cannot_be_read(aws) -> None:
+    def denied(**kwargs: Any) -> dict[str, Any]:
+        raise RuntimeError("lambda event invoke config inventory denied")
+
+    aws["lambda"].get_function_event_invoke_config = denied
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["trainerConfiguration"]["asyncRetryPolicyMatches"] is False
+    assert any(
+        blocker.startswith("TRAINER_LAMBDA_ASYNC_RETRY_POLICY_CHECK_FAILED:")
+        for blocker in result["blockers"]
+    )
+
+
+def test_rejects_legacy_trainer_sqs_stack_output(aws) -> None:
+    aws["cloudformation"].outputs[
+        deploy_identity.TRAINER_FORBIDDEN_DLQ_ARN_OUTPUT
+    ] = ""
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert (
+        "TRAINER_SQS_FALLBACK_STACK_OUTPUT_PRESENT:"
+        f"{deploy_identity.TRAINER_FORBIDDEN_DLQ_ARN_OUTPUT}"
+    ) in result["blockers"]
+
+
 @pytest.mark.parametrize(
     ("key", "value", "blocker_prefix"),
     (
@@ -364,13 +446,12 @@ def test_rejects_artifact_bucket_without_enabled_versioning(aws) -> None:
     )
 
 
-def test_rejects_trainer_schedule_without_retry_or_dead_letter_queue(aws) -> None:
+def test_rejects_trainer_schedule_without_retry_policy(aws) -> None:
     original = aws["events"].list_targets_by_rule
 
     def without_delivery_config(**kwargs: Any) -> dict[str, Any]:
         response = original(**kwargs)
         if kwargs["Rule"].startswith("rule-trainer-"):
-            response["Targets"][0].pop("DeadLetterConfig", None)
             response["Targets"][0].pop("RetryPolicy", None)
         return response
 
@@ -379,8 +460,42 @@ def test_rejects_trainer_schedule_without_retry_or_dead_letter_queue(aws) -> Non
     result = _verify()
 
     assert result["ok"] is False
-    assert result["schedules"]["trainer"]["retryAndDlqMatches"] is False
-    assert "TRAINER_EVENTBRIDGE_RETRY_OR_DLQ_MISMATCH" in result["blockers"]
+    assert result["schedules"]["trainer"]["retryPolicyMatches"] is False
+    assert "TRAINER_EVENTBRIDGE_RETRY_POLICY_MISMATCH" in result["blockers"]
+
+
+def test_rejects_unexpected_trainer_dead_letter_destination(aws) -> None:
+    original = aws["events"].list_targets_by_rule
+
+    def with_dead_letter(**kwargs: Any) -> dict[str, Any]:
+        response = original(**kwargs)
+        if kwargs["Rule"].startswith("rule-trainer-"):
+            response["Targets"][0]["DeadLetterConfig"] = {
+                "Arn": "arn:aws:sqs:us-east-1:123456789012:unexpected"
+            }
+        return response
+
+    aws["events"].list_targets_by_rule = with_dead_letter
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["schedules"]["trainer"]["deadLetterQueueAbsent"] is False
+    assert "TRAINER_EVENTBRIDGE_FAILURE_DESTINATION_PRESENT" in result[
+        "blockers"
+    ]
+
+
+def test_template_preserves_retries_without_requiring_sqs_create() -> None:
+    template = (
+        Path(__file__).resolve().parents[2] / "template.yaml"
+    ).read_text(encoding="utf-8")
+
+    assert "AWS::SQS::Queue" not in template
+    assert "MLBMLTrainingDeadLetterQueue" not in template
+    assert "sqs:SendMessage" not in template
+    assert template.count("MaximumEventAgeInSeconds: 21600") >= 3
+    assert template.count("MaximumRetryAttempts: 2") >= 3
 
 
 def test_rejects_trainer_schedule_with_swapped_invocation_modes(aws) -> None:

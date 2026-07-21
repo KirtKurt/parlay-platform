@@ -49,7 +49,7 @@ TRAINER_HANDLER = "mlb_ml_aws_training_v1.lambda_handler"
 TRAINER_RESERVED_CONCURRENT_EXECUTIONS = 1
 TRAINER_ARTIFACT_BUCKET_OUTPUT = "MLBMLArtifactsBucketName"
 TRAINER_FUNCTION_ARN_OUTPUT = "MLBMLTrainingFunctionArn"
-TRAINER_DLQ_ARN_OUTPUT = "MLBMLTrainingDeadLetterQueueArn"
+TRAINER_FORBIDDEN_DLQ_ARN_OUTPUT = "MLBMLTrainingDeadLetterQueueArn"
 TRAINER_RETRY_POLICY = {
     "MaximumEventAgeInSeconds": 21600,
     "MaximumRetryAttempts": 2,
@@ -205,6 +205,8 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
         "expectedHandler": TRAINER_HANDLER,
         "expectedEnvironment": dict(TRAINER_EXPECTED_ENVIRONMENT),
         "requiredEnvironmentKeys": list(TRAINER_REQUIRED_ENVIRONMENT),
+        "expectedAsyncRetryPolicy": dict(TRAINER_RETRY_POLICY),
+        "sqsFailureDestinationRequired": False,
         "matches": False,
     }
 
@@ -220,17 +222,17 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
     expected_trainer_arn = str(
         stack_outputs.get(TRAINER_FUNCTION_ARN_OUTPUT) or ""
     )
-    expected_trainer_dlq_arn = str(
-        stack_outputs.get(TRAINER_DLQ_ARN_OUTPUT) or ""
-    )
     if not artifact_bucket_name:
         blockers.append(
             f"STACK_OUTPUT_MISSING:{TRAINER_ARTIFACT_BUCKET_OUTPUT}"
         )
     if not expected_trainer_arn:
         blockers.append(f"STACK_OUTPUT_MISSING:{TRAINER_FUNCTION_ARN_OUTPUT}")
-    if not expected_trainer_dlq_arn:
-        blockers.append(f"STACK_OUTPUT_MISSING:{TRAINER_DLQ_ARN_OUTPUT}")
+    if TRAINER_FORBIDDEN_DLQ_ARN_OUTPUT in stack_outputs:
+        blockers.append(
+            f"TRAINER_SQS_FALLBACK_STACK_OUTPUT_PRESENT:"
+            f"{TRAINER_FORBIDDEN_DLQ_ARN_OUTPUT}"
+        )
 
     for logical_id, role in FUNCTIONS.items():
         try:
@@ -257,6 +259,12 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
         configuration_matches = True
         if role == "trainer":
             actual_handler = str(config.get("Handler") or "")
+            function_dead_letter_config = dict(
+                config.get("DeadLetterConfig") or {}
+            )
+            if function_dead_letter_config:
+                configuration_matches = False
+                blockers.append("TRAINER_FUNCTION_DEAD_LETTER_CONFIG_PRESENT")
             if actual_handler != TRAINER_HANDLER:
                 configuration_matches = False
                 blockers.append(
@@ -308,6 +316,41 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                 blockers.append(
                     f"TRAINER_RESERVED_CONCURRENCY_CHECK_FAILED:{exc}"
                 )
+            async_retry_policy: Dict[str, Any] = {}
+            async_destination_config: Dict[str, Any] = {}
+            try:
+                async_config = lambdas.get_function_event_invoke_config(
+                    FunctionName=physical_id,
+                    Qualifier="$LATEST",
+                )
+                async_retry_policy = {
+                    "MaximumEventAgeInSeconds": async_config.get(
+                        "MaximumEventAgeInSeconds"
+                    ),
+                    "MaximumRetryAttempts": async_config.get(
+                        "MaximumRetryAttempts"
+                    ),
+                }
+                async_destination_config = dict(
+                    async_config.get("DestinationConfig") or {}
+                )
+                if async_retry_policy != TRAINER_RETRY_POLICY:
+                    configuration_matches = False
+                    blockers.append(
+                        "TRAINER_LAMBDA_ASYNC_RETRY_POLICY_MISMATCH:"
+                        f"expected={TRAINER_RETRY_POLICY}:"
+                        f"actual={async_retry_policy}"
+                    )
+                if async_destination_config:
+                    configuration_matches = False
+                    blockers.append(
+                        "TRAINER_LAMBDA_ASYNC_DESTINATION_CONFIG_PRESENT"
+                    )
+            except Exception as exc:
+                configuration_matches = False
+                blockers.append(
+                    f"TRAINER_LAMBDA_ASYNC_RETRY_POLICY_CHECK_FAILED:{exc}"
+                )
             safe_environment_keys = (
                 *TRAINER_REQUIRED_ENVIRONMENT,
                 *TRAINER_EXPECTED_ENVIRONMENT.keys(),
@@ -324,6 +367,18 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                 ),
                 "reservedConcurrencyMatches": (
                     reserved_concurrency == TRAINER_RESERVED_CONCURRENT_EXECUTIONS
+                ),
+                "functionDeadLetterConfig": function_dead_letter_config,
+                "functionDeadLetterConfigAbsent": not bool(
+                    function_dead_letter_config
+                ),
+                "asyncRetryPolicy": async_retry_policy,
+                "asyncRetryPolicyMatches": (
+                    async_retry_policy == TRAINER_RETRY_POLICY
+                ),
+                "asyncDestinationConfig": async_destination_config,
+                "asyncDestinationConfigAbsent": not bool(
+                    async_destination_config
                 ),
                 "environment": {
                     key: environment.get(key)
@@ -460,25 +515,34 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
         schedules = sorted(str(rule.get("schedule") or "") for rule in enabled_rules)
         if schedules != sorted(expected):
             blockers.append(f"SCHEDULE_MISMATCH:{role}:expected={expected}:actual={schedules}")
-        trainer_delivery_matches = None
+        trainer_retry_policy_matches = None
+        trainer_dead_letter_absent = None
         trainer_invocation_inputs_match = None
         if role == "trainer":
-            trainer_delivery_matches = bool(
-                expected_trainer_dlq_arn
-                and enabled_rules
+            trainer_retry_policy_matches = bool(
+                enabled_rules
                 and all(
                     all(
-                        (target.get("DeadLetterConfig") or {}).get("Arn")
-                        == expected_trainer_dlq_arn
-                        and (target.get("RetryPolicy") or {})
-                        == TRAINER_RETRY_POLICY
+                        (target.get("RetryPolicy") or {}) == TRAINER_RETRY_POLICY
                         for target in rule.get("matchingTargets") or []
                     )
                     for rule in enabled_rules
                 )
             )
-            if not trainer_delivery_matches:
-                blockers.append("TRAINER_EVENTBRIDGE_RETRY_OR_DLQ_MISMATCH")
+            trainer_dead_letter_absent = bool(
+                enabled_rules
+                and all(
+                    all(
+                        not bool(target.get("DeadLetterConfig"))
+                        for target in rule.get("matchingTargets") or []
+                    )
+                    for rule in enabled_rules
+                )
+            )
+            if not trainer_retry_policy_matches:
+                blockers.append("TRAINER_EVENTBRIDGE_RETRY_POLICY_MISMATCH")
+            if not trainer_dead_letter_absent:
+                blockers.append("TRAINER_EVENTBRIDGE_FAILURE_DESTINATION_PRESENT")
             expected_invocations = sorted(
                 (
                     str(invocation["schedule"]),
@@ -515,11 +579,13 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
             "enabledRules": enabled_rules,
             "expectedSchedules": expected,
             "exactMatch": schedules == sorted(expected),
-            "retryAndDlqMatches": trainer_delivery_matches,
+            "retryPolicyMatches": trainer_retry_policy_matches,
+            "deadLetterQueueAbsent": trainer_dead_letter_absent,
+            "deliveryPolicyMatches": bool(
+                trainer_retry_policy_matches and trainer_dead_letter_absent
+            ) if role == "trainer" else None,
             "invocationInputsMatch": trainer_invocation_inputs_match,
-            "expectedDeadLetterQueueArn": (
-                expected_trainer_dlq_arn if role == "trainer" else None
-            ),
+            "sqsFailureDestinationRequired": False if role == "trainer" else None,
             "expectedRetryPolicy": (
                 dict(TRAINER_RETRY_POLICY) if role == "trainer" else None
             ),
