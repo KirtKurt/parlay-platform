@@ -35,11 +35,13 @@ def canonical_authority(slate: str, game_id: str, commence: str) -> dict:
 
 
 def main() -> int:
+    # Display semantics retain every immutable locked winner. Official rolling
+    # accuracy is a separate quality classification applied by the audit layer.
     locked = {
         "slatePredictionLock": {"locked": True, "lockStatus": "LOCKED"},
         "predictions": [
             {
-                "gameId": "low-confidence-official",
+                "gameId": "low-confidence-visible-lock",
                 "predictedWinner": "Washington Nationals",
                 "predictedSide": "home",
                 "teamWinProbabilityPct": 59.99,
@@ -49,7 +51,7 @@ def main() -> int:
                 "tags": ["SLATE_LOCKED", "ML_REJECTED", "NOT_PLAYABLE"],
             },
             {
-                "gameId": "playable-official",
+                "gameId": "playable-visible-lock",
                 "predictedWinner": "Los Angeles Dodgers",
                 "actionablePick": True,
                 "officialPick": False,
@@ -95,7 +97,7 @@ def main() -> int:
     audit_rows = [
         {
             "status": "GRADED",
-            "id": "official-not-playable",
+            "id": "locked-diagnostic-below-floor",
             "slateDateEt": "2026-07-11",
             "commenceTime": "2026-07-11T18:00:00Z",
             "homeTeam": "Washington Nationals",
@@ -114,14 +116,14 @@ def main() -> int:
             "teamWinProbabilityPct": 58.0,
             "americanOdds": -125,
             "homeSignal": {"marketConsensusProbability": 0.42, "americanOdds": 115},
-            "awaySignal": {"marketConsensusProbability": 0.58, "americanOdds": -125},
+            "awaySignal": {"marketConsensusProbability": 0.58, "americanOdds": -125, "delta": 0.01, "reversalCount": 0},
             "canonicalLockAuthority": canonical_authority(
-                "2026-07-11", "official-not-playable", "2026-07-11T18:00:00Z"
+                "2026-07-11", "locked-diagnostic-below-floor", "2026-07-11T18:00:00Z"
             ),
         },
         {
             "status": "GRADED",
-            "id": "official-playable",
+            "id": "official-quality-playable",
             "slateDateEt": "2026-07-11",
             "commenceTime": "2026-07-11T19:00:00Z",
             "homeTeam": "Los Angeles Dodgers",
@@ -137,30 +139,32 @@ def main() -> int:
             "recommendationStatus": "PLAYABLE_PREDICTION",
             "predictionSemanticsVersion": "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1",
             "tags": ["SLATE_LOCKED", "ACTIONABLE_PICK"],
-            "teamWinProbabilityPct": 55.0,
-            "americanOdds": -110,
-            "homeSignal": {"marketConsensusProbability": 0.55, "americanOdds": -110},
-            "awaySignal": {"marketConsensusProbability": 0.45, "americanOdds": 100},
+            "teamWinProbabilityPct": 62.0,
+            "americanOdds": -163,
+            "homeSignal": {"marketConsensusProbability": 0.62, "americanOdds": -163, "delta": 0.01, "reversalCount": 0},
+            "awaySignal": {"marketConsensusProbability": 0.38, "americanOdds": 145},
             "canonicalLockAuthority": canonical_authority(
-                "2026-07-11", "official-playable", "2026-07-11T19:00:00Z"
+                "2026-07-11", "official-quality-playable", "2026-07-11T19:00:00Z"
             ),
         },
     ]
     normalized = [accuracy._normalize_audit_row(row) for row in audit_rows]
     metrics = accuracy._window_metrics(normalized)
 
-    assert normalized[0]["officialPrediction"] is True
+    assert normalized[0]["officialPrediction"] is False
     assert normalized[0]["playable"] is False
+    assert normalized[0]["officialLockQualityGate"]["selectedTeamProbabilityPct"] == 58.0
     assert normalized[1]["officialPrediction"] is True
     assert normalized[1]["playable"] is True
-    assert metrics["officialPredictions"]["count"] == 2
+    assert normalized[1]["officialLockQualityGate"]["officialEligible"] is True
+    assert metrics["officialPredictions"]["count"] == 1
     assert metrics["playableRecommendations"]["count"] == 1
-    assert metrics["officialPredictions"]["accuracyPct"] == 50.0
+    assert metrics["officialPredictions"]["accuracyPct"] == 0.0
     assert metrics["playableRecommendations"]["accuracyPct"] == 0.0
     assert metrics["officialPredictions"]["probabilityScoring"]["brierScore"] is not None
     assert metrics["officialPredictions"]["probabilityScoring"]["logLoss"] is not None
-    assert metrics["officialPredictions"]["roi"]["pricedPickCount"] == 2
-    assert metrics["marketFavoriteBaseline"]["count"] == 2
+    assert metrics["officialPredictions"]["roi"]["pricedPickCount"] == 1
+    assert metrics["marketFavoriteBaseline"]["count"] == 1
     assert metrics["comparison"]["modelAccuracyLiftVsMarketPct"] is not None
 
     legacy = accuracy._normalize_audit_row(
@@ -213,7 +217,7 @@ def main() -> int:
     assert stored_ledger["status"] == "GRADED"
     assert accuracy._dedupe([normalized_ledger]) == []
 
-    print("MLB official/playable display semantics and canonical-only accuracy ledger metrics verified")
+    print("MLB visible-lock, 60% official-quality, playability, and canonical ledger semantics verified")
     return 0
 
 
