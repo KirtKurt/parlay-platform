@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
-VERSION = "MLB-ACCURACY-TARGET-POLICY-v2-90pct-production-reliability"
+VERSION = "MLB-ACCURACY-TARGET-POLICY-v3-90pct-reliability-60pct-official-lock"
 ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT = 90.0
 RECOMMENDATION_RELIABILITY_THRESHOLD_PCT = 90.0
 MIN_OUTCOME_UNTOUCHED_ACCURACY_PCT = 90.0
@@ -13,13 +13,14 @@ MIN_SELECTED_UNTOUCHED_TEST = 100
 MIN_EXACT_ODDS_COVERAGE_PCT = 90.0
 MAX_RELIABILITY_CALIBRATION_ERROR = 0.10
 MIN_ROLLING_24H_SLATE_ACCURACY_PCT = 90.0
+INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT = 60.0
 RELIABILITY_PROGRESS_MILESTONES_PCT = (50.0, 60.0, 70.0, 80.0)
 RUNTIME_SAFETY_VERSION = "MLB-ML-RUNTIME-SAFETY-v5-90pct-exact-odds-calibrated"
 CHAMPION_GATE_VERSION = "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion"
 
 
 def install() -> Dict[str, Any]:
-    """Install the production authority policy without suppressing official picks."""
+    """Install production authority targets and the official-lock quality floor."""
     recommendation = str(RECOMMENDATION_RELIABILITY_THRESHOLD_PCT)
     audit = str(ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT)
 
@@ -38,6 +39,9 @@ def install() -> Dict[str, Any]:
     os.environ["INQSI_MLB_ROLLING_24H_ALL_GAMES_TARGET_ACCURACY"] = audit
     os.environ["INQSI_MLB_ROLLING_24H_SLATE_AUTHORITY_TARGET_ACCURACY"] = str(
         MIN_ROLLING_24H_SLATE_ACCURACY_PCT
+    )
+    os.environ["INQSI_MLB_INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT"] = str(
+        INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT
     )
 
     patched = []
@@ -120,6 +124,15 @@ def install() -> Dict[str, Any]:
     except Exception as exc:
         errors.append(f"champion:{exc}")
 
+    try:
+        import mlb_official_lock_quality_gate as official_gate
+        import mlb_real_world_accuracy_patch as accuracy
+
+        official_gate.apply(accuracy)
+        patched.append("official_lock_60pct_confirmed_direction_gate")
+    except Exception as exc:
+        errors.append(f"official_lock_quality:{exc}")
+
     return {
         "ok": not errors,
         "version": VERSION,
@@ -137,15 +150,17 @@ def install() -> Dict[str, Any]:
         "rolling24hSlateAccuracyProgressMilestonesReportingOnly": True,
         "automaticPromotionAfterApplicableGates": True,
         "roiPromotionGateRequired": False,
-        "everyGameRetainsOfficialPick": True,
+        "everyGameRetainsOfficialPick": False,
+        "everyGameRetainsVisibleLockedPrediction": True,
         "playabilitySeparateFromOfficialPick": True,
-        "individualGameOfficialPickProbabilityFloorPct": None,
+        "individualGameOfficialPickProbabilityFloorPct": INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT,
+        "multipleReversalsRequireIndependentConfirmationForOfficialStatus": True,
         "patched": patched,
         "errors": errors,
         "policy": (
-            "Both direction and playability require a rolling 24-hour official-card MLB slate accuracy average of at "
-            "least 90%, then must pass their separate robust untouched-test gates. Direction and playability promote "
-            "automatically and independently only after their applicable gates pass. Every game still keeps its "
-            "official pick."
+            "Every game retains a visible immutable winner record. Official-target eligibility begins at 60% and "
+            "requires direction integrity; multi-reversal, divergent, compressed, resistance, or late-conflict rows "
+            "require independent book agreement plus steam or run-line confirmation. Direction and playability still "
+            "require the separate 90% production reliability gates."
         ),
     }
