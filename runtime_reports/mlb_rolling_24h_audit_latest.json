@@ -1,7 +1,7 @@
 {
   "ok": true,
   "proofType": "MLB_ROLLING_24H_AUDIT",
-  "createdAt": "2026-07-21T13:07:08.981407+00:00",
+  "createdAt": "2026-07-21T14:53:24.819386+00:00",
   "sport": "mlb",
   "windowHours": 24,
   "summary": {
@@ -843,6 +843,9 @@
       "status": "INVALID_CANONICAL_LOCK",
       "canonicalLockEvidenceStatus": "INVALID",
       "canonicalLockValidationErrors": [
+        "candidate_snapshot_candidateGameIdentity_proof_mismatch",
+        "candidate_snapshot_identityBindingMode_proof_mismatch",
+        "candidate_snapshot_stageGameIdentity_proof_mismatch",
         "stage_bound_source_window_metadata_mismatch",
         "stage_fingerprint_mismatch",
         "stage_model_version_mismatch",
@@ -853,6 +856,9 @@
         "verified": false,
         "providerGameId": "ed99d6d31957cf5543b0733a49085559",
         "rejectionReasons": [
+          "candidate_snapshot_candidateGameIdentity_proof_mismatch",
+          "candidate_snapshot_identityBindingMode_proof_mismatch",
+          "candidate_snapshot_stageGameIdentity_proof_mismatch",
           "stage_bound_source_window_metadata_mismatch",
           "stage_fingerprint_mismatch",
           "stage_model_version_mismatch",
@@ -863,8 +869,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "canonical_lock_failed_validation",
         "doubleheaderSafe": true,
         "finalProviderGameId": "ed99d6d31957cf5543b0733a49085559"
@@ -899,8 +905,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "29d4af8b2386afc600f412243c22a53b"
@@ -935,8 +941,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "f237d860c80df8632a4717d53fee1c25"
@@ -971,8 +977,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "0dd84d01f2970e524c07c9ff2a747b7f"
@@ -1007,8 +1013,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "128e4328bfe1ffa187a85b1e5e2b5ec6"
@@ -1043,8 +1049,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "b829b2871533d73401916f919c2b485a"
@@ -1079,8 +1085,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "c9a69923caed0afdda9fd6b94171b189"
@@ -1115,8 +1121,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "b6936af60f2ffed1b270c119f7127ae7"
@@ -1139,6 +1145,9 @@
       "status": "INVALID_CANONICAL_LOCK",
       "canonicalLockEvidenceStatus": "INVALID",
       "canonicalLockValidationErrors": [
+        "candidate_snapshot_candidateGameIdentity_proof_mismatch",
+        "candidate_snapshot_identityBindingMode_proof_mismatch",
+        "candidate_snapshot_stageGameIdentity_proof_mismatch",
         "stage_bound_source_window_metadata_mismatch",
         "stage_fingerprint_mismatch",
         "stage_model_version_mismatch",
@@ -1149,6 +1158,9 @@
         "verified": false,
         "providerGameId": "97617f61842d6317b6167cdf64f137a1",
         "rejectionReasons": [
+          "candidate_snapshot_candidateGameIdentity_proof_mismatch",
+          "candidate_snapshot_identityBindingMode_proof_mismatch",
+          "candidate_snapshot_stageGameIdentity_proof_mismatch",
           "stage_bound_source_window_metadata_mismatch",
           "stage_fingerprint_mismatch",
           "stage_model_version_mismatch",
@@ -1159,8 +1171,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "canonical_lock_failed_validation",
         "doubleheaderSafe": true,
         "finalProviderGameId": "97617f61842d6317b6167cdf64f137a1"
@@ -1195,8 +1207,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "417e9c61c9e75d104917a558c350fd33"
@@ -1219,6 +1231,9 @@
       "status": "INVALID_CANONICAL_LOCK",
       "canonicalLockEvidenceStatus": "INVALID",
       "canonicalLockValidationErrors": [
+        "candidate_snapshot_candidateGameIdentity_proof_mismatch",
+        "candidate_snapshot_identityBindingMode_proof_mismatch",
+        "candidate_snapshot_stageGameIdentity_proof_mismatch",
         "stage_bound_source_window_metadata_mismatch",
         "stage_fingerprint_mismatch",
         "stage_model_version_mismatch",
@@ -1229,6 +1244,9 @@
         "verified": false,
         "providerGameId": "66d5a2a0202c6946683c1a8247be9ed4",
         "rejectionReasons": [
+          "candidate_snapshot_candidateGameIdentity_proof_mismatch",
+          "candidate_snapshot_identityBindingMode_proof_mismatch",
+          "candidate_snapshot_stageGameIdentity_proof_mismatch",
           "stage_bound_source_window_metadata_mismatch",
           "stage_fingerprint_mismatch",
           "stage_model_version_mismatch",
@@ -1239,8 +1257,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "canonical_lock_failed_validation",
         "doubleheaderSafe": true,
         "finalProviderGameId": "66d5a2a0202c6946683c1a8247be9ed4"
@@ -1275,8 +1293,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "17257e28ab0601512288eeccc637c3d1"
@@ -1311,8 +1329,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "2d7808af8bc666b615b13864d5730354"
@@ -1347,8 +1365,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "85be05f7a6300ba953ba0dc345908c33"
@@ -1383,8 +1401,8 @@
       },
       "lockedCardAudit": {
         "applied": true,
-        "version": "MLB-LOCKED-CARD-AUDIT-v4-canonical-provider-id-only",
-        "selectionPolicy": "exact_canonical_provider_game_id_and_teams_only",
+        "version": "MLB-LOCKED-CARD-AUDIT-v5-provider-alias-vector-separation",
+        "selectionPolicy": "exact_provider_id_or_verified_immutable_official_pk_alias_and_teams",
         "missingReason": "no_exact_canonical_provider_game_id_match",
         "doubleheaderSafe": true,
         "finalProviderGameId": "7a53b98354a4d009429693371637853d"
@@ -1427,7 +1445,7 @@
     "applied": true,
     "version": "MLB-REAL-WORLD-ACCURACY-v2.2-60pct-official-quality-canonical-lock",
     "classification": {
-      "officialPrediction": "winner selected in an exact canonical immutable LOCKED#GAME row",
+      "officialPrediction": "winner selected in a canonical immutable LOCKED#GAME row joined by exact provider identity or a verified immutable official-game-PK/provider alias crosswalk",
       "playableRecommendation": "higher-confidence wagering recommendation; official status is excluded"
     },
     "windows": {
@@ -1793,7 +1811,7 @@
       "brier_skill_vs_market"
     ],
     "immutableLedgerPk": "MLB_CANONICAL_LOCK_ACCURACY#LEDGER#v2",
-    "policy": "Only completed games with exact canonical immutable LOCKED#GAME authority are graded. Daily-card, legacy, fuzzy-match, and displayed-forecast rows are excluded.",
+    "policy": "Only completed games with canonical immutable LOCKED#GAME authority and exact or verified immutable provider identity are graded. Daily-card, legacy, fuzzy-match, and displayed-forecast rows are excluded.",
     "legacySummaryFieldsNormalized": true,
     "legacyProbabilityPolicy": "Use selected-side de-vigged market probability for legacy reporting; legacy rows are excluded from ML v3 training.",
     "legacyPlayabilityPolicy": "Do not accept officialPick/actionablePick alone as proof of a playable recommendation on legacy rows.",
@@ -1873,7 +1891,7 @@
     "latestPk": "MLB_ROLLING_24H_AUDIT#LATEST",
     "latestSk": "LATEST",
     "runPk": "MLB_ROLLING_24H_AUDIT#RUNS",
-    "runSk": "AUDIT#2026-07-21T13:07:08.981407+00:00"
+    "runSk": "AUDIT#2026-07-21T14:53:24.819386+00:00"
   },
   "mlOptimizationV3": {
     "applied": true,
@@ -1941,7 +1959,7 @@
     "promotionGate": {
       "ok": true,
       "version": "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion",
-      "evaluatedAtUtc": "2026-07-21T13:08:19.543713+00:00",
+      "evaluatedAtUtc": "2026-07-21T14:54:36.994614+00:00",
       "automaticPromotionEnabled": true,
       "automaticPromotionRequiresPassedApplicableGates": true,
       "promotionEligible": false,
@@ -2277,7 +2295,7 @@
       "ok": true,
       "latestPk": "MLB_ML_OPTIMIZATION#V3",
       "latestSk": "CHALLENGER#LATEST",
-      "runSk": "CHALLENGER#2026-07-21T13:07:56.189047+00:00"
+      "runSk": "CHALLENGER#2026-07-21T14:54:12.981868+00:00"
     },
     "promotion": {
       "ok": true,
