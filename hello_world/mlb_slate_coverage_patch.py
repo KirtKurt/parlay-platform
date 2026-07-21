@@ -1117,6 +1117,7 @@ def _prelock_row(
         "displayGroup": display_group,
         "fullDataFinalPick": False,
         "accuracyTargetEligible": False,
+        "playableAccuracyEligible": False,
         "trainingEligible": False,
         "trainingEligibilityStatus": "PENDING_IMMUTABLE_LOCK",
         "trainingExclusionReasons": ["immutable_tminus45_prediction_not_available"],

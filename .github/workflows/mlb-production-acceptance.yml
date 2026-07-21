@@ -1,16 +1,6 @@
 name: MLB Production Acceptance
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'template.yaml'
-      - 'hello_world/mlb_*.py'
-      - 'scripts/*mlb*.py'
-      - '.github/workflows/deploy.yml'
-      - '.github/workflows/mlb-production-acceptance.yml'
-  schedule:
-    - cron: '10 * * * *'
   workflow_dispatch:
 
 permissions:

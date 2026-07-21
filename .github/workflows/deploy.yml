@@ -104,6 +104,7 @@ jobs:
           python scripts/verify_mlb_workflow_authority.py
           python scripts/verify_mlb_official_prediction_semantics.py
           python -m pytest -q tests/unit/test_mlb_production_acceptance.py
+          python -m py_compile scripts/mlb_deploy_http_probe.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
           python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
 
@@ -133,6 +134,7 @@ jobs:
             tests/unit/test_mlb_ml_promotion_policy_v2.py
             tests/unit/test_mlb_ml_aws_training_v1.py
             tests/unit/test_mlb_deploy_identity.py
+            tests/unit/test_mlb_deploy_http_probe.py
             tests/unit/test_mlb_trainer_deploy_response.py
             tests/unit/test_mlb_workflow_authority.py
             tests/unit/test_run_mlb_ml_v3_audit_report.py
@@ -272,9 +274,44 @@ jobs:
             --expected-template-sha256 "$EXPECTED_TEMPLATE_SHA256" \
             --output runtime_reports/mlb_deploy_identity_latest.json
 
+      - name: Prove shared Lambda capacity recovered before trainer initialization
+        env:
+          API_URL: ${{ steps.stack.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          base_url="${API_URL%/}"
+          success_streak=0
+          for attempt in $(seq 1 30); do
+            health_ok=false
+            model_ok=false
+            curl --fail --silent --show-error \
+              --connect-timeout 2 --max-time 8 \
+              "${base_url}/v1/health" >/tmp/mlb-capacity-health.json \
+              && health_ok=true
+            curl --fail --silent --show-error \
+              --connect-timeout 2 --max-time 8 \
+              "${base_url}/v1/mlb/model/version" >/tmp/mlb-capacity-model.json \
+              && model_ok=true
+            if [ "$health_ok" = true ] && [ "$model_ok" = true ]; then
+              success_streak=$((success_streak + 1))
+              if [ "$success_streak" -ge 3 ]; then
+                echo "Shared Lambda capacity is stable across three consecutive probes."
+                break
+              fi
+            else
+              success_streak=0
+            fi
+            if [ "$attempt" -eq 30 ]; then
+              echo "::error::Shared Lambda capacity did not recover after schedule backpressure deployment"
+              exit 1
+            fi
+            sleep 4
+          done
+
       - name: Run AWS-native MLB trainer and verify fresh split health
         env:
           EXPECTED_TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
+          AWS_MAX_ATTEMPTS: "1"
         run: |
           set -euo pipefail
           TRAINER_ARN=$(aws cloudformation describe-stacks \
@@ -285,30 +322,51 @@ jobs:
           test -n "$TRAINER_ARN"
           test "$TRAINER_ARN" != "None"
           RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-          aws lambda invoke \
-            --function-name "$TRAINER_ARN" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --cli-connect-timeout 10 \
-            --cli-read-timeout 1000 \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}' \
-            /tmp/mlb-ml-v2-training.json > /tmp/mlb-ml-v2-training-invoke.json
-          aws lambda invoke \
-            --function-name "$TRAINER_ARN" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --cli-connect-timeout 10 \
-            --cli-read-timeout 1000 \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}' \
-            /tmp/mlb-ml-v2-selection-capture.json > /tmp/mlb-ml-v2-selection-capture-invoke.json
-          aws lambda invoke \
-            --function-name "$TRAINER_ARN" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --cli-connect-timeout 10 \
-            --cli-read-timeout 1000 \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"mode":"status"}' \
-            /tmp/mlb-ml-v2-status-after.json > /tmp/mlb-ml-v2-status-after-invoke.json
+          invoke_with_capacity_retry() {
+            local payload="$1"
+            local response_path="$2"
+            local invocation_path="$3"
+            local error_path="${invocation_path}.error"
+            for attempt in $(seq 1 15); do
+              set +e
+              aws lambda invoke \
+                --function-name "$TRAINER_ARN" \
+                --region "${{ secrets.AWS_REGION }}" \
+                --cli-connect-timeout 10 \
+                --cli-read-timeout 1000 \
+                --cli-binary-format raw-in-base64-out \
+                --payload "$payload" \
+                "$response_path" >"$invocation_path" 2>"$error_path"
+              status=$?
+              set -e
+              if [ "$status" -eq 0 ]; then
+                return 0
+              fi
+              if ! grep -Eq \
+                'TooManyRequestsException|ConcurrentInvocationLimitExceeded|Rate Exceeded' \
+                "$error_path"; then
+                sed -n '1,20p' "$error_path"
+                return "$status"
+              fi
+              if [ "$attempt" -eq 15 ]; then
+                echo "::error::Lambda capacity remained exhausted after bounded trainer invoke retries"
+                return "$status"
+              fi
+              sleep 4
+            done
+          }
+          invoke_with_capacity_retry \
+            '{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}' \
+            /tmp/mlb-ml-v2-training.json \
+            /tmp/mlb-ml-v2-training-invoke.json
+          invoke_with_capacity_retry \
+            '{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}' \
+            /tmp/mlb-ml-v2-selection-capture.json \
+            /tmp/mlb-ml-v2-selection-capture-invoke.json
+          invoke_with_capacity_retry \
+            '{"mode":"status"}' \
+            /tmp/mlb-ml-v2-status-after.json \
+            /tmp/mlb-ml-v2-status-after-invoke.json
           # Fail closed unless trainingHealth and selectionCaptureHealth both
           # attest deploymentIdentityMatches for the exact runs above.
           python scripts/verify_mlb_trainer_deploy_response.py \
@@ -327,15 +385,24 @@ jobs:
           API_URL: ${{ steps.stack.outputs.api_url }}
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error "${API_URL}v1/health" > /tmp/health.json
+          base_url="${API_URL%/}"
+          python scripts/mlb_deploy_http_probe.py \
+            "${base_url}/v1/health" \
+            --output /tmp/health.json \
+            --max-wait-seconds 180 \
+            --request-timeout-seconds 8
+          python scripts/mlb_deploy_http_probe.py \
+            "${base_url}/v1/mlb/model/version" \
+            --output /tmp/mlb-model-version.json \
+            --max-wait-seconds 180 \
+            --request-timeout-seconds 20
           python - <<'PY'
           import json
-          import os
-          import urllib.request
+          from pathlib import Path
 
-          base = os.environ['API_URL']
-          with urllib.request.urlopen(base + 'v1/mlb/model/version', timeout=45) as response:
-              payload = json.loads(response.read().decode('utf-8'))
+          payload = json.loads(
+              Path('/tmp/mlb-model-version.json').read_text(encoding='utf-8')
+          )
           print(json.dumps(payload, indent=2, default=str))
           if payload.get('ok') is not True or payload.get('engine_import_ok') is not True:
               raise SystemExit('Live MLB v3 engine did not import')
@@ -372,6 +439,7 @@ jobs:
               'legacyV1AuthorityDisabled',
               'v2ShadowManualFirst',
               'canonicalProbabilityAndPersistedPrelockAuthority',
+              'providerNeutralCalibrationAndActionability',
               'sourceHonestFundamentalsV2',
           ):
               if steps.get(name) is not True:
@@ -406,25 +474,20 @@ jobs:
           import time
           from datetime import datetime, timezone
           import urllib.parse
-          import urllib.request
+          from scripts.mlb_deploy_http_probe import fetch_json_object
 
-          def fetch(url, timeout=45):
-              request = urllib.request.Request(
+          def fetch(url, timeout=45, deadline=None):
+              return fetch_json_object(
                   url,
+                  deadline_monotonic=deadline,
+                  max_wait_seconds=180,
+                  request_timeout_seconds=timeout,
+                  retry_delay_seconds=4,
                   headers={
                       'accept': 'application/json',
                       'user-agent': 'inqsi-deploy-read-only-lock-lifecycle-smoke/2.0',
                   },
-                  method='GET',
               )
-              with urllib.request.urlopen(request, timeout=timeout) as response:
-                  status = response.getcode()
-                  payload = json.loads(response.read().decode('utf-8'))
-              if status != 200:
-                  raise SystemExit(f'Live MLB endpoint returned HTTP {status}: {url}')
-              if not isinstance(payload, dict):
-                  raise SystemExit(f'Live MLB endpoint response was not an object: {url}')
-              return payload
 
           base_url = os.environ['API_URL'].rstrip('/')
           status_url = base_url + '/v1/mlb/locks/status'
@@ -435,7 +498,11 @@ jobs:
               remaining = deadline - time.monotonic()
               if remaining <= 0:
                   raise SystemExit('No official-schedule-backed durable roster appeared within 20 minutes')
-              payload = fetch(status_url, timeout=max(1, min(45, remaining)))
+              payload = fetch(
+                  status_url,
+                  timeout=max(1, min(45, remaining)),
+                  deadline=deadline,
+              )
               if (
                   payload.get('officialScheduleBacked') is True
                   and payload.get('officialScheduleAuthorityVersion') == expected_schedule_version
@@ -593,7 +660,10 @@ jobs:
           prediction_url = base_url + '/v1/mlb/predictions?' + prediction_query
           prediction_deadline = time.monotonic() + 20 * 60
           while True:
-              predictions = fetch(prediction_url)
+              predictions = fetch(
+                  prediction_url,
+                  deadline=prediction_deadline,
+              )
               winner_rows = [
                   row
                   for row in predictions.get('predictions') or []

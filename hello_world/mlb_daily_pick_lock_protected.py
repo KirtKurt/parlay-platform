@@ -32,6 +32,7 @@ _REQUIRED_RUNTIME_STEPS = {
     "canonicalLockedStorageFinalizer",
     "lastPrelockPromotionAuthority",
     "canonicalProbabilityAndPersistedPrelockAuthority",
+    "providerNeutralCalibrationAndActionability",
     "legacyFinalGateDisabled",
 }
 if isinstance(_raw_runtime_status, dict):

@@ -34,6 +34,7 @@ _REQUIRED_RUNTIME_STEPS = {
     "canonicalLockedStorageFinalizer",
     "lastPrelockPromotionAuthority",
     "canonicalProbabilityAndPersistedPrelockAuthority",
+    "providerNeutralCalibrationAndActionability",
     "legacyFinalGateDisabled",
 }
 

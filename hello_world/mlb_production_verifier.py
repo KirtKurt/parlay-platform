@@ -198,7 +198,9 @@ def _vector_validation(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def _locked_row_integrity(slate_date: str, expected_count: int, locked: bool) -> Dict[str, Any]:
+def _locked_row_integrity(
+    slate_date: str, expected_count: int, evaluate_full_slate: bool
+) -> Dict[str, Any]:
     stored = _query_stored_predictions(slate_date)
     grouped: Dict[str, List[Dict[str, Any]]] = {}
     for row in stored:
@@ -218,9 +220,14 @@ def _locked_row_integrity(slate_date: str, expected_count: int, locked: bool) ->
     checks = [_vector_validation(row) for row in selected]
     valid = [check for check in checks if check.get("ok")]
     invalid = [check for check in checks if not check.get("ok")]
-    complete = bool(locked and expected_count > 0 and len(selected) == expected_count and len(valid) == expected_count)
+    complete = bool(
+        evaluate_full_slate
+        and expected_count > 0
+        and len(selected) == expected_count
+        and len(valid) == expected_count
+    )
     return {
-        "evaluated": bool(locked),
+        "evaluated": bool(evaluate_full_slate),
         "requiredFeatureVectorVersion": mlb_ml_clean_cohort_v1.FEATURE_SNAPSHOT_VERSION,
         "expectedGameCount": expected_count,
         "rawStoredRowCount": len(stored),
@@ -234,7 +241,80 @@ def _locked_row_integrity(slate_date: str, expected_count: int, locked: bool) ->
     }
 
 
+def _per_game_lock_progress(
+    lock_status: Dict[str, Any], *, checked_at: datetime, expected_count: int
+) -> Dict[str, Any]:
+    raw_statuses = lock_status.get("perGameStatus") or []
+    statuses = [row for row in raw_statuses if isinstance(row, dict)]
+    due: List[Dict[str, Any]] = []
+    pending: List[Dict[str, Any]] = []
+    invalid: List[Dict[str, Any]] = []
+
+    for row in statuses:
+        game_id = str(row.get("gameIdentity") or row.get("gameId") or "")
+        lock_at = _parse_dt(row.get("scheduledLockAtUtc"))
+        compact = {
+            "gameId": game_id or None,
+            "scheduledLockAtUtc": lock_at.isoformat() if lock_at else None,
+            "lockStatus": row.get("lockStatus") or row.get("state"),
+            "lockOutcomeRecorded": row.get("lockOutcomeRecorded") is True,
+            "lockedPrediction": row.get("lockedPrediction") is True,
+        }
+        if not lock_at:
+            invalid.append(compact)
+        elif lock_at <= checked_at:
+            due.append(compact)
+        else:
+            pending.append(compact)
+
+    missing_due = [row for row in due if row["lockOutcomeRecorded"] is not True]
+    valid_cutoffs = [
+        _parse_dt(row.get("scheduledLockAtUtc"))
+        for row in statuses
+        if _parse_dt(row.get("scheduledLockAtUtc"))
+    ]
+    final_cutoff = max(valid_cutoffs) if valid_cutoffs else None
+    status_complete = bool(
+        expected_count > 0
+        and len(statuses) == expected_count
+        and len(valid_cutoffs) == expected_count
+    )
+    final_cutoff_reached = bool(
+        status_complete and final_cutoff and checked_at >= final_cutoff
+    )
+    terminal_slate = bool(
+        lock_status.get("lockStatusComplete") is True
+        or lock_status.get("dailyCardComplete") is True
+    )
+    return {
+        "statusComplete": status_complete,
+        "statusCount": len(statuses),
+        "invalidStatusCount": len(invalid),
+        "invalidStatuses": invalid,
+        "dueGameCount": len(due),
+        "dueTerminalGameCount": len(due) - len(missing_due),
+        "dueMissingGameCount": len(missing_due),
+        "dueMissingGames": missing_due,
+        "pendingGameCount": len(pending),
+        "finalPerGameCutoffAtUtc": (
+            final_cutoff.isoformat() if final_cutoff else None
+        ),
+        "finalPerGameCutoffReached": final_cutoff_reached,
+        "terminalSlate": terminal_slate,
+        "fullSlateVectorEvaluationDue": bool(
+            terminal_slate or final_cutoff_reached
+        ),
+        "policy": (
+            "Only games whose own scheduled T-45 cutoff is at or before "
+            "checkedAt must have a terminal lock outcome. Full-slate vector "
+            "coverage is evaluated only after the final per-game cutoff or "
+            "an explicitly terminal slate."
+        ),
+    }
+
+
 def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any]:
+    checked_at = _now_utc()
     pulls = history.query_pulls("mlb", slate_date, 500)
     latest_pull = pulls[-1] if pulls else {}
     latest_age = _age_minutes(latest_pull.get("pulled_at")) if latest_pull else None
@@ -246,9 +326,23 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
     prediction_count = int(predictions.get("count") or 0)
     pull_count = len(pulls)
     lock_data = lock_status.get("lock") or {}
-    expected_locked_count = int(lock_data.get("gameCount") or lock_data.get("predictionCount") or game_count or 0)
-    locked = bool(lock_status.get("locked"))
-    integrity = _locked_row_integrity(slate_date, expected_locked_count, locked)
+    expected_slate_count = int(
+        lock_status.get("gameCount")
+        or lock_data.get("gameCount")
+        or lock_data.get("predictionCount")
+        or game_count
+        or 0
+    )
+    per_game = _per_game_lock_progress(
+        lock_status,
+        checked_at=checked_at,
+        expected_count=expected_slate_count,
+    )
+    integrity = _locked_row_integrity(
+        slate_date,
+        expected_slate_count,
+        per_game["fullSlateVectorEvaluationDue"],
+    )
 
     if mode in {"continuous", "ingest"}:
         if pull_count == 0:
@@ -263,9 +357,14 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
             blockers.append("INCOMPLETE_SINGLE_GAME_CARD")
 
     if mode in {"continuous", "lock"}:
-        if bool(lock_status.get("lockDue")) and game_count > 0 and not locked:
+        if expected_slate_count > 0 and per_game["statusComplete"] is not True:
+            blockers.append("PER_GAME_LOCK_STATUS_MISSING_OR_INVALID")
+        if per_game["dueMissingGameCount"] > 0:
             blockers.append("LOCK_DUE_BUT_NOT_LOCKED")
-        if locked and not integrity.get("coverageComplete"):
+        if (
+            per_game["fullSlateVectorEvaluationDue"] is True
+            and not integrity.get("coverageComplete")
+        ):
             blockers.append("LOCKED_ROWS_MISSING_VALID_FROZEN_FINGERPRINTS")
 
     ok = not blockers
@@ -275,7 +374,7 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
         "mode": mode,
         "run": run,
         "slateDateEt": slate_date,
-        "checkedAt": _now_utc().isoformat(),
+        "checkedAt": checked_at.isoformat(),
         "pullCount": pull_count,
         "latestPullAt": latest_pull.get("pulled_at"),
         "latestPullAgeMinutes": latest_age,
@@ -285,11 +384,13 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
         "promotedCount": predictions.get("promotedCount"),
         "allGamesPredicted": predictions.get("allGamesPredicted"),
         "lock": {
-            "locked": locked,
+            "locked": bool(lock_status.get("locked")),
             "lockDue": lock_status.get("lockDue"),
             "lockTimeEt": lock_status.get("lockTimeEt"),
             "minutesUntilLock": lock_status.get("minutesUntilLock"),
-            "expectedLockedGameCount": expected_locked_count,
+            "expectedSlateGameCount": expected_slate_count,
+            "expectedLockedGameCount": per_game["dueGameCount"],
+            "perGameProgress": per_game,
         },
         "lockedRowIntegrity": integrity,
         "blockers": blockers,

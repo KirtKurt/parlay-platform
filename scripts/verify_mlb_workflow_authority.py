@@ -4,72 +4,31 @@ from __future__ import annotations
 import ast
 import re
 from pathlib import Path
-from typing import Dict, List
+from typing import List
 
 
 ROOT = Path(__file__).resolve().parents[1]
-RETIRED_WORKFLOWS: Dict[str, str] = {
-    ".github/workflows/mlb-v1-direct-lambda-hotfix.yml": (
-        "name: Retired - MLB V1 Direct Lambda Hotfix\n\n"
-        "# Retired permanently: production Lambda code may only be deployed by deploy.yml.\n"
-        "on: []\n\npermissions: {}\n\njobs:\n  retired:\n"
-        "    if: ${{ false }}\n    runs-on: ubuntu-latest\n"
-        "    steps:\n      - run: exit 1\n"
-    ),
-    ".github/workflows/mlb-v1-emergency-deploy.yml": (
-        "name: Retired - MLB V1 Emergency Deploy\n\n"
-        "# Retired permanently: production changes may only be deployed by deploy.yml.\n"
-        "on: []\n\npermissions: {}\n\njobs:\n  retired:\n"
-        "    if: ${{ false }}\n    runs-on: ubuntu-latest\n"
-        "    steps:\n      - run: exit 1\n"
-    ),
-    ".github/workflows/manual-mlb-force-run.yml": (
-        "name: Retired - Manual MLB Force Run\n\n"
-        "# Retired permanently: production MLB pulls run only through canonical SAM schedules.\n"
-        "on: []\n\npermissions: {}\n\njobs:\n  retired:\n"
-        "    if: ${{ false }}\n    runs-on: ubuntu-latest\n"
-        "    steps:\n      - run: exit 1\n"
-    ),
-    ".github/workflows/diagnose-mlb-live-pull-500.yml": (
-        "name: Retired - Diagnose MLB Live Pull 500\n\n"
-        "# Retired permanently: diagnostics may not invoke production MLB writers.\n"
-        "on: []\n\npermissions: {}\n\njobs:\n  retired:\n"
-        "    if: ${{ false }}\n    runs-on: ubuntu-latest\n"
-        "    steps:\n      - run: exit 1\n"
-    ),
-    ".github/workflows/proof-run-0400-et.yml": (
-        "name: Retired - Proof Run 0400 ET\n\n"
-        "# Retired permanently: proof workflows may not invoke production schedulers.\n"
-        "on: []\n\npermissions: {}\n\njobs:\n  retired:\n"
-        "    if: ${{ false }}\n    runs-on: ubuntu-latest\n"
-        "    steps:\n      - run: exit 1\n"
-    ),
-    ".github/workflows/proof-run-1215-et.yml": (
-        "name: Retired - Proof Run 1215 ET\n\n"
-        "# Retired permanently: proof workflows may not invoke production schedulers.\n"
-        "on: []\n\npermissions: {}\n\njobs:\n  retired:\n"
-        "    if: ${{ false }}\n    runs-on: ubuntu-latest\n"
-        "    steps:\n      - run: exit 1\n"
-    ),
-    ".github/workflows/proof-run-1250-et.yml": (
-        "name: Retired - Proof Run 1250 ET\n\n"
-        "# Retired permanently: proof workflows may not invoke production schedulers.\n"
-        "on: []\n\npermissions: {}\n\njobs:\n  retired:\n"
-        "    if: ${{ false }}\n    runs-on: ubuntu-latest\n"
-        "    steps:\n      - run: exit 1\n"
-    ),
-}
-DISABLED_ALTERNATE_WORKFLOWS = (
+FORBIDDEN_RETIRED_WORKFLOWS = (
+    ".github/workflows/diagnose-mlb-live-pull-500.yml",
+    ".github/workflows/enable-sportsdataio.yml",
+    ".github/workflows/install-dedicated-mlb-v3-read.yml",
+    ".github/workflows/install-pull-history-contract.yml",
+    ".github/workflows/manual-mlb-force-run.yml",
+    ".github/workflows/mlb-hot-pull-recovery.yml",
+    ".github/workflows/mlb-v1-direct-lambda-hotfix.yml",
+    ".github/workflows/mlb-v1-emergency-deploy.yml",
+    ".github/workflows/proof-run-0400-et.yml",
+    ".github/workflows/proof-run-1215-et.yml",
+    ".github/workflows/proof-run-1250-et.yml",
     ".github/workflows/proof-run-1800-et-mlb-all-signals.yml",
 )
 FORBIDDEN_ABSENT_PATHS = (
-    ".github/workflows/enable-sportsdataio.yml",
-    ".github/workflows/mlb-hot-pull-recovery.yml",
     "scripts/patch_template_sportsdataio.py",
     "scripts/verify_mlb_sportsdataio_sam_wiring.py",
     "tests/unit/test_mlb_sportsdataio_sam_wiring.py",
 )
 READ_ONLY_STORAGE_POLICY = "READ_ONLY_CANONICAL_PREDICTION_AUTHORITY_ONLY"
+PRODUCTION_ACCEPTANCE_WORKFLOW = ".github/workflows/mlb-production-acceptance.yml"
 
 
 def _verify_read_only_hot_sides(root: Path) -> List[str]:
@@ -181,32 +140,36 @@ def _verify_read_only_hot_sides(root: Path) -> List[str]:
 
 def verify_repository(root: Path = ROOT) -> List[str]:
     errors: List[str] = _verify_read_only_hot_sides(root)
-    for relative, expected in RETIRED_WORKFLOWS.items():
-        path = root / relative
-        if not path.is_file():
-            errors.append(f"retired_workflow_missing:{relative}")
-            continue
-        actual = path.read_text(encoding="utf-8")
-        if actual != expected:
-            errors.append(f"retired_workflow_not_canonical_disabled_stub:{relative}")
-
-    for relative in DISABLED_ALTERNATE_WORKFLOWS:
-        path = root / relative
-        if not path.is_file():
-            errors.append(f"disabled_alternate_workflow_missing:{relative}")
-            continue
-        actual = path.read_text(encoding="utf-8")
-        if (
-            "\non: []\n" not in actual
-            or "permissions:\n  contents: read\n" not in actual
-            or "contents: write" in actual
-            or "if: ${{ false }}" not in actual
-        ):
-            errors.append(f"alternate_workflow_not_disabled:{relative}")
+    for relative in FORBIDDEN_RETIRED_WORKFLOWS:
+        if (root / relative).exists():
+            errors.append(f"forbidden_retired_workflow_present:{relative}")
 
     for relative in FORBIDDEN_ABSENT_PATHS:
         if (root / relative).exists():
             errors.append(f"forbidden_retired_path_present:{relative}")
+
+    acceptance_path = root / PRODUCTION_ACCEPTANCE_WORKFLOW
+    acceptance = (
+        acceptance_path.read_text(encoding="utf-8")
+        if acceptance_path.is_file()
+        else ""
+    )
+    if not acceptance:
+        errors.append("production_acceptance_workflow_missing")
+    else:
+        trigger_match = re.search(
+            r"(?ms)^on:\n(?P<body>.*?)(?=^permissions:\n)",
+            acceptance,
+        )
+        trigger_block = trigger_match.group("body") if trigger_match else ""
+        if "  workflow_dispatch:\n" not in trigger_block:
+            errors.append("production_acceptance_manual_trigger_missing")
+        if re.search(r"(?m)^  (?:push|schedule):", trigger_block):
+            errors.append(
+                "production_acceptance_heavy_verifier_must_not_run_automatically"
+            )
+        if "--logical-resource-id MLBProductionVerifierFunction" not in acceptance:
+            errors.append("production_acceptance_manual_verifier_diagnostic_missing")
 
     contract_path = root / ".github/workflows/mlb-production-source-contract.yml"
     contract = (
@@ -218,8 +181,7 @@ def verify_repository(root: Path = ROOT) -> List[str]:
         errors.append("production_source_contract_missing")
     else:
         for relative in (
-            *RETIRED_WORKFLOWS,
-            *DISABLED_ALTERNATE_WORKFLOWS,
+            *FORBIDDEN_RETIRED_WORKFLOWS,
             *FORBIDDEN_ABSENT_PATHS,
         ):
             quoted = f"- '{relative}'"
@@ -241,13 +203,13 @@ def verify_repository(root: Path = ROOT) -> List[str]:
     if not deploy:
         errors.append("canonical_deploy_workflow_missing")
     else:
-        status_token = "--payload '{\"mode\":\"status\"}'"
+        status_token = "'{\"mode\":\"status\"}'"
         training_token = (
-            "--payload '{\"sport\":\"mlb\",\"mode\":\"scheduled\","
+            "'{\"sport\":\"mlb\",\"mode\":\"scheduled\","
             "\"run\":\"aws_native_fixed_prospective_shadow_training\"}'"
         )
         selection_token = (
-            "--payload '{\"sport\":\"mlb\",\"mode\":\"selection_capture\","
+            "'{\"sport\":\"mlb\",\"mode\":\"selection_capture\","
             "\"run\":\"aws_native_prospective_selection_capture\"}'"
         )
         training = deploy.find(training_token)
@@ -264,6 +226,20 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             errors.append("canonical_deploy_split_run_status_order_is_invalid")
         if verifier < 0 or verifier < post_status:
             errors.append("canonical_deploy_does_not_verify_post_run_trainer_status")
+        for required_capacity_token in (
+            "Prove shared Lambda capacity recovered before trainer initialization",
+            "AWS_MAX_ATTEMPTS: \"1\"",
+            "invoke_with_capacity_retry",
+            "ConcurrentInvocationLimitExceeded",
+            "scripts/mlb_deploy_http_probe.py",
+            "from scripts.mlb_deploy_http_probe import fetch_json_object",
+            "deadline=deadline",
+        ):
+            if required_capacity_token not in deploy:
+                errors.append(
+                    "canonical_deploy_capacity_backpressure_missing:"
+                    + required_capacity_token
+                )
         if "python scripts/verify_mlb_workflow_authority.py" not in deploy:
             errors.append("canonical_deploy_does_not_verify_retired_workflows")
         if "python scripts/verify_mlb_bbs_sam_wiring.py" not in deploy:

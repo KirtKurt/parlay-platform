@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import json
 import sys
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -49,7 +50,12 @@ class FakeTable:
         item = self.items.get((Key["PK"], Key["SK"]))
         return {"Item": copy.deepcopy(item)} if item is not None else {}
 
-    def put_item(self, Item, ConditionExpression=None):
+    def put_item(
+        self,
+        Item,
+        ConditionExpression=None,
+        ExpressionAttributeValues=None,
+    ):
         if (
             Item.get("record_type") in {
                 patch.ATTEMPT_RECORD_TYPE,
@@ -61,13 +67,38 @@ class FakeTable:
             raise RuntimeError("injected diagnostic write failure")
         key = (Item["PK"], Item["SK"])
         if ConditionExpression and key in self.items:
-            raise ConditionalCollision()
+            if "lease_expires_at_epoch <= :now_epoch" in ConditionExpression:
+                current_expiry = int(
+                    self.items[key].get("lease_expires_at_epoch") or 0
+                )
+                now_epoch = int(
+                    (ExpressionAttributeValues or {}).get(":now_epoch") or 0
+                )
+                if current_expiry > now_epoch:
+                    raise ConditionalCollision()
+            else:
+                raise ConditionalCollision()
         self.items[key] = copy.deepcopy(Item)
         self.put_calls.append(key)
         self.put_requests.append({
             "key": key,
             "condition": ConditionExpression,
         })
+        return {}
+
+    def delete_item(
+        self,
+        Key,
+        ConditionExpression=None,
+        ExpressionAttributeValues=None,
+    ):
+        key = (Key["PK"], Key["SK"])
+        existing = self.items.get(key)
+        if ConditionExpression == "lease_owner = :owner":
+            owner = (ExpressionAttributeValues or {}).get(":owner")
+            if not existing or existing.get("lease_owner") != owner:
+                raise ConditionalCollision()
+        self.items.pop(key, None)
         return {}
 
     def query(
@@ -815,6 +846,386 @@ def test_cutoff_finalizes_at_tminus45_without_hidden_stabilization_delay():
     assert g1_status["sourceWindowStableAtUtc"] == "2026-07-13T17:15:00+00:00"
     assert g1_status["sourceWindowStabilizationSeconds"] == 0
     assert module.mlb_game_winner_engine.canonical_new_writes == 1
+
+
+def test_scheduled_minute_invocation_before_lifecycle_envelope_skips_progress(monkeypatch):
+    module = build_module(EARLY_PULLS, "2026-07-13T16:59:59+00:00")
+    progress_calls = []
+    original_progress = patch._progress
+
+    def counted_progress(*args, **kwargs):
+        progress_calls.append(kwargs.get("ensure_canonical"))
+        return original_progress(*args, **kwargs)
+
+    monkeypatch.setattr(patch, "_progress", counted_progress)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is True
+    assert result["skipped"] is True
+    assert result["reason"] == "OUTSIDE_PER_GAME_LIFECYCLE_ACTION_WINDOW"
+    assert result["lifecycleTiming"]["opensAtUtc"] == "2026-07-13T17:00:00+00:00"
+    assert progress_calls == []
+    assert staged_items(module) == []
+
+
+def test_eventbridge_delegate_marks_lock_run_as_scheduled(monkeypatch):
+    import mlb_daily_pick_lock as daily_lock
+
+    captured = {}
+
+    def fake_run_lock(slate_date=None, force=False, *, scheduled=False):
+        captured.update({
+            "slateDate": slate_date,
+            "force": force,
+            "scheduled": scheduled,
+        })
+        return {"ok": True, "scheduled": scheduled}
+
+    monkeypatch.setattr(daily_lock, "run_lock", fake_run_lock)
+
+    response = daily_lock.handle(
+        {"source": "aws.events", "detail-type": "Scheduled Event"},
+        None,
+    )
+
+    assert response["statusCode"] == 200
+    assert json.loads(response["body"])["scheduled"] is True
+    assert captured == {"slateDate": None, "force": False, "scheduled": True}
+
+
+def test_scheduled_tminus60_runs_one_progress_snapshot_and_records_checkpoint(monkeypatch):
+    module = build_module(EARLY_PULLS, "2026-07-13T17:00:00+00:00")
+    progress_calls = []
+    original_progress = patch._progress
+
+    def counted_progress(*args, **kwargs):
+        progress_calls.append(kwargs.get("ensure_canonical"))
+        return original_progress(*args, **kwargs)
+
+    monkeypatch.setattr(patch, "_progress", counted_progress)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    readiness = [
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.READINESS_RECORD_TYPE
+    ]
+    assert result["reason"] == "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER"
+    assert result["singleProgressSnapshot"] is True
+    assert progress_calls == [False]
+    assert len(readiness) == 1
+    assert readiness[0]["game_identity"] == patch.game_identity(G1)
+    assert readiness[0]["checkpoint"] == "T_MINUS_60"
+    assert readiness[0]["checkpoint_timing_status"] == "ON_TIME"
+    assert staged_items(module) == []
+
+
+def test_scheduled_tminus45_keeps_full_lock_path(monkeypatch):
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    progress_calls = []
+    original_progress = patch._progress
+
+    def counted_progress(*args, **kwargs):
+        progress_calls.append(kwargs.get("ensure_canonical"))
+        return original_progress(*args, **kwargs)
+
+    monkeypatch.setattr(patch, "_progress", counted_progress)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["reason"] == "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER"
+    assert result.get("singleProgressSnapshot") is not True
+    assert True in progress_calls
+    assert len(staged_items(module)) == 1
+    assert staged_items(module)[0]["scheduled_lock_at_utc"] == "2026-07-13T17:15:00+00:00"
+
+
+def test_scheduled_completed_daily_card_uses_one_progress_snapshot(monkeypatch):
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    module.run_lock(SLATE)
+    module.history.pulls.extend(LATE_PULLS)
+    persist_latest_prelock_candidates(module, LATE_PULLS)
+    module.now = dt("2026-07-13T19:15:00+00:00")
+    assert module.run_lock(SLATE)["locked"] is True
+
+    progress_calls = []
+    original_progress = patch._progress
+
+    def counted_progress(*args, **kwargs):
+        progress_calls.append(kwargs.get("ensure_canonical"))
+        return original_progress(*args, **kwargs)
+
+    monkeypatch.setattr(patch, "_progress", counted_progress)
+    module.now = dt("2026-07-13T19:16:00+00:00")
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["locked"] is True
+    assert result["alreadyLocked"] is True
+    assert result["scheduledInvocation"] is True
+    assert result["singleProgressSnapshot"] is True
+    assert progress_calls == [False]
+
+
+def test_scheduled_terminal_no_prediction_slate_does_not_repeat_full_path(monkeypatch):
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "source-only-scheduled")
+    module = build_module(
+        [source],
+        "2026-07-13T17:15:00+00:00",
+        seed=False,
+    )
+    first = module.run_lock(SLATE)
+    assert first["dailyCardComplete"] is True
+    assert first["perGameLockProgress"]["canonicalCount"] == 0
+
+    progress_calls = []
+    original_progress = patch._progress
+
+    def counted_progress(*args, **kwargs):
+        progress_calls.append(kwargs.get("ensure_canonical"))
+        return original_progress(*args, **kwargs)
+
+    monkeypatch.setattr(patch, "_progress", counted_progress)
+    module.now = dt("2026-07-13T17:16:00+00:00")
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is True
+    assert result["dailyCardComplete"] is True
+    assert result["lockStatusComplete"] is True
+    assert result["reason"] == "ALL_GAME_LOCK_OUTCOMES_RECORDED_WITH_NO_PREDICTION_DATA"
+    assert result["singleProgressSnapshot"] is True
+    assert result["perGameLockProgress"]["lockOutcomeCount"] == 1
+    assert progress_calls == [False]
+
+
+def test_scheduled_single_flight_blocks_overlap_and_expired_owner_cannot_release_successor():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    started_at = dt("2026-07-13T17:15:00+00:00")
+
+    first = patch._acquire_scheduled_single_flight(module, SLATE, started_at)
+    overlap = patch._acquire_scheduled_single_flight(
+        module,
+        SLATE,
+        started_at + timedelta(minutes=1),
+    )
+    successor = patch._acquire_scheduled_single_flight(
+        module,
+        SLATE,
+        started_at
+        + timedelta(seconds=patch.SCHEDULED_SINGLE_FLIGHT_LEASE_SECONDS + 1),
+    )
+
+    assert first["acquired"] is True
+    assert overlap["acquired"] is False
+    assert successor["acquired"] is True
+    assert successor["owner"] != first["owner"]
+    assert patch._release_scheduled_single_flight(module, first) is False
+    lease_item = module.TABLE.get_item(
+        Key=patch._scheduled_single_flight_key(SLATE),
+        ConsistentRead=True,
+    )["Item"]
+    assert lease_item["lease_owner"] == successor["owner"]
+    assert patch._release_scheduled_single_flight(module, successor) is True
+    assert module.TABLE.get_item(
+        Key=patch._scheduled_single_flight_key(SLATE),
+        ConsistentRead=True,
+    ) == {}
+
+
+def test_expired_scheduled_single_flight_allows_eventual_tminus45_repair():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    first = patch._acquire_scheduled_single_flight(
+        module,
+        SLATE,
+        module.now,
+    )
+    assert first["acquired"] is True
+
+    overlap = module.run_lock(SLATE, scheduled=True)
+    assert overlap["reason"] == "SCHEDULED_SINGLE_FLIGHT_ALREADY_RUNNING"
+    assert staged_items(module) == []
+
+    module.now = module.now + timedelta(
+        seconds=patch.SCHEDULED_SINGLE_FLIGHT_LEASE_SECONDS + 1
+    )
+    repaired = module.run_lock(SLATE, scheduled=True)
+
+    assert repaired["scheduledSingleFlight"]["released"] is True
+    assert repaired["perGameLockProgress"]["canonicalCount"] == 1
+    assert len(staged_items(module)) == 1
+    assert staged_items(module)[0]["scheduled_lock_at_utc"] == (
+        "2026-07-13T17:15:00+00:00"
+    )
+
+
+def test_post_window_reconciliation_records_last_game_missed_without_prediction(monkeypatch):
+    source = pull("2026-07-13T17:15:00+00:00", [G1], "missed-post-window")
+    module = build_module(
+        [source],
+        "2026-07-13T18:02:01+00:00",
+        seed=False,
+    )
+
+    reconciled = module.run_lock(SLATE, scheduled=True)
+
+    assert reconciled["ok"] is True
+    assert reconciled["reason"] == "POST_WINDOW_TERMINAL_STATUS_RECONCILED"
+    assert reconciled["postStartPredictionCreationAllowed"] is False
+    assert reconciled["perGameLockProgress"]["missedCount"] == 1
+    assert reconciled["perGameLockProgress"]["lockOutcomeCount"] == 0
+    assert reconciled["lockStatusComplete"] is True
+    assert staged_items(module) == []
+    assert module.mlb_game_winner_engine.prediction_calls == 0
+
+    monkeypatch.setattr(
+        patch,
+        "_progress",
+        lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("cached terminal reconciliation must not rescan progress")
+        ),
+    )
+    cached = module.run_lock(SLATE, scheduled=True)
+    assert cached["reason"] == "POST_WINDOW_TERMINAL_STATUS_ALREADY_RECONCILED"
+    assert cached["missedGameCount"] == 1
+
+
+def test_post_window_reconciliation_cannot_canonicalize_a_prestart_stage():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    module.mlb_game_winner_engine.canonical_failures_remaining = 2
+    failed_at_cutoff = module.run_lock(SLATE)
+    assert failed_at_cutoff["ok"] is False
+    assert len(staged_items(module)) == 1
+    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+
+    module.now = dt("2026-07-13T20:02:01+00:00")
+    reconciled = module.run_lock(SLATE, scheduled=True)
+
+    assert reconciled["ok"] is False
+    assert reconciled["reason"] == "POST_WINDOW_TERMINAL_RECONCILIATION_INCOMPLETE"
+    assert reconciled["postStartPredictionCreationAllowed"] is False
+    assert reconciled["perGameLockProgress"]["dueMissingCount"] == 1
+    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+
+
+def test_scheduled_active_multigame_window_cannot_canonicalize_started_game():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    module.mlb_game_winner_engine.canonical_failures_remaining = 20
+
+    failed_at_cutoff = module.run_lock(SLATE, scheduled=True)
+    assert failed_at_cutoff["ok"] is False
+    assert len(staged_items(module)) == 1
+    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+
+    # G1 has started, but G2 keeps the slate-wide scheduler envelope active.
+    # Recovery may validate an existing immutable row, never create one now.
+    module.mlb_game_winner_engine.canonical_failures_remaining = 0
+    module.now = dt("2026-07-13T18:05:00+00:00")
+    retry = module.run_lock(SLATE, scheduled=True)
+
+    assert retry["ok"] is False
+    assert retry["reason"] == "PER_GAME_LOCK_DUE_BUT_NOT_CANONICAL"
+    g1_status = next(
+        row
+        for row in retry["perGameLockProgress"]["games"]
+        if row["gameId"] == "g1"
+    )
+    assert g1_status["state"] == "STAGED_CANONICAL_WRITE_BLOCKED"
+    assert "canonical_creation_blocked_game_already_started" in str(
+        g1_status["errors"]
+    )
+    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+
+
+def test_manual_and_forced_runs_cannot_canonicalize_started_game_stage():
+    for force in (False, True):
+        module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+        module.mlb_game_winner_engine.canonical_failures_remaining = 20
+        failed_at_cutoff = module.run_lock(SLATE)
+        assert failed_at_cutoff["ok"] is False
+        assert len(staged_items(module)) == 1
+
+        module.mlb_game_winner_engine.canonical_failures_remaining = 0
+        module.now = dt("2026-07-13T20:05:00+00:00")
+        retry = module.run_lock(SLATE, force=force)
+
+        assert retry["ok"] is False
+        assert retry["reason"] == "MISSED_PER_GAME_LOCK_NOT_BACKFILLED"
+        g1_status = next(
+            row
+            for row in retry["perGameLockProgress"]["games"]
+            if row["gameId"] == "g1"
+        )
+        assert g1_status["state"] == "STAGED_CANONICAL_WRITE_BLOCKED"
+        assert "canonical_creation_blocked_game_already_started" in str(
+            g1_status["errors"]
+        )
+        assert module.mlb_game_winner_engine.canonical_new_writes == 0
+
+
+def test_post_start_retry_preserves_valid_existing_canonical_readback():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    first = module.run_lock(SLATE)
+    assert first["perGameLockProgress"]["canonicalCount"] == 1
+    assert module.mlb_game_winner_engine.canonical_new_writes == 1
+    stage = staged_items(module)[0]
+
+    module.now = dt("2026-07-13T18:05:00+00:00")
+    existing = patch._canonical_store_before_game_start(
+        module,
+        stage["data"]["row"],
+        G1,
+    )
+
+    assert existing["immutableExisting"] is True
+    assert module.mlb_game_winner_engine.canonical_new_writes == 1
+
+
+def test_manual_and_forced_runs_bypass_scheduled_single_flight():
+    manual = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    assert patch._acquire_scheduled_single_flight(
+        manual,
+        SLATE,
+        manual.now,
+    )["acquired"] is True
+    manual_result = manual.run_lock(SLATE)
+    assert manual_result["perGameLockProgress"]["canonicalCount"] == 1
+
+    forced = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    assert patch._acquire_scheduled_single_flight(
+        forced,
+        SLATE,
+        forced.now,
+    )["acquired"] is True
+    forced_result = forced.run_lock(SLATE, force=True, scheduled=True)
+    assert forced_result["perGameLockProgress"]["canonicalCount"] == 1
+
+
+def test_scheduled_lifecycle_envelope_boundaries_include_delivery_jitter():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:00:00+00:00")
+
+    assert patch._scheduled_lifecycle_timing(
+        module,
+        [G1, G2],
+        dt("2026-07-13T16:59:59+00:00"),
+    )["active"] is False
+    assert patch._scheduled_lifecycle_timing(
+        module,
+        [G1, G2],
+        dt("2026-07-13T17:00:00+00:00"),
+    )["active"] is True
+    assert patch._scheduled_lifecycle_timing(
+        module,
+        [G1, G2],
+        dt("2026-07-13T20:02:00+00:00"),
+    )["active"] is True
+    assert patch._scheduled_lifecycle_timing(
+        module,
+        [G1, G2],
+        dt("2026-07-13T20:02:01+00:00"),
+    )["active"] is False
 
 
 def test_pull_discovered_after_tminus45_finalization_cannot_rewrite_lock():

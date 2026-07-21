@@ -15,7 +15,13 @@ RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
 EXECUTION_CONCURRENCY_CONTROL = {
     "version": "MLB-ML-EXECUTION-LEASE-v1-shared-ddb-conditional",
     "strategy": "dynamodb_conditional_lease",
-    "scope": "one_shared_lease_per_experiment",
+    "scope": "one_global_lease_across_experiments_and_modes",
+    "leasePartitionKey": (
+        "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2"
+    ),
+    "migrationAnchorExperimentId": (
+        "mlb-v2-2026-07-21-future-prospective-r2"
+    ),
     "leaseKey": "EXECUTION_LEASE",
     "leaseSeconds": 960,
     "protectedExecutionModes": [

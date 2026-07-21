@@ -29,6 +29,12 @@ STATUS_LATEST_SK = "STATUS#LATEST"
 STATUS_LATEST_TRAINING_SK = "STATUS#LATEST#TRAINING"
 STATUS_LATEST_SELECTION_CAPTURE_SK = "STATUS#LATEST#SELECTION_CAPTURE"
 STATUS_RUN_SK_PREFIX = "STATUS#RUN#"
+EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID = (
+    "mlb-v2-2026-07-21-future-prospective-r2"
+)
+EXECUTION_LEASE_PK = (
+    f"{EXPERIMENT_PK_PREFIX}{EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID}"
+)
 EXECUTION_LEASE_SK = "EXECUTION_LEASE"
 EXECUTION_LEASE_RECORD_TYPE = "mlb_ml_execution_lease_v1"
 EXECUTION_LEASE_VERSION = "MLB-ML-EXECUTION-LEASE-v1-shared-ddb-conditional"
@@ -53,6 +59,10 @@ class ConditionalStateConflict(TrainingContractError):
 
 
 class ExecutionLeaseUnavailable(ConditionalStateConflict):
+    pass
+
+
+class ExecutionLeaseRequired(TrainingContractError):
     pass
 
 
@@ -234,7 +244,11 @@ def execution_concurrency_control(*, acquired_for_run: bool) -> Dict[str, Any]:
     return {
         "version": EXECUTION_LEASE_VERSION,
         "strategy": "dynamodb_conditional_lease",
-        "scope": "one_shared_lease_per_experiment",
+        "scope": "one_global_lease_across_experiments_and_modes",
+        "leasePartitionKey": EXECUTION_LEASE_PK,
+        "migrationAnchorExperimentId": (
+            EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
+        ),
         "leaseKey": EXECUTION_LEASE_SK,
         "leaseSeconds": EXECUTION_LEASE_SECONDS,
         "protectedExecutionModes": list(EXECUTION_LEASE_PROTECTED_MODES),
@@ -355,9 +369,10 @@ class AwsTrainingStore:
         expires = acquired + timedelta(seconds=lease_seconds)
         item = _ddb_safe(
             {
-                "PK": _experiment_pk(experiment_id),
+                "PK": EXECUTION_LEASE_PK,
                 "SK": EXECUTION_LEASE_SK,
                 "record_type": EXECUTION_LEASE_RECORD_TYPE,
+                "experiment_id": experiment_id,
                 "lease_owner": owner,
                 "execution_mode": mode,
                 "acquired_at": acquired.isoformat(),
@@ -395,7 +410,7 @@ class AwsTrainingStore:
             raise TrainingContractError("execution lease owner is required")
         try:
             self.table.delete_item(
-                Key={"PK": _experiment_pk(experiment_id), "SK": EXECUTION_LEASE_SK},
+                Key={"PK": EXECUTION_LEASE_PK, "SK": EXECUTION_LEASE_SK},
                 ConditionExpression="lease_owner = :owner",
                 ExpressionAttributeValues={":owner": owner},
             )
@@ -1242,9 +1257,75 @@ class TrainingService:
         self.row_loader = row_loader
         self.now = now
         self._execution_lease_acquired_for_run = False
+        self._execution_lease_context: Optional[Dict[str, Any]] = None
+        self._selection_capture_before_training: Optional[Dict[str, Any]] = None
 
-    def attest_execution_lease_acquired(self) -> None:
+    def attest_execution_lease_acquired(
+        self,
+        lease: Mapping[str, Any],
+        *,
+        owner_token: str,
+        execution_mode: str,
+    ) -> None:
+        mode = str(execution_mode or "").strip().lower()
+        owner = str(owner_token or "").strip()
+        expected_pk = EXECUTION_LEASE_PK
+        errors: List[str] = []
+        if self._execution_lease_context is not None:
+            errors.append("service_already_has_execution_lease")
+        if mode not in EXECUTION_LEASE_PROTECTED_MODES:
+            errors.append("execution_mode_invalid")
+        if not owner:
+            errors.append("owner_token_missing")
+        if str(lease.get("PK") or "") != expected_pk:
+            errors.append("lease_partition_key_mismatch")
+        if str(lease.get("experiment_id") or "") != self.config.experiment_id:
+            errors.append("experiment_id_mismatch")
+        if str(lease.get("SK") or "") != EXECUTION_LEASE_SK:
+            errors.append("lease_key_mismatch")
+        if str(lease.get("record_type") or "") != EXECUTION_LEASE_RECORD_TYPE:
+            errors.append("record_type_mismatch")
+        if str(lease.get("lease_owner") or "") != owner:
+            errors.append("owner_mismatch")
+        if str(lease.get("execution_mode") or "").strip().lower() != mode:
+            errors.append("execution_mode_mismatch")
+        try:
+            expires_at_epoch = int(lease.get("lease_expires_at_epoch"))
+        except Exception:
+            expires_at_epoch = 0
+        if expires_at_epoch <= int(self.now().timestamp()):
+            errors.append("lease_expired_or_missing")
+        if errors:
+            raise ExecutionLeaseRequired(
+                "execution lease attestation is invalid: "
+                + ",".join(sorted(set(errors)))
+            )
+        self._execution_lease_context = {
+            "PK": expected_pk,
+            "SK": EXECUTION_LEASE_SK,
+            "experimentId": self.config.experiment_id,
+            "leaseOwner": owner,
+            "executionMode": mode,
+            "leaseExpiresAtEpoch": expires_at_epoch,
+        }
         self._execution_lease_acquired_for_run = True
+
+    def _require_execution_lease(self, *allowed_modes: str) -> Dict[str, Any]:
+        context = self._execution_lease_context or {}
+        mode = str(context.get("executionMode") or "")
+        allowed = {str(value).strip().lower() for value in allowed_modes if value}
+        if (
+            not self._execution_lease_acquired_for_run
+            or not context
+            or mode not in allowed
+            or int(context.get("leaseExpiresAtEpoch") or 0)
+            <= int(self.now().timestamp())
+        ):
+            raise ExecutionLeaseRequired(
+                "an active attested execution lease is required for "
+                + ",".join(sorted(allowed))
+            )
+        return context
 
     def _new_manifest(self) -> Dict[str, Any]:
         return experiment.new_manifest(
@@ -1630,6 +1711,14 @@ class TrainingService:
                 "templateSha256": self.config.deployment_template_sha256,
             },
         }
+        if (
+            str(result.get("executionMode") or "").strip().lower() == "training"
+            and self._selection_capture_before_training is not None
+        ):
+            result.setdefault(
+                "selectionCaptureBeforeTraining",
+                copy.deepcopy(self._selection_capture_before_training),
+            )
         result.setdefault(
             "automaticPromotionEnabled", self.config.automatic_promotion_enabled
         )
@@ -1657,6 +1746,7 @@ class TrainingService:
         return result
 
     def capture_selections(self) -> Dict[str, Any]:
+        self._require_execution_lease("selection_capture", "training")
         # This frequent path must never scan historical labels, advance the
         # experiment, fit a model, or create experiment state. Its sole write
         # authority is the pre-outcome selection ledger plus its own status.
@@ -1726,7 +1816,31 @@ class TrainingService:
             }
         )
 
+    def run_scheduled(self) -> Dict[str, Any]:
+        """Capture prospective evidence before scheduled fitting under one lease."""
+        self._require_execution_lease("training")
+        capture_status = self.capture_selections()
+        capture = capture_status.get("selectionCapture") or {}
+        self._selection_capture_before_training = {
+            "ok": capture_status.get("ok") is True,
+            "status": capture_status.get("status"),
+            "capturedCount": int(capture.get("capturedCount") or 0),
+            "existingCount": int(capture.get("existingCount") or 0),
+            "selectedCount": int(capture.get("selectedCount") or 0),
+            "skippedCount": int(capture.get("skippedCount") or 0),
+            "collisionPolicy": (
+                "capture_before_training_under_shared_execution_lease"
+            ),
+            "selectionWritesIdempotent": True,
+        }
+        if capture_status.get("ok") is not True:
+            raise TrainingContractError(
+                "selection capture before scheduled training was unhealthy"
+            )
+        return self.run()
+
     def run(self) -> Dict[str, Any]:
+        self._require_execution_lease("training")
         manifest = self._load_or_create_manifest()
         loaded_result = self.row_loader(self.config)
         if loaded_result is None:
@@ -2097,6 +2211,7 @@ class TrainingService:
         requested_authorities: Sequence[str],
         stable_champion: bool,
     ) -> Dict[str, Any]:
+        self._require_execution_lease("manual_review")
         if not artifact_digest or not reviewer:
             raise TrainingContractError(
                 "manual review requires artifactDigest and reviewer"
@@ -2186,7 +2301,7 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     lease_acquired = False
     primary_error: Optional[BaseException] = None
     try:
-        service.store.acquire_execution_lease(
+        lease = service.store.acquire_execution_lease(
             service.config.experiment_id,
             owner_token=lease_owner,
             execution_mode=execution_mode,
@@ -2194,9 +2309,13 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
             lease_seconds=configured_lease_seconds,
         )
         lease_acquired = True
-        service.attest_execution_lease_acquired()
+        service.attest_execution_lease_acquired(
+            lease,
+            owner_token=lease_owner,
+            execution_mode=execution_mode,
+        )
         if execution_mode == "training":
-            result = service.run()
+            result = service.run_scheduled()
         elif execution_mode == "selection_capture":
             result = service.capture_selections()
         else:

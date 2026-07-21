@@ -168,6 +168,9 @@ text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
       # pull history can legitimately exceed the 60-second global default.
       Timeout: 300
       MemorySize: 1024
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 60
+        MaximumRetryAttempts: 0
       Environment:
         Variables:
           MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'
@@ -185,6 +188,9 @@ text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
           Properties:
             Schedule: rate(1 minute)
             Input: '{"sport":"mlb","run":"daily_lock_check","auto_ingest":false}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 60
+              MaximumRetryAttempts: 0
         MLBDailyPickLockRun:
           Type: Api
           Properties:

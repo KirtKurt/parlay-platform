@@ -387,6 +387,9 @@ def test_public_prelock_provider_alias_is_bound_to_durable_stats_identity(monkey
         "providerEventId": "late-provider-880002",
         "providerCommenceTime": "2026-07-17T23:01:00Z",
         "providerStartDriftSeconds": 60,
+        # An upstream actionability wrapper must not make a pre-lock row count
+        # toward immutable playable-pick accuracy.
+        "playableAccuracyEligible": True,
     }
     engine = _engine([], current=[provider_row])
     _install(engine)
@@ -416,6 +419,7 @@ def test_public_prelock_provider_alias_is_bound_to_durable_stats_identity(monkey
     assert row["providerEventId"] == "late-provider-880002"
     assert row["officialGamePk"] == "880002"
     assert row["lockedPrediction"] is False
+    assert row["playableAccuracyEligible"] is False
 
 
 def test_public_lifecycle_synthesizes_manifest_row_without_current_prediction(monkeypatch):

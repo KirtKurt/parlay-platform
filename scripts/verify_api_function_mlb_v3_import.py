@@ -102,6 +102,9 @@ assert runtime.get("steps", {}).get("sourceHonestFundamentalsV2") is True, runti
 assert runtime.get("steps", {}).get(
     "canonicalProbabilityAndPersistedPrelockAuthority"
 ) is True, runtime
+assert runtime.get("steps", {}).get(
+    "providerNeutralCalibrationAndActionability"
+) is True, runtime
 policy = runtime.get("accuracyTargetPolicy") or {}
 assert policy.get("rolling24hAllGamesAuditTargetPct") == 90.0, policy
 assert policy.get("minimumRolling24hSlateAccuracyPct") == 90.0, policy

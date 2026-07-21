@@ -170,11 +170,9 @@ def test_build_exposes_unambiguous_published_display_and_diagnostic_role(monkeyp
     assert proof["rows"][0]["predictedWinner"] == "Published Winners"
 
 
-def test_workflow_exports_published_predictions_separately_from_raw_signals():
+def test_retired_signal_proof_workflow_cannot_publish_or_write_predictions():
     workflow = (
         ROOT / ".github" / "workflows" / "proof-run-1800-et-mlb-all-signals.yml"
-    ).read_text(encoding="utf-8")
+    )
 
-    assert "'mlbPublishedPredictions': all_games.get('publishedPredictionDisplay')" in workflow
-    assert "RAW_B10_SIGNAL_SCORE_DIAGNOSTIC_ONLY_NOT_A_PREDICTION" in workflow
-    assert "'mlbRawSignalScoreDiagnostics': [" in workflow
+    assert workflow.exists() is False

@@ -13,9 +13,8 @@ ROOT = Path(__file__).resolve().parents[2]
 
 def _copy_contract(tmp_path: Path) -> Path:
     for relative in (
-        *authority.RETIRED_WORKFLOWS,
-        *authority.DISABLED_ALTERNATE_WORKFLOWS,
         ".github/workflows/mlb-production-source-contract.yml",
+        ".github/workflows/mlb-production-acceptance.yml",
         ".github/workflows/deploy.yml",
         "template.yaml",
         "hello_world/api.py",
@@ -43,44 +42,91 @@ def test_pull_request_contract_installs_and_validates_sam() -> None:
     assert "sam validate --template-file template.yaml" in contract
 
 
-def test_rejects_reenabled_retired_workflow(tmp_path: Path) -> None:
+def test_production_acceptance_heavy_verifier_is_manual_only() -> None:
+    workflow = (ROOT / authority.PRODUCTION_ACCEPTANCE_WORKFLOW).read_text(
+        encoding="utf-8"
+    )
+    trigger_block = workflow.split("on:\n", 1)[1].split("permissions:\n", 1)[0]
+    assert "  workflow_dispatch:\n" in trigger_block
+    assert "  push:" not in trigger_block
+    assert "  schedule:" not in trigger_block
+
+
+def test_rejects_removal_of_capacity_safe_postdeploy_http_probe(
+    tmp_path: Path,
+) -> None:
     root = _copy_contract(tmp_path)
-    retired = root / ".github/workflows/mlb-v1-emergency-deploy.yml"
-    retired.write_text(
-        retired.read_text(encoding="utf-8").replace("on: []", "on:\n  workflow_dispatch:"),
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "from scripts.mlb_deploy_http_probe import fetch_json_object",
+            "# capacity-safe helper removed",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert any(
+        error.startswith(
+            "canonical_deploy_capacity_backpressure_missing:"
+            "from scripts.mlb_deploy_http_probe import fetch_json_object"
+        )
+        for error in authority.verify_repository(root)
+    )
+
+
+@pytest.mark.parametrize("trigger", ("push", "schedule"))
+def test_rejects_automated_heavy_production_acceptance(
+    tmp_path: Path,
+    trigger: str,
+) -> None:
+    root = _copy_contract(tmp_path)
+    workflow = root / authority.PRODUCTION_ACCEPTANCE_WORKFLOW
+    text = workflow.read_text(encoding="utf-8")
+    workflow.write_text(
+        text.replace("  workflow_dispatch:\n", f"  {trigger}:\n  workflow_dispatch:\n", 1),
         encoding="utf-8",
     )
 
     assert (
-        "retired_workflow_not_canonical_disabled_stub:"
+        "production_acceptance_heavy_verifier_must_not_run_automatically"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_reenabled_retired_workflow(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    retired = root / ".github/workflows/mlb-v1-emergency-deploy.yml"
+    retired.parent.mkdir(parents=True, exist_ok=True)
+    retired.write_text(
+        "name: forbidden retired workflow\non:\n  workflow_dispatch:\njobs: {}\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        "forbidden_retired_workflow_present:"
         ".github/workflows/mlb-v1-emergency-deploy.yml"
     ) in authority.verify_repository(root)
 
 
 @pytest.mark.parametrize(
     "relative",
-    (
-        ".github/workflows/manual-mlb-force-run.yml",
-        ".github/workflows/diagnose-mlb-live-pull-500.yml",
-        ".github/workflows/proof-run-0400-et.yml",
-        ".github/workflows/proof-run-1215-et.yml",
-        ".github/workflows/proof-run-1250-et.yml",
-    ),
+    authority.FORBIDDEN_RETIRED_WORKFLOWS,
 )
 def test_rejects_reenabled_out_of_band_writer_workflow(
     tmp_path: Path, relative: str
 ) -> None:
     root = _copy_contract(tmp_path)
     workflow = root / relative
+    workflow.parent.mkdir(parents=True, exist_ok=True)
     workflow.write_text(
-        workflow.read_text(encoding="utf-8").replace(
-            "on: []", "on:\n  workflow_dispatch:", 1
-        ),
+        "name: forbidden retired workflow\non:\n  push:\njobs: {}\n",
         encoding="utf-8",
     )
 
     assert (
-        f"retired_workflow_not_canonical_disabled_stub:{relative}"
+        f"forbidden_retired_workflow_present:{relative}"
         in authority.verify_repository(root)
     )
 
@@ -184,7 +230,7 @@ def test_rejects_reenabled_alternate_prediction_writer(tmp_path: Path) -> None:
     )
 
     assert (
-        f"forbidden_retired_path_present:{relative}"
+        f"forbidden_retired_workflow_present:{relative}"
         in authority.verify_repository(root)
     )
 
@@ -208,7 +254,7 @@ def test_requires_selection_capture_before_status_check(tmp_path: Path) -> None:
     deploy = root / ".github/workflows/deploy.yml"
     text = deploy.read_text(encoding="utf-8")
     token = (
-        "--payload '{\"sport\":\"mlb\",\"mode\":\"selection_capture\","
+        "'{\"sport\":\"mlb\",\"mode\":\"selection_capture\","
         "\"run\":\"aws_native_prospective_selection_capture\"}'"
     )
     deploy.write_text(text.replace(token, "--payload '{}'", 1), encoding="utf-8")

@@ -16,19 +16,25 @@ FUNCTIONS = {
     "MLBProductionVerifierFunction": "verifier",
     "MLBV3ReadFunction": "read",
     "MLBResultsSchedulerFunction": "settlement",
+    "SoccerSchedulerFunction": "soccer",
+    "InqsiAutopsySchedulerFunction": "autopsy",
 }
 
 EXPECTED_SCHEDULES = {
     "ingest": ["cron(0/15 * * * ? *)"],
     "lock": ["rate(1 minute)"],
-    "trainer": ["rate(6 hours)", "rate(15 minutes)"],
-    "verifier": ["rate(5 minutes)"],
-    "settlement": ["rate(15 minutes)"],
+    "trainer": ["cron(11 1/6 * * ? *)", "cron(4/15 * * * ? *)"],
+    # The old verifier is intentionally schedule-disabled until its runtime is
+    # persisted-summary-only. It remains directly invocable for diagnostics.
+    "verifier": [],
+    "settlement": ["cron(6/15 * * * ? *)"],
+    "soccer": ["cron(9/15 * * * ? *)"],
+    "autopsy": ["cron(13 6 * * ? *)"],
 }
 
 TRAINER_EXPECTED_INVOCATIONS = (
     {
-        "schedule": "rate(6 hours)",
+        "schedule": "cron(11 1/6 * * ? *)",
         "input": {
             "sport": "mlb",
             "mode": "scheduled",
@@ -36,7 +42,7 @@ TRAINER_EXPECTED_INVOCATIONS = (
         },
     },
     {
-        "schedule": "rate(15 minutes)",
+        "schedule": "cron(4/15 * * * ? *)",
         "input": {
             "sport": "mlb",
             "mode": "selection_capture",
@@ -44,6 +50,61 @@ TRAINER_EXPECTED_INVOCATIONS = (
         },
     },
 )
+
+SCHEDULE_EXPECTED_INVOCATIONS = {
+    "ingest": (
+        {
+            "schedule": "cron(0/15 * * * ? *)",
+            "input": {
+                "sport": "mlb",
+                "t": "HOT",
+                "run": "hot_pull_audited",
+                "days_ahead": 0,
+            },
+        },
+    ),
+    "lock": (
+        {
+            "schedule": "rate(1 minute)",
+            "input": {
+                "sport": "mlb",
+                "run": "daily_lock_check",
+                "auto_ingest": False,
+            },
+        },
+    ),
+    "trainer": TRAINER_EXPECTED_INVOCATIONS,
+    "settlement": (
+        {
+            "schedule": "cron(6/15 * * * ? *)",
+            "input": {
+                "sport": "mlb",
+                "days_from": 3,
+                "run": "results_pull_15m",
+            },
+        },
+    ),
+    "soccer": (
+        {
+            "schedule": "cron(9/15 * * * ? *)",
+            "input": {
+                "sport": "soccer",
+                "t": "HOT",
+                "run": "hot_pull_audited",
+            },
+        },
+    ),
+    "autopsy": (
+        {
+            "schedule": "cron(13 6 * * ? *)",
+            "input": {
+                "sport_key": "all",
+                "mode": "grade",
+                "run": "nightly_autopsy_1am_et",
+            },
+        },
+    ),
+}
 
 TRAINER_HANDLER = "mlb_ml_aws_training_v1.lambda_handler"
 TRAINER_TIMEOUT_SECONDS = 900
@@ -53,8 +114,78 @@ TRAINER_ARTIFACT_BUCKET_OUTPUT = "MLBMLArtifactsBucketName"
 TRAINER_FUNCTION_ARN_OUTPUT = "MLBMLTrainingFunctionArn"
 TRAINER_FORBIDDEN_DLQ_ARN_OUTPUT = "MLBMLTrainingDeadLetterQueueArn"
 TRAINER_RETRY_POLICY = {
-    "MaximumEventAgeInSeconds": 21600,
-    "MaximumRetryAttempts": 2,
+    "MaximumEventAgeInSeconds": 300,
+    "MaximumRetryAttempts": 0,
+}
+TRAINER_EVENTBRIDGE_RETRY_POLICY = {
+    "MaximumEventAgeInSeconds": 3600,
+    "MaximumRetryAttempts": 0,
+}
+SCHEDULE_RETRY_POLICIES = {
+    "ingest": {
+        "cron(0/15 * * * ? *)": {
+            "MaximumEventAgeInSeconds": 300,
+            "MaximumRetryAttempts": 1,
+        },
+    },
+    "lock": {
+        "rate(1 minute)": {
+            "MaximumEventAgeInSeconds": 60,
+            "MaximumRetryAttempts": 0,
+        },
+    },
+    "trainer": {
+        "cron(11 1/6 * * ? *)": dict(TRAINER_EVENTBRIDGE_RETRY_POLICY),
+        "cron(4/15 * * * ? *)": {
+            "MaximumEventAgeInSeconds": 300,
+            "MaximumRetryAttempts": 0,
+        },
+    },
+    "settlement": {
+        "cron(6/15 * * * ? *)": {
+            "MaximumEventAgeInSeconds": 300,
+            "MaximumRetryAttempts": 0,
+        },
+    },
+    "soccer": {
+        "cron(9/15 * * * ? *)": {
+            "MaximumEventAgeInSeconds": 300,
+            "MaximumRetryAttempts": 0,
+        },
+    },
+    "autopsy": {
+        "cron(13 6 * * ? *)": {
+            "MaximumEventAgeInSeconds": 3600,
+            "MaximumRetryAttempts": 0,
+        },
+    },
+}
+FUNCTION_ASYNC_RETRY_POLICIES = {
+    "ingest": {
+        "MaximumEventAgeInSeconds": 300,
+        "MaximumRetryAttempts": 1,
+    },
+    "lock": {
+        "MaximumEventAgeInSeconds": 60,
+        "MaximumRetryAttempts": 0,
+    },
+    "trainer": dict(TRAINER_RETRY_POLICY),
+    "verifier": {
+        "MaximumEventAgeInSeconds": 300,
+        "MaximumRetryAttempts": 0,
+    },
+    "settlement": {
+        "MaximumEventAgeInSeconds": 300,
+        "MaximumRetryAttempts": 0,
+    },
+    "soccer": {
+        "MaximumEventAgeInSeconds": 300,
+        "MaximumRetryAttempts": 0,
+    },
+    "autopsy": {
+        "MaximumEventAgeInSeconds": 3600,
+        "MaximumRetryAttempts": 0,
+    },
 }
 TRAINER_EXPECTED_ENVIRONMENT = {
     "MLB_ML_EXPERIMENT_ID": "mlb-v2-2026-07-22-future-prospective-r3",
@@ -326,6 +457,74 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
             blockers.append(f"DEPLOY_TEMPLATE_SHA_MISMATCH:{logical_id}")
 
         configuration_matches = True
+        expected_async_retry_policy = FUNCTION_ASYNC_RETRY_POLICIES.get(role)
+        async_retry_policy: Dict[str, Any] = {}
+        async_destination_config: Any = None
+        async_destination_config_present = False
+        configured_async_destinations: Dict[str, Dict[str, str]] = {}
+        async_destination_config_valid = False
+        if expected_async_retry_policy is not None:
+            blocker_prefix = (
+                "TRAINER_LAMBDA"
+                if role == "trainer"
+                else f"LAMBDA_ASYNC:{role.upper()}"
+            )
+            try:
+                async_config = lambdas.get_function_event_invoke_config(
+                    FunctionName=physical_id,
+                    Qualifier="$LATEST",
+                )
+                async_retry_policy = {
+                    "MaximumEventAgeInSeconds": async_config.get(
+                        "MaximumEventAgeInSeconds"
+                    ),
+                    "MaximumRetryAttempts": async_config.get(
+                        "MaximumRetryAttempts"
+                    ),
+                }
+                raw_async_destination_config = async_config.get(
+                    "DestinationConfig",
+                    _MISSING_ASYNC_DESTINATION_CONFIG,
+                )
+                async_destination_config_present = (
+                    raw_async_destination_config
+                    is not _MISSING_ASYNC_DESTINATION_CONFIG
+                )
+                async_destination_config = (
+                    raw_async_destination_config
+                    if async_destination_config_present
+                    else None
+                )
+                try:
+                    configured_async_destinations = (
+                        _normalize_async_destination_config(
+                            raw_async_destination_config
+                        )
+                    )
+                    async_destination_config_valid = True
+                except ValueError as exc:
+                    configuration_matches = False
+                    blockers.append(
+                        f"{blocker_prefix}_ASYNC_DESTINATION_CONFIG_INVALID:"
+                        f"{exc}"
+                    )
+                if async_retry_policy != expected_async_retry_policy:
+                    configuration_matches = False
+                    blockers.append(
+                        f"{blocker_prefix}_ASYNC_RETRY_POLICY_MISMATCH:"
+                        f"expected={expected_async_retry_policy}:"
+                        f"actual={async_retry_policy}"
+                    )
+                if configured_async_destinations:
+                    configuration_matches = False
+                    blockers.append(
+                        f"{blocker_prefix}_ASYNC_DESTINATION_CONFIG_PRESENT"
+                    )
+            except Exception as exc:
+                configuration_matches = False
+                blockers.append(
+                    f"{blocker_prefix}_ASYNC_RETRY_POLICY_CHECK_FAILED:{exc}"
+                )
         retired_present = sorted(
             key for key in RETIRED_PROVIDER_ENVIRONMENT if key in environment
         )
@@ -435,67 +634,6 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                     "TRAINER_RESERVED_CONCURRENCY_ABSENCE_CHECK_FAILED:"
                     f"{exc}"
                 )
-            async_retry_policy: Dict[str, Any] = {}
-            async_destination_config: Any = None
-            async_destination_config_present = False
-            configured_async_destinations: Dict[str, Dict[str, str]] = {}
-            async_destination_config_valid = False
-            try:
-                async_config = lambdas.get_function_event_invoke_config(
-                    FunctionName=physical_id,
-                    Qualifier="$LATEST",
-                )
-                async_retry_policy = {
-                    "MaximumEventAgeInSeconds": async_config.get(
-                        "MaximumEventAgeInSeconds"
-                    ),
-                    "MaximumRetryAttempts": async_config.get(
-                        "MaximumRetryAttempts"
-                    ),
-                }
-                raw_async_destination_config = async_config.get(
-                    "DestinationConfig",
-                    _MISSING_ASYNC_DESTINATION_CONFIG,
-                )
-                async_destination_config_present = (
-                    raw_async_destination_config
-                    is not _MISSING_ASYNC_DESTINATION_CONFIG
-                )
-                async_destination_config = (
-                    raw_async_destination_config
-                    if async_destination_config_present
-                    else None
-                )
-                try:
-                    configured_async_destinations = (
-                        _normalize_async_destination_config(
-                            raw_async_destination_config
-                        )
-                    )
-                    async_destination_config_valid = True
-                except ValueError as exc:
-                    configuration_matches = False
-                    blockers.append(
-                        "TRAINER_LAMBDA_ASYNC_DESTINATION_CONFIG_INVALID:"
-                        f"{exc}"
-                    )
-                if async_retry_policy != TRAINER_RETRY_POLICY:
-                    configuration_matches = False
-                    blockers.append(
-                        "TRAINER_LAMBDA_ASYNC_RETRY_POLICY_MISMATCH:"
-                        f"expected={TRAINER_RETRY_POLICY}:"
-                        f"actual={async_retry_policy}"
-                    )
-                if configured_async_destinations:
-                    configuration_matches = False
-                    blockers.append(
-                        "TRAINER_LAMBDA_ASYNC_DESTINATION_CONFIG_PRESENT"
-                    )
-            except Exception as exc:
-                configuration_matches = False
-                blockers.append(
-                    f"TRAINER_LAMBDA_ASYNC_RETRY_POLICY_CHECK_FAILED:{exc}"
-                )
             safe_environment_keys = (
                 *TRAINER_REQUIRED_ENVIRONMENT,
                 *TRAINER_EXPECTED_ENVIRONMENT.keys(),
@@ -557,6 +695,26 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
             "deployTemplateSha256": actual_template_sha or None,
             "identityMatches": actual_git_sha == expected_git_sha and actual_template_sha == expected_template_sha256,
             "configurationMatches": configuration_matches,
+            "asyncDeliveryPolicy": {
+                "expectedRetryPolicy": expected_async_retry_policy,
+                "actualRetryPolicy": async_retry_policy,
+                "retryPolicyMatches": (
+                    async_retry_policy == expected_async_retry_policy
+                    if expected_async_retry_policy is not None
+                    else None
+                ),
+                "destinationConfigPresent": async_destination_config_present,
+                "destinationConfigValid": async_destination_config_valid,
+                "configuredDestinations": configured_async_destinations,
+                "destinationConfigAbsent": (
+                    bool(
+                        async_destination_config_valid
+                        and not configured_async_destinations
+                    )
+                    if expected_async_retry_policy is not None
+                    else None
+                ),
+            },
         }
 
     artifact_bucket_proof: Dict[str, Any] = {
@@ -645,48 +803,79 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                 f"bucket={artifact_bucket_name}:{exc}"
             )
 
+    regional_rule_inventory: List[Dict[str, Any]] = []
+    try:
+        for rule_name in _all_rule_names(events):
+            rule = events.describe_rule(Name=rule_name)
+            regional_rule_inventory.append({
+                "name": rule_name,
+                "state": rule.get("State"),
+                "schedule": rule.get("ScheduleExpression"),
+                "targets": _targets_for_rule(events, rule_name),
+            })
+    except Exception as exc:
+        blockers.append(f"EVENTBRIDGE_REGIONAL_RULE_DISCOVERY_FAILED:{exc}")
+
     schedule_proofs: Dict[str, Any] = {}
     for role, expected in EXPECTED_SCHEDULES.items():
         arn = function_arns.get(role)
         if not arn:
             blockers.append(f"SCHEDULE_TARGET_FUNCTION_MISSING:{role}")
             continue
-        rule_names = _rule_names_for_target(events, arn)
+        base_arn = _base_lambda_arn(arn)
         enabled_rules: List[Dict[str, Any]] = []
-        for rule_name in rule_names:
-            rule = events.describe_rule(Name=rule_name)
-            targets = _targets_for_rule(events, rule_name)
+        for rule in regional_rule_inventory:
+            targets = rule.get("targets") or []
             matching_targets = [
                 target
                 for target in targets
-                if str(target.get("Arn") or "") == arn
+                if _base_lambda_arn(target.get("Arn")) == base_arn
             ]
-            if rule.get("State") == "ENABLED" and matching_targets:
+            if rule.get("state") == "ENABLED" and matching_targets:
                 enabled_rules.append({
-                    "name": rule_name,
-                    "state": rule.get("State"),
-                    "schedule": rule.get("ScheduleExpression"),
+                    "name": rule.get("name"),
+                    "state": rule.get("state"),
+                    "schedule": rule.get("schedule"),
                     "targetArns": sorted(str(target.get("Arn") or "") for target in targets),
                     "matchingTargets": matching_targets,
                 })
         schedules = sorted(str(rule.get("schedule") or "") for rule in enabled_rules)
         if schedules != sorted(expected):
             blockers.append(f"SCHEDULE_MISMATCH:{role}:expected={expected}:actual={schedules}")
-        trainer_retry_policy_matches = None
-        trainer_dead_letter_absent = None
-        trainer_invocation_inputs_match = None
-        if role == "trainer":
-            trainer_retry_policy_matches = bool(
+        target_topology_matches = bool(
+            len(enabled_rules) == len(expected)
+            and all(
+                len(rule.get("matchingTargets") or []) == 1
+                and len(rule.get("targetArns") or []) == 1
+                and str(
+                    (rule.get("matchingTargets") or [{}])[0].get("Arn")
+                    or ""
+                )
+                == arn
+                for rule in enabled_rules
+            )
+        )
+        if not target_topology_matches:
+            blockers.append(f"EVENTBRIDGE_TARGET_TOPOLOGY_MISMATCH:{role}")
+        expected_retry_policies = SCHEDULE_RETRY_POLICIES.get(role)
+        retry_policy_matches = None
+        dead_letter_absent = None
+        invocation_inputs_match = None
+        if expected_retry_policies is not None:
+            retry_policy_matches = bool(
                 enabled_rules
                 and all(
                     all(
-                        (target.get("RetryPolicy") or {}) == TRAINER_RETRY_POLICY
+                        (target.get("RetryPolicy") or {})
+                        == expected_retry_policies.get(
+                            str(rule.get("schedule") or ""), {}
+                        )
                         for target in rule.get("matchingTargets") or []
                     )
                     for rule in enabled_rules
                 )
             )
-            trainer_dead_letter_absent = bool(
+            dead_letter_absent = bool(
                 enabled_rules
                 and all(
                     all(
@@ -696,16 +885,26 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                     for rule in enabled_rules
                 )
             )
-            if not trainer_retry_policy_matches:
-                blockers.append("TRAINER_EVENTBRIDGE_RETRY_POLICY_MISMATCH")
-            if not trainer_dead_letter_absent:
-                blockers.append("TRAINER_EVENTBRIDGE_FAILURE_DESTINATION_PRESENT")
+            if not retry_policy_matches:
+                blockers.append(
+                    "TRAINER_EVENTBRIDGE_RETRY_POLICY_MISMATCH"
+                    if role == "trainer"
+                    else f"EVENTBRIDGE_RETRY_POLICY_MISMATCH:{role}"
+                )
+            if not dead_letter_absent:
+                blockers.append(
+                    "TRAINER_EVENTBRIDGE_FAILURE_DESTINATION_PRESENT"
+                    if role == "trainer"
+                    else f"EVENTBRIDGE_FAILURE_DESTINATION_PRESENT:{role}"
+                )
+        expected_role_invocations = SCHEDULE_EXPECTED_INVOCATIONS.get(role)
+        if expected_role_invocations is not None:
             expected_invocations = sorted(
                 (
                     str(invocation["schedule"]),
                     json.dumps(invocation["input"], sort_keys=True, separators=(",", ":")),
                 )
-                for invocation in TRAINER_EXPECTED_INVOCATIONS
+                for invocation in expected_role_invocations
             )
             actual_invocations: List[tuple[str, str]] = []
             malformed_input = False
@@ -725,27 +924,30 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                             json.dumps(parsed_input, sort_keys=True, separators=(",", ":")),
                         )
                     )
-            trainer_invocation_inputs_match = (
+            invocation_inputs_match = (
                 not malformed_input
                 and sorted(actual_invocations) == expected_invocations
             )
-            if not trainer_invocation_inputs_match:
-                blockers.append("TRAINER_EVENTBRIDGE_INVOCATION_INPUT_MISMATCH")
+            if not invocation_inputs_match:
+                blockers.append(
+                    "TRAINER_EVENTBRIDGE_INVOCATION_INPUT_MISMATCH"
+                    if role == "trainer"
+                    else f"EVENTBRIDGE_INVOCATION_INPUT_MISMATCH:{role}"
+                )
         schedule_proofs[role] = {
             "functionArn": arn,
             "enabledRules": enabled_rules,
             "expectedSchedules": expected,
             "exactMatch": schedules == sorted(expected),
-            "retryPolicyMatches": trainer_retry_policy_matches,
-            "deadLetterQueueAbsent": trainer_dead_letter_absent,
+            "targetTopologyMatches": target_topology_matches,
+            "retryPolicyMatches": retry_policy_matches,
+            "deadLetterQueueAbsent": dead_letter_absent,
             "deliveryPolicyMatches": bool(
-                trainer_retry_policy_matches and trainer_dead_letter_absent
-            ) if role == "trainer" else None,
-            "invocationInputsMatch": trainer_invocation_inputs_match,
-            "sqsFailureDestinationRequired": False if role == "trainer" else None,
-            "expectedRetryPolicy": (
-                dict(TRAINER_RETRY_POLICY) if role == "trainer" else None
-            ),
+                retry_policy_matches and dead_letter_absent
+            ) if expected_retry_policies is not None else None,
+            "invocationInputsMatch": invocation_inputs_match,
+            "sqsFailureDestinationRequired": False if expected_retry_policies is not None else None,
+            "expectedRetryPolicy": expected_retry_policies,
         }
 
     alternate_writer_rules: List[Dict[str, Any]] = []
