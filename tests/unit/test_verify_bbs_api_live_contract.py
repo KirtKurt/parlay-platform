@@ -92,6 +92,10 @@ def test_verifies_auth_and_mlb_envelope_without_exposing_sensitive_values() -> N
     assert report["activation"]["reviewMilestoneDefined"] is False
     assert report["mlbMatches"]["rowCount"] == 1
     assert report["mlbMatches"]["documentedRowSchemaValidated"] is True
+    assert report["mlbMatches"]["documentedRowCount"] == 1
+    assert report["mlbMatches"]["unmappedRowCount"] == 0
+    assert report["mlbMatches"]["rowSchemaMismatches"] == {}
+    assert report["mlbMatches"]["schemaReviewRequired"] is False
     assert report["mlbMatches"]["providerOfficialGameIdentityDocumented"] is False
     assert report["activation"]["officialIdentityCredit"] is False
     assert report["rateLimit"] == {"limit": "1000", "remaining": "998"}
@@ -99,6 +103,65 @@ def test_verifies_auth_and_mlb_envelope_without_exposing_sensitive_values() -> N
     assert "owner@example.com" not in rendered
     assert "…abcd" not in rendered
     assert len(requests) == 2
+
+
+def test_live_schema_drift_is_quarantined_without_blocking_shadow_deploy() -> None:
+    calls = 0
+
+    def opener(_request, *, timeout):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return FakeResponse(_envelope({"plan": "free", "paused": False}))
+        return FakeResponse(
+            _envelope(
+                [
+                    {
+                        "id": "provider-shape-not-persisted-in-report",
+                        "start_time": "2026-07-22T23:05:00Z",
+                        "league": "mlb",
+                        "teams": ["home", "away"],
+                    }
+                ]
+            )
+        )
+
+    report = live.verify(API_KEY, opener=opener)
+    rendered = json.dumps(report)
+
+    assert report["ok"] is True
+    assert report["mlbMatches"]["documentedRowSchemaValidated"] is False
+    assert report["mlbMatches"]["documentedRowCount"] == 0
+    assert report["mlbMatches"]["unmappedRowCount"] == 1
+    assert report["mlbMatches"]["schemaReviewRequired"] is True
+    assert report["mlbMatches"]["schemaDisposition"] == (
+        "UNMAPPED_RAW_SHADOW_ROWS_QUARANTINED"
+    )
+    assert report["mlbMatches"]["rowSchemaMismatches"] == {
+        "AWAY_TEAM_INVALID": 1,
+        "HOME_TEAM_INVALID": 1,
+        "KICKOFF_UTC_INVALID": 1,
+        "MATCH_ID_MISSING": 1,
+        "SPORT_FIELD_INVALID": 1,
+    }
+    assert report["activation"]["schemaActivationEligible"] is False
+    assert report["activation"]["runtimeQuarantineRequired"] is True
+    assert report["activation"]["officialIdentityCredit"] is False
+    assert "provider-shape-not-persisted-in-report" not in rendered
+
+
+def test_non_object_match_row_still_fails_envelope_contract() -> None:
+    calls = 0
+
+    def opener(_request, *, timeout):
+        nonlocal calls
+        calls += 1
+        if calls == 1:
+            return FakeResponse(_envelope({"plan": "free", "paused": False}))
+        return FakeResponse(_envelope(["not-an-object"]))
+
+    with pytest.raises(live.LiveContractError, match="MATCH_ROW_NOT_OBJECT"):
+        live.verify(API_KEY, opener=opener)
 
 
 def test_rejects_wrong_secret_name_value_shape_before_network() -> None:

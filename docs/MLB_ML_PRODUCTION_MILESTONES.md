@@ -119,6 +119,13 @@ canonical pull. BBS currently documents `match_id` and `kickoff_utc` but no MLB
 official identity credit. Team/time similarity is not promoted to an identity
 join, including for doubleheaders.
 
+Deployment authentication and the standard response envelope are release
+blocking. A live row shape that differs from the published BBS fields is
+fingerprinted and reported only through value-free reason counts, then admitted
+solely as quarantined raw shadow evidence. Schema drift never earns identity,
+completeness, prediction, or training credit and does not block the canonical
+odds/lock/settlement deployment.
+
 | BBS milestone | Required proof | ML effect |
 |---|---|---|
 | Authenticated | CI proves `/v1/user/me` and the filtered MLB match envelope using the exact secret without persisting account data or key material. | None |
