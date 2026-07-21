@@ -6,7 +6,7 @@ from decimal import Decimal
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
-MODEL_VERSION = "INQSI-MLB-v2.1-core-single-game-import-safe"
+MODEL_VERSION = "INQSI-MLB-v4.0-canonical-probability-aws-v2-shadow-manual-first"
 MODEL_CREATED_AT = "2026-07-09"
 
 WEIGHTS = {
@@ -83,7 +83,7 @@ def model_version() -> Dict[str, Any]:
         "created_at": MODEL_CREATED_AT,
         "pick_type": "individual_game_moneyline",
         "parlaysEnabled": False,
-        "sourcePolicy": "The Odds API stored pull history only; no public sportsbook pages or manual odds for production picks.",
+        "sourcePolicy": "Persisted canonical predictions from unique 15-minute market slots and immutable pre-lock Fundamentals V2 evidence.",
         "ranking": "EV + edge vs real book price + 15-minute line movement + book agreement + guardrails",
         "weights": WEIGHTS,
         "confidence_tiers": CONFIDENCE_TIERS,
@@ -122,7 +122,10 @@ def predictions(game_date: Optional[str] = None, limit: int = 500, store: bool =
             raise RuntimeError("MLB_PUBLIC_READ_RUNTIME_NOT_READY")
         # Public MLB surfaces are read-only. Candidate persistence belongs only
         # to the protected scheduled ingestion path.
-        winners = engine.predict_all(game_date, store=False, limit=limit)
+        reader = getattr(engine, "read_persisted_predictions", None)
+        if not callable(reader):
+            raise RuntimeError("persisted_prelock_prediction_reader_unavailable")
+        winners = reader(game_date, store=False, limit=limit)
     except Exception as exc:
         return {
             "ok": False,

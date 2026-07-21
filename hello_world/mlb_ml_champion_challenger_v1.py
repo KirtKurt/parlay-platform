@@ -20,8 +20,11 @@ MIN_SELECTED_PRICE_COVERAGE = max(90.0, float(os.environ.get("INQSI_MLB_ML_MIN_S
 MAX_RELIABILITY_CALIBRATION_ERROR = min(0.10, float(os.environ.get("INQSI_MLB_ML_MAX_RELIABILITY_CALIBRATION_ERROR", "0.10")))
 MIN_ROLLING_24H_SLATE_ACCURACY_PCT = 90.0
 RELIABILITY_PROGRESS_MILESTONES_PCT = (50.0, 60.0, 70.0, 80.0)
-# Fail-safe default: only the authoritative AWS audit explicitly enables writes.
-AUTO_PROMOTE = os.environ.get("INQSI_MLB_ML_AUTO_PROMOTE", "false").lower() in {"1", "true", "yes"}
+# Retired production path: V1 remains available only for historical diagnostic
+# reads. AWS V2 owns training and manual-first promotion.
+AUTO_PROMOTE = False
+AUTOMATIC_PROMOTION_SUPPORTED = False
+LEGACY_V1_AUTHORITY_RETIRED = True
 
 
 def _f(value: Any, default: float = 0.0) -> float:

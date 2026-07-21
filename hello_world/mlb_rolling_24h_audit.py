@@ -310,12 +310,23 @@ def _canonical_lock_item_errors(item: Dict[str, Any], slate_date: str) -> List[s
         errors.extend(immutable_storage.validate_canonical_stage_authority(history.PULLS, data))
     except Exception as exc:
         errors.append(f"canonical_stage_authority_validator_failed:{type(exc).__name__}")
+    # Exact-vector and training-status metadata are deliberately not canonical
+    # winner-lock authority.  Locks written before the selection/training
+    # separation contract can lack that metadata while still carrying a valid,
+    # exact immutable stage chain.  Classify those rows as training-ineligible
+    # in ``_canonical_lock_authority`` instead of erasing their gradeable pick.
+    # New writes remain fail-closed in
+    # ``mlb_immutable_locked_storage_patch._require_vector_status``.
     try:
         import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 
-        errors.extend(vector_contract.validate_selection_lock_vector_status(data))
+        errors.extend(
+            vector_contract.selection_lock_gradeability_integrity_errors(data)
+        )
     except Exception as exc:
-        errors.append(f"selection_vector_status_validator_failed:{type(exc).__name__}")
+        errors.append(
+            f"selection_vector_integrity_validator_failed:{type(exc).__name__}"
+        )
     return sorted(set(errors))
 
 
@@ -325,12 +336,45 @@ def _canonical_lock_authority(item: Dict[str, Any], slate_date: str) -> Dict[str
         import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 
         vector_errors = vector_contract.effective_selection_lock_vector_errors(data)
+        vector_status_errors = vector_contract.validate_selection_lock_vector_status(
+            data
+        )
+        training_exclusions = vector_contract.selection_lock_training_exclusions(
+            data,
+            vector_errors=vector_errors,
+            vector_status_errors=vector_status_errors,
+        )
     except Exception as exc:
         vector_errors = [f"exact_lock_vector_validator_failed:{type(exc).__name__}"]
+        vector_status_errors = [
+            f"selection_vector_status_validator_failed:{type(exc).__name__}"
+        ]
+        training_exclusions = sorted(
+            {
+                *(
+                    str(reason)
+                    for reason in (
+                        data.get("trainingExclusionReasons")
+                        or (data.get("mlFeatureFreeze") or {}).get(
+                            "trainingExclusionReasons"
+                        )
+                        or []
+                    )
+                    if str(reason)
+                ),
+                *(f"exact_lock_vector_validation:{error}" for error in vector_errors),
+                *(
+                    f"selection_lock_vector_status_validation:{error}"
+                    for error in vector_status_errors
+                ),
+            }
+        )
     training = data.get("mlFeatureFreeze") or {}
     exact_vector_verified = not vector_errors
     learning_eligible = bool(
         exact_vector_verified
+        and not vector_status_errors
+        and not training_exclusions
         and data.get("trainingEligible", training.get("trainingEligible")) is True
     )
     return {
@@ -350,11 +394,9 @@ def _canonical_lock_authority(item: Dict[str, Any], slate_date: str) -> Dict[str
         "selectionLockIndependentOfTrainingVector": True,
         "exactLockVectorValidated": exact_vector_verified,
         "exactLockVectorValidationErrors": vector_errors,
-        "trainingExclusionReasons": list(
-            data.get("trainingExclusionReasons")
-            or training.get("trainingExclusionReasons")
-            or []
-        ),
+        "selectionLockVectorStatusValidated": not vector_status_errors,
+        "selectionLockVectorStatusValidationErrors": vector_status_errors,
+        "trainingExclusionReasons": training_exclusions,
         "slateDateEt": slate_date,
         "providerGameId": _provider_game_id(data),
         "exactProviderIdentityMatched": False,

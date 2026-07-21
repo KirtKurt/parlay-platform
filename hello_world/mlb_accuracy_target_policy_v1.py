@@ -3,7 +3,7 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
-VERSION = "MLB-ACCURACY-TARGET-POLICY-v3-90pct-reliability-60pct-official-lock"
+VERSION = "MLB-ACCURACY-TARGET-POLICY-v4-dashboard-only-v2-manual-first"
 ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT = 90.0
 RECOMMENDATION_RELIABILITY_THRESHOLD_PCT = 90.0
 MIN_OUTCOME_UNTOUCHED_ACCURACY_PCT = 90.0
@@ -16,11 +16,11 @@ MIN_ROLLING_24H_SLATE_ACCURACY_PCT = 90.0
 INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT = 60.0
 RELIABILITY_PROGRESS_MILESTONES_PCT = (50.0, 60.0, 70.0, 80.0)
 RUNTIME_SAFETY_VERSION = "MLB-ML-RUNTIME-SAFETY-v5-90pct-exact-odds-calibrated"
-CHAMPION_GATE_VERSION = "MLB-ML-CHAMPION-CHALLENGER-v1.5-90pct-automatic-independent-promotion"
+CHAMPION_GATE_VERSION = "MLB-ML-CHAMPION-CHALLENGER-v1.6-retired-shadow-only"
 
 
 def install() -> Dict[str, Any]:
-    """Install production authority targets and the official-lock quality floor."""
+    """Install reporting targets while keeping every legacy ML authority inert."""
     recommendation = str(RECOMMENDATION_RELIABILITY_THRESHOLD_PCT)
     audit = str(ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT)
 
@@ -84,43 +84,10 @@ def install() -> Dict[str, Any]:
         champion.RELIABILITY_PROGRESS_MILESTONES_PCT = RELIABILITY_PROGRESS_MILESTONES_PCT
         champion.RECOMMENDATION_RELIABILITY_THRESHOLD_PCT = RECOMMENDATION_RELIABILITY_THRESHOLD_PCT
         champion.VERSION = CHAMPION_GATE_VERSION
-
-        if not getattr(champion, "_INQSI_MLB_90PCT_PRODUCTION_RELIABILITY_POLICY_APPLIED", False):
-            original_evaluate = champion.evaluate
-
-            def evaluate_with_separated_targets(
-                dual_model,
-                clean_count,
-                playable_evidence_count,
-                rolling_slate_accuracy_pct=None,
-            ):
-                result = original_evaluate(
-                    dual_model,
-                    clean_count,
-                    playable_evidence_count,
-                    rolling_slate_accuracy_pct=rolling_slate_accuracy_pct,
-                )
-                if isinstance(result, dict):
-                    result["version"] = CHAMPION_GATE_VERSION
-                    result["rolling24hAllGamesAuditTargetPct"] = ROLLING_24H_ALL_GAMES_AUDIT_TARGET_PCT
-                    result["recommendationReliabilityThresholdPct"] = RECOMMENDATION_RELIABILITY_THRESHOLD_PCT
-                    result["selectedUntouchedTestPlayabilityAccuracyTargetPct"] = RECOMMENDATION_RELIABILITY_THRESHOLD_PCT
-                    result["rolling24hSlateAccuracyProgressMilestonesPct"] = list(RELIABILITY_PROGRESS_MILESTONES_PCT)
-                    result["rolling24hSlateAccuracyProgressMilestonesReportingOnly"] = True
-                    result["policy"] = (
-                        "Direction and playability promote automatically and independently only after their applicable "
-                        "gates pass. Both require a current rolling 24-hour official-card MLB slate accuracy average of "
-                        "90%, 500 clean rows, and 100 total untouched-test rows. Direction separately requires 90% "
-                        "untouched outcome accuracy; playability separately requires 100 selected rows, 90% selected "
-                        "accuracy, 90% exact locked-odds coverage, and calibration error no greater than 0.10. "
-                        "Rolling-slate accuracy milestones at 50/60/70/80 are reporting-only."
-                    )
-                return result
-
-            champion.evaluate = evaluate_with_separated_targets
-            champion._INQSI_MLB_90PCT_PRODUCTION_RELIABILITY_POLICY_APPLIED = True
-
-        patched.append("champion_playability_90pct_automatic")
+        champion.AUTO_PROMOTE = False
+        champion.AUTOMATIC_PROMOTION_SUPPORTED = False
+        champion.LEGACY_V1_AUTHORITY_RETIRED = True
+        patched.append("legacy_v1_champion_shadow_only")
     except Exception as exc:
         errors.append(f"champion:{exc}")
 
@@ -148,9 +115,13 @@ def install() -> Dict[str, Any]:
         "minimumRolling24hSlateAccuracyPct": MIN_ROLLING_24H_SLATE_ACCURACY_PCT,
         "rolling24hSlateAccuracyProgressMilestonesPct": list(RELIABILITY_PROGRESS_MILESTONES_PCT),
         "rolling24hSlateAccuracyProgressMilestonesReportingOnly": True,
-        "automaticPromotionAfterApplicableGates": True,
+        "rolling24hAccuracyAffectsPromotion": False,
+        "automaticPromotionAfterApplicableGates": False,
+        "firstPromotionRequiresManualReview": True,
+        "legacyV1AuthorityEnabled": False,
+        "v2AwsNativeShadowTraining": True,
         "roiPromotionGateRequired": False,
-        "everyGameRetainsOfficialPick": False,
+        "everyGameRetainsOfficialPick": True,
         "everyGameRetainsVisibleLockedPrediction": True,
         "playabilitySeparateFromOfficialPick": True,
         "individualGameOfficialPickProbabilityFloorPct": INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT,
@@ -158,9 +129,9 @@ def install() -> Dict[str, Any]:
         "patched": patched,
         "errors": errors,
         "policy": (
-            "Every game retains a visible immutable winner record. Official-target eligibility begins at 60% and "
+            "Every game retains a visible immutable winner record. Audit-target eligibility begins at 60% and "
             "requires direction integrity; multi-reversal, divergent, compressed, resistance, or late-conflict rows "
-            "require independent book agreement plus steam or run-line confirmation. Direction and playability still "
-            "require the separate 90% production reliability gates."
+            "require independent book agreement plus steam or run-line confirmation. The 90% values are dashboard "
+            "aspirations only. V2 promotion uses fixed prospective market-skill gates and manual first review."
         ),
     }

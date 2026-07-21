@@ -607,6 +607,85 @@ def test_runtime_version_exposes_last_prelock_promotion_authority_marker():
     assert coverage.AUTHORITY_VERSION == "MLB-LAST-PRELOCK-PROMOTION-AUTHORITY-v1-canonical-read-overlay"
 
 
+def test_legacy_immutable_lock_suppresses_ambiguous_probability_authority(monkeypatch):
+    canonical = _canonical_item(G1, G1["home_team"], "home", 71)
+    canonical["data"].update(
+        {
+            "playable": True,
+            "trainingEligible": True,
+            "teamWinProbabilityPct": 97.0,
+            "modelWinProbability": 0.97,
+        }
+    )
+    engine = _engine([canonical])
+    monkeypatch.setattr(
+        immutable_storage, "validate_canonical_stage_authority", lambda table, row: []
+    )
+    monkeypatch.setattr(
+        exact_contract, "validate_selection_lock_vector_status", lambda row: []
+    )
+
+    row, errors = coverage._canonical_row(engine, canonical, SLATE, G1)
+
+    assert errors == []
+    assert row["predictedWinner"] == G1["home_team"]
+    assert row["probabilityAuthoritySuppressed"] is True
+    assert row["playable"] is False
+    assert row["trainingEligible"] is False
+    assert "teamWinProbabilityPct" not in row
+    assert "modelWinProbability" not in row
+    assert "legacy_probability_contract_missing" in row["trainingExclusionReasons"]
+
+
+def test_persisted_public_reader_carries_probability_contract_attestation(monkeypatch):
+    captured = {}
+
+    class Engine:
+        history = object()
+        _INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED = True
+
+    class LockModule:
+        LOCK_MINUTES = 45
+        _parse_dt = staticmethod(coverage._parse_dt)
+
+    monkeypatch.setattr(
+        per_game,
+        "_scoring_pulls",
+        lambda adapter, pulls, game, at_or_before=None: list(pulls),
+    )
+
+    def candidate(adapter, slate, game, scoring, at_or_before=None):
+        captured["engine"] = adapter.mlb_game_winner_engine
+        required = getattr(
+            adapter.mlb_game_winner_engine,
+            "_INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED",
+            False,
+        )
+        return (
+            None,
+            None,
+            [],
+            ["probability_contract_version_missing_or_wrong"] if required else [],
+        )
+
+    monkeypatch.setattr(per_game, "_last_prelock_candidate", candidate)
+
+    current, invalid = coverage._persisted_prelock_by_identity(
+        Engine,
+        LockModule,
+        PULLS,
+        [G1],
+        SLATE,
+        datetime(2026, 7, 17, 21, 0, tzinfo=timezone.utc),
+    )
+
+    assert captured["engine"] is Engine
+    assert current == {}
+    assert invalid["provider:game-1"] == [
+        "probability_contract_version_missing_or_wrong"
+    ]
+
+
 def test_schedule_drift_invalidates_old_canonical_row(monkeypatch):
     monkeypatch.setattr(exact_contract, "validate_exact_locked_row", lambda row: [])
     shifted = copy.deepcopy(G1)

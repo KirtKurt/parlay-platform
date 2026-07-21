@@ -1,7 +1,12 @@
 import json
 from typing import Any, Dict
 
-from mlb_audit import final_mlb_scores_report, settlement_proof_report, settle_mlb_slate
+import mlb_canonical_final_labels_v1 as canonical_settlement
+from mlb_audit import (
+    final_mlb_scores_report,
+    settlement_proof_report as legacy_settlement_proof_report,
+    settle_mlb_slate as legacy_settle_mlb_slate,
+)
 from mlb_signal_learning import build_signal_learning_report
 from mlb_result_signals import build_result_signals, latest_result_signals
 
@@ -46,7 +51,15 @@ def _payload(event: Dict[str, Any]) -> Dict[str, Any]:
     payload: Dict[str, Any] = {}
     payload.update(event.get("queryStringParameters") or {})
     payload.update(_parse_body(event))
-    for key in ("slate_date_et", "date", "days_from", "daysFrom", "fetch_scores", "store"):
+    for key in (
+        "slate_date_et",
+        "date",
+        "days_from",
+        "daysFrom",
+        "fetch_scores",
+        "store",
+        "legacy_diagnostic",
+    ):
         if key in event and key not in payload:
             payload[key] = event[key]
     return payload
@@ -68,6 +81,59 @@ def _settlement_args(payload: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _legacy_diagnostic(
+    args: Dict[str, Any],
+    *,
+    proof: bool = False,
+    enabled: bool = True,
+) -> Dict[str, Any]:
+    """Preserve the former settlement surface without granting it authority."""
+    if not enabled:
+        return {
+            "ok": True,
+            "executed": False,
+            "authoritative": False,
+            "status": "LEGACY_DIAGNOSTIC_DISABLED",
+        }
+    try:
+        report = (
+            legacy_settlement_proof_report(**args)
+            if proof
+            else legacy_settle_mlb_slate(**args)
+        )
+        return {
+            "ok": bool(report.get("ok")) if isinstance(report, dict) else False,
+            "executed": True,
+            "authoritative": False,
+            "report": report,
+        }
+    except Exception as exc:
+        return {
+            "ok": False,
+            "executed": True,
+            "authoritative": False,
+            "error": f"{type(exc).__name__}:{exc}",
+        }
+
+
+def _canonical_with_legacy_diagnostic(
+    report: Dict[str, Any],
+    args: Dict[str, Any],
+    *,
+    proof: bool = False,
+    enabled: bool = True,
+) -> Dict[str, Any]:
+    out = dict(report)
+    out["legacyDiagnosticCompatibility"] = _legacy_diagnostic(
+        args,
+        proof=proof,
+        enabled=enabled,
+    )
+    out["settlementAuthority"] = "CANONICAL_IMMUTABLE_LOCK_OFFICIAL_GAME_PK"
+    out["legacyDiagnosticIsAuthoritative"] = False
+    return out
+
+
 def lambda_handler(event, context):
     event = event or {}
     method = (event.get("httpMethod") or "").upper()
@@ -85,10 +151,26 @@ def lambda_handler(event, context):
 
         if method in {"GET", "POST"} and path in {"/v1/results/mlb/proof", "/v1/mlb/settlement/proof_report"}:
             proof_args = {**args, "fetch_scores": _bool(payload.get("fetch_scores"), False)}
-            return _resp(200, settlement_proof_report(**proof_args))
+            canonical = canonical_settlement.settlement_proof_report(**proof_args)
+            report = _canonical_with_legacy_diagnostic(
+                canonical,
+                proof_args,
+                proof=True,
+                enabled=_bool(payload.get("legacy_diagnostic"), False),
+            )
+            return _resp(200 if canonical.get("ok") else 409, report)
 
         if method in {"GET", "POST"} and path in {"/v1/results/mlb/settlement", "/v1/mlb/settlement/slate"}:
-            return _resp(200, settle_mlb_slate(**args))
+            canonical = canonical_settlement.settle_mlb_slate(
+                **args,
+                store=_bool(payload.get("store"), True),
+            )
+            report = _canonical_with_legacy_diagnostic(
+                canonical,
+                args,
+                enabled=_bool(payload.get("legacy_diagnostic"), False),
+            )
+            return _resp(200 if canonical.get("ok") else 409, report)
 
         if method in {"GET", "POST"} and path in {"/v1/results/mlb/signal-learning", "/v1/mlb/signal-learning"}:
             learn_args = {**args, "fetch_scores": _bool(payload.get("fetch_scores"), False)}
@@ -101,13 +183,55 @@ def lambda_handler(event, context):
                 return _resp(200, build_result_signals(slate_date, fetch_scores=_bool(payload.get("fetch_scores"), True), store=_bool(payload.get("store"), True)))
             return _resp(200, latest_result_signals(slate_date))
 
-        # EventBridge scheduled execution: fetch final scores, settle all completed games,
-        # build observe-only signal-learning and winner-labeled result-signal rows. No live games are graded.
+        # EventBridge scheduled execution: the canonical immutable lock -> official
+        # MLB gamePk label is authoritative. The former settlement and derived
+        # signal reports remain nested diagnostic compatibility only.
         if not method:
-            settlement = settle_mlb_slate(**args)
-            learning = build_signal_learning_report(slate_date=args.get("slate_date"), days_from=args.get("days_from", 3), fetch_scores=False)
-            result_signals = build_result_signals(args.get("slate_date") or settlement.get("slate_date_et") or learning.get("slate_date_et"), fetch_scores=False, store=True) if (args.get("slate_date") or settlement.get("slate_date_et") or learning.get("slate_date_et")) else {"ok": False, "error": "No slate_date available for result signals"}
-            return _resp(200, {**settlement, "signal_learning": learning, "result_signals": result_signals})
+            settlement = (
+                canonical_settlement.settle_mlb_slate(**args, store=True)
+                if args.get("slate_date")
+                else canonical_settlement.settle_recent_mlb_slates(
+                    days_from=args.get("days_from", 3),
+                    fetch_scores=args.get("fetch_scores", True),
+                    store=True,
+                )
+            )
+            # The former settlement mutates legacy rows. It is never invoked by
+            # the scheduled authoritative path; compatibility is opt-in on an
+            # explicit HTTP request only.
+            legacy = _legacy_diagnostic(args, enabled=False)
+            resolved_slate = (
+                args.get("slate_date")
+                or settlement.get("slateDateEt")
+                or ((legacy.get("report") or {}).get("slate_date_et"))
+            )
+            learning = build_signal_learning_report(
+                slate_date=resolved_slate,
+                days_from=args.get("days_from", 3),
+                fetch_scores=False,
+            )
+            result_signals = (
+                build_result_signals(
+                    resolved_slate,
+                    fetch_scores=False,
+                    store=True,
+                )
+                if resolved_slate
+                else {"ok": False, "error": "No slate_date available for result signals"}
+            )
+            report = {
+                **settlement,
+                "settlementAuthority": "CANONICAL_IMMUTABLE_LOCK_OFFICIAL_GAME_PK",
+                "legacyDiagnosticIsAuthoritative": False,
+                "legacyDiagnosticCompatibility": legacy,
+                "signalLearningDiagnostic": learning,
+                "resultSignalsDiagnostic": result_signals,
+                # Retain the old response keys for consumers while explicitly
+                # classifying their contents as non-authoritative diagnostics.
+                "signal_learning": learning,
+                "result_signals": result_signals,
+            }
+            return _resp(200 if settlement.get("ok") else 409, report)
 
         return _resp(404, {"ok": False, "sport": "mlb", "error": f"Route not found: {method} {path}"})
     except Exception as exc:

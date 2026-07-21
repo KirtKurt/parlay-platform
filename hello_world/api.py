@@ -361,6 +361,10 @@ def _build_parlays_from_latest(sport: str, max_parlays: int) -> Dict[str, Any]:
 
 
 def _generate_hot_predictions(sport: str, limit: int, store: bool) -> Dict[str, Any]:
+    # MLB predictions are owned by the canonical locked-prediction pipeline.
+    # This legacy multi-sport endpoint may calculate MLB diagnostics but must
+    # never persist an alternate PRED# row.
+    store = bool(store and sport != "mlb")
     snapshots = _recent_snapshots(sport, limit)
     if len(snapshots) < 2:
         return {"ok": True, "sport": sport, "predictions": [], "message": "Need at least two snapshots before generating hot predictions."}
@@ -400,9 +404,16 @@ def _generate_hot_predictions(sport: str, limit: int, store: bool) -> Dict[str, 
 
 
 def _record_prediction_result(body: Dict[str, Any]) -> Dict[str, Any]:
+    sport = (body.get("sport") or "mlb").lower()
+    if sport == "mlb":
+        return {
+            "ok": False,
+            "sport": "mlb",
+            "readOnly": True,
+            "error": "MLB legacy prediction results are read-only",
+        }
     if predictions_tbl is None:
         raise RuntimeError("PREDICTIONS_TABLE not configured")
-    sport = (body.get("sport") or "mlb").lower()
     slate_date = body.get("slate_date_et") or _get_slate_date_et()
     sk = body.get("sk") or body.get("SK")
     if not sk:
@@ -507,7 +518,14 @@ def lambda_handler(event, context):
         return _resp(200, _query_odds_history((params.get("sport") or "mlb").lower(), params.get("game_key"), params.get("game_id"), min(int(params.get("limit") or 200), 500)))
     if method == "GET" and path == "/v1/predictions/hot":
         params = event.get("queryStringParameters") or {}
-        return _resp(200, _generate_hot_predictions((params.get("sport") or "mlb").lower(), min(int(params.get("limit") or 30), 100), params.get("store", "false").lower() == "true"))
+        sport = (params.get("sport") or "mlb").lower()
+        store = params.get("store", "false").lower() == "true" and sport != "mlb"
+        return _resp(
+            200,
+            _generate_hot_predictions(
+                sport, min(int(params.get("limit") or 30), 100), store
+            ),
+        )
     if method == "GET" and path == "/v1/predictions/accuracy":
         params = event.get("queryStringParameters") or {}
         return _resp(200, _prediction_accuracy((params.get("sport") or "mlb").lower(), params.get("slate_date_et")))
@@ -522,7 +540,7 @@ def lambda_handler(event, context):
         return _resp(200, movement_deltas(min(int(params.get("limit") or 40), 200)))
     if method == "GET" and path == "/v1/predictions/mlb/hot-sides":
         params = event.get("queryStringParameters") or {}
-        return _resp(200, hot_sides(min(int(params.get("limit") or 40), 200), params.get("store", "false").lower() == "true"))
+        return _resp(200, hot_sides(min(int(params.get("limit") or 40), 200)))
     if method == "GET" and path == "/v1/results/mlb/status":
         params = event.get("queryStringParameters") or {}
         return _resp(200, results_status(params.get("slate_date_et")))
@@ -552,7 +570,8 @@ def lambda_handler(event, context):
         body = _parse_json(event.get("body"))
         return _resp(200, evaluate_mlb_predictions(body.get("slate_date_et")))
     if method == "POST" and path == "/v1/predictions/result":
-        return _resp(200, _record_prediction_result(_parse_json(event.get("body"))))
+        result = _record_prediction_result(_parse_json(event.get("body")))
+        return _resp(409 if result.get("readOnly") is True else 200, result)
     if method == "POST" and path in {"/v1/pull/nba", "/v1/pull/ncaam", "/v1/pull/mlb"}:
         sport = path.rsplit("/", 1)[-1]
         body = _parse_json(event.get("body"))

@@ -14,10 +14,16 @@ import mlb_ml_champion_runtime_v1 as runtime
 import mlb_ml_clean_cohort_hardening_v1 as cohort_hardening
 import mlb_ml_clean_cohort_v1 as cohort
 import mlb_ml_dual_model_v1 as dual
+import mlb_ml_dual_model_v2 as dual_v2
+import mlb_ml_experiment_v2 as experiment_v2
+import mlb_ml_promotion_policy_v2 as promotion_v2
 import mlb_ml_frozen_features as canonical_freeze
 from mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 cohort_hardening.apply(cohort)
+
+R2_EXPERIMENT_ID = "mlb-v2-2026-07-21-future-prospective-r2"
+R2_RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
 
 
 def source_honest_context():
@@ -137,7 +143,36 @@ def main() -> int:
     finally:
         runtime.champion_store.load_champion = original_loader
 
-    print("MLB ML optimization v3 verified: immutable pregame features, final-label join, dual models, exact-odds validation, independent 90% authority gates, and shadow-only behavior below target")
+    manifest = experiment_v2.new_manifest(
+        experiment_id=R2_EXPERIMENT_ID,
+        release_contract_id=R2_EXPERIMENT_ID,
+        release_cutoff_utc=R2_RELEASE_CUTOFF_UTC,
+        feature_vector_version=experiment_v2.REQUIRED_FUNDAMENTALS_VERSION,
+        model_feature_schemas={
+            "outcome": dual_v2.OUTCOME_FEATURES,
+            "reliability": dual_v2.RELIABILITY_FEATURES,
+        },
+        created_at_utc=R2_RELEASE_CUTOFF_UTC,
+    )
+    assert experiment_v2.PARTITION_MINIMUMS == {
+        "train": 300,
+        "validation": 100,
+        "prospectiveTest": 100,
+    }
+    assert manifest["experimentId"] == R2_EXPERIMENT_ID
+    assert manifest["releaseCutoffUtc"] == R2_RELEASE_CUTOFF_UTC
+    r2_gate = promotion_v2.evaluate(
+        {}, manifest, current_champion=None, automatic_promotion_enabled=False
+    )
+    assert r2_gate["firstPromotionRequiresManualReview"] is True
+    assert r2_gate["automaticPromotionEnabled"] is False
+    assert r2_gate["runtimeAuthorityActivationEligible"] is False
+
+    print(
+        "MLB ML optimization diagnostics verified: legacy V1 feature/join/runtime checks "
+        "remain non-authoritative; production proof is r2 future-cutover fixed whole-slate "
+        "300/100/100 with manual-first shadow approval and no runtime activation"
+    )
     return 0
 
 

@@ -35,6 +35,7 @@ def main() -> int:
             "AWS_EC2_METADATA_DISABLED": "true",
             "SNAPSHOTS_TABLE": "",
             "INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION": "false",
+            "INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED": "false",
             "INQSI_MLB_ML_AUTO_PROMOTE": "false",
             "INQSI_MLB_LAMBDA_TASK_ROOT": str(LAMBDA_TASK_ROOT),
             "PYTHONPATH": os.pathsep.join(inherited_pythonpath),
@@ -75,17 +76,32 @@ assert response.get("statusCode") == 200, response
 body = json.loads(response.get("body") or "{}")
 assert body.get("ok") is True, body
 assert body.get("engine_import_ok") is True, body
-assert body.get("model_version") == "INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority", body
-assert body.get("productionAuthoritySource") == "gate_promoted_DynamoDB_champion_bundle_only", body
-assert body.get("automaticPromotionPolicy") == "authoritative_AWS_audit_only_after_independent_90pct_authority_gates", body
+assert body.get("model_version") == "INQSI-MLB-v4.0-canonical-probability-aws-v2-shadow-manual-first", body
+assert body.get("productionAuthoritySource") == "persisted_canonical_rules_market_prediction_v2_shadow_only", body
+assert body.get("automaticPromotionPolicy") == "disabled_manual_review_creates_shadow_pointer_only", body
+assert body.get("legacyV1AuthorityEnabled") is False, body
+assert body.get("awsNativeTrainingInstalled") is True, body
+assert body.get("awsNativeTrainingAuthority") is False, body
+assert body.get("awsNativeTrainingHealthSource") == "separate_mode_specific_status_contract", body
+assert body.get("firstPromotionRequiresManualReview") is True, body
+assert body.get("manualReviewCreatesShadowApprovalOnly") is True, body
+assert body.get("v2InferenceConsumerInstalled") is False, body
+assert body.get("runtimeAuthorityActivationAvailable") is False, body
 assert body.get("requiredWinnerPickPolicy") == "one_official_locked_winner_prediction_for_every_mlb_game", body
 assert body.get("playablePolicy") == "playability_is_separate_and_may_be_false_for_an_official_prediction", body
-assert body.get("apiRuntimeVersion") == "MLB-V3-READ-API-v3-read-only", body
+assert body.get("apiRuntimeVersion") == "MLB-V3-READ-API-v4-persisted-canonical-v2-shadow", body
 assert body.get("readOnly") is True, body
 assert str(body.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZATION-v3"), body
 runtime = body.get("ml_runtime_install") or {}
 assert runtime.get("ok") is True, runtime
-assert runtime.get("version") == "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority", runtime
+assert runtime.get("version") == (
+    "MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-"
+    "aws-v2-shadow-manual-first"
+), runtime
+assert runtime.get("steps", {}).get("sourceHonestFundamentalsV2") is True, runtime
+assert runtime.get("steps", {}).get(
+    "canonicalProbabilityAndPersistedPrelockAuthority"
+) is True, runtime
 policy = runtime.get("accuracyTargetPolicy") or {}
 assert policy.get("rolling24hAllGamesAuditTargetPct") == 90.0, policy
 assert policy.get("minimumRolling24hSlateAccuracyPct") == 90.0, policy
@@ -95,9 +111,12 @@ assert policy.get("selectedUntouchedTestPlayabilityAccuracyTargetPct") == 90.0, 
 assert policy.get("minimumExactOddsCoveragePct") == 90.0, policy
 assert policy.get("rolling24hSlateAccuracyProgressMilestonesPct") == [50.0, 60.0, 70.0, 80.0], policy
 assert policy.get("rolling24hSlateAccuracyProgressMilestonesReportingOnly") is True, policy
-assert policy.get("automaticPromotionAfterApplicableGates") is True, policy
+assert policy.get("rolling24hAccuracyAffectsPromotion") is False, policy
+assert policy.get("automaticPromotionAfterApplicableGates") is False, policy
+assert policy.get("firstPromotionRequiresManualReview") is True, policy
+assert policy.get("legacyV1AuthorityEnabled") is False, policy
 assert policy.get("roiPromotionGateRequired") is False, policy
-assert policy.get("everyGameRetainsOfficialPick") is False, policy
+assert policy.get("everyGameRetainsOfficialPick") is True, policy
 assert policy.get("everyGameRetainsVisibleLockedPrediction") is True, policy
 assert policy.get("playabilitySeparateFromOfficialPick") is True, policy
 assert policy.get("individualGameOfficialPickProbabilityFloorPct") == 60.0, policy
@@ -105,7 +124,9 @@ assert policy.get("multipleReversalsRequireIndependentConfirmationForOfficialSta
 required = {
     "accuracyTargetsSeparated",
     "legacyReliabilityOverlaySafety",
-    "singleDdbChampionAuthority",
+    "legacyV1ChampionRuntimeInstalledForShadowDiagnostics",
+    "legacyV1AuthorityDisabled",
+    "v2ShadowManualFirst",
     "officialSemanticsFinalized",
     "immutableFeatureFreeze",
     "immutableLockedStorageAuthority",
@@ -119,12 +140,12 @@ missing = sorted(name for name in required if (runtime.get("steps") or {}).get(n
 assert not missing, {"missingRuntimeSteps": missing, "runtime": runtime}
 
 read_calls = []
-original_predict_all = mlb_v3_read_api.ENGINE.predict_all
+original_reader = mlb_v3_read_api.ENGINE.read_persisted_predictions
 try:
-    def capture_predict_all(date, *, store, limit):
+    def capture_persisted_reader(date, *, store, limit):
         read_calls.append({"date": date, "store": store, "limit": limit})
         return {"ok": True, "predictions": [], "count": 0}
-    mlb_v3_read_api.ENGINE.predict_all = capture_predict_all
+    mlb_v3_read_api.ENGINE.read_persisted_predictions = capture_persisted_reader
     read_event = {
         "path": "/v1/mlb/predictions",
         "rawPath": "/v1/mlb/predictions",
@@ -133,27 +154,27 @@ try:
     }
     read_response = mlb_v3_read_api.lambda_handler(read_event, None)
 finally:
-    mlb_v3_read_api.ENGINE.predict_all = original_predict_all
+    mlb_v3_read_api.ENGINE.read_persisted_predictions = original_reader
 assert read_response.get("statusCode") == 200, read_response
 read_body = json.loads(read_response.get("body") or "{}")
 assert read_calls == [{"date": "2026-07-16", "store": False, "limit": 7}], read_calls
 assert read_body.get("readOnly") is True, read_body
 
 original_runtime_status = mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3
-original_predict_all = mlb_v3_read_api.ENGINE.predict_all
+original_reader = mlb_v3_read_api.ENGINE.read_persisted_predictions
 fail_closed_calls = []
 try:
     mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3 = {
         **original_runtime_status,
         "ok": False,
     }
-    mlb_v3_read_api.ENGINE.predict_all = (
+    mlb_v3_read_api.ENGINE.read_persisted_predictions = (
         lambda *args, **kwargs: fail_closed_calls.append((args, kwargs))
     )
     failed_response = mlb_v3_read_api.lambda_handler(read_event, None)
 finally:
     mlb_v3_read_api.ENGINE.MLB_ML_RUNTIME_INSTALL_V3 = original_runtime_status
-    mlb_v3_read_api.ENGINE.predict_all = original_predict_all
+    mlb_v3_read_api.ENGINE.read_persisted_predictions = original_reader
 assert failed_response.get("statusCode") == 503, failed_response
 failed_body = json.loads(failed_response.get("body") or "{}")
 assert fail_closed_calls == [], fail_closed_calls

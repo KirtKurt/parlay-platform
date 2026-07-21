@@ -8,7 +8,17 @@ import mlb_ml_champion_challenger_v1 as champion_store
 import mlb_ml_clean_cohort_v1 as cohort
 import mlb_ml_dual_model_v1 as dual_model
 
-VERSION = "MLB-ML-CHAMPION-RUNTIME-v1.1-independent-authority-reselection-safe"
+VERSION = "MLB-ML-CHAMPION-RUNTIME-v1.2-legacy-shadow-only"
+
+
+def _legacy_authority_enabled() -> bool:
+    """Legacy V1 is permanently diagnostic-only.
+
+    V2 owns the AWS-native experiment and promotion lifecycle. A legacy
+    champion may still be loaded and scored for diagnostics, but no runtime
+    environment switch may restore its prediction or playability authority.
+    """
+    return False
 
 
 def _f(value: Any, default: float = 0.0) -> float:
@@ -116,18 +126,30 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
     champion = champion_store.load_champion()
     direction_authority_requested = bool((champion or {}).get("directionAuthorityEnabled"))
     playability_authority_requested = bool((champion or {}).get("playabilityAuthorityEnabled"))
+    legacy_authority_enabled = _legacy_authority_enabled()
     outcome_model = (champion or {}).get("outcomeModel") or ((champion or {}).get("dualModel") or {}).get("outcomeModel") or {}
     reliability_model = (champion or {}).get("reliabilityModel") or ((champion or {}).get("dualModel") or {}).get("reliabilityModel") or {}
     outcome_model_available = bool(outcome_model.get("ok") is True)
     reliability_model_available = bool(reliability_model.get("ok") is True)
     reliability_threshold_valid, reliability_threshold = _validated_reliability_threshold(reliability_model)
-    direction_authority = bool(direction_authority_requested and outcome_model_available)
+    direction_authority = bool(
+        legacy_authority_enabled
+        and direction_authority_requested
+        and outcome_model_available
+    )
     playability_authority = bool(
-        playability_authority_requested
+        legacy_authority_enabled
+        and playability_authority_requested
         and reliability_model_available
         and reliability_threshold_valid
     )
     authority_safety_errors: List[str] = []
+    if not legacy_authority_enabled and (
+        direction_authority_requested or playability_authority_requested
+    ):
+        authority_safety_errors.append(
+            "legacy_v1_authority_disabled_v2_shadow_manual_first"
+        )
     if direction_authority_requested and not outcome_model_available:
         authority_safety_errors.append("direction_authority_requested_without_valid_outcome_model")
     if playability_authority_requested and not reliability_model_available:
@@ -229,6 +251,7 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
             "reliabilityThresholdValidated": reliability_threshold_valid,
             "directionAuthorityRequested": direction_authority_requested,
             "playabilityAuthorityRequested": playability_authority_requested,
+            "legacyV1AuthorityEnabled": legacy_authority_enabled,
             "directionAuthorityEnabled": direction_authority,
             "playabilityAuthorityEnabled": playability_authority,
             "authoritySafetyErrors": authority_safety_errors,
@@ -249,6 +272,7 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "reliabilityThresholdValidated": reliability_threshold_valid,
         "directionAuthorityRequested": direction_authority_requested,
         "playabilityAuthorityRequested": playability_authority_requested,
+        "legacyV1AuthorityEnabled": legacy_authority_enabled,
         "directionAuthorityEnabled": direction_authority,
         "playabilityAuthorityEnabled": playability_authority,
         "authoritySafetyErrors": authority_safety_errors,
@@ -257,7 +281,11 @@ def enhance_result(result: Dict[str, Any]) -> Dict[str, Any]:
         "championPlayableCount": playable,
         "directionFlipPlayabilityBlockedCount": direction_flip_playability_blocks,
         "rowCount": len(rows),
-        "safetyPolicy": "Each authority requires its own promoted valid model; playability also requires a validation-selected reliability threshold.",
+        "safetyPolicy": (
+            "Legacy V1 models are diagnostic-only unless an explicit emergency "
+            "opt-in is present. V2 remains shadow-only until its fixed prospective "
+            "gates pass and the first promotion is manually reviewed."
+        ),
     }
     return result
 

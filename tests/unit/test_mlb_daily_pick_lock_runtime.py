@@ -17,7 +17,10 @@ REQUIRED_RUNTIME_STEPS = {
     "accuracyTargetsSeparated",
     "legacyReliabilityOverlaySafety",
     "sourceHonestFundamentals",
-    "singleDdbChampionAuthority",
+    "sourceHonestFundamentalsV2",
+    "legacyV1ChampionRuntimeInstalledForShadowDiagnostics",
+    "legacyV1AuthorityDisabled",
+    "v2ShadowManualFirst",
     "officialSemanticsFinalized",
     "exactCleanCohortVectorPatch",
     "officialFreezeBridge",
@@ -25,6 +28,7 @@ REQUIRED_RUNTIME_STEPS = {
     "immutableLockedStorageAuthority",
     "canonicalLockedStorageFinalizer",
     "lastPrelockPromotionAuthority",
+    "canonicalProbabilityAndPersistedPrelockAuthority",
     "legacyFinalGateDisabled",
 }
 STUB_MODULE_NAMES = (

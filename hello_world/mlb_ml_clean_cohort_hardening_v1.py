@@ -29,6 +29,16 @@ def _number(value: Any) -> Optional[float]:
         return None
 
 
+def _count(value: Any) -> Optional[int]:
+    try:
+        if value in (None, ""):
+            return None
+        parsed = int(value)
+        return parsed if parsed >= 0 else None
+    except Exception:
+        return None
+
+
 def _selected_signal(row: Dict[str, Any]) -> Dict[str, Any]:
     side = str(row.get("predictedSide") or "").lower()
     value = row.get("homeSignal") if side == "home" else row.get("awaySignal") if side == "away" else None
@@ -143,6 +153,67 @@ def apply(cohort_module: Any):
             reasons.append("frozen_vector_home_temporal_history_missing")
         if _number(vector_features.get("awayTemporalAvailable")) != 1.0:
             reasons.append("frozen_vector_away_temporal_history_missing")
+        pull_integrity = frozen_vector.get("pullHistoryIntegrity") or {}
+        source_slot = frozen_vector.get("predictionSourceCanonicalSlot") or {}
+        if not isinstance(pull_integrity, dict) or not pull_integrity:
+            pull_integrity = {}
+            reasons.append("frozen_vector_pull_history_integrity_missing")
+        unique_slot_count = _count(pull_integrity.get("uniqueSlotCount"))
+        raw_pull_count = _count(pull_integrity.get("rawPullCount"))
+        duplicate_pull_count = _count(pull_integrity.get("duplicatePullCount"))
+        invalid_pull_count = _count(pull_integrity.get("invalidPullCount"))
+        contaminated_slot_count = _count(pull_integrity.get("contaminatedSlotCount"))
+        if not pull_integrity.get("version"):
+            reasons.append("frozen_vector_pull_history_integrity_version_missing")
+        if not pull_integrity.get("canonicalizationVersion"):
+            reasons.append("frozen_vector_pull_slot_canonicalization_version_missing")
+        if unique_slot_count is None or unique_slot_count <= 0:
+            reasons.append("frozen_vector_canonical_pull_slot_count_missing")
+        if raw_pull_count is None or unique_slot_count is None or raw_pull_count != unique_slot_count:
+            reasons.append("frozen_vector_raw_and_unique_pull_slot_counts_mismatch")
+        if not pull_integrity.get("canonicalSlotFingerprint"):
+            reasons.append("frozen_vector_canonical_pull_slot_fingerprint_missing")
+        if pull_integrity.get("duplicateContaminated") is not False:
+            reasons.append("frozen_vector_duplicate_pull_slot_contamination")
+        if duplicate_pull_count is None or duplicate_pull_count > 0:
+            reasons.append("frozen_vector_duplicate_pull_observation_count_nonzero")
+        if invalid_pull_count is None or invalid_pull_count > 0:
+            reasons.append("frozen_vector_invalid_pull_observation_count_nonzero")
+        if contaminated_slot_count is None or contaminated_slot_count > 0:
+            reasons.append("frozen_vector_contaminated_pull_slot_count_nonzero")
+
+        if not isinstance(source_slot, dict) or not source_slot:
+            source_slot = {}
+            reasons.append("frozen_vector_prediction_source_canonical_slot_missing")
+        source_slot_start = str(source_slot.get("slotStartUtc") or "")
+        source_fingerprint = str(source_slot.get("canonicalPullFingerprint") or "")
+        if not source_slot.get("version"):
+            reasons.append("frozen_vector_prediction_source_slot_version_missing")
+        if source_slot.get("canonical") is not True:
+            reasons.append("frozen_vector_prediction_source_slot_not_canonical")
+        if not source_slot_start:
+            reasons.append("frozen_vector_prediction_source_slot_start_missing")
+        if not source_slot.get("canonicalPullId"):
+            reasons.append("frozen_vector_prediction_source_pull_id_missing")
+        if not source_slot.get("canonicalPulledAtUtc"):
+            reasons.append("frozen_vector_prediction_source_pull_time_missing")
+        if not source_fingerprint:
+            reasons.append("frozen_vector_prediction_source_slot_fingerprint_missing")
+        slot_starts = pull_integrity.get("slotStartsUtc") or []
+        if (
+            source_slot_start
+            and (
+                not isinstance(slot_starts, list)
+                or source_slot_start not in {str(value) for value in slot_starts}
+            )
+        ):
+            reasons.append("frozen_vector_prediction_source_slot_not_in_history")
+        if source_slot.get("contaminated") is not False:
+            reasons.append("frozen_vector_prediction_source_slot_contaminated")
+        if _count(source_slot.get("duplicatePullCount")) != 0:
+            reasons.append("frozen_vector_prediction_source_duplicate_pull_count_nonzero")
+        if _count(source_slot.get("invalidPullCount")) != 0:
+            reasons.append("frozen_vector_prediction_source_invalid_pull_count_nonzero")
 
         labels = frozen_vector.get("labels")
         if not isinstance(labels, dict) or not {"homeWon", "pickCorrect"}.issubset(labels):

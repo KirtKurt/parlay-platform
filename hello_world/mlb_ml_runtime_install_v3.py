@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict
 
-VERSION = "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority"
+VERSION = (
+    "MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-"
+    "aws-v2-shadow-manual-first"
+)
 
 
 def install() -> Dict[str, Any]:
@@ -31,6 +35,7 @@ def install() -> Dict[str, Any]:
     try:
         import mlb_game_winner_engine as engine
         import mlb_fundamentals_snapshot_v1
+        import mlb_fundamentals_snapshot_v2
         import mlb_ml_champion_runtime_v1
         import mlb_official_prediction_semantics
         import mlb_official_freeze_bridge
@@ -39,6 +44,7 @@ def install() -> Dict[str, Any]:
         import mlb_immutable_locked_storage_patch
         import mlb_locked_prediction_storage_finalizer_v1
         import mlb_last_possible_prediction_gate
+        import mlb_prediction_probability_contract_v1
         import mlb_slate_coverage_patch
         import mlb_slate_prediction_lock
 
@@ -47,6 +53,7 @@ def install() -> Dict[str, Any]:
 
         for attr, patch in [
             ("_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED", mlb_fundamentals_snapshot_v1),
+            ("_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V2_APPLIED", mlb_fundamentals_snapshot_v2),
             ("_INQSI_MLB_ML_CHAMPION_RUNTIME_V1_APPLIED", mlb_ml_champion_runtime_v1),
             ("_INQSI_MLB_OFFICIAL_PREDICTION_SEMANTICS_APPLIED", mlb_official_prediction_semantics),
         ]:
@@ -70,10 +77,29 @@ def install() -> Dict[str, Any]:
             and getattr(engine, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED", False)
         )
 
+        # Finalize direction/probability before the public authority and sole
+        # storage writer. V2 was installed before semantics/freezing above, so
+        # its exact fingerprint is part of the frozen T-45 vector.
+        mlb_prediction_probability_contract_v1.apply(engine)
+        engine._INQSI_MLB_PERSISTED_PRELOCK_PUBLIC_AUTHORITY_ENABLED = True
+
         exact_vector = getattr(mlb_ml_frozen_features, "_INQSI_MLB_EXACT_LOCK_VECTOR_PATCH_APPLIED", False)
         official_bridge = getattr(mlb_official_prediction_semantics, "_INQSI_MLB_OFFICIAL_FREEZE_BRIDGE_APPLIED_V2", False)
         status["steps"]["sourceHonestFundamentals"] = hasattr(engine, "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED")
-        status["steps"]["singleDdbChampionAuthority"] = hasattr(engine, "_INQSI_MLB_ML_CHAMPION_RUNTIME_V1_APPLIED")
+        legacy_runtime_installed = hasattr(
+            engine, "_INQSI_MLB_ML_CHAMPION_RUNTIME_V1_APPLIED"
+        )
+        legacy_authority_enabled = False
+        automatic_promotion_enabled = str(
+            os.environ.get("INQSI_MLB_ML_AUTO_PROMOTE", "false")
+        ).strip().lower() in {"1", "true", "yes"}
+        status["steps"][
+            "legacyV1ChampionRuntimeInstalledForShadowDiagnostics"
+        ] = legacy_runtime_installed
+        status["steps"]["legacyV1AuthorityDisabled"] = bool(
+            legacy_runtime_installed and not legacy_authority_enabled
+        )
+        status["steps"]["v2ShadowManualFirst"] = not automatic_promotion_enabled
         status["steps"]["officialSemanticsFinalized"] = hasattr(engine, "_INQSI_MLB_OFFICIAL_PREDICTION_SEMANTICS_APPLIED")
         status["steps"]["exactCleanCohortVectorPatch"] = exact_vector
         status["steps"]["officialFreezeBridge"] = official_bridge
@@ -94,6 +120,35 @@ def install() -> Dict[str, Any]:
         # it forces every inner wrapper to store=False, then persists the exact
         # user-visible PRE_LOCK_PLATFORM_PREDICTION returned here.
         mlb_slate_coverage_patch.install_public_authority(engine, mlb_slate_prediction_lock)
+        status["steps"]["canonicalProbabilityAndPersistedPrelockAuthority"] = bool(
+            getattr(
+                engine,
+                "_INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED",
+                False,
+            )
+            and getattr(
+                engine,
+                "MLB_PREDICTION_PROBABILITY_CONTRACT_VERSION",
+                None,
+            )
+            == mlb_prediction_probability_contract_v1.VERSION
+            and getattr(
+                engine,
+                "_INQSI_MLB_PERSISTED_PRELOCK_PUBLIC_AUTHORITY_ENABLED",
+                False,
+            )
+            and callable(getattr(engine, "read_persisted_predictions", None))
+        )
+        status["probabilityContractVersion"] = mlb_prediction_probability_contract_v1.VERSION
+        # V2 is installed before semantics/freezing, so the exact signed
+        # snapshot is bound into the T-45 vector. The public persisted-read
+        # alias remains inside the final storage wrapper and never recomputes.
+        status["steps"]["sourceHonestFundamentalsV2"] = bool(
+            getattr(engine, "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V2_APPLIED", False)
+            and getattr(engine, "MLB_FUNDAMENTALS_SNAPSHOT_V2_VERSION", None)
+            == mlb_fundamentals_snapshot_v2.VERSION
+        )
+        status["fundamentalsSnapshotV2Version"] = mlb_fundamentals_snapshot_v2.VERSION
         status["steps"]["lastPrelockPromotionAuthority"] = bool(
             getattr(engine, "_INQSI_MLB_PUBLIC_PER_GAME_AUTHORITY_APPLIED", False)
             and getattr(
@@ -116,10 +171,9 @@ def install() -> Dict[str, Any]:
 
     status["ok"] = not status["errors"] and all(status["steps"].values())
     status["policy"] = (
-        "The gate-promoted DynamoDB champion is the only model allowed to change direction or playability. "
-        "Only the authoritative AWS audit may automatically promote an independently eligible authority. "
-        "Both authorities require at least 90% current rolling 24-hour official-card slate accuracy; direction "
-        "also requires 90% untouched outcome accuracy and playability separately requires 90% selected untouched-test accuracy. "
+        "The persisted canonical rules/market prediction remains production direction and playability authority. "
+        "Legacy V1 champions are diagnostic-only. AWS V2 trains and evaluates in shadow using fixed whole-slate "
+        "300/100/100 partitions; the first promotion always requires manual review and automatic promotion is disabled. "
         "Every new locked game stores the exact immutable clean-cohort vector before final labels exist. "
         "The final public lock is the validated canonical promotion of the last prediction available at each game's own T-minus-45 cutoff; no lock-time rescore is authoritative."
     )

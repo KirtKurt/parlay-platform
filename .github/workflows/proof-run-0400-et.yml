@@ -1,122 +1,13 @@
-name: One-Time 4:00 AM ET Full Readiness Proof
+name: Retired - Proof Run 0400 ET
 
-on:
-  schedule:
-    # 4:00 AM America/New_York on 2026-06-28 is 08:00 UTC.
-    # This is after the 1:00 AM ET start plus the 12-snapshot minimum window.
-    - cron: '0 8 28 6 *'
-  workflow_dispatch:
+# Retired permanently: proof workflows may not invoke production schedulers.
+on: []
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
-  proof:
+  retired:
+    if: ${{ false }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-
-      - name: Install runtime dependencies
-        run: python -m pip install --upgrade boto3
-
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Run full all-sports readiness proof
-        env:
-          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
-          ODDS_REGIONS: us
-          ODDS_MARKETS: h2h,spreads,totals
-          ODDS_FORMAT: american
-          SNAPSHOTS_TABLE: parlay_platform_snapshots
-          INQSI_AUTO_BUILD_SPORTS: mlb,wnba,nfl,cfb,nba,ncaam,nhl,soccer,tennis
-        run: |
-          set -euo pipefail
-          mkdir -p runtime_reports
-          export PYTHONPATH="$GITHUB_WORKSPACE/hello_world:${PYTHONPATH:-}"
-          python - <<'PY'
-          import json
-          from datetime import datetime, timezone
-          from zoneinfo import ZoneInfo
-          import all_sports_live_scheduler
-          import auto_build_runner
-          import market_board
-
-          sports = ['mlb','wnba','nfl','cfb','nba','ncaam','nhl','soccer','tennis']
-          et_now = datetime.now(ZoneInfo('America/New_York')).isoformat()
-          scheduler_result = all_sports_live_scheduler.lambda_handler({
-              'sports': ','.join(sports),
-              'run': 'one_time_0400am_et_full_readiness_proof',
-          }, None)
-          scheduler_body = json.loads(scheduler_result.get('body') or '{}')
-
-          auto_build_runner.main()
-          parlay_report = json.load(open('runtime_reports/parlay_latest.json', encoding='utf-8'))
-          board = market_board.board_all({'sports': ','.join(sports)})
-          build_results = (parlay_report.get('result') or {}).get('results') or []
-          built = [r.get('sport') for r in build_results if r.get('buildStatus') == 'BUILT']
-          not_built = [
-              {
-                  'sport': r.get('sport'),
-                  'reason': r.get('reason'),
-                  'pullCount': r.get('pullCount'),
-                  'sameSlateSignalCount': r.get('sameSlateSignalCount'),
-                  'rawSignalCount': r.get('rawSignalCount'),
-                  'pullCoverage': r.get('pullCoverage'),
-                  'buildDeadline': r.get('buildDeadline'),
-              }
-              for r in build_results if r.get('buildStatus') != 'BUILT'
-          ]
-          proof = {
-              'ok': True,
-              'proofRun': 'one_time_0400am_et_full_readiness_proof',
-              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
-              'createdAtEt': et_now,
-              'question': 'After 1:00 AM ET start and 12-snapshot window, did all configured sports that can pull data create 3-leg parlays?',
-              'sports': sports,
-              'sportsWith3LegParlays': built,
-              'sportsWithout3LegParlays': not_built,
-              'successLevel': {
-                  'builtCount': len(built),
-                  'checkedCount': len(sports),
-                  'allSportsBuilt': len(built) == len(sports),
-              },
-              'schedulerResult': scheduler_body,
-              'parlayProof': parlay_report,
-              'marketBoard': board,
-          }
-          open('runtime_reports/proof_0400am_latest.json','w',encoding='utf-8').write(json.dumps(proof, indent=2, default=str)+'\n')
-          open('runtime_reports/live_odds_latest.json','w',encoding='utf-8').write(json.dumps({
-              'ok': True,
-              'createdAtUtc': proof['createdAtUtc'],
-              'createdAtEt': proof['createdAtEt'],
-              'sportsRequested': sports,
-              'builtSports': built,
-              'sportsWithout3LegParlays': not_built,
-              'mlbParlayBuilt': 'mlb' in built,
-              'successLevel': proof['successLevel'],
-              'parlayProof': parlay_report,
-              'schedulerResult': scheduler_body,
-          }, indent=2, default=str)+'\n')
-          print(json.dumps({'ok': True, 'createdAtEt': et_now, 'builtSports': built, 'notBuilt': not_built, 'successLevel': proof['successLevel']}, indent=2, default=str))
-          PY
-
-      - name: Commit proof reports
-        if: always()
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add runtime_reports/proof_0400am_latest.json runtime_reports/live_odds_latest.json runtime_reports/parlay_latest.json runtime_reports/pull_health_latest.json || true
-          git commit -m "Run 4:00 AM ET full readiness proof" || true
-          git pull --rebase --autostash origin main || true
-          git push || true
+      - run: exit 1

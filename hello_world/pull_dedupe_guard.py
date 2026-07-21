@@ -70,6 +70,26 @@ def _latest_pull(history_module: Any, sport: str, slate: str) -> Optional[Dict[s
 def apply(history_module: Any) -> None:
     if history_module is None or getattr(history_module, "_inqsi_pull_dedupe_installed", False):
         return
+    # New history runtimes atomically store the observation at the canonical
+    # PULL#SLOT key and preserve raw variants there. Wrapping that writer with
+    # the legacy, separately persisted PULL_SLOT marker recreates the exact
+    # marker/observation crash gap this guard originally tried to avoid.
+    if (
+        getattr(history_module, "_INQSI_INTRINSIC_PULL_SLOT_IDEMPOTENCY", False)
+        or (
+            getattr(history_module, "PULL_SLOT_VERSION", None)
+            and getattr(history_module, "PULL_HISTORY_INTEGRITY_VERSION", None)
+            and callable(getattr(history_module, "canonicalize_pull_slots", None))
+        )
+    ):
+        history_module._inqsi_pull_dedupe_installed = True
+        history_module._inqsi_native_atomic_pull_slot_writer = True
+        history_module.PULL_DEDUPE_VERSION = (
+            getattr(history_module, "INTRINSIC_PULL_IDEMPOTENCY_VERSION", None)
+            or getattr(history_module, "PULL_SLOT_VERSION", None)
+            or VERSION
+        )
+        return
     original_store_pull = history_module.store_pull
 
     def store_pull(body: Dict[str, Any]) -> Dict[str, Any]:

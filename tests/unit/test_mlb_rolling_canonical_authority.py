@@ -233,7 +233,7 @@ def test_query_accepts_explicit_training_exclusion_but_rejects_unmarked_vector_t
     assert rejected["status"] == "INVALID_CANONICAL_LOCK"
     assert rejected["canonicalLockEvidenceStatus"] == "INVALID"
     assert rejected["canonicalLockValidationErrors"]
-    assert "invalid_vector_not_explicitly_unverified" in (
+    assert "pregame_vector_contains_outcome_label" in (
         rejected["canonicalLockAuthority"]["rejectionReasons"]
     )
 

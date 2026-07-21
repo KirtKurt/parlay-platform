@@ -33,6 +33,15 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
     fundamentals.apply = lambda module: setattr(
         module, "_INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V1_APPLIED", True
     )
+    fundamentals_v2 = _module("mlb_fundamentals_snapshot_v2")
+    fundamentals_v2.VERSION = "test-fundamentals-v2"
+
+    def apply_fundamentals_v2(module: ModuleType) -> None:
+        events.append("fundamentals_v2_apply")
+        module._INQSI_MLB_FUNDAMENTALS_SNAPSHOT_V2_APPLIED = True
+        module.MLB_FUNDAMENTALS_SNAPSHOT_V2_VERSION = fundamentals_v2.VERSION
+
+    fundamentals_v2.apply = apply_fundamentals_v2
     champion = _module("mlb_ml_champion_runtime_v1")
     champion.apply = lambda module: setattr(
         module, "_INQSI_MLB_ML_CHAMPION_RUNTIME_V1_APPLIED", True
@@ -65,6 +74,12 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
 
     def apply_finalizer(module: ModuleType) -> None:
         events.append("storage_finalizer_apply")
+        original = module.predict_all
+
+        def final_storage_writer(*args, **kwargs):
+            return original(*args, **kwargs)
+
+        module.predict_all = final_storage_writer
         module._INQSI_MLB_LOCKED_STORAGE_FINALIZER_V1_APPLIED = True
 
     finalizer.apply = apply_finalizer
@@ -79,6 +94,16 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
 
     legacy_gate.apply = apply_legacy_gate
 
+    probability = _module("mlb_prediction_probability_contract_v1")
+    probability.VERSION = "test-probability-contract"
+
+    def apply_probability(module: ModuleType) -> None:
+        events.append("probability_contract_apply")
+        module._INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED = True
+        module.MLB_PREDICTION_PROBABILITY_CONTRACT_VERSION = probability.VERSION
+
+    probability.apply = apply_probability
+
     slate_lock = _module("mlb_slate_prediction_lock")
     slate_lock.apply = lambda module: events.append("slate_lock_apply")
 
@@ -90,6 +115,7 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
         events.append("public_authority_apply")
         module._INQSI_MLB_PUBLIC_PER_GAME_AUTHORITY_APPLIED = True
         module.MLB_PUBLIC_PER_GAME_AUTHORITY_VERSION = coverage.AUTHORITY_VERSION
+        module.read_persisted_predictions = module.predict_all
         lock_module._INQSI_MLB_LAST_PRELOCK_PROMOTION_AUTHORITY_APPLIED = True
 
     coverage.install_public_authority = install_public_authority
@@ -102,6 +128,7 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
             safety,
             engine,
             fundamentals,
+            fundamentals_v2,
             champion,
             semantics,
             freeze_bridge,
@@ -110,6 +137,7 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
             immutable,
             finalizer,
             legacy_gate,
+            probability,
             coverage,
             slate_lock,
         )
@@ -127,14 +155,27 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
 
         assert status["ok"] is True
         assert status["version"] == (
-            "MLB-ML-RUNTIME-INSTALL-v3.9-explicit-verified-stage-promotion-authority"
+            "MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-"
+            "aws-v2-shadow-manual-first"
         )
+        assert status["steps"]["legacyV1AuthorityDisabled"] is True
+        assert status["steps"]["v2ShadowManualFirst"] is True
         assert status["steps"]["legacyFinalGateDisabled"] is True
         assert status["steps"]["lastPrelockPromotionAuthority"] is True
         assert events.count("legacy_gate_apply") == 1
-        assert events.index("public_authority_apply") < events.index(
+        assert events.index("fundamentals_v2_apply") < events.index(
             "storage_finalizer_apply"
         )
+        # V2 must wrap prediction generation before public authority captures
+        # that chain and before the storage finalizer freezes it. Persisted
+        # public reads retain their separate unwrapped alias below.
+        assert events.index("fundamentals_v2_apply") < events.index(
+            "public_authority_apply"
+        )
+        assert events.index("probability_contract_apply") < events.index(
+            "public_authority_apply"
+        )
+        assert engine.read_persisted_predictions is not engine.predict_all
         assert engine._INQSI_MLB_CANONICAL_PER_GAME_AUTHORITY_ENABLED is True
     finally:
         sys.modules.pop(module_name, None)

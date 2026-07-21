@@ -67,6 +67,13 @@ def _validate_deploy_workflow() -> None:
         'DeployTemplateSha256="${DEPLOY_TEMPLATE_SHA256}"',
         "Prove exact deployed Lambda identity and schedules",
         "verify_mlb_deploy_identity.py",
+        "Run AWS-native MLB trainer and verify fresh split health",
+        "verify_mlb_trainer_deploy_response.py",
+        "aws_native_fixed_prospective_shadow_training",
+        "aws_native_prospective_selection_capture",
+        "trainingHealth",
+        "selectionCaptureHealth",
+        "deploymentIdentityMatches",
         "Verify The Odds API without writing an unscheduled pull",
         "writePerformed",
         "mlb-deployment-identity-${{ github.run_id }}",
@@ -79,6 +86,16 @@ def _validate_deploy_workflow() -> None:
         "test_mlb_ml_runtime_install_explicit.py",
     ]
     missing = [token for token in required if token not in text]
+    verifier = (
+        ROOT / "scripts" / "verify_mlb_trainer_deploy_response.py"
+    ).read_text(encoding="utf-8")
+    for token in [
+        "mlb-v2-2026-07-21-future-prospective-r2",
+        "2026-07-22T04:00:00+00:00",
+        "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow",
+    ]:
+        if token not in verifier:
+            missing.append(f"trainer verifier identity: {token}")
     forbidden = [
         token
         for token in [

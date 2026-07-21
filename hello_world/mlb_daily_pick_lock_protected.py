@@ -20,7 +20,10 @@ _REQUIRED_RUNTIME_STEPS = {
     "accuracyTargetsSeparated",
     "legacyReliabilityOverlaySafety",
     "sourceHonestFundamentals",
-    "singleDdbChampionAuthority",
+    "sourceHonestFundamentalsV2",
+    "legacyV1ChampionRuntimeInstalledForShadowDiagnostics",
+    "legacyV1AuthorityDisabled",
+    "v2ShadowManualFirst",
     "officialSemanticsFinalized",
     "exactCleanCohortVectorPatch",
     "officialFreezeBridge",
@@ -28,6 +31,7 @@ _REQUIRED_RUNTIME_STEPS = {
     "immutableLockedStorageAuthority",
     "canonicalLockedStorageFinalizer",
     "lastPrelockPromotionAuthority",
+    "canonicalProbabilityAndPersistedPrelockAuthority",
     "legacyFinalGateDisabled",
 }
 if isinstance(_raw_runtime_status, dict):

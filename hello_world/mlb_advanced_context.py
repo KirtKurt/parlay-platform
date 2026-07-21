@@ -1,16 +1,18 @@
 from __future__ import annotations
 
+import hashlib
 import json
+import os
 import urllib.parse
 import urllib.request
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 from mlb_official_schedule_authority import normalize_team as _official_normalize_team
 
 
-ADVANCED_CONTEXT_VERSION = "MLB-B1.0-advanced-context-v1"
+ADVANCED_CONTEXT_VERSION = "MLB-B1.0-advanced-context-v2-source-provenance"
 STATSAPI_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
 
 _REQUIRED_CONTEXT_KEYS = [
@@ -24,10 +26,10 @@ _REQUIRED_CONTEXT_KEYS = [
     "ballpark_factors",
     "injuries_late_scratches_news",
     "public_betting_handle",
-    "closing_line_value",
 ]
 
 _STATSAPI_CACHE: Dict[str, Dict[str, Any]] = {}
+_STATSAPI_CACHE_SECONDS = max(60, int(os.environ.get("INQSI_MLB_STATSAPI_CONTEXT_CACHE_SECONDS", "300")))
 
 
 def _normalize_team(name: Optional[str]) -> str:
@@ -40,6 +42,22 @@ def _http_get_json(url: str, timeout: int = 12) -> Any:
         return json.loads(response.read().decode("utf-8"))
 
 
+def _payload_fingerprint(payload: Any) -> str:
+    material = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _source_provenance(schedule: Dict[str, Any], dataset: str, source_effective_at: Optional[str] = None) -> Dict[str, Any]:
+    return {
+        "provider": "MLB Stats API",
+        "endpoint": schedule.get("endpoint"),
+        "dataset": dataset,
+        "retrievedAtUtc": schedule.get("retrievedAtUtc"),
+        "sourceEffectiveAtUtc": source_effective_at,
+        "payloadFingerprint": schedule.get("payloadFingerprint"),
+    }
+
+
 def _date_for_statsapi(game_date_et: str) -> str:
     try:
         dt = datetime.strptime(game_date_et, "%Y-%m-%d")
@@ -49,8 +67,17 @@ def _date_for_statsapi(game_date_et: str) -> str:
 
 
 def _statsapi_schedule(game_date_et: str) -> Dict[str, Any]:
-    if game_date_et in _STATSAPI_CACHE:
-        return _STATSAPI_CACHE[game_date_et]
+    cached = _STATSAPI_CACHE.get(game_date_et)
+    try:
+        cached_at = datetime.fromisoformat(
+            str((cached or {}).get("retrievedAtUtc") or "").replace("Z", "+00:00")
+        ) if (cached or {}).get("retrievedAtUtc") else None
+    except Exception:
+        cached_at = None
+    if cached_at and cached_at.tzinfo is None:
+        cached_at = cached_at.replace(tzinfo=timezone.utc)
+    if cached and cached.get("ok") and cached_at and datetime.now(timezone.utc) - cached_at.astimezone(timezone.utc) <= timedelta(seconds=_STATSAPI_CACHE_SECONDS):
+        return cached
     params = {
         "sportId": "1",
         "date": _date_for_statsapi(game_date_et),
@@ -59,32 +86,87 @@ def _statsapi_schedule(game_date_et: str) -> Dict[str, Any]:
     url = STATSAPI_SCHEDULE_URL + "?" + urllib.parse.urlencode(params)
     try:
         payload = _http_get_json(url)
-        out = {"ok": True, "source_status": "CONNECTED", "payload": payload, "error": None}
+        retrieved_at = datetime.now(timezone.utc).isoformat()
+        out = {
+            "ok": True,
+            "source_status": "CONNECTED",
+            "payload": payload,
+            "error": None,
+            "endpoint": url,
+            "retrievedAtUtc": retrieved_at,
+            "payloadFingerprint": _payload_fingerprint(payload),
+        }
     except Exception as exc:
-        out = {"ok": False, "source_status": "ERROR", "payload": {}, "error": str(exc)}
+        retrieved_at = datetime.now(timezone.utc).isoformat()
+        out = {
+            "ok": False,
+            "source_status": "ERROR",
+            "payload": {},
+            "error": str(exc),
+            "endpoint": url,
+            "retrievedAtUtc": retrieved_at,
+            "payloadFingerprint": None,
+        }
     _STATSAPI_CACHE[game_date_et] = out
     return out
 
 
-def _match_statsapi_game(game_date_et: str, home_team: Optional[str], away_team: Optional[str]) -> Optional[Dict[str, Any]]:
+def _match_statsapi_game(
+    game_date_et: str,
+    home_team: Optional[str],
+    away_team: Optional[str],
+    official_game_pk: Optional[Any] = None,
+) -> Optional[Dict[str, Any]]:
     schedule = _statsapi_schedule(game_date_et)
     payload = schedule.get("payload") or {}
     target_home = _normalize_team(home_team)
     target_away = _normalize_team(away_team)
-    for date_row in payload.get("dates") or []:
-        for game in date_row.get("games") or []:
-            teams = game.get("teams") or {}
-            home = ((teams.get("home") or {}).get("team") or {}).get("name")
-            away = ((teams.get("away") or {}).get("team") or {}).get("name")
-            if _normalize_team(home) == target_home and _normalize_team(away) == target_away:
-                return game
-    return None
+    games = [
+        game
+        for date_row in payload.get("dates") or []
+        for game in (date_row.get("games") or [])
+        if isinstance(game, dict)
+    ]
+    # Once official identity is available it is the only permitted join key.
+    # Falling through to team names can silently swap Games 1 and 2 of a
+    # doubleheader, contaminating the frozen T-45 fundamentals.
+    if official_game_pk not in (None, ""):
+        exact = [
+            game
+            for game in games
+            if str(game.get("gamePk") or "") == str(official_game_pk)
+        ]
+        if len(exact) != 1:
+            return None
+        teams = exact[0].get("teams") or {}
+        home = ((teams.get("home") or {}).get("team") or {}).get("name")
+        away = ((teams.get("away") or {}).get("team") or {}).get("name")
+        return exact[0] if (
+            _normalize_team(home) == target_home
+            and _normalize_team(away) == target_away
+        ) else None
+
+    team_matches: List[Dict[str, Any]] = []
+    for game in games:
+        teams = game.get("teams") or {}
+        home = ((teams.get("home") or {}).get("team") or {}).get("name")
+        away = ((teams.get("away") or {}).get("team") or {}).get("name")
+        if _normalize_team(home) == target_home and _normalize_team(away) == target_away:
+            team_matches.append(game)
+    # Team/date identity is permitted only when unique. Same-team
+    # doubleheaders intentionally remain unresolved without official gamePk.
+    return team_matches[0] if len(team_matches) == 1 else None
 
 
 def _probable_pitcher_payload(game_date_et: str, game: Dict[str, Any]) -> Dict[str, Any]:
-    matched = _match_statsapi_game(game_date_et, game.get("home_team"), game.get("away_team"))
+    schedule = _statsapi_schedule(game_date_et)
+    matched = _match_statsapi_game(
+        game_date_et,
+        game.get("home_team"),
+        game.get("away_team"),
+        game.get("official_game_pk") or game.get("officialGamePk"),
+    )
     if not matched:
-        schedule = _statsapi_schedule(game_date_et)
         return {
             "source_status": "MISSING_FROM_PROVIDER" if schedule.get("ok") else "ERROR",
             "source": "MLB Stats API schedule hydrate=probablePitcher",
@@ -95,6 +177,7 @@ def _probable_pitcher_payload(game_date_et: str, game: Dict[str, Any]) -> Dict[s
             "game_status": None,
             "reason": "No matching MLB Stats API schedule game found for this odds-provider matchup.",
             "error": schedule.get("error"),
+            "sourceProvenance": _source_provenance(schedule, "schedule hydrate=probablePitcher"),
         }
     teams = matched.get("teams") or {}
     home_probable = (teams.get("home") or {}).get("probablePitcher") or {}
@@ -111,19 +194,39 @@ def _probable_pitcher_payload(game_date_et: str, game: Dict[str, Any]) -> Dict[s
         "away_pitcher_id": away_probable.get("id"),
         "game_status": ((matched.get("status") or {}).get("detailedState")),
         "game_pk": matched.get("gamePk"),
+        "sourceProvenance": _source_provenance(
+            schedule,
+            "schedule hydrate=probablePitcher",
+        ),
     }
 
 
 def _venue_payload(game_date_et: str, game: Dict[str, Any]) -> Dict[str, Any]:
-    matched = _match_statsapi_game(game_date_et, game.get("home_team"), game.get("away_team"))
+    schedule = _statsapi_schedule(game_date_et)
+    matched = _match_statsapi_game(
+        game_date_et,
+        game.get("home_team"),
+        game.get("away_team"),
+        game.get("official_game_pk") or game.get("officialGamePk"),
+    )
     if not matched:
-        return {"source_status": "MISSING_FROM_PROVIDER", "source": "MLB Stats API schedule hydrate=venue", "venue_name": None, "venue_id": None}
+        return {
+            "source_status": "MISSING_FROM_PROVIDER",
+            "source": "MLB Stats API schedule hydrate=venue",
+            "venue_name": None,
+            "venue_id": None,
+            "sourceProvenance": _source_provenance(schedule, "schedule hydrate=venue"),
+        }
     venue = matched.get("venue") or {}
     return {
         "source_status": "CONNECTED" if venue.get("name") else "PARTIAL",
         "source": "MLB Stats API schedule hydrate=venue",
         "venue_name": venue.get("name"),
         "venue_id": venue.get("id"),
+        "sourceProvenance": _source_provenance(
+            schedule,
+            "schedule hydrate=venue",
+        ),
     }
 
 
@@ -143,7 +246,9 @@ def _closing_line_value(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     return {
         "source_status": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT",
         "source": "15-minute odds snapshots + post-close/final settlement pass",
-        "required_for_advanced_eligibility": True,
+        "required_for_advanced_eligibility": False,
+        "pregame_completeness_eligible": False,
+        "postgame_evaluation_only": True,
         "current_latest_consensus": latest_consensus,
         "previous_consensus": previous_consensus,
         "movement": movement,
@@ -191,6 +296,18 @@ def build_advanced_context(game_date_et: str, game: Dict[str, Any], row: Optiona
             "home_starter_xfip": None,
             "away_starter_fip": None,
             "away_starter_xfip": None,
+            "home_starter_era": None,
+            "away_starter_era": None,
+            "home_starter_xera": None,
+            "away_starter_xera": None,
+            "home_starter_k_minus_bb_pct": None,
+            "away_starter_k_minus_bb_pct": None,
+            "home_starter_recent_pitch_count": None,
+            "away_starter_recent_pitch_count": None,
+            "home_starter_recent_innings": None,
+            "away_starter_recent_innings": None,
+            "home_starter_health_status": None,
+            "away_starter_health_status": None,
             "note": "Requires a pitcher-stat provider such as a licensed stats feed, FanGraphs-style feed, or internal pybaseball/statcast pipeline.",
         },
         "wrc_plus": {
@@ -209,6 +326,10 @@ def build_advanced_context(game_date_et: str, game: Dict[str, Any], row: Optiona
             "away_starter_hand": None,
             "home_offense_vs_opp_hand": None,
             "away_offense_vs_opp_hand": None,
+            "home_pitch_mix": None,
+            "away_pitch_mix": None,
+            "home_average_velocity_mph": None,
+            "away_average_velocity_mph": None,
             "note": "Probable pitcher names may be available from MLB Stats API, but handedness and opponent split metrics require a stats feed.",
         },
         "bullpen_fatigue": {
@@ -218,6 +339,12 @@ def build_advanced_context(game_date_et: str, game: Dict[str, Any], row: Optiona
             "away_bullpen_fatigue_score": None,
             "home_reliever_usage_1d_3d_5d": None,
             "away_reliever_usage_1d_3d_5d": None,
+            "home_available_relievers": None,
+            "away_available_relievers": None,
+            "home_unavailable_relievers": None,
+            "away_unavailable_relievers": None,
+            "home_high_leverage_roles": None,
+            "away_high_leverage_roles": None,
             "note": "Requires pitcher appearance and pitch-count history.",
         },
         "confirmed_lineups": {
@@ -240,11 +367,13 @@ def build_advanced_context(game_date_et: str, game: Dict[str, Any], row: Optiona
             "note": "Requires ballpark coordinates plus weather/roof provider data.",
         },
         "ballpark_factors": {
-            "source_status": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "source_status": "PARTIAL" if venue.get("source_status") == "CONNECTED" else "NOT_CONNECTED_SOURCE_REQUIRED",
             "required_for_advanced_eligibility": True,
             "venue_name": venue.get("venue_name"),
+            "venue_id": venue.get("venue_id"),
             "park_factor_runs": None,
             "park_factor_hr": None,
+            "sourceProvenance": venue.get("sourceProvenance"),
             "note": "Venue identity is partially connected through MLB Stats API; park-factor values require a park-factor dataset.",
         },
         "injuries_late_scratches_news": {
@@ -324,11 +453,11 @@ def advanced_context_status() -> Dict[str, Any]:
             "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
             "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",
             "public_betting_handle": "NOT_CONNECTED_SOURCE_REQUIRED",
-            "closing_line_value": "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT",
+            "closing_line_value": "POSTGAME_EVALUATION_ONLY_NOT_A_PREGAME_REQUIREMENT",
         },
         "odds_api_scope": {
             "usable_for": ["odds", "15-minute movement", "book agreement", "market validation", "scores/final settlement", "CLV once closing snapshots are frozen"],
             "not_a_source_for": ["FIP", "xFIP", "wRC+", "confirmed lineups", "injuries/news", "weather", "public betting handle"],
         },
-        "eligibility_policy": "Advanced MLB eligibility is blocked until every required context source is connected. This prevents the platform from pretending missing data exists.",
+        "eligibility_policy": "Advanced MLB eligibility is blocked until every required pregame context source is connected. Closing-line value is evaluated only after the game and is never a pregame completeness input.",
     }

@@ -25,8 +25,8 @@ try:
 except Exception:
     OPTIMIZATION_VERSION = None
 
-MODEL_VERSION = "INQSI-MLB-v3.1-90pct-rolling-slate-automatic-authority"
-VERSION = "MLB-V3-READ-API-v3-read-only"
+MODEL_VERSION = "INQSI-MLB-v4.0-canonical-probability-aws-v2-shadow-manual-first"
+VERSION = "MLB-V3-READ-API-v4-persisted-canonical-v2-shadow"
 
 
 def _json_default(value: Any) -> Any:
@@ -77,13 +77,21 @@ def _model_body() -> Dict[str, Any]:
         "pick_type": "individual_game_moneyline",
         "requiredWinnerPickPolicy": "one_official_locked_winner_prediction_for_every_mlb_game",
         "playablePolicy": "playability_is_separate_and_may_be_false_for_an_official_prediction",
-        "mlDirectionPolicy": "outcome_model_requires_90pct_untouched_accuracy_and_90pct_rolling_official_card_slate_accuracy_before_automatic_authority",
+        "mlDirectionPolicy": "persisted_rules_market_direction_v2_shadow_only_no_v2_runtime_consumer",
         "mlReliabilityPolicy": "reliability_probability_is_never_team_win_probability",
-        "productionAuthoritySource": "gate_promoted_DynamoDB_champion_bundle_only",
-        "automaticPromotionPolicy": "authoritative_AWS_audit_only_after_independent_90pct_authority_gates",
+        "productionAuthoritySource": "persisted_canonical_rules_market_prediction_v2_shadow_only",
+        "automaticPromotionPolicy": "disabled_manual_review_creates_shadow_pointer_only",
+        "legacyV1AuthorityEnabled": False,
+        "awsNativeTrainingInstalled": True,
+        "awsNativeTrainingAuthority": False,
+        "awsNativeTrainingHealthSource": "separate_mode_specific_status_contract",
+        "firstPromotionRequiresManualReview": True,
+        "manualReviewCreatesShadowApprovalOnly": True,
+        "v2InferenceConsumerInstalled": False,
+        "runtimeAuthorityActivationAvailable": False,
         "parlaysEnabled": False,
         "readOnly": True,
-        "sourcePolicy": "The Odds API pull history plus timestamped source-honest fundamentals snapshots.",
+        "sourcePolicy": "Canonical 15-minute market slots plus immutable pre-lock Fundamentals V2 snapshots and official FINAL labels.",
     }
 
 
@@ -102,7 +110,10 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         return _response(503, {**model, "ok": False, "winner_predictions": [], "predictions": [], "count": 0})
     date = params.get("game_date_et") or params.get("date") or _today_et()
     try:
-        result = ENGINE.predict_all(
+        reader = getattr(ENGINE, "read_persisted_predictions", None)
+        if not callable(reader):
+            raise RuntimeError("persisted_prelock_prediction_reader_unavailable")
+        result = reader(
             date,
             # This public Lambda has no write authority. Persisted
             # candidates are owned by protected scheduled ingestion.

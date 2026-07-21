@@ -19,6 +19,10 @@ REQUIRED_GROUPS = [
     "closing_line_value",
 ]
 
+PREGAME_REQUIRED_GROUPS = [
+    group for group in REQUIRED_GROUPS if group != "closing_line_value"
+]
+
 
 def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
     try:
@@ -57,9 +61,13 @@ def build(row: Dict[str, Any]) -> Dict[str, Any]:
             context = {"snapshotBuildError": str(exc)}
 
     statuses = {group: _status(context.get(group)) for group in REQUIRED_GROUPS}
-    connected = [group for group, status in statuses.items() if status == "CONNECTED"]
+    connected = [
+        group
+        for group in PREGAME_REQUIRED_GROUPS
+        if statuses.get(group) == "CONNECTED"
+    ]
     partial = [group for group, status in statuses.items() if status in {"PARTIAL", "SCHEMA_CONNECTED_PENDING_CLOSING_SNAPSHOT"}]
-    missing = [group for group in REQUIRED_GROUPS if group not in connected]
+    missing = [group for group in PREGAME_REQUIRED_GROUPS if group not in connected]
 
     fip = context.get("fip_xfip") or {}
     wrc = context.get("wrc_plus") or {}
@@ -98,7 +106,10 @@ def build(row: Dict[str, Any]) -> Dict[str, Any]:
         "connectedGroups": connected,
         "partialGroups": partial,
         "missingGroups": missing,
-        "completenessRatio": round(len(connected) / len(REQUIRED_GROUPS), 4) if REQUIRED_GROUPS else 0.0,
+        "completenessRatio": round(len(connected) / len(PREGAME_REQUIRED_GROUPS), 4) if PREGAME_REQUIRED_GROUPS else 0.0,
+        "pregameCompletenessGroups": list(PREGAME_REQUIRED_GROUPS),
+        "postgameOnlyGroups": ["closing_line_value"],
+        "closingLineValueCountsTowardPregameCompleteness": False,
         "probablePitchers": {
             "home": probable.get("home_probable_pitcher"),
             "away": probable.get("away_probable_pitcher"),

@@ -29,7 +29,7 @@ LOCK_POLICY = "each_mlb_game_minus_45_minutes"
 REQUIRED_LOCK_MINUTES = 45
 STAGE_RECORD_TYPE = "mlb_staged_per_game_tminus45_lock"
 CUTOFF_STABILIZATION_SECONDS = 0
-SOURCE_WINDOW_VERSION = "mlb_per_game_cutoff_source_window_v1"
+SOURCE_WINDOW_VERSION = "mlb_per_game_cutoff_source_window_v2-canonical-quarter-hour"
 ATTEMPT_DIAGNOSTICS_VERSION = "MLB-PER-GAME-LOCK-DIAGNOSTICS-v1-append-only"
 ATTEMPT_RECORD_TYPE = "mlb_per_game_lock_attempt_diagnostic"
 ATTEMPT_OUTCOME_RECORD_TYPE = "mlb_per_game_lock_attempt_outcome_diagnostic"
@@ -71,6 +71,17 @@ def _supported_payload_fingerprint_version(value: Any) -> bool:
     # was added.  It is still required to match the canonical persisted-row
     # hash; unknown named algorithms always fail closed.
     return value in (None, "", PAYLOAD_FINGERPRINT_VERSION)
+
+
+def _probability_contract_required(module: Any) -> bool:
+    engine = getattr(module, "mlb_game_winner_engine", module)
+    return bool(
+        getattr(
+            engine,
+            "_INQSI_MLB_PREDICTION_PROBABILITY_CONTRACT_V1_APPLIED",
+            False,
+        )
+    )
 
 
 def _public_prelock_marker_errors(
@@ -264,7 +275,11 @@ def _scoring_pulls(
     if not cutoff:
         return []
     selected: List[Dict[str, Any]] = []
-    for pull in sorted(pulls or [], key=lambda item: _pull_at(module, item) or datetime.min.replace(tzinfo=timezone.utc)):
+    canonical_pulls = history_contract.canonicalize_pull_slots(
+        pulls or [],
+        sport="mlb",
+    )
+    for pull in sorted(canonical_pulls, key=lambda item: _pull_at(module, item) or datetime.min.replace(tzinfo=timezone.utc)):
         pulled_at = _pull_at(module, pull)
         if not pulled_at or pulled_at > cutoff:
             continue
@@ -285,15 +300,69 @@ def _game_snapshot_fingerprint(game: Dict[str, Any]) -> str:
 def _source_window_entry(module: Any, pull: Dict[str, Any], game: Dict[str, Any]) -> Dict[str, Any]:
     matching = _matching_game(pull, game)
     pulled_at = _pull_at(module, pull)
+    slot = pull.get("canonicalPullSlot") or {}
+    storage = pull.get("canonicalPullStorage") or {}
     return {
         "pullId": str(pull.get("pull_id") or ""),
         "pulledAtUtc": pulled_at.isoformat() if pulled_at else None,
         "gameSnapshotFingerprint": _game_snapshot_fingerprint(matching or {}),
+        "pullStoragePk": storage.get("pk"),
+        "pullStorageSk": storage.get("sk"),
+        "canonicalSlotVersion": slot.get("version"),
+        "slotStartUtc": slot.get("slotStartUtc"),
+        "canonicalPullFingerprint": slot.get("canonicalPullFingerprint"),
+        "rawPullCount": slot.get("rawPullCount"),
+        "duplicatePullCount": slot.get("duplicatePullCount"),
+        "slotContaminated": slot.get("contaminated") is True,
     }
 
 
 def _source_window_entries(module: Any, scoring: Iterable[Dict[str, Any]], game: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [_source_window_entry(module, pull, game) for pull in scoring]
+
+
+def _source_window_integrity(scoring: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+    # Scoring pulls are game-scoped copies of canonical full-slate pulls. Their
+    # payload fingerprint necessarily differs after scoping, but their slot
+    # proof remains the exact metadata produced before scoping. Aggregate that
+    # proof directly; persisted full-pull fingerprints are independently read
+    # back and verified by ``_source_window_authority_errors``.
+    slots = [
+        copy.deepcopy(pull.get("canonicalPullSlot") or {})
+        for pull in scoring or []
+        if isinstance(pull, dict)
+    ]
+    raw_count = sum(int(slot.get("rawPullCount") or 0) for slot in slots)
+    invalid_count = sum(int(slot.get("invalidPullCount") or 0) for slot in slots)
+    duplicate_count = sum(int(slot.get("duplicatePullCount") or 0) for slot in slots)
+    fingerprint_payload = [
+        {
+            "slotStartUtc": slot.get("slotStartUtc"),
+            "canonicalPullId": slot.get("canonicalPullId"),
+            "canonicalPulledAtUtc": slot.get("canonicalPulledAtUtc"),
+            "canonicalPullFingerprint": slot.get("canonicalPullFingerprint"),
+            "rawPullCount": slot.get("rawPullCount"),
+            "invalidPullCount": slot.get("invalidPullCount"),
+        }
+        for slot in slots
+    ]
+    return {
+        "version": history_contract.PULL_HISTORY_INTEGRITY_VERSION,
+        "canonicalizationVersion": history_contract.PULL_SLOT_VERSION,
+        "slotMinutes": history_contract.PULL_SLOT_MINUTES,
+        "rawPullCount": raw_count,
+        "uniqueSlotCount": len(slots),
+        "duplicatePullCount": duplicate_count,
+        "invalidPullCount": invalid_count,
+        "contaminatedSlotCount": sum(
+            1 for slot in slots if slot.get("contaminated") is True
+        ),
+        "duplicateContaminated": duplicate_count > 0 or invalid_count > 0,
+        "slotStartsUtc": [slot.get("slotStartUtc") for slot in slots],
+        "canonicalSlotFingerprint": history_contract.canonical_payload_fingerprint(
+            fingerprint_payload
+        ),
+    }
 
 
 def _source_window_key(entry: Dict[str, Any]) -> Tuple[str, str, str]:
@@ -737,7 +806,11 @@ def _stage_outcome_alias(
     row = ((stage.get("data") or {}).get("row") or {})
     proof = stage.get("candidate_proof") or {}
     try:
-        persisted_errors = persisted_stage_authority_errors(module.TABLE, stage)
+        persisted_errors = persisted_stage_authority_errors(
+            module.TABLE,
+            stage,
+            probability_contract_required=_probability_contract_required(module),
+        )
         fingerprint_valid = stage.get("stage_fingerprint") == _stage_fingerprint(stage)
     except Exception:
         return None, False
@@ -1784,6 +1857,34 @@ def _candidate_snapshot_authority_errors(table: Any, item: Dict[str, Any]) -> Li
         errors.append("candidate_snapshot_vector_fingerprint_mismatch")
     if stage_row.get("lastPrelockSelectionFingerprint") != proof.get("candidateSelectionFingerprint"):
         errors.append("stage_selection_not_candidate_snapshot_selection")
+    if (item.get("source_window") or {}).get("version") == SOURCE_WINDOW_VERSION:
+        source_id = str(proof.get("predictionSourcePullId") or "")
+        source_at_text = str(proof.get("predictionSourcePullAtUtc") or "")
+        source_key = {
+            "PK": proof.get("predictionSourcePullStoragePk")
+            or f"PULLS#mlb#{item.get('slate_date')}",
+            "SK": proof.get("predictionSourcePullStorageSk")
+            or f"PULL#{source_at_text}#{source_id}",
+        }
+        source_item = _consistent_item(table, source_key)
+        source_pull = (source_item or {}).get("data") or {}
+        if not source_item:
+            errors.append("candidate_source_pull_readback_missing")
+        elif (
+            source_item.get("record_type") != "pull_run"
+            or str(source_pull.get("pull_id") or "") != source_id
+            or _parse_iso(source_pull.get("pulled_at")) != _parse_iso(source_at_text)
+            or history_contract.pull_payload_fingerprint(source_pull)
+            != str(proof.get("predictionSourcePullFingerprint") or "")
+        ):
+            errors.append("candidate_source_pull_readback_mismatch")
+        source_slot = history_contract.pull_slot_start(source_at_text)
+        if (
+            source_slot is None
+            or source_slot.isoformat()
+            != str(proof.get("predictionSourceCanonicalSlotStartUtc") or "")
+        ):
+            errors.append("candidate_source_canonical_slot_binding_mismatch")
     for key in ("winner", "correct", "success", "homeWon", "pickCorrect", "outcome", "finalScore"):
         if key in candidate_row:
             errors.append(f"candidate_snapshot_contains_{key}")
@@ -1803,6 +1904,7 @@ def _source_window_authority_errors(table: Any, item: Dict[str, Any]) -> List[st
         return ["bound_source_window_missing"]
     timestamps: List[datetime] = []
     seen = set()
+    seen_slots = set()
     for index, entry in enumerate(entries):
         if not isinstance(entry, dict):
             errors.append("bound_source_window_entry_invalid")
@@ -1810,17 +1912,26 @@ def _source_window_authority_errors(table: Any, item: Dict[str, Any]) -> List[st
         pull_id = str(entry.get("pullId") or "")
         pulled_at = _parse_iso(entry.get("pulledAtUtc"))
         fingerprint = str(entry.get("gameSnapshotFingerprint") or "")
+        slot_start = str(entry.get("slotStartUtc") or "")
         key_tuple = (pull_id, str(entry.get("pulledAtUtc") or ""), fingerprint)
         if not pull_id or not pulled_at or not fingerprint or key_tuple in seen:
             errors.append("bound_source_window_entry_incomplete_or_duplicate")
             continue
         seen.add(key_tuple)
+        if (
+            entry.get("canonicalSlotVersion") != history_contract.PULL_SLOT_VERSION
+            or not slot_start
+            or slot_start in seen_slots
+            or not entry.get("canonicalPullFingerprint")
+        ):
+            errors.append("bound_source_window_canonical_slot_proof_invalid")
+        seen_slots.add(slot_start)
         timestamps.append(pulled_at)
         if not cutoff or pulled_at > cutoff:
             errors.append("bound_source_window_pull_after_cutoff")
         pull_item = _consistent_item(table, {
-            "PK": f"PULLS#mlb#{item.get('slate_date')}",
-            "SK": f"PULL#{entry.get('pulledAtUtc')}#{pull_id}",
+            "PK": entry.get("pullStoragePk") or f"PULLS#mlb#{item.get('slate_date')}",
+            "SK": entry.get("pullStorageSk") or f"PULL#{entry.get('pulledAtUtc')}#{pull_id}",
         })
         if not pull_item:
             errors.append(f"bound_source_window_pull_readback_missing:{index}")
@@ -1834,6 +1945,10 @@ def _source_window_authority_errors(table: Any, item: Dict[str, Any]) -> List[st
         ):
             errors.append(f"bound_source_window_pull_readback_mismatch:{index}")
             continue
+        if history_contract.pull_payload_fingerprint(pull) != str(
+            entry.get("canonicalPullFingerprint") or ""
+        ):
+            errors.append(f"bound_source_window_pull_fingerprint_mismatch:{index}")
         staged_row = (item.get("data") or {}).get("row") or {}
         matching = _matching_game(
             pull,
@@ -1849,17 +1964,42 @@ def _source_window_authority_errors(table: Any, item: Dict[str, Any]) -> List[st
             errors.append(f"bound_source_window_game_fingerprint_mismatch:{index}")
     if timestamps != sorted(timestamps):
         errors.append("bound_source_window_not_chronological")
+    integrity = source_window.get("pullHistoryIntegrity") or {}
+    if not isinstance(integrity, dict):
+        errors.append("bound_source_window_integrity_missing")
+        integrity = {}
+    if (
+        integrity.get("version") != history_contract.PULL_HISTORY_INTEGRITY_VERSION
+        or integrity.get("canonicalizationVersion") != history_contract.PULL_SLOT_VERSION
+        or int(integrity.get("uniqueSlotCount") or 0) != len(entries)
+        or int(source_window.get("uniqueSlotCount") or 0) != len(entries)
+        or str(source_window.get("canonicalSlotFingerprint") or "")
+        != str(integrity.get("canonicalSlotFingerprint") or "")
+    ):
+        errors.append("bound_source_window_integrity_mismatch")
     latest = entries[-1] if entries and isinstance(entries[-1], dict) else {}
     if (
-        _parse_iso(latest.get("pulledAtUtc")) != _parse_iso(item.get("source_pull_at_utc"))
-        or str(latest.get("pullId") or "") != str(item.get("source_pull_id") or "")
+        _parse_iso(latest.get("pulledAtUtc"))
+        != _parse_iso(source_window.get("canonicalTerminalPullAtUtc"))
+        or str(latest.get("pullId") or "")
+        != str(source_window.get("canonicalTerminalPullId") or "")
         or int(item.get("pull_depth") or 0) != len(entries)
     ):
         errors.append("bound_source_window_terminal_pull_mismatch")
+    proof = item.get("candidate_proof") or {}
+    if (
+        _parse_iso(item.get("source_pull_at_utc"))
+        != _parse_iso(proof.get("predictionSourcePullAtUtc"))
+        or str(item.get("source_pull_id") or "")
+        != str(proof.get("predictionSourcePullId") or "")
+    ):
+        errors.append("stage_source_pull_candidate_proof_mismatch")
     return sorted(set(errors))
 
 
-def _selection_lock_authority_errors(row: Dict[str, Any]) -> List[str]:
+def _selection_lock_authority_errors(
+    row: Dict[str, Any], *, probability_contract_required: bool = False
+) -> List[str]:
     """Validate winner-selection facts independently of ML-vector eligibility."""
     errors: List[str] = []
     side = row.get("predictedSide")
@@ -1877,10 +2017,22 @@ def _selection_lock_authority_errors(row: Dict[str, Any]) -> List[str]:
         errors.append("selected_side_locked_price_not_proven")
     if _team_win_probability_pct(row) in (None, ""):
         errors.append("selected_team_win_probability_missing")
+    if probability_contract_required or row.get("probabilityContractVersion"):
+        try:
+            import mlb_prediction_probability_contract_v1 as probability_contract
+
+            errors.extend(probability_contract.validation_errors(row))
+        except Exception as exc:
+            errors.append(f"probability_contract_validator_unavailable:{exc}")
     return sorted(set(errors))
 
 
-def persisted_stage_authority_errors(table: Any, item: Dict[str, Any]) -> List[str]:
+def persisted_stage_authority_errors(
+    table: Any,
+    item: Dict[str, Any],
+    *,
+    probability_contract_required: bool = False,
+) -> List[str]:
     """Validate the persisted authority chain required for canonical promotion."""
     errors: List[str] = []
     if item.get("model_version") != VERSION:
@@ -1914,7 +2066,12 @@ def persisted_stage_authority_errors(table: Any, item: Dict[str, Any]) -> List[s
     errors.extend(_candidate_snapshot_authority_errors(table, item))
     errors.extend(_source_window_authority_errors(table, item))
     stage_row = ((item.get("data") or {}).get("row") or {})
-    errors.extend(_selection_lock_authority_errors(stage_row))
+    errors.extend(
+        _selection_lock_authority_errors(
+            stage_row,
+            probability_contract_required=probability_contract_required,
+        )
+    )
     return sorted(set(errors))
 
 
@@ -2388,10 +2545,25 @@ def _prepare_row(
     staged_at: datetime,
     manifest: List[Dict[str, Any]],
     locked_count: int,
+    candidate_persisted_at_utc: Any,
     fingerprint_version: Optional[str] = PAYLOAD_FINGERPRINT_VERSION,
     reliability_block_reasons: Optional[Iterable[str]] = None,
+    pull_history_integrity: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     out = copy.deepcopy(row)
+    candidate_persisted_at = _parse_iso(candidate_persisted_at_utc)
+    if not candidate_persisted_at:
+        raise RuntimeError("LAST_PRELOCK_POST_WRITE_ACK_TIMESTAMP_MISSING")
+    row_claimed_persisted_at = _parse_iso(out.get("predictionPersistedAtUtc"))
+    if (
+        row_claimed_persisted_at
+        and row_claimed_persisted_at != candidate_persisted_at
+    ):
+        raise RuntimeError(
+            "LAST_PRELOCK_PERSISTENCE_TIMESTAMP_CONFLICTS_WITH_POST_WRITE_ACK"
+        )
+    if isinstance(pull_history_integrity, dict):
+        out["pullHistoryIntegrity"] = copy.deepcopy(pull_history_integrity)
     reliability_reasons = sorted({
         str(reason) for reason in (reliability_block_reasons or []) if reason
     })
@@ -2422,6 +2594,9 @@ def _prepare_row(
         )
     )
     lock = _per_game_lock(module, slate, game, source_pull, staged_at, manifest, locked_count)
+    scheduled_lock_at = _parse_iso(lock.get("lockAtUtc"))
+    if not scheduled_lock_at or candidate_persisted_at > scheduled_lock_at:
+        raise RuntimeError("LAST_PRELOCK_POST_WRITE_ACK_AFTER_SCHEDULED_LOCK")
     coverage = _manifest_coverage(manifest, locked_count)
     out.update({
         "slate_date": slate,
@@ -2450,6 +2625,7 @@ def _prepare_row(
         "lockedAtUtc": lock.get("lockAtUtc"),
         "scheduledLockAtUtc": lock.get("scheduledLockAtUtc"),
         "actualStagedAtUtc": lock.get("actualStagedAtUtc"),
+        "predictionPersistedAtUtc": candidate_persisted_at.isoformat(),
         "predictionSourcePullAt": lock.get("latestScoringPullAt"),
         "predictionSourcePullId": lock.get("latestScoringPullId"),
         "lockedAmericanOdds": out.get("lockedAmericanOdds") if out.get("lockedAmericanOdds") not in (None, "") else out.get("americanOdds"),
@@ -2678,6 +2854,31 @@ def _vector_errors(row: Dict[str, Any], game: Dict[str, Any], lock_at: datetime,
             errors.append("fundamentals_snapshot_version_mismatch")
         if _parse_iso(vector.get("fundamentalsSnapshotAsOfUtc")) != _parse_iso(snapshot.get("asOfUtc")):
             errors.append("fundamentals_snapshot_timestamp_mismatch")
+        snapshot_v2_value = row.get("fundamentalsSnapshotV2") or {}
+        if vector.get("fundamentalsSnapshotV2Version") or snapshot_v2_value:
+            import mlb_fundamentals_snapshot_v2 as snapshot_v2
+
+            ref_v2 = (
+                row.get("fundamentalsSnapshotV2Ref")
+                or row.get("fundamentalsSnapshotRefV2")
+                or {}
+            )
+            if snapshot_v2.validate(snapshot_v2_value):
+                errors.append("fundamentals_v2_snapshot_invalid")
+            if vector.get("fundamentalsSnapshotV2Fingerprint") != snapshot_v2_value.get("fingerprint"):
+                errors.append("fundamentals_v2_vector_fingerprint_mismatch")
+            if vector.get("fundamentalsSnapshotV2Ref") != ref_v2:
+                errors.append("fundamentals_v2_vector_reference_mismatch")
+            created_at = row.get("predictionPersistedAtUtc") or row.get("createdAt") or row.get("created_at")
+            safe_v2 = snapshot_v2.provenance_is_lock_safe(
+                snapshot_v2_value,
+                prediction_persisted_at=created_at,
+                lock_at=lock_at,
+            )
+            if vector.get("fundamentalsSnapshotV2AtOrBeforeLock") is not safe_v2:
+                errors.append("fundamentals_v2_vector_provenance_mismatch")
+            if not safe_v2:
+                errors.append("fundamentals_v2_snapshot_not_lock_safe")
     except Exception as exc:
         errors.append(f"frozen_vector_verifier_unavailable:{exc}")
     if str(vector.get("gameId") or "") != str(row.get("gameId") or ""):
@@ -2939,6 +3140,21 @@ def _source_pull_for_candidate(
         elif pulled_at == source_at:
             same_timestamp.append(pull)
 
+    # Prefer the exact immutable raw observation retained beneath its canonical
+    # slot. The public/scoring copy is intentionally game-scoped and therefore
+    # cannot serve as a byte-for-byte DynamoDB source proof.
+    raw_matches: List[Tuple[int, Dict[str, Any]]] = []
+    for index, canonical in enumerate(scoring):
+        for raw in canonical.get("_canonicalSlotRawPulls") or []:
+            if _pull_at(module, raw) != source_at:
+                continue
+            if source_id and str(raw.get("pull_id") or "") != source_id:
+                continue
+            raw_matches.append((index, raw))
+    if len(raw_matches) == 1:
+        index, matching = raw_matches[0]
+        return copy.deepcopy(matching), list(scoring[: index + 1])
+
     if source_id:
         exact = [
             pull
@@ -2951,7 +3167,14 @@ def _source_pull_for_candidate(
         # while carrying different prices.
         exact = same_timestamp if len(same_timestamp) == 1 else []
     if len(exact) != 1:
-        return None, earlier
+        # Historical pre-fix candidates may name one of several raw retries in
+        # a contaminated quarter-hour. Scoring still binds one canonical slot,
+        # but selection provenance must resolve the exact immutable raw source
+        # ID and timestamp rather than silently accepting another price.
+        if len(raw_matches) != 1:
+            return None, earlier
+        index, matching = raw_matches[0]
+        return copy.deepcopy(matching), list(scoring[: index + 1])
     matching = exact[0]
     return matching, earlier + [matching]
 
@@ -3087,6 +3310,17 @@ def _last_prelock_candidate(
             errors.append("persisted_prelock_winner_side_mismatch")
         if not _selected_price_proven(row):
             errors.append("persisted_prelock_selected_side_real_book_price_missing")
+        contract_required = bool(
+            _probability_contract_required(module)
+            or row.get("probabilityContractVersion")
+        )
+        if contract_required:
+            try:
+                import mlb_prediction_probability_contract_v1 as probability_contract
+
+                errors.extend(probability_contract.validation_errors(row))
+            except Exception as exc:
+                errors.append(f"persisted_prelock_probability_contract_unavailable:{exc}")
         source_id = _candidate_source_id(item, row)
         source_pull, bound_scoring = _source_pull_for_candidate(module, scoring, source_at, source_id)
         if source_pull is None:
@@ -3176,6 +3410,36 @@ def _last_prelock_candidate(
             "candidateSnapshotFingerprint": _payload_fingerprint(item, fingerprint_version),
             "predictionSourcePullAtUtc": source_at.isoformat(),
             "predictionSourcePullId": source_pull.get("pull_id") if source_pull else source_id or None,
+            "predictionSourcePullFingerprint": (
+                history_contract.pull_payload_fingerprint(source_pull)
+                if source_pull
+                else None
+            ),
+            "predictionSourcePullStoragePk": (
+                (source_pull.get("canonicalPullStorage") or {}).get("pk")
+                if source_pull
+                else None
+            ),
+            "predictionSourcePullStorageSk": (
+                (source_pull.get("canonicalPullStorage") or {}).get("sk")
+                if source_pull
+                else None
+            ),
+            "predictionSourceCanonicalSlotStartUtc": (
+                ((bound_scoring[-1].get("canonicalPullSlot") or {}).get("slotStartUtc"))
+                if bound_scoring
+                else None
+            ),
+            "predictionSourceCanonicalizedForScoring": bool(
+                source_pull
+                and bound_scoring
+                and (
+                    str(source_pull.get("pull_id") or "")
+                    != str(bound_scoring[-1].get("pull_id") or "")
+                    or _pull_at(module, source_pull)
+                    != _pull_at(module, bound_scoring[-1])
+                )
+            ),
             "sourceAgeAtCutoffMinutes": round(source_age, 4),
             "evaluationCutoffAtUtc": selection_cutoff.isoformat(),
             "sourceAtOrBeforeCutoff": source_at <= selection_cutoff,
@@ -3323,16 +3587,34 @@ def _validate_stage(
         or candidate_persisted_at > lock_at
     ):
         errors.append("candidate_post_write_ack_timestamp_invalid")
+    if _parse_iso(row.get("predictionPersistedAtUtc")) != candidate_persisted_at:
+        errors.append("promoted_row_post_write_ack_timestamp_mismatch")
     latest_bound = bound_entries[-1] if bound_entries and isinstance(bound_entries[-1], dict) else {}
-    if source_at != _parse_iso(latest_bound.get("pulledAtUtc")):
-        errors.append("source_pull_timestamp_mismatch_bound_window")
-    if str(item.get("source_pull_id") or "") != str(latest_bound.get("pullId") or ""):
-        errors.append("source_pull_id_mismatch_bound_window")
+    if _parse_iso(source_window.get("canonicalTerminalPullAtUtc")) != _parse_iso(
+        latest_bound.get("pulledAtUtc")
+    ):
+        errors.append("canonical_terminal_pull_timestamp_mismatch_bound_window")
+    if str(source_window.get("canonicalTerminalPullId") or "") != str(
+        latest_bound.get("pullId") or ""
+    ):
+        errors.append("canonical_terminal_pull_id_mismatch_bound_window")
+    if source_at != _parse_iso(candidate_proof.get("predictionSourcePullAtUtc")):
+        errors.append("source_pull_timestamp_mismatch_candidate_proof")
+    if str(item.get("source_pull_id") or "") != str(
+        candidate_proof.get("predictionSourcePullId") or ""
+    ):
+        errors.append("source_pull_id_mismatch_candidate_proof")
     if int(item.get("pull_depth") or 0) != len(bound_entries):
         errors.append("pull_depth_mismatch")
     if item.get("stage_fingerprint") != _stage_fingerprint(item):
         errors.append("stage_fingerprint_mismatch")
-    errors.extend(persisted_stage_authority_errors(module.TABLE, item))
+    errors.extend(
+        persisted_stage_authority_errors(
+            module.TABLE,
+            item,
+            probability_contract_required=_probability_contract_required(module),
+        )
+    )
     if not _selected_price_proven(row):
         errors.append("selected_side_real_book_price_missing")
     for key in ("winner", "correct", "success", "homeWon", "pickCorrect", "outcome", "finalScore"):
@@ -3571,7 +3853,23 @@ def _generate_stage(
     )
     if candidate_errors or not candidate or not candidate_proof or not bound_scoring:
         return None, candidate_errors or ["persisted_prelock_prediction_missing"]
-    source = bound_scoring[-1]
+    canonical_source = bound_scoring[-1]
+    candidate_source_at = _parse_iso(candidate_proof.get("predictionSourcePullAtUtc"))
+    candidate_source_id = str(candidate_proof.get("predictionSourcePullId") or "")
+    source, rebound_scoring = _source_pull_for_candidate(
+        module,
+        scoring,
+        candidate_source_at,
+        candidate_source_id,
+    )
+    if source is None:
+        return None, ["persisted_prelock_source_pull_not_found_in_cutoff_history"]
+    if _pull_history_identity(module, rebound_scoring) != _pull_history_identity(
+        module,
+        bound_scoring,
+    ):
+        return None, ["candidate_source_canonical_window_changed"]
+    source_integrity = _source_window_integrity(bound_scoring)
     source_at = _pull_at(module, source)
     lock_at = _lock_at(module, game)
     reliability_block_reasons: List[str] = []
@@ -3594,8 +3892,10 @@ def _generate_stage(
             now,
             manifest,
             locked_count,
+            candidate_proof.get("predictionPersistedAtUtc"),
             candidate_proof.get("predictionPayloadFingerprintVersion") or None,
             reliability_block_reasons,
+            source_integrity,
         )
     except Exception as exc:
         return None, [str(exc)]
@@ -3607,6 +3907,16 @@ def _generate_stage(
         "scheduledCutoffAtUtc": (_lock_at(module, game) or now).isoformat(),
         "stabilizationSeconds": CUTOFF_STABILIZATION_SECONDS,
         "pulls": _source_window_entries(module, bound_scoring, game),
+        "canonicalTerminalPullAtUtc": (_pull_at(module, canonical_source) or now).isoformat(),
+        "canonicalTerminalPullId": canonical_source.get("pull_id"),
+        "rawPullCount": source_integrity.get("rawPullCount"),
+        "uniqueSlotCount": source_integrity.get("uniqueSlotCount"),
+        "duplicatePullCount": source_integrity.get("duplicatePullCount"),
+        "invalidPullCount": source_integrity.get("invalidPullCount"),
+        "contaminatedSlotCount": source_integrity.get("contaminatedSlotCount"),
+        "duplicateContaminated": source_integrity.get("duplicateContaminated"),
+        "canonicalSlotFingerprint": source_integrity.get("canonicalSlotFingerprint"),
+        "pullHistoryIntegrity": source_integrity,
     }
     if not isinstance(provider_manifest_authority, dict) or not provider_manifest_authority:
         return None, ["provider_manifest_authority_missing"]

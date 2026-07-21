@@ -119,7 +119,8 @@ jobs:
         env:
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
           SNAPSHOTS_TABLE: parlay_platform_snapshots
-          INQSI_MLB_ML_AUTO_PROMOTE: 'true'
+          INQSI_MLB_ML_AUTO_PROMOTE: 'false'
+          INQSI_MLB_ML_AUDIT_STORE: 'false'
           INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
           INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-13T00:20:03+00:00'
           PYTHONPATH: ${{ github.workspace }}/hello_world
