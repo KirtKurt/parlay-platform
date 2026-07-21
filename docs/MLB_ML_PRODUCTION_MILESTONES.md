@@ -66,10 +66,10 @@ milestone has already been earned:
   factors, weather/roof, and travel/rest remain missing unless a genuine
   pre-lock source supplies the required values and provenance. Missing groups
   remain null and exclude the game from the V2 training cohort.
-- The r2 cohort begins at the explicit post-build boundary
+- The r3 cohort begins at the explicit next-slate prospective boundary
   `2026-07-22T04:00:00+00:00`. Any July 20 or July 21 game, or any lock timestamp before that
   instant is historical, even if its record happens to resemble the V2 schema,
-  and cannot enter an r2 partition.
+  and cannot enter an r3 partition.
 - A game counts toward the milestones below only after its current lock,
   complete pregame V2 snapshot, frozen vector, write-once official label, and
   full-slate-final status all pass their current validators. Historical rows
@@ -102,6 +102,36 @@ Any prediction policy, feature definition, label rule, cohort schema, partition
 boundary, or threshold change creates a new experiment version and a new future
 prospective test. Historical games are never relabeled or backfilled to make a
 milestone appear complete.
+
+## Big Balls Sports Data shadow-source milestones
+
+The canonical repository credential name is `BBS_API_KEY`. Deployment passes
+it once as a `NoEcho` CloudFormation parameter into AWS Secrets Manager. Only
+the scheduled audited-pull Lambda may read that secret; public reads, locks,
+settlement, and AWS training receive neither the key nor its secret ARN.
+
+BBS begins as an untrusted supplemental shadow source. It receives no scoring,
+fundamentals-completeness, or training credit merely because authentication or
+an endpoint succeeds. Each response is captured once per canonical 15-minute
+slot in a versioned, encrypted, write-once S3 object bound to the persisted
+canonical pull. BBS currently documents `match_id` and `kickoff_utc` but no MLB
+`gamePk` or external-ID map, so every match row remains quarantined from
+official identity credit. Team/time similarity is not promoted to an identity
+join, including for doubleheaders.
+
+| BBS milestone | Required proof | ML effect |
+|---|---|---|
+| Authenticated | CI proves `/v1/user/me` and the filtered MLB match envelope using the exact secret without persisting account data or key material. | None |
+| Shadow active | AWS proves the secret is scoped only to the audited pull and writes one immutable artifact for a canonical slot. | None |
+| First bounded UTC-date probe | A canonical-slot-bound artifact preserves one documented UTC-date envelope without delaying or changing the odds pull. It explicitly makes no complete Eastern-slate claim. | Partial raw validation evidence only; official identity and slate coverage remain unsatisfied |
+| Complete slate capture designed | A separately reviewed asynchronous capture queries every distinct UTC date represented by the official Eastern slate, merges and deduplicates provider match IDs, and remains bound to one canonical pull. | Defines the evidence needed before any multi-slate review milestone may be created |
+| Schema activated | A reviewed field mapping starts on the next complete future slate under a new cohort/feature version. | Only explicitly approved fields may earn completeness; historical artifacts are never retrofitted |
+
+The existing 15/140/300/400/500 eligible-game milestones do not advance from
+BBS artifacts until a new schema is activated. BBS documentation currently
+does not prove production-ready FIP/xFIP/xERA, K-BB%, pitch mix/velocity,
+bullpen availability/roles, or populated confirmed-lineup/injury feeds, so
+those groups remain fail-closed.
 
 ## Promotion decision record
 

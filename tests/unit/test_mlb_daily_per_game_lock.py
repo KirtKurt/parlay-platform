@@ -707,8 +707,11 @@ def persist_candidate(module, game_row, source_pull, mutate=None, persisted_at=N
 
 def persist_candidate_with_production_writer(module, game_row, source_pull):
     import mlb_game_winner_engine as production_writer
+    import mlb_prediction_probability_contract_v1 as probability_contract
 
     row = module.mlb_game_winner_engine.prediction_row(game_row, source_pull)
+    row = probability_contract.normalize_row(row)
+    assert probability_contract.validation_errors(row) == []
     mark_user_visible_prelock(row)
     snapshot = production_writer._pregame_snapshot_item(
         row,

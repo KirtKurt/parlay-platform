@@ -72,7 +72,7 @@ def _read_v2_training_state(*, now_utc=None, deployed_identity=None) -> dict:
 
     table_name = os.environ.get("SNAPSHOTS_TABLE", "")
     experiment_id = os.environ.get(
-        "MLB_ML_EXPERIMENT_ID", "mlb-v2-2026-07-21-future-prospective-r2"
+        "MLB_ML_EXPERIMENT_ID", "mlb-v2-2026-07-22-future-prospective-r3"
     )
     if not table_name:
         raise RuntimeError("SNAPSHOTS_TABLE is required for V2 status monitoring")

@@ -17,8 +17,8 @@ import mlb_ml_experiment_v2 as experiment_v2
 import mlb_ml_promotion_policy_v2 as promotion_v2
 
 
-R2_EXPERIMENT_ID = "mlb-v2-2026-07-21-future-prospective-r2"
-R2_RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
+R3_EXPERIMENT_ID = "mlb-v2-2026-07-22-future-prospective-r3"
+R3_RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
 
 
 class _Key:
@@ -92,26 +92,26 @@ def _load_audit_module(table: _PagedTable):
     return audit
 
 
-def verify_r2_future_manual_first_contract() -> None:
+def verify_r3_future_manual_first_contract() -> None:
     assert experiment_v2.PARTITION_MINIMUMS == {
         "train": 300,
         "validation": 100,
         "prospectiveTest": 100,
     }
     manifest = experiment_v2.new_manifest(
-        experiment_id=R2_EXPERIMENT_ID,
-        release_contract_id=R2_EXPERIMENT_ID,
-        release_cutoff_utc=R2_RELEASE_CUTOFF_UTC,
+        experiment_id=R3_EXPERIMENT_ID,
+        release_contract_id=R3_EXPERIMENT_ID,
+        release_cutoff_utc=R3_RELEASE_CUTOFF_UTC,
         feature_vector_version=experiment_v2.REQUIRED_FUNDAMENTALS_VERSION,
         model_feature_schemas={
             "outcome": dual_v2.OUTCOME_FEATURES,
             "reliability": dual_v2.RELIABILITY_FEATURES,
         },
-        created_at_utc=R2_RELEASE_CUTOFF_UTC,
+        created_at_utc=R3_RELEASE_CUTOFF_UTC,
     )
-    assert manifest["experimentId"] == R2_EXPERIMENT_ID
-    assert manifest["releaseContractId"] == R2_EXPERIMENT_ID
-    assert manifest["releaseCutoffUtc"] == R2_RELEASE_CUTOFF_UTC
+    assert manifest["experimentId"] == R3_EXPERIMENT_ID
+    assert manifest["releaseContractId"] == R3_EXPERIMENT_ID
+    assert manifest["releaseCutoffUtc"] == R3_RELEASE_CUTOFF_UTC
     assert manifest["partitions"]["train"]["minimumRows"] == 300
     assert manifest["partitions"]["validation"]["minimumRows"] == 100
     assert manifest["partitions"]["prospectiveTest"]["minimumRows"] == 100
@@ -176,10 +176,10 @@ def verify_durable_paginated_history() -> None:
 
 
 def main() -> int:
-    verify_r2_future_manual_first_contract()
+    verify_r3_future_manual_first_contract()
     verify_durable_paginated_history()
     print(
-        "MLB ML training readiness verified: r2 starts at its future release cutoff, "
+        "MLB ML training readiness verified: r3 starts at its future release cutoff, "
         "uses fixed whole-slate 300/100/100 partitions with manual-first shadow approval, "
         "and historical audit evidence paginates across a durable diagnostic window"
     )

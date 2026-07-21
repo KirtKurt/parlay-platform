@@ -75,6 +75,15 @@ class FakeLambda:
                         "ODDS_API_KEY": "must-not-appear-in-proof",
                     }
                 )
+            if role == "ingest":
+                environment.update(
+                    {
+                        "BBS_API_SECRET_ARN": "arn:aws:secretsmanager:us-east-1:123456789012:secret:bbs",
+                        "BBS_SHADOW_CAPTURE_ENABLED": "true",
+                        "BBS_SHADOW_S3_BUCKET": ARTIFACT_BUCKET,
+                        "BBS_SHADOW_SCHEMA_VERSION": "MLB-BBS-SHADOW-v2-canonical-bound-raw-only",
+                    }
+                )
             self.configurations[f"physical-{role}"] = {
                 "FunctionArn": _arn(role),
                 "Handler": handler,
@@ -245,11 +254,11 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
         "rate(15 minutes)",
     ]
     assert deploy_identity.TRAINER_EXPECTED_ENVIRONMENT["MLB_ML_EXPERIMENT_ID"] == (
-        "mlb-v2-2026-07-21-future-prospective-r2"
+        "mlb-v2-2026-07-22-future-prospective-r3"
     )
     assert deploy_identity.TRAINER_EXPECTED_ENVIRONMENT[
         "MLB_ML_RELEASE_CONTRACT_ID"
-    ] == "mlb-v2-2026-07-21-future-prospective-r2"
+    ] == "mlb-v2-2026-07-22-future-prospective-r3"
     assert deploy_identity.TRAINER_EXPECTED_ENVIRONMENT[
         "MLB_ML_RELEASE_CUTOFF_UTC"
     ] == "2026-07-22T04:00:00+00:00"
@@ -258,6 +267,17 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
 
     assert result["ok"] is True
     assert result["blockers"] == []
+    assert result["providerCredentialBoundary"] == {
+        "provider": "Big Balls Sports Data",
+        "exactGithubSecretName": "BBS_API_KEY",
+        "runtimeSecretArnEnvironment": "BBS_API_SECRET_ARN",
+        "consumerRole": "ingest",
+        "secretArnPresentOnIngest": True,
+        "shadowEnvironmentMatches": True,
+        "plaintextKeyEnvironmentAbsent": True,
+        "retiredProviderEnvironmentAbsent": True,
+        "otherCanonicalFunctionsWithoutBbsAuthority": True,
+    }
     assert result["functions"]["MLBMLTrainingFunction"]["configurationMatches"] is True
     assert result["trainerConfiguration"]["matches"] is True
     assert result["trainerConfiguration"]["executionConcurrencyStrategy"] == (
@@ -313,6 +333,40 @@ def test_rejects_wrong_trainer_handler(aws) -> None:
     assert result["ok"] is False
     assert result["trainerConfiguration"]["matches"] is False
     assert any(value.startswith("TRAINER_HANDLER_MISMATCH:") for value in result["blockers"])
+
+
+def test_rejects_bbs_credential_authority_on_public_read_lambda(aws) -> None:
+    environment = aws["lambda"].configurations["physical-read"]["Environment"]["Variables"]
+    environment["BBS_API_SECRET_ARN"] = "arn:forbidden"
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["providerCredentialBoundary"]["otherCanonicalFunctionsWithoutBbsAuthority"] is False
+    assert any(
+        blocker.startswith("BBS_AUTHORITY_LEAKED_TO_READ:")
+        for blocker in result["blockers"]
+    )
+
+
+def test_rejects_plaintext_or_retired_provider_environment_drift(aws) -> None:
+    ingest = aws["lambda"].configurations["physical-ingest"]["Environment"]["Variables"]
+    ingest["BBS_API_KEY"] = "must-not-be-a-lambda-environment-value"
+    ingest["SPORTSDATAIO_API_KEY"] = "retired"
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["providerCredentialBoundary"]["plaintextKeyEnvironmentAbsent"] is False
+    assert result["providerCredentialBoundary"]["retiredProviderEnvironmentAbsent"] is False
+    assert any(
+        blocker.startswith("BBS_PLAINTEXT_KEY_ENVIRONMENT_PRESENT:")
+        for blocker in result["blockers"]
+    )
+    assert any(
+        blocker.startswith("RETIRED_PROVIDER_ENVIRONMENT_PRESENT:")
+        for blocker in result["blockers"]
+    )
 
 
 def test_rejects_wrong_trainer_timeout(aws) -> None:

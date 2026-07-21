@@ -10,13 +10,18 @@ try:
 except Exception:
     history = None
 
+try:
+    import mlb_fundamentals_snapshot_v2 as fundamentals_v2
+except Exception:
+    fundamentals_v2 = None
+
 SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
 FINAL_GATE_START_MINUTES = int(os.environ.get("INQSI_MLB_FINAL_GATE_START_MINUTES", "720"))
 FINAL_GATE_END_MINUTES = int(os.environ.get("INQSI_MLB_FINAL_GATE_END_MINUTES", "10"))
-REQUIRE_SPORTSDATAIO_AT_FINAL_GATE = os.environ.get("INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE", "false").lower() in {"1", "true", "yes"}
-
-POLICY_VERSION_REQUIRE_SPORTSDATAIO = "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-REQUIRE-SPORTSDATAIO"
-POLICY_VERSION_ODDS_API_ONLY = "MLB-LAST-POSSIBLE-PREDICTION-GATE-v4-12H-INDIVIDUAL-GAME-ODDS-API-ONLY"
+POLICY_VERSION = (
+    "MLB-LAST-POSSIBLE-PREDICTION-GATE-v5-12H-INDIVIDUAL-GAME-"
+    "FUNDAMENTALS-V2-SEPARATE-FROM-TIME-LOCK"
+)
 SLATE_LOCK_POLICY_VERSION = "MLB-SLATE-WIDE-PREDICTION-LOCK-v1-45MIN"
 
 
@@ -55,6 +60,62 @@ def _phase(minutes_to_start: float | None) -> str:
     return "PRE_FINAL_GATE"
 
 
+def _fundamentals_v2_status(row: Dict[str, Any]) -> Dict[str, Any]:
+    """Return source-honest V2 completeness without crediting shadow context.
+
+    Only the canonical, validated V2 snapshot can satisfy this gate. Generic
+    optimizer flags and provider shadow payloads are deliberately ignored.
+    """
+    snapshot = row.get("fundamentalsSnapshotV2")
+    reasons = []
+    if not isinstance(snapshot, dict):
+        reasons.append("fundamentals_v2_snapshot_missing")
+    elif fundamentals_v2 is None:
+        reasons.append("fundamentals_v2_validator_unavailable")
+    else:
+        reasons.extend(str(reason) for reason in fundamentals_v2.validate(snapshot))
+        if snapshot.get("pregameComplete") is not True:
+            reasons.append("fundamentals_v2_pregame_incomplete")
+        if snapshot.get("trainingEligibleAtCapture") is not True:
+            reasons.append("fundamentals_v2_capture_not_eligible")
+    reasons = sorted(set(reason for reason in reasons if reason))
+    return {
+        "applied": not reasons,
+        "snapshotVersion": snapshot.get("version") if isinstance(snapshot, dict) else None,
+        "snapshotFingerprint": (
+            snapshot.get("fingerprint") if isinstance(snapshot, dict) else None
+        ),
+        "completenessRatio": (
+            snapshot.get("completenessRatio") if isinstance(snapshot, dict) else 0.0
+        ),
+        "missingGroups": (
+            sorted(snapshot.get("missingGroups") or [])
+            if isinstance(snapshot, dict)
+            else []
+        ),
+        "validationReasons": reasons,
+    }
+
+
+def _final_data_status(final_locked: bool, fundamentals_applied: bool) -> str:
+    if final_locked and fundamentals_applied:
+        return "TIME_LOCKED_FUNDAMENTALS_V2_COMPLETE"
+    if final_locked:
+        return "TIME_LOCKED_FUNDAMENTALS_V2_INCOMPLETE"
+    if fundamentals_applied:
+        return "PRE_LOCK_FUNDAMENTALS_V2_COMPLETE"
+    return "PRE_LOCK_FUNDAMENTALS_V2_INCOMPLETE"
+
+
+def _prediction_source(fundamentals_applied: bool, scope: str) -> str:
+    completeness = (
+        "WITH_VALIDATED_FUNDAMENTALS_V2"
+        if fundamentals_applied
+        else "WITHOUT_COMPLETE_FUNDAMENTALS_V2"
+    )
+    return f"CANONICAL_MARKET_AND_LEARNING_{completeness}_{scope}"
+
+
 def _store_final(row: Dict[str, Any], module: Any = None) -> Dict[str, Any]:
     """Delegate final rows through the canonical prediction store.
 
@@ -73,17 +134,12 @@ def _store_final(row: Dict[str, Any], module: Any = None) -> Dict[str, Any]:
 
 def _annotate_from_slate_lock(out: Dict[str, Any], persist: bool = False, module: Any = None) -> Dict[str, Any]:
     lock = dict(out.get("slatePredictionLock") or {})
-    optimizer = out.get("winnerOptimizer") or {}
-    fundamentals_applied = bool(optimizer.get("fundamentalsApplied"))
+    fundamentals = _fundamentals_v2_status(out)
+    fundamentals_applied = bool(fundamentals["applied"])
     final_locked = bool(lock.get("locked"))
+    full_data_final_pick = bool(final_locked and fundamentals_applied)
     phase = "SLATE_LOCKED" if final_locked else "PRE_SLATE_LOCK"
-    blocked_missing_sportsdataio = bool(REQUIRE_SPORTSDATAIO_AT_FINAL_GATE and final_locked and not fundamentals_applied)
     policy_version = lock.get("policyVersion") or SLATE_LOCK_POLICY_VERSION
-    source = "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_SLATE_LOCK" if fundamentals_applied else "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_SLATE_LOCK"
-    final_data_status = "FULL_DATA_READY" if fundamentals_applied else "ODDS_API_ONLY_READY"
-    if blocked_missing_sportsdataio:
-        source = "BLOCKED_FULL_DATA_PICK_MISSING_SPORTSDATAIO_SLATE_LOCK"
-        final_data_status = "BLOCKED_MISSING_SPORTSDATAIO"
 
     out["lastPossiblePredictionGate"] = {
         "policyVersion": policy_version,
@@ -104,34 +160,43 @@ def _annotate_from_slate_lock(out: Dict[str, Any], persist: bool = False, module
         "scoringPullCount": lock.get("scoringPullCount"),
         "finalWindowActive": final_locked,
         "finalLocked": final_locked,
-        "oddsApiOnly": not REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
-        "requiresSportsDataIoAttempt": REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
-        "requiresSportsDataIoForFullDataFinalPick": REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
-        "sportsDataIoFundamentalsApplied": fundamentals_applied,
-        "finalGateBlocked": blocked_missing_sportsdataio,
-        "finalGateBlockReason": "SPORTSDATAIO_FINAL_GATE_MISSING" if blocked_missing_sportsdataio else None,
-        "finalDataStatus": final_data_status,
-        "predictionSource": source,
+        "timeLockFinal": final_locked,
+        "fundamentalsV2Applied": fundamentals_applied,
+        "fundamentalsV2Complete": fundamentals_applied,
+        "fundamentalsV2SnapshotVersion": fundamentals["snapshotVersion"],
+        "fundamentalsV2SnapshotFingerprint": fundamentals["snapshotFingerprint"],
+        "fundamentalsV2CompletenessRatio": fundamentals["completenessRatio"],
+        "fundamentalsV2MissingGroups": fundamentals["missingGroups"],
+        "fundamentalsV2ValidationReasons": fundamentals["validationReasons"],
+        "fundamentalsV2RequiredForFullDataFinalPick": True,
+        "fullDataFinalPick": full_data_final_pick,
+        "finalDataStatus": _final_data_status(
+            final_locked, fundamentals_applied
+        ),
+        "predictionSource": _prediction_source(
+            fundamentals_applied, "SLATE_LOCK"
+        ),
         "rules": [
             "All MLB predictions for the slate lock together 45 minutes before the first game begins.",
             "Once the slate is locked, later 15-minute pulls do not change any game-winner prediction on that slate.",
             "Locked predictions are scored from pull history captured at or before the slate lock timestamp.",
+            "Time-lock finality is independent from Fundamentals V2 completeness.",
+            "A full-data final pick requires both a final time lock and a validated complete Fundamentals V2 snapshot.",
         ],
     }
     tags = sorted(set(out.get("tags") or []))
     tags.append("SLATE_WIDE_45_MIN_LOCK_POLICY")
     if final_locked:
         tags.extend(["SLATE_LOCKED", "FINAL_LOCKED"])
-        out["fullDataFinalPick"] = True
     else:
         tags.append("PRE_SLATE_LOCK")
-    if blocked_missing_sportsdataio:
-        tags.append("FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO")
-        out["fullDataFinalPick"] = False
-        out["officialPick"] = False
-        out["accuracyTargetEligible"] = False
-        out["actionability"] = "BLOCKED_MISSING_SPORTSDATAIO_SLATE_LOCK"
-        out["actionabilityReason"] = "sportsdataio_required_for_full_data_slate_lock_but_not_applied"
+    if fundamentals_applied:
+        tags.append("FUNDAMENTALS_V2_COMPLETE")
+    else:
+        tags.append("FUNDAMENTALS_V2_INCOMPLETE")
+        if final_locked:
+            tags.append("FINAL_LOCKED_WITHOUT_COMPLETE_FUNDAMENTALS_V2")
+    out["fullDataFinalPick"] = full_data_final_pick
     out["tags"] = sorted(set(tags))
     if persist:
         out["finalGateStored"] = _store_final(out, module=module)
@@ -145,44 +210,41 @@ def annotate_prediction(row: Dict[str, Any], persist: bool = False, module: Any 
 
     minutes = _minutes_to_start(out)
     phase = _phase(minutes)
-    optimizer = out.get("winnerOptimizer") or {}
-    fundamentals_applied = bool(optimizer.get("fundamentalsApplied"))
+    fundamentals = _fundamentals_v2_status(out)
+    fundamentals_applied = bool(fundamentals["applied"])
     final_window = phase == "FINAL_GATE_OPEN"
     closed = phase in {"LOCK_CLOSED", "GAME_STARTED_OR_CLOSED"}
     final_locked = final_window or closed
-    blocked_missing_sportsdataio = bool(REQUIRE_SPORTSDATAIO_AT_FINAL_GATE and final_locked and not fundamentals_applied)
-
-    if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE and fundamentals_applied:
-        source = "MARKET_PLUS_MULTI_WINDOW_LEARNING_PLUS_SPORTSDATAIO_FINAL_GATE"
-        final_data_status = "FULL_DATA_READY"
-        policy_version = POLICY_VERSION_REQUIRE_SPORTSDATAIO
-    elif blocked_missing_sportsdataio:
-        source = "BLOCKED_FULL_DATA_PICK_MISSING_SPORTSDATAIO_FINAL_GATE"
-        final_data_status = "BLOCKED_MISSING_SPORTSDATAIO"
-        policy_version = POLICY_VERSION_REQUIRE_SPORTSDATAIO
-    else:
-        source = "MARKET_PLUS_MULTI_WINDOW_LEARNING_ODDS_API_ONLY_FINAL_GATE"
-        final_data_status = "ODDS_API_ONLY_READY"
-        policy_version = POLICY_VERSION_ODDS_API_ONLY
+    full_data_final_pick = bool(final_locked and fundamentals_applied)
 
     out["lastPossiblePredictionGate"] = {
-        "policyVersion": policy_version,
+        "policyVersion": POLICY_VERSION,
         "phase": phase,
         "minutesToStart": minutes,
         "gateWindowMinutesBeforeStart": {"opensAt": FINAL_GATE_START_MINUTES, "closesAt": FINAL_GATE_END_MINUTES},
         "finalWindowActive": final_window,
         "finalLocked": final_locked,
-        "oddsApiOnly": not REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
-        "requiresSportsDataIoAttempt": REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
-        "requiresSportsDataIoForFullDataFinalPick": REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
-        "sportsDataIoFundamentalsApplied": fundamentals_applied,
-        "finalGateBlocked": blocked_missing_sportsdataio,
-        "finalGateBlockReason": "SPORTSDATAIO_FINAL_GATE_MISSING" if blocked_missing_sportsdataio else None,
-        "finalDataStatus": final_data_status,
-        "predictionSource": source,
+        "timeLockFinal": final_locked,
+        "fundamentalsV2Applied": fundamentals_applied,
+        "fundamentalsV2Complete": fundamentals_applied,
+        "fundamentalsV2SnapshotVersion": fundamentals["snapshotVersion"],
+        "fundamentalsV2SnapshotFingerprint": fundamentals["snapshotFingerprint"],
+        "fundamentalsV2CompletenessRatio": fundamentals["completenessRatio"],
+        "fundamentalsV2MissingGroups": fundamentals["missingGroups"],
+        "fundamentalsV2ValidationReasons": fundamentals["validationReasons"],
+        "fundamentalsV2RequiredForFullDataFinalPick": True,
+        "fullDataFinalPick": full_data_final_pick,
+        "finalDataStatus": _final_data_status(
+            final_locked, fundamentals_applied
+        ),
+        "predictionSource": _prediction_source(
+            fundamentals_applied, "INDIVIDUAL_GAME_GATE"
+        ),
         "rules": [
             f"Open the final gate {FINAL_GATE_START_MINUTES} minutes before each individual game.",
             "This fallback is only used when the slate-wide lock wrapper is absent.",
+            "Time-lock finality is independent from Fundamentals V2 completeness.",
+            "A full-data final pick requires both a final time lock and a validated complete Fundamentals V2 snapshot.",
         ],
     }
     tags = sorted(set(out.get("tags") or []))
@@ -190,17 +252,13 @@ def annotate_prediction(row: Dict[str, Any], persist: bool = False, module: Any 
         tags.append("FINAL_GATE_OPEN")
     if final_locked:
         tags.append("FINAL_LOCKED")
-    if not REQUIRE_SPORTSDATAIO_AT_FINAL_GATE:
-        tags.append("ODDS_API_ONLY")
-    if blocked_missing_sportsdataio:
-        tags.append("FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO")
-        out["fullDataFinalPick"] = False
-        out["officialPick"] = False
-        out["accuracyTargetEligible"] = False
-        out["actionability"] = "BLOCKED_MISSING_SPORTSDATAIO_FINAL_GATE"
-        out["actionabilityReason"] = "sportsdataio_required_for_full_data_final_gate_but_not_applied"
-    elif final_locked:
-        out["fullDataFinalPick"] = True
+    if fundamentals_applied:
+        tags.append("FUNDAMENTALS_V2_COMPLETE")
+    else:
+        tags.append("FUNDAMENTALS_V2_INCOMPLETE")
+        if final_locked:
+            tags.append("FINAL_LOCKED_WITHOUT_COMPLETE_FUNDAMENTALS_V2")
+    out["fullDataFinalPick"] = full_data_final_pick
     out["tags"] = sorted(set(tags))
     if persist:
         out["finalGateStored"] = _store_final(out, module=module)
@@ -218,9 +276,23 @@ def annotate_result(result: Dict[str, Any], persist: bool = False, module: Any =
     for row in predictions:
         phase = (row.get("lastPossiblePredictionGate") or {}).get("phase") or "UNKNOWN"
         phases[phase] = phases.get(phase, 0) + 1
-    fundamentals_applied = [row for row in predictions if (row.get("lastPossiblePredictionGate") or {}).get("sportsDataIoFundamentalsApplied")]
+    fundamentals_applied = [
+        row
+        for row in predictions
+        if (row.get("lastPossiblePredictionGate") or {}).get(
+            "fundamentalsV2Applied"
+        )
+        is True
+    ]
     final_rows = [row for row in predictions if (row.get("lastPossiblePredictionGate") or {}).get("finalLocked")]
-    blocked_rows = [row for row in predictions if (row.get("lastPossiblePredictionGate") or {}).get("finalGateBlocked")]
+    incomplete_final_rows = [
+        row
+        for row in final_rows
+        if (row.get("lastPossiblePredictionGate") or {}).get(
+            "fundamentalsV2Applied"
+        )
+        is not True
+    ]
     full_data_rows = [row for row in predictions if row.get("fullDataFinalPick")]
     summary = dict(result.get("rolling24hAccuracyTarget") or result.get("accuracyTarget") or {})
     lock = result.get("slatePredictionLock") or ((predictions[0].get("slatePredictionLock") if predictions else {}) or {})
@@ -228,7 +300,7 @@ def annotate_result(result: Dict[str, Any], persist: bool = False, module: Any =
         policy_version = lock.get("policyVersion") or SLATE_LOCK_POLICY_VERSION
         gate_window = {"opensAt": lock.get("lockMinutesBeforeFirstGame", 45), "closesAt": lock.get("lockMinutesBeforeFirstGame", 45), "meaning": "single_slate_wide_lock_cutoff"}
     else:
-        policy_version = POLICY_VERSION_REQUIRE_SPORTSDATAIO if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE else POLICY_VERSION_ODDS_API_ONLY
+        policy_version = POLICY_VERSION
         gate_window = {"opensAt": FINAL_GATE_START_MINUTES, "closesAt": FINAL_GATE_END_MINUTES}
     summary["lastPossiblePredictionGate"] = {
         "applied": True,
@@ -240,12 +312,16 @@ def annotate_result(result: Dict[str, Any], persist: bool = False, module: Any =
         "gateWindowMinutesBeforeStart": gate_window,
         "phaseCounts": phases,
         "finalLockedCount": len(final_rows),
-        "oddsApiOnly": not REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
-        "requiresSportsDataIoForFullDataFinalPick": REQUIRE_SPORTSDATAIO_AT_FINAL_GATE,
-        "sportsDataIoFundamentalsAppliedCount": len(fundamentals_applied),
-        "sportsDataIoMissingFinalGateCount": len([row for row in final_rows if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE and not (row.get("lastPossiblePredictionGate") or {}).get("sportsDataIoFundamentalsApplied")]),
-        "blockedMissingSportsDataIoCount": len(blocked_rows),
+        "timeLockFinalCount": len(final_rows),
+        "fundamentalsV2AppliedCount": len(fundamentals_applied),
+        "fundamentalsV2IncompleteAtFinalLockCount": len(incomplete_final_rows),
+        "fundamentalsV2RequiredForFullDataFinalPick": True,
+        "timeLockFinalityIndependentFromFundamentalsV2": True,
+        "shadowEvidenceCreditedForFundamentalsV2": False,
         "fullDataFinalPickCount": len(full_data_rows),
+        "fullDataFinalPickInvariant": (
+            "finalLocked AND validated complete Fundamentals V2 snapshot"
+        ),
         "persistedFinalRows": bool(persist),
     }
     out = dict(result)
@@ -254,7 +330,11 @@ def annotate_result(result: Dict[str, Any], persist: bool = False, module: Any =
     out["lastPossiblePredictionGate"] = summary["lastPossiblePredictionGate"]
     out["rolling24hAccuracyTarget"] = summary
     out["accuracyTarget"] = summary
-    suffix = "+slate-wide-45min-final-gate" if lock.get("slateWideLock") else ("+last-possible-gate-v4-12h-individual-game-require-sportsdataio" if REQUIRE_SPORTSDATAIO_AT_FINAL_GATE else "+last-possible-gate-v4-12h-individual-game-odds-api-only")
+    suffix = (
+        "+slate-wide-45min-final-gate"
+        if lock.get("slateWideLock")
+        else "+last-possible-gate-v5-12h-individual-game-fundamentals-v2"
+    )
     if suffix not in str(result.get("modelVersion") or ""):
         out["modelVersion"] = str(result.get("modelVersion") or "") + suffix
     return out

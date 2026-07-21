@@ -147,6 +147,27 @@ def test_connected_group_without_source_payload_proof_is_rejected_as_missing():
     assert snapshot_v2.validate(snapshot) == []
 
 
+def test_retired_provider_cannot_earn_v2_completeness_or_training_eligibility():
+    row = _complete_row()
+    for group in row["advanced_context"].values():
+        if not isinstance(group, dict) or not isinstance(
+            group.get("sourceProvenance"), dict
+        ):
+            continue
+        group["sourceProvenance"]["provider"] = "SportsDataIO"
+
+    snapshot = snapshot_v2.build(row)
+
+    assert snapshot["connectedGroups"] == []
+    assert snapshot["pregameComplete"] is False
+    assert snapshot["trainingEligibleAtCapture"] is False
+    assert all(
+        group["status"] == "REJECTED_RETIRED_PROVIDER"
+        for group in snapshot["groups"].values()
+    )
+    assert snapshot_v2.validate(snapshot) == []
+
+
 def test_incomplete_snapshot_cannot_self_declare_training_eligible():
     snapshot = snapshot_v2.build(_row())
     tampered = deepcopy(snapshot)

@@ -155,6 +155,11 @@ SOURCE_PRESENT_STATUSES = {
     "PARTIAL_MISSING_REQUIRED_VALUES",
 }
 
+# Historical rows may still carry this provider name. The integration and
+# credentials are retired, and its old optimizer used neutral-filled values
+# and team/date joins, so those rows must never earn V2 completeness credit.
+RETIRED_PROVIDER_TOKENS = ("sportsdataio",)
+
 # These are the minimum fields needed before a group is complete for the new
 # prospective cohort. Optional descriptive fields remain in the signed schema,
 # but cannot turn missing evidence into a made-up zero.
@@ -281,6 +286,13 @@ def _source_metadata(item: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _retired_provider(value: Any) -> bool:
+    normalized = "".join(
+        character for character in str(value or "").lower() if character.isalnum()
+    )
+    return any(token in normalized for token in RETIRED_PROVIDER_TOKENS)
+
+
 def _identifiers(item: Dict[str, Any], row: Dict[str, Any]) -> Dict[str, Any]:
     return {
         "gameId": row.get("gameId") or row.get("game_id") or row.get("gameIdentity"),
@@ -312,7 +324,9 @@ def _group(
     elif status == "CONNECTED" and missing_value_keys:
         status = "PARTIAL_MISSING_REQUIRED_VALUES"
     if status in SOURCE_PRESENT_STATUSES:
-        if not _parse_dt(source.get("retrievedAtUtc")):
+        if _retired_provider(source.get("provider")):
+            status = "REJECTED_RETIRED_PROVIDER"
+        elif not _parse_dt(source.get("retrievedAtUtc")):
             status = "INVALID_MISSING_RETRIEVAL_TIME"
         elif not _present(source.get("provider")):
             status = "INVALID_MISSING_SOURCE_PROVIDER"
@@ -465,6 +479,8 @@ def validate(snapshot: Any) -> List[str]:
             errors.append(f"fundamentals_v2_{name}_invalid")
             continue
         if group.get("status") in SOURCE_PRESENT_STATUSES:
+            if _retired_provider(group.get("provider")):
+                errors.append(f"fundamentals_v2_{name}_retired_provider")
             if not _parse_dt(group.get("retrievedAtUtc")):
                 errors.append(f"fundamentals_v2_{name}_missing_retrieval_time")
             if not _present(group.get("provider")):

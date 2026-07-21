@@ -38,13 +38,6 @@ except Exception:
     pass
 
 try:
-    import mlb_game_winner_engine as _mlb_game_winner_engine_for_fundamentals
-    import mlb_fundamentals_optimizer_patch
-    mlb_fundamentals_optimizer_patch.apply(_mlb_game_winner_engine_for_fundamentals)
-except Exception:
-    pass
-
-try:
     import mlb_game_winner_engine as _mlb_game_winner_engine_for_final_gate
     import mlb_last_possible_prediction_gate
     mlb_last_possible_prediction_gate.apply(_mlb_game_winner_engine_for_final_gate)
@@ -99,13 +92,6 @@ try:
     import mlb_ml_optimization_v3
     mlb_ml_clean_cohort_hardening_v1.apply(mlb_ml_clean_cohort_v1)
     mlb_ml_optimization_v3.apply(_mlb_rolling_24h_audit_for_optimization_v3)
-except Exception:
-    pass
-
-try:
-    import api as _api_for_sportsdataio
-    import sportsdataio_api_patch
-    sportsdataio_api_patch.apply(_api_for_sportsdataio)
 except Exception:
     pass
 

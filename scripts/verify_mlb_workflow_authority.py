@@ -23,13 +23,6 @@ RETIRED_WORKFLOWS: Dict[str, str] = {
         "    if: ${{ false }}\n    runs-on: ubuntu-latest\n"
         "    steps:\n      - run: exit 1\n"
     ),
-    ".github/workflows/enable-sportsdataio.yml": (
-        "name: Retired - Enable SportsDataIO Runtime\n\n"
-        "# Retired permanently: production environment changes belong in the SAM stack.\n"
-        "on: []\n\npermissions: {}\n\njobs:\n  retired:\n"
-        "    if: ${{ false }}\n    runs-on: ubuntu-latest\n"
-        "    steps:\n      - run: exit 1\n"
-    ),
     ".github/workflows/manual-mlb-force-run.yml": (
         "name: Retired - Manual MLB Force Run\n\n"
         "# Retired permanently: production MLB pulls run only through canonical SAM schedules.\n"
@@ -68,9 +61,14 @@ RETIRED_WORKFLOWS: Dict[str, str] = {
 }
 DISABLED_ALTERNATE_WORKFLOWS = (
     ".github/workflows/proof-run-1800-et-mlb-all-signals.yml",
-    ".github/workflows/mlb-hot-pull-recovery.yml",
 )
-SPORTSDATAIO_PATCHER = "scripts/patch_template_sportsdataio.py"
+FORBIDDEN_ABSENT_PATHS = (
+    ".github/workflows/enable-sportsdataio.yml",
+    ".github/workflows/mlb-hot-pull-recovery.yml",
+    "scripts/patch_template_sportsdataio.py",
+    "scripts/verify_mlb_sportsdataio_sam_wiring.py",
+    "tests/unit/test_mlb_sportsdataio_sam_wiring.py",
+)
 READ_ONLY_STORAGE_POLICY = "READ_ONLY_CANONICAL_PREDICTION_AUTHORITY_ONLY"
 
 
@@ -206,6 +204,10 @@ def verify_repository(root: Path = ROOT) -> List[str]:
         ):
             errors.append(f"alternate_workflow_not_disabled:{relative}")
 
+    for relative in FORBIDDEN_ABSENT_PATHS:
+        if (root / relative).exists():
+            errors.append(f"forbidden_retired_path_present:{relative}")
+
     contract_path = root / ".github/workflows/mlb-production-source-contract.yml"
     contract = (
         contract_path.read_text(encoding="utf-8")
@@ -215,20 +217,24 @@ def verify_repository(root: Path = ROOT) -> List[str]:
     if not contract:
         errors.append("production_source_contract_missing")
     else:
-        for relative in (*RETIRED_WORKFLOWS, *DISABLED_ALTERNATE_WORKFLOWS):
+        for relative in (
+            *RETIRED_WORKFLOWS,
+            *DISABLED_ALTERNATE_WORKFLOWS,
+            *FORBIDDEN_ABSENT_PATHS,
+        ):
             quoted = f"- '{relative}'"
             if contract.count(quoted) != 2:
                 errors.append(
-                    f"retired_workflow_not_watched_on_push_and_pull_request:{relative}"
+                    f"retired_or_forbidden_path_not_watched_on_push_and_pull_request:{relative}"
                 )
         if "python scripts/verify_mlb_workflow_authority.py" not in contract:
             errors.append("production_source_contract_does_not_run_workflow_authority_verifier")
-        if contract.count(f"- '{SPORTSDATAIO_PATCHER}'") != 2:
-            errors.append("sportsdataio_patcher_not_watched_on_push_and_pull_request")
-        if f"python {SPORTSDATAIO_PATCHER}" not in contract:
-            errors.append("production_source_contract_does_not_run_sportsdataio_patcher")
-        if "python scripts/verify_mlb_sportsdataio_sam_wiring.py" not in contract:
-            errors.append("production_source_contract_does_not_verify_sportsdataio_wiring")
+        if "python scripts/verify_mlb_bbs_sam_wiring.py" not in contract:
+            errors.append("production_source_contract_does_not_verify_bbs_wiring")
+        if "uses: aws-actions/setup-sam@v2" not in contract:
+            errors.append("production_source_contract_does_not_install_sam_cli")
+        if "sam validate --template-file template.yaml" not in contract:
+            errors.append("production_source_contract_does_not_validate_sam_template")
 
     deploy_path = root / ".github/workflows/deploy.yml"
     deploy = deploy_path.read_text(encoding="utf-8") if deploy_path.is_file() else ""
@@ -260,10 +266,20 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             errors.append("canonical_deploy_does_not_verify_post_run_trainer_status")
         if "python scripts/verify_mlb_workflow_authority.py" not in deploy:
             errors.append("canonical_deploy_does_not_verify_retired_workflows")
-        if f"python {SPORTSDATAIO_PATCHER}" not in deploy:
-            errors.append("canonical_deploy_does_not_run_sportsdataio_patcher")
-        if "python scripts/verify_mlb_sportsdataio_sam_wiring.py" not in deploy:
-            errors.append("canonical_deploy_does_not_verify_sportsdataio_wiring")
+        if "python scripts/verify_mlb_bbs_sam_wiring.py" not in deploy:
+            errors.append("canonical_deploy_does_not_verify_bbs_wiring")
+        if '${{ secrets.BBS_API_KEY }}' not in deploy:
+            errors.append("canonical_deploy_does_not_consume_exact_bbs_secret")
+        if '"BbsApiKey=${BBS_API_KEY_VALUE}"' not in deploy:
+            errors.append("canonical_deploy_does_not_pass_bbs_noecho_parameter")
+        for token in (
+            "SPORTSDATAIO_API_KEY",
+            "SportsDataIoApiKey",
+            "patch_template_sportsdataio.py",
+            "verify_mlb_sportsdataio_sam_wiring.py",
+        ):
+            if token in deploy:
+                errors.append(f"canonical_deploy_retired_provider_token_present:{token}")
         shadow_runtime_tokens = {
             "disabled_manual_review_creates_shadow_pointer_only": (
                 "canonical_deploy_does_not_require_shadow_only_manual_review"

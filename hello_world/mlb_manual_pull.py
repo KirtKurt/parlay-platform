@@ -39,6 +39,11 @@ try:
 except Exception:
     official_schedule = None
 
+try:
+    import mlb_bbs_context_v1 as bbs_shadow
+except Exception:
+    bbs_shadow = None
+
 
 dynamodb = boto3.resource("dynamodb")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -675,7 +680,40 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
     }
     try:
         stored = pull_history.store_pull(body)
-        manifest = ((stored.get("stored") or {}).get("provider_manifest") or {})
+        stored_details = stored.get("stored") or {}
+        stored_pull = stored.get("pull") or {}
+        canonical_slot = stored.get("canonicalSlot") or {}
+        manifest = stored_details.get("provider_manifest") or {}
+        canonical_pull_id = str(
+            canonical_slot.get("canonicalPullId")
+            or stored_details.get("pull_id")
+            or stored_pull.get("pull_id")
+            or ""
+        )
+        canonical_pulled_at = str(
+            canonical_slot.get("canonicalPulledAtUtc")
+            or stored_pull.get("pulled_at")
+            or ""
+        )
+        canonical_pull_fingerprint = (
+            pull_history.pull_payload_fingerprint(stored_pull)
+            if stored_pull
+            and callable(getattr(pull_history, "pull_payload_fingerprint", None))
+            else ""
+        )
+        canonical_pk = str(stored_details.get("pk") or "")
+        canonical_sk = str(stored_details.get("sk") or "")
+        canonical_slot_start = str(canonical_slot.get("slotStartUtc") or "")
+        canonical_binding_complete = all(
+            (
+                canonical_pull_id,
+                canonical_pulled_at,
+                canonical_pull_fingerprint,
+                canonical_pk,
+                canonical_sk,
+                canonical_slot_start,
+            )
+        )
         expected_authority = compact.get("official_schedule_authority") or {}
         official_authority_bound = bool(
             not expected_authority
@@ -688,6 +726,7 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
         )
         manifest_bound = bool(
             stored.get("ok") is True
+            and canonical_binding_complete
             and manifest.get("immutable") is True
             and manifest.get("full_provider_schedule") is True
             and int(manifest.get("game_count") or -1) == len(games)
@@ -701,8 +740,20 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
             "games": len(games),
             "stored": stored.get("stored"),
             "error": stored.get("error"),
-            "pull_id": body["pull_id"],
-            "pk": (stored.get("stored") or {}).get("pk"),
+            # These values come from the persisted canonical slot authority,
+            # not from this invocation's candidate body. Same-slot retries must
+            # bind supplemental artifacts to the first immutable pull.
+            "pull_id": canonical_pull_id,
+            "pk": canonical_pk,
+            "canonicalPullId": canonical_pull_id,
+            "canonicalPulledAtUtc": canonical_pulled_at,
+            "canonicalSlotStartUtc": canonical_slot_start,
+            "canonicalPullPayloadFingerprint": canonical_pull_fingerprint,
+            "canonicalPullPk": canonical_pk,
+            "canonicalPullSk": canonical_sk,
+            "retryReturnedExistingCanonicalPull": (
+                canonical_slot.get("retryReturnedExistingCanonicalPull") is True
+            ),
             "providerManifestVersion": manifest.get("version"),
             "providerManifestFingerprint": manifest.get("fingerprint"),
             "providerManifestGameCount": manifest.get("game_count"),
@@ -719,6 +770,47 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
         }
     except Exception as exc:
         return {"ok": False, "games": len(games), "error": str(exc), "pull_id": body["pull_id"]}
+
+
+def _capture_bbs_shadow_safe(
+    *,
+    game_date: str,
+    canonical: Dict[str, Any],
+    date_compact: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Capture supplemental provider evidence without affecting the odds pull.
+
+    Only the audited-pull Lambda has the secret/S3 permissions. A provider or
+    adapter failure is reported as shadow health and cannot change predictions,
+    stored locks, or the HTTP success of the canonical odds path.
+    """
+
+    if bbs_shadow is None:
+        return {
+            "ok": False,
+            "status": "ADAPTER_UNAVAILABLE",
+            "shadowOnly": True,
+            "trainingEligible": False,
+            "completenessCredit": False,
+        }
+    try:
+        return bbs_shadow.capture_shadow_slot(
+            game_date=game_date,
+            canonical_pull=canonical,
+            official_games=_canonical_games(date_compact),
+        )
+    except Exception:
+        # Do not echo SDK/provider exception strings: some libraries include
+        # request headers. The detailed failure remains observable in Lambda
+        # error metrics while this public response stays credential-safe.
+        return {
+            "ok": False,
+            "status": "UNEXPECTED_SHADOW_CAPTURE_ERROR",
+            "shadowOnly": True,
+            "trainingEligible": False,
+            "completenessCredit": False,
+            "secretExposed": False,
+        }
 
 
 def _latest_two_hot_snapshots_for_game_date(game_date: str, limit: int = 12) -> List[Dict[str, Any]]:
@@ -920,6 +1012,8 @@ def lambda_handler(event, context):
         hot_movement_feature_results = []
         hot_side_prediction_results = []
         game_winner_prediction_results = []
+        bbs_shadow_capture_results = []
+        bbs_shadow_capture_attempted = False
 
         for game_date in compact.get("game_dates_et") or []:
             date_compact = _compact_for_game_date(compact, game_date)
@@ -936,6 +1030,26 @@ def lambda_handler(event, context):
             hot_movement_feature_results.append({"game_date_et": game_date, **_store_hot_movement_features(game_date=game_date, asof=asof, run=run)})
             hot_side_prediction_results.append({"game_date_et": game_date, **_build_read_only_hot_sides(game_date=game_date)})
             game_winner_prediction_results.append({"game_date_et": game_date, **_build_and_store_game_winners(game_date=game_date)})
+            if not bbs_shadow_capture_attempted:
+                bbs_shadow_capture_attempted = True
+                bbs_result = _capture_bbs_shadow_safe(
+                    game_date=game_date,
+                    canonical=canonical,
+                    date_compact=date_compact,
+                )
+            else:
+                bbs_result = {
+                    "ok": True,
+                    "status": "SKIPPED_SINGLE_REQUEST_BUDGET_ALREADY_USED",
+                    "shadowOnly": True,
+                    "trainingEligible": False,
+                    "completenessCredit": False,
+                    "officialIdentityCredit": False,
+                }
+            bbs_shadow_capture_results.append({
+                "game_date_et": game_date,
+                **bbs_result,
+            })
 
         start_at = _parse_start_at_et()
         provider_schedule_manifests = [
@@ -1005,6 +1119,7 @@ def lambda_handler(event, context):
             "hot_movement_features": hot_movement_feature_results,
             "hot_side_predictions": hot_side_prediction_results,
             "game_winner_predictions": game_winner_prediction_results,
+            "bbs_shadow_capture": bbs_shadow_capture_results,
         })
     except Exception as exc:
         payload = _event_payload(event)

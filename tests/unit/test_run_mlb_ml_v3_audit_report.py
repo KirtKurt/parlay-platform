@@ -190,7 +190,7 @@ def _status(
 
 
 def test_generic_latest_never_overrides_mode_specific_authority(monkeypatch) -> None:
-    experiment_id = "mlb-v2-2026-07-21-future-prospective-r2"
+    experiment_id = "mlb-v2-2026-07-22-future-prospective-r3"
     pk = f"MLB_ML_EXPERIMENT#V2#{experiment_id}"
     generic = _status("selection_capture", 1, ok=False)
     generic["automaticPromotionEnabled"] = True
@@ -216,7 +216,7 @@ def test_generic_latest_never_overrides_mode_specific_authority(monkeypatch) -> 
 
 
 def test_fresh_capture_cannot_mask_stale_or_failed_training(monkeypatch) -> None:
-    experiment_id = "mlb-v2-2026-07-21-future-prospective-r2"
+    experiment_id = "mlb-v2-2026-07-22-future-prospective-r3"
     pk = f"MLB_ML_EXPERIMENT#V2#{experiment_id}"
     _install_table(
         monkeypatch,
@@ -251,7 +251,7 @@ def test_fresh_capture_cannot_mask_stale_or_failed_training(monkeypatch) -> None
 
 
 def test_matching_fresh_modes_require_same_deployment_identity(monkeypatch) -> None:
-    experiment_id = "mlb-v2-2026-07-21-future-prospective-r2"
+    experiment_id = "mlb-v2-2026-07-22-future-prospective-r3"
     pk = f"MLB_ML_EXPERIMENT#V2#{experiment_id}"
     _install_table(
         monkeypatch,

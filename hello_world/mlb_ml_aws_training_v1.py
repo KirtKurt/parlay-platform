@@ -124,11 +124,11 @@ class TrainingConfig:
     def __post_init__(self) -> None:
         if self.experiment_id != experiment.PRODUCTION_EXPERIMENT_ID:
             raise TrainingContractError(
-                "MLB ML production requires the future-prospective r2 experiment ID"
+                "MLB ML production requires the future-prospective r3 experiment ID"
             )
         if self.release_contract_id != experiment.PRODUCTION_RELEASE_CONTRACT_ID:
             raise TrainingContractError(
-                "MLB ML production requires the future-prospective r2 release contract"
+                "MLB ML production requires the future-prospective r3 release contract"
             )
         try:
             cutoff = datetime.fromisoformat(
@@ -141,7 +141,7 @@ class TrainingConfig:
             raise TrainingContractError("MLB ML release cutoff must be ISO-8601") from exc
         if cutoff_value != experiment.PRODUCTION_RELEASE_CUTOFF_UTC:
             raise TrainingContractError(
-                "MLB ML r2 release cutoff must begin at the July 22 ET slate boundary"
+                "MLB ML r3 release cutoff must begin at the July 22 ET slate boundary"
             )
         for value, length, name in (
             (self.deployment_git_sha, 40, "git SHA"),

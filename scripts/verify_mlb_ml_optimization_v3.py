@@ -22,8 +22,8 @@ from mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 cohort_hardening.apply(cohort)
 
-R2_EXPERIMENT_ID = "mlb-v2-2026-07-21-future-prospective-r2"
-R2_RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
+R3_EXPERIMENT_ID = "mlb-v2-2026-07-22-future-prospective-r3"
+R3_RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
 
 
 def source_honest_context():
@@ -144,23 +144,23 @@ def main() -> int:
         runtime.champion_store.load_champion = original_loader
 
     manifest = experiment_v2.new_manifest(
-        experiment_id=R2_EXPERIMENT_ID,
-        release_contract_id=R2_EXPERIMENT_ID,
-        release_cutoff_utc=R2_RELEASE_CUTOFF_UTC,
+        experiment_id=R3_EXPERIMENT_ID,
+        release_contract_id=R3_EXPERIMENT_ID,
+        release_cutoff_utc=R3_RELEASE_CUTOFF_UTC,
         feature_vector_version=experiment_v2.REQUIRED_FUNDAMENTALS_VERSION,
         model_feature_schemas={
             "outcome": dual_v2.OUTCOME_FEATURES,
             "reliability": dual_v2.RELIABILITY_FEATURES,
         },
-        created_at_utc=R2_RELEASE_CUTOFF_UTC,
+        created_at_utc=R3_RELEASE_CUTOFF_UTC,
     )
     assert experiment_v2.PARTITION_MINIMUMS == {
         "train": 300,
         "validation": 100,
         "prospectiveTest": 100,
     }
-    assert manifest["experimentId"] == R2_EXPERIMENT_ID
-    assert manifest["releaseCutoffUtc"] == R2_RELEASE_CUTOFF_UTC
+    assert manifest["experimentId"] == R3_EXPERIMENT_ID
+    assert manifest["releaseCutoffUtc"] == R3_RELEASE_CUTOFF_UTC
     r2_gate = promotion_v2.evaluate(
         {}, manifest, current_champion=None, automatic_promotion_enabled=False
     )
@@ -170,7 +170,7 @@ def main() -> int:
 
     print(
         "MLB ML optimization diagnostics verified: legacy V1 feature/join/runtime checks "
-        "remain non-authoritative; production proof is r2 future-cutover fixed whole-slate "
+        "remain non-authoritative; production proof is r3 future-cutover fixed whole-slate "
         "300/100/100 with manual-first shadow approval and no runtime activation"
     )
     return 0

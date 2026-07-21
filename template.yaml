@@ -7,11 +7,10 @@ Parameters:
     Type: String
     NoEcho: true
     Description: External odds feed key
-  SportsDataIoApiKey:
+  BbsApiKey:
     Type: String
     NoEcho: true
-    Default: ""
-    Description: Optional SportsDataIO MLB fundamentals feed key
+    Description: Big Balls Sports Data key used only by the MLB shadow-capture Lambda
   InqsiAdminApiToken:
     Type: String
     NoEcho: true
@@ -153,6 +152,14 @@ Resources:
         BlockPublicPolicy: true
         IgnorePublicAcls: true
         RestrictPublicBuckets: true
+
+  BbsApiSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Big Balls Sports Data credential for source-honest MLB shadow capture
+      SecretString: !Ref BbsApiKey
 
   InqsiMembersTable:
     Type: AWS::DynamoDB::Table
@@ -568,12 +575,6 @@ Resources:
   ApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Environment:
-        Variables:
-          SPORTSDATAIO_API_KEY: !Ref SportsDataIoApiKey
-          INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS: 'true'
-          INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE: 'false'
-          SPORTSDATAIO_TIMEOUT_SECONDS: '25'
       CodeUri: hello_world/
       Handler: frontend_app.lambda_handler
       Policies:
@@ -602,13 +603,14 @@ Resources:
   MLBAuditedPullFunction:
     Type: AWS::Serverless::Function
     Properties:
+      Timeout: 120
       Environment:
         Variables:
-          SPORTSDATAIO_API_KEY: !Ref SportsDataIoApiKey
-          INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS: 'true'
-          INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE: 'false'
-          SPORTSDATAIO_TIMEOUT_SECONDS: '25'
           INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken
+          BBS_API_SECRET_ARN: !Ref BbsApiSecret
+          BBS_SHADOW_CAPTURE_ENABLED: 'true'
+          BBS_SHADOW_S3_BUCKET: !Ref MLBMLArtifactsBucket
+          BBS_SHADOW_SCHEMA_VERSION: 'MLB-BBS-SHADOW-v2-canonical-bound-raw-only'
       CodeUri: hello_world/
       Handler: mlb_manual_pull_protected.lambda_handler
       Policies:
@@ -618,6 +620,16 @@ Resources:
             TableName: !Ref SignalLedgerTable
         - DynamoDBCrudPolicy:
             TableName: !Ref PredictionsTable
+        - Statement:
+            - Effect: Allow
+              Action:
+                - secretsmanager:GetSecretValue
+              Resource: !Ref BbsApiSecret
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:PutObject
+              Resource: !Sub '${MLBMLArtifactsBucket.Arn}/mlb/providers/bbs/*'
       Events:
         MLBManualPull:
           Type: Api
@@ -632,12 +644,6 @@ Resources:
   MLBSignalApiFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Environment:
-        Variables:
-          SPORTSDATAIO_API_KEY: !Ref SportsDataIoApiKey
-          INQSI_MLB_USE_SPORTSDATAIO_FUNDAMENTALS: 'true'
-          INQSI_REQUIRE_SPORTSDATAIO_FINAL_GATE: 'false'
-          SPORTSDATAIO_TIMEOUT_SECONDS: '25'
       CodeUri: hello_world/
       Handler: mlb_date_signal_api.lambda_handler
       Policies:
@@ -679,6 +685,11 @@ Resources:
           Type: Api
           Properties:
             Path: /v1/sources/mlb/status
+            Method: GET
+        FundamentalsStatus:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/fundamentals/status
             Method: GET
 
 
@@ -808,8 +819,8 @@ Resources:
       Environment:
         Variables:
           MLB_ML_ARTIFACTS_BUCKET: !Ref MLBMLArtifactsBucket
-          MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-07-21-future-prospective-r2'
-          MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-07-21-future-prospective-r2'
+          MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-07-22-future-prospective-r3'
+          MLB_ML_RELEASE_CONTRACT_ID: 'mlb-v2-2026-07-22-future-prospective-r3'
           MLB_ML_RELEASE_CUTOFF_UTC: '2026-07-22T04:00:00+00:00'
           MLB_ML_FEATURE_VECTOR_VERSION: 'MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness'
           MLB_ML_EXECUTION_LEASE_SECONDS: '960'

@@ -148,7 +148,7 @@ def _fundamental_component(row: Dict[str, Any], selected: Dict[str, Any], other:
     return {
         "score": round(score, 2),
         "applied": True,
-        "mode": optimizer.get("fundamentalsMode") or "SPORTSDATAIO_ENABLED",
+        "mode": optimizer.get("fundamentalsMode") or "TIMESTAMPED_FUNDAMENTALS_V2",
         "edge": round(edge, 2),
         "details": fundamentals,
         "source": "team_power_starting_pitcher_bullpen_lineup_fundamentals",

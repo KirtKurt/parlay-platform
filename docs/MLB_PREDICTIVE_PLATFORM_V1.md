@@ -50,10 +50,10 @@ ODDS_API_KEY
 
 GitHub Actions passes `secrets.ODDS_API_KEY` into the SAM deploy parameter `OddsApiKey`, which injects `ODDS_API_KEY` into the Lambda runtime. A GitHub secret existing by itself is not enough; deploy smoke now performs a real `POST /v1/pull/mlb` and fails if the deployed Lambda cannot use The Odds API successfully.
 
-Removed or disabled from the MLB production path:
+Removed from the MLB production path:
 
 ```text
-SportsDataIO for MLB picks
+legacy third-party fundamentals client, credentials, routes, and scoring optimizer
 public sportsbook page scraping
 manual odds entry for official picks
 NFL/CFB parlay scoring

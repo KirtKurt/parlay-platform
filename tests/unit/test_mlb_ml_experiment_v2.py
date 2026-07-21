@@ -495,7 +495,7 @@ def test_legacy_vector_and_pre_release_rows_never_enter_new_cohort():
 def test_r2_release_cutoff_rejects_backfill_and_accepts_exact_boundary():
     r2 = experiment.new_manifest(
         experiment_id="mlb-v2-r2-cutoff-test",
-        release_contract_id="mlb-v2-2026-07-21-future-prospective-r2",
+        release_contract_id="mlb-v2-2026-07-22-future-prospective-r3",
         release_cutoff_utc="2026-07-22T04:00:00+00:00",
         feature_vector_version="MLB-VECTOR-v2",
         model_feature_schemas=FEATURE_SCHEMAS,

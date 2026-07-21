@@ -63,13 +63,14 @@ def _validate_deploy_workflow() -> None:
         "Prove committed MLB source is canonical",
         "Calculate canonical deployment identity",
         "Deploy exact canonical source",
+        "BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}",
+        "Missing BBS_API_KEY",
         'parameter_overrides=(',
         '"OddsApiKey=${ODDS_API_KEY_VALUE}"',
+        '"BbsApiKey=${BBS_API_KEY_VALUE}"',
         '"InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}"',
         '"DeployGitSha=${GITHUB_SHA}"',
         '"DeployTemplateSha256=${DEPLOY_TEMPLATE_SHA256}"',
-        'if [[ -n "${SPORTSDATAIO_API_KEY_VALUE:-}" ]]; then',
-        'parameter_overrides+=("SportsDataIoApiKey=${SPORTSDATAIO_API_KEY_VALUE}")',
         '--parameter-overrides "${parameter_overrides[@]}"',
         "Prove exact deployed Lambda identity and schedules",
         "verify_mlb_deploy_identity.py",
@@ -96,7 +97,7 @@ def _validate_deploy_workflow() -> None:
         ROOT / "scripts" / "verify_mlb_trainer_deploy_response.py"
     ).read_text(encoding="utf-8")
     for token in [
-        "mlb-v2-2026-07-21-future-prospective-r2",
+        "mlb-v2-2026-07-22-future-prospective-r3",
         "2026-07-22T04:00:00+00:00",
         "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow",
     ]:
@@ -110,6 +111,9 @@ def _validate_deploy_workflow() -> None:
             "force=true",
             "deploy_live_odds_smoke",
             "Smoke test live MLB Odds API pull and storage",
+            "SPORTSDATAIO_API_KEY_VALUE",
+            "SportsDataIoApiKey",
+            "secrets.BS_API_KEY",
         ]
         if token in text
     ]
