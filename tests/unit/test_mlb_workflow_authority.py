@@ -264,6 +264,68 @@ def test_requires_selection_capture_before_status_check(tmp_path: Path) -> None:
     assert "canonical_deploy_split_run_status_order_is_invalid" in errors
 
 
+def test_requires_bounded_retry_for_all_three_deploy_invocations(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace("python scripts/invoke_mlb_trainer_with_retry.py", "python", 1),
+        encoding="utf-8",
+    )
+
+    errors = authority.verify_repository(root)
+    assert (
+        "canonical_deploy_must_use_bounded_invoke_retry_exactly_three_times"
+        in errors
+    )
+
+
+def test_requires_capacity_probe_horizon_to_outlast_old_lock_backlog(
+    tmp_path: Path,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "capacity_deadline=$((SECONDS + 360))",
+            "capacity_deadline=$((SECONDS + 120))",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_capacity_backpressure_missing:"
+        "capacity_deadline=$((SECONDS + 360))"
+        in authority.verify_repository(root)
+    )
+
+
+@pytest.mark.parametrize(
+    ("token", "expected_error"),
+    (
+        (
+            "tests/unit/test_mlb_daily_pick_lock_runtime.py",
+            "production_source_contract_does_not_test_lock_runtime",
+        ),
+        (
+            "tests/unit/test_mlb_daily_per_game_lock.py",
+            "production_source_contract_does_not_test_per_game_lock",
+        ),
+    ),
+)
+def test_requires_lock_contracts_in_premerge_source_gate(
+    tmp_path: Path, token: str, expected_error: str
+) -> None:
+    root = _copy_contract(tmp_path)
+    contract = root / ".github/workflows/mlb-production-source-contract.yml"
+    text = contract.read_text(encoding="utf-8")
+    contract.write_text(text.replace(token, "removed-lock-contract.py"), encoding="utf-8")
+
+    assert expected_error in authority.verify_repository(root)
+
+
 def test_rejects_reintroduced_retired_provider_patcher(tmp_path: Path) -> None:
     root = _copy_contract(tmp_path)
     relative = "scripts/patch_template_sportsdataio.py"

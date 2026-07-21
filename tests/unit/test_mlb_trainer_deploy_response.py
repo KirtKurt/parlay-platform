@@ -40,6 +40,7 @@ def _payloads():
         "experimentId": verifier.EXPERIMENT_ID,
         "releaseContractId": verifier.EXPERIMENT_ID,
         "releaseCutoffUtc": verifier.RELEASE_CUTOFF_UTC,
+        "createdAtUtc": "2026-07-21T23:00:00+00:00",
         "manifestDigest": "manifest-digest",
         "phase": "ACCUMULATING_TRAIN",
     }
@@ -162,6 +163,12 @@ def test_accepts_fresh_split_run_and_status_health() -> None:
                 {"releaseContractId": "stale-release"}
             ),
             "manifest_release_contract_identity_mismatch",
+        ),
+        (
+            lambda training, selection, after: after["manifest"].update(
+                {"createdAtUtc": verifier.RELEASE_CUTOFF_UTC}
+            ),
+            "manifest_not_created_before_release_cutoff",
         ),
         (
             lambda training, selection, after: after.update(

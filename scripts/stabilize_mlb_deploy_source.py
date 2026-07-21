@@ -75,6 +75,8 @@ def _validate_deploy_workflow() -> None:
         "Prove exact deployed Lambda identity and schedules",
         "verify_mlb_deploy_identity.py",
         "Run AWS-native MLB trainer and verify fresh split health",
+        "invoke_mlb_trainer_with_retry.py",
+        "test_mlb_trainer_invoke_retry.py",
         "verify_mlb_trainer_deploy_response.py",
         "aws_native_fixed_prospective_shadow_training",
         "aws_native_prospective_selection_capture",

@@ -867,9 +867,9 @@ def test_deploy_initializes_both_trainer_modes_before_status_acceptance() -> Non
 
     assert workflow.index(training_payload) < workflow.index(capture_payload)
     assert workflow.index(capture_payload) < workflow.index(status_payload)
-    assert workflow.count("--cli-read-timeout 1000") >= 1
     assert 'AWS_MAX_ATTEMPTS: "1"' in workflow
-    assert "invoke_with_capacity_retry" in workflow
+    assert workflow.count("python scripts/invoke_mlb_trainer_with_retry.py") == 3
+    assert "invoke_with_capacity_retry" not in workflow
     assert "Prove shared Lambda capacity recovered before trainer initialization" in workflow
     assert "trainingHealth" in workflow
     assert "selectionCaptureHealth" in workflow

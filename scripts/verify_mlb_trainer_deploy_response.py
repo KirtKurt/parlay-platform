@@ -198,6 +198,12 @@ def verify(
         errors.append("manifest_release_contract_identity_mismatch")
     if manifest.get("releaseCutoffUtc") != RELEASE_CUTOFF_UTC:
         errors.append("manifest_release_cutoff_mismatch")
+    manifest_created = _parse_time(manifest.get("createdAtUtc"))
+    release_cutoff = _parse_time(RELEASE_CUTOFF_UTC)
+    if manifest_created is None:
+        errors.append("manifest_created_at_invalid")
+    elif release_cutoff is None or manifest_created >= release_cutoff:
+        errors.append("manifest_not_created_before_release_cutoff")
     manifest_digest = str(manifest.get("manifestDigest") or "")
     if not manifest_digest:
         errors.append("manifest_digest_missing")
