@@ -21,8 +21,41 @@ import mlb_locked_prediction_storage_finalizer_v1 as finalizer
 import mlb_last_possible_prediction_gate as legacy_gate
 
 
-def _user_visible_prelock(engine, row):
+def _user_visible_prelock(engine, row, *, normalize_probability=True):
+    import inqsi_pull_history as history
+    import mlb_prediction_probability_contract_v1 as probability_contract
+
     out = copy.deepcopy(row)
+    if normalize_probability:
+        side = str(out.get("predictedSide") or "home").lower()
+        winner = str(out.get("predictedWinner") or "Home")
+        out.setdefault("homeTeam", winner if side == "home" else "Home")
+        out.setdefault("awayTeam", winner if side == "away" else "Away")
+        home_signal = dict(out.get("homeSignal") or {})
+        home_signal.setdefault("modelWinProbability", 0.62)
+        home_signal.setdefault("marketProbability", 0.54)
+        home_signal.setdefault("americanOdds", out.get("americanOdds", -118.0))
+        home_signal.setdefault("priceBook", "fixture-book")
+        home_signal.setdefault("priceSource", "real_book")
+        away_signal = dict(out.get("awaySignal") or {})
+        away_signal.setdefault("modelWinProbability", 0.38)
+        away_signal.setdefault("marketProbability", 0.46)
+        away_signal.setdefault("americanOdds", 108.0)
+        away_signal.setdefault("priceBook", "fixture-book")
+        away_signal.setdefault("priceSource", "real_book")
+        out["homeSignal"] = home_signal
+        out["awaySignal"] = away_signal
+        out.setdefault("predictionSourcePullAt", out.get("createdAt"))
+        out.setdefault("predictionSourcePullId", "storage-authority-fixture")
+        out.setdefault(
+            "predictionSourceCanonicalSlot",
+            {
+                "version": history.PULL_SLOT_VERSION,
+                "canonicalPullFingerprint": "storage-authority-canonical-slot",
+            },
+        )
+        out = probability_contract.normalize_row(out)
+        assert probability_contract.validation_errors(out) == []
     out.update({
         "lockedPrediction": False,
         "officialPrediction": False,
@@ -255,6 +288,7 @@ def test_installed_probability_contract_cannot_be_bypassed_by_omitting_version(
             "predictedSide": "home",
             "createdAt": "2026-07-17T17:00:00+00:00",
         },
+        normalize_probability=False,
     )
 
     result = engine._store_prediction(row)

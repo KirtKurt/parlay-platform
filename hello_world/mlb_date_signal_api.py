@@ -366,7 +366,10 @@ def lambda_handler(event, context):
             return _resp(200, game_context(game_date, params.get("game_key") or "", min(int(params.get("limit") or 40), 200)))
         if method == "GET" and path == "/v1/results/mlb/status":
             return _resp(200, _base_results_status(params.get("slate_date_et") or game_date))
-        if method == "GET" and path == "/v1/sources/mlb/status":
+        if method == "GET" and path in {
+            "/v1/sources/mlb/status",
+            "/v1/mlb/fundamentals/status",
+        }:
             return _resp(200, source_status())
         return _resp(404, {"ok": False, "error": f"Route not found: {method} {path}"})
     except Exception as exc:

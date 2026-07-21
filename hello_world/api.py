@@ -544,7 +544,7 @@ def lambda_handler(event, context):
     if method == "GET" and path == "/v1/results/mlb/status":
         params = event.get("queryStringParameters") or {}
         return _resp(200, results_status(params.get("slate_date_et")))
-    if method == "GET" and path == "/v1/sources/mlb/status":
+    if method == "GET" and path in {"/v1/sources/mlb/status", "/v1/mlb/fundamentals/status"}:
         return _resp(200, source_status())
     if method == "GET" and path == "/v1/audit/soccer/snapshots":
         params = event.get("queryStringParameters") or {}

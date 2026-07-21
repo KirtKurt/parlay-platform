@@ -35,6 +35,14 @@ def test_repository_workflow_authority_is_hardened() -> None:
     assert authority.verify_repository(ROOT) == []
 
 
+def test_pull_request_contract_installs_and_validates_sam() -> None:
+    contract = (ROOT / ".github/workflows/mlb-production-source-contract.yml").read_text(
+        encoding="utf-8"
+    )
+    assert "uses: aws-actions/setup-sam@v2" in contract
+    assert "sam validate --template-file template.yaml" in contract
+
+
 def test_rejects_reenabled_retired_workflow(tmp_path: Path) -> None:
     root = _copy_contract(tmp_path)
     retired = root / ".github/workflows/mlb-v1-emergency-deploy.yml"
@@ -160,7 +168,7 @@ def test_requires_both_source_contract_path_filters(tmp_path: Path) -> None:
     contract.write_text(text.replace(watched, "", 1), encoding="utf-8")
 
     assert (
-        "retired_workflow_not_watched_on_push_and_pull_request:"
+        "retired_or_forbidden_path_not_watched_on_push_and_pull_request:"
         ".github/workflows/enable-sportsdataio.yml"
     ) in authority.verify_repository(root)
 
@@ -169,15 +177,14 @@ def test_rejects_reenabled_alternate_prediction_writer(tmp_path: Path) -> None:
     root = _copy_contract(tmp_path)
     relative = ".github/workflows/mlb-hot-pull-recovery.yml"
     workflow = root / relative
+    workflow.parent.mkdir(parents=True, exist_ok=True)
     workflow.write_text(
-        workflow.read_text(encoding="utf-8").replace(
-            "on: []", "on:\n  workflow_dispatch:", 1
-        ),
+        "name: forbidden\non:\n  workflow_dispatch:\njobs: {}\n",
         encoding="utf-8",
     )
 
     assert (
-        f"alternate_workflow_not_disabled:{relative}"
+        f"forbidden_retired_path_present:{relative}"
         in authority.verify_repository(root)
     )
 
@@ -191,7 +198,7 @@ def test_requires_alternate_writer_source_contract_filters(tmp_path: Path) -> No
     contract.write_text(text.replace(watched, "", 1), encoding="utf-8")
 
     assert (
-        f"retired_workflow_not_watched_on_push_and_pull_request:{relative}"
+        f"retired_or_forbidden_path_not_watched_on_push_and_pull_request:{relative}"
         in authority.verify_repository(root)
     )
 
@@ -211,15 +218,15 @@ def test_requires_selection_capture_before_status_check(tmp_path: Path) -> None:
     assert "canonical_deploy_split_run_status_order_is_invalid" in errors
 
 
-def test_requires_sportsdataio_patcher_source_filters(tmp_path: Path) -> None:
+def test_rejects_reintroduced_retired_provider_patcher(tmp_path: Path) -> None:
     root = _copy_contract(tmp_path)
-    contract = root / ".github/workflows/mlb-production-source-contract.yml"
-    text = contract.read_text(encoding="utf-8")
-    watched = f"      - '{authority.SPORTSDATAIO_PATCHER}'\n"
-    contract.write_text(text.replace(watched, "", 1), encoding="utf-8")
+    relative = "scripts/patch_template_sportsdataio.py"
+    path = root / relative
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("raise SystemExit('retired')\n", encoding="utf-8")
 
     assert (
-        "sportsdataio_patcher_not_watched_on_push_and_pull_request"
+        f"forbidden_retired_path_present:{relative}"
         in authority.verify_repository(root)
     )
 

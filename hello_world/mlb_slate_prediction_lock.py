@@ -105,16 +105,6 @@ def _enhance(result: Dict[str, Any]) -> Dict[str, Any]:
         return result
 
 
-def _optimize_locked_row(row: Dict[str, Any]) -> Dict[str, Any]:
-    try:
-        import mlb_fundamentals_optimizer_patch
-        return mlb_fundamentals_optimizer_patch.optimize_with_fundamentals(row)
-    except Exception as exc:
-        out = dict(row or {})
-        out["fundamentalsCalibrationNoPick"] = {"applied": False, "error": str(exc)}
-        return out
-
-
 def _slate_from_call(args: Tuple[Any, ...], kwargs: Dict[str, Any], module: Any) -> str:
     if args and args[0]:
         return str(args[0])

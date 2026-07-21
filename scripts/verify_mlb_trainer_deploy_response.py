@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterable, List, Optional
 
 TRAINER_VERSION = "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
 EXPERIMENT_VERSION = "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
-EXPERIMENT_ID = "mlb-v2-2026-07-21-future-prospective-r2"
+EXPERIMENT_ID = "mlb-v2-2026-07-22-future-prospective-r3"
 RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
 EXECUTION_CONCURRENCY_CONTROL = {
     "version": "MLB-ML-EXECUTION-LEASE-v1-shared-ddb-conditional",

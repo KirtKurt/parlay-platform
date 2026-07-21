@@ -12,6 +12,8 @@ NON_PREDICTIVE_TAGS = {
     "PRE_SLATE_LOCK",
     "SLATE_LOCKED",
     "SLATE_WIDE_45_MIN_LOCK_POLICY",
+    # Historical provider-state tags remain excluded forever; removing them
+    # from this denylist would make old operational labels learnable features.
     "FINAL_GATE_BLOCKED_MISSING_SPORTSDATAIO",
     # Provider/source status
     "SPORTSDATAIO_FINAL_GATE_MISSING",

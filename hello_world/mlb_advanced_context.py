@@ -14,6 +14,8 @@ from mlb_official_schedule_authority import normalize_team as _official_normaliz
 
 ADVANCED_CONTEXT_VERSION = "MLB-B1.0-advanced-context-v2-source-provenance"
 STATSAPI_SCHEDULE_URL = "https://statsapi.mlb.com/api/v1/schedule"
+TRAVEL_REST_ALGORITHM_VERSION = "MLB-TRAVEL-REST-v1-official-calendar-gap"
+TRAVEL_REST_LOOKBACK_DAYS = 14
 
 _REQUIRED_CONTEXT_KEYS = [
     "fip_xfip",
@@ -25,10 +27,11 @@ _REQUIRED_CONTEXT_KEYS = [
     "weather_wind_roof",
     "ballpark_factors",
     "injuries_late_scratches_news",
-    "public_betting_handle",
+    "travel_rest",
 ]
 
 _STATSAPI_CACHE: Dict[str, Dict[str, Any]] = {}
+_STATSAPI_HISTORY_CACHE: Dict[str, Dict[str, Any]] = {}
 _STATSAPI_CACHE_SECONDS = max(60, int(os.environ.get("INQSI_MLB_STATSAPI_CONTEXT_CACHE_SECONDS", "300")))
 
 
@@ -76,7 +79,7 @@ def _statsapi_schedule(game_date_et: str) -> Dict[str, Any]:
         cached_at = None
     if cached_at and cached_at.tzinfo is None:
         cached_at = cached_at.replace(tzinfo=timezone.utc)
-    if cached and cached.get("ok") and cached_at and datetime.now(timezone.utc) - cached_at.astimezone(timezone.utc) <= timedelta(seconds=_STATSAPI_CACHE_SECONDS):
+    if cached and cached_at and datetime.now(timezone.utc) - cached_at.astimezone(timezone.utc) <= timedelta(seconds=_STATSAPI_CACHE_SECONDS):
         return cached
     params = {
         "sportId": "1",
@@ -111,22 +114,87 @@ def _statsapi_schedule(game_date_et: str) -> Dict[str, Any]:
     return out
 
 
-def _match_statsapi_game(
-    game_date_et: str,
+def _statsapi_schedule_history(game_date_et: str) -> Dict[str, Any]:
+    """Return the exact official schedule window used by the rest algorithm.
+
+    This is a separate source pull from the single-day probable-pitcher hydrate.
+    Its retrieval time and raw-payload fingerprint must therefore remain
+    separate as well; combining the two would claim provenance that did not
+    exist in either response.
+    """
+
+    cached = _STATSAPI_HISTORY_CACHE.get(game_date_et)
+    try:
+        cached_at = datetime.fromisoformat(
+            str((cached or {}).get("retrievedAtUtc") or "").replace("Z", "+00:00")
+        ) if (cached or {}).get("retrievedAtUtc") else None
+    except Exception:
+        cached_at = None
+    if cached_at and cached_at.tzinfo is None:
+        cached_at = cached_at.replace(tzinfo=timezone.utc)
+    if cached and cached_at and datetime.now(timezone.utc) - cached_at.astimezone(timezone.utc) <= timedelta(seconds=_STATSAPI_CACHE_SECONDS):
+        return cached
+
+    try:
+        slate_date = datetime.strptime(game_date_et, "%Y-%m-%d").date()
+        start_date = slate_date - timedelta(days=TRAVEL_REST_LOOKBACK_DAYS)
+        params = {
+            "sportId": "1",
+            "startDate": start_date.isoformat(),
+            "endDate": slate_date.isoformat(),
+        }
+        url = STATSAPI_SCHEDULE_URL + "?" + urllib.parse.urlencode(params)
+        payload = _http_get_json(url)
+        retrieved_at = datetime.now(timezone.utc).isoformat()
+        out = {
+            "ok": True,
+            "source_status": "CONNECTED",
+            "payload": payload,
+            "error": None,
+            "endpoint": url,
+            "retrievedAtUtc": retrieved_at,
+            "payloadFingerprint": _payload_fingerprint(payload),
+            "historyStartDateEt": start_date.isoformat(),
+            "historyEndDateEt": slate_date.isoformat(),
+        }
+    except Exception as exc:
+        retrieved_at = datetime.now(timezone.utc).isoformat()
+        out = {
+            "ok": False,
+            "source_status": "ERROR",
+            "payload": {},
+            "error": str(exc),
+            "endpoint": locals().get("url"),
+            "retrievedAtUtc": retrieved_at,
+            "payloadFingerprint": None,
+            "historyStartDateEt": locals().get("start_date").isoformat() if locals().get("start_date") else None,
+            "historyEndDateEt": locals().get("slate_date").isoformat() if locals().get("slate_date") else None,
+        }
+    _STATSAPI_HISTORY_CACHE[game_date_et] = out
+    return out
+
+
+def _schedule_games(schedule: Dict[str, Any]) -> List[Dict[str, Any]]:
+    payload = schedule.get("payload") or {}
+    return [
+        game
+        for date_row in payload.get("dates") or []
+        if isinstance(date_row, dict)
+        for game in (date_row.get("games") or [])
+        if isinstance(game, dict)
+    ]
+
+
+def _match_game_from_schedule(
+    schedule: Dict[str, Any],
     home_team: Optional[str],
     away_team: Optional[str],
     official_game_pk: Optional[Any] = None,
 ) -> Optional[Dict[str, Any]]:
-    schedule = _statsapi_schedule(game_date_et)
-    payload = schedule.get("payload") or {}
     target_home = _normalize_team(home_team)
     target_away = _normalize_team(away_team)
-    games = [
-        game
-        for date_row in payload.get("dates") or []
-        for game in (date_row.get("games") or [])
-        if isinstance(game, dict)
-    ]
+    games = _schedule_games(schedule)
+
     # Once official identity is available it is the only permitted join key.
     # Falling through to team names can silently swap Games 1 and 2 of a
     # doubleheader, contaminating the frozen T-45 fundamentals.
@@ -156,6 +224,206 @@ def _match_statsapi_game(
     # Team/date identity is permitted only when unique. Same-team
     # doubleheaders intentionally remain unresolved without official gamePk.
     return team_matches[0] if len(team_matches) == 1 else None
+
+
+def _match_statsapi_game(
+    game_date_et: str,
+    home_team: Optional[str],
+    away_team: Optional[str],
+    official_game_pk: Optional[Any] = None,
+) -> Optional[Dict[str, Any]]:
+    schedule = _statsapi_schedule(game_date_et)
+    return _match_game_from_schedule(
+        schedule,
+        home_team,
+        away_team,
+        official_game_pk,
+    )
+
+
+def _parse_utc(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _game_team_id(game: Dict[str, Any], side: str) -> Optional[str]:
+    team_id = ((((game.get("teams") or {}).get(side) or {}).get("team") or {}).get("id"))
+    return str(team_id) if team_id not in (None, "") else None
+
+
+def _game_has_started(game: Dict[str, Any]) -> bool:
+    status = game.get("status") or {}
+    detailed = str(status.get("detailedState") or "").lower()
+    if any(token in detailed for token in ("postponed", "cancelled", "canceled")):
+        return False
+    return str(status.get("abstractGameState") or "").lower() in {"live", "final"}
+
+
+def _latest_prior_game(
+    games: List[Dict[str, Any]],
+    *,
+    team_id: str,
+    current_game_pk: str,
+    current_start: datetime,
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+    candidates: List[Tuple[datetime, str, Dict[str, Any]]] = []
+    seen_game_pks: set[str] = set()
+    for candidate in games:
+        candidate_pk = str(candidate.get("gamePk") or "")
+        if not candidate_pk or candidate_pk == current_game_pk:
+            continue
+        candidate_team_ids = {
+            _game_team_id(candidate, "home"),
+            _game_team_id(candidate, "away"),
+        }
+        if team_id not in candidate_team_ids:
+            continue
+        if candidate_pk in seen_game_pks:
+            return None, "DUPLICATE_PRIOR_OFFICIAL_GAME_IDENTITY"
+        seen_game_pks.add(candidate_pk)
+        candidate_start = _parse_utc(candidate.get("gameDate"))
+        if candidate_start is None or candidate_start >= current_start:
+            continue
+        if not _game_has_started(candidate):
+            continue
+        candidates.append((candidate_start, candidate_pk, candidate))
+
+    if not candidates:
+        return None, "NO_STARTED_PRIOR_GAME_IN_VERIFIED_HISTORY_WINDOW"
+    latest_start = max(item[0] for item in candidates)
+    latest = [item for item in candidates if item[0] == latest_start]
+    if len(latest) != 1:
+        return None, "AMBIGUOUS_LATEST_PRIOR_OFFICIAL_GAME"
+    return latest[0][2], None
+
+
+def _official_rest_days(current_start: datetime, previous_start: datetime) -> Optional[int]:
+    current_date = current_start.astimezone(ZoneInfo("America/New_York")).date()
+    previous_date = previous_start.astimezone(ZoneInfo("America/New_York")).date()
+    calendar_gap = (current_date - previous_date).days
+    if calendar_gap < 0:
+        return None
+    # Adjacent-day games and two games on the same local date both have zero
+    # full off-days between them. This is a definition, not a missing-value
+    # default or a capped estimate.
+    return max(0, calendar_gap - 1)
+
+
+def _travel_rest_payload(game_date_et: str, game: Dict[str, Any]) -> Dict[str, Any]:
+    history = _statsapi_schedule_history(game_date_et)
+    provenance = _source_provenance(
+        history,
+        (
+            "schedule history "
+            f"{history.get('historyStartDateEt') or 'unknown'}..{history.get('historyEndDateEt') or game_date_et}; "
+            f"derivation={TRAVEL_REST_ALGORITHM_VERSION}"
+        ),
+    )
+    base: Dict[str, Any] = {
+        "source": "MLB Stats API schedule history",
+        "required_for_advanced_eligibility": True,
+        "home_rest_days": None,
+        "away_rest_days": None,
+        "home_travel_miles": None,
+        "away_travel_miles": None,
+        "home_previous_game_pk": None,
+        "away_previous_game_pk": None,
+        "home_previous_game_start_utc": None,
+        "away_previous_game_start_utc": None,
+        "algorithmVersion": TRAVEL_REST_ALGORITHM_VERSION,
+        "lookbackDays": TRAVEL_REST_LOOKBACK_DAYS,
+        "sourceProvenance": provenance,
+    }
+    if not history.get("ok"):
+        return {
+            **base,
+            "source_status": "ERROR",
+            "reason": "Official MLB schedule history could not be retrieved.",
+            "error": history.get("error"),
+        }
+
+    official_game_pk = game.get("official_game_pk") or game.get("officialGamePk")
+    if official_game_pk in (None, ""):
+        return {
+            **base,
+            "source_status": "MISSING_OFFICIAL_GAME_IDENTITY",
+            "reason": "Official gamePk is required; team/date fallback is not permitted for frozen rest evidence.",
+        }
+    current = _match_game_from_schedule(
+        history,
+        game.get("home_team"),
+        game.get("away_team"),
+        official_game_pk,
+    )
+    if not current:
+        return {
+            **base,
+            "source_status": "MISSING_FROM_PROVIDER",
+            "reason": "Exact current official game/team identity was not uniquely present in the verified history payload.",
+        }
+
+    current_game_pk = str(current.get("gamePk") or "")
+    current_start = _parse_utc(current.get("gameDate"))
+    home_team_id = _game_team_id(current, "home")
+    away_team_id = _game_team_id(current, "away")
+    if not current_game_pk or current_start is None or not home_team_id or not away_team_id or home_team_id == away_team_id:
+        return {
+            **base,
+            "source_status": "INVALID_OFFICIAL_IDENTITY",
+            "reason": "Current official game is missing a unique gamePk, start time, or exact team IDs.",
+        }
+    if current_start.astimezone(ZoneInfo("America/New_York")).date().isoformat() != game_date_et:
+        return {
+            **base,
+            "source_status": "INVALID_OFFICIAL_IDENTITY",
+            "reason": "Current official game start does not belong to the requested Eastern slate date.",
+        }
+
+    games = _schedule_games(history)
+    home_previous, home_error = _latest_prior_game(
+        games,
+        team_id=home_team_id,
+        current_game_pk=current_game_pk,
+        current_start=current_start,
+    )
+    away_previous, away_error = _latest_prior_game(
+        games,
+        team_id=away_team_id,
+        current_game_pk=current_game_pk,
+        current_start=current_start,
+    )
+    home_previous_start = _parse_utc((home_previous or {}).get("gameDate"))
+    away_previous_start = _parse_utc((away_previous or {}).get("gameDate"))
+    home_rest = _official_rest_days(current_start, home_previous_start) if home_previous_start else None
+    away_rest = _official_rest_days(current_start, away_previous_start) if away_previous_start else None
+
+    result = {
+        **base,
+        "source_status": "CONNECTED" if home_rest is not None and away_rest is not None else "PARTIAL",
+        "home_rest_days": home_rest,
+        "away_rest_days": away_rest,
+        "home_team_id": home_team_id,
+        "away_team_id": away_team_id,
+        "current_game_pk": current_game_pk,
+        "home_previous_game_pk": (home_previous or {}).get("gamePk"),
+        "away_previous_game_pk": (away_previous or {}).get("gamePk"),
+        "home_previous_game_start_utc": home_previous_start.isoformat() if home_previous_start else None,
+        "away_previous_game_start_utc": away_previous_start.isoformat() if away_previous_start else None,
+    }
+    if result["source_status"] != "CONNECTED":
+        result["reason"] = ";".join(
+            reason
+            for reason in (home_error, away_error)
+            if reason
+        ) or "Official schedule history did not prove both teams' rest days."
+    return result
 
 
 def _probable_pitcher_payload(game_date_et: str, game: Dict[str, Any]) -> Dict[str, Any]:
@@ -279,6 +547,7 @@ def _odds_validation(row: Optional[Dict[str, Any]]) -> Dict[str, Any]:
 def build_advanced_context(game_date_et: str, game: Dict[str, Any], row: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     probable = _probable_pitcher_payload(game_date_et, game)
     venue = _venue_payload(game_date_et, game)
+    travel_rest = _travel_rest_payload(game_date_et, game)
 
     context = {
         "version": ADVANCED_CONTEXT_VERSION,
@@ -385,6 +654,7 @@ def build_advanced_context(game_date_et: str, game: Dict[str, Any], row: Optiona
             "pitcher_change_flag": None,
             "note": "Requires a news/injury/transaction feed.",
         },
+        "travel_rest": travel_rest,
         "public_betting_handle": {
             "source_status": "NOT_CONNECTED_SOURCE_REQUIRED",
             "required_for_advanced_eligibility": True,
@@ -452,8 +722,24 @@ def advanced_context_status() -> Dict[str, Any]:
             "weather_wind_roof": "NOT_CONNECTED_SOURCE_REQUIRED",
             "ballpark_factors": "NOT_CONNECTED_SOURCE_REQUIRED",
             "injuries_late_scratches_news": "NOT_CONNECTED_SOURCE_REQUIRED",
+            "travel_rest": "CONNECTED_FROM_MLB_STATS_API_WHEN_HISTORY_COMPLETE",
             "public_betting_handle": "NOT_CONNECTED_SOURCE_REQUIRED",
             "closing_line_value": "POSTGAME_EVALUATION_ONLY_NOT_A_PREGAME_REQUIREMENT",
+            "bbs_shadow_capture": "PARTIAL_SINGLE_UTC_DATE_PROBE_NO_OFFICIAL_IDENTITY_OR_ML_CREDIT",
+        },
+        "supplemental_provider_policy": {
+            "provider": "Big Balls Sports Data",
+            "mode": "SHADOW_ONLY",
+            "credentialConsumer": "MLBAuditedPullFunction",
+            "publicReadCredentialAccess": False,
+            "predictionAuthority": False,
+            "trainingEligibility": False,
+            "completenessCredit": False,
+            "captureCoverage": "PARTIAL_SINGLE_UTC_DATE_PROBE",
+            "completeSlateCoverageClaimed": False,
+            "reviewMilestoneDefined": False,
+            "officialIdentityCredit": False,
+            "providerIdentityGateSatisfied": False,
         },
         "odds_api_scope": {
             "usable_for": ["odds", "15-minute movement", "book agreement", "market validation", "scores/final settlement", "CLV once closing snapshots are frozen"],

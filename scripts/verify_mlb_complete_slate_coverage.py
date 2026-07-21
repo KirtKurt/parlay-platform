@@ -232,11 +232,9 @@ def main() -> int:
     inqsi_pull_history.PULLS = History.PULLS
 
     original_enhance = lock_module._enhance
-    original_optimize = lock_module._optimize_locked_row
     original_validate = exact_contract.validate_exact_locked_row
     original_stage_validate = immutable_storage.validate_canonical_stage_authority
     lock_module._enhance = lambda result: result
-    lock_module._optimize_locked_row = lambda row: row
     exact_contract.validate_exact_locked_row = lambda row: []
     # This verifier owns public provider-manifest completeness and
     # doubleheader-safe canonical overlay. The persisted stage-authority chain
@@ -253,7 +251,6 @@ def main() -> int:
         )
     finally:
         lock_module._enhance = original_enhance
-        lock_module._optimize_locked_row = original_optimize
         exact_contract.validate_exact_locked_row = original_validate
         immutable_storage.validate_canonical_stage_authority = original_stage_validate
 

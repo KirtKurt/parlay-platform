@@ -65,6 +65,116 @@ def canonical_games():
     ]
 
 
+def test_bbs_shadow_capture_is_bound_to_canonical_pull_and_fails_soft(monkeypatch):
+    calls = []
+
+    class Adapter:
+        @staticmethod
+        def capture_shadow_slot(**kwargs):
+            calls.append(kwargs)
+            raise RuntimeError("Authorization: Bearer must-never-leak")
+
+    monkeypatch.setattr(mlb_manual_pull, "bbs_shadow", Adapter)
+    compact = {
+        "games": [
+            {
+                "game_id": "official-777001",
+                "official_game_pk": 777001,
+                "home_team": "Home One",
+                "away_team": "Away One",
+                "commence_time": "2026-07-22T23:05:00Z",
+                "books": {},
+            }
+        ]
+    }
+    canonical = {
+        "ok": True,
+        "pull_id": "mlb_v1_slot",
+        "providerManifestBound": True,
+        "providerManifestFingerprint": "fingerprint",
+    }
+
+    result = mlb_manual_pull._capture_bbs_shadow_safe(
+        game_date="2026-07-22",
+        canonical=canonical,
+        date_compact=compact,
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["canonical_pull"] is canonical
+    assert calls[0]["official_games"][0]["official_game_pk"] == 777001
+    assert result == {
+        "ok": False,
+        "status": "UNEXPECTED_SHADOW_CAPTURE_ERROR",
+        "shadowOnly": True,
+        "trainingEligible": False,
+        "completenessCredit": False,
+        "secretExposed": False,
+    }
+    assert "Bearer" not in str(result)
+
+
+def test_canonical_history_returns_persisted_slot_binding_on_retry(monkeypatch):
+    persisted_pull = {
+        "pull_id": "first-slot-pull",
+        "sport": "mlb",
+        "slate_date": "2026-07-16",
+        "pulled_at": "2026-07-16T17:01:00+00:00",
+        "source": "the_odds_api",
+        "games": canonical_games(),
+    }
+
+    def fake_store(_body):
+        return {
+            "ok": True,
+            "stored": {
+                "pk": "PULLS#mlb#2026-07-16",
+                "sk": "PULL#SLOT#2026-07-16T17:00:00+00:00",
+                "pull_id": "first-slot-pull",
+                "provider_manifest": {
+                    "version": "manifest-v1",
+                    "fingerprint": "manifest-fingerprint",
+                    "game_count": 2,
+                    "pk": "PROVIDER_MANIFEST#mlb#2026-07-16",
+                    "sk": "SCHEDULE#manifest-fingerprint",
+                    "immutable": True,
+                    "full_provider_schedule": True,
+                    "official_schedule_backed": False,
+                },
+            },
+            "pull": copy.deepcopy(persisted_pull),
+            "deduped": True,
+            "canonicalSlot": {
+                "slotStartUtc": "2026-07-16T17:00:00+00:00",
+                "canonicalPullId": "first-slot-pull",
+                "canonicalPulledAtUtc": "2026-07-16T17:01:00+00:00",
+                "retryReturnedExistingCanonicalPull": True,
+            },
+        }
+
+    monkeypatch.setattr(mlb_manual_pull.pull_history, "store_pull", fake_store)
+    result = mlb_manual_pull._store_canonical_pull_history(
+        game_date="2026-07-16",
+        asof="2026-07-16T17:09:00+00:00",
+        run="retry",
+        compact={"games": canonical_games()},
+    )
+
+    assert result["ok"] is True
+    assert result["pull_id"] == "first-slot-pull"
+    assert result["canonicalPullId"] == "first-slot-pull"
+    assert result["canonicalPulledAtUtc"] == "2026-07-16T17:01:00+00:00"
+    assert result["canonicalSlotStartUtc"] == "2026-07-16T17:00:00+00:00"
+    assert result["canonicalPullPk"] == "PULLS#mlb#2026-07-16"
+    assert result["canonicalPullSk"] == (
+        "PULL#SLOT#2026-07-16T17:00:00+00:00"
+    )
+    assert result["canonicalPullPayloadFingerprint"] == (
+        inqsi_pull_history.pull_payload_fingerprint(persisted_pull)
+    )
+    assert result["retryReturnedExistingCanonicalPull"] is True
+
+
 def official_backed_body(*, pull_id="official-full-manifest", pulled_at="2026-07-16T17:00:00+00:00"):
     schedule = mlb_manual_pull.official_schedule.validate_exact_date_schedule({
         "totalGames": 2,

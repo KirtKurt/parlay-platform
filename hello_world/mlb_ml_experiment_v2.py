@@ -9,7 +9,7 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 
 VERSION = "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
-PRODUCTION_EXPERIMENT_ID = "mlb-v2-2026-07-21-future-prospective-r2"
+PRODUCTION_EXPERIMENT_ID = "mlb-v2-2026-07-22-future-prospective-r3"
 PRODUCTION_RELEASE_CONTRACT_ID = PRODUCTION_EXPERIMENT_ID
 PRODUCTION_RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
 PARTITION_ORDER = ("train", "validation", "prospectiveTest")

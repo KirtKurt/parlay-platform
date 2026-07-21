@@ -57,8 +57,8 @@ TRAINER_RETRY_POLICY = {
     "MaximumRetryAttempts": 2,
 }
 TRAINER_EXPECTED_ENVIRONMENT = {
-    "MLB_ML_EXPERIMENT_ID": "mlb-v2-2026-07-21-future-prospective-r2",
-    "MLB_ML_RELEASE_CONTRACT_ID": "mlb-v2-2026-07-21-future-prospective-r2",
+    "MLB_ML_EXPERIMENT_ID": "mlb-v2-2026-07-22-future-prospective-r3",
+    "MLB_ML_RELEASE_CONTRACT_ID": "mlb-v2-2026-07-22-future-prospective-r3",
     "MLB_ML_RELEASE_CUTOFF_UTC": "2026-07-22T04:00:00+00:00",
     "MLB_ML_FEATURE_VECTOR_VERSION": (
         "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness"
@@ -72,6 +72,21 @@ TRAINER_REQUIRED_ENVIRONMENT = (
     "MLB_ML_ARTIFACTS_BUCKET",
     "SNAPSHOTS_TABLE",
     "OUTCOMES_TABLE",
+)
+
+BBS_EXPECTED_INGEST_ENVIRONMENT = {
+    "BBS_SHADOW_CAPTURE_ENABLED": "true",
+    "BBS_SHADOW_SCHEMA_VERSION": (
+        "MLB-BBS-SHADOW-v2-canonical-bound-raw-only"
+    ),
+}
+BBS_SECRET_ARN_ENVIRONMENT = "BBS_API_SECRET_ARN"
+BBS_FORBIDDEN_PLAINTEXT_ENVIRONMENT = "BBS_API_KEY"
+RETIRED_PROVIDER_ENVIRONMENT = (
+    "SPORTSDATAIO_API_KEY",
+    "SPORTSDATAIO_BASE_URL",
+    "SPORTSDATAIO_MLB_GAMES_ENDPOINT",
+    "SPORTSDATAIO_MLB_PBP_ENDPOINT",
 )
 
 LEGACY_TOKENS = (
@@ -215,6 +230,17 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
         "sqsFailureDestinationRequired": False,
         "matches": False,
     }
+    provider_credential_proof: Dict[str, Any] = {
+        "provider": "Big Balls Sports Data",
+        "exactGithubSecretName": "BBS_API_KEY",
+        "runtimeSecretArnEnvironment": BBS_SECRET_ARN_ENVIRONMENT,
+        "consumerRole": "ingest",
+        "secretArnPresentOnIngest": False,
+        "shadowEnvironmentMatches": False,
+        "plaintextKeyEnvironmentAbsent": True,
+        "retiredProviderEnvironmentAbsent": True,
+        "otherCanonicalFunctionsWithoutBbsAuthority": True,
+    }
 
     try:
         stack_outputs = _stack_outputs(cloudformation, stack_name)
@@ -263,6 +289,49 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
             blockers.append(f"DEPLOY_TEMPLATE_SHA_MISMATCH:{logical_id}")
 
         configuration_matches = True
+        retired_present = sorted(
+            key for key in RETIRED_PROVIDER_ENVIRONMENT if key in environment
+        )
+        if retired_present:
+            configuration_matches = False
+            provider_credential_proof["retiredProviderEnvironmentAbsent"] = False
+            blockers.append(
+                f"RETIRED_PROVIDER_ENVIRONMENT_PRESENT:{logical_id}:"
+                + ",".join(retired_present)
+            )
+        if BBS_FORBIDDEN_PLAINTEXT_ENVIRONMENT in environment:
+            configuration_matches = False
+            provider_credential_proof["plaintextKeyEnvironmentAbsent"] = False
+            blockers.append(f"BBS_PLAINTEXT_KEY_ENVIRONMENT_PRESENT:{logical_id}")
+        if role == "ingest":
+            secret_arn_present = bool(
+                str(environment.get(BBS_SECRET_ARN_ENVIRONMENT) or "").strip()
+            )
+            provider_credential_proof["secretArnPresentOnIngest"] = secret_arn_present
+            if not secret_arn_present:
+                configuration_matches = False
+                blockers.append("BBS_SECRET_ARN_MISSING_ON_INGEST")
+            shadow_environment_matches = all(
+                str(environment.get(key) or "") == expected
+                for key, expected in BBS_EXPECTED_INGEST_ENVIRONMENT.items()
+            ) and bool(str(environment.get("BBS_SHADOW_S3_BUCKET") or "").strip())
+            provider_credential_proof["shadowEnvironmentMatches"] = shadow_environment_matches
+            if not shadow_environment_matches:
+                configuration_matches = False
+                blockers.append("BBS_SHADOW_ENVIRONMENT_MISMATCH_ON_INGEST")
+        else:
+            leaked = sorted(
+                key
+                for key in environment
+                if str(key).startswith("BBS_")
+                or str(key).startswith("BbsApi")
+            )
+            if leaked:
+                configuration_matches = False
+                provider_credential_proof["otherCanonicalFunctionsWithoutBbsAuthority"] = False
+                blockers.append(
+                    f"BBS_AUTHORITY_LEAKED_TO_{role.upper()}:" + ",".join(leaked)
+                )
         if role == "trainer":
             actual_handler = str(config.get("Handler") or "")
             function_dead_letter_config = dict(
@@ -620,6 +689,30 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
             arn = str(function.get("FunctionArn") or "")
             handler = str(function.get("Handler") or "")
             description = str(function.get("Description") or "")
+            environment = (function.get("Environment") or {}).get("Variables") or {}
+            retired_present = sorted(
+                key for key in RETIRED_PROVIDER_ENVIRONMENT if key in environment
+            )
+            if retired_present:
+                provider_credential_proof["retiredProviderEnvironmentAbsent"] = False
+                blockers.append(
+                    f"RETIRED_PROVIDER_ENVIRONMENT_PRESENT_ON_DISCOVERED_LAMBDA:{name}:"
+                    + ",".join(retired_present)
+                )
+            if BBS_FORBIDDEN_PLAINTEXT_ENVIRONMENT in environment:
+                provider_credential_proof["plaintextKeyEnvironmentAbsent"] = False
+                blockers.append(
+                    f"BBS_PLAINTEXT_KEY_ENVIRONMENT_PRESENT_ON_DISCOVERED_LAMBDA:{name}"
+                )
+            bbs_authority_keys = sorted(
+                key for key in environment if str(key).startswith("BBS_")
+            )
+            if bbs_authority_keys and _base_lambda_arn(arn) != _base_lambda_arn(function_arns.get("ingest")):
+                provider_credential_proof["otherCanonicalFunctionsWithoutBbsAuthority"] = False
+                blockers.append(
+                    f"BBS_AUTHORITY_PRESENT_ON_NON_INGEST_LAMBDA:{name}:"
+                    + ",".join(bbs_authority_keys)
+                )
             if not arn or not _is_mlb_pull_or_training_writer(
                 name, handler, description
             ):
@@ -700,6 +793,7 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
         "expectedTemplateSha256": expected_template_sha256,
         "functions": function_proofs,
         "trainerConfiguration": trainer_configuration,
+        "providerCredentialBoundary": provider_credential_proof,
         "artifactBucket": artifact_bucket_proof,
         "schedules": schedule_proofs,
         "enabledLegacyRules": alternate_writer_rules,
