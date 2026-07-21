@@ -14,6 +14,7 @@ if str(HELLO_WORLD) not in sys.path:
 
 import mlb_manual_pull
 import inqsi_pull_history
+import mlb_daily_lock_coverage_patch
 import mlb_daily_pick_lock
 
 
@@ -83,6 +84,120 @@ def test_provider_game_without_supported_odds_remains_in_slate_manifest():
     assert game["odds_available"] is False
     assert game["moneyline_available"] is False
     assert game["markets_stored"] == []
+
+
+def test_quota_free_event_roster_exact_id_merge_keeps_games_missing_from_odds():
+    events = [
+        {
+            "id": "event-with-odds",
+            "commence_time": "2026-07-16T22:00:00+00:00",
+            "home_team": "Home One",
+            "away_team": "Away One",
+        },
+        {
+            "id": "event-without-odds",
+            "commence_time": "2026-07-16T23:00:00+00:00",
+            "home_team": "Home Two",
+            "away_team": "Away Two",
+        },
+    ]
+    odds_games = [
+        {
+            **events[0],
+            "bookmakers": [
+                {
+                    "key": "fanduel",
+                    "markets": [
+                        {
+                            "key": "h2h",
+                            "outcomes": [
+                                {"name": "Home One", "price": -120},
+                                {"name": "Away One", "price": 110},
+                            ],
+                        }
+                    ],
+                }
+            ],
+        },
+        {
+            # Same teams are not sufficient: an odds-only id must not attach
+            # to, or expand, the authoritative event roster.
+            "id": "odds-only-different-id",
+            "commence_time": events[1]["commence_time"],
+            "home_team": events[1]["home_team"],
+            "away_team": events[1]["away_team"],
+            "bookmakers": [],
+        },
+    ]
+
+    merged = mlb_manual_pull._merge_event_roster_with_odds(events, odds_games)
+    compact = mlb_manual_pull._compact(merged)
+
+    assert [game["id"] for game in merged] == [
+        "event-with-odds",
+        "event-without-odds",
+    ]
+    assert compact["count"] == 2
+    by_id = {game["game_id"]: game for game in compact["games"]}
+    assert by_id["event-with-odds"]["moneyline_available"] is True
+    assert by_id["event-without-odds"]["books"] == {}
+    assert by_id["event-without-odds"]["moneyline_available"] is False
+    assert compact["provider_roster"] == {
+        "source": "the_odds_api_events_exact_id_merge",
+        "eventRosterCount": 2,
+        "oddsPayloadCount": 1,
+        "eventsWithoutOddsCount": 1,
+        "oddsOnlyCount": 0,
+        "exactProviderIdMerge": True,
+        "quotaChargedForRosterRequest": False,
+    }
+
+
+def test_fetch_uses_events_endpoint_and_timestamps_only_after_both_responses(monkeypatch):
+    calls = []
+    events = [
+        {
+            "id": "event-1",
+            "commence_time": "2026-07-16T22:00:00+00:00",
+            "home_team": "Home One",
+            "away_team": "Away One",
+        }
+    ]
+
+    def fake_get(url, timeout=20):
+        calls.append(url)
+        if "/events?" in url:
+            assert timeout == 10
+        return events if "/events?" in url else []
+
+    monkeypatch.setattr(mlb_manual_pull, "ODDS_API_KEY", "test-key")
+    monkeypatch.setattr(mlb_manual_pull, "_http_get_json", fake_get)
+    monkeypatch.setattr(mlb_manual_pull, "_now_iso", lambda: calls.append("timestamp") or "2026-07-16T20:00:00+00:00")
+
+    merged, asof = mlb_manual_pull._fetch_odds_with_completion_timestamp()
+
+    assert "/odds/?" in calls[0]
+    assert "/events?" in calls[1]
+    assert calls[2] == "timestamp"
+    assert asof == "2026-07-16T20:00:00+00:00"
+    assert [row["id"] for row in merged] == ["event-1"]
+
+
+def test_event_roster_merge_treats_provider_ids_as_opaque_and_fails_on_empty_roster():
+    event = {
+        "id": " event-1 ",
+        "commence_time": "2026-07-16T22:00:00+00:00",
+        "home_team": "Home One",
+        "away_team": "Away One",
+    }
+    odds = [{**event, "id": "event-1", "bookmakers": [{"key": "fanduel", "markets": []}]}]
+
+    merged = mlb_manual_pull._merge_event_roster_with_odds([event], odds)
+
+    assert merged[0]["id"] == " event-1 "
+    assert merged[0]["bookmakers"] == []
+    with pytest.raises(RuntimeError, match="EVENTS_ROSTER_EMPTY_WHILE_ODDS_NONEMPTY"):
+        mlb_manual_pull._merge_event_roster_with_odds([], odds)
 
 
 def test_manual_pull_canonical_history_keeps_provider_game_without_odds():
@@ -170,3 +285,93 @@ def test_store_pull_persists_independent_write_once_manifest_and_lock_reads_it(m
     table.items[manifest_key]["data"]["games"][0]["home_team"] = "Tampered Club"
     with pytest.raises(RuntimeError, match="MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID"):
         mlb_daily_pick_lock._latest_games_for_date("2026-07-16", [pull])
+
+
+def test_verified_full_slate_manifest_survives_post_start_feed_contraction(monkeypatch):
+    table = FakeTable()
+    monkeypatch.setattr(inqsi_pull_history, "PULLS", table)
+    full = inqsi_pull_history.store_pull({
+        "pull_id": "full-prestart",
+        "sport": "mlb",
+        "slate_date": "2026-07-16",
+        "pulled_at": "2026-07-16T20:00:00+00:00",
+        "source": "the_odds_api",
+        "games": canonical_games(),
+    })["pull"]
+    contracted = inqsi_pull_history.store_pull({
+        "pull_id": "contracted-after-game-one-start",
+        "sport": "mlb",
+        "slate_date": "2026-07-16",
+        "pulled_at": "2026-07-16T22:30:00+00:00",
+        "source": "the_odds_api",
+        "games": [canonical_games()[1]],
+    })["pull"]
+
+    resolved = inqsi_pull_history.verified_full_slate_manifest(
+        [full, contracted],
+        "2026-07-16",
+    )
+    lock_games = mlb_daily_pick_lock._latest_games_for_date(
+        "2026-07-16",
+        [full, contracted],
+    )
+    history_calls = []
+
+    class History:
+        @staticmethod
+        def verified_full_slate_manifest(pulls, slate):
+            history_calls.append((pulls, slate))
+            return inqsi_pull_history.verified_full_slate_manifest(pulls, slate)
+
+    class Module:
+        history = History()
+        _game_date_et = staticmethod(mlb_daily_pick_lock._game_date_et)
+        _parse_dt = staticmethod(mlb_daily_pick_lock._parse_dt)
+
+    coverage_games = mlb_daily_lock_coverage_patch._latest_games(
+        Module(),
+        "2026-07-16",
+        [full, contracted],
+    )
+
+    assert resolved["latestFeedContracted"] is True
+    assert resolved["fullSlateGameCount"] == 2
+    assert resolved["latestFeedGameCount"] == 1
+    assert resolved["fullAuthorityPullId"] == "full-prestart"
+    assert resolved["latestFeedPullId"] == "contracted-after-game-one-start"
+    assert [game["game_id"] for game in lock_games] == [
+        "provider-with-odds",
+        "provider-no-odds",
+    ]
+    assert [game["game_id"] for game in coverage_games] == [
+        "provider-with-odds",
+        "provider-no-odds",
+    ]
+    assert len(history_calls) == 1
+
+
+def test_verified_full_slate_manifest_rejects_future_game_omission(monkeypatch):
+    table = FakeTable()
+    monkeypatch.setattr(inqsi_pull_history, "PULLS", table)
+    full = inqsi_pull_history.store_pull({
+        "pull_id": "full-prestart",
+        "sport": "mlb",
+        "slate_date": "2026-07-16",
+        "pulled_at": "2026-07-16T20:00:00+00:00",
+        "source": "the_odds_api",
+        "games": canonical_games(),
+    })["pull"]
+    invalid_subset = inqsi_pull_history.store_pull({
+        "pull_id": "premature-subset",
+        "sport": "mlb",
+        "slate_date": "2026-07-16",
+        "pulled_at": "2026-07-16T21:00:00+00:00",
+        "source": "the_odds_api",
+        "games": [canonical_games()[0]],
+    })["pull"]
+
+    with pytest.raises(RuntimeError, match="MLB_PROVIDER_LATEST_FEED_FUTURE_GAME_OMITTED"):
+        inqsi_pull_history.verified_full_slate_manifest(
+            [full, invalid_subset],
+            "2026-07-16",
+        )

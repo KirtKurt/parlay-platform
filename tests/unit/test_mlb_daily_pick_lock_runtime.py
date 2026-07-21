@@ -115,6 +115,9 @@ def _load_handler(
     per_game.ATTEMPT_DIAGNOSTICS_VERSION = "test-diagnostics-version"
     per_game.PROMOTION_POLICY_VERSION = "test-promotion-version"
     per_game.PAYLOAD_FINGERPRINT_VERSION = "test-ddb-canonical-fingerprint-version"
+    per_game.READINESS_VERSION = "test-readiness-version"
+    per_game.LOCK_OUTCOME_VERSION = "test-lock-outcome-version"
+    per_game.RELEASE_ASSESSMENT_VERSION = "test-playability-version"
 
     def apply_per_game(module):
         assert module is daily_lock
@@ -123,6 +126,10 @@ def _load_handler(
         module.MLB_DAILY_PER_GAME_LOCK_VERSION = "test-per-game-lock-version"
         module.MLB_PER_GAME_LOCK_ATTEMPT_DIAGNOSTICS_VERSION = installed_diagnostics_version
         module.MLB_LAST_PRELOCK_PROMOTION_VERSION = "test-promotion-version"
+        module.MLB_LOCK_READINESS_VERSION = "test-readiness-version"
+        module.MLB_LOCK_OUTCOME_VERSION = "test-lock-outcome-version"
+        module.MLB_PLAYABILITY_ASSESSMENT_VERSION = "test-playability-version"
+        module.MLB_LOCK_SOURCE_WINDOW_STABILIZATION_SECONDS = 0
         module.LOCK_POLICY = "test-policy"
 
     per_game.apply = apply_per_game
@@ -186,7 +193,7 @@ def test_installs_exact_runtime_before_lock_patches_and_delegates():
             name: True for name in REQUIRED_RUNTIME_STEPS
         }
         assert payload["perGameLockInstallation"]["fixVersion"] == (
-            "MLB-LOCK-RUNTIME-FIX-v3-ddb-canonical-prelock-fingerprint"
+            "MLB-LOCK-RUNTIME-FIX-v4-roster-readiness-release-status"
         )
         assert payload["perGameLockInstallation"]["lastPrelockAtCutoffBecomesFinal"] is True
         assert payload["perGameLockInstallation"]["modelOrSignalRecomputedAtLock"] is False
@@ -202,6 +209,10 @@ def test_installs_exact_runtime_before_lock_patches_and_delegates():
             "test-ddb-canonical-fingerprint-version"
         )
         assert payload["perGameLockInstallation"]["candidatePayloadFingerprintDdbReadCanonical"] is True
+        assert payload["perGameLockInstallation"]["readinessCheckpointsAtTMinus60AndTMinus50"] is True
+        assert payload["perGameLockInstallation"]["lockOutcomeStatusSeparateFromPrediction"] is True
+        assert payload["perGameLockInstallation"]["latePlayabilityAssessmentCannotRewriteSelection"] is True
+        assert payload["perGameLockInstallation"]["sourceWindowStabilizationSeconds"] == 0
         assert len(delegate_calls) == 1
 
 

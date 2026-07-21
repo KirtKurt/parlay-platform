@@ -9,6 +9,23 @@ VERSION = "INQSI-MLB-DAILY-LOCK-v3-complete-slate-doubleheader-safe"
 
 
 def _latest_games(module: Any, slate_date: str, pulls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    resolver = getattr(module.history, "verified_full_slate_manifest", None)
+    if callable(resolver):
+        resolved = resolver(pulls, slate_date)
+        return sorted(
+            [
+                game
+                for game in (resolved.get("games") or [])
+                if module._game_date_et(game) == slate_date
+            ],
+            key=lambda game: module._parse_dt(
+                game.get("commence_time") or game.get("commenceTime")
+            )
+            or datetime.max.replace(tzinfo=timezone.utc),
+        )
+
+    # Compatibility fallback for injected legacy test adapters.  Production
+    # exposes verified_full_slate_manifest and always takes the path above.
     by_identity: Dict[str, Tuple[datetime, Dict[str, Any]]] = {}
     provider_pulls: List[Tuple[datetime, Dict[str, Any], List[Dict[str, Any]]]] = []
     local_validator = getattr(module.history, "validate_provider_schedule_manifest", None)

@@ -501,6 +501,14 @@ def staged_items(module):
     return [item for item in module.TABLE.items.values() if item.get("record_type") == patch.STAGE_RECORD_TYPE]
 
 
+def lock_outcome_items(module):
+    return [
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == patch.LOCK_OUTCOME_RECORD_TYPE
+    ]
+
+
 def diagnostic_items(module):
     return [
         item
@@ -678,29 +686,30 @@ def test_manual_pull_timestamp_is_captured_after_provider_response():
     assert "raw_all, asof = _fetch_odds_with_completion_timestamp()" in source
 
 
-def test_cutoff_waits_full_120_seconds_without_changing_scheduled_lock():
+def test_cutoff_finalizes_at_tminus45_without_hidden_stabilization_delay():
     module = build_module(EARLY_PULLS, "2026-07-13T17:16:59+00:00")
 
     result = module.run_lock(SLATE)
 
     assert result["reason"] == "PER_GAME_LOCKS_STAGED_WAITING_FOR_REMAINDER"
-    assert not staged_items(module)
+    assert len(staged_items(module)) == 1
     g1_status = next(row for row in result["perGameLockProgress"]["games"] if row["gameId"] == "g1")
-    assert g1_status["state"] == "WAITING_FOR_CUTOFF_STABILIZATION"
+    assert g1_status["state"] == "LOCKED_CANONICAL"
     assert g1_status["scheduledLockAtUtc"] == "2026-07-13T17:15:00+00:00"
-    assert g1_status["sourceWindowStableAtUtc"] == "2026-07-13T17:17:00+00:00"
-    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+    assert g1_status["sourceWindowStableAtUtc"] == "2026-07-13T17:15:00+00:00"
+    assert g1_status["sourceWindowStabilizationSeconds"] == 0
+    assert module.mlb_game_winner_engine.canonical_new_writes == 1
 
 
-def test_newer_cutoff_pull_arriving_during_grace_wins_source_window():
+def test_pull_discovered_after_tminus45_finalization_cannot_rewrite_lock():
     initial = [
         pull("2026-07-13T17:00:00+00:00", [G1], "1700-one"),
         pull("2026-07-13T17:14:00+00:00", [G1], "1714-one"),
     ]
     module = build_module(initial, "2026-07-13T17:16:00+00:00")
-    waiting = module.run_lock(SLATE)
-    assert waiting["perGameLockProgress"]["stabilizingCount"] == 1
-    assert not staged_items(module)
+    first = module.run_lock(SLATE)
+    assert first["locked"] is True
+    assert staged_items(module)[0]["source_pull_id"] == "pull-1714-one"
 
     newest = pull("2026-07-13T17:15:00+00:00", [G1], "1715-one")
     module.history.pulls.append(newest)
@@ -710,8 +719,8 @@ def test_newer_cutoff_pull_arriving_during_grace_wins_source_window():
 
     assert result["locked"] is True
     stage = staged_items(module)[0]
-    assert stage["source_pull_id"] == "pull-1715-one"
-    assert stage["source_pull_at_utc"] == "2026-07-13T17:15:00+00:00"
+    assert stage["source_pull_id"] == "pull-1714-one"
+    assert stage["source_pull_at_utc"] == "2026-07-13T17:14:00+00:00"
 
 
 def test_response_completed_after_cutoff_is_not_in_bound_source_window():
@@ -966,16 +975,17 @@ def test_v3_unversioned_candidate_with_matching_legacy_hash_fails_closed():
     assert not staged_items(module)
 
 
-def test_missing_or_post_cutoff_candidate_fails_closed_without_stage():
+def test_missing_or_post_cutoff_candidate_records_terminal_no_prediction_status():
     source = pull("2026-07-13T17:15:00+00:00", [G1], "source-only")
     missing = build_module([source], "2026-07-13T17:17:00+00:00", seed=False)
 
     missing_result = missing.run_lock(SLATE)
 
-    assert missing_result["ok"] is False
-    assert "no_persisted_user_visible_platform_prelock_prediction" in str(
-        missing_result["failures"]
-    )
+    assert missing_result["ok"] is True
+    assert missing_result["dailyCardComplete"] is True
+    assert missing_result["perGameLockProgress"]["lockOutcomeCount"] == 1
+    assert missing_result["perGameLockProgress"]["canonicalCount"] == 0
+    assert lock_outcome_items(missing)[0]["lock_status"] == "LOCKED_NO_PREDICTION_DATA"
     assert not staged_items(missing)
 
     after = pull("2026-07-13T17:15:01+00:00", [G1], "after-cutoff")
@@ -988,10 +998,9 @@ def test_missing_or_post_cutoff_candidate_fails_closed_without_stage():
 
     after_result = post_cutoff.run_lock(SLATE)
 
-    assert after_result["ok"] is False
-    assert "no_persisted_user_visible_platform_prelock_prediction" in str(
-        after_result["failures"]
-    )
+    assert after_result["ok"] is True
+    assert after_result["dailyCardComplete"] is True
+    assert lock_outcome_items(post_cutoff)[0]["locked_prediction"] is False
     assert not staged_items(post_cutoff)
     assert post_cutoff.mlb_game_winner_engine.prediction_calls == 0
 
@@ -1012,10 +1021,9 @@ def test_backdated_prediction_persisted_after_cutoff_is_not_authoritative():
 
     result = module.run_lock(SLATE)
 
-    assert result["ok"] is False
-    assert "no_persisted_user_visible_platform_prelock_prediction" in str(
-        result["failures"]
-    )
+    assert result["ok"] is True
+    assert result["dailyCardComplete"] is True
+    assert lock_outcome_items(module)[0]["lock_status"] == "LOCKED_NO_PREDICTION_DATA"
 
 
 def test_client_timestamp_without_post_write_ack_proof_is_not_authoritative():
@@ -1247,7 +1255,7 @@ def test_first_game_canonical_at_own_cutoff_while_later_game_pending():
     assert stage["scheduled_lock_at_utc"] == "2026-07-13T17:15:00+00:00"
     assert stage["staged_at_utc"] == "2026-07-13T17:17:00+00:00"
     assert stage["source_pull_at_utc"] == "2026-07-13T17:15:00+00:00"
-    assert stage["source_window"]["stabilizationSeconds"] == 120
+    assert stage["source_window"]["stabilizationSeconds"] == 0
     assert stage["source_window"]["scheduledCutoffAtUtc"] == "2026-07-13T17:15:00+00:00"
     assert stage["source_window"]["pulls"][-1]["pullId"] == "pull-1715"
     assert daily_item(module) is None
@@ -1480,7 +1488,7 @@ def test_contracted_feed_future_game_omission_fails_closed_without_shrinking_sla
     )
     assert any(
         failure.get("gameIdentity") == patch.game_identity(full_slate[-1])
-        and failure.get("reason") == "STALE_OR_MISSING_CUTOFF_PULL_NOT_STAGED"
+        and failure.get("reason") == "PROVIDER_MANIFEST_AUTHORITY_NOT_STAGED"
         for failure in result["failures"]
     )
     assert daily_item(module) is None

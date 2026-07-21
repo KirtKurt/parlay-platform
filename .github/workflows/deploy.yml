@@ -74,7 +74,7 @@ jobs:
           python scripts/verify_mlb_daily_pull_start_gate.py
           python scripts/verify_mlb_schedule_invariants.py
           python scripts/verify_mlb_official_prediction_semantics.py
-          python tests/unit/test_mlb_production_acceptance.py
+          python -m pytest -q tests/unit/test_mlb_production_acceptance.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
 
       - name: Enforce MLB published prediction and immutable lock regressions
@@ -83,12 +83,44 @@ jobs:
           AWS_EC2_METADATA_DISABLED: "true"
         run: |
           set -euo pipefail
-          python -m pytest -q \
-            tests/unit/test_mlb_published_prediction_authority.py \
-            tests/unit/test_mlb_daily_per_game_lock.py \
-            tests/unit/test_mlb_storage_authority.py \
-            tests/unit/test_mlb_rolling_canonical_authority.py \
+          regression_tests=(
+            tests/unit/test_mlb_published_prediction_authority.py
+            tests/unit/test_mlb_daily_per_game_lock.py
+            tests/unit/test_mlb_storage_authority.py
+            tests/unit/test_mlb_rolling_canonical_authority.py
             tests/unit/test_mlb_ml_runtime_install_explicit.py
+          )
+
+          # These contracts may be introduced by the same lock-status change.
+          # Run each one when present without making an older source revision
+          # fail merely because the optional regression file does not exist yet.
+          optional_tests=(
+            tests/unit/test_mlb_manual_pull_manifest.py
+            tests/unit/test_mlb_official_prediction_semantics.py
+            tests/unit/test_mlb_public_per_game_authority.py
+            tests/unit/test_mlb_production_verifier_authority.py
+            tests/unit/test_mlb_daily_pick_lock_runtime.py
+          )
+          shopt -s nullglob
+          optional_tests+=(
+            tests/unit/test_mlb_*lock*status*.py
+            tests/unit/test_mlb_*status*lifecycle*.py
+            tests/unit/test_mlb_*readiness*lifecycle*.py
+          )
+          shopt -u nullglob
+
+          declare -A selected_tests=()
+          for test_file in "${regression_tests[@]}"; do
+            selected_tests["$test_file"]=1
+          done
+          for test_file in "${optional_tests[@]}"; do
+            if [ -f "$test_file" ] && [ -z "${selected_tests[$test_file]+x}" ]; then
+              regression_tests+=("$test_file")
+              selected_tests["$test_file"]=1
+            fi
+          done
+
+          python -m pytest -q "${regression_tests[@]}"
 
       - name: Validate SAM template
         run: sam validate --template-file template.yaml
@@ -224,6 +256,56 @@ jobs:
           ):
               if policy.get(name) != 90.0:
                   raise SystemExit(f'Live MLB authority threshold is stale: {name}={policy.get(name)}')
+          PY
+
+      - name: Smoke test read-only MLB lock status
+        env:
+          API_URL: ${{ steps.stack.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+
+          url = os.environ['API_URL'].rstrip('/') + '/v1/mlb/locks/status'
+          request = urllib.request.Request(
+              url,
+              headers={
+                  'accept': 'application/json',
+                  'user-agent': 'inqsi-deploy-read-only-lock-status-smoke/1.0',
+              },
+              method='GET',
+          )
+          with urllib.request.urlopen(request, timeout=45) as response:
+              status = response.getcode()
+              payload = json.loads(response.read().decode('utf-8'))
+
+          print(json.dumps(payload, indent=2, default=str))
+          if status != 200:
+              raise SystemExit(f'Live MLB lock status returned HTTP {status}')
+          if not isinstance(payload, dict):
+              raise SystemExit('Live MLB lock status response was not an object')
+
+          required = (
+              'ok',
+              'sport',
+              'slateDateEt',
+              'modelVersion',
+              'lockPolicy',
+              'lockMinutesBeforeEachGame',
+              'gameCount',
+              'perGameStatus',
+          )
+          missing = [name for name in required if name not in payload]
+          if missing:
+              raise SystemExit(f'Live MLB lock status is missing fields: {missing}')
+          if payload.get('ok') is not True or payload.get('sport') != 'mlb':
+              raise SystemExit('Live MLB lock status is unhealthy')
+          if payload.get('lockMinutesBeforeEachGame') != 45:
+              raise SystemExit('Live MLB lock status does not retain T-minus-45')
+          if not isinstance(payload.get('perGameStatus'), list):
+              raise SystemExit('Live MLB per-game lock status is not a list')
           PY
 
       - name: Verify The Odds API without writing an unscheduled pull

@@ -38,10 +38,14 @@ G2 = _game("game-2", "2026-07-18T02:00:00Z", "Away Two", "Home Two")
 G1["books"] = {"fanduel": {"ml": {"home": -110, "away": 100}}}
 
 
-def _provider_pull(manifest_games=None, raw_games=None, pull_id="pull-1"):
+def _provider_pull(
+    manifest_games=None,
+    raw_games=None,
+    pull_id="pull-1",
+    pulled_at="2026-07-17T20:00:00Z",
+):
     manifest_games = copy.deepcopy(manifest_games if manifest_games is not None else [G1, G2])
     raw_games = copy.deepcopy(raw_games if raw_games is not None else manifest_games)
-    pulled_at = "2026-07-17T20:00:00Z"
     manifest = inqsi_pull_history._build_provider_schedule_manifest(
         sport="mlb",
         slate=SLATE,
@@ -465,3 +469,33 @@ def test_subset_pull_cannot_shrink_full_provider_manifest_or_appear_complete(mon
     assert result["officialPredictionCount"] == 0
     assert result["slateCoverage"]["coverageComplete"] is False
     assert "provider_manifest_pull_membership_mismatch" in result["slateCoverage"]["error"]
+
+
+def test_public_authority_retains_full_roster_after_started_game_contracts(monkeypatch):
+    monkeypatch.setattr(exact_contract, "validate_exact_locked_row", lambda row: [])
+    monkeypatch.setattr(immutable_storage, "validate_canonical_stage_authority", lambda table, row: [])
+    full = _provider_pull(
+        pull_id="full-prestart",
+        pulled_at="2026-07-17T20:00:00Z",
+    )
+    contracted = _provider_pull(
+        manifest_games=[G2],
+        raw_games=[G2],
+        pull_id="contracted-after-game-one-start",
+        pulled_at="2026-07-17T23:30:00Z",
+    )
+    monkeypatch.setattr(sys.modules[__name__], "PULLS", [full, contracted])
+    engine = _engine([
+        _canonical_item(G1, G1["home_team"], "home", 71),
+        _canonical_item(G2, G2["home_team"], "home", 69),
+    ])
+    _install(engine)
+
+    result = engine.predict_all(SLATE, store=False)
+
+    assert result["locked"] is True
+    assert result["gameCount"] == 2
+    assert result["officialPredictionCount"] == 2
+    assert result["slateCoverage"]["verifiedFullSlateGameCount"] == 2
+    assert result["slateCoverage"]["latestProviderFeedGameCount"] == 1
+    assert result["slateCoverage"]["latestProviderFeedContracted"] is True

@@ -1,3 +1,4 @@
+import copy
 import json
 import os
 import urllib.error
@@ -148,6 +149,72 @@ def _odds_url() -> str:
         "dateFormat": "iso",
     }
     return f"https://api.the-odds-api.com/v4/sports/{SPORT_KEY}/odds/?" + urllib.parse.urlencode(params)
+
+
+def _events_url() -> str:
+    """Return the provider's quota-free event-roster endpoint."""
+    if not ODDS_API_KEY:
+        raise RuntimeError("ODDS_API_KEY missing")
+    params = {
+        "apiKey": ODDS_API_KEY,
+        "dateFormat": "iso",
+    }
+    return f"https://api.the-odds-api.com/v4/sports/{SPORT_KEY}/events?" + urllib.parse.urlencode(params)
+
+
+def _provider_rows_by_exact_id(rows: List[Dict[str, Any]], *, label: str) -> Dict[str, Dict[str, Any]]:
+    indexed: Dict[str, Dict[str, Any]] = {}
+    for row in rows or []:
+        if not isinstance(row, dict):
+            raise RuntimeError(f"ODDS_API_{label}_ROW_INVALID")
+        raw_provider_id = row.get("id")
+        if raw_provider_id is None or raw_provider_id == "":
+            raise RuntimeError(f"ODDS_API_{label}_EVENT_ID_MISSING")
+        # Provider ids are opaque.  Never trim, case-fold, or fall back to a
+        # team/time key when binding schedule and odds rows.
+        provider_id = str(raw_provider_id)
+        if provider_id in indexed:
+            raise RuntimeError(f"ODDS_API_{label}_DUPLICATE_EVENT_ID:{provider_id}")
+        indexed[provider_id] = row
+    return indexed
+
+
+def _merge_event_roster_with_odds(
+    events: List[Dict[str, Any]],
+    odds_games: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Left-join odds onto the event roster using only the exact provider id.
+
+    The event endpoint is roster authority.  An event remains present with an
+    empty bookmaker list when no market has been posted.  Odds-only ids are
+    ignored; they are never team/name matched into the roster.
+    """
+    events_by_id = _provider_rows_by_exact_id(events, label="EVENTS")
+    odds_by_id = _provider_rows_by_exact_id(odds_games, label="ODDS")
+    if not events_by_id and odds_by_id:
+        raise RuntimeError("ODDS_API_EVENTS_ROSTER_EMPTY_WHILE_ODDS_NONEMPTY")
+    merged: List[Dict[str, Any]] = []
+
+    for provider_id, event in events_by_id.items():
+        if not event.get("home_team") or not event.get("away_team"):
+            raise RuntimeError(f"ODDS_API_EVENTS_TEAM_IDENTITY_MISSING:{provider_id}")
+        if _parse_dt(event.get("commence_time")) is None:
+            raise RuntimeError(f"ODDS_API_EVENTS_COMMENCE_TIME_INVALID:{provider_id}")
+        odds = odds_by_id.pop(provider_id, None)
+        row = copy.deepcopy(event)
+        row["bookmakers"] = copy.deepcopy((odds or {}).get("bookmakers") or [])
+        row["_provider_event_roster"] = True
+        row["_provider_odds_payload"] = odds is not None
+        row["_odds_exact_id_match"] = odds is not None
+        merged.append(row)
+
+    return sorted(
+        merged,
+        key=lambda row: (
+            str(row.get("commence_time") or ""),
+            str(row.get("id") or ""),
+        ),
+    )
 
 
 def _oddsapi_auth_diagnostic(exc: Exception) -> Optional[Dict[str, Any]]:
@@ -382,20 +449,62 @@ def _compact(raw_games: List[Dict[str, Any]]) -> Dict[str, Any]:
             "odds_available": bool(books),
             "moneyline_available": any("ml" in payload for payload in books.values()),
             "markets_stored": markets_stored,
+            "provider_event_roster": raw_game.get("_provider_event_roster") is True,
+            "provider_odds_payload": raw_game.get("_provider_odds_payload") is True,
+            "odds_exact_id_match": raw_game.get("_odds_exact_id_match") is True,
+            "provider_odds_only": raw_game.get("_provider_odds_only") is True,
         })
+    event_roster_count = len([game for game in games_out if game.get("provider_event_roster") is True])
+    odds_payload_count = len([game for game in games_out if game.get("provider_odds_payload") is True])
+    events_without_odds_count = len([
+        game
+        for game in games_out
+        if game.get("provider_event_roster") is True
+        and game.get("provider_odds_payload") is not True
+    ])
+    odds_only_count = len([game for game in games_out if game.get("provider_odds_only") is True])
     return {
         "games": games_out,
         "count": len(games_out),
         "game_dates_et": sorted(game_dates_seen),
         "available_book_keys": sorted(books_seen),
         "markets": ["ml", "spread", "total"],
+        "provider_roster": {
+            "source": "the_odds_api_events_exact_id_merge",
+            "eventRosterCount": event_roster_count,
+            "oddsPayloadCount": odds_payload_count,
+            "eventsWithoutOddsCount": events_without_odds_count,
+            "oddsOnlyCount": odds_only_count,
+            "exactProviderIdMerge": True,
+            "quotaChargedForRosterRequest": False,
+        },
     }
 
 
 def _compact_for_game_date(compact: Dict[str, Any], game_date: str) -> Dict[str, Any]:
     games = [game for game in compact.get("games", []) or [] if game.get("game_date_et") == game_date]
     books_seen = sorted({book for game in games for book in (game.get("books") or {}).keys()})
-    return {**compact, "games": games, "count": len(games), "game_dates_et": [game_date] if games else [], "available_book_keys": books_seen, "date_isolated": True}
+    provider_roster = dict(compact.get("provider_roster") or {})
+    provider_roster.update({
+        "eventRosterCount": len([game for game in games if game.get("provider_event_roster") is True]),
+        "oddsPayloadCount": len([game for game in games if game.get("provider_odds_payload") is True]),
+        "eventsWithoutOddsCount": len([
+            game
+            for game in games
+            if game.get("provider_event_roster") is True
+            and game.get("provider_odds_payload") is not True
+        ]),
+        "oddsOnlyCount": len([game for game in games if game.get("provider_odds_only") is True]),
+    })
+    return {
+        **compact,
+        "games": games,
+        "count": len(games),
+        "game_dates_et": [game_date] if games else [],
+        "available_book_keys": books_seen,
+        "date_isolated": True,
+        "provider_roster": provider_roster,
+    }
 
 
 def _store_snapshot_item(*, t: str, slate_date: str, game_date: str, asof: str, run: str, compact: Dict[str, Any], date_isolated: bool, pk: str) -> Dict[str, str]:
@@ -421,6 +530,7 @@ def _store_snapshot_item(*, t: str, slate_date: str, game_date: str, asof: str, 
         "meta": {
             "source": "theOddsAPI",
             "provider_sport_key": SPORT_KEY,
+            "provider_roster": compact.get("provider_roster") or {},
             "run_type": run,
             "pulled_at": asof,
             "markets": ["h2h", "spreads", "totals"],
@@ -489,6 +599,7 @@ def _store_canonical_pull_history(*, game_date: str, asof: str, run: str, compac
             "platform_version": PLATFORM_VERSION,
             "run": run,
             "provider_sport_key": SPORT_KEY,
+            "provider_roster": compact.get("provider_roster") or {},
             "date_isolated": True,
             "line_movement_prediction": True,
         },
@@ -647,8 +758,16 @@ def _build_and_store_game_winners(*, game_date: str) -> Dict[str, Any]:
 
 
 def _fetch_odds_with_completion_timestamp() -> tuple[List[Dict[str, Any]], str]:
-    """Timestamp a pull only after the provider response has completed."""
-    raw = _http_get_json(_odds_url())
+    """Fetch quota-free roster plus odds, then timestamp the completed merge."""
+    odds_games = _http_get_json(_odds_url())
+    # The roster payload is small; bound its wait separately so the two
+    # provider calls leave time for DynamoDB writes and prediction generation.
+    events = _http_get_json(_events_url(), timeout=10)
+    if not isinstance(events, list):
+        raise RuntimeError("ODDS_API_EVENTS_RESPONSE_NOT_LIST")
+    if not isinstance(odds_games, list):
+        raise RuntimeError("ODDS_API_ODDS_RESPONSE_NOT_LIST")
+    raw = _merge_event_roster_with_odds(events, odds_games)
     return raw, _now_iso()
 
 
@@ -756,6 +875,7 @@ def lambda_handler(event, context):
             "date_isolated_stored": isolated_stored,
             "canonical_pull_history": canonical_pull_history,
             "provider_schedule_manifests": provider_schedule_manifests,
+            "provider_roster": compact.get("provider_roster") or {},
             "providerScheduleManifestComplete": bool(
                 compact["count"] == 0
                 or (

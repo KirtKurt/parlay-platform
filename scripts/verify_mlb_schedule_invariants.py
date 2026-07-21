@@ -75,14 +75,22 @@ def _verify_explicit_lock_runtime_install() -> None:
         violations.append('protected MLB lock handler does not fail closed when ML runtime installation is incomplete')
     if 'mlRuntimeInstallation' not in source:
         violations.append('protected MLB lock handler does not expose ML runtime installation status')
-    if 'MLB-LOCK-RUNTIME-FIX-v3-ddb-canonical-prelock-fingerprint' not in source:
-        violations.append('protected MLB lock handler is missing the canonical pre-lock fingerprint fix marker')
+    if 'MLB-LOCK-RUNTIME-FIX-v4-roster-readiness-release-status' not in source:
+        violations.append('protected MLB lock handler is missing the roster/readiness/release status fix marker')
     if 'MLB_PER_GAME_LOCK_ATTEMPT_DIAGNOSTICS_VERSION' not in source:
         violations.append('protected MLB lock handler does not require durable lock-attempt diagnostics')
     if 'lastPrelockAtCutoffBecomesFinal' not in source or 'modelOrSignalRecomputedAtLock' not in source:
         violations.append('protected MLB lock handler does not attest no-rescore last-prelock promotion')
     if 'candidatePayloadFingerprintVersion' not in source or 'candidatePayloadFingerprintDdbReadCanonical' not in source:
         violations.append('protected MLB lock handler does not attest DynamoDB-canonical candidate fingerprints')
+    for token in (
+        'readinessCheckpointsAtTMinus60AndTMinus50',
+        'lockOutcomeStatusSeparateFromPrediction',
+        'latePlayabilityAssessmentCannotRewriteSelection',
+        'doubleheaderGame2EventDrivenPlayabilityRecheck',
+    ):
+        if token not in source:
+            violations.append(f'protected MLB lock handler missing lifecycle attestation: {token}')
 
 
 def _verify_explicit_pull_runtime_install() -> None:

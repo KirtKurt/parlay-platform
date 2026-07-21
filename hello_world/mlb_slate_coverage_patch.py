@@ -6,6 +6,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from boto3.dynamodb.conditions import Key
 
+import inqsi_pull_history as history_contract
+
 VERSION = "MLB-SLATE-COVERAGE-v4-immutable-provider-manifest-authority"
 AUTHORITY_VERSION = "MLB-LAST-PRELOCK-PROMOTION-AUTHORITY-v1-canonical-read-overlay"
 CANONICAL_RECORD_TYPE = "mlb_immutable_locked_single_game_prediction"
@@ -54,6 +56,19 @@ def game_identity(game: Dict[str, Any]) -> str:
 
 
 def _latest_games(lock_module: Any, pulls: List[Dict[str, Any]], slate: str) -> List[Dict[str, Any]]:
+    resolver = getattr(history_contract, "verified_full_slate_manifest", None)
+    if callable(resolver):
+        resolved = resolver(pulls, slate)
+        return sorted(
+            [
+                game
+                for game in (resolved.get("games") or [])
+                if lock_module._game_day(game) == slate
+            ],
+            key=lock_module._game_sort,
+        )
+
+    # Compatibility fallback for legacy injected adapters.
     by_identity: Dict[str, Tuple[datetime, Dict[str, Any]]] = {}
     for pull in pulls or []:
         pulled_at = lock_module._pull_dt(pull) or datetime.min.replace(tzinfo=timezone.utc)
@@ -73,26 +88,40 @@ def _provider_manifest_for_public(
     pulls: List[Dict[str, Any]],
     slate: str,
 ) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
-    """Read the latest pull's independently stored full provider schedule.
+    """Read the verified durable full-slate provider schedule.
 
     Public completeness must never be inferred from the odds-bearing ``games``
-    array.  That array may legitimately omit a provider game with no supported
-    book/market.  ``provider_manifest_games_for_lock`` verifies the manifest
-    fingerprint, its exact pull membership, and its strongly consistent
-    immutable DynamoDB readback before returning the schedule used here.
+    array.  The quota-free events roster preserves games without odds, while
+    the durable resolver retains already-started games after the live feed
+    contracts.  Both the full authority and newest feed receive strongly
+    consistent immutable readback before public status uses the roster.
     """
     if not pulls:
         raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_MISSING:NO_PULL_HISTORY")
-    latest_pull = pulls[-1]
+    resolver = getattr(getattr(module, "history", None), "verified_full_slate_manifest", None)
+    if not callable(resolver):
+        resolver = getattr(history_contract, "verified_full_slate_manifest", None)
+    if not callable(resolver):
+        raise RuntimeError("MLB_VERIFIED_FULL_SLATE_MANIFEST_RESOLVER_UNAVAILABLE")
+    resolved = resolver(pulls, slate)
+    full_pull = resolved.get("fullAuthorityPull")
+    if not isinstance(full_pull, dict):
+        raise RuntimeError("MLB_VERIFIED_FULL_SLATE_MANIFEST_INVALID:full_authority_missing")
+
     reader = getattr(getattr(module, "history", None), "provider_manifest_games_for_lock", None)
     if not callable(reader):
+        reader = getattr(history_contract, "provider_manifest_games_for_lock", None)
+    if not callable(reader):
         raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_VALIDATOR_UNAVAILABLE")
-    games = reader(latest_pull, slate)
+    games = reader(full_pull, slate)
     if not isinstance(games, list):
         raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:games_not_list")
+    resolved_games = list(resolved.get("games") or [])
+    if games != resolved_games:
+        raise RuntimeError("MLB_VERIFIED_FULL_SLATE_MANIFEST_INVALID:resolved_games_mismatch")
 
-    manifest = latest_pull.get("provider_schedule_manifest")
-    binding = latest_pull.get("provider_manifest_binding")
+    manifest = full_pull.get("provider_schedule_manifest")
+    binding = full_pull.get("provider_manifest_binding")
     if not isinstance(manifest, dict) or not isinstance(binding, dict):
         raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:manifest_or_binding_missing")
     declared_games = manifest.get("games")
@@ -133,6 +162,13 @@ def _provider_manifest_for_public(
         "providerManifestPullId": manifest.get("pullId"),
         "providerManifestImmutable": binding.get("immutable") is True,
         "providerManifestFullProviderSchedule": binding.get("fullProviderSchedule") is True,
+        "verifiedFullSlateManifestVersion": resolved.get("version"),
+        "verifiedFullSlateGameCount": resolved.get("fullSlateGameCount"),
+        "latestProviderFeedGameCount": resolved.get("latestFeedGameCount"),
+        "latestProviderFeedContracted": resolved.get("latestFeedContracted") is True,
+        "latestProviderManifestFingerprint": resolved.get("latestFeedFingerprint"),
+        "latestProviderManifestObservedAtUtc": resolved.get("latestFeedObservedAtUtc"),
+        "durableRosterImmutableReadbackVerified": resolved.get("immutableReadbackVerified") is True,
     }
 
 

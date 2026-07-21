@@ -73,7 +73,7 @@ import mlb_daily_lock_coverage_patch
 import mlb_daily_lock_ml_vector_preservation_patch
 import mlb_daily_per_game_lock_patch
 
-LOCK_RUNTIME_FIX_VERSION = "MLB-LOCK-RUNTIME-FIX-v3-ddb-canonical-prelock-fingerprint"
+LOCK_RUNTIME_FIX_VERSION = "MLB-LOCK-RUNTIME-FIX-v4-roster-readiness-release-status"
 
 mlb_daily_lock_coverage_patch.apply(mlb_daily_pick_lock)
 ML_VECTOR_PRESERVATION_STATUS = mlb_daily_lock_ml_vector_preservation_patch.apply(mlb_daily_pick_lock)
@@ -115,12 +115,33 @@ _payload_fingerprint_ready = bool(
     and _payload_fingerprint_version == _history_payload_fingerprint_version
     and callable(getattr(_history_contract, "canonical_payload_fingerprint", None))
 )
+_expected_readiness_version = getattr(mlb_daily_per_game_lock_patch, "READINESS_VERSION", None)
+_expected_lock_outcome_version = getattr(mlb_daily_per_game_lock_patch, "LOCK_OUTCOME_VERSION", None)
+_expected_playability_version = getattr(mlb_daily_per_game_lock_patch, "RELEASE_ASSESSMENT_VERSION", None)
+_readiness_version = getattr(mlb_daily_pick_lock, "MLB_LOCK_READINESS_VERSION", None)
+_lock_outcome_version = getattr(mlb_daily_pick_lock, "MLB_LOCK_OUTCOME_VERSION", None)
+_playability_version = getattr(mlb_daily_pick_lock, "MLB_PLAYABILITY_ASSESSMENT_VERSION", None)
+_source_window_stabilization_seconds = getattr(
+    mlb_daily_pick_lock,
+    "MLB_LOCK_SOURCE_WINDOW_STABILIZATION_SECONDS",
+    None,
+)
+_lifecycle_ready = bool(
+    _expected_readiness_version
+    and _readiness_version == _expected_readiness_version
+    and _expected_lock_outcome_version
+    and _lock_outcome_version == _expected_lock_outcome_version
+    and _expected_playability_version
+    and _playability_version == _expected_playability_version
+    and _source_window_stabilization_seconds == 0
+)
 PER_GAME_LOCK_STATUS = {
     "ok": bool(
         getattr(mlb_daily_pick_lock, "_INQSI_MLB_DAILY_PER_GAME_LOCK_V1", False)
         and _attempt_diagnostics_ready
         and _promotion_ready
         and _payload_fingerprint_ready
+        and _lifecycle_ready
     ),
     "version": getattr(mlb_daily_pick_lock, "MLB_DAILY_PER_GAME_LOCK_VERSION", None),
     "policy": getattr(mlb_daily_pick_lock, "LOCK_POLICY", None),
@@ -139,6 +160,14 @@ PER_GAME_LOCK_STATUS = {
     "durableAttemptDiagnostics": _attempt_diagnostics_ready,
     "attemptDiagnosticsVersion": _attempt_diagnostics_version,
     "expectedAttemptDiagnosticsVersion": _expected_attempt_diagnostics_version,
+    "readinessCheckpointsAtTMinus60AndTMinus50": _lifecycle_ready,
+    "readinessVersion": _readiness_version,
+    "lockOutcomeStatusSeparateFromPrediction": _lifecycle_ready,
+    "lockOutcomeVersion": _lock_outcome_version,
+    "latePlayabilityAssessmentCannotRewriteSelection": _lifecycle_ready,
+    "playabilityAssessmentVersion": _playability_version,
+    "sourceWindowStabilizationSeconds": _source_window_stabilization_seconds,
+    "doubleheaderGame2EventDrivenPlayabilityRecheck": _lifecycle_ready,
 }
 ADMIN_TOKEN = os.environ.get("INQSI_ADMIN_API_TOKEN", "")
 

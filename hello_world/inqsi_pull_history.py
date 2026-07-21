@@ -1,7 +1,7 @@
 import os, uuid, json, hashlib
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
 import boto3
@@ -336,6 +336,246 @@ def provider_manifest_games_for_lock(pull: Dict[str, Any], slate: str) -> List[D
     if errors:
         raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:" + ",".join(errors))
     return sorted(list((pull.get("provider_schedule_manifest") or {}).get("games") or []), key=_manifest_sort_key)
+
+
+def _manifest_observed_at(pull: Dict[str, Any]) -> Optional[datetime]:
+    value = (
+        (pull.get("provider_schedule_manifest") or {}).get("observedAtUtc")
+        or pull.get("pulled_at")
+        or pull.get("asof")
+        or pull.get("created_at")
+    )
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _manifest_game_start(game: Dict[str, Any]) -> Optional[datetime]:
+    value = game.get("commence_time") or game.get("commenceTime")
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
+def _event_roster_backed(pull: Dict[str, Any]) -> bool:
+    """Return whether this pull was built from the provider's events roster.
+
+    Older v1 pulls used the odds response itself as the schedule.  Keep them as
+    a migration fallback until the first events-backed pull is stored, but do
+    not let them outrank the new schedule authority afterward.
+    """
+    roster = (pull.get("meta") or {}).get("provider_roster") or {}
+    return bool(
+        roster.get("source") == "the_odds_api_events_exact_id_merge"
+        and roster.get("exactProviderIdMerge") is True
+    )
+
+
+def verified_full_slate_manifest(
+    pulls: List[Dict[str, Any]],
+    slate: str,
+) -> Dict[str, Any]:
+    """Resolve a durable pre-start roster across contracted provider feeds.
+
+    The quota-free events endpoint supplies games even when no odds exist, but
+    the provider may still remove events after they begin.  The earliest
+    maximum-cardinality manifest observed before its own first game is the
+    durable roster. A later response may contract only after omitted games
+    have started; malformed, unknown, changed, or prematurely contracted
+    responses fail closed and can never redefine the durable roster.
+    """
+    candidates: List[Tuple[int, datetime, Dict[str, Any], bool]] = []
+    missing_provider_proofs: List[Tuple[Optional[datetime], str]] = []
+    invalid_provider_proofs: List[Dict[str, Any]] = []
+    for pull in pulls or []:
+        if str(pull.get("source") or "").strip().lower() != "the_odds_api":
+            continue
+        manifest = pull.get("provider_schedule_manifest")
+        binding = pull.get("provider_manifest_binding")
+        if manifest is None and binding is None:
+            missing_provider_proofs.append(
+                (_manifest_observed_at(pull), str(pull.get("pull_id") or "unknown"))
+            )
+            continue
+        errors = validate_provider_schedule_manifest(
+            pull,
+            slate,
+            verify_immutable_storage=False,
+        )
+        if errors:
+            invalid_provider_proofs.append({
+                "pullId": str(pull.get("pull_id") or "unknown"),
+                "errors": sorted(set(errors)),
+            })
+            continue
+        observed_at = _manifest_observed_at(pull)
+        if observed_at is None:
+            raise RuntimeError(
+                "MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:observed_at_invalid"
+            )
+        try:
+            count = int((manifest or {}).get("gameCount"))
+        except Exception:
+            count = -1
+        candidates.append((count, observed_at, pull, _event_roster_backed(pull)))
+
+    if not candidates:
+        if invalid_provider_proofs:
+            errors = sorted({
+                error
+                for proof in invalid_provider_proofs
+                for error in (proof.get("errors") or [])
+            })
+            raise RuntimeError(
+                "MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:" + ",".join(errors)
+            )
+        if missing_provider_proofs:
+            missing_ids = sorted(pull_id for _observed_at, pull_id in missing_provider_proofs)
+            raise RuntimeError(
+                "MLB_PROVIDER_SCHEDULE_MANIFEST_MISSING:provider_schedule_manifest_missing:"
+                + ",".join(missing_ids)
+            )
+        raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_MISSING:NO_PROVIDER_PULLS")
+
+    # Once a quota-free events-roster pull exists, legacy odds-derived
+    # manifests are no longer eligible to define the slate.  This makes the
+    # same-day deployment migration deterministic without retroactively
+    # invalidating the pre-deployment rows used for diagnostics.
+    event_candidates = [item for item in candidates if item[3]]
+    active_candidates = event_candidates or candidates
+    authority_mode = (
+        "EVENTS_ROSTER_EXACT_PROVIDER_ID"
+        if event_candidates
+        else "LEGACY_ODDS_MANIFEST_MIGRATION_FALLBACK"
+    )
+
+    first_proven_at = min(item[1] for item in active_candidates)
+    unproved_current = sorted(
+        pull_id
+        for observed_at, pull_id in missing_provider_proofs
+        if observed_at is None or observed_at >= first_proven_at
+    )
+    if unproved_current:
+        raise RuntimeError(
+            "MLB_PROVIDER_SCHEDULE_MANIFEST_MISSING:CURRENT_PROVIDER_PULLS:"
+            + ",".join(unproved_current)
+        )
+    if invalid_provider_proofs:
+        errors = sorted({
+            error
+            for proof in invalid_provider_proofs
+            for error in (proof.get("errors") or [])
+        })
+        raise RuntimeError(
+            "MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:" + ",".join(errors)
+        )
+
+    anchor_candidates: List[Tuple[int, datetime, Dict[str, Any], bool]] = []
+    for candidate in active_candidates:
+        _count, observed_at, pull, _event_backed = candidate
+        starts = [
+            _manifest_game_start(game)
+            for game in ((pull.get("provider_schedule_manifest") or {}).get("games") or [])
+        ]
+        starts = [value for value in starts if value is not None]
+        if starts and observed_at < min(starts):
+            anchor_candidates.append(candidate)
+    if not anchor_candidates:
+        raise RuntimeError("MLB_PROVIDER_FULL_SLATE_PRESTART_AUTHORITY_MISSING")
+
+    full_count = max(item[0] for item in anchor_candidates)
+    _full_count, _full_at, full_pull, full_event_backed = min(
+        (item for item in anchor_candidates if item[0] == full_count),
+        key=lambda item: item[1],
+    )
+    _latest_count, latest_at, latest_pull, latest_event_backed = max(
+        active_candidates,
+        key=lambda item: item[1],
+    )
+
+    full_games = provider_manifest_games_for_lock(full_pull, slate)
+    latest_games = (
+        full_games
+        if latest_pull is full_pull
+        else provider_manifest_games_for_lock(latest_pull, slate)
+    )
+    if full_count != len(full_games):
+        raise RuntimeError("MLB_PROVIDER_FULL_SLATE_MANIFEST_COUNT_MISMATCH")
+
+    full_by_id = {provider_game_identity("mlb", game): game for game in full_games}
+    latest_by_id = {provider_game_identity("mlb", game): game for game in latest_games}
+    if len(full_by_id) != len(full_games) or len(latest_by_id) != len(latest_games):
+        raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_DUPLICATE_IDENTITY")
+
+    unknown = sorted(set(latest_by_id) - set(full_by_id))
+    if unknown:
+        raise RuntimeError(
+            "MLB_PROVIDER_LATEST_FEED_UNKNOWN_GAME_IDENTITY:" + ",".join(unknown)
+        )
+
+    changed = sorted(
+        identity
+        for identity, latest_game in latest_by_id.items()
+        if _provider_manifest_game("mlb", latest_game)
+        != _provider_manifest_game("mlb", full_by_id[identity])
+    )
+    if changed:
+        raise RuntimeError(
+            "MLB_PROVIDER_LATEST_FEED_SCHEDULE_CHANGED:" + ",".join(changed)
+        )
+    prematurely_omitted = sorted(
+        identity
+        for identity, game in full_by_id.items()
+        if identity not in latest_by_id
+        and (
+            _manifest_game_start(game) is None
+            or _manifest_game_start(game) > latest_at
+        )
+    )
+    if prematurely_omitted:
+        raise RuntimeError(
+            "MLB_PROVIDER_LATEST_FEED_FUTURE_GAME_OMITTED:"
+            + ",".join(prematurely_omitted)
+        )
+
+    full_manifest = full_pull.get("provider_schedule_manifest") or {}
+    latest_manifest = latest_pull.get("provider_schedule_manifest") or {}
+    return {
+        "version": "MLB-VERIFIED-FULL-SLATE-ROSTER-v2-events-authority",
+        "slateDate": slate,
+        "games": list(full_games),
+        "fullSlateGameCount": len(full_games),
+        "latestFeedGameCount": len(latest_games),
+        "latestFeedContracted": len(latest_games) < len(full_games),
+        "rosterAuthorityMode": authority_mode,
+        "eventRosterBacked": bool(full_event_backed),
+        "latestFeedEventRosterBacked": bool(latest_event_backed),
+        "legacyMigrationFallback": not bool(full_event_backed),
+        "latestFeedAnomalies": [],
+        "latestFeedAnomalyCount": 0,
+        "durableRosterPreservedDespiteLatestFeedAnomaly": False,
+        "fullAuthorityPull": full_pull,
+        "latestFeedPull": latest_pull,
+        "fullAuthorityFingerprint": full_manifest.get("fingerprint"),
+        "fullAuthorityPullId": full_manifest.get("pullId"),
+        "fullAuthorityObservedAtUtc": full_manifest.get("observedAtUtc"),
+        "latestFeedFingerprint": latest_manifest.get("fingerprint"),
+        "latestFeedPullId": latest_manifest.get("pullId"),
+        "latestFeedObservedAtUtc": latest_manifest.get("observedAtUtc"),
+        "immutableReadbackVerified": True,
+    }
 
 
 def provider_manifest_authority_for_lock(

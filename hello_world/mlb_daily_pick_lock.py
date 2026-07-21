@@ -18,6 +18,7 @@ MODEL_VERSION = "INQSI-MLB-DAILY-LOCK-v2.1-single-game-ml"
 LOCK_POLICY = "first_mlb_game_minus_45_minutes"
 
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
+OUTCOMES_TABLE = os.environ.get("OUTCOMES_TABLE", "")
 LOCK_MINUTES = int(os.environ.get("MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME") or os.environ.get("LOCK_MINUTES_BEFORE_FIRST_GAME") or "45")
 REQUIRE_ALL_GAMES_FOR_LOCK = str(os.environ.get("MLB_REQUIRE_ALL_GAMES_FOR_LOCK", "true")).strip().lower() not in {"0", "false", "no", "off"}
 MIN_PULLS_PER_GAME_FOR_LOCK = int(os.environ.get("MLB_MIN_PULLS_PER_GAME_FOR_LOCK", "4"))
@@ -25,6 +26,7 @@ MAX_LATEST_PULL_AGE_MINUTES = int(os.environ.get("MLB_MAX_LATEST_PULL_AGE_MINUTE
 
 DDB = boto3.resource("dynamodb")
 TABLE = DDB.Table(SNAPSHOTS_TABLE) if SNAPSHOTS_TABLE else None
+OUTCOMES = DDB.Table(OUTCOMES_TABLE) if OUTCOMES_TABLE else None
 
 
 def _json_default(value: Any) -> Any:
@@ -168,19 +170,18 @@ def _pulls_for_date(slate_date: str) -> List[Dict[str, Any]]:
 def _latest_games_for_date(slate_date: str, pulls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     if not pulls:
         return []
-    latest_pull = pulls[-1]
-    # Provider pulls are locked against the independently persisted full
-    # schedule manifest, never against an odds-filtered games list.  Missing or
-    # tampered manifest authority raises and makes the scheduled lock fail.
-    if (
-        str(latest_pull.get("source") or "") == "the_odds_api"
-        or latest_pull.get("provider_schedule_manifest") is not None
-        or latest_pull.get("provider_manifest_binding") is not None
-    ):
-        games = history.provider_manifest_games_for_lock(latest_pull, slate_date)
-    else:
-        games = latest_pull.get("games") or []
-    return [game for game in games if _game_date_et(game) == slate_date]
+    # The live events feed may contract after games begin.  Locks always use
+    # the independently stored, verified pre-start full-slate manifest.
+    resolved = history.verified_full_slate_manifest(pulls, slate_date)
+    games = resolved.get("games") or []
+    return sorted(
+        [game for game in games if _game_date_et(game) == slate_date],
+        key=lambda game: (
+            _parse_dt(game.get("commence_time") or game.get("commenceTime"))
+            or datetime.max.replace(tzinfo=timezone.utc),
+            str(game.get("game_id") or game.get("id") or ""),
+        ),
+    )
 
 
 def _first_start_et(games: List[Dict[str, Any]]) -> Optional[datetime]:

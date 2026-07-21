@@ -244,7 +244,10 @@ def freeze_row(row: Dict[str, Any], coverage_complete: Optional[bool] = None) ->
     out = copy.deepcopy(row or {})
     lock = _lock_info(out)
     semantics = str(out.get("predictionSemanticsVersion") or "")
-    semantics_ok = semantics.startswith("MLB-OFFICIAL-PREDICTION-SEMANTICS-v1")
+    semantics_ok = semantics.startswith((
+        "MLB-OFFICIAL-PREDICTION-SEMANTICS-v1",
+        "MLB-OFFICIAL-PREDICTION-SEMANTICS-v2",
+    ))
     provider_id = str(out.get("gameId") or out.get("game_id") or out.get("id") or "").strip()
     if coverage_complete is None:
         coverage_complete = bool((out.get("slateCoverage") or {}).get("coverageComplete"))

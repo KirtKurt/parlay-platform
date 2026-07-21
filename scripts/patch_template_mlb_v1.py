@@ -177,6 +177,8 @@ text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref SnapshotsTable
+        - DynamoDBReadPolicy:
+            TableName: !Ref OutcomesTable
       Events:
         MLBDailyPickLockEveryMinute:
           Type: Schedule
@@ -218,6 +220,7 @@ for required, message in [
     ("INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256", "deploy template SHA environment missing"),
     ("MLBDailyPickLockFunction:", "daily lock function missing"),
     ("Path: /v1/mlb/locks/status", "lock status route missing"),
+    ("DynamoDBReadPolicy:\n            TableName: !Ref OutcomesTable", "daily lock outcomes read policy missing"),
 ]:
     if required not in text:
         violations.append(message)
