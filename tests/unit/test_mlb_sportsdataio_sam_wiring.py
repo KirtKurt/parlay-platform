@@ -65,7 +65,7 @@ def test_rejects_required_or_missing_deploy_secret_override(tmp_path: Path) -> N
     deploy = root / ".github/workflows/deploy.yml"
     text = deploy.read_text(encoding="utf-8")
     text = text.replace(
-        '              SportsDataIoApiKey="${SPORTSDATAIO_API_KEY_VALUE}" \\\n',
+        '            parameter_overrides+=("SportsDataIoApiKey=${SPORTSDATAIO_API_KEY_VALUE}")\n',
         "",
         1,
     )
@@ -75,3 +75,46 @@ def test_rejects_required_or_missing_deploy_secret_override(tmp_path: Path) -> N
     errors = wiring.verify_repository(root)
     assert "deploy_must_pass_sportsdataio_parameter_exactly_once" in errors
     assert "deploy_must_not_require_or_print_optional_sportsdataio_secret" in errors
+
+
+def test_rejects_unguarded_optional_deploy_secret_override(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    text = text.replace(
+        '          if [[ -n "${SPORTSDATAIO_API_KEY_VALUE:-}" ]]; then\n',
+        "",
+        1,
+    ).replace(
+        "          else\n"
+        '            echo "SportsDataIO secret is not configured; the optional parameter override is omitted."\n'
+        "          fi\n",
+        "",
+        1,
+    )
+    deploy.write_text(text, encoding="utf-8")
+
+    assert (
+        "deploy_must_guard_optional_sportsdataio_parameter"
+        in wiring.verify_repository(root)
+    )
+
+
+def test_rejects_optional_override_moved_outside_guard(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    override = (
+        '            parameter_overrides+=("SportsDataIoApiKey=${SPORTSDATAIO_API_KEY_VALUE}")\n'
+    )
+    text = text.replace(override, "", 1).replace(
+        "          fi\n",
+        "          fi\n" + override,
+        1,
+    )
+    deploy.write_text(text, encoding="utf-8")
+
+    assert (
+        "deploy_must_guard_optional_sportsdataio_parameter"
+        in wiring.verify_repository(root)
+    )
