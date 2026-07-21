@@ -97,10 +97,11 @@ assert policy.get("rolling24hSlateAccuracyProgressMilestonesPct") == [50.0, 60.0
 assert policy.get("rolling24hSlateAccuracyProgressMilestonesReportingOnly") is True, policy
 assert policy.get("automaticPromotionAfterApplicableGates") is True, policy
 assert policy.get("roiPromotionGateRequired") is False, policy
-assert policy.get("everyGameRetainsOfficialPick") is True, policy
+assert policy.get("everyGameRetainsOfficialPick") is False, policy
+assert policy.get("everyGameRetainsVisibleLockedPrediction") is True, policy
 assert policy.get("playabilitySeparateFromOfficialPick") is True, policy
-assert "individualGameOfficialPickProbabilityFloorPct" in policy, policy
-assert policy.get("individualGameOfficialPickProbabilityFloorPct") is None, policy
+assert policy.get("individualGameOfficialPickProbabilityFloorPct") == 60.0, policy
+assert policy.get("multipleReversalsRequireIndependentConfirmationForOfficialStatus") is True, policy
 required = {
     "accuracyTargetsSeparated",
     "legacyReliabilityOverlaySafety",
@@ -178,7 +179,7 @@ print(json.dumps({
         sys.stderr.write(result.stderr)
         return result.returncode
     print(result.stdout.strip())
-    print("MLB Lambda cold import, read-only, fail-closed, and pull-history contracts verified")
+    print("MLB Lambda cold import, read-only, fail-closed, pull-history, and 60% official-lock contracts verified")
     return 0
 
 
