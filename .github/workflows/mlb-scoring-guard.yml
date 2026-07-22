@@ -61,10 +61,11 @@ jobs:
           path: runtime_reports/mlb_scoring_guard_status_latest.json
           if-no-files-found: error
 
-      - name: Publish latest proof on scheduled main runs
-        if: success() && github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+      - name: Publish latest proof on the current branch
+        if: success() && (github.event_name == 'push' || github.event_name == 'schedule')
         run: |
           set -euo pipefail
+          TARGET_BRANCH="${GITHUB_REF_NAME}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add runtime_reports/mlb_scoring_guard_status_latest.json
@@ -72,6 +73,6 @@ jobs:
             echo 'No scoring proof change'
           else
             git commit -m 'Update MLB scoring guard read-only proof'
-            git pull --rebase --autostash origin main
-            git push origin HEAD:main
+            git pull --rebase --autostash origin "$TARGET_BRANCH"
+            git push origin "HEAD:$TARGET_BRANCH"
           fi
