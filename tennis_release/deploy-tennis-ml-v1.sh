@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
+trap 'rc=$?; printf "Tennis deployment failed\nexit=%s\nline=%s\ncommand=%s\n" "$rc" "$LINENO" "$BASH_COMMAND" | tee /tmp/tennis-failure.txt >&2; exit "$rc"' ERR
 : "${AWS_REGION:=us-east-1}"
 : "${TENNIS_STACK_NAME:=inqsi-tennis-v1}"
 : "${RELEASE_SHA256:=dbc456f51a89d3b5fa2c16668577f6e90a7f125e5357cb93be92523a14391112}"
@@ -13,7 +14,7 @@ actual=$(sha256sum "$BASE/overlay.zip" | awk '{print $1}')
 unzip -q "$BASE/overlay.zip" -d "$BASE/source"
 [[ -f "$SRC/template.yaml" && -f "$SRC/src/tennis_training_handler.py" ]]
 cd "$SRC"
-python -m pip install -r requirements-dev.txt
+python -m pip install --disable-pip-version-check --quiet -r requirements-dev.txt
 ./scripts/run_all_checks.sh
 aws sts get-caller-identity > /tmp/aws-identity.json
 [[ -n "${TENNIS_ODDS_API_KEY:-}" ]] || { echo "::error::Missing dedicated TENNIS_ODDS_API_KEY"; exit 1; }

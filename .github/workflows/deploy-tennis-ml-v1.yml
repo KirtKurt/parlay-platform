@@ -10,6 +10,7 @@ concurrency:
 permissions:
   contents: read
   id-token: write
+  pull-requests: write
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -44,6 +45,12 @@ jobs:
         run: |
           echo "Tennis provider credential source: ${TENNIS_CREDENTIAL_SOURCE}"
           bash tennis_release/deploy-tennis-ml-v1.sh
+      - if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          test -s /tmp/tennis-failure.txt || printf 'Tennis deployment failed before the driver installed its error trap.\n' > /tmp/tennis-failure.txt
+          gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/tennis-failure.txt
       - if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -51,6 +58,7 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
           path: |
+            /tmp/tennis-failure.txt
             /tmp/aws-identity.json
             /tmp/tennis-stack.json
             /tmp/tennis-outputs.json
