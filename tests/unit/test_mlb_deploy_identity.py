@@ -1,21 +1,54 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
+import zipfile
 from pathlib import Path
 from typing import Any
+from urllib.error import HTTPError, URLError
 
 import pytest
 
 from scripts import verify_mlb_deploy_identity as deploy_identity
+from scripts.mlb_lambda_artifact_identity import (
+    MANIFEST_SCHEMA_VERSION,
+    lambda_code_sha256,
+    zip_content_manifest,
+)
 
 
 STACK_NAME = "parlay-platform-test"
 REGION = "us-east-1"
 GIT_SHA = "a" * 40
 TEMPLATE_SHA = "b" * 64
+DEPLOY_RUN_ID = "123456789-2"
 ARTIFACT_BUCKET = "parlay-platform-test-mlb-artifacts"
 OMIT_DESTINATION_CONFIG = object()
+
+
+def _lambda_artifact(logical_id: str) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        entry = zipfile.ZipInfo("runtime_identity.txt")
+        entry.date_time = (2026, 7, 21, 0, 0, 0)
+        archive.writestr(entry, f"{logical_id}\n".encode("utf-8"))
+    return buffer.getvalue()
+
+
+LAMBDA_ARTIFACTS = {
+    logical_id: _lambda_artifact(logical_id)
+    for logical_id in deploy_identity.FUNCTIONS
+}
+EXPECTED_CODE_MANIFEST = {
+    "schemaVersion": MANIFEST_SCHEMA_VERSION,
+    "expectedGitSha": GIT_SHA,
+    "expectedTemplateSha256": TEMPLATE_SHA,
+    "functions": {
+        logical_id: zip_content_manifest(artifact)
+        for logical_id, artifact in LAMBDA_ARTIFACTS.items()
+    },
+}
 
 
 def _arn(role: str) -> str:
@@ -67,6 +100,7 @@ class FakeLambda:
             environment = {
                 "INQSI_DEPLOY_GIT_SHA": GIT_SHA,
                 "INQSI_DEPLOY_TEMPLATE_SHA256": TEMPLATE_SHA,
+                "INQSI_DEPLOY_RUN_ID": DEPLOY_RUN_ID,
             }
             handler = f"mlb_{role}.lambda_handler"
             if role == "trainer":
@@ -98,14 +132,25 @@ class FakeLambda:
                     else 30
                 ),
                 "Runtime": "python3.11",
+                "State": "Active",
+                "LastUpdateStatus": "Successful",
                 "LastModified": "2026-07-21T00:00:00.000+0000",
-                "CodeSha256": f"code-{logical_id}",
+                "CodeSha256": lambda_code_sha256(
+                    LAMBDA_ARTIFACTS[logical_id]
+                ),
                 "Version": "$LATEST",
                 "Environment": {"Variables": environment},
             }
 
     def get_function_configuration(self, **kwargs: Any) -> dict[str, Any]:
         return copy.deepcopy(self.configurations[kwargs["FunctionName"]])
+
+    def get_function(self, **kwargs: Any) -> dict[str, Any]:
+        physical_id = kwargs["FunctionName"]
+        return {
+            "Configuration": copy.deepcopy(self.configurations[physical_id]),
+            "Code": {"Location": f"https://lambda.invalid/{physical_id}"},
+        }
 
     def get_function_concurrency(self, **kwargs: Any) -> dict[str, Any]:
         assert kwargs == {"FunctionName": "physical-trainer"}
@@ -255,15 +300,35 @@ def aws(monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         return clients[service_name]
 
     monkeypatch.setattr(deploy_identity.boto3, "client", client)
+    role_by_physical_id = {
+        f"physical-{role}": logical_id
+        for logical_id, role in deploy_identity.FUNCTIONS.items()
+    }
+
+    def download(location: str) -> bytes:
+        physical_id = location.rsplit("/", 1)[-1]
+        return LAMBDA_ARTIFACTS[role_by_physical_id[physical_id]]
+
+    monkeypatch.setattr(deploy_identity, "_download_lambda_artifact", download)
     return clients
 
 
-def _verify() -> dict[str, Any]:
+def _verify(
+    *,
+    expected_deploy_run_id: str = DEPLOY_RUN_ID,
+    expected_code_manifest: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     return deploy_identity.verify(
         stack_name=STACK_NAME,
         region=REGION,
         expected_git_sha=GIT_SHA,
         expected_template_sha256=TEMPLATE_SHA,
+        expected_deploy_run_id=expected_deploy_run_id,
+        expected_code_manifest=copy.deepcopy(
+            EXPECTED_CODE_MANIFEST
+            if expected_code_manifest is None
+            else expected_code_manifest
+        ),
     )
 
 
@@ -286,6 +351,18 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
 
     assert result["ok"] is True
     assert result["blockers"] == []
+    assert result["eventBridgeDefaultBusInventoryComplete"] is True
+    assert result["expectedDeployRunId"] == DEPLOY_RUN_ID
+    assert result["expectedCodeManifest"]["identityMatches"] is True
+    assert all(
+        proof["deployRunIdMatches"] is True
+        and proof["codeSha256Present"] is True
+        and proof["downloadedCodeSha256Matches"] is True
+        and proof["codeArtifactMatchesCleanBuild"] is True
+        and proof["state"] == "Active"
+        and proof["lastUpdateStatus"] == "Successful"
+        for proof in result["functions"].values()
+    )
     assert result["providerCredentialBoundary"] == {
         "provider": "Big Balls Sports Data",
         "exactGithubSecretName": "BBS_API_KEY",
@@ -419,6 +496,85 @@ def test_rejects_wrong_trainer_timeout(aws) -> None:
     assert any(
         value.startswith("TRAINER_TIMEOUT_MISMATCH:")
         for value in result["blockers"]
+    )
+
+
+def test_rejects_incomplete_lambda_update_and_run_identity(aws) -> None:
+    configuration = aws["lambda"].configurations["physical-read"]
+    configuration["LastUpdateStatus"] = "Failed"
+    configuration["CodeSha256"] = ""
+    configuration["Environment"]["Variables"]["INQSI_DEPLOY_RUN_ID"] = "old-run"
+
+    result = _verify()
+
+    assert result["ok"] is False
+    proof = result["functions"]["MLBV3ReadFunction"]
+    assert proof["codeSha256Present"] is False
+    assert proof["deployRunIdMatches"] is False
+    assert proof["lastUpdateStatus"] == "Failed"
+    assert "DEPLOY_RUN_ID_MISMATCH:MLBV3ReadFunction" in result["blockers"]
+    assert "LAMBDA_LAST_UPDATE_NOT_SUCCESSFUL:MLBV3ReadFunction:Failed" in result[
+        "blockers"
+    ]
+    assert "LAMBDA_CODE_SHA256_MISSING:MLBV3ReadFunction" in result["blockers"]
+
+
+def test_exact_run_marker_allows_recovery_rerun_without_clock_assumption(
+    aws,
+) -> None:
+    for configuration in aws["lambda"].configurations.values():
+        configuration["LastModified"] = "2020-01-01T00:00:00+00:00"
+
+    result = _verify()
+
+    assert result["ok"] is True
+    assert result["blockers"] == []
+
+
+def test_rejects_code_manifest_from_another_source_identity(aws) -> None:
+    manifest = copy.deepcopy(EXPECTED_CODE_MANIFEST)
+    manifest["expectedGitSha"] = "c" * 40
+
+    result = _verify(expected_code_manifest=manifest)
+
+    assert result["ok"] is False
+    assert "EXPECTED_LAMBDA_CODE_MANIFEST_IDENTITY_MISMATCH" in result[
+        "blockers"
+    ]
+    assert all(
+        proof["codeArtifactMatchesCleanBuild"] is False
+        for proof in result["functions"].values()
+    )
+
+
+def test_rejects_live_lambda_code_that_differs_from_clean_build(
+    aws,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    tampered = _lambda_artifact("tampered")
+    aws["lambda"].configurations["physical-read"]["CodeSha256"] = (
+        lambda_code_sha256(tampered)
+    )
+    original_download = deploy_identity._download_lambda_artifact
+
+    def download(location: str) -> bytes:
+        if location.endswith("/physical-read"):
+            return tampered
+        return original_download(location)
+
+    monkeypatch.setattr(deploy_identity, "_download_lambda_artifact", download)
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["functions"]["MLBV3ReadFunction"][
+        "codeArtifactMatchesCleanBuild"
+    ] is False
+    assert any(
+        blocker.startswith(
+            "LAMBDA_CODE_ARTIFACT_VERIFICATION_FAILED:MLBV3ReadFunction:"
+        )
+        for blocker in result["blockers"]
     )
 
 
@@ -733,6 +889,48 @@ def test_rejects_extra_qualified_alias_schedule_for_canonical_function(aws) -> N
     assert "EVENTBRIDGE_TARGET_TOPOLOGY_MISMATCH:lock" in result["blockers"]
 
 
+def test_rejects_qualified_target_in_cloudtrail_management_enabled_state(
+    aws,
+) -> None:
+    aws["events"].rules["rule-lock-cloudtrail-enabled-alias"] = {
+        "State": "ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS",
+        "ScheduleExpression": "rate(2 minutes)",
+        "Arn": _arn("lock") + ":old",
+        "Input": json.dumps(
+            {
+                "sport": "mlb",
+                "run": "daily_lock_check",
+                "auto_ingest": False,
+            }
+        ),
+    }
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["schedules"]["lock"]["targetTopologyMatches"] is False
+    assert "EVENTBRIDGE_TARGET_TOPOLOGY_MISMATCH:lock" in result["blockers"]
+
+
+def test_rejects_enabled_schedule_targeting_public_read_lambda(aws) -> None:
+    aws["events"].rules["rule-read-unexpected"] = {
+        "State": "ENABLED",
+        "ScheduleExpression": "rate(1 minute)",
+        "Arn": _arn("read"),
+        "Input": json.dumps({"sport": "mlb", "run": "unexpected_read"}),
+    }
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["schedules"]["read"]["enabledRules"]
+    assert result["schedules"]["read"]["targetTopologyMatches"] is False
+    assert any(
+        blocker.startswith("SCHEDULE_MISMATCH:read:")
+        for blocker in result["blockers"]
+    )
+
+
 def test_disabled_verifier_rule_remains_allowed_but_enabled_rule_is_rejected(aws) -> None:
     aws["events"].rules["rule-verifier-disabled"] = {
         "State": "DISABLED",
@@ -871,9 +1069,87 @@ def test_deploy_initializes_both_trainer_modes_before_status_acceptance() -> Non
     assert workflow.count("python scripts/invoke_mlb_trainer_with_retry.py") == 3
     assert "invoke_with_capacity_retry" not in workflow
     assert "Prove shared Lambda capacity recovered before trainer initialization" in workflow
+    assert "--expected-deploy-run-id" in workflow
+    assert "steps.deploy.outputs.run_id" in workflow
+    assert "--expected-code-manifest" in workflow
+    assert "--template-file .aws-sam/build/template.yaml" in workflow
+    assert "PYTHONDONTWRITEBYTECODE" in workflow
+    assert workflow.index("Verify built MLB Lambda cold start") < workflow.index(
+        "Bind the verified clean SAM build to the deployment identity"
+    ) < workflow.index("Deploy exact canonical source")
+    assert "Preflight Lambda artifact attestation access" in workflow
+    assert "aws lambda get-function" in workflow
+    assert "for attempt in range(1, 4):" in workflow
+    assert (
+        "CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)"
+        in workflow
+    )
+    assert "UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE" not in workflow
     assert "trainingHealth" in workflow
     assert "selectionCaptureHealth" in workflow
     assert "deploymentIdentityMatches" in workflow
+
+
+def test_lambda_artifact_download_retries_transient_transport_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifact = _lambda_artifact("retry-success")
+    attempts = 0
+    sleeps: list[int] = []
+
+    class Response:
+        headers = {"Content-Length": str(len(artifact))}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args: Any) -> None:
+            return None
+
+        def read(self, _limit: int) -> bytes:
+            return artifact
+
+    def open_url(*_args: Any, **_kwargs: Any):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise URLError("temporary")
+        if attempts == 2:
+            raise HTTPError("https://lambda.invalid", 503, "busy", {}, None)
+        return Response()
+
+    monkeypatch.setattr(deploy_identity, "urlopen", open_url)
+    monkeypatch.setattr(deploy_identity.time, "sleep", sleeps.append)
+
+    assert deploy_identity._download_lambda_artifact(
+        "https://lambda.invalid/artifact.zip"
+    ) == artifact
+    assert attempts == 3
+    assert sleeps == [1, 2]
+
+
+def test_lambda_artifact_download_does_not_retry_nontransient_http_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts = 0
+
+    def open_url(*_args: Any, **_kwargs: Any):
+        nonlocal attempts
+        attempts += 1
+        raise HTTPError("https://lambda.invalid", 403, "forbidden", {}, None)
+
+    monkeypatch.setattr(deploy_identity, "urlopen", open_url)
+    monkeypatch.setattr(
+        deploy_identity.time,
+        "sleep",
+        lambda _seconds: pytest.fail("nontransient error must not be retried"),
+    )
+
+    with pytest.raises(HTTPError):
+        deploy_identity._download_lambda_artifact(
+            "https://lambda.invalid/artifact.zip"
+        )
+    assert attempts == 1
 
 
 def test_rejects_enabled_legacy_mlb_pull_function_outside_current_stack(aws) -> None:

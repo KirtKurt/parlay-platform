@@ -29,6 +29,10 @@ Parameters:
     Type: String
     Default: unknown
     Description: SHA-256 of the canonical SAM template deployed to AWS
+  DeployRunId:
+    Type: String
+    Default: unknown
+    Description: Unique GitHub Actions deployment run and attempt
 
 Globals:
   Function:
@@ -42,6 +46,7 @@ Globals:
         ODDS_API_KEY: !Ref OddsApiKey
         INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256
         INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
+        INQSI_DEPLOY_RUN_ID: !Ref DeployRunId
         INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
         INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED: 'false'
         INQSI_MLB_ML_AUTO_PROMOTE: 'false'

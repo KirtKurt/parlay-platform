@@ -356,3 +356,81 @@ def test_rejects_live_authority_claim_in_deploy_smoke(tmp_path: Path) -> None:
         "canonical_deploy_allows_training_to_claim_live_authority"
         in authority.verify_repository(root)
     )
+
+
+def test_requires_unique_deploy_run_binding(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace('"DeployRunId=${DEPLOY_RUN_ID}"', '"DeployRunId=unknown"', 1),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_does_not_bind_lambda_to_unique_deploy_run"
+        in authority.verify_repository(root)
+    )
+
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    (
+        (
+            "--template-file .aws-sam/build/template.yaml",
+            "--template-file template.yaml",
+        ),
+        (
+            'PYTHONDONTWRITEBYTECODE: "1"',
+            'PYTHONDONTWRITEBYTECODE: "0"',
+        ),
+    ),
+)
+def test_requires_exact_verified_sam_build_for_deploy(
+    tmp_path: Path,
+    old: str,
+    new: str,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(text.replace(old, new, 1), encoding="utf-8")
+
+    assert (
+        "canonical_deploy_does_not_bind_live_code_to_verified_sam_build"
+        in authority.verify_repository(root)
+    )
+
+
+def test_requires_lambda_artifact_access_preflight(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace("aws lambda get-function", "# artifact read removed", 1),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_does_not_preflight_lambda_artifact_read_access"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_terminal_rollback_as_updateable(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE",
+            "UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE|IMPORT_COMPLETE",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_treats_terminal_rollback_as_updateable"
+        in authority.verify_repository(root)
+    )
