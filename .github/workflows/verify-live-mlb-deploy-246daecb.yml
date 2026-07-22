@@ -12,127 +12,486 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 35
     steps:
       - name: Checkout diagnostic branch
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      - name: Prepare exact read-only verifier
-        run: |
-          set -euo pipefail
-          git fetch origin agent/verify-mlb-deploy-159222cd
-          git show origin/agent/verify-mlb-deploy-159222cd:scripts/verify_live_mlb_deploy_159222cd.py \
-            > /tmp/verify_live_mlb_deploy_246daecb.py
-          git show origin/agent/verify-mlb-deploy-159222cd:scripts/run_live_mlb_deploy_verifier_159222cd.py \
-            > /tmp/run_live_mlb_deploy_verifier_246daecb.py
-          sed -i \
-            's/159222cd145ae0ba727970775abda22f956fb97c/246daecb3960518fb59bb69c6891989d50fb7308/g; s/159222cd/246daecb/g' \
-            /tmp/verify_live_mlb_deploy_246daecb.py
-          sed -i \
-            's/verify_live_mlb_deploy_159222cd/verify_live_mlb_deploy_246daecb/g' \
-            /tmp/run_live_mlb_deploy_verifier_246daecb.py
-
-      - name: Collect exact deployment, identity, and live-read evidence
-        id: verify
-        continue-on-error: true
+      - name: Verify exact deployed identity and wait for live read acceptance
         env:
           GH_TOKEN: ${{ github.token }}
-          PYTHONPATH: /tmp
-          SUMMARY_PATH: live_mlb_deploy_246daecb.json
-        run: python /tmp/run_live_mlb_deploy_verifier_246daecb.py
-
-      - name: Drain and independently probe after failed deployment
-        if: steps.verify.outcome == 'failure'
+          REPOSITORY: ${{ github.repository }}
         run: |
           set -euo pipefail
-          sleep 330
           python - <<'PY'
           from __future__ import annotations
+
+          import io
           import json
+          import os
           import time
           import urllib.error
+          import urllib.parse
           import urllib.request
+          import zipfile
           from pathlib import Path
 
-          base = 'https://7nz8g8unyd.execute-api.us-east-1.amazonaws.com/Prod'
-          output = {
-              'targetGitSha': '246daecb3960518fb59bb69c6891989d50fb7308',
-              'readOnly': True,
-              'fullDrainBeforeProbeSeconds': 330,
-              'probes': [],
+          TARGET_SHA = "246daecb3960518fb59bb69c6891989d50fb7308"
+          TARGET_WORKFLOW = "Deploy SAM to AWS"
+          API_BASE = "https://7nz8g8unyd.execute-api.us-east-1.amazonaws.com/Prod"
+          GITHUB_API = "https://api.github.com"
+          EXPECTED_SCHEDULE_VERSION = (
+              "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date"
+          )
+          repository = os.environ["REPOSITORY"]
+          token = os.environ["GH_TOKEN"]
+          output: dict[str, object] = {
+              "targetGitSha": TARGET_SHA,
+              "readOnly": True,
+              "productionWrites": False,
           }
-          for path, label in (
-              ('/v1/health', 'health'),
-              ('/v1/mlb/locks/status', 'lockStatusAfterDrain'),
-              ('/v1/mlb/predictions', 'predictionsAfterDrain'),
-          ):
-              started = time.monotonic()
+
+          def github_json(path: str) -> dict:
               request = urllib.request.Request(
-                  base + path,
+                  GITHUB_API + path,
                   headers={
-                      'accept': 'application/json',
-                      'user-agent': 'inqsi-exact-main-deploy-verifier/1.0',
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "parlay-platform-read-only-deploy-verifier/2.0",
                   },
               )
-              try:
-                  with urllib.request.urlopen(request, timeout=60) as response:
-                      status = int(response.getcode())
-                      payload = json.loads(response.read().decode('utf-8'))
-                  result = {
-                      'label': label,
-                      'path': path,
-                      'httpStatus': status,
-                      'elapsedSeconds': round(time.monotonic() - started, 3),
-                      'ok': payload.get('ok') if isinstance(payload, dict) else None,
-                      'sport': payload.get('sport') if isinstance(payload, dict) else None,
-                      'slateDateEt': payload.get('slateDateEt') if isinstance(payload, dict) else None,
-                      'gameCount': payload.get('gameCount') if isinstance(payload, dict) else None,
-                      'lockedPredictionCount': payload.get('lockedPredictionCount') if isinstance(payload, dict) else None,
-                      'lockedStatusCount': payload.get('lockedStatusCount') if isinstance(payload, dict) else None,
-                      'officialPredictionCount': payload.get('officialPredictionCount') if isinstance(payload, dict) else None,
-                      'operationalDefect': payload.get('operationalDefect') if isinstance(payload, dict) else None,
-                  }
-              except urllib.error.HTTPError as exc:
-                  result = {
-                      'label': label,
-                      'path': path,
-                      'httpStatus': int(exc.code),
-                      'elapsedSeconds': round(time.monotonic() - started, 3),
-                      'error': exc.read().decode('utf-8', 'replace')[:1000],
-                  }
-              except Exception as exc:
-                  result = {
-                      'label': label,
-                      'path': path,
-                      'elapsedSeconds': round(time.monotonic() - started, 3),
-                      'errorType': type(exc).__name__,
-                      'error': str(exc),
-                  }
-              output['probes'].append(result)
-              print(json.dumps(result, sort_keys=True), flush=True)
-          Path('live_mlb_post_failure_probe_246daecb.json').write_text(
-              json.dumps(output, indent=2, sort_keys=True) + '\n',
-              encoding='utf-8',
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              if not isinstance(payload, dict):
+                  raise RuntimeError(f"GitHub API returned non-object for {path}")
+              return payload
+
+          query = urllib.parse.urlencode(
+              {
+                  "head_sha": TARGET_SHA,
+                  "event": "push",
+                  "branch": "main",
+                  "per_page": 100,
+              }
           )
+          runs = github_json(
+              f"/repos/{repository}/actions/runs?{query}"
+          ).get("workflow_runs") or []
+          matches = [
+              run
+              for run in runs
+              if isinstance(run, dict)
+              and run.get("head_sha") == TARGET_SHA
+              and run.get("head_branch") == "main"
+              and run.get("event") == "push"
+              and run.get("name") == TARGET_WORKFLOW
+          ]
+          if len(matches) != 1:
+              raise RuntimeError(
+                  f"Expected one exact deployment run; found {len(matches)}"
+              )
+          run = matches[0]
+          if run.get("status") != "completed":
+              raise RuntimeError("Exact deployment run is not completed")
+          run_id = int(run["id"])
+          run_attempt = int(run.get("run_attempt") or 1)
+          output["deploymentRun"] = {
+              "id": run_id,
+              "attempt": run_attempt,
+              "status": run.get("status"),
+              "conclusion": run.get("conclusion"),
+              "headSha": run.get("head_sha"),
+              "url": run.get("html_url"),
+          }
+
+          jobs_payload = github_json(
+              f"/repos/{repository}/actions/runs/{run_id}/jobs?filter=latest&per_page=100"
+          )
+          jobs = [
+              job
+              for job in jobs_payload.get("jobs") or []
+              if isinstance(job, dict)
+          ]
+          deploy_jobs = [job for job in jobs if job.get("name") == "deploy"]
+          if len(deploy_jobs) != 1:
+              raise RuntimeError("Exact deployment job is not unique")
+          deploy_job = deploy_jobs[0]
+          steps = [
+              step
+              for step in deploy_job.get("steps") or []
+              if isinstance(step, dict)
+          ]
+          failed_steps = [
+              str(step.get("name"))
+              for step in steps
+              if step.get("conclusion") not in ("success", "skipped", None)
+          ]
+          required_success_steps = {
+              "Deploy exact canonical source",
+              "Prove exact deployed Lambda identity and schedules",
+              "Prove shared Lambda capacity recovered before trainer initialization",
+              "Run AWS-native MLB trainer and verify fresh split health",
+              "Smoke test health and MLB read runtime",
+              "Upload exact deployment proof",
+          }
+          successful_steps = {
+              str(step.get("name"))
+              for step in steps
+              if step.get("conclusion") == "success"
+          }
+          missing_success = sorted(required_success_steps - successful_steps)
+          if missing_success:
+              raise RuntimeError(
+                  "Deployment did not complete required safe stages: "
+                  + json.dumps(missing_success)
+              )
+          if failed_steps not in ([], ["Smoke test read-only MLB lock status"]):
+              raise RuntimeError(
+                  "Deployment has an unexpected failed step set: "
+                  + json.dumps(failed_steps)
+              )
+          output["deploymentJob"] = {
+              "id": deploy_job.get("id"),
+              "conclusion": deploy_job.get("conclusion"),
+              "failedSteps": failed_steps,
+              "requiredSafeStagesPassed": True,
+          }
+
+          artifacts_payload = github_json(
+              f"/repos/{repository}/actions/runs/{run_id}/artifacts?per_page=100"
+          )
+          expected_name = f"mlb-deployment-identity-{run_id}"
+          artifacts = sorted(
+              [
+                  artifact
+                  for artifact in artifacts_payload.get("artifacts") or []
+                  if isinstance(artifact, dict)
+                  and artifact.get("name") == expected_name
+                  and artifact.get("expired") is False
+              ],
+              key=lambda artifact: str(artifact.get("created_at") or ""),
+              reverse=True,
+          )
+          expected_deploy_run_id = f"{run_id}-{run_attempt}"
+          selected_identity = None
+          selected_artifact = None
+          selected_files: list[str] = []
+          for artifact in artifacts:
+              request = urllib.request.Request(
+                  artifact["archive_download_url"],
+                  headers={
+                      "Accept": "application/vnd.github+json",
+                      "Authorization": f"Bearer {token}",
+                      "X-GitHub-Api-Version": "2022-11-28",
+                      "User-Agent": "parlay-platform-read-only-deploy-verifier/2.0",
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=120) as response:
+                  archive = response.read()
+              with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+                  names = sorted(bundle.namelist())
+                  identity_names = [
+                      name
+                      for name in names
+                      if name.endswith("mlb_deploy_identity_latest.json")
+                  ]
+                  if len(identity_names) != 1:
+                      continue
+                  identity = json.loads(
+                      bundle.read(identity_names[0]).decode("utf-8")
+                  )
+              if (
+                  isinstance(identity, dict)
+                  and identity.get("ok") is True
+                  and identity.get("expectedGitSha") == TARGET_SHA
+                  and identity.get("expectedDeployRunId")
+                  == expected_deploy_run_id
+              ):
+                  selected_identity = identity
+                  selected_artifact = artifact
+                  selected_files = names
+                  break
+          if selected_identity is None or selected_artifact is None:
+              raise RuntimeError(
+                  "No deployment identity artifact matches the latest exact attempt "
+                  + expected_deploy_run_id
+              )
+          functions = selected_identity.get("functions") or {}
+          if not isinstance(functions, dict) or not functions:
+              raise RuntimeError("Deployment identity proof has no functions")
+          bad_functions: dict[str, list[str]] = {}
+          for name, evidence in functions.items():
+              errors: list[str] = []
+              if not isinstance(evidence, dict):
+                  errors.append("non_object")
+              else:
+                  if evidence.get("deployGitSha") != TARGET_SHA:
+                      errors.append("deploy_sha")
+                  if evidence.get("deployRunId") != expected_deploy_run_id:
+                      errors.append("deploy_run")
+                  if evidence.get("identityMatches") is not True:
+                      errors.append("identity")
+                  if evidence.get("configurationMatches") is not True:
+                      errors.append("configuration")
+                  if evidence.get("codeArtifactMatchesCleanBuild") is not True:
+                      errors.append("artifact")
+              if errors:
+                  bad_functions[str(name)] = errors
+          if bad_functions:
+              raise RuntimeError(
+                  "Deployment identity mismatch: "
+                  + json.dumps(bad_functions, sort_keys=True)
+              )
+          output["deploymentIdentity"] = {
+              "ok": True,
+              "expectedDeployRunId": expected_deploy_run_id,
+              "templateSha256": selected_identity.get(
+                  "expectedTemplateSha256"
+              ),
+              "functionCount": len(functions),
+              "allFunctionArtifactsMatch": True,
+              "artifactId": selected_artifact.get("id"),
+              "artifactDigest": selected_artifact.get("digest"),
+              "files": selected_files,
+          }
+
+          def one_public_read(path: str, timeout: float = 60.0):
+              request = urllib.request.Request(
+                  API_BASE + path,
+                  headers={
+                      "Accept": "application/json",
+                      "User-Agent": "parlay-platform-read-only-deploy-verifier/2.0",
+                  },
+              )
+              started = time.monotonic()
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
+                      status = int(response.getcode())
+                      raw = response.read()
+              except urllib.error.HTTPError as exc:
+                  raw = exc.read()
+                  try:
+                      payload = json.loads(raw.decode("utf-8"))
+                  except Exception:
+                      payload = {
+                          "error": raw.decode("utf-8", "replace")[:1000]
+                      }
+                  return int(exc.code), payload, time.monotonic() - started
+              payload = json.loads(raw.decode("utf-8"))
+              return status, payload, time.monotonic() - started
+
+          health_status, health, health_elapsed = one_public_read(
+              "/v1/health", timeout=15
+          )
+          if (
+              health_status != 200
+              or not isinstance(health, dict)
+              or health.get("ok") is not True
+          ):
+              raise RuntimeError(
+                  "Live health is not accepted: "
+                  + json.dumps(
+                      {"status": health_status, "payload": health},
+                      default=str,
+                  )
+              )
+
+          status_deadline = time.monotonic() + 20 * 60
+          status_attempts = 0
+          while True:
+              status_attempts += 1
+              try:
+                  lock_http, lock_status, lock_elapsed = one_public_read(
+                      "/v1/mlb/locks/status", timeout=60
+                  )
+              except (
+                  urllib.error.URLError,
+                  TimeoutError,
+                  ConnectionError,
+              ) as exc:
+                  remaining = status_deadline - time.monotonic()
+                  if remaining <= 0:
+                      raise RuntimeError(
+                          "Lock status transport deadline exhausted"
+                      ) from exc
+                  # A client timeout can leave the 300-second Lambda running.
+                  # Drain it before another delivery to prevent overlap.
+                  time.sleep(min(330, remaining))
+                  continue
+
+              if lock_http == 200:
+                  break
+              error = (
+                  str(lock_status.get("error") or "")
+                  if isinstance(lock_status, dict)
+                  else ""
+              )
+              transient_no_pull = error.startswith(
+                  "MLB_PROVIDER_SCHEDULE_MANIFEST_MISSING:NO_PROVIDER_PULLS"
+              )
+              transient_http = lock_http == 429 or 500 <= lock_http <= 599
+              remaining = status_deadline - time.monotonic()
+              if not (transient_no_pull or transient_http) or remaining <= 0:
+                  raise RuntimeError(
+                      "Lock status did not reach acceptance: "
+                      + json.dumps(
+                          {
+                              "status": lock_http,
+                              "error": error,
+                              "attempts": status_attempts,
+                          },
+                          sort_keys=True,
+                      )
+                  )
+              print(
+                  json.dumps(
+                      {
+                          "waitingForLiveLockStatus": True,
+                          "status": lock_http,
+                          "error": error,
+                          "attempt": status_attempts,
+                      },
+                      sort_keys=True,
+                  ),
+                  flush=True,
+              )
+              time.sleep(min(30, remaining))
+
+          if not isinstance(lock_status, dict):
+              raise RuntimeError("Live lock status is not a JSON object")
+          game_count = int(lock_status.get("gameCount") or 0)
+          per_game_status = lock_status.get("perGameStatus") or []
+          if (
+              lock_status.get("ok") is not True
+              or lock_status.get("sport") != "mlb"
+              or lock_status.get("officialScheduleBacked") is not True
+              or lock_status.get("officialScheduleAuthorityVersion")
+              != EXPECTED_SCHEDULE_VERSION
+              or lock_status.get("officialScheduleAuthoritativeStartTimes")
+              is not True
+              or not isinstance(per_game_status, list)
+              or len(per_game_status) != game_count
+          ):
+              raise RuntimeError(
+                  "Live lock status contract is invalid: "
+                  + json.dumps(lock_status, default=str)[:3000]
+              )
+
+          slate = str(lock_status.get("slateDateEt") or "")
+          prediction_path = "/v1/mlb/predictions"
+          if slate:
+              prediction_path += "?" + urllib.parse.urlencode({"date": slate})
+          prediction_deadline = time.monotonic() + 20 * 60
+          prediction_attempts = 0
+          while True:
+              prediction_attempts += 1
+              try:
+                  pred_http, predictions, pred_elapsed = one_public_read(
+                      prediction_path, timeout=60
+                  )
+              except (
+                  urllib.error.URLError,
+                  TimeoutError,
+                  ConnectionError,
+              ) as exc:
+                  remaining = prediction_deadline - time.monotonic()
+                  if remaining <= 0:
+                      raise RuntimeError(
+                          "Predictions transport deadline exhausted"
+                      ) from exc
+                  time.sleep(min(330, remaining))
+                  continue
+              if (
+                  pred_http == 200
+                  and isinstance(predictions, dict)
+                  and predictions.get("ok") is True
+                  and predictions.get("sport") == "mlb"
+              ):
+                  break
+              remaining = prediction_deadline - time.monotonic()
+              if (
+                  not (pred_http == 429 or 500 <= pred_http <= 599)
+                  or remaining <= 0
+              ):
+                  raise RuntimeError(
+                      "Predictions did not reach acceptance: "
+                      + json.dumps(
+                          {
+                              "status": pred_http,
+                              "attempts": prediction_attempts,
+                              "payload": predictions,
+                          },
+                          default=str,
+                      )[:3000]
+                  )
+              time.sleep(min(30, remaining))
+
+          output["liveReads"] = {
+              "health": {
+                  "httpStatus": health_status,
+                  "elapsedSeconds": round(health_elapsed, 3),
+                  "ok": health.get("ok"),
+              },
+              "lockStatus": {
+                  "httpStatus": lock_http,
+                  "elapsedSeconds": round(lock_elapsed, 3),
+                  "attempts": status_attempts,
+                  "ok": lock_status.get("ok"),
+                  "sport": lock_status.get("sport"),
+                  "slateDateEt": lock_status.get("slateDateEt"),
+                  "gameCount": game_count,
+                  "lockedPredictionCount": lock_status.get(
+                      "lockedPredictionCount"
+                  ),
+                  "lockedStatusCount": lock_status.get("lockedStatusCount"),
+                  "operationalDefect": lock_status.get("operationalDefect"),
+              },
+              "predictions": {
+                  "httpStatus": pred_http,
+                  "elapsedSeconds": round(pred_elapsed, 3),
+                  "attempts": prediction_attempts,
+                  "ok": predictions.get("ok"),
+                  "sport": predictions.get("sport"),
+                  "gameCount": predictions.get("gameCount"),
+                  "lockedPredictionCount": predictions.get(
+                      "lockedPredictionCount"
+                  ),
+                  "officialPredictionCount": predictions.get(
+                      "officialPredictionCount"
+                  ),
+                  "operationalDefect": predictions.get("operationalDefect"),
+              },
+          }
+          output["ok"] = True
+          Path("live_mlb_deploy_246daecb_v2.json").write_text(
+              json.dumps(output, indent=2, sort_keys=True, default=str) + "\n",
+              encoding="utf-8",
+          )
+          print(json.dumps(output, indent=2, sort_keys=True, default=str))
+          print("VERIFICATION_OK", flush=True)
           PY
 
       - name: Upload compact verification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: live-mlb-deploy-verification-${{ github.run_id }}
-          path: |
-            live_mlb_deploy_246daecb.json
-            live_mlb_post_failure_probe_246daecb.json
+          name: live-mlb-deploy-verification-v2-${{ github.run_id }}
+          path: live_mlb_deploy_246daecb_v2.json
           if-no-files-found: warn
-          retention-days: 3
+          retention-days: 7
 
-      - name: Enforce exact deployment acceptance
+      - name: Enforce exact live deployment acceptance
         if: always()
-        env:
-          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
         run: |
-          cat live_mlb_deploy_246daecb.json
-          test "$VERIFY_OUTCOME" = "success"
+          test -f live_mlb_deploy_246daecb_v2.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(
+              Path('live_mlb_deploy_246daecb_v2.json').read_text(encoding='utf-8')
+          )
+          if payload.get('ok') is not True:
+              raise SystemExit('Exact live deployment acceptance is not green')
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
