@@ -1,0 +1,119 @@
+{
+  "allWorking": true,
+  "checkedAtEt": "2026-07-22T01:46:55.327163-04:00",
+  "checkedAtUtc": "2026-07-22T05:46:55.327163+00:00",
+  "checks": {
+    "currentSlateIsJuly22": true,
+    "deployedFunctionActive": true,
+    "directLambdaOk": true,
+    "healthHttpOk": true,
+    "latestPullFresh": true,
+    "latestPullOfficialScheduleBacked": true,
+    "predictionsHttpOk": true,
+    "scheduledPullPresent": true,
+    "statusCurrentSlate": true,
+    "statusHttpOk": true,
+    "statusOfficialScheduleBacked": true,
+    "statusWithinGatewayDeadline": true
+  },
+  "currentPullPipeline": {
+    "canonicalSlotKeyCount": 4,
+    "latestPullAgeMinutes": 1.481,
+    "latestPullAtUtc": "2026-07-22T05:45:26.491721+00:00",
+    "latestPullId": "mlb_v1_2026-07-22_2026_07_22T05_45_26_491721_00_00",
+    "manifestGameCount": "17",
+    "officialScheduleAuthoritativeRoster": true,
+    "officialScheduleAuthoritativeStartTimes": true,
+    "officialScheduleAuthoritySource": "MLB Stats API exact-date schedule",
+    "officialScheduleAuthorityVersion": "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date",
+    "storedPullCount": 4,
+    "tableConfigured": true
+  },
+  "directLockStatus": {
+    "elapsedMs": 2789.941,
+    "error": null,
+    "payloadSummary": {
+      "canonicalPredictionComplete": false,
+      "gameCount": 17,
+      "lockStatusComplete": false,
+      "lockedPredictionCount": 0,
+      "lockedStatusCount": 0,
+      "modelVersion": "INQSI-MLB-DAILY-LOCK-v5-tminus45-readiness-release-status",
+      "noPredictionDataCount": 0,
+      "officialScheduleAuthoritativeStartTimes": true,
+      "officialScheduleAuthorityVersion": "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date",
+      "officialScheduleBacked": true,
+      "officialScheduleGameCount": 17,
+      "ok": true,
+      "operationalDefect": false,
+      "pullCount": 4,
+      "slateDateEt": "2026-07-22",
+      "sport": "mlb"
+    },
+    "statusCode": 200
+  },
+  "http": {
+    "health": {
+      "elapsedMs": 809.958,
+      "error": null,
+      "payloadSummary": {
+        "ok": true
+      },
+      "statusCode": 200
+    },
+    "lockStatus": {
+      "elapsedMs": 2836.558,
+      "error": null,
+      "payloadSummary": {
+        "canonicalPredictionComplete": false,
+        "gameCount": 17,
+        "lockStatusComplete": false,
+        "lockedPredictionCount": 0,
+        "lockedStatusCount": 0,
+        "modelVersion": "INQSI-MLB-DAILY-LOCK-v5-tminus45-readiness-release-status",
+        "noPredictionDataCount": 0,
+        "officialScheduleAuthoritativeStartTimes": true,
+        "officialScheduleAuthorityVersion": "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date",
+        "officialScheduleBacked": true,
+        "officialScheduleGameCount": 17,
+        "ok": true,
+        "operationalDefect": false,
+        "pullCount": 4,
+        "slateDateEt": "2026-07-22",
+        "sport": "mlb"
+      },
+      "statusCode": 200
+    },
+    "predictions": {
+      "elapsedMs": 3666.335,
+      "error": null,
+      "payloadSummary": {
+        "canonicalPredictionComplete": false,
+        "gameCount": 17,
+        "lockStatusComplete": false,
+        "lockedPredictionCount": 0,
+        "lockedStatusCount": 0,
+        "modelVersion": "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production+last-prelock-promotion-authority-v1",
+        "noPredictionDataCount": 0,
+        "ok": true,
+        "operationalDefect": false,
+        "predictionCount": 17,
+        "sport": "mlb",
+        "winnerCount": 0
+      },
+      "statusCode": 200
+    }
+  },
+  "lockFunction": {
+    "codeSha256": "DbtIG/DSddSmAM0f/IfIPG9Lr5G+TxIf62msytzcCyQ=",
+    "lastModified": "2026-07-22T05:05:00.000+0000",
+    "lastUpdateStatus": "Successful",
+    "name": "parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP",
+    "state": "Active"
+  },
+  "region": "us-east-1",
+  "selectedApiOutputKey": "ApiUrl",
+  "slateDateEt": "2026-07-22",
+  "stackName": "parlay-platform-dev",
+  "targetGitSha": "52b0ee85c5d7e12f8f4e18406c961e6b71d04eb4"
+}
