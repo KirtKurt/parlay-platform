@@ -28,6 +28,13 @@ def test_deploy_lease_contract_exactly_matches_runtime_attestation() -> None:
     )
 
 
+def test_deploy_fingerprint_contract_exactly_matches_runtime_attestation() -> None:
+    assert (
+        verifier.STATUS_FINGERPRINT_VERSION
+        == aws_training.STATUS_FINGERPRINT_VERSION
+    )
+
+
 def _payloads():
     identity = {"gitSha": GIT_SHA, "templateSha256": TEMPLATE_SHA}
     common = {
@@ -58,6 +65,7 @@ def _payloads():
         "automaticPromotionEnabled": False,
         "liveInferenceAuthority": False,
         "milestones": {"stage": "TRAIN_0_OF_300"},
+        "statusFingerprintVersion": verifier.STATUS_FINGERPRINT_VERSION,
     }
     selection = {
         **common,
@@ -71,6 +79,7 @@ def _payloads():
         "historicalTrainingScanInvoked": False,
         "modelTrained": False,
         "liveInferenceAuthority": False,
+        "statusFingerprintVersion": verifier.STATUS_FINGERPRINT_VERSION,
     }
     after = {
         **common,
@@ -215,6 +224,18 @@ def test_accepts_fresh_split_run_and_status_health() -> None:
                 "latestRun"
             ].update({"status": "STALE"}),
             "training_latest_run_does_not_match_deploy_run",
+        ),
+        (
+            lambda training, selection, after: training.update(
+                {"statusFingerprintVersion": "stale-fingerprint-contract"}
+            ),
+            "training_status_fingerprint_version_mismatch",
+        ),
+        (
+            lambda training, selection, after: after["selectionCaptureHealth"][
+                "latestRun"
+            ].update({"statusFingerprintVersion": "stale-fingerprint-contract"}),
+            "selection_capture_latest_run_status_fingerprint_version_mismatch",
         ),
     ),
 )
