@@ -1,0 +1,55 @@
+name: Extract v2 diagnostic tail
+
+on:
+  push:
+    branches:
+      - agent/report-mlb-deploy-246daecb
+    paths:
+      - .github/workflows/extract_v2_diagnostic_tail.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/report-mlb-deploy-246daecb
+          fetch-depth: 0
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="${GITHUB_API_URL%/}"
+          repo="$GITHUB_REPOSITORY"
+          curl -fsSL \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            -H "User-Agent: parlay-platform-v2-tail-extractor/1.0" \
+            "$api/repos/$repo/actions/jobs/88828455227/logs" \
+            -o /tmp/job_logs.bin
+          if unzip -t /tmp/job_logs.bin >/dev/null 2>&1; then
+            unzip -p /tmp/job_logs.bin >/tmp/job_logs.txt
+          else
+            cp /tmp/job_logs.bin /tmp/job_logs.txt
+          fi
+          python - <<'PY'
+          from pathlib import Path
+          lines = Path('/tmp/job_logs.txt').read_text(encoding='utf-8-sig', errors='replace').splitlines()
+          Path('v2_diagnostic_failure_tail.txt').write_text('\n'.join(lines[-220:]) + '\n', encoding='utf-8')
+          PY
+      - shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/extract_v2_diagnostic_tail.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Record v2 diagnostic failure tail"
+          git push origin HEAD:agent/report-mlb-deploy-246daecb
