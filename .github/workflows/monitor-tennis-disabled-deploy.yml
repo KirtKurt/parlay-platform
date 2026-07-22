@@ -1,0 +1,113 @@
+name: Monitor credential-blocked Tennis deployment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [agent/tennis-ml-production-deploy]
+    paths:
+      - ".github/workflows/monitor-tennis-disabled-deploy.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: parlay-platform-tennis-disabled-deployment-monitor
+  cancel-in-progress: true
+
+env:
+  DEPLOY_WORKFLOW: deploy-tennis.yml
+  DEPLOY_BRANCH: agent/tennis-ml-production-deploy
+  DEPLOY_SOURCE_SHA: bc9a068270731ab4afe86f016ae118aea875372b
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for exact deployment and collect evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --method GET \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/${DEPLOY_WORKFLOW}/runs" \
+            -f branch="$DEPLOY_BRANCH" -f event=push -f per_page=30 \
+            > /tmp/tennis-deploy-runs.json
+          run_id=$(python - <<'PY'
+          import json, os
+          payload=json.load(open('/tmp/tennis-deploy-runs.json'))
+          rows=[r for r in payload.get('workflow_runs',[]) if r.get('head_sha')==os.environ['DEPLOY_SOURCE_SHA']]
+          if len(rows)!=1:
+              raise SystemExit(f"expected one exact deployment run, found {len(rows)}")
+          print(rows[0]['id'])
+          PY
+          )
+          completed=false
+          for attempt in $(seq 1 300); do
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > /tmp/run.json
+            status=$(python -c "import json; print(json.load(open('/tmp/run.json')).get('status',''))")
+            conclusion=$(python -c "import json; print(json.load(open('/tmp/run.json')).get('conclusion') or '')")
+            echo "attempt=${attempt} status=${status} conclusion=${conclusion}"
+            if [ "$status" = completed ]; then completed=true; break; fi
+            sleep 12
+          done
+          [ "$completed" = true ] || { echo "deployment monitor deadline exceeded"; exit 1; }
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" > /tmp/jobs.json
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" > /tmp/artifacts.json
+          rm -rf /tmp/evidence && mkdir -p /tmp/evidence
+          set +e
+          gh run download "$run_id" -R "$GITHUB_REPOSITORY" --dir /tmp/evidence
+          set -e
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          run=json.load(open('/tmp/run.json'))
+          jobs=json.load(open('/tmp/jobs.json')).get('jobs',[])
+          artifacts=json.load(open('/tmp/artifacts.json')).get('artifacts',[])
+          evidence_files=list(Path('/tmp/evidence').rglob('tennis-deployment-evidence.json'))
+          evidence=None
+          if len(evidence_files)==1:
+              try: evidence=json.loads(evidence_files[0].read_text())
+              except Exception as exc: evidence={'parseError':str(exc)}
+          payload={
+            'schemaVersion':'TENNIS-ML-CREDENTIAL-BLOCKED-DEPLOY-MONITOR-v1',
+            'recordedAtUtc':datetime.now(timezone.utc).isoformat(),
+            'expectedHeadSha':os.environ['DEPLOY_SOURCE_SHA'],
+            'run':{
+              'id':run.get('id'),'runNumber':run.get('run_number'),'runAttempt':run.get('run_attempt'),
+              'event':run.get('event'),'status':run.get('status'),'conclusion':run.get('conclusion'),
+              'headSha':run.get('head_sha'),'createdAt':run.get('created_at'),'updatedAt':run.get('updated_at'),
+              'htmlUrl':run.get('html_url'),
+            },
+            'jobs':[
+              {'id':j.get('id'),'name':j.get('name'),'status':j.get('status'),'conclusion':j.get('conclusion'),
+               'startedAt':j.get('started_at'),'completedAt':j.get('completed_at'),'htmlUrl':j.get('html_url'),
+               'steps':[{'name':s.get('name'),'status':s.get('status'),'conclusion':s.get('conclusion'),'number':s.get('number')} for s in j.get('steps',[])]}
+              for j in jobs
+            ],
+            'artifacts':[{'id':a.get('id'),'name':a.get('name'),'sizeInBytes':a.get('size_in_bytes'),'expired':a.get('expired'),'createdAt':a.get('created_at'),'expiresAt':a.get('expires_at')} for a in artifacts],
+            'deploymentEvidence':evidence,
+          }
+          if payload['run']['headSha']!=payload['expectedHeadSha']:
+              raise SystemExit('exact deployment SHA mismatch')
+          Path('tennis_release/deployment-status-disabled.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(payload,indent=2,sort_keys=True))
+          PY
+
+      - name: Publish exact status
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s tennis_release/deployment-status-disabled.json || exit 0
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tennis_release/deployment-status-disabled.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Record credential-blocked Tennis deployment status"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
