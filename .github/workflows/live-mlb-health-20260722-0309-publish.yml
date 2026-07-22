@@ -1,0 +1,244 @@
+name: Publish live MLB health 2026-07-22 0309 ET
+
+on:
+  push:
+    branches:
+      - agent/live-mlb-health-20260722-0309
+    paths:
+      - .github/workflows/live-mlb-health-20260722-0309-publish.yml
+
+permissions:
+  contents: write
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/live-mlb-health-20260722-0309
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Install dependency
+        run: python -m pip install --quiet "boto3>=1.34,<2"
+
+      - name: Run fresh read-only MLB probe
+        env:
+          TARGET_MAIN_SHA: e8c755895692c8d3faf27271442c513b2621c784
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json, os, time, urllib.error, urllib.parse, urllib.request
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+          import boto3
+          from boto3.dynamodb.conditions import Key
+
+          region = os.environ['AWS_REGION']
+          stack_name = 'parlay-platform-dev'
+          now = datetime.now(timezone.utc)
+          slate = now.astimezone(ZoneInfo('America/New_York')).date().isoformat()
+
+          def plain(value):
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value, dict):
+                  return {str(k): plain(v) for k, v in value.items()}
+              if isinstance(value, list):
+                  return [plain(v) for v in value]
+              return value
+
+          def dt(value):
+              try:
+                  parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+                  if parsed.tzinfo is None:
+                      parsed = parsed.replace(tzinfo=timezone.utc)
+                  return parsed.astimezone(timezone.utc)
+              except Exception:
+                  return None
+
+          def get_json(url, timeout):
+              started = time.monotonic()
+              request = urllib.request.Request(url, headers={
+                  'accept': 'application/json',
+                  'user-agent': 'inqsi-live-mlb-status-check/1.0',
+              })
+              code, body, error = None, b'', None
+              try:
+                  with urllib.request.urlopen(request, timeout=timeout) as response:
+                      code = int(response.status)
+                      body = response.read()
+              except urllib.error.HTTPError as exc:
+                  code = int(exc.code)
+                  body = exc.read()
+                  error = f'HTTPError:{exc.code}'
+              except Exception as exc:
+                  error = f'{type(exc).__name__}:{exc}'
+              payload = None
+              if body:
+                  try:
+                      parsed = json.loads(body.decode('utf-8'))
+                      payload = parsed if isinstance(parsed, dict) else None
+                  except Exception as exc:
+                      error = error or f'InvalidJson:{type(exc).__name__}:{exc}'
+              return {
+                  'statusCode': code,
+                  'elapsedMs': round((time.monotonic() - started) * 1000, 3),
+                  'error': error,
+                  'payload': payload,
+              }
+
+          cf = boto3.client('cloudformation', region_name=region)
+          stack = cf.describe_stacks(StackName=stack_name)['Stacks'][0]
+          outputs = {row['OutputKey']: row.get('OutputValue') for row in stack.get('Outputs', [])}
+          api_key = next((key for key in ('ApiUrl', 'MLBV3ApiUrl', 'ApiEndpoint', 'APIUrl') if outputs.get(key)), None)
+          if not api_key:
+              raise SystemExit(f'No API URL output: {sorted(outputs)}')
+          base_url = str(outputs[api_key]).rstrip('/')
+
+          lambda_client = boto3.client('lambda', region_name=region)
+          functions = {}
+          table_name = None
+          for logical_id in ('MLBDailyPickLockFunction', 'MLBV3ReadFunction', 'MLBAuditedPullFunction'):
+              physical = cf.describe_stack_resource(
+                  StackName=stack_name,
+                  LogicalResourceId=logical_id,
+              )['StackResourceDetail']['PhysicalResourceId']
+              config = lambda_client.get_function_configuration(FunctionName=physical)
+              variables = (config.get('Environment') or {}).get('Variables') or {}
+              table_name = table_name or variables.get('SNAPSHOTS_TABLE')
+              functions[logical_id] = {
+                  'name': physical,
+                  'state': config.get('State'),
+                  'lastUpdateStatus': config.get('LastUpdateStatus'),
+                  'lastModified': config.get('LastModified'),
+                  'codeSha256': config.get('CodeSha256'),
+              }
+          if not table_name:
+              raise SystemExit('SNAPSHOTS_TABLE unavailable')
+
+          table = boto3.resource('dynamodb', region_name=region).Table(table_name)
+          kwargs = {
+              'KeyConditionExpression': Key('PK').eq(f'PULLS#mlb#{slate}'),
+              'ConsistentRead': True,
+              'ScanIndexForward': False,
+          }
+          items = []
+          while True:
+              page = table.query(**kwargs)
+              items.extend(page.get('Items') or [])
+              key = page.get('LastEvaluatedKey')
+              if not key:
+                  break
+              kwargs['ExclusiveStartKey'] = key
+          rows = [plain(item) for item in items if item.get('record_type') == 'pull_run' and isinstance(item.get('data'), dict)]
+          latest = max(rows, key=lambda item: dt((item.get('data') or {}).get('pulled_at')) or datetime.min.replace(tzinfo=timezone.utc), default=None)
+          latest_data = (latest or {}).get('data') or {}
+          latest_at = dt(latest_data.get('pulled_at'))
+          age = round((now - latest_at).total_seconds() / 60, 3) if latest_at else None
+          authority = latest_data.get('provider_manifest_binding') or {}
+          manifest = latest_data.get('provider_schedule_manifest') or {}
+          manifest_count = int(authority.get('gameCount') or manifest.get('gameCount') or len(manifest.get('games') or []) or 0)
+
+          health = get_json(base_url + '/v1/health', 20)
+          status = get_json(base_url + '/v1/mlb/locks/status?' + urllib.parse.urlencode({'date': slate}), 45)
+          predictions = get_json(base_url + '/v1/mlb/predictions?' + urllib.parse.urlencode({'date': slate}), 45)
+          hp = health.get('payload') or {}
+          sp = status.get('payload') or {}
+          pp = predictions.get('payload') or {}
+          sg = int(sp.get('gameCount') or 0)
+          pg = int(pp.get('gameCount') or 0)
+
+          checks = {
+              'todayIsJuly22': slate == '2026-07-22',
+              'allFunctionsActive': all(row.get('state') == 'Active' and row.get('lastUpdateStatus') == 'Successful' for row in functions.values()),
+              'pullsPresent': bool(rows),
+              'latestPullFresh': age is not None and age <= 20,
+              'pullOfficialScheduleBacked': authority.get('officialScheduleAuthoritativeStartTimes') is True,
+              'healthOk': health.get('statusCode') == 200 and hp.get('ok') is True,
+              'lockStatusOk': status.get('statusCode') == 200 and sp.get('ok') is True,
+              'lockStatusToday': sp.get('slateDateEt') == slate,
+              'lockStatusOfficial': sp.get('officialScheduleBacked') is True and sp.get('officialScheduleAuthoritativeStartTimes') is True,
+              'lockStatusNoOperationalDefect': sp.get('operationalDefect') is False,
+              'lockStatusWithinGatewayDeadline': status.get('elapsedMs', 999999) < 29000,
+              'predictionsOk': predictions.get('statusCode') == 200 and pp.get('ok') is True,
+              'predictionsNoOperationalDefect': pp.get('operationalDefect') is False,
+              'coverageConsistent': bool(sg and sg == pg and manifest_count in (0, sg)),
+          }
+
+          report = {
+              'allWorking': all(checks.values()),
+              'checkedAtUtc': now.isoformat(),
+              'checkedAtEt': now.astimezone(ZoneInfo('America/New_York')).isoformat(),
+              'targetMainSha': os.environ['TARGET_MAIN_SHA'],
+              'slateDateEt': slate,
+              'checks': checks,
+              'functions': functions,
+              'currentPullPipeline': {
+                  'storedPullCount': len(rows),
+                  'canonicalSlotKeyCount': sum(1 for item in rows if str(item.get('SK') or '').startswith('PULL#SLOT#')),
+                  'latestPullAtUtc': latest_at.isoformat() if latest_at else None,
+                  'latestPullAgeMinutes': age,
+                  'latestPullId': latest_data.get('pull_id'),
+                  'manifestGameCount': manifest_count,
+                  'officialScheduleAuthorityVersion': authority.get('officialScheduleAuthorityVersion'),
+                  'officialScheduleAuthoritySource': authority.get('officialScheduleAuthoritySource'),
+                  'officialScheduleAuthoritativeRoster': authority.get('officialScheduleAuthoritativeRoster'),
+                  'officialScheduleAuthoritativeStartTimes': authority.get('officialScheduleAuthoritativeStartTimes'),
+              },
+              'http': {
+                  'health': {'statusCode': health.get('statusCode'), 'elapsedMs': health.get('elapsedMs'), 'error': health.get('error'), 'ok': hp.get('ok')},
+                  'lockStatus': {
+                      'statusCode': status.get('statusCode'), 'elapsedMs': status.get('elapsedMs'), 'error': status.get('error'),
+                      'ok': sp.get('ok'), 'sport': sp.get('sport'), 'slateDateEt': sp.get('slateDateEt'),
+                      'gameCount': sp.get('gameCount'), 'pullCount': sp.get('pullCount'),
+                      'officialScheduleBacked': sp.get('officialScheduleBacked'),
+                      'officialScheduleGameCount': sp.get('officialScheduleGameCount'),
+                      'officialScheduleAuthoritativeStartTimes': sp.get('officialScheduleAuthoritativeStartTimes'),
+                      'operationalDefect': sp.get('operationalDefect'),
+                      'lockedPredictionCount': sp.get('lockedPredictionCount'),
+                      'lockedStatusCount': sp.get('lockedStatusCount'),
+                      'noPredictionDataCount': sp.get('noPredictionDataCount'),
+                      'canonicalPredictionComplete': sp.get('canonicalPredictionComplete'),
+                      'lockStatusComplete': sp.get('lockStatusComplete'),
+                      'modelVersion': sp.get('modelVersion'),
+                  },
+                  'predictions': {
+                      'statusCode': predictions.get('statusCode'), 'elapsedMs': predictions.get('elapsedMs'), 'error': predictions.get('error'),
+                      'ok': pp.get('ok'), 'sport': pp.get('sport'), 'gameCount': pp.get('gameCount'),
+                      'predictionCount': len(pp.get('predictions') or []),
+                      'winnerCount': sum(1 for row in pp.get('predictions') or [] if isinstance(row, dict) and row.get('predictedWinner') not in (None, '')),
+                      'officialPredictionCount': pp.get('officialPredictionCount'),
+                      'operationalDefect': pp.get('operationalDefect'),
+                      'modelVersion': pp.get('modelVersion'),
+                  },
+              },
+          }
+          path = Path('runtime_reports/live_mlb_health_20260722_0309.json')
+          path.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
+          print(json.dumps(report, indent=2, sort_keys=True, default=str))
+          if not report['allWorking']:
+              raise SystemExit('Current MLB production health check failed')
+          PY
+
+      - name: Publish sanitized result to diagnostic branch
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s runtime_reports/live_mlb_health_20260722_0309.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add runtime_reports/live_mlb_health_20260722_0309.json
+          git commit -m "Record current July 22 MLB health" || exit 0
+          git push origin HEAD:agent/live-mlb-health-20260722-0309
