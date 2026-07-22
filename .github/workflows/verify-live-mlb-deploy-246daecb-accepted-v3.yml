@@ -1,0 +1,54 @@
+name: Verify accepted live MLB deployment 246daecb v3
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/verify-live-mlb-deploy-246daecb-accepted-v3.yml"
+      - "scripts/verify_live_mlb_deploy_246daecb_final.py"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v4
+
+      - name: Download exact attempt-3 deployment identity
+        uses: actions/download-artifact@v4
+        with:
+          artifact-ids: 8518375702
+          path: deploy-proof
+          github-token: ${{ github.token }}
+          repository: KirtKurt/parlay-platform
+          run-id: 29889451738
+
+      - name: Verify exact artifact and live reads
+        run: python scripts/verify_live_mlb_deploy_246daecb_final.py
+
+      - name: Upload accepted deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-mlb-deploy-accepted-v3-${{ github.run_id }}
+          path: live_mlb_deploy_246daecb_accepted.json
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Enforce accepted deployment
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          payload = json.loads(
+              Path('live_mlb_deploy_246daecb_accepted.json').read_text(encoding='utf-8')
+          )
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          if payload.get('ok') is not True:
+              raise SystemExit('Accepted exact deployment evidence is not green')
+          PY
