@@ -82,7 +82,10 @@ def _read_v2_training_state(*, now_utc=None, deployed_identity=None) -> dict:
         item = table.get_item(
             Key={"PK": pk, "SK": sk}, ConsistentRead=True
         ).get("Item") or {}
-        data = item.get("data") or {}
+        # DynamoDB resource reads return every number as Decimal. Normalize the
+        # control record through the same boundary as the authoritative trainer
+        # before recomputing manifest and status fingerprints.
+        data = trainer._plain(item.get("data") or {})
         return data if isinstance(data, dict) else {}
 
     experiment_pk = f"MLB_ML_EXPERIMENT#V2#{experiment_id}"

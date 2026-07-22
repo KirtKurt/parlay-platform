@@ -13,6 +13,9 @@ TRAINER_VERSION = "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-sha
 EXPERIMENT_VERSION = "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
 EXPERIMENT_ID = "mlb-v2-2026-07-22-future-prospective-r3"
 RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
+STATUS_FINGERPRINT_VERSION = (
+    "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical"
+)
 EXECUTION_CONCURRENCY_CONTROL = {
     "version": "MLB-ML-EXECUTION-LEASE-v1-shared-ddb-conditional",
     "strategy": "dynamodb_conditional_lease",
@@ -182,6 +185,8 @@ def verify(
         ("selection_capture", selection_capture),
     ):
         errors.extend(_execution_lease_errors(payload, prefix=prefix))
+        if payload.get("statusFingerprintVersion") != STATUS_FINGERPRINT_VERSION:
+            errors.append(f"{prefix}_status_fingerprint_version_mismatch")
         created = _parse_time(payload.get("createdAtUtc"))
         if created is None or started is None or created < started:
             errors.append(f"{prefix}_run_not_fresh_for_deploy")
@@ -244,6 +249,8 @@ def verify(
         if not isinstance(latest, dict) or not latest:
             errors.append(f"{prefix}_latest_run_missing")
             continue
+        if latest.get("statusFingerprintVersion") != STATUS_FINGERPRINT_VERSION:
+            errors.append(f"{prefix}_latest_run_status_fingerprint_version_mismatch")
         if latest != run:
             errors.append(f"{prefix}_latest_run_does_not_match_deploy_run")
         errors.extend(

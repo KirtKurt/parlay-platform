@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import copy
+import json
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 import pytest
+from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 
 from scripts import run_mlb_ml_v3_audit_report as audit_report
 import mlb_ml_aws_training_v1 as trainer
@@ -46,6 +48,13 @@ class FakeDynamoResource:
     def Table(self, name: str) -> FakeTable:
         assert name == "snapshots"
         return self.table
+
+
+def _ddb_resource_round_trip(value: Any) -> Any:
+    """Return the value shape produced by a real boto3 DynamoDB resource read."""
+    serializer = TypeSerializer()
+    deserializer = TypeDeserializer()
+    return deserializer.deserialize(serializer.serialize(trainer._ddb_safe(value)))
 
 
 class AdvancingManifestTable(FakeTable):
@@ -386,6 +395,43 @@ def test_stable_manifest_and_recaptured_statuses_pass(monkeypatch) -> None:
     assert result["ok"] is True
     assert result["manifestReadStable"] is True
     assert result["manifestReadBefore"] == result["manifestReadAfter"]
+
+
+def test_real_dynamodb_numeric_round_trip_preserves_manifest_and_status_health(
+    monkeypatch,
+) -> None:
+    training = _status("training", 15)
+    training["metrics"] = {
+        "accuracyPct": 90.0,
+        "calibrationError": 0.08,
+        "selectedCount": 15,
+    }
+    training["statusFingerprint"] = trainer._status_fingerprint(training)
+    records = {
+        (PK, "MANIFEST"): _ddb_resource_round_trip(MANIFEST),
+        (PK, "STATUS#LATEST#TRAINING"): _ddb_resource_round_trip(
+            training
+        ),
+        (PK, "STATUS#LATEST#SELECTION_CAPTURE"): _ddb_resource_round_trip(
+            _status("selection_capture", 10)
+        ),
+    }
+    _install_table(monkeypatch, records)
+
+    result = audit_report._read_v2_training_state(now_utc=NOW)
+
+    assert result["ok"] is True
+    assert result["manifestValid"] is True
+    assert result["manifestReadStable"] is True
+    assert result["trainingHealth"]["ok"] is True
+    assert result["selectionCaptureHealth"]["ok"] is True
+    assert result["manifestReadBefore"]["revision"] == 0
+    assert result["trainingHealth"]["latestRun"]["metrics"] == {
+        "accuracyPct": 90,
+        "calibrationError": 0.08,
+        "selectedCount": 15,
+    }
+    json.dumps(result)
 
 
 def test_deployed_trainer_identity_rejects_non_hex_attestation(monkeypatch) -> None:
