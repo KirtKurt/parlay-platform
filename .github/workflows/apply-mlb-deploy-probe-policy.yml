@@ -36,16 +36,241 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Reconstruct exact reviewed patch
+      - name: Construct exact two-file policy change
         run: |
           set -euo pipefail
-          cat scripts/.mlb_deploy_probe_policy.patch.b64.{1,2,3} \
-            | tr -d '\n' \
-            | base64 -d > /tmp/mlb-deploy-probe-policy.patch
-          echo "e71068bee8dc0489ccfd5a65fc732fac8d18fa09232221c260c867ab97d9587a  /tmp/mlb-deploy-probe-policy.patch" \
-            | sha256sum --check
-          git apply --check /tmp/mlb-deploy-probe-policy.patch
-          git apply /tmp/mlb-deploy-probe-policy.patch
+          python - <<'PY'
+          from pathlib import Path
+
+          deploy_path = Path('.github/workflows/deploy.yml')
+          source = deploy_path.read_text(encoding='utf-8')
+
+          def replace_once(old: str, new: str, label: str) -> None:
+              global source
+              count = source.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected one preimage, found {count}')
+              source = source.replace(old, new, 1)
+
+          replace_once(
+              "            tests/unit/test_mlb_deploy_http_probe.py\n"
+              "            tests/unit/test_mlb_lambda_artifact_identity.py",
+              "            tests/unit/test_mlb_deploy_http_probe.py\n"
+              "            tests/unit/test_mlb_deploy_heavy_read_retry_policy.py\n"
+              "            tests/unit/test_mlb_lambda_artifact_identity.py",
+              'mandatory regression insertion',
+          )
+
+          replace_once(
+              "          from scripts.mlb_deploy_http_probe import fetch_json_object\n\n"
+              "          def fetch(url, timeout=45, deadline=None, max_attempts=None):",
+              "          from scripts.mlb_deploy_http_probe import fetch_json_object\n"
+              "          from scripts.mlb_deploy_http_probe import TransientHttpProbeExhausted\n\n"
+              "          def fetch(url, timeout=45, deadline=None, max_attempts=None):",
+              'transient exception import',
+          )
+
+          replace_once(
+              "              )\n\n"
+              "          base_url = os.environ['API_URL'].rstrip('/')",
+              "              )\n\n"
+              "          def transient_retry_delay(exc, remaining):\n"
+              "              reason = str(exc)\n"
+              "              lambda_may_still_be_running = any(\n"
+              "                  marker in reason\n"
+              "                  for marker in (\n"
+              "                      'HTTP 504',\n"
+              "                      'TimeoutError',\n"
+              "                      'URLError',\n"
+              "                      'ConnectionError',\n"
+              "                      'IncompleteRead',\n"
+              "                  )\n"
+              "              )\n"
+              "              delay = 330 if lambda_may_still_be_running else 30\n"
+              "              return min(delay, remaining), lambda_may_still_be_running\n\n"
+              "          base_url = os.environ['API_URL'].rstrip('/')",
+              'retry delay helper',
+          )
+
+          old_status = """              payload = fetch(
+                  status_url,
+                  timeout=max(1, min(45, remaining)),
+                  deadline=deadline,
+                  # One client delivery per outer attempt prevents a timed-out
+                  # API Gateway request from spawning an overlapping retry
+                  # herd against the shared lock Lambda.
+                  max_attempts=1,
+              )"""
+          new_status = """              try:
+                  payload = fetch(
+                      status_url,
+                      timeout=max(1, min(45, remaining)),
+                      deadline=deadline,
+                      # One client delivery per outer attempt prevents a timed-out
+                      # API Gateway request from spawning an overlapping retry
+                      # herd against the shared lock Lambda.
+                      max_attempts=1,
+                  )
+              except TransientHttpProbeExhausted as exc:
+                  attempt += 1
+                  remaining = deadline - time.monotonic()
+                  if remaining <= 0:
+                      raise SystemExit(
+                          'No official-schedule-backed durable roster appeared within 20 minutes'
+                      ) from exc
+                  delay, lambda_may_still_be_running = transient_retry_delay(
+                      exc,
+                      remaining,
+                  )
+                  if lambda_may_still_be_running:
+                      print(
+                          'Lock-status delivery may still be running; draining the admitted '
+                          f'Lambda before attempt {attempt + 1}'
+                      )
+                  else:
+                      print(
+                          'Lock-status authority is transiently unavailable; waiting for the '
+                          f'next scheduled pull before attempt {attempt + 1}'
+                      )
+                  time.sleep(delay)
+                  continue"""
+          replace_once(old_status, new_status, 'lock-status outer retry')
+
+          old_predictions = """          prediction_deadline = time.monotonic() + 20 * 60
+          while True:
+              predictions = fetch(
+                  prediction_url,
+                  deadline=prediction_deadline,
+                  max_attempts=1,
+              )"""
+          new_predictions = """          prediction_deadline = time.monotonic() + 20 * 60
+          prediction_attempt = 0
+          while True:
+              remaining = prediction_deadline - time.monotonic()
+              if remaining <= 0:
+                  raise SystemExit(
+                      'No fresh persisted canonical probability-contract predictions '
+                      'appeared within 20 minutes'
+                  )
+              try:
+                  predictions = fetch(
+                      prediction_url,
+                      timeout=max(1, min(45, remaining)),
+                      deadline=prediction_deadline,
+                      max_attempts=1,
+                  )
+              except TransientHttpProbeExhausted as exc:
+                  prediction_attempt += 1
+                  remaining = prediction_deadline - time.monotonic()
+                  if remaining <= 0:
+                      raise SystemExit(
+                          'No fresh persisted canonical probability-contract predictions '
+                          'appeared within 20 minutes'
+                      ) from exc
+                  delay, lambda_may_still_be_running = transient_retry_delay(
+                      exc,
+                      remaining,
+                  )
+                  if lambda_may_still_be_running:
+                      print(
+                          'Predictions delivery may still be running; draining the admitted '
+                          f'Lambda before attempt {prediction_attempt + 1}'
+                      )
+                  else:
+                      print(
+                          'Predictions authority is transiently unavailable; waiting before '
+                          f'attempt {prediction_attempt + 1}'
+                      )
+                  time.sleep(delay)
+                  continue"""
+          replace_once(old_predictions, new_predictions, 'predictions outer retry')
+
+          deploy_path.write_text(source, encoding='utf-8')
+
+          test_path = Path('tests/unit/test_mlb_deploy_heavy_read_retry_policy.py')
+          if test_path.exists():
+              raise SystemExit(f'unexpected existing file: {test_path}')
+          test_path.write_text('''from __future__ import annotations
+
+import ast
+import re
+import textwrap
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[2]
+DEPLOY = ROOT / ".github/workflows/deploy.yml"
+TEST_PATH = "tests/unit/test_mlb_deploy_heavy_read_retry_policy.py"
+
+
+def _status_script() -> str:
+    source = DEPLOY.read_text(encoding="utf-8")
+    matches = list(
+        re.finditer(
+            r"(?ms)^      - name: Smoke test read-only MLB lock status\\s*$\\n"
+            r"(?P<body>.*?)(?=^      - name: |\\Z)",
+            source,
+        )
+    )
+    assert len(matches) == 1
+    body = matches[0].group("body")
+    start = body.index("          python - <<'PY'\\n") + len("          python - <<'PY'\\n")
+    end = body.rindex("\\n          PY")
+    return textwrap.dedent(body[start:end])
+
+
+def _retry_function():
+    tree = ast.parse(_status_script())
+    functions = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef) and node.name == "transient_retry_delay"
+    ]
+    assert len(functions) == 1
+    namespace: dict[str, object] = {}
+    exec(compile(ast.Module(body=functions, type_ignores=[]), "<deploy>", "exec"), namespace)
+    return namespace["transient_retry_delay"]
+
+
+def test_heavy_read_probe_retries_structured_500_without_lambda_drain() -> None:
+    retry = _retry_function()
+    delay, drain = retry(
+        RuntimeError("JSON probe attempt limit exhausted after 1 attempts: HTTP 500"),
+        1200,
+    )
+    assert delay == 30
+    assert drain is False
+
+
+def test_heavy_read_probe_drains_ambiguous_or_gateway_timeouts() -> None:
+    retry = _retry_function()
+    for reason in ("HTTP 504", "TimeoutError", "URLError", "ConnectionError", "IncompleteRead"):
+        delay, drain = retry(RuntimeError(f"probe failed: {reason}"), 1200)
+        assert delay == 330
+        assert drain is True
+    assert retry(RuntimeError("probe failed: HTTP 504"), 17) == (17, True)
+
+
+def test_status_and_predictions_keep_one_delivery_per_outer_attempt() -> None:
+    script = _status_script()
+    compile(script, "<deploy-heavy-read-smoke>", "exec")
+    assert script.count("except TransientHttpProbeExhausted as exc:") == 2
+    assert script.count("transient_retry_delay(\\n            exc,\\n            remaining,") == 2
+    assert script.count("max_attempts=1,") == 2
+    assert "Lock-status authority is transiently unavailable" in script
+    assert "Predictions authority is transiently unavailable" in script
+
+
+def test_retry_policy_is_mandatory_in_the_deploy_regression_gate() -> None:
+    source = DEPLOY.read_text(encoding="utf-8")
+    regression = re.search(
+        r"(?ms)^          regression_tests=\\(\\s*$\\n(?P<body>.*?)(?=^          \\)\\s*$)",
+        source,
+    )
+    assert regression is not None
+    assert regression.group("body").count(TEST_PATH) == 1
+''', encoding='utf-8')
+          PY
 
       - name: Install focused verification runtime
         run: python -m pip install --quiet "pytest>=8,<9" "PyYAML>=6,<7"
