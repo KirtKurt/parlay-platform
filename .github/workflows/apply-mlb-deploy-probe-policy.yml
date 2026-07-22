@@ -1,24 +1,33 @@
 name: Apply MLB deploy heavy-read retry policy
 
 on:
-  push:
-    branches:
-      - agent/mlb-public-read-real-payload-hotfix
+  pull_request:
+    types: [opened, synchronize, reopened]
     paths:
       - ".github/workflows/apply-mlb-deploy-probe-policy.yml"
+      - "scripts/.mlb_deploy_probe_policy.patch.b64.*"
 
 permissions:
   contents: write
+  pull-requests: read
 
 jobs:
   apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Checkout exact current-main branch
+      - name: Checkout exact PR head branch
         uses: actions/checkout@v4
         with:
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
+
+      - name: Align with current main
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git merge --no-edit origin/main
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -90,4 +99,4 @@ jobs:
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git commit -m "Fix MLB deploy heavy-read retry policy"
-          git push origin HEAD:agent/mlb-public-read-real-payload-hotfix
+          git push origin HEAD:"${GITHUB_HEAD_REF}"
