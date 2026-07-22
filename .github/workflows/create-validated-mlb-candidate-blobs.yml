@@ -1,0 +1,107 @@
+name: Create validated MLB candidate blobs
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/create-validated-mlb-candidate-blobs.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  create:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PYTHONPATH: "hello_world:."
+    steps:
+      - name: Checkout exact PR head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Align worktree with current main
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git fetch origin main
+          git merge --no-edit origin/main
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install validation runtime
+        run: python -m pip install --quiet "pytest>=8,<9" "PyYAML>=6,<7"
+
+      - name: Execute the reviewed construction and validation steps
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import os
+          import subprocess
+          import yaml
+
+          workflow = yaml.safe_load(
+              Path('.github/workflows/fix-mlb-bootstrap-marker.yml').read_text(encoding='utf-8')
+          )
+          steps = workflow['jobs']['finalize']['steps']
+          required = (
+              'Construct exact deploy policy change',
+              'Create mandatory retry-policy regression',
+              'Verify retry policy and canonical source fixed point',
+          )
+          by_name = {
+              step.get('name'): step.get('run')
+              for step in steps
+              if isinstance(step, dict) and step.get('run')
+          }
+          if set(required) - set(by_name):
+              raise SystemExit(f'missing reviewed finalizer steps: {sorted(set(required) - set(by_name))}')
+          env = dict(os.environ)
+          env['PYTHONPATH'] = 'hello_world:.'
+          for name in required:
+              print(f'=== {name} ===', flush=True)
+              subprocess.run(
+                  ['bash', '-euo', 'pipefail', '-c', by_name[name]],
+                  check=True,
+                  env=env,
+              )
+          PY
+
+      - name: Create detached Git blobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          : > /tmp/mlb-candidate-blobs.txt
+          for spec in \
+            "deploy_blob_sha:.github/workflows/deploy.yml" \
+            "test_blob_sha:tests/unit/test_mlb_deploy_heavy_read_retry_policy.py"; do
+            key=${spec%%:*}
+            file=${spec#*:}
+            encoded=$(base64 -w0 "$file")
+            sha=$(gh api \
+              --method POST \
+              "/repos/${GITHUB_REPOSITORY}/git/blobs" \
+              -f content="$encoded" \
+              -f encoding=base64 \
+              --jq '.sha')
+            printf '%s=%s\n' "$key" "$sha" | tee -a /tmp/mlb-candidate-blobs.txt
+            printf '%s_sha256=%s\n' "$key" "$(sha256sum "$file" | awk '{print $1}')" \
+              | tee -a /tmp/mlb-candidate-blobs.txt
+          done
+          printf 'base_commit=%s\n' "$(git rev-parse origin/main)" | tee -a /tmp/mlb-candidate-blobs.txt
+
+      - name: Upload detached blob evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-candidate-blobs-${{ github.run_id }}
+          path: /tmp/mlb-candidate-blobs.txt
+          if-no-files-found: error
+          retention-days: 3
