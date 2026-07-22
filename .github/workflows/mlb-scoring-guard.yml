@@ -4,22 +4,22 @@ on:
   pull_request:
     branches: [main]
     paths:
-      - '.github/workflows/mlb-scoring-guard.yml'
+      - 'template.yaml'
+      - 'hello_world/mlb_manual_pull.py'
+      - 'scripts/verify_mlb_schedule_invariants.py'
       - 'scripts/mlb_scoring_guard_status.py'
-      - 'scripts/diagnose_mlb_scoring_engine.py'
-      - 'scripts/diagnose_mlb_pull_lambda_runtime.py'
-      - 'scripts/apply_mlb_scoring_runtime_fix.py'
       - 'tests/unit/test_mlb_scoring_guard_status.py'
       - 'tests/unit/test_mlb_scoring_runtime_capacity.py'
+      - '.github/workflows/mlb-scoring-guard.yml'
   push:
     paths:
-      - '.github/workflows/mlb-scoring-guard.yml'
+      - 'template.yaml'
+      - 'hello_world/mlb_manual_pull.py'
+      - 'scripts/verify_mlb_schedule_invariants.py'
       - 'scripts/mlb_scoring_guard_status.py'
-      - 'scripts/diagnose_mlb_scoring_engine.py'
-      - 'scripts/diagnose_mlb_pull_lambda_runtime.py'
-      - 'scripts/apply_mlb_scoring_runtime_fix.py'
       - 'tests/unit/test_mlb_scoring_guard_status.py'
       - 'tests/unit/test_mlb_scoring_runtime_capacity.py'
+      - '.github/workflows/mlb-scoring-guard.yml'
   workflow_dispatch:
   schedule:
     - cron: '7/15 * * * *'
@@ -28,7 +28,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: mlb-scoring-guard-read-only-${{ github.head_ref || github.ref_name }}
+  group: mlb-scoring-guard-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
@@ -36,49 +36,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'push' && github.ref_name || '' }}
-          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: Apply canonical scoring runtime migration on the repair branch
-        if: github.event_name == 'push' && github.ref_name == 'agent/mlb-scoring-run-proof'
-        run: python scripts/apply_mlb_scoring_runtime_fix.py
-
-      - name: Verify capacity and priority regressions
-        if: github.event_name == 'push' && github.ref_name == 'agent/mlb-scoring-run-proof'
-        run: python -m pytest -q tests/unit/test_mlb_scoring_runtime_capacity.py
-
-      - name: Commit canonical source migration
-        if: github.event_name == 'push' && github.ref_name == 'agent/mlb-scoring-run-proof'
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add template.yaml hello_world/mlb_manual_pull.py
-          if git diff --cached --quiet; then
-            echo 'Canonical MLB scoring runtime fix is already applied.'
-          else
-            git commit -m 'Fix MLB scoring runtime timeout and priority'
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
-          fi
-
       - name: Install read-only guard runtime
         run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
 
-      - name: Verify scoring guard semantics
+      - name: Verify scoring guard and runtime-capacity contracts
         run: |
           python -m pytest -q \
             tests/unit/test_mlb_scoring_guard_status.py \
             tests/unit/test_mlb_scoring_runtime_capacity.py
-          python -m py_compile \
-            scripts/diagnose_mlb_scoring_engine.py \
-            scripts/diagnose_mlb_pull_lambda_runtime.py \
-            scripts/apply_mlb_scoring_runtime_fix.py
+          python scripts/verify_mlb_schedule_invariants.py
+          python -m py_compile scripts/mlb_scoring_guard_status.py
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -86,15 +58,6 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Diagnose live MLB pull Lambda runtime read-only
-        env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          python scripts/diagnose_mlb_pull_lambda_runtime.py \
-            --hours 12 \
-            --output runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
 
       - name: Build and enforce live MLB scoring proof
         env:
@@ -109,48 +72,25 @@ jobs:
             --output runtime_reports/mlb_scoring_guard_status_latest.json \
             --enforce
 
-      - name: Diagnose protected scoring path without writes
-        if: always()
-        env:
-          SNAPSHOTS_TABLE: parlay_platform_snapshots
-          SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
-          PREDICTIONS_TABLE: parlay_platform_predictions
-          OUTCOMES_TABLE: parlay_platform_outcomes
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          PYTHONPATH: ${{ github.workspace }}/hello_world
-        run: |
-          set -euo pipefail
-          SLATE_DATE=$(TZ=America/New_York date +%F)
-          python scripts/diagnose_mlb_scoring_engine.py \
-            --slate-date "$SLATE_DATE" \
-            --output runtime_reports/mlb_scoring_engine_diagnostic_latest.json
-
       - name: Upload scoring proof
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: mlb-scoring-guard-${{ github.run_id }}
-          path: |
-            runtime_reports/mlb_scoring_guard_status_latest.json
-            runtime_reports/mlb_scoring_engine_diagnostic_latest.json
-            runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
+          path: runtime_reports/mlb_scoring_guard_status_latest.json
           if-no-files-found: error
 
-      - name: Publish latest proof on the current branch
-        if: success() && (github.event_name == 'push' || github.event_name == 'schedule')
+      - name: Publish latest successful scheduled proof
+        if: success() && github.event_name == 'schedule' && github.ref == 'refs/heads/main'
         run: |
           set -euo pipefail
-          TARGET_BRANCH="${GITHUB_REF_NAME}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add \
-            runtime_reports/mlb_scoring_guard_status_latest.json \
-            runtime_reports/mlb_scoring_engine_diagnostic_latest.json \
-            runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
+          git add runtime_reports/mlb_scoring_guard_status_latest.json
           if git diff --cached --quiet; then
             echo 'No scoring proof change'
           else
             git commit -m 'Update MLB scoring guard read-only proof'
-            git pull --rebase --autostash origin "$TARGET_BRANCH"
-            git push origin "HEAD:$TARGET_BRANCH"
+            git pull --rebase --autostash origin main
+            git push origin HEAD:main
           fi
