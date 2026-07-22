@@ -1,0 +1,110 @@
+name: Extract deployed MLB lock-status smoke failure
+
+on:
+  push:
+    branches:
+      - agent/diagnose-mlb-lock-status-52b0ee85
+    paths:
+      - .github/workflows/extract_mlb_lock_status_failure.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/diagnose-mlb-lock-status-52b0ee85
+          fetch-depth: 0
+
+      - name: Download and sanitize failed deployment job log
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_ID: "88834742152"
+          RUN_ID: "29892220179"
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            -H "Accept: application/vnd.github+json" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${JOB_ID}/logs" \
+            --output /tmp/deploy-job.log
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import re
+          from pathlib import Path
+
+          raw = Path('/tmp/deploy-job.log').read_text(encoding='utf-8-sig', errors='replace')
+          lines = raw.splitlines()
+          keywords = (
+              'Smoke test read-only MLB lock status',
+              'inqsi-deploy-read-only-lock-lifecycle-smoke',
+              'HTTP Error',
+              'HTTP 5',
+              'HTTP 4',
+              '504',
+              'timed out',
+              'Timeout',
+              'NO_PROVIDER_PULLS',
+              'NO_STORED_ODDS_API_PULL_HISTORY',
+              'NO_MLB_GAMES_FOR_SLATE_DATE',
+              'No official-schedule-backed durable roster',
+              'Live MLB lock status',
+              'Process completed with exit code',
+              '##[error]',
+          )
+          selected = []
+          for index, line in enumerate(lines):
+              if any(keyword in line for keyword in keywords):
+                  start = max(0, index - 8)
+                  end = min(len(lines), index + 16)
+                  selected.extend(lines[start:end])
+                  selected.append('---')
+          # Always retain a generous terminal window; this includes the exact
+          # failing command and exception even if GitHub changes step labels.
+          tail = lines[-900:]
+          report = {
+              'runId': int(os.environ['RUN_ID']),
+              'jobId': int(os.environ['JOB_ID']),
+              'lineCount': len(lines),
+              'keywordMatchBlockCount': selected.count('---'),
+          }
+          Path('mlb_lock_status_smoke_failure_summary.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          def redact(value: str) -> str:
+              value = re.sub(r'(?i)(authorization:\s*(?:bearer|token)\s+)[^\s]+', r'\1***', value)
+              value = re.sub(r'(?i)(x-amz-security-token[=:]\s*)[^\s&]+', r'\1***', value)
+              value = re.sub(r'(?i)(apiKey=)[^&\s]+', r'\1***', value)
+              return value
+          Path('mlb_lock_status_smoke_failure_matches.txt').write_text(
+              '\n'.join(redact(line) for line in selected) + '\n',
+              encoding='utf-8',
+          )
+          Path('mlb_lock_status_smoke_failure_tail.txt').write_text(
+              '\n'.join(redact(line) for line in tail) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Publish diagnostics and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/extract_mlb_lock_status_failure.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Record MLB lock-status deployment failure evidence"
+          git push origin HEAD:agent/diagnose-mlb-lock-status-52b0ee85
