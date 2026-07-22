@@ -1,0 +1,267 @@
+#!/usr/bin/env python3
+"""Read-only final acceptance for deployed MLB commit 246daecb."""
+
+from __future__ import annotations
+
+import json
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+from pathlib import Path
+
+TARGET_SHA = "246daecb3960518fb59bb69c6891989d50fb7308"
+EXPECTED_DEPLOY_RUN_ID = "29889451738-3"
+API_BASE = "https://7nz8g8unyd.execute-api.us-east-1.amazonaws.com/Prod"
+OUTPUT = Path("live_mlb_deploy_246daecb_accepted.json")
+
+
+def persist(result: dict[str, object]) -> None:
+    OUTPUT.write_text(
+        json.dumps(result, indent=2, sort_keys=True, default=str) + "\n",
+        encoding="utf-8",
+    )
+    print(json.dumps(result, indent=2, sort_keys=True, default=str), flush=True)
+
+
+def verify_identity(result: dict[str, object]) -> None:
+    matches = list(Path("deploy-proof").rglob("mlb_deploy_identity_latest.json"))
+    if len(matches) != 1:
+        raise RuntimeError(
+            f"Downloaded identity file count is {len(matches)}: {matches}"
+        )
+    identity = json.loads(matches[0].read_text(encoding="utf-8"))
+    if not isinstance(identity, dict) or identity.get("ok") is not True:
+        raise RuntimeError("Deployment identity proof is not healthy")
+    if identity.get("expectedGitSha") != TARGET_SHA:
+        raise RuntimeError(f"Identity SHA is {identity.get('expectedGitSha')}")
+    if identity.get("expectedDeployRunId") != EXPECTED_DEPLOY_RUN_ID:
+        raise RuntimeError(
+            f"Identity run is {identity.get('expectedDeployRunId')}"
+        )
+    functions = identity.get("functions") or {}
+    if not isinstance(functions, dict) or len(functions) != 8:
+        raise RuntimeError(
+            "Deployment identity does not attest exactly eight functions"
+        )
+    bad: dict[str, list[str]] = {}
+    for name, evidence in functions.items():
+        errors: list[str] = []
+        if not isinstance(evidence, dict):
+            errors.append("non_object")
+        else:
+            if evidence.get("deployGitSha") != TARGET_SHA:
+                errors.append("deploy_sha")
+            if evidence.get("deployRunId") != EXPECTED_DEPLOY_RUN_ID:
+                errors.append("deploy_run")
+            if evidence.get("identityMatches") is not True:
+                errors.append("identity")
+            if evidence.get("configurationMatches") is not True:
+                errors.append("configuration")
+            if evidence.get("codeArtifactMatchesCleanBuild") is not True:
+                errors.append("artifact")
+        if errors:
+            bad[str(name)] = errors
+    if bad:
+        raise RuntimeError(
+            "Deployment identity mismatch: " + json.dumps(bad, sort_keys=True)
+        )
+    result["deploymentIdentity"] = {
+        "ok": True,
+        "expectedGitSha": identity.get("expectedGitSha"),
+        "expectedDeployRunId": identity.get("expectedDeployRunId"),
+        "templateSha256": identity.get("expectedTemplateSha256"),
+        "functionCount": len(functions),
+        "allFunctionArtifactsMatch": True,
+    }
+
+
+def one_read(path: str, timeout: float = 60.0):
+    request = urllib.request.Request(
+        API_BASE + path,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "parlay-platform-accepted-read-only-verifier/1.1",
+        },
+    )
+    started = time.monotonic()
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = int(response.getcode())
+            raw = response.read()
+    except urllib.error.HTTPError as exc:
+        raw = exc.read()
+        try:
+            payload = json.loads(raw.decode("utf-8"))
+        except Exception:
+            payload = {"error": raw.decode("utf-8", "replace")[:1000]}
+        return int(exc.code), payload, time.monotonic() - started
+    payload = json.loads(raw.decode("utf-8"))
+    return status, payload, time.monotonic() - started
+
+
+def main() -> None:
+    result: dict[str, object] = {
+        "targetGitSha": TARGET_SHA,
+        "expectedDeployRunId": EXPECTED_DEPLOY_RUN_ID,
+        "deployArtifactId": 8518375702,
+        "readOnly": True,
+        "productionWrites": False,
+        "ok": False,
+    }
+    try:
+        verify_identity(result)
+        health_http, health, health_elapsed = one_read("/v1/health", timeout=15)
+        if (
+            health_http != 200
+            or not isinstance(health, dict)
+            or health.get("ok") is not True
+        ):
+            raise RuntimeError(
+                "Health failed: "
+                + json.dumps({"status": health_http, "payload": health})
+            )
+
+        deadline = time.monotonic() + 20 * 60
+        attempts: list[dict[str, object]] = []
+        while True:
+            try:
+                lock_http, lock_status, lock_elapsed = one_read(
+                    "/v1/mlb/locks/status", timeout=60
+                )
+            except (
+                urllib.error.URLError,
+                TimeoutError,
+                ConnectionError,
+            ) as exc:
+                attempt = {
+                    "httpStatus": None,
+                    "errorType": type(exc).__name__,
+                    "error": str(exc),
+                }
+                attempts.append(attempt)
+                print(json.dumps(attempt, sort_keys=True), flush=True)
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    raise RuntimeError(
+                        "Lock-status transport deadline exhausted"
+                    ) from exc
+                # A client timeout can leave the 300-second Lambda running.
+                time.sleep(min(330, remaining))
+                continue
+
+            error = (
+                str(lock_status.get("error") or "")
+                if isinstance(lock_status, dict)
+                else ""
+            )
+            attempt = {
+                "httpStatus": lock_http,
+                "elapsedSeconds": round(lock_elapsed, 3),
+                "error": error,
+            }
+            attempts.append(attempt)
+            print(json.dumps(attempt, sort_keys=True), flush=True)
+            if lock_http == 200:
+                break
+            remaining = deadline - time.monotonic()
+            retryable = (
+                error.startswith(
+                    "MLB_PROVIDER_SCHEDULE_MANIFEST_MISSING:NO_PROVIDER_PULLS"
+                )
+                or lock_http == 429
+                or 500 <= lock_http <= 599
+            )
+            if not retryable or remaining <= 0:
+                raise RuntimeError(
+                    "Lock status failed: " + json.dumps(attempt, sort_keys=True)
+                )
+            time.sleep(min(30, remaining))
+
+        if not isinstance(lock_status, dict):
+            raise RuntimeError("Lock status is not an object")
+        game_count = int(lock_status.get("gameCount") or 0)
+        rows = lock_status.get("perGameStatus") or []
+        if (
+            lock_status.get("ok") is not True
+            or lock_status.get("sport") != "mlb"
+            or lock_status.get("officialScheduleBacked") is not True
+            or lock_status.get("officialScheduleAuthoritativeStartTimes") is not True
+            or not isinstance(rows, list)
+            or len(rows) != game_count
+        ):
+            raise RuntimeError(
+                "Lock-status contract invalid: "
+                + json.dumps(lock_status, default=str)[:3000]
+            )
+
+        slate = str(lock_status.get("slateDateEt") or "")
+        prediction_path = "/v1/mlb/predictions"
+        if slate:
+            prediction_path += "?" + urllib.parse.urlencode({"date": slate})
+        pred_http, predictions, pred_elapsed = one_read(
+            prediction_path, timeout=60
+        )
+        if (
+            pred_http != 200
+            or not isinstance(predictions, dict)
+            or predictions.get("ok") is not True
+            or predictions.get("sport") != "mlb"
+        ):
+            raise RuntimeError(
+                "Predictions failed: "
+                + json.dumps(
+                    {"status": pred_http, "payload": predictions},
+                    default=str,
+                )[:3000]
+            )
+
+        result["liveReads"] = {
+            "health": {
+                "httpStatus": health_http,
+                "elapsedSeconds": round(health_elapsed, 3),
+                "ok": health.get("ok"),
+            },
+            "lockStatus": {
+                "httpStatus": lock_http,
+                "elapsedSeconds": round(lock_elapsed, 3),
+                "attemptCount": len(attempts),
+                "attempts": attempts,
+                "ok": lock_status.get("ok"),
+                "sport": lock_status.get("sport"),
+                "slateDateEt": slate,
+                "gameCount": game_count,
+                "lockedPredictionCount": lock_status.get(
+                    "lockedPredictionCount"
+                ),
+                "lockedStatusCount": lock_status.get("lockedStatusCount"),
+                "operationalDefect": lock_status.get("operationalDefect"),
+            },
+            "predictions": {
+                "httpStatus": pred_http,
+                "elapsedSeconds": round(pred_elapsed, 3),
+                "ok": predictions.get("ok"),
+                "sport": predictions.get("sport"),
+                "gameCount": predictions.get("gameCount"),
+                "lockedPredictionCount": predictions.get(
+                    "lockedPredictionCount"
+                ),
+                "officialPredictionCount": predictions.get(
+                    "officialPredictionCount"
+                ),
+                "operationalDefect": predictions.get("operationalDefect"),
+            },
+        }
+        result["ok"] = True
+    except BaseException as exc:
+        result["errorType"] = type(exc).__name__
+        result["error"] = str(exc)
+        persist(result)
+        raise
+
+    persist(result)
+    print("VERIFICATION_OK", flush=True)
+
+
+if __name__ == "__main__":
+    main()
