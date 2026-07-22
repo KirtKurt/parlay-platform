@@ -1,0 +1,300 @@
+2026-07-22T03:54:02.6328531Z [36;1mif installation.get('ok') is not True:[0m
+2026-07-22T03:54:02.6328855Z [36;1m    raise SystemExit('Live MLB per-game lock installation is unhealthy')[0m
+2026-07-22T03:54:02.6329389Z [36;1mif installation.get('fixVersion') != 'MLB-LOCK-RUNTIME-FIX-v5-official-schedule-lifecycle-vector-separation':[0m
+2026-07-22T03:54:02.6329935Z [36;1m    raise SystemExit(f"Live MLB lock fix is stale: {installation.get('fixVersion')}")[0m
+2026-07-22T03:54:02.6330370Z [36;1mif installation.get('officialScheduleAuthorityRequired') is not True:[0m
+2026-07-22T03:54:02.6330811Z [36;1m    raise SystemExit('Live MLB lock runtime does not require official schedule authority')[0m
+2026-07-22T03:54:02.6331524Z [36;1mif installation.get('selectionLockIndependentOfTrainingVector') is not True:[0m
+2026-07-22T03:54:02.6332011Z [36;1m    raise SystemExit('Live MLB selection lock still depends on training-vector eligibility')[0m
+2026-07-22T03:54:02.6332464Z [36;1mvector_installation = payload.get('mlLockVectorPreservation') or {}[0m
+2026-07-22T03:54:02.6332914Z [36;1mif vector_installation.get('selectionLockIndependentOfTrainingVector') is not True:[0m
+2026-07-22T03:54:02.6333351Z [36;1m    raise SystemExit('Live MLB vector separation runtime is stale')[0m
+2026-07-22T03:54:02.6333700Z [36;1mif not isinstance(payload.get('perGameStatus'), list):[0m
+2026-07-22T03:54:02.6334037Z [36;1m    raise SystemExit('Live MLB per-game lock status is not a list')[0m
+2026-07-22T03:54:02.6334368Z [36;1mgame_count = int(payload.get('gameCount') or 0)[0m
+2026-07-22T03:54:02.6334673Z [36;1mif payload.get('officialScheduleBacked') is not True:[0m
+2026-07-22T03:54:02.6335066Z [36;1m    raise SystemExit('Live MLB roster is not backed by the official exact-date schedule')[0m
+2026-07-22T03:54:02.6335550Z [36;1mif payload.get('officialScheduleAuthorityVersion') != expected_schedule_version:[0m
+2026-07-22T03:54:02.6335996Z [36;1m    raise SystemExit('Live MLB official schedule authority version is stale')[0m
+2026-07-22T03:54:02.6336412Z [36;1mif payload.get('officialScheduleAuthoritativeStartTimes') is not True:[0m
+2026-07-22T03:54:02.6336817Z [36;1m    raise SystemExit('Live MLB canonical start times are not official')[0m
+2026-07-22T03:54:02.6337355Z [36;1mif int(payload.get('officialScheduleGameCount') or 0) != game_count:[0m
+2026-07-22T03:54:02.6337789Z [36;1m    raise SystemExit('Live MLB official schedule count differs from durable roster count')[0m
+2026-07-22T03:54:02.6338233Z [36;1mlocked_predictions = int(payload.get('lockedPredictionCount') or 0)[0m
+2026-07-22T03:54:02.6338623Z [36;1mlocked_statuses = int(payload.get('lockedStatusCount') or 0)[0m
+2026-07-22T03:54:02.6339011Z [36;1mterminal_no_data = int(payload.get('noPredictionDataCount') or 0)[0m
+2026-07-22T03:54:02.6339377Z [36;1mif locked_statuses != locked_predictions + terminal_no_data:[0m
+2026-07-22T03:54:02.6339816Z [36;1m    raise SystemExit('Lock-status counts conflate canonical predictions and terminal outcomes')[0m
+2026-07-22T03:54:02.6340259Z [36;1mif not (0 <= locked_predictions <= locked_statuses <= game_count):[0m
+2026-07-22T03:54:02.6340666Z [36;1m    raise SystemExit('Live MLB lock-status counts exceed the full-slate game count')[0m
+2026-07-22T03:54:02.6341183Z [36;1mif payload.get('canonicalPredictionComplete') != (bool(game_count) and locked_predictions == game_count):[0m
+2026-07-22T03:54:02.6341732Z [36;1m    raise SystemExit('canonicalPredictionComplete does not match immutable winner coverage')[0m
+2026-07-22T03:54:02.6342239Z [36;1mif payload.get('lockStatusComplete') != (bool(game_count) and locked_statuses == game_count):[0m
+2026-07-22T03:54:02.6342717Z [36;1m    raise SystemExit('lockStatusComplete does not match terminal status coverage')[0m
+2026-07-22T03:54:02.6343059Z [36;1m[0m
+2026-07-22T03:54:02.6343278Z [36;1mstatus_rows = payload.get('perGameStatus') or [][0m
+2026-07-22T03:54:02.6343554Z [36;1mif len(status_rows) != game_count:[0m
+2026-07-22T03:54:02.6343903Z [36;1m    raise SystemExit('Per-game status does not cover the full durable slate manifest')[0m
+2026-07-22T03:54:02.6344262Z [36;1mstatus_by_game = {}[0m
+2026-07-22T03:54:02.6344516Z [36;1mofficial_schedule_query = urllib.parse.urlencode({[0m
+2026-07-22T03:54:02.6344790Z [36;1m    'sportId': '1',[0m
+2026-07-22T03:54:02.6345009Z [36;1m    'startDate': payload['slateDateEt'],[0m
+2026-07-22T03:54:02.6345274Z [36;1m    'endDate': payload['slateDateEt'],[0m
+2026-07-22T03:54:02.6345499Z [36;1m})[0m
+2026-07-22T03:54:02.6345845Z [36;1mofficial_schedule = fetch('https://statsapi.mlb.com/api/v1/schedule?' + official_schedule_query)[0m
+2026-07-22T03:54:02.6346236Z [36;1mofficial_games = [[0m
+2026-07-22T03:54:02.6346550Z [36;1m    game[0m
+2026-07-22T03:54:02.6346876Z [36;1m    for date_row in official_schedule.get('dates') or [][0m
+2026-07-22T03:54:02.6347340Z [36;1m    for game in date_row.get('games') or [][0m
+2026-07-22T03:54:02.6347575Z [36;1m][0m
+2026-07-22T03:54:02.6347833Z [36;1mofficial_by_pk = {str(game.get('gamePk')): game for game in official_games}[0m
+2026-07-22T03:54:02.6348175Z [36;1mcurrent_schedule_drifts = [][0m
+2026-07-22T03:54:02.6348409Z [36;1mseen_official_pks = set()[0m
+2026-07-22T03:54:02.6348626Z [36;1mfor row in status_rows:[0m
+2026-07-22T03:54:02.6348853Z [36;1m    if not isinstance(row, dict):[0m
+2026-07-22T03:54:02.6349165Z [36;1m        raise SystemExit('Per-game lock status contains a non-object row')[0m
+2026-07-22T03:54:02.6349549Z [36;1m    game_id = str(row.get('gameId') or row.get('gameIdentity') or '')[0m
+2026-07-22T03:54:02.6349874Z [36;1m    if not game_id or game_id in status_by_game:[0m
+2026-07-22T03:54:02.6350250Z [36;1m        raise SystemExit('Per-game lock status has a missing or duplicate game identity')[0m
+2026-07-22T03:54:02.6350619Z [36;1m    status_by_game[game_id] = row[0m
+2026-07-22T03:54:02.6350890Z [36;1m    official_pk = str(row.get('officialGamePk') or '')[0m
+2026-07-22T03:54:02.6351211Z [36;1m    if not official_pk or official_pk in seen_official_pks:[0m
+2026-07-22T03:54:02.6351654Z [36;1m        raise SystemExit(f'Per-game lock status has a missing or duplicate official game identity: {game_id}')[0m
+2026-07-22T03:54:02.6352067Z [36;1m    seen_official_pks.add(official_pk)[0m
+2026-07-22T03:54:02.6352339Z [36;1m    official_game = official_by_pk.get(official_pk)[0m
+2026-07-22T03:54:02.6352816Z [36;1m    canonical_start = datetime.fromisoformat(str(row.get('commenceTime')).replace('Z', '+00:00')).astimezone(timezone.utc)[0m
+2026-07-22T03:54:02.6353254Z [36;1m    if official_game is not None:[0m
+2026-07-22T03:54:02.6353706Z [36;1m        current_official_start = datetime.fromisoformat(str(official_game['gameDate']).replace('Z', '+00:00')).astimezone(timezone.utc)[0m
+2026-07-22T03:54:02.6354203Z [36;1m        if canonical_start != current_official_start:[0m
+2026-07-22T03:54:02.6354494Z [36;1m            current_schedule_drifts.append({[0m
+2026-07-22T03:54:02.6354740Z [36;1m                'gameId': game_id,[0m
+2026-07-22T03:54:02.6354986Z [36;1m                'officialGamePk': official_pk,[0m
+2026-07-22T03:54:02.6355299Z [36;1m                'durableAuthorityStart': canonical_start.isoformat(),[0m
+2026-07-22T03:54:02.6355665Z [36;1m                'currentStatsApiStart': current_official_start.isoformat(),[0m
+2026-07-22T03:54:02.6355970Z [36;1m            })[0m
+2026-07-22T03:54:02.6356245Z [36;1m    if row.get('canonicalStartTimeSource') != 'MLB_STATS_API_EXACT_DATE':[0m
+2026-07-22T03:54:02.6356659Z [36;1m        raise SystemExit(f'Per-game start-time authority is stale for {game_id}')[0m
+2026-07-22T03:54:02.6357160Z [36;1m    provider_event_id = row.get('providerEventId')[0m
+2026-07-22T03:54:02.6357427Z [36;1m    if ([0m
+2026-07-22T03:54:02.6357627Z [36;1m        provider_event_id not in (None, '')[0m
+2026-07-22T03:54:02.6357905Z [36;1m        and not game_id.startswith('mlb_statsapi:')[0m
+2026-07-22T03:54:02.6358187Z [36;1m        and str(provider_event_id) != game_id[0m
+2026-07-22T03:54:02.6358421Z [36;1m    ):[0m
+2026-07-22T03:54:02.6358711Z [36;1m        raise SystemExit(f'Provider event identity was not preserved for {game_id}')[0m
+2026-07-22T03:54:02.6359140Z [36;1m    if provider_event_id in (None, '') and not game_id.startswith('mlb_statsapi:'):[0m
+2026-07-22T03:54:02.6359631Z [36;1m        raise SystemExit(f'Provider-missing official game lacks the Stats API fallback identity: {game_id}')[0m
+2026-07-22T03:54:02.6360079Z [36;1m    if row.get('lockStatus') == 'LOCKED_NO_PREDICTION_DATA':[0m
+2026-07-22T03:54:02.6360499Z [36;1m        if row.get('lockedPrediction') is not False or row.get('predictedWinner') not in (None, ''):[0m
+2026-07-22T03:54:02.6360973Z [36;1m            raise SystemExit('Terminal no-data status was counted as a canonical winner')[0m
+2026-07-22T03:54:02.6361636Z [36;1m        if row.get('blocked') is not True or row.get('trainingEligible') is not False:[0m
+2026-07-22T03:54:02.6362078Z [36;1m            raise SystemExit('Terminal no-data status is not release/training ineligible')[0m
+2026-07-22T03:54:02.6362446Z [36;1mif len(seen_official_pks) != game_count:[0m
+2026-07-22T03:54:02.6362800Z [36;1m    raise SystemExit('Official game identities do not cover the durable roster')[0m
+2026-07-22T03:54:02.6363202Z [36;1mif len(official_by_pk) != game_count or current_schedule_drifts:[0m
+2026-07-22T03:54:02.6363504Z [36;1m    print(json.dumps({[0m
+2026-07-22T03:54:02.6363820Z [36;1m        'diagnostic': 'current_stats_api_differs_from_immutable_schedule_authority',[0m
+2026-07-22T03:54:02.6364172Z [36;1m        'durableGameCount': game_count,[0m
+2026-07-22T03:54:02.6364458Z [36;1m        'currentStatsApiGameCount': len(official_by_pk),[0m
+2026-07-22T03:54:02.6364768Z [36;1m        'startTimeDrifts': current_schedule_drifts,[0m
+2026-07-22T03:54:02.6365024Z [36;1m    }, indent=2))[0m
+2026-07-22T03:54:02.6365212Z [36;1m[0m
+2026-07-22T03:54:02.6365488Z [36;1mprediction_query = urllib.parse.urlencode({'date': payload['slateDateEt']})[0m
+2026-07-22T03:54:02.6365918Z [36;1mprediction_url = base_url + '/v1/mlb/predictions?' + prediction_query[0m
+2026-07-22T03:54:02.6366270Z [36;1mprediction_deadline = time.monotonic() + 20 * 60[0m
+2026-07-22T03:54:02.6366528Z [36;1mwhile True:[0m
+2026-07-22T03:54:02.6366730Z [36;1m    predictions = fetch([0m
+2026-07-22T03:54:02.6367098Z [36;1m        prediction_url,[0m
+2026-07-22T03:54:02.6367427Z [36;1m        deadline=prediction_deadline,[0m
+2026-07-22T03:54:02.6367666Z [36;1m        max_attempts=1,[0m
+2026-07-22T03:54:02.6367865Z [36;1m    )[0m
+2026-07-22T03:54:02.6368045Z [36;1m    winner_rows = [[0m
+2026-07-22T03:54:02.6368241Z [36;1m        row[0m
+2026-07-22T03:54:02.6368469Z [36;1m        for row in predictions.get('predictions') or [][0m
+2026-07-22T03:54:02.6368840Z [36;1m        if isinstance(row, dict) and row.get('predictedWinner') not in (None, '')[0m
+2026-07-22T03:54:02.6369152Z [36;1m    ][0m
+2026-07-22T03:54:02.6369335Z [36;1m    prelock_winner_rows = [[0m
+2026-07-22T03:54:02.6369633Z [36;1m        row for row in winner_rows if row.get('lockedPrediction') is not True[0m
+2026-07-22T03:54:02.6369943Z [36;1m    ][0m
+2026-07-22T03:54:02.6370150Z [36;1m    if winner_rows and not prelock_winner_rows:[0m
+2026-07-22T03:54:02.6370485Z [36;1m        # Immutable locks from an earlier runtime are never rewritten.[0m
+2026-07-22T03:54:02.6370784Z [36;1m        break[0m
+2026-07-22T03:54:02.6370993Z [36;1m    if prelock_winner_rows and all([0m
+2026-07-22T03:54:02.6371266Z [36;1m        row.get('probabilityContractVersion')[0m
+2026-07-22T03:54:02.6371631Z [36;1m        == 'MLB-PREDICTION-PROBABILITY-CONTRACT-v1-canonical-model-direction'[0m
+2026-07-22T03:54:02.6372000Z [36;1m        for row in prelock_winner_rows[0m
+2026-07-22T03:54:02.6372234Z [36;1m    ):[0m
+2026-07-22T03:54:02.6384632Z [36;1m        break[0m
+2026-07-22T03:54:02.6384911Z [36;1m    if time.monotonic() >= prediction_deadline:[0m
+2026-07-22T03:54:02.6385402Z [36;1m        raise SystemExit('No fresh persisted canonical probability-contract predictions appeared within 20 minutes')[0m
+2026-07-22T03:54:02.6385978Z [36;1m    print('Waiting for the next protected MLB pull to persist the canonical probability contract')[0m
+2026-07-22T03:54:02.6386356Z [36;1m    time.sleep(30)[0m
+2026-07-22T03:54:02.6386621Z [36;1mprint(json.dumps(predictions, indent=2, default=str))[0m
+2026-07-22T03:54:02.6386912Z [36;1mprediction_required = ([0m
+2026-07-22T03:54:02.6387235Z [36;1m    'gameCount',[0m
+2026-07-22T03:54:02.6387442Z [36;1m    'lockedPredictionCount',[0m
+2026-07-22T03:54:02.6387680Z [36;1m    'officialPredictionCount',[0m
+2026-07-22T03:54:02.6387905Z [36;1m    'lockedStatusCount',[0m
+2026-07-22T03:54:02.6388125Z [36;1m    'noPredictionDataCount',[0m
+2026-07-22T03:54:02.6388505Z [36;1m    'lockStatusComplete',[0m
+2026-07-22T03:54:02.6388850Z [36;1m    'canonicalPredictionComplete',[0m
+2026-07-22T03:54:02.6389100Z [36;1m    'operationalDefect',[0m
+2026-07-22T03:54:02.6389312Z [36;1m    'predictions',[0m
+2026-07-22T03:54:02.6389512Z [36;1m)[0m
+2026-07-22T03:54:02.6389807Z [36;1mprediction_missing = [name for name in prediction_required if name not in predictions][0m
+2026-07-22T03:54:02.6390167Z [36;1mif prediction_missing:[0m
+2026-07-22T03:54:02.6390525Z [36;1m    raise SystemExit(f'Live MLB predictions is missing lifecycle fields: {prediction_missing}')[0m
+2026-07-22T03:54:02.6391032Z [36;1mif predictions.get('sport') != 'mlb' or not isinstance(predictions.get('predictions'), list):[0m
+2026-07-22T03:54:02.6391496Z [36;1m    raise SystemExit('Live MLB predictions lifecycle response is malformed')[0m
+2026-07-22T03:54:02.6391887Z [36;1mif int(predictions.get('gameCount') or 0) != game_count:[0m
+2026-07-22T03:54:02.6392290Z [36;1m    raise SystemExit('Predictions and lock status disagree on durable game count')[0m
+2026-07-22T03:54:02.6392693Z [36;1mif len(predictions.get('predictions') or []) != game_count:[0m
+2026-07-22T03:54:02.6393099Z [36;1m    raise SystemExit('Prediction lifecycle rows do not cover the full durable slate')[0m
+2026-07-22T03:54:02.6393483Z [36;1mif predictions.get('operationalDefect') is True:[0m
+2026-07-22T03:54:02.6393883Z [36;1m    raise SystemExit('Prediction lifecycle reports an operational defect after deployment')[0m
+2026-07-22T03:54:02.6394335Z [36;1mprediction_locks = int(predictions.get('lockedPredictionCount') or 0)[0m
+2026-07-22T03:54:02.6394744Z [36;1mprediction_statuses = int(predictions.get('lockedStatusCount') or 0)[0m
+2026-07-22T03:54:02.6395151Z [36;1mprediction_terminal = int(predictions.get('noPredictionDataCount') or 0)[0m
+2026-07-22T03:54:02.6395577Z [36;1mif prediction_locks != int(predictions.get('officialPredictionCount') or 0):[0m
+2026-07-22T03:54:02.6396033Z [36;1m    raise SystemExit('Official prediction count does not match canonical winner count')[0m
+2026-07-22T03:54:02.6396470Z [36;1mif prediction_statuses != prediction_locks + prediction_terminal:[0m
+2026-07-22T03:54:02.6397043Z [36;1m    raise SystemExit('Prediction endpoint conflates canonical winners and terminal outcomes')[0m
+2026-07-22T03:54:02.6397412Z [36;1m[0m
+2026-07-22T03:54:02.6397587Z [36;1mprediction_by_game = {[0m
+2026-07-22T03:54:02.6397856Z [36;1m    str(row.get('gameId') or row.get('gameIdentity') or ''): row[0m
+2026-07-22T03:54:02.6398180Z [36;1m    for row in predictions.get('predictions') or [][0m
+2026-07-22T03:54:02.6398441Z [36;1m    if isinstance(row, dict)[0m
+2026-07-22T03:54:02.6398656Z [36;1m}[0m
+2026-07-22T03:54:02.6398949Z [36;1mif len(prediction_by_game) != game_count or set(prediction_by_game) != set(status_by_game):[0m
+2026-07-22T03:54:02.6399427Z [36;1m    raise SystemExit('Prediction and lock-status lifecycle identities are not one-to-one')[0m
+2026-07-22T03:54:02.6399830Z [36;1mfor game_id, status_row in status_by_game.items():[0m
+2026-07-22T03:54:02.6400130Z [36;1m    prediction_row = prediction_by_game[game_id][0m
+2026-07-22T03:54:02.6400387Z [36;1m    for field in ([0m
+2026-07-22T03:54:02.6400589Z [36;1m        'officialGamePk',[0m
+2026-07-22T03:54:02.6400805Z [36;1m        'officialGameId',[0m
+2026-07-22T03:54:02.6401014Z [36;1m        'providerEventId',[0m
+2026-07-22T03:54:02.6401248Z [36;1m        'canonicalStartTimeSource',[0m
+2026-07-22T03:54:02.6401474Z [36;1m    ):[0m
+2026-07-22T03:54:02.6401702Z [36;1m        if prediction_row.get(field) != status_row.get(field):[0m
+2026-07-22T03:54:02.6402135Z [36;1m            raise SystemExit(f'Identity authority {field} differs between endpoints for {game_id}')[0m
+2026-07-22T03:54:02.6402590Z [36;1m    if prediction_row.get('predictedWinner') not in (None, ''):[0m
+2026-07-22T03:54:02.6403216Z [36;1m        has_probability_contract = prediction_row.get('probabilityContractVersion') == 'MLB-PREDICTION-PROBABILITY-CONTRACT-v1-canonical-model-direction'[0m
+2026-07-22T03:54:02.6404135Z [36;1m        if not has_probability_contract and prediction_row.get('lockedPrediction') is not True:[0m
+2026-07-22T03:54:02.6404624Z [36;1m            raise SystemExit(f'Canonical probability contract is missing for {game_id}')[0m
+2026-07-22T03:54:02.6404979Z [36;1m        if has_probability_contract:[0m
+2026-07-22T03:54:02.6405321Z [36;1m            home_probability = float(prediction_row.get('homeModelWinProbability'))[0m
+2026-07-22T03:54:02.6405747Z [36;1m            away_probability = float(prediction_row.get('awayModelWinProbability'))[0m
+2026-07-22T03:54:02.6406139Z [36;1m            if abs(home_probability + away_probability - 1.0) > 1e-9:[0m
+2026-07-22T03:54:02.6406541Z [36;1m                raise SystemExit(f'Model probabilities are not complementary for {game_id}')[0m
+2026-07-22T03:54:02.6407029Z [36;1m            selected_side = prediction_row.get('predictedSide')[0m
+2026-07-22T03:54:02.6407346Z [36;1m            if selected_side not in {'home', 'away'}:[0m
+2026-07-22T03:54:02.6407681Z [36;1m                raise SystemExit(f'Predicted side is invalid for {game_id}')[0m
+2026-07-22T03:54:02.6408176Z [36;1m            expected_winner = prediction_row.get('homeTeam') if selected_side == 'home' else prediction_row.get('awayTeam')[0m
+2026-07-22T03:54:02.6408732Z [36;1m            selected_probability = home_probability if selected_side == 'home' else away_probability[0m
+2026-07-22T03:54:02.6409246Z [36;1m            if prediction_row.get('predictedWinner') != expected_winner or selected_probability < 0.5:[0m
+2026-07-22T03:54:02.6409723Z [36;1m                raise SystemExit(f'Winner, side, and model probability disagree for {game_id}')[0m
+2026-07-22T03:54:02.6410220Z [36;1m            for field in ('modelWinProbability', 'marketProbability', 'signalScore', 'pickReliability'):[0m
+2026-07-22T03:54:02.6410617Z [36;1m                if field not in prediction_row:[0m
+2026-07-22T03:54:02.6411005Z [36;1m                    raise SystemExit(f'Probability semantics field {field} is missing for {game_id}')[0m
+2026-07-22T03:54:02.6411443Z [36;1m            if prediction_row.get('probabilityCorrectionApplied') is True:[0m
+2026-07-22T03:54:02.6411921Z [36;1m                if prediction_row.get('playable') is not False or prediction_row.get('trainingEligible') is not False:[0m
+2026-07-22T03:54:02.6412436Z [36;1m                    raise SystemExit(f'Probability correction did not fail closed for {game_id}')[0m
+2026-07-22T03:54:02.6412972Z [36;1m    if not (status_row.get('lockedPrediction') is True or status_row.get('lockStatus') == 'LOCKED_NO_PREDICTION_DATA'):[0m
+2026-07-22T03:54:02.6413372Z [36;1m        continue[0m
+2026-07-22T03:54:02.6413639Z [36;1m    if status_row.get('lockStatus') == 'LOCKED_NO_PREDICTION_DATA':[0m
+2026-07-22T03:54:02.6414009Z [36;1m        if prediction_row.get('lockStatus') != 'LOCKED_NO_PREDICTION_DATA':[0m
+2026-07-22T03:54:02.6414441Z [36;1m            raise SystemExit(f'Terminal status mismatch between endpoints for {game_id}')[0m
+2026-07-22T03:54:02.6414844Z [36;1m        if prediction_row.get('predictedWinner') not in (None, ''):[0m
+2026-07-22T03:54:02.6415240Z [36;1m            raise SystemExit(f'Terminal prediction row exposes a winner for {game_id}')[0m
+2026-07-22T03:54:02.6415565Z [36;1m        continue[0m
+2026-07-22T03:54:02.6415855Z [36;1m    for field in ('predictedWinner', 'predictedSide', 'selectionFingerprint'):[0m
+2026-07-22T03:54:02.6416236Z [36;1m        if prediction_row.get(field) != status_row.get(field):[0m
+2026-07-22T03:54:02.6416623Z [36;1m            raise SystemExit(f'Immutable {field} differs between endpoints for {game_id}')[0m
+2026-07-22T03:54:02.6417151Z [36;1m    prediction_assessment = prediction_row.get('playabilityAssessment') or {}[0m
+2026-07-22T03:54:02.6417561Z [36;1m    status_assessment = status_row.get('playabilityAssessment') or {}[0m
+2026-07-22T03:54:02.6417857Z [36;1m    if ([0m
+2026-07-22T03:54:02.6418474Z [36;1m        prediction_row.get('requiredPlayabilityCheckpoint') == status_row.get('requiredPlayabilityCheckpoint')[0m
+2026-07-22T03:54:02.6419087Z [36;1m        and prediction_assessment.get('assessment_fingerprint') == status_assessment.get('assessment_fingerprint')[0m
+2026-07-22T03:54:02.6419484Z [36;1m    ):[0m
+2026-07-22T03:54:02.6419774Z [36;1m        for field in ('playable', 'blocked', 'playabilityAssessmentValidationErrors'):[0m
+2026-07-22T03:54:02.6420164Z [36;1m            if prediction_row.get(field) != status_row.get(field):[0m
+2026-07-22T03:54:02.6420572Z [36;1m                raise SystemExit(f'Playability {field} differs between endpoints for {game_id}')[0m
+2026-07-22T03:54:02.6420909Z [36;1mPY[0m
+2026-07-22T03:54:02.6472444Z shell: /usr/bin/bash -e {0}
+2026-07-22T03:54:02.6472655Z env:
+2026-07-22T03:54:02.6472884Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T03:54:02.6473247Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T03:54:02.6473598Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T03:54:02.6473907Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T03:54:02.6474205Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T03:54:02.6474511Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T03:54:02.6474828Z   AWS_DEFAULT_REGION: ***
+2026-07-22T03:54:02.6475042Z   AWS_REGION: ***
+2026-07-22T03:54:02.6475235Z   AWS_ACCESS_KEY_ID: ***
+2026-07-22T03:54:02.6475497Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T03:54:02.6475806Z   API_URL: https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/
+2026-07-22T03:54:02.6476090Z ##[endgroup]
+2026-07-22T03:54:31.8246105Z Traceback (most recent call last):
+2026-07-22T03:54:31.8256410Z   File "<stdin>", line 31, in <module>
+2026-07-22T03:54:31.8256817Z   File "<stdin>", line 9, in fetch
+2026-07-22T03:54:31.8257720Z   File "/home/runner/work/parlay-platform/parlay-platform/scripts/mlb_deploy_http_probe.py", line 137, in fetch_json_object
+2026-07-22T03:54:31.8258460Z     raise TransientHttpProbeExhausted(
+2026-07-22T03:54:31.8259109Z scripts.mlb_deploy_http_probe.TransientHttpProbeExhausted: JSON probe attempt limit exhausted after 1 attempts: HTTP 504
+2026-07-22T03:54:31.8346404Z ##[error]Process completed with exit code 1.
+2026-07-22T03:54:31.8408437Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T03:54:31.8409453Z ##[group]Run actions/upload-artifact@v4
+2026-07-22T03:54:31.8409676Z with:
+2026-07-22T03:54:31.8409866Z   name: mlb-deployment-identity-29889451738
+2026-07-22T03:54:31.8410289Z   path: runtime_reports/mlb_lambda_build_manifest_deploy.json
+runtime_reports/mlb_deploy_identity_latest.json
+
+2026-07-22T03:54:31.8410706Z   if-no-files-found: warn
+2026-07-22T03:54:31.8410905Z   compression-level: 6
+2026-07-22T03:54:31.8411096Z   overwrite: false
+2026-07-22T03:54:31.8411278Z   include-hidden-files: false
+2026-07-22T03:54:31.8411478Z env:
+2026-07-22T03:54:31.8411687Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T03:54:31.8412047Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T03:54:31.8412382Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T03:54:31.8412691Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T03:54:31.8412985Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T03:54:31.8413289Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T03:54:31.8413589Z   AWS_DEFAULT_REGION: ***
+2026-07-22T03:54:31.8413799Z   AWS_REGION: ***
+2026-07-22T03:54:31.8413994Z   AWS_ACCESS_KEY_ID: ***
+2026-07-22T03:54:31.8414260Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T03:54:31.8414682Z ##[endgroup]
+2026-07-22T03:54:31.9730999Z (node:2886) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-22T03:54:31.9731704Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-22T03:54:31.9770756Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-07-22T03:54:31.9798350Z The least common ancestor is /home/runner/work/parlay-platform/parlay-platform/runtime_reports. This will be the root directory of the artifact
+2026-07-22T03:54:31.9799235Z With the provided path, there will be 2 files uploaded
+2026-07-22T03:54:31.9799872Z Artifact name is valid!
+2026-07-22T03:54:31.9800164Z Root directory input is valid!
+2026-07-22T03:54:32.2530362Z Beginning upload of artifact content to blob storage
+2026-07-22T03:54:32.2698317Z (node:2886) [DEP0169] DeprecationWarning: `url.parse()` behavior is not standardized and prone to errors that have security implications. Use the WHATWG URL API instead. CVEs are not issued for `url.parse()` vulnerabilities.
+2026-07-22T03:54:32.4889866Z Uploaded bytes 4511
+2026-07-22T03:54:32.5508034Z Finished uploading artifact content to blob storage!
+2026-07-22T03:54:32.5508964Z SHA256 digest of uploaded artifact zip is b79c3b8359e86fc5857f568850b01671a495982a4f860d3b465d0030ad6ed60e
+2026-07-22T03:54:32.5509917Z Finalizing artifact upload
+2026-07-22T03:54:32.7705477Z Artifact mlb-deployment-identity-29889451738.zip successfully finalized. Artifact ID 8517766676
+2026-07-22T03:54:32.7706492Z Artifact mlb-deployment-identity-29889451738 has been successfully uploaded! Final size is 4511 bytes. Artifact ID is 8517766676
+2026-07-22T03:54:32.7711352Z Artifact download URL: https://github.com/KirtKurt/parlay-platform/actions/runs/29889451738/artifacts/8517766676
+2026-07-22T03:54:32.7860720Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T03:54:32.7861710Z Post job cleanup.
+2026-07-22T03:54:32.8816639Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T03:54:32.8818374Z Post job cleanup.
+2026-07-22T03:54:32.9518082Z [command]/usr/bin/git version
+2026-07-22T03:54:32.9554025Z git version 2.54.0
+2026-07-22T03:54:32.9581688Z Temporarily overriding HOME='/home/runner/work/_temp/b6f36584-2a27-44f5-bb7f-082138d9201b' before making global git config changes
+2026-07-22T03:54:32.9582731Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-22T03:54:32.9585623Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-22T03:54:32.9617585Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-22T03:54:32.9645852Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-22T03:54:32.9870336Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-22T03:54:32.9904190Z http.https://github.com/.extraheader
+2026-07-22T03:54:32.9914291Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-22T03:54:32.9951104Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-22T03:54:33.0215593Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-22T03:54:33.0247249Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-22T03:54:33.0595857Z Cleaning up orphan processes
+2026-07-22T03:54:33.0855730Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5, actions/upload-artifact@v4, aws-actions/configure-aws-credentials@v4, aws-actions/setup-sam@v2. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
