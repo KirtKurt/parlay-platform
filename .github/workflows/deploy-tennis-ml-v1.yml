@@ -1,0 +1,58 @@
+name: Deploy isolated Tennis predictive platform V1.1 ML
+on:
+  push:
+    branches: [agent/tennis-v1-ml-aws-deploy-20260722]
+    paths: ["tennis_release/**", ".github/workflows/deploy-tennis-ml-v1.yml"]
+  workflow_dispatch:
+concurrency:
+  group: inqsi-tennis-v1-production
+  cancel-in-progress: false
+permissions:
+  contents: read
+  id-token: write
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      TENNIS_STACK_NAME: inqsi-tennis-v1
+      RELEASE_SHA256: dbc456f51a89d3b5fa2c16668577f6e90a7f125e5357cb93be92523a14391112
+      TENNIS_AWS_DEPLOY_ROLE_ARN: ${{ secrets.TENNIS_AWS_DEPLOY_ROLE_ARN }}
+      TENNIS_ODDS_API_KEY: ${{ secrets.TENNIS_ODDS_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {fetch-depth: 0}
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - uses: aws-actions/setup-sam@v2
+      - if: env.TENNIS_AWS_DEPLOY_ROLE_ARN != ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.TENNIS_AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: tennis-v1-ml-${{ github.run_id }}-${{ github.run_attempt }}
+          aws-region: us-east-1
+      - if: env.TENNIS_AWS_DEPLOY_ROLE_ARN == ''
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Validate, deploy, and prove isolation
+        run: bash tennis_release/deploy-tennis-ml-v1.sh
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v1-ml-deployment-evidence-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            /tmp/aws-identity.json
+            /tmp/tennis-stack.json
+            /tmp/tennis-outputs.json
+            /tmp/tennis-model.json
+            /tmp/tennis-ml-status.json
+            /tmp/tennis-discovery.json
+            /tmp/mlb-before.sha256
+            /tmp/mlb-after.sha256
