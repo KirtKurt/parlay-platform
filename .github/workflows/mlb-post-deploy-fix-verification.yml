@@ -1,0 +1,259 @@
+name: Verify MLB Scoring Fix After Deploy
+
+on:
+  workflow_run:
+    workflows: ["Deploy SAM to AWS"]
+    types: [completed]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-post-deploy-fix-verification
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout deployed main source
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install verification runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify deployed Lambda capacity and force one fresh audited pull
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
+          PREDICTIONS_TABLE: parlay_platform_predictions
+          OUTCOMES_TABLE: parlay_platform_outcomes
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          import boto3
+          from botocore.config import Config
+
+          region = os.environ.get('AWS_REGION') or 'us-east-1'
+          target_sha = os.environ['TARGET_DEPLOY_SHA']
+          cfn = boto3.client('cloudformation', region_name=region)
+          resource = cfn.describe_stack_resource(
+              StackName='parlay-platform-dev',
+              LogicalResourceId='MLBAuditedPullFunction',
+          )['StackResourceDetail']
+          function_name = resource['PhysicalResourceId']
+          lamb = boto3.client(
+              'lambda',
+              region_name=region,
+              config=Config(read_timeout=900, connect_timeout=30, retries={'max_attempts': 1}),
+          )
+          config = lamb.get_function_configuration(FunctionName=function_name)
+          timeout = int(config.get('Timeout') or 0)
+          memory = int(config.get('MemorySize') or 0)
+          deployed_sha = str(((config.get('Environment') or {}).get('Variables') or {}).get('INQSI_DEPLOY_GIT_SHA') or '')
+          if timeout < 600:
+              raise SystemExit(f'Live MLB pull Lambda timeout is {timeout}; expected at least 600')
+          if memory < 2048:
+              raise SystemExit(f'Live MLB pull Lambda memory is {memory}; expected at least 2048')
+          if deployed_sha != target_sha:
+              raise SystemExit(f'Deploy identity mismatch: live={deployed_sha} expected={target_sha}')
+
+          invoked_at = datetime.now(timezone.utc).isoformat()
+          response = lamb.invoke(
+              FunctionName=function_name,
+              InvocationType='RequestResponse',
+              Payload=json.dumps({
+                  'sport': 'mlb',
+                  't': 'HOT',
+                  'run': 'post_deploy_scoring_fix_verification',
+                  'days_ahead': 0,
+                  'force': True,
+              }).encode('utf-8'),
+          )
+          raw = response['Payload'].read()
+          outer = json.loads(raw.decode('utf-8') or '{}')
+          if response.get('FunctionError'):
+              raise SystemExit('Post-deploy MLB pull returned FunctionError')
+          status_code = int(outer.get('statusCode') or 200)
+          body = outer.get('body')
+          payload = json.loads(body) if isinstance(body, str) else dict(body or outer)
+          if status_code >= 400 or payload.get('ok') is not True:
+              raise SystemExit('Post-deploy MLB pull failed: ' + json.dumps({
+                  'statusCode': status_code,
+                  'error': payload.get('error'),
+                  'upstream_error': payload.get('upstream_error'),
+              }, sort_keys=True, default=str))
+
+          winner_results = [row for row in (payload.get('game_winner_predictions') or []) if isinstance(row, dict)]
+          winner_summary = []
+          for row in winner_results:
+              winner_summary.append({
+                  'gameDateEt': row.get('game_date_et'),
+                  'ok': row.get('ok'),
+                  'gameCount': row.get('gameCount'),
+                  'predictionCount': row.get('count'),
+                  'preLockStorageCandidateCount': row.get('preLockStorageCandidateCount'),
+                  'preLockStoredCount': row.get('preLockStoredCount'),
+                  'preLockStorageComplete': row.get('preLockStorageComplete'),
+                  'allGamesPredicted': row.get('allGamesPredicted'),
+                  'operationalDefect': row.get('operationalDefect'),
+              })
+          if not winner_summary:
+              raise SystemExit('Post-deploy pull returned no game-winner result')
+          for row in winner_summary:
+              if row.get('ok') is not True or row.get('allGamesPredicted') is not True or row.get('preLockStorageComplete') is not True:
+                  raise SystemExit('Post-deploy winner persistence incomplete: ' + json.dumps(row, sort_keys=True, default=str))
+              if int(row.get('preLockStoredCount') or 0) != int(row.get('gameCount') or -1):
+                  raise SystemExit('Post-deploy stored/game count mismatch: ' + json.dumps(row, sort_keys=True, default=str))
+
+          Path('/tmp/mlb-post-deploy-invocation.json').write_text(json.dumps({
+              'functionName': function_name,
+              'timeoutSeconds': timeout,
+              'memorySizeMb': memory,
+              'deployedGitSha': deployed_sha,
+              'targetDeploySha': target_sha,
+              'functionLastModified': config.get('LastModified'),
+              'invokedAtUtc': invoked_at,
+              'statusCode': status_code,
+              'winnerResults': winner_summary,
+          }, indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
+          PY
+
+      - name: Enforce persisted full-slate scoring coverage
+        env:
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          sleep 5
+          SLATE_DATE=$(TZ=America/New_York date +%F)
+          python scripts/mlb_scoring_guard_status.py \
+            --slate-date "$SLATE_DATE" \
+            --output runtime_reports/mlb_scoring_guard_status_latest.json \
+            --enforce
+
+      - name: Check post-deploy Lambda runtime health
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python scripts/diagnose_mlb_pull_lambda_runtime.py \
+            --hours 2 \
+            --output runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
+
+      - name: Build immutable post-deploy acceptance proof
+        env:
+          TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          invocation = json.loads(Path('/tmp/mlb-post-deploy-invocation.json').read_text(encoding='utf-8'))
+          scoring = json.loads(Path('runtime_reports/mlb_scoring_guard_status_latest.json').read_text(encoding='utf-8'))
+          runtime = json.loads(Path('runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json').read_text(encoding='utf-8'))
+
+          deployed_at_raw = invocation.get('functionLastModified')
+          deployed_at = datetime.fromisoformat(str(deployed_at_raw).replace('Z', '+00:00'))
+          if deployed_at.tzinfo is None:
+              deployed_at = deployed_at.replace(tzinfo=timezone.utc)
+          post_deploy_timeouts = []
+          for row in runtime.get('timeouts') or []:
+              stamp = datetime.fromisoformat(str(row.get('timestampUtc')).replace('Z', '+00:00'))
+              if stamp.tzinfo is None:
+                  stamp = stamp.replace(tzinfo=timezone.utc)
+              if stamp >= deployed_at:
+                  post_deploy_timeouts.append(row)
+
+          blockers = []
+          if scoring.get('guardPassed') is not True:
+              blockers.append('scoring_guard_failed')
+          if invocation.get('timeoutSeconds', 0) < 600:
+              blockers.append('timeout_not_600')
+          if invocation.get('memorySizeMb', 0) < 2048:
+              blockers.append('memory_not_2048')
+          if invocation.get('deployedGitSha') != os.environ['TARGET_DEPLOY_SHA']:
+              blockers.append('deploy_sha_mismatch')
+          if post_deploy_timeouts:
+              blockers.append('new_timeout_after_deploy')
+
+          report = {
+              'ok': not blockers,
+              'proofType': 'MLB_SCORING_FIX_POST_DEPLOY_ACCEPTANCE',
+              'version': 'MLB-SCORING-FIX-POST-DEPLOY-v1',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+              'deployedCommit': os.environ['TARGET_DEPLOY_SHA'],
+              'lambdaConfiguration': invocation,
+              'scoringGuardPassed': scoring.get('guardPassed') is True,
+              'scoringSummary': scoring.get('summary'),
+              'scoringBlockers': scoring.get('blockers') or [],
+              'postDeployTimeoutCount': len(post_deploy_timeouts),
+              'postDeployTimeouts': post_deploy_timeouts,
+              'blockers': blockers,
+              'secretExposed': False,
+          }
+          path = Path('runtime_reports/mlb_scoring_fix_post_deploy_latest.json')
+          path.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
+          if blockers:
+              raise SystemExit('MLB post-deploy acceptance failed: ' + json.dumps(blockers))
+          PY
+
+      - name: Upload post-deploy proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-scoring-fix-post-deploy-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_scoring_fix_post_deploy_latest.json
+            runtime_reports/mlb_scoring_guard_status_latest.json
+            runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
+          if-no-files-found: warn
+
+      - name: Publish verified production proof
+        if: success()
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            runtime_reports/mlb_scoring_fix_post_deploy_latest.json \
+            runtime_reports/mlb_scoring_guard_status_latest.json \
+            runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
+          if git diff --cached --quiet; then
+            echo 'No post-deploy proof change'
+          else
+            git commit -m 'Publish MLB scoring fix post-deploy proof'
+            git pull --rebase --autostash origin main
+            git push origin HEAD:main
+          fi
