@@ -44,7 +44,9 @@ EXECUTION_LEASE_PROTECTED_MODES = (
     "selection_capture",
     "training",
 )
-STATUS_FINGERPRINT_VERSION = "MLB-ML-AWS-TRAINING-STATUS-SHA256-v1"
+STATUS_FINGERPRINT_VERSION = (
+    "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical"
+)
 TRAINING_STATUS_MAX_AGE = timedelta(hours=8)
 SELECTION_CAPTURE_STATUS_MAX_AGE = timedelta(minutes=45)
 SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
@@ -231,13 +233,16 @@ def _sha256(payload: Any) -> str:
 
 
 def _status_fingerprint(status: Mapping[str, Any]) -> str:
-    return _sha256(
-        {
-            key: value
-            for key, value in status.items()
-            if key not in {"statusFingerprint", "statusFingerprintVersion"}
-        }
-    )
+    # DynamoDB stores Python floats as Decimal values. Canonicalize through the
+    # same conversion before hashing so an integral float such as ``90.0``
+    # verifies after DynamoDB returns it as Decimal("90.0") and ``_plain``
+    # normalizes it to ``90``.
+    fingerprint_payload = {
+        key: value
+        for key, value in status.items()
+        if key not in {"statusFingerprint", "statusFingerprintVersion"}
+    }
+    return _sha256(_ddb_safe(fingerprint_payload))
 
 
 def execution_concurrency_control(*, acquired_for_run: bool) -> Dict[str, Any]:

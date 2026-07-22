@@ -84,6 +84,24 @@ def healthy_status(execution_mode, *, created_at=NOW, status="HEALTHY"):
     return value
 
 
+def test_status_fingerprint_survives_dynamodb_numeric_round_trip():
+    status = healthy_status("training")
+    status["milestones"] = {
+        "assumedCleanGamesPerFullSlate": 15.0,
+        "aspirationalAccuracyPct": 90.0,
+        "maximumCalibrationError": 0.08,
+    }
+    status["statusFingerprint"] = aws_training._status_fingerprint(status)
+    round_tripped = aws_training._plain(aws_training._ddb_safe(status))
+
+    assert round_tripped["milestones"]["assumedCleanGamesPerFullSlate"] == 15
+    assert round_tripped["milestones"]["aspirationalAccuracyPct"] == 90
+    assert round_tripped["milestones"]["maximumCalibrationError"] == 0.08
+    assert status["statusFingerprint"] == aws_training._status_fingerprint(
+        round_tripped
+    )
+
+
 def new_manifest(sealed=False):
     value = experiment.new_manifest(
         experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
