@@ -1,0 +1,140 @@
+2026-07-22T04:42:50.8470309Z [36;1mlabel = sys.argv[3][0m
+2026-07-22T04:42:50.8470563Z [36;1mfunction_env = json.loads([0m
+2026-07-22T04:42:50.8470928Z [36;1m    Path('/tmp/function_env.json').read_text(encoding='utf-8')[0m
+2026-07-22T04:42:50.8471294Z [36;1m)[0m
+2026-07-22T04:42:50.8471702Z [36;1mfor key, value in function_env.items():[0m
+2026-07-22T04:42:50.8472310Z [36;1m    os.environ[str(key)] = str(value)[0m
+2026-07-22T04:42:50.8472731Z [36;1msys.path.insert(0, str(source_root / 'hello_world'))[0m
+2026-07-22T04:42:50.8473087Z [36;1m[0m
+2026-07-22T04:42:50.8473339Z [36;1mimport mlb_daily_per_game_lock_patch as patch[0m
+2026-07-22T04:42:50.8473676Z [36;1mimport mlb_daily_pick_lock as module[0m
+2026-07-22T04:42:50.8473950Z [36;1m[0m
+2026-07-22T04:42:50.8474144Z [36;1mpatch.apply(module)[0m
+2026-07-22T04:42:50.8474478Z [36;1mfixed_now = datetime(2026, 7, 22, 4, 30, tzinfo=timezone.utc)[0m
+2026-07-22T04:42:50.8474852Z [36;1mmodule._now_utc = lambda: fixed_now[0m
+2026-07-22T04:42:50.8475123Z [36;1m[0m
+2026-07-22T04:42:50.8475323Z [36;1mstarted = time.perf_counter()[0m
+2026-07-22T04:42:50.8475636Z [36;1mpayload = module._status_payload('2026-07-21')[0m
+2026-07-22T04:42:50.8476049Z [36;1melapsed_ms = round((time.perf_counter() - started) * 1000.0, 3)[0m
+2026-07-22T04:42:50.8476440Z [36;1mcanonical = json.dumps([0m
+2026-07-22T04:42:50.8476694Z [36;1m    payload,[0m
+2026-07-22T04:42:50.8476924Z [36;1m    sort_keys=True,[0m
+2026-07-22T04:42:50.8477169Z [36;1m    separators=(',', ':'),[0m
+2026-07-22T04:42:50.8477427Z [36;1m    default=str,[0m
+2026-07-22T04:42:50.8477647Z [36;1m)[0m
+2026-07-22T04:42:50.8477906Z [36;1mpayload_path = output_root / f'{label}_payload.json'[0m
+2026-07-22T04:42:50.8478330Z [36;1mpayload_path.write_text(canonical + '\n', encoding='utf-8')[0m
+2026-07-22T04:42:50.8478700Z [36;1msummary_fields = ([0m
+2026-07-22T04:42:50.8479004Z [36;1m    'ok', 'sport', 'slateDateEt', 'pullCount', 'gameCount',[0m
+2026-07-22T04:42:50.8479416Z [36;1m    'stagedGameCount', 'canonicalImmutableGameRowCount',[0m
+2026-07-22T04:42:50.8479823Z [36;1m    'lockedPredictionCount', 'lockedStatusCount',[0m
+2026-07-22T04:42:50.8480270Z [36;1m    'noPredictionDataCount', 'playabilityValidationErrorCount',[0m
+2026-07-22T04:42:50.8480743Z [36;1m    'playabilityLifecycleErrorCount', 'operationalDefect',[0m
+2026-07-22T04:42:50.8481121Z [36;1m    'officialScheduleBacked',[0m
+2026-07-22T04:42:50.8481547Z [36;1m)[0m
+2026-07-22T04:42:50.8481743Z [36;1mresult = {[0m
+2026-07-22T04:42:50.8482189Z [36;1m    'label': label,[0m
+2026-07-22T04:42:50.8482453Z [36;1m    'elapsedMs': elapsed_ms,[0m
+2026-07-22T04:42:50.8482771Z [36;1m    'payloadBytes': len(canonical.encode('utf-8')),[0m
+2026-07-22T04:42:50.8483123Z [36;1m    'payloadSha256': hashlib.sha256([0m
+2026-07-22T04:42:50.8483435Z [36;1m        canonical.encode('utf-8')[0m
+2026-07-22T04:42:50.8483715Z [36;1m    ).hexdigest(),[0m
+2026-07-22T04:42:50.8483960Z [36;1m    'payloadSummary': {[0m
+2026-07-22T04:42:50.8484228Z [36;1m        key: payload.get(key)[0m
+2026-07-22T04:42:50.8484505Z [36;1m        for key in summary_fields[0m
+2026-07-22T04:42:50.8484846Z [36;1m        if isinstance(payload, dict) and key in payload[0m
+2026-07-22T04:42:50.8485166Z [36;1m    },[0m
+2026-07-22T04:42:50.8485358Z [36;1m}[0m
+2026-07-22T04:42:50.8485620Z [36;1m(output_root / f'{label}_result.json').write_text([0m
+2026-07-22T04:42:50.8486021Z [36;1m    json.dumps(result, indent=2, sort_keys=True) + '\n',[0m
+2026-07-22T04:42:50.8486363Z [36;1m    encoding='utf-8',[0m
+2026-07-22T04:42:50.8486596Z [36;1m)[0m
+2026-07-22T04:42:50.8486782Z [36;1mPY[0m
+2026-07-22T04:42:50.8486964Z [36;1m[0m
+2026-07-22T04:42:50.8487269Z [36;1mtimeout 300 python /tmp/run_status.py /tmp/baseline /tmp baseline[0m
+2026-07-22T04:42:50.8487766Z [36;1mtimeout 180 python /tmp/run_status.py /tmp/candidate /tmp candidate[0m
+2026-07-22T04:42:50.8488136Z [36;1m[0m
+2026-07-22T04:42:50.8488437Z [36;1mBASE_SHA="$BASE_SHA" CANDIDATE_SHA="$candidate_sha" python - <<'PY'[0m
+2026-07-22T04:42:50.8488816Z [36;1mimport json[0m
+2026-07-22T04:42:50.8489040Z [36;1mimport os[0m
+2026-07-22T04:42:50.8489269Z [36;1mfrom pathlib import Path[0m
+2026-07-22T04:42:50.8489518Z [36;1m[0m
+2026-07-22T04:42:50.8489712Z [36;1mbaseline = json.loads([0m
+2026-07-22T04:42:50.8490194Z [36;1m    Path('/tmp/baseline_result.json').read_text(encoding='utf-8')[0m
+2026-07-22T04:42:50.8490554Z [36;1m)[0m
+2026-07-22T04:42:50.8490758Z [36;1mcandidate = json.loads([0m
+2026-07-22T04:42:50.8491111Z [36;1m    Path('/tmp/candidate_result.json').read_text(encoding='utf-8')[0m
+2026-07-22T04:42:50.8491465Z [36;1m)[0m
+2026-07-22T04:42:50.8491768Z [36;1mbaseline_payload = Path('/tmp/baseline_payload.json').read_text([0m
+2026-07-22T04:42:50.8492426Z [36;1m    encoding='utf-8'[0m
+2026-07-22T04:42:50.8492657Z [36;1m)[0m
+2026-07-22T04:42:50.8492959Z [36;1mcandidate_payload = Path('/tmp/candidate_payload.json').read_text([0m
+2026-07-22T04:42:50.8493341Z [36;1m    encoding='utf-8'[0m
+2026-07-22T04:42:50.8493576Z [36;1m)[0m
+2026-07-22T04:42:50.8493841Z [36;1mpayload_equal = baseline_payload == candidate_payload[0m
+2026-07-22T04:42:50.8494224Z [36;1mbaseline_ms = float(baseline['elapsedMs'])[0m
+2026-07-22T04:42:50.8494572Z [36;1mcandidate_ms = float(candidate['elapsedMs'])[0m
+2026-07-22T04:42:50.8494888Z [36;1mreport = {[0m
+2026-07-22T04:42:50.8495104Z [36;1m    'readOnly': True,[0m
+2026-07-22T04:42:50.8495364Z [36;1m    'slateDateEt': '2026-07-21',[0m
+2026-07-22T04:42:50.8495669Z [36;1m    'fixedNowUtc': '2026-07-22T04:30:00+00:00',[0m
+2026-07-22T04:42:50.8495994Z [36;1m    'baseSha': os.environ['BASE_SHA'],[0m
+2026-07-22T04:42:50.8496333Z [36;1m    'candidateSha': os.environ['CANDIDATE_SHA'],[0m
+2026-07-22T04:42:50.8496669Z [36;1m    'payloadEqual': payload_equal,[0m
+2026-07-22T04:42:50.8496959Z [36;1m    'baseline': baseline,[0m
+2026-07-22T04:42:50.8497221Z [36;1m    'candidate': candidate,[0m
+2026-07-22T04:42:50.8497585Z [36;1m    'elapsedReductionMs': round(baseline_ms - candidate_ms, 3),[0m
+2026-07-22T04:42:50.8497961Z [36;1m    'speedupX': round([0m
+2026-07-22T04:42:50.8498227Z [36;1m        baseline_ms / candidate_ms,[0m
+2026-07-22T04:42:50.8498499Z [36;1m        3,[0m
+2026-07-22T04:42:50.8498729Z [36;1m    ) if candidate_ms > 0 else None,[0m
+2026-07-22T04:42:50.8499117Z [36;1m    'candidateUnderTwentyFiveSeconds': candidate_ms < 25000.0,[0m
+2026-07-22T04:42:50.8499625Z [36;1m    'gatePassed': bool([0m
+2026-07-22T04:42:50.8499885Z [36;1m        payload_equal[0m
+2026-07-22T04:42:50.8500143Z [36;1m        and candidate_ms < 25000.0[0m
+2026-07-22T04:42:50.8500516Z [36;1m        and baseline['payloadSha256'] == candidate['payloadSha256'][0m
+2026-07-22T04:42:50.8500867Z [36;1m    ),[0m
+2026-07-22T04:42:50.8501056Z [36;1m}[0m
+2026-07-22T04:42:50.8501360Z [36;1mPath('mlb_lock_status_snapshot_hotpath_benchmark.json').write_text([0m
+2026-07-22T04:42:50.8501805Z [36;1m    json.dumps(report, indent=2, sort_keys=True) + '\n',[0m
+2026-07-22T04:42:50.8502413Z [36;1m    encoding='utf-8',[0m
+2026-07-22T04:42:50.8502657Z [36;1m)[0m
+2026-07-22T04:42:50.8502902Z [36;1mPath('/tmp/benchmark_gate.txt').write_text([0m
+2026-07-22T04:42:50.8503266Z [36;1m    'pass\n' if report['gatePassed'] else 'fail\n',[0m
+2026-07-22T04:42:50.8503600Z [36;1m    encoding='utf-8',[0m
+2026-07-22T04:42:50.8503836Z [36;1m)[0m
+2026-07-22T04:42:50.8504045Z [36;1mPY[0m
+2026-07-22T04:42:50.8561578Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-22T04:42:50.8562158Z env:
+2026-07-22T04:42:50.8562443Z   AWS_DEFAULT_REGION: ***
+2026-07-22T04:42:50.8562715Z   AWS_REGION: ***
+2026-07-22T04:42:50.8562965Z   AWS_ACCESS_KEY_ID: ***
+2026-07-22T04:42:50.8563309Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T04:42:50.8563555Z   AWS_MAX_ATTEMPTS: 1
+2026-07-22T04:42:50.8563929Z   FUNCTION_NAME: parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP
+2026-07-22T04:42:50.8564402Z   BASE_SHA: 246daecb3960518fb59bb69c6891989d50fb7308
+2026-07-22T04:42:50.8564776Z   CANDIDATE_REF: agent/mlb-lock-status-snapshot-hotpath
+2026-07-22T04:42:50.8565091Z ##[endgroup]
+2026-07-22T04:42:50.8653889Z fatal: ambiguous argument 'agent/mlb-lock-status-snapshot-hotpath': unknown revision or path not in the working tree.
+2026-07-22T04:42:50.8655033Z Use '--' to separate paths from revisions, like this:
+2026-07-22T04:42:50.8655638Z 'git <command> [<revision>...] -- [<file>...]'
+2026-07-22T04:42:50.8666754Z ##[error]Process completed with exit code 128.
+2026-07-22T04:42:50.8798990Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T04:42:50.8800259Z Post job cleanup.
+2026-07-22T04:42:50.9976334Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T04:42:50.9977621Z Post job cleanup.
+2026-07-22T04:42:51.0826654Z [command]/usr/bin/git version
+2026-07-22T04:42:51.0867285Z git version 2.54.0
+2026-07-22T04:42:51.0909003Z Temporarily overriding HOME='/home/runner/work/_temp/7f2d699b-4dcd-449d-b87c-4f76d73a5382' before making global git config changes
+2026-07-22T04:42:51.0910421Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-22T04:42:51.0916212Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-22T04:42:51.0954799Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-22T04:42:51.0988822Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-22T04:42:51.1254388Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-22T04:42:51.1364011Z http.https://github.com/.extraheader
+2026-07-22T04:42:51.1376999Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-22T04:42:51.1441296Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-22T04:42:51.1696979Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-22T04:42:51.1735539Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-22T04:42:51.2115702Z Cleaning up orphan processes
+2026-07-22T04:42:51.2416808Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, aws-actions/configure-aws-credentials@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
