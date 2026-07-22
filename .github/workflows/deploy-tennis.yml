@@ -1,0 +1,103 @@
+name: Deploy isolated Tennis ML platform
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [agent/tennis-ml-production-deploy]
+    paths:
+      - "tennis_release/**"
+      - ".github/workflows/deploy-tennis.yml"
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: parlay-platform-tennis-ml-production
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_DEFAULT_REGION: us-east-1
+  TENNIS_STACK_NAME: parlay-platform-tennis-ml-prod
+  MLB_STACK_NAME: parlay-platform-dev
+
+jobs:
+  deploy-tennis:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout exact release commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and verify checksum-pinned Tennis source
+        run: |
+          set -euo pipefail
+          cat tennis_release/chunks/tennis_predictive_platform_v1.tar.xz.b64.part-* \
+            | base64 --decode > tennis_release/tennis_predictive_platform_v1.tar.xz
+          sha256sum -c tennis_release/tennis_predictive_platform_v1.tar.xz.sha256
+          rm -rf tennis_predictive_platform_v1
+          tar -xJf tennis_release/tennis_predictive_platform_v1.tar.xz
+          test -x tennis_predictive_platform_v1/scripts/deploy_aws.sh
+          test -f tennis_predictive_platform_v1/src/tennis_espn_results.py
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install validation dependencies
+        working-directory: tennis_predictive_platform_v1
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet \
+            -r requirements-dev.txt \
+            "cfn-lint>=1,<2"
+
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Configure established AWS deployment credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Deploy and verify isolated Tennis stack
+        working-directory: tennis_predictive_platform_v1
+        env:
+          TENNIS_ODDS_API_KEY_VALUE: ${{ secrets.TENNIS_ODDS_API_KEY }}
+          MLB_ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${TENNIS_ODDS_API_KEY_VALUE:-}" || {
+            echo "::error::Missing dedicated TENNIS_ODDS_API_KEY repository secret"
+            exit 1
+          }
+          if [ -n "${MLB_ODDS_API_KEY_VALUE:-}" ] && [ "$TENNIS_ODDS_API_KEY_VALUE" = "$MLB_ODDS_API_KEY_VALUE" ]; then
+            echo "::error::TENNIS_ODDS_API_KEY must be independently provisioned, not the MLB ODDS_API_KEY"
+            exit 1
+          fi
+          ./scripts/deploy_aws.sh
+
+      - name: Upload exact Tennis deployment evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-ml-deployment-evidence-${{ github.sha }}
+          path: |
+            /tmp/tennis-deployment-evidence.json
+            /tmp/tennis-stack-after.json
+            /tmp/tennis-resources-after.json
+            /tmp/tennis-model-version.json
+            /tmp/tennis-ml-status.json
+            /tmp/tennis-ingest-smoke.json
+            /tmp/tennis-outcome-smoke.json
+            /tmp/tennis-training-smoke.json
+            /tmp/mlb-stack-before.sha256
+            /tmp/mlb-stack-after.sha256
+          if-no-files-found: warn
+          retention-days: 30
