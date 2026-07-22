@@ -1025,11 +1025,23 @@ def lambda_handler(event, context):
             canonical = _store_canonical_pull_history(game_date=game_date, asof=asof, run=run, compact=date_compact)
             canonical_pull_history.append({"game_date_et": game_date, **canonical})
 
+            # Persist the customer-facing winner rows immediately after the
+            # canonical pull. Optional reporting must never consume the entire
+            # invocation budget before durable scoring completes.
+            game_winner_prediction_results.append({"game_date_et": game_date, **_build_and_store_game_winners(game_date=game_date)})
+            hot_movement_feature_results.append({"game_date_et": game_date, **_store_hot_movement_features(game_date=game_date, asof=asof, run=run)})
             audit_results.append({"game_date_et": game_date, **_record_snapshot_audit_safe(game_date=game_date, asof=asof, t=t, run=run, date_compact=date_compact, raw_games=raw)})
             prediction_audit_results.append({"game_date_et": game_date, **_record_no_edge_predictions_safe(game_date=game_date, asof=asof, date_compact=date_compact)})
-            hot_movement_feature_results.append({"game_date_et": game_date, **_store_hot_movement_features(game_date=game_date, asof=asof, run=run)})
-            hot_side_prediction_results.append({"game_date_et": game_date, **_build_read_only_hot_sides(game_date=game_date)})
-            game_winner_prediction_results.append({"game_date_et": game_date, **_build_and_store_game_winners(game_date=game_date)})
+            if event.get("httpMethod") or event.get("requestContext"):
+                hot_side_prediction_results.append({"game_date_et": game_date, **_build_read_only_hot_sides(game_date=game_date)})
+            else:
+                hot_side_prediction_results.append({
+                    "game_date_et": game_date,
+                    "ok": True,
+                    "skipped": True,
+                    "reason": "scheduled_ingestion_prioritizes_durable_game_winner_persistence",
+                    "readEndpoint": "/v1/predictions/mlb/hot-sides",
+                })
             if not bbs_shadow_capture_attempted:
                 bbs_shadow_capture_attempted = True
                 bbs_result = _capture_bbs_shadow_safe(

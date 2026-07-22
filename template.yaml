@@ -608,7 +608,12 @@ Resources:
   MLBAuditedPullFunction:
     Type: AWS::Serverless::Function
     Properties:
-      Timeout: 120
+      # The protected writer performs official-roster reconciliation, canonical
+      # storage, full-slate scoring, and immutable pre-lock persistence. The old
+      # 120-second ceiling repeatedly terminated it after the pull was stored but
+      # before winner rows were durable.
+      Timeout: 600
+      MemorySize: 2048
       # A missing canonical evidence slot is material, so ingestion keeps one
       # bounded retry. Slot-conditional storage makes that retry idempotent.
       EventInvokeConfig:
