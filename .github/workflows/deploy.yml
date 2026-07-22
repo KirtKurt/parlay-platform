@@ -120,6 +120,8 @@ jobs:
           python scripts/verify_mlb_official_prediction_semantics.py
           python -m pytest -q tests/unit/test_mlb_production_acceptance.py
           python -m py_compile scripts/mlb_deploy_http_probe.py
+          python -m py_compile scripts/mlb_lambda_artifact_identity.py
+          python -m py_compile scripts/create_mlb_lambda_build_manifest.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
           python -m py_compile scripts/invoke_mlb_trainer_with_retry.py
           python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
@@ -151,6 +153,7 @@ jobs:
             tests/unit/test_mlb_ml_aws_training_v1.py
             tests/unit/test_mlb_deploy_identity.py
             tests/unit/test_mlb_deploy_http_probe.py
+            tests/unit/test_mlb_lambda_artifact_identity.py
             tests/unit/test_mlb_trainer_invoke_retry.py
             tests/unit/test_mlb_trainer_deploy_response.py
             tests/unit/test_mlb_workflow_authority.py
@@ -211,7 +214,19 @@ jobs:
       - name: Verify built MLB Lambda cold start
         env:
           INQSI_MLB_LAMBDA_TASK_ROOT: .aws-sam/build/MLBV3ReadFunction
+          PYTHONDONTWRITEBYTECODE: "1"
         run: python scripts/verify_api_function_mlb_v3_import.py
+
+      - name: Bind the verified clean SAM build to the deployment identity
+        env:
+          EXPECTED_TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
+        run: |
+          set -euo pipefail
+          python scripts/create_mlb_lambda_build_manifest.py \
+            --build-root .aws-sam/build \
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-template-sha256 "$EXPECTED_TEMPLATE_SHA256" \
+            --output runtime_reports/mlb_lambda_build_manifest_deploy.json
 
       - name: Wait for CloudFormation updateability
         run: |
@@ -224,7 +239,7 @@ jobs:
               --output text 2>/dev/null || echo STACK_MISSING)
             echo "CloudFormation status: $STATUS"
             case "$STATUS" in
-              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE|STACK_MISSING)
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)
                 exit 0
                 ;;
               *_IN_PROGRESS)
@@ -239,7 +254,75 @@ jobs:
           echo "::error::Timed out waiting for CloudFormation"
           exit 1
 
+      - name: Preflight Lambda artifact attestation access
+        run: |
+          set -euo pipefail
+          stack_id=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'Stacks[0].StackId' \
+            --output text 2>/dev/null || true)
+          if [ -z "$stack_id" ] || [ "$stack_id" = "None" ]; then
+            echo "Stack is not present; artifact access will be proved after creation."
+            exit 0
+          fi
+          for logical_id in \
+            MLBAuditedPullFunction \
+            MLBDailyPickLockFunction \
+            MLBMLTrainingFunction \
+            MLBProductionVerifierFunction \
+            MLBV3ReadFunction \
+            MLBResultsSchedulerFunction \
+            SoccerSchedulerFunction \
+            InqsiAutopsySchedulerFunction; do
+            function_name=$(aws cloudformation describe-stack-resource \
+              --stack-name parlay-platform-dev \
+              --logical-resource-id "$logical_id" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --query 'StackResourceDetail.PhysicalResourceId' \
+              --output text)
+            test -n "$function_name"
+            test "$function_name" != "None"
+            code_url=$(aws lambda get-function \
+              --function-name "$function_name" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --query 'Code.Location' \
+              --output text)
+            test -n "$code_url"
+            test "$code_url" != "None"
+            LAMBDA_CODE_URL="$code_url" python - <<'PY'
+          import os
+          import time
+          import urllib.error
+          import urllib.request
+
+          for attempt in range(1, 4):
+              request = urllib.request.Request(
+                  os.environ['LAMBDA_CODE_URL'],
+                  headers={'Range': 'bytes=0-0'},
+                  method='GET',
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=30) as response:
+                      if not response.read(1):
+                          raise RuntimeError(
+                              'Lambda deployment package preflight returned no bytes'
+                          )
+                  break
+              except urllib.error.HTTPError as exc:
+                  if exc.code != 429 and not 500 <= exc.code <= 599:
+                      raise
+                  if attempt == 3:
+                      raise
+              except (urllib.error.URLError, TimeoutError):
+                  if attempt == 3:
+                      raise
+              time.sleep(2 ** (attempt - 1))
+          PY
+          done
+
       - name: Deploy exact canonical source
+        id: deploy
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
           BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
@@ -247,15 +330,18 @@ jobs:
           DEPLOY_TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
         run: |
           set -euo pipefail
+          DEPLOY_RUN_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "run_id=$DEPLOY_RUN_ID" >> "$GITHUB_OUTPUT"
           parameter_overrides=(
             "OddsApiKey=${ODDS_API_KEY_VALUE}"
             "BbsApiKey=${BBS_API_KEY_VALUE}"
             "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}"
             "DeployGitSha=${GITHUB_SHA}"
             "DeployTemplateSha256=${DEPLOY_TEMPLATE_SHA256}"
+            "DeployRunId=${DEPLOY_RUN_ID}"
           )
           sam deploy \
-            --template-file template.yaml \
+            --template-file .aws-sam/build/template.yaml \
             --stack-name parlay-platform-dev \
             --region "${{ secrets.AWS_REGION }}" \
             --capabilities CAPABILITY_IAM \
@@ -289,6 +375,8 @@ jobs:
             --region "${{ secrets.AWS_REGION }}" \
             --expected-git-sha "$GITHUB_SHA" \
             --expected-template-sha256 "$EXPECTED_TEMPLATE_SHA256" \
+            --expected-deploy-run-id "${{ steps.deploy.outputs.run_id }}" \
+            --expected-code-manifest runtime_reports/mlb_lambda_build_manifest_deploy.json \
             --output runtime_reports/mlb_deploy_identity_latest.json
 
       - name: Prove shared Lambda capacity recovered before trainer initialization
@@ -836,5 +924,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mlb-deployment-identity-${{ github.run_id }}
-          path: runtime_reports/mlb_deploy_identity_latest.json
+          path: |
+            runtime_reports/mlb_lambda_build_manifest_deploy.json
+            runtime_reports/mlb_deploy_identity_latest.json
           if-no-files-found: warn

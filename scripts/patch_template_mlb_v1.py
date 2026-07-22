@@ -70,23 +70,39 @@ def set_global_env(s: str, key: str, value: str) -> str:
 
 
 def ensure_deploy_identity_parameters(s: str) -> str:
-    required = ("  DeployGitSha:\n", "  DeployTemplateSha256:\n")
-    if all(token in s for token in required):
-        return s
     marker = "Globals:\n"
     if marker not in s:
         raise RuntimeError("Globals marker missing")
-    block = """  DeployGitSha:
+    parameter_blocks = (
+        (
+            "  DeployGitSha:\n",
+            """  DeployGitSha:
     Type: String
     Default: unknown
     Description: Exact Git commit deployed to AWS
-  DeployTemplateSha256:
+""",
+        ),
+        (
+            "  DeployTemplateSha256:\n",
+            """  DeployTemplateSha256:
     Type: String
     Default: unknown
     Description: SHA-256 of the canonical SAM template deployed to AWS
-
-"""
-    return s.replace(marker, block + marker, 1)
+""",
+        ),
+        (
+            "  DeployRunId:\n",
+            """  DeployRunId:
+    Type: String
+    Default: unknown
+    Description: Unique GitHub Actions deployment run and attempt
+""",
+        ),
+    )
+    for token, block in parameter_blocks:
+        if token not in s:
+            s = s.replace(marker, block + marker, 1)
+    return s
 
 
 def patch_mlb_hot_block(s: str) -> str:
@@ -148,6 +164,7 @@ text = text.replace('"days_ahead":1', '"days_ahead":0').replace('"days_ahead": 1
 for key, value in [
     ("INQSI_DEPLOY_GIT_SHA", "!Ref DeployGitSha"),
     ("INQSI_DEPLOY_TEMPLATE_SHA256", "!Ref DeployTemplateSha256"),
+    ("INQSI_DEPLOY_RUN_ID", "!Ref DeployRunId"),
     ("MLB_PULL_START_AT_ET", "'01:00'"),
     ("MLB_SCHED_INTERVAL_MINUTES", "'15'"),
     ("ODDS_PRIMARY_BOOK", "'fanduel'"),
@@ -222,8 +239,10 @@ violations = []
 for required, message in [
     ("  DeployGitSha:", "DeployGitSha parameter missing"),
     ("  DeployTemplateSha256:", "DeployTemplateSha256 parameter missing"),
+    ("  DeployRunId:", "DeployRunId parameter missing"),
     ("INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha", "deploy Git SHA environment missing"),
     ("INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256", "deploy template SHA environment missing"),
+    ("INQSI_DEPLOY_RUN_ID: !Ref DeployRunId", "deploy run ID environment missing"),
     ("MLBDailyPickLockFunction:", "daily lock function missing"),
     ("Path: /v1/mlb/locks/status", "lock status route missing"),
     ("DynamoDBReadPolicy:\n            TableName: !Ref OutcomesTable", "daily lock outcomes read policy missing"),

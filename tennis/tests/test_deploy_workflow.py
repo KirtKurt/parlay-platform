@@ -79,3 +79,47 @@ def test_tennis_canary_validates_builds_and_tests_before_deploying():
     build_index = workflow.index("sam build --no-cached --template-file template.yaml")
     deploy_index = workflow.index("sam deploy")
     assert test_index < validate_index < build_index < deploy_index
+
+
+def test_failed_initial_canary_recovery_is_identity_bound_and_empty_only():
+    workflow = _workflow()
+
+    assert (
+        "Recover only the immediately prior failed disabled tennis canary" in workflow
+    )
+    assert '"DeployGitSha": "24aaf52651294b2a2d478dd5e49b516ae3149210"' in workflow
+    assert (
+        "8cd7b8d864c60e29638261f85809879773e6694628d2d7c833e05c7c85e7c2cc" in workflow
+    )
+    assert '"TennisScheduleState": "DISABLED"' in workflow
+    assert "reviewed sqs:CreateQueue denial" in workflow
+    assert '"TennisSnapshotsTable": "AWS::DynamoDB::Table"' in workflow
+    assert '"TennisBbsApiSecret": "AWS::SecretsManager::Secret"' in workflow
+    assert "All five retained resources are exact, tennis-tagged" in workflow
+    assert "aws dynamodb list-tags-of-resource" in workflow
+    assert "aws s3api get-bucket-tagging" in workflow
+    assert "aws secretsmanager describe-secret" in workflow
+    assert "Refusing to delete nonempty failed-canary table" in workflow
+    assert "Refusing to delete a nonempty failed-canary archive bucket" in workflow
+    assert "--recovery-window-in-days 7" in workflow
+    assert "--force-delete-without-recovery" not in workflow
+
+    recovery = workflow.split(
+        "Recover only the immediately prior failed disabled tennis canary", 1
+    )[1].split("Create but do not execute tennis change set", 1)[0]
+    assert recovery.index("aws dynamodb delete-table") < recovery.index(
+        "aws cloudformation delete-stack"
+    )
+
+
+def test_tennis_canary_proves_mlb_runtime_continuity_without_invoking_mlb():
+    workflow = _workflow()
+
+    step = workflow.split(
+        "Prove MLB scheduled-pull continuity without invoking MLB", 1
+    )[1].split("Fingerprint production MLB stack after tennis deployment", 1)[0]
+    assert "MLBAuditedPullFunction" in step
+    assert "aws logs describe-log-streams" in step
+    assert "aws cloudwatch get-metric-statistics" in step
+    assert "Invocations Errors Throttles" in step
+    assert "aws lambda invoke" not in step

@@ -28,10 +28,18 @@ def test_tennis_sam_is_a_separate_eventbridge_only_stack():
     assert "Default: DISABLED" in template
     assert "cron(0/15 * * * ? *)" in template
     assert "Type: Api" not in template
-    assert "ReservedConcurrentExecutions: 1" in template
-    assert "TennisPullDeadLetterQueue" in template
-    assert "DestinationConfig:" in template
-    assert "SQSSendMessagePolicy:" in template
+    assert "ReservedConcurrentExecutions:" not in template
+    assert 'TENNIS_SLOT_LEASE_SECONDS: "300"' in template
+    assert "TimeToLiveSpecification:" in template
+    assert "DeletionPolicy: RetainExceptOnCreate" in template
+    assert "Type: AWS::SQS::" not in template
+    assert "TennisPullDeadLetterQueue" not in template
+    assert "DeadLetterConfig:" not in template
+    assert "DestinationConfig:" not in template
+    assert "SQSSendMessagePolicy:" not in template
+    assert "sqs:" not in template.lower()
+    assert template.count("MaximumEventAgeInSeconds: 900") == 2
+    assert template.count("MaximumRetryAttempts: 2") == 2
     assert "Input:" not in template
     assert 'TENNIS_PULL_LEAD_HOURS: "8"' in template
     assert "TENNIS_MODEL_STATE: RULE_BASED_SHADOW" in template
@@ -44,7 +52,10 @@ def test_tennis_sam_is_a_separate_eventbridge_only_stack():
     assert "s3:DeleteObject" not in template
     assert "TennisCoverageAlarm:" in template
     assert "TennisQuotaReserveAlarm:" in template
-    assert "TennisPullDeadLetterAgeAlarm:" in template
+    assert "TennisPullAsyncDropAlarm:" in template
+    assert "MetricName: AsyncEventsDropped" in template
+    assert "TennisPullAsyncEventAgeAlarm:" in template
+    assert "MetricName: AsyncEventAge" in template
     assert "RetentionInDays: 30" in template
 
 

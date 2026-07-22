@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from metrics import emit_report_metrics
+from metrics import emit_failure_metrics, emit_report_metrics
 
 
 def test_compact_emf_metrics_cover_quality_quota_and_archive(capsys):
@@ -67,3 +67,20 @@ def test_retry_coverage_uses_cumulative_covered_events(capsys):
 
     assert values["StoredSnapshots"] == 2.0
     assert values["CoveragePercent"] == 100.0
+
+
+def test_failure_metrics_preserve_retry_and_exhaustion_evidence(capsys):
+    values = emit_failure_metrics(
+        error_code="provider_request_failed",
+        failure_attempt_count=3,
+        retry_exhausted=True,
+        duration_ms=25.0,
+        namespace="Inqsi/TennisCollector",
+    )
+    envelope = json.loads(capsys.readouterr().out)
+
+    assert values["CollectorFailure"] == 1.0
+    assert values["FailureAttemptCount"] == 3.0
+    assert values["RetryExhausted"] == 1.0
+    assert envelope["FailureCode"] == "provider_request_failed"
+    assert envelope["Sport"] == "tennis"

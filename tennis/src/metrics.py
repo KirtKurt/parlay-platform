@@ -116,3 +116,49 @@ def emit_report_metrics(
     }
     print(json.dumps(envelope, sort_keys=True, separators=(",", ":")))
     return values
+
+
+def emit_failure_metrics(
+    *,
+    error_code: str,
+    failure_attempt_count: int,
+    retry_exhausted: bool,
+    duration_ms: float,
+    namespace: str,
+) -> Dict[str, float]:
+    """Emit failure evidence even when the collector cannot produce a report."""
+
+    values = {
+        "CollectorFailure": 1.0,
+        "FailureAttemptCount": float(max(int(failure_attempt_count), 0)),
+        "RetryExhausted": 1.0 if retry_exhausted else 0.0,
+        "FailureDurationMs": max(float(duration_ms), 0.0),
+    }
+    envelope: Dict[str, Any] = {
+        "_aws": {
+            "Timestamp": int(time.time() * 1000),
+            "CloudWatchMetrics": [
+                {
+                    "Namespace": namespace,
+                    "Dimensions": [["Sport", "Mode"]],
+                    "Metrics": [
+                        {
+                            "Name": name,
+                            "Unit": (
+                                "Milliseconds"
+                                if name == "FailureDurationMs"
+                                else "None"
+                            ),
+                        }
+                        for name in values
+                    ],
+                }
+            ],
+        },
+        "Sport": "tennis",
+        "Mode": "RULE_BASED_SHADOW",
+        "FailureCode": error_code,
+        **values,
+    }
+    print(json.dumps(envelope, sort_keys=True, separators=(",", ":")))
+    return values

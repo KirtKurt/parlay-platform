@@ -44,7 +44,7 @@ Conditions:
 Resources:
   TennisSnapshotsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
@@ -62,6 +62,9 @@ Resources:
         PointInTimeRecoveryEnabled: true
       SSESpecification:
         SSEEnabled: true
+      TimeToLiveSpecification:
+        AttributeName: ttl_epoch
+        Enabled: true
       Tags:
         - Key: inqsi:sport
           Value: tennis
@@ -70,7 +73,7 @@ Resources:
 
   TennisSignalsTable:
     Type: AWS::DynamoDB::Table
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BillingMode: PAY_PER_REQUEST
@@ -96,7 +99,7 @@ Resources:
 
   TennisArchiveBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       VersioningConfiguration:
@@ -128,7 +131,7 @@ Resources:
 
   TennisOddsApiSecret:
     Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       Description: Dedicated tennis odds credential; not shared with MLB
@@ -141,7 +144,7 @@ Resources:
 
   TennisBbsApiSecret:
     Type: AWS::SecretsManager::Secret
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       Description: BBS credential scoped to the manual tennis capability probe
@@ -152,17 +155,6 @@ Resources:
         - Key: inqsi:consumer
           Value: tennis-results-probe-only
 
-  TennisPullDeadLetterQueue:
-    Type: AWS::SQS::Queue
-    Properties:
-      MessageRetentionPeriod: 1209600
-      SqsManagedSseEnabled: true
-      Tags:
-        - Key: inqsi:sport
-          Value: tennis
-        - Key: inqsi:purpose
-          Value: pull-failures
-
   TennisPullFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -172,14 +164,9 @@ Resources:
       Architectures: [x86_64]
       Timeout: 240
       MemorySize: 1024
-      ReservedConcurrentExecutions: 1
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 900
         MaximumRetryAttempts: 2
-        DestinationConfig:
-          OnFailure:
-            Type: SQS
-            Destination: !GetAtt TennisPullDeadLetterQueue.Arn
       Environment:
         Variables:
           TENNIS_ODDS_API_SECRET_ARN: !Ref TennisOddsApiSecret
@@ -205,6 +192,7 @@ Resources:
           TENNIS_QUOTA_PROTECTED_RESERVE: !Ref TennisQuotaProtectedReserve
           TENNIS_QUOTA_DAILY_BUDGET: !Ref TennisQuotaDailyBudget
           TENNIS_REQUIRE_QUOTA_HEADERS: "true"
+          TENNIS_SLOT_LEASE_SECONDS: "300"
           TENNIS_METRICS_NAMESPACE: Inqsi/TennisCollector
           TENNIS_MODEL_STATE: RULE_BASED_SHADOW
           INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
@@ -214,8 +202,6 @@ Resources:
             TableName: !Ref TennisSnapshotsTable
         - DynamoDBCrudPolicy:
             TableName: !Ref TennisSignalsTable
-        - SQSSendMessagePolicy:
-            QueueName: !GetAtt TennisPullDeadLetterQueue.QueueName
         - Statement:
             - Sid: ReadOnlyDedicatedTennisOddsSecret
               Effect: Allow
@@ -238,7 +224,6 @@ Resources:
       Runtime: python3.11
       Timeout: 15
       MemorySize: 256
-      ReservedConcurrentExecutions: 1
       Environment:
         Variables:
           TENNIS_BBS_API_SECRET_ARN: !Ref TennisBbsApiSecret
@@ -262,8 +247,6 @@ Resources:
       Targets:
         - Id: TennisPullFunctionTarget
           Arn: !GetAtt TennisPullFunction.Arn
-          DeadLetterConfig:
-            Arn: !GetAtt TennisPullDeadLetterQueue.Arn
           RetryPolicy:
             MaximumEventAgeInSeconds: 900
             MaximumRetryAttempts: 2
@@ -276,29 +259,9 @@ Resources:
       Principal: events.amazonaws.com
       SourceArn: !GetAtt TennisPullScheduleRule.Arn
 
-  TennisPullDeadLetterQueuePolicy:
-    Type: AWS::SQS::QueuePolicy
-    Properties:
-      Queues:
-        - !Ref TennisPullDeadLetterQueue
-      PolicyDocument:
-        Version: "2012-10-17"
-        Statement:
-          - Sid: TennisScheduleOnly
-            Effect: Allow
-            Principal:
-              Service: events.amazonaws.com
-            Action: sqs:SendMessage
-            Resource: !GetAtt TennisPullDeadLetterQueue.Arn
-            Condition:
-              StringEquals:
-                aws:SourceAccount: !Ref AWS::AccountId
-              ArnEquals:
-                aws:SourceArn: !GetAtt TennisPullScheduleRule.Arn
-
   TennisPullLogGroup:
     Type: AWS::Logs::LogGroup
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       LogGroupName: !Sub "/aws/lambda/${TennisPullFunction}"
@@ -306,7 +269,7 @@ Resources:
 
   TennisResultsProbeLogGroup:
     Type: AWS::Logs::LogGroup
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       LogGroupName: !Sub "/aws/lambda/${TennisResultsProbeFunction}"
@@ -380,16 +343,16 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
 
-  TennisPullDeadLetterAlarm:
+  TennisPullAsyncDropAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: Tennis pull exhausted EventBridge or Lambda retries
-      Namespace: AWS/SQS
-      MetricName: ApproximateNumberOfMessagesVisible
+      AlarmDescription: Tennis pull was dropped after exhausting Lambda retry or age limits
+      Namespace: AWS/Lambda
+      MetricName: AsyncEventsDropped
       Dimensions:
-        - Name: QueueName
-          Value: !GetAtt TennisPullDeadLetterQueue.QueueName
-      Statistic: Maximum
+        - Name: FunctionName
+          Value: !Ref TennisPullFunction
+      Statistic: Sum
       Period: 300
       EvaluationPeriods: 1
       Threshold: 1
@@ -397,19 +360,19 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
 
-  TennisPullDeadLetterAgeAlarm:
+  TennisPullAsyncEventAgeAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
-      AlarmDescription: Tennis DLQ message has remained unhandled for ten minutes
-      Namespace: AWS/SQS
-      MetricName: ApproximateAgeOfOldestMessage
+      AlarmDescription: Tennis asynchronous invocation has waited at least ten minutes
+      Namespace: AWS/Lambda
+      MetricName: AsyncEventAge
       Dimensions:
-        - Name: QueueName
-          Value: !GetAtt TennisPullDeadLetterQueue.QueueName
+        - Name: FunctionName
+          Value: !Ref TennisPullFunction
       Statistic: Maximum
       Period: 300
-      EvaluationPeriods: 2
-      Threshold: 600
+      EvaluationPeriods: 1
+      Threshold: 600000
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
       AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
@@ -591,9 +554,6 @@ Outputs:
   TennisArchiveBucketName:
     Description: Retained immutable tennis Parquet training archive
     Value: !Ref TennisArchiveBucket
-  TennisPullDeadLetterQueueUrl:
-    Description: Tennis-only failed-pull queue
-    Value: !Ref TennisPullDeadLetterQueue
   DeployedGitSha:
     Description: Exact tennis source revision
     Value: !Ref DeployGitSha

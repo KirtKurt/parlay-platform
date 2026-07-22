@@ -63,6 +63,7 @@ class TennisConfig:
     quota_protected_reserve: int = 250
     quota_daily_budget: int = 20_000
     require_quota_headers: bool = True
+    slot_lease_seconds: int = 300
     metrics_namespace: str = "Inqsi/TennisCollector"
     model_state: str = "RULE_BASED_SHADOW"
 
@@ -105,6 +106,7 @@ class TennisConfig:
             ),
             quota_daily_budget=_positive_int("TENNIS_QUOTA_DAILY_BUDGET", 20_000),
             require_quota_headers=_boolean("TENNIS_REQUIRE_QUOTA_HEADERS", True),
+            slot_lease_seconds=_positive_int("TENNIS_SLOT_LEASE_SECONDS", 300),
             metrics_namespace=os.environ.get(
                 "TENNIS_METRICS_NAMESPACE", "Inqsi/TennisCollector"
             ).strip(),
@@ -138,6 +140,8 @@ class TennisConfig:
             raise RuntimeError(
                 "TENNIS_QUOTA_DAILY_BUDGET must exceed TENNIS_QUOTA_PROTECTED_RESERVE"
             )
+        if not 241 <= self.slot_lease_seconds <= 840:
+            raise RuntimeError("TENNIS_SLOT_LEASE_SECONDS must be between 241 and 840")
         if not self.metrics_namespace:
             raise RuntimeError("TENNIS_METRICS_NAMESPACE is required")
         if self.markets != "h2h":

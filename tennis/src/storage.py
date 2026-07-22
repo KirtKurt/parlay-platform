@@ -71,6 +71,20 @@ def tournament_checkpoint_key(
     }
 
 
+def slot_lease_key(slot_utc: str) -> Dict[str, str]:
+    return {
+        "PK": "TENNIS#COLLECTOR#LEASE",
+        "SK": f"SLOT#{slot_utc}",
+    }
+
+
+def invocation_failure_key(slot_utc: str, delivery_id: str) -> Dict[str, str]:
+    return {
+        "PK": f"TENNIS#COLLECTOR#FAILURE#SLOT#{slot_utc}",
+        "SK": f"DELIVERY#{delivery_id}",
+    }
+
+
 class DynamoTennisStore:
     def __init__(self, snapshots_table: str, signals_table: str):
         import boto3
@@ -78,6 +92,155 @@ class DynamoTennisStore:
         dynamodb = boto3.resource("dynamodb")
         self.snapshots = dynamodb.Table(snapshots_table)
         self.signals = dynamodb.Table(signals_table)
+
+    def acquire_slot_lease(
+        self,
+        slot_utc: str,
+        *,
+        owner_id: str,
+        acquired_at_utc: str,
+        now_epoch: int,
+        lease_seconds: int,
+    ) -> bool:
+        ttl_epoch = int(now_epoch) + int(lease_seconds)
+        item = {
+            **slot_lease_key(slot_utc),
+            "record_type": "tennis_collector_slot_lease",
+            "sport": "tennis",
+            "slot_utc": slot_utc,
+            "owner_id": owner_id,
+            "acquired_at_utc": acquired_at_utc,
+            "ttl_epoch": ttl_epoch,
+        }
+        try:
+            self.snapshots.put_item(
+                Item=ddb_safe(item),
+                ConditionExpression=(
+                    "attribute_not_exists(PK) OR #ttl_epoch < :now_epoch"
+                ),
+                ExpressionAttributeNames={"#ttl_epoch": "ttl_epoch"},
+                ExpressionAttributeValues=ddb_safe({":now_epoch": int(now_epoch)}),
+            )
+            return True
+        except Exception as exc:
+            if _conditional_failure(exc):
+                return False
+            raise RuntimeError("tennis_slot_lease_acquire_failed") from None
+
+    def release_slot_lease(self, slot_utc: str, *, owner_id: str) -> bool:
+        try:
+            self.snapshots.delete_item(
+                Key=slot_lease_key(slot_utc),
+                ConditionExpression="owner_id = :owner_id",
+                ExpressionAttributeValues={":owner_id": owner_id},
+            )
+            return True
+        except Exception as exc:
+            if _conditional_failure(exc):
+                return False
+            raise RuntimeError("tennis_slot_lease_release_failed") from None
+
+    def record_invocation_failure(
+        self,
+        slot_utc: str,
+        *,
+        delivery_id: str,
+        scheduled_at_utc: str,
+        failed_at_utc: str,
+        request_id: str,
+        error_code: str,
+        max_attempts: int,
+    ) -> Dict[str, Any]:
+        """Atomically journal failures across Lambda retries for one delivery."""
+
+        key = invocation_failure_key(slot_utc, delivery_id)
+        maximum = max(int(max_attempts), 1)
+        response = self.snapshots.update_item(
+            Key=key,
+            UpdateExpression=(
+                "SET schema_version=:version, record_type=:record_type, "
+                "sport=:sport, slot_utc=:slot, delivery_id=:delivery, "
+                "scheduled_at_utc=:scheduled, "
+                "first_failed_at_utc=if_not_exists(first_failed_at_utc,:failed), "
+                "last_failed_at_utc=:failed, last_request_id=:request, "
+                "last_error_code=:error, max_attempts=:maximum "
+                "ADD failure_attempt_count :one"
+            ),
+            ExpressionAttributeValues=ddb_safe(
+                {
+                    ":version": "INQSI-TENNIS-COLLECTOR-FAILURE-v1",
+                    ":record_type": "tennis_collector_failure_journal",
+                    ":sport": "tennis",
+                    ":slot": slot_utc,
+                    ":delivery": delivery_id,
+                    ":scheduled": scheduled_at_utc,
+                    ":failed": failed_at_utc,
+                    ":request": request_id,
+                    ":error": error_code,
+                    ":maximum": maximum,
+                    ":one": 1,
+                }
+            ),
+            ReturnValues="ALL_NEW",
+        )
+        item = from_ddb(response.get("Attributes") or {})
+        attempt_count = int(item.get("failure_attempt_count") or 0)
+        exhausted = attempt_count >= maximum
+        status = "EXHAUSTED" if exhausted else "RETRY_PENDING"
+        status_values: Dict[str, Any] = {
+            ":status": status,
+            ":updated": failed_at_utc,
+        }
+        update_expression = "SET #failure_status=:status, updated_at_utc=:updated"
+        if exhausted:
+            update_expression += (
+                ", exhausted_at_utc=if_not_exists(exhausted_at_utc,:updated)"
+            )
+        self.snapshots.update_item(
+            Key=key,
+            UpdateExpression=update_expression,
+            ExpressionAttributeNames={"#failure_status": "failure_status"},
+            ExpressionAttributeValues=status_values,
+        )
+        return {
+            **item,
+            "failure_status": status,
+            "failure_attempt_count": attempt_count,
+            "retry_exhausted": exhausted,
+        }
+
+    def resolve_invocation_failure(
+        self,
+        slot_utc: str,
+        *,
+        delivery_id: str,
+        recovered_at_utc: str,
+        request_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Mark a previously failed delivery recovered without creating a row."""
+
+        key = invocation_failure_key(slot_utc, delivery_id)
+        try:
+            response = self.snapshots.update_item(
+                Key=key,
+                UpdateExpression=(
+                    "SET #failure_status=:recovered, recovered_at_utc=:recovered_at, "
+                    "updated_at_utc=:recovered_at, last_request_id=:request"
+                ),
+                ConditionExpression="attribute_exists(PK) AND attribute_exists(SK)",
+                ExpressionAttributeNames={"#failure_status": "failure_status"},
+                ExpressionAttributeValues={
+                    ":recovered": "RECOVERED",
+                    ":recovered_at": recovered_at_utc,
+                    ":request": request_id,
+                },
+                ReturnValues="ALL_NEW",
+            )
+        except Exception as exc:
+            if _conditional_failure(exc):
+                return None
+            raise RuntimeError("tennis_failure_journal_resolve_failed") from None
+        return from_ddb(response.get("Attributes") or {})
 
     def get_window_state(self, slate_date_et: str) -> Optional[Dict[str, Any]]:
         response = self.snapshots.get_item(
@@ -361,6 +524,92 @@ class InMemoryTennisStore:
         self.runs: Dict[Tuple[str, str], Dict[str, Any]] = {}
         self.event_states: Dict[str, Dict[str, Any]] = {}
         self.tournament_checkpoints: Dict[Tuple[str, str, str], Dict[str, Any]] = {}
+        self.slot_leases: Dict[str, Dict[str, Any]] = {}
+        self.invocation_failures: Dict[Tuple[str, str], Dict[str, Any]] = {}
+
+    def acquire_slot_lease(
+        self,
+        slot_utc: str,
+        *,
+        owner_id: str,
+        acquired_at_utc: str,
+        now_epoch: int,
+        lease_seconds: int,
+    ) -> bool:
+        current = self.slot_leases.get(slot_utc)
+        if current and int(current["ttl_epoch"]) >= int(now_epoch):
+            return False
+        self.slot_leases[slot_utc] = {
+            "owner_id": owner_id,
+            "acquired_at_utc": acquired_at_utc,
+            "ttl_epoch": int(now_epoch) + int(lease_seconds),
+        }
+        return True
+
+    def release_slot_lease(self, slot_utc: str, *, owner_id: str) -> bool:
+        current = self.slot_leases.get(slot_utc)
+        if not current or current.get("owner_id") != owner_id:
+            return False
+        del self.slot_leases[slot_utc]
+        return True
+
+    def record_invocation_failure(
+        self,
+        slot_utc: str,
+        *,
+        delivery_id: str,
+        scheduled_at_utc: str,
+        failed_at_utc: str,
+        request_id: str,
+        error_code: str,
+        max_attempts: int,
+    ) -> Dict[str, Any]:
+        key = (slot_utc, delivery_id)
+        maximum = max(int(max_attempts), 1)
+        row = self.invocation_failures.setdefault(
+            key,
+            {
+                **invocation_failure_key(slot_utc, delivery_id),
+                "schema_version": "INQSI-TENNIS-COLLECTOR-FAILURE-v1",
+                "record_type": "tennis_collector_failure_journal",
+                "sport": "tennis",
+                "slot_utc": slot_utc,
+                "delivery_id": delivery_id,
+                "scheduled_at_utc": scheduled_at_utc,
+                "first_failed_at_utc": failed_at_utc,
+                "failure_attempt_count": 0,
+            },
+        )
+        row["failure_attempt_count"] += 1
+        row["last_failed_at_utc"] = failed_at_utc
+        row["updated_at_utc"] = failed_at_utc
+        row["last_request_id"] = request_id
+        row["last_error_code"] = error_code
+        row["max_attempts"] = maximum
+        exhausted = row["failure_attempt_count"] >= maximum
+        row["failure_status"] = "EXHAUSTED" if exhausted else "RETRY_PENDING"
+        row["retry_exhausted"] = exhausted
+        if exhausted:
+            row.setdefault("exhausted_at_utc", failed_at_utc)
+        return copy.deepcopy(row)
+
+    def resolve_invocation_failure(
+        self,
+        slot_utc: str,
+        *,
+        delivery_id: str,
+        recovered_at_utc: str,
+        request_id: str,
+    ) -> Optional[Dict[str, Any]]:
+        row = self.invocation_failures.get((slot_utc, delivery_id))
+        if row is None:
+            return None
+        row["failure_status"] = "RECOVERED"
+        row["retry_exhausted"] = False
+        row["recovered_at_utc"] = recovered_at_utc
+        row["updated_at_utc"] = recovered_at_utc
+        row["last_request_id"] = request_id
+        return copy.deepcopy(row)
 
     def get_window_state(self, slate_date_et: str) -> Optional[Dict[str, Any]]:
         row = self.windows.get(slate_date_et)

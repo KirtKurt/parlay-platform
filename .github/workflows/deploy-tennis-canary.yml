@@ -21,7 +21,7 @@ concurrency:
 jobs:
   deploy-tennis-canary:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 50
     defaults:
       run:
         shell: bash
@@ -68,37 +68,6 @@ jobs:
           else
             echo "Dedicated TENNIS_ODDS_API_KEY is absent; this is allowed only because the canary schedule is disabled."
           fi
-
-      - name: Diagnose an earlier failed tennis stack before retrying
-        run: |
-          set -euo pipefail
-          stack_status=$(aws cloudformation describe-stacks \
-            --stack-name "$TENNIS_STACK_NAME" \
-            --region us-east-1 \
-            --query 'Stacks[0].StackStatus' \
-            --output text 2>/dev/null || echo STACK_MISSING)
-          if [ "$stack_status" != "ROLLBACK_COMPLETE" ]; then
-            echo "No failed tennis stack requires diagnosis: $stack_status"
-            exit 0
-          fi
-
-          aws cloudformation describe-stack-events \
-            --stack-name "$TENNIS_STACK_NAME" \
-            --region us-east-1 \
-            --query "StackEvents[?ResourceStatus=='CREATE_FAILED'].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]" \
-            --output json > /tmp/tennis-create-failures.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          failures = json.loads(Path("/tmp/tennis-create-failures.json").read_text())
-          print("Original tennis CREATE_FAILED events:")
-          print(json.dumps(failures, indent=2, default=str))
-          if not failures:
-              raise SystemExit("ROLLBACK_COMPLETE stack has no visible CREATE_FAILED event")
-          PY
-          echo "::error::A prior tennis canary stack is ROLLBACK_COMPLETE; diagnosis printed above. No deployment action was taken."
-          exit 86
 
       - name: Install tennis validation dependencies
         run: |
@@ -184,6 +153,308 @@ jobs:
           Path(f"/tmp/mlb-stack-{phase}.sha256").write_text(digest + "\n")
           print(f"Production MLB stack fingerprint ({phase}): {digest}")
           PY
+          date +%s > /tmp/mlb-continuity-start-epoch
+
+      - name: Recover only the immediately prior failed disabled tennis canary
+        run: |
+          set -euo pipefail
+          stack_status=$(aws cloudformation describe-stacks \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo STACK_MISSING)
+          if [ "$stack_status" != "ROLLBACK_COMPLETE" ]; then
+            echo "No failed initial tennis stack requires recovery: $stack_status"
+            exit 0
+          fi
+
+          aws cloudformation describe-stacks \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --output json > /tmp/failed-tennis-stack.json
+          aws cloudformation describe-stack-events \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --output json > /tmp/failed-tennis-events.json
+          aws cloudformation list-stack-resources \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --output json > /tmp/failed-tennis-resources.json
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          stack = json.loads(Path("/tmp/failed-tennis-stack.json").read_text())["Stacks"][0]
+          parameters = {
+              row["ParameterKey"]: row.get("ParameterValue", "")
+              for row in stack.get("Parameters", [])
+          }
+          expected = {
+              "TennisScheduleState": "DISABLED",
+              "DeployGitSha": "24aaf52651294b2a2d478dd5e49b516ae3149210",
+              "DeployTemplateSha256": (
+                  "8cd7b8d864c60e29638261f85809879773e6694628d2d7c833e05c7c85e7c2cc"
+              ),
+          }
+          mismatches = {
+              key: {"expected": value, "actual": parameters.get(key)}
+              for key, value in expected.items()
+              if parameters.get(key) != value
+          }
+          if stack.get("StackName") != "parlay-platform-tennis-dev" or mismatches:
+              raise SystemExit(
+                  f"Refusing to recover a stack outside the failed tennis boundary: {mismatches}"
+              )
+
+          events = json.loads(Path("/tmp/failed-tennis-events.json").read_text())
+          failures = [
+              {
+                  "logicalId": row.get("LogicalResourceId"),
+                  "type": row.get("ResourceType"),
+                  "status": row.get("ResourceStatus"),
+                  "reason": row.get("ResourceStatusReason"),
+              }
+              for row in events.get("StackEvents", [])
+              if str(row.get("ResourceStatus", "")).endswith("_FAILED")
+          ]
+          print("Prior failed tennis create events:")
+          print(json.dumps(failures, indent=2, sort_keys=True))
+          denied_queue = [
+              row
+              for row in failures
+              if row.get("logicalId") == "TennisPullDeadLetterQueue"
+              and row.get("type") == "AWS::SQS::Queue"
+              and "sqs:createqueue" in str(row.get("reason") or "").lower()
+              and "accessdenied" in str(row.get("reason") or "").lower()
+          ]
+          if len(denied_queue) != 1:
+              raise SystemExit(
+                  "Prior tennis failure was not the reviewed sqs:CreateQueue denial"
+              )
+
+          resources = json.loads(Path("/tmp/failed-tennis-resources.json").read_text())
+          allowed_retained = {
+              "TennisSnapshotsTable": "AWS::DynamoDB::Table",
+              "TennisSignalsTable": "AWS::DynamoDB::Table",
+              "TennisArchiveBucket": "AWS::S3::Bucket",
+              "TennisOddsApiSecret": "AWS::SecretsManager::Secret",
+              "TennisBbsApiSecret": "AWS::SecretsManager::Secret",
+          }
+          retained = []
+          safe_id = re.compile(r"^[A-Za-z0-9:/._+=@-]+$")
+          for row in resources.get("StackResourceSummaries", []):
+              logical_id = str(row.get("LogicalResourceId") or "")
+              resource_type = str(row.get("ResourceType") or "")
+              physical_id = str(row.get("PhysicalResourceId") or "")
+              if not logical_id.startswith("Tennis"):
+                  raise SystemExit(f"Non-tennis resource found in failed stack: {logical_id}")
+              if row.get("ResourceStatus") != "DELETE_SKIPPED":
+                  continue
+              if (
+                  allowed_retained.get(logical_id) != resource_type
+                  or not safe_id.fullmatch(physical_id)
+              ):
+                  raise SystemExit(
+                      f"Unexpected retained failed-stack resource: {logical_id} {resource_type}"
+                  )
+              retained.append(
+                  {"logicalId": logical_id, "type": resource_type, "physicalId": physical_id}
+              )
+          if {row["logicalId"] for row in retained} != set(allowed_retained):
+              raise SystemExit(
+                  "Failed canary retained-resource set does not match the reviewed five resources"
+              )
+          Path("/tmp/failed-tennis-retained.json").write_text(
+              json.dumps(retained, sort_keys=True)
+          )
+          print("Verified retained failed-canary resources:")
+          print(json.dumps(retained, indent=2, sort_keys=True))
+          PY
+
+          while IFS=$'\t' read -r logical_id resource_type physical_id; do
+            [ -n "$logical_id" ] || continue
+            case "$logical_id:$resource_type" in
+              TennisSnapshotsTable:AWS::DynamoDB::Table)
+                expected_data_class=pre-match-snapshots
+                table_arn=$(aws dynamodb describe-table \
+                  --table-name "$physical_id" \
+                  --region us-east-1 \
+                  --query 'Table.TableArn' \
+                  --output text)
+                aws dynamodb list-tags-of-resource \
+                  --resource-arn "$table_arn" \
+                  --region us-east-1 \
+                  --output json > /tmp/failed-tennis-resource-tags.json
+                ;;
+              TennisSignalsTable:AWS::DynamoDB::Table)
+                expected_data_class=shadow-features
+                table_arn=$(aws dynamodb describe-table \
+                  --table-name "$physical_id" \
+                  --region us-east-1 \
+                  --query 'Table.TableArn' \
+                  --output text)
+                aws dynamodb list-tags-of-resource \
+                  --resource-arn "$table_arn" \
+                  --region us-east-1 \
+                  --output json > /tmp/failed-tennis-resource-tags.json
+                ;;
+              TennisArchiveBucket:AWS::S3::Bucket)
+                expected_data_class=immutable-parquet-training-archive
+                aws s3api get-bucket-tagging \
+                  --bucket "$physical_id" \
+                  --region us-east-1 \
+                  --output json > /tmp/failed-tennis-resource-tags.json
+                ;;
+              TennisOddsApiSecret:AWS::SecretsManager::Secret)
+                expected_data_class=tennis-pull-only
+                aws secretsmanager describe-secret \
+                  --secret-id "$physical_id" \
+                  --region us-east-1 \
+                  --output json > /tmp/failed-tennis-resource-tags.json
+                ;;
+              TennisBbsApiSecret:AWS::SecretsManager::Secret)
+                expected_data_class=tennis-results-probe-only
+                aws secretsmanager describe-secret \
+                  --secret-id "$physical_id" \
+                  --region us-east-1 \
+                  --output json > /tmp/failed-tennis-resource-tags.json
+                ;;
+              *)
+                echo "::error::Unexpected failed-canary resource identity: $logical_id $resource_type"
+                exit 1
+                ;;
+            esac
+
+            FAILED_TENNIS_LOGICAL_ID="$logical_id" \
+            FAILED_TENNIS_RESOURCE_TYPE="$resource_type" \
+            FAILED_TENNIS_EXPECTED_CLASS="$expected_data_class" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          payload = json.loads(Path("/tmp/failed-tennis-resource-tags.json").read_text())
+          tag_rows = payload.get("Tags") or payload.get("TagSet") or []
+          tags = {
+              str(row.get("Key")): str(row.get("Value"))
+              for row in tag_rows
+          }
+          expected = {"inqsi:sport": "tennis"}
+          if os.environ["FAILED_TENNIS_RESOURCE_TYPE"] == "AWS::SecretsManager::Secret":
+              expected["inqsi:consumer"] = os.environ["FAILED_TENNIS_EXPECTED_CLASS"]
+              if payload.get("DeletedDate"):
+                  raise SystemExit("Failed-canary secret is already pending deletion")
+          else:
+              expected["inqsi:data-class"] = os.environ["FAILED_TENNIS_EXPECTED_CLASS"]
+          mismatches = {
+              key: {"expected": value, "actual": tags.get(key)}
+              for key, value in expected.items()
+              if tags.get(key) != value
+          }
+          if mismatches:
+              raise SystemExit(
+                  f"Refusing cleanup for mistagged {os.environ['FAILED_TENNIS_LOGICAL_ID']}: "
+                  f"{mismatches}"
+              )
+          PY
+          done < <(
+            python - <<'PY'
+          import json
+          from pathlib import Path
+
+          for row in json.loads(Path("/tmp/failed-tennis-retained.json").read_text()):
+              print(f"{row['logicalId']}\t{row['type']}\t{row['physicalId']}")
+          PY
+          )
+          echo "All five retained resources are exact, tennis-tagged failed-canary resources."
+
+          while IFS=$'\t' read -r resource_type physical_id; do
+            [ -n "$resource_type" ] || continue
+            case "$resource_type" in
+              AWS::DynamoDB::Table)
+                item_count=$(aws dynamodb scan \
+                  --table-name "$physical_id" \
+                  --region us-east-1 \
+                  --consistent-read \
+                  --select COUNT \
+                  --query Count \
+                  --output text)
+                test "$item_count" = "0" || {
+                  echo "::error::Refusing to delete nonempty failed-canary table: $physical_id"
+                  exit 1
+                }
+                aws dynamodb delete-table \
+                  --table-name "$physical_id" \
+                  --region us-east-1 >/dev/null
+                aws dynamodb wait table-not-exists \
+                  --table-name "$physical_id" \
+                  --region us-east-1
+                ;;
+              AWS::S3::Bucket)
+                FAILED_TENNIS_BUCKET="$physical_id" python - <<'PY'
+          import json
+          import os
+          import subprocess
+
+          payload = json.loads(
+              subprocess.check_output(
+                  [
+                      "aws", "s3api", "list-object-versions",
+                      "--bucket", os.environ["FAILED_TENNIS_BUCKET"],
+                      "--region", "us-east-1", "--output", "json",
+                  ],
+                  text=True,
+              )
+          )
+          if payload.get("Versions") or payload.get("DeleteMarkers"):
+              raise SystemExit("Refusing to delete a nonempty failed-canary archive bucket")
+          PY
+                aws s3api delete-bucket \
+                  --bucket "$physical_id" \
+                  --region us-east-1
+                ;;
+              AWS::SecretsManager::Secret)
+                aws secretsmanager delete-secret \
+                  --secret-id "$physical_id" \
+                  --region us-east-1 \
+                  --recovery-window-in-days 7 >/dev/null
+                ;;
+              AWS::Logs::LogGroup)
+                stream_count=$(aws logs describe-log-streams \
+                  --log-group-name "$physical_id" \
+                  --region us-east-1 \
+                  --limit 1 \
+                  --query 'length(logStreams)' \
+                  --output text)
+                test "$stream_count" = "0" || {
+                  echo "::error::Refusing to delete a nonempty failed-canary log group: $physical_id"
+                  exit 1
+                }
+                aws logs delete-log-group \
+                  --log-group-name "$physical_id" \
+                  --region us-east-1
+                ;;
+              *)
+                echo "::error::Unexpected retained resource type: $resource_type"
+                exit 1
+                ;;
+            esac
+          done < <(
+            python - <<'PY'
+          import json
+          from pathlib import Path
+
+          for row in json.loads(Path("/tmp/failed-tennis-retained.json").read_text()):
+              print(f"{row['type']}\t{row['physicalId']}")
+          PY
+          )
+          aws cloudformation delete-stack \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1
+          aws cloudformation wait stack-delete-complete \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1
+          echo "Recovered only verified-empty resources from the failed disabled tennis create."
 
       - name: Create but do not execute tennis change set
         id: create_changeset
@@ -336,8 +607,26 @@ jobs:
                 aws cloudformation describe-stack-events \
                   --stack-name "$TENNIS_STACK_NAME" \
                   --region us-east-1 \
-                  --max-items 20 \
-                  --output table || true
+                  --output json > /tmp/tennis-failed-events.json || true
+                python - <<'PY'
+          import json
+          from pathlib import Path
+
+          path = Path("/tmp/tennis-failed-events.json")
+          if path.exists():
+              events = json.loads(path.read_text()).get("StackEvents", [])
+              failures = [
+                  {
+                      "logicalId": row.get("LogicalResourceId"),
+                      "type": row.get("ResourceType"),
+                      "status": row.get("ResourceStatus"),
+                      "reason": row.get("ResourceStatusReason"),
+                  }
+                  for row in events
+                  if str(row.get("ResourceStatus", "")).endswith("_FAILED")
+              ]
+              print(json.dumps(failures, indent=2, sort_keys=True))
+          PY
                 echo "::error::Tennis stack is not healthy: $status"
                 exit 1
                 ;;
@@ -501,6 +790,96 @@ jobs:
               raise SystemExit(f"BBS tennis capability probe failed closed: status={status!r}, report={report}")
           print(json.dumps(report, indent=2, default=str))
           print(f"Accepted BBS tennis capability status: {status}")
+          PY
+
+      - name: Prove MLB scheduled-pull continuity without invoking MLB
+        run: |
+          set -euo pipefail
+          test -f /tmp/mlb-continuity-start-epoch
+          mlb_pull_function_name=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --logical-resource-id MLBAuditedPullFunction \
+            --region us-east-1 \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          test -n "$mlb_pull_function_name"
+          test "$mlb_pull_function_name" != "None"
+
+          start_epoch=$(< /tmp/mlb-continuity-start-epoch)
+          start_ms=$((start_epoch * 1000))
+          continuity_deadline=$((SECONDS + 1080))
+          latest_log_ms=0
+          while [ "$SECONDS" -lt "$continuity_deadline" ]; do
+            latest_log_ms=$(aws logs describe-log-streams \
+              --log-group-name "/aws/lambda/$mlb_pull_function_name" \
+              --region us-east-1 \
+              --order-by LastEventTime \
+              --descending \
+              --limit 1 \
+              --query 'logStreams[0].lastEventTimestamp' \
+              --output text 2>/dev/null || echo 0)
+            case "$latest_log_ms" in
+              None|*[!0-9]*) latest_log_ms=0 ;;
+            esac
+            if [ "$latest_log_ms" -ge "$start_ms" ]; then
+              break
+            fi
+            sleep 15
+          done
+          test "$latest_log_ms" -ge "$start_ms" || {
+            echo "::error::No scheduled MLB audited-pull Lambda log arrived during the tennis canary window"
+            exit 1
+          }
+
+          start_iso=$(date -u -d "@$start_epoch" '+%Y-%m-%dT%H:%M:%SZ')
+          metric_deadline=$((SECONDS + 300))
+          while [ "$SECONDS" -lt "$metric_deadline" ]; do
+            end_iso=$(date -u '+%Y-%m-%dT%H:%M:%SZ')
+            for metric_name in Invocations Errors Throttles; do
+              aws cloudwatch get-metric-statistics \
+                --namespace AWS/Lambda \
+                --metric-name "$metric_name" \
+                --dimensions "Name=FunctionName,Value=$mlb_pull_function_name" \
+                --start-time "$start_iso" \
+                --end-time "$end_iso" \
+                --period 60 \
+                --statistics Sum \
+                --region us-east-1 \
+                --output json > "/tmp/mlb-$metric_name.json"
+            done
+            invocation_sum=$(python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path("/tmp/mlb-Invocations.json").read_text())
+          print(sum(float(row.get("Sum") or 0) for row in payload.get("Datapoints", [])))
+          PY
+            )
+            if python -c 'import sys; raise SystemExit(0 if float(sys.argv[1]) > 0 else 1)' "$invocation_sum"; then
+              break
+            fi
+            sleep 10
+          done
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def total(name: str) -> float:
+              payload = json.loads(Path(f"/tmp/mlb-{name}.json").read_text())
+              return sum(float(row.get("Sum") or 0) for row in payload.get("Datapoints", []))
+
+          report = {
+              "Invocations": total("Invocations"),
+              "Errors": total("Errors"),
+              "Throttles": total("Throttles"),
+          }
+          print("MLB audited-pull continuity metrics:")
+          print(json.dumps(report, indent=2, sort_keys=True))
+          if report["Invocations"] < 1:
+              raise SystemExit("MLB scheduled-pull invocation metric did not arrive")
+          if report["Errors"] != 0 or report["Throttles"] != 0:
+              raise SystemExit("MLB audited-pull Lambda errored or throttled during tennis canary")
           PY
 
       - name: Fingerprint production MLB stack after tennis deployment
