@@ -20,4 +20,16 @@ jobs:
         run: |
           set -euo pipefail
           gh api "/repos/${GITHUB_REPOSITORY}/actions/jobs/88834632067/logs" > /tmp/bootstrap.log
-          tail -n 120 /tmp/bootstrap.log
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          lines = Path('/tmp/bootstrap.log').read_text(encoding='utf-8-sig', errors='replace').splitlines()
+          pattern = re.compile(r'(?i)(git rm|git add|git commit|git push|fatal:|error:|rejected|denied|refusing|remote:|process completed)')
+          hits = [line for line in lines if pattern.search(line)]
+          print('=== PUBLICATION_MARKERS ===')
+          for line in hits[-60:]:
+              print(line)
+          print('=== TERMINAL_TAIL ===')
+          for line in lines[-30:]:
+              print(line)
+          PY
