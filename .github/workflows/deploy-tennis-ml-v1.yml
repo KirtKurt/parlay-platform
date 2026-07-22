@@ -42,28 +42,28 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       - name: Validate, deploy, and prove isolation
+        shell: bash
         run: |
+          set -Eeuo pipefail
+          trap 'rc=$?; if [[ ! -s /tmp/tennis-failure.txt ]]; then printf "Tennis workflow invocation failed\nexit=%s\nline=%s\ncommand=%s\n" "$rc" "$LINENO" "$BASH_COMMAND" > /tmp/tennis-failure.txt; fi' ERR
           echo "Tennis provider credential source: ${TENNIS_CREDENTIAL_SOURCE}"
           bash tennis_release/deploy-tennis-ml-v1.sh
       - if: failure()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          test -s /tmp/tennis-failure.txt || printf 'Tennis deployment failed before the driver installed its error trap.\n' > /tmp/tennis-failure.txt
+          test -s /tmp/tennis-failure.txt || printf 'Tennis deployment failed without a diagnostic file.\n' > /tmp/tennis-failure.txt
           gh pr comment "${{ github.event.pull_request.number }}" --body-file /tmp/tennis-failure.txt
+      - if: always()
+        run: |
+          mkdir -p tennis_release/evidence
+          for file in /tmp/tennis-failure.txt /tmp/aws-identity.json /tmp/tennis-stack.json /tmp/tennis-outputs.json /tmp/tennis-model.json /tmp/tennis-ml-status.json /tmp/tennis-discovery.json /tmp/mlb-before.sha256 /tmp/mlb-after.sha256; do
+            [[ -f "$file" ]] && cp "$file" tennis_release/evidence/
+          done
       - if: always()
         uses: actions/upload-artifact@v4
         with:
           name: tennis-v1-ml-deployment-evidence-${{ github.run_id }}-${{ github.run_attempt }}
           if-no-files-found: warn
           retention-days: 30
-          path: |
-            /tmp/tennis-failure.txt
-            /tmp/aws-identity.json
-            /tmp/tennis-stack.json
-            /tmp/tennis-outputs.json
-            /tmp/tennis-model.json
-            /tmp/tennis-ml-status.json
-            /tmp/tennis-discovery.json
-            /tmp/mlb-before.sha256
-            /tmp/mlb-after.sha256
+          path: tennis_release/evidence/
