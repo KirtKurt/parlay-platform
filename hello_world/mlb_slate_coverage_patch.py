@@ -2045,8 +2045,20 @@ def install_public_authority(module: Any, lock_module: Any) -> Any:
         except Exception as exc:
             return _fail_closed(result, str(exc))
 
+    def read_persisted_predictions(*args, **kwargs):
+        # Public persisted reads replay the same immutable pull, manifest, and
+        # pre-lock authorities for every game. Share only those write-once
+        # readbacks within this one read-only call; the protected predict/store
+        # path remains outside the scope.
+        if kwargs.get("store") is not False:
+            return patched_predict_all(*args, **kwargs)
+        import mlb_daily_per_game_lock_patch as per_game
+
+        with per_game._status_read_scope():
+            return patched_predict_all(*args, **kwargs)
+
     module.predict_all = patched_predict_all
-    module.read_persisted_predictions = patched_predict_all
+    module.read_persisted_predictions = read_persisted_predictions
     module.MLB_PUBLIC_PER_GAME_AUTHORITY_VERSION = AUTHORITY_VERSION
     module._INQSI_MLB_PUBLIC_PER_GAME_AUTHORITY_APPLIED = True
     return module

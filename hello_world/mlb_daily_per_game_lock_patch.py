@@ -67,6 +67,38 @@ _SCOPED_PULLS: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
     "inqsi_mlb_scoped_per_game_lock_pulls",
     default=None,
 )
+_STATUS_READ_CACHE: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
+    "inqsi_mlb_lock_status_request_read_cache",
+    default=None,
+)
+_STATUS_MISSING_ITEM = object()
+
+
+@contextmanager
+def _status_read_scope():
+    """Share immutable readbacks only within one read-only status request."""
+    existing = _STATUS_READ_CACHE.get()
+    if existing is not None:
+        yield existing
+        return
+    token = _STATUS_READ_CACHE.set({
+        "consistentItems": {},
+        "canonicalPulls": {},
+    })
+    try:
+        yield _STATUS_READ_CACHE.get()
+    finally:
+        _STATUS_READ_CACHE.reset(token)
+
+
+def _table_cache_identity(table: Any) -> Tuple[Any, ...]:
+    """Identify separate boto3 handles for the same DynamoDB table."""
+    name = getattr(table, "name", None) or getattr(table, "table_name", None)
+    if not name:
+        return ("object", id(table))
+    client = getattr(getattr(table, "meta", None), "client", None)
+    region = getattr(getattr(client, "meta", None), "region_name", None)
+    return ("dynamodb", str(region or ""), str(name))
 
 
 def _supported_payload_fingerprint_version(value: Any) -> bool:
@@ -521,10 +553,26 @@ def _scoring_pulls(
     if not cutoff:
         return []
     selected: List[Dict[str, Any]] = []
-    canonical_pulls = history_contract.canonicalize_pull_slots(
-        pulls or [],
-        sport="mlb",
+    source_pulls = pulls or []
+    request_cache = _STATUS_READ_CACHE.get()
+    canonical_cache = (
+        request_cache.get("canonicalPulls")
+        if isinstance(request_cache, dict)
+        else None
     )
+    cache_key = id(source_pulls) if isinstance(source_pulls, list) else None
+    canonical_pulls = (
+        canonical_cache.get(cache_key)
+        if isinstance(canonical_cache, dict) and cache_key in canonical_cache
+        else None
+    )
+    if canonical_pulls is None:
+        canonical_pulls = history_contract.canonicalize_pull_slots(
+            source_pulls,
+            sport="mlb",
+        )
+        if isinstance(canonical_cache, dict) and cache_key is not None:
+            canonical_cache[cache_key] = canonical_pulls
     for pull in sorted(canonical_pulls, key=lambda item: _pull_at(module, item) or datetime.min.replace(tzinfo=timezone.utc)):
         pulled_at = _pull_at(module, pull)
         if not pulled_at or pulled_at > cutoff:
@@ -1724,11 +1772,35 @@ def _stage_fingerprint(item: Dict[str, Any]) -> str:
 
 
 def _consistent_item(table: Any, key: Dict[str, str]) -> Optional[Dict[str, Any]]:
+    request_cache = _STATUS_READ_CACHE.get()
+    item_cache = (
+        request_cache.get("consistentItems")
+        if isinstance(request_cache, dict)
+        else None
+    )
+    cache_key = (
+        _table_cache_identity(table),
+        str(key.get("PK") or ""),
+        str(key.get("SK") or ""),
+    )
+    if isinstance(item_cache, dict) and cache_key in item_cache:
+        cached = item_cache[cache_key]
+        return None if cached is _STATUS_MISSING_ITEM else copy.deepcopy(cached)
     try:
         item = table.get_item(Key=key, ConsistentRead=True).get("Item")
     except Exception:
         return None
-    return item if isinstance(item, dict) else None
+    if not isinstance(item, dict):
+        if isinstance(item_cache, dict):
+            # A successful strongly consistent absence is a valid request-local
+            # snapshot. Replaying it cannot make an immutable authority valid;
+            # transport exceptions above remain uncached and retryable.
+            item_cache[cache_key] = _STATUS_MISSING_ITEM
+        return None
+    if isinstance(item_cache, dict):
+        # Authority rows reached through this helper are write-once.
+        item_cache[cache_key] = copy.deepcopy(item)
+    return item
 
 
 def _provider_manifest_authority_errors(table: Any, item: Dict[str, Any]) -> List[str]:
@@ -4819,7 +4891,7 @@ def apply(module: Any) -> Any:
 
     module._lock_response = lock_response
 
-    def status_payload(slate_date: Optional[str] = None) -> Dict[str, Any]:
+    def _status_payload_uncached(slate_date: Optional[str] = None) -> Dict[str, Any]:
         slate = slate_date or module._today_et()
         base = {
             "ok": True,
@@ -4986,6 +5058,10 @@ def apply(module: Any) -> Any:
             "invalidExistingDailyLock": bool(raw_existing and daily_authority_errors),
             "dailyLockAuthorityErrors": daily_authority_errors,
         }
+
+    def status_payload(slate_date: Optional[str] = None) -> Dict[str, Any]:
+        with _status_read_scope():
+            return _status_payload_uncached(slate_date)
 
     def _run_lock_once(
         slate_date: Optional[str] = None,
