@@ -7,12 +7,14 @@ on:
       - '.github/workflows/mlb-pull-runtime-diagnostic.yml'
       - 'scripts/diagnose_mlb_pull_lambda_runtime.py'
       - 'scripts/apply_mlb_scoring_runtime_fix.py'
+      - 'scripts/verify_mlb_schedule_invariants.py'
       - 'tests/unit/test_mlb_scoring_runtime_capacity.py'
   push:
     paths:
       - '.github/workflows/mlb-pull-runtime-diagnostic.yml'
       - 'scripts/diagnose_mlb_pull_lambda_runtime.py'
       - 'scripts/apply_mlb_scoring_runtime_fix.py'
+      - 'scripts/verify_mlb_schedule_invariants.py'
       - 'tests/unit/test_mlb_scoring_runtime_capacity.py'
   workflow_dispatch:
 
@@ -45,7 +47,9 @@ jobs:
 
       - name: Verify capacity and priority regressions
         if: (github.event_name == 'push' && github.ref_name == 'agent/mlb-scoring-run-proof') || (github.event_name == 'pull_request' && github.head_ref == 'agent/mlb-scoring-run-proof')
-        run: python -m pytest -q tests/unit/test_mlb_scoring_runtime_capacity.py
+        run: |
+          python -m pytest -q tests/unit/test_mlb_scoring_runtime_capacity.py
+          python scripts/verify_mlb_schedule_invariants.py
 
       - name: Commit canonical source migration
         if: (github.event_name == 'push' && github.ref_name == 'agent/mlb-scoring-run-proof') || (github.event_name == 'pull_request' && github.head_ref == 'agent/mlb-scoring-run-proof')
@@ -54,7 +58,10 @@ jobs:
           TARGET_BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add template.yaml hello_world/mlb_manual_pull.py
+          git add \
+            template.yaml \
+            hello_world/mlb_manual_pull.py \
+            scripts/verify_mlb_schedule_invariants.py
           if git diff --cached --quiet; then
             echo 'Canonical MLB scoring runtime fix is already applied.'
           else
