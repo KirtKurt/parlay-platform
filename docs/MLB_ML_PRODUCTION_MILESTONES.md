@@ -51,6 +51,15 @@ The release candidate supplies the Fix 4 settlement authority and the Fix 5
 snapshot contract. That is implementation readiness, not evidence that either
 milestone has already been earned:
 
+Every deployment gives the eight functions covered by the production schedule
+proof a unique `INQSI_DEPLOY_RUN_ID`, so recovery reruns force an attributable
+CloudFormation configuration update without comparing runner and AWS clocks.
+CI fingerprints the exact `.aws-sam/build` tree only after cold-start checks,
+then deploys that built template. Post-deploy verification downloads each live
+Lambda ZIP, matches it to Lambda's `CodeSha256`, and requires its path/content
+manifest to equal the verified build. Git, template, or run markers alone
+cannot make stale or out-of-band code pass.
+
 - The Results Scheduler may read the immutable snapshots table and write only
   the separate outcomes/labels record. Exact-label proof remains
   `WAITING_FOR_FIRST_CANONICAL_FINAL_LABEL` until at least one persisted label

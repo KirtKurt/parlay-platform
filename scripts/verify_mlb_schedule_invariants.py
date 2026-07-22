@@ -207,8 +207,10 @@ for obsolete in ['MLBProductionIngestVerifyDaily435Et', 'MLBProductionLockVerify
 for required in [
     'DeployGitSha:',
     'DeployTemplateSha256:',
+    'DeployRunId:',
     'INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha',
     'INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256',
+    'INQSI_DEPLOY_RUN_ID: !Ref DeployRunId',
 ]:
     if required not in text:
         violations.append(f'deploy identity contract missing: {required}')

@@ -119,6 +119,17 @@ jobs:
             scripts/verify_mlb_schedule_invariants.py \
             .github/workflows/deploy.yml
 
+      - name: Build and fingerprint the exact SAM Lambda artifacts
+        run: |
+          set -euo pipefail
+          sam build --no-cached --template-file template.yaml
+          TEMPLATE_SHA256=$(sha256sum template.yaml | awk '{print $1}')
+          python scripts/create_mlb_lambda_build_manifest.py \
+            --build-root .aws-sam/build \
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-template-sha256 "$TEMPLATE_SHA256" \
+            --output /tmp/mlb-lambda-build-manifest.json
+
       - name: Verify MLB production invariants
         run: |
           python scripts/verify_mlb_schedule_invariants.py
@@ -169,6 +180,7 @@ jobs:
             tests/unit/test_mlb_daily_per_game_lock.py \
             tests/unit/test_mlb_deploy_identity.py \
             tests/unit/test_mlb_deploy_http_probe.py \
+            tests/unit/test_mlb_lambda_artifact_identity.py \
             tests/unit/test_mlb_trainer_invoke_retry.py \
             tests/unit/test_mlb_trainer_deploy_response.py \
             tests/unit/test_mlb_workflow_authority.py \
@@ -179,6 +191,8 @@ jobs:
           python -m py_compile scripts/stabilize_mlb_deploy_source.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
           python -m py_compile scripts/mlb_deploy_http_probe.py
+          python -m py_compile scripts/mlb_lambda_artifact_identity.py
+          python -m py_compile scripts/create_mlb_lambda_build_manifest.py
           python -m py_compile scripts/invoke_mlb_trainer_with_retry.py
           python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
           python -m py_compile scripts/verify_mlb_workflow_authority.py

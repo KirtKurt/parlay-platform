@@ -2,11 +2,29 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
 
 import boto3
+
+try:
+    from scripts.mlb_lambda_artifact_identity import (
+        MANIFEST_SCHEMA_VERSION,
+        MAX_COMPRESSED_ARTIFACT_BYTES,
+        lambda_code_sha256,
+        zip_content_manifest,
+    )
+except ModuleNotFoundError:
+    from mlb_lambda_artifact_identity import (
+        MANIFEST_SCHEMA_VERSION,
+        MAX_COMPRESSED_ARTIFACT_BYTES,
+        lambda_code_sha256,
+        zip_content_manifest,
+    )
 
 
 FUNCTIONS = {
@@ -21,6 +39,7 @@ FUNCTIONS = {
 }
 
 EXPECTED_SCHEDULES = {
+    "read": [],
     "ingest": ["cron(0/15 * * * ? *)"],
     "lock": ["rate(1 minute)"],
     "trainer": ["cron(11 1/6 * * ? *)", "cron(4/15 * * * ? *)"],
@@ -220,6 +239,10 @@ RETIRED_PROVIDER_ENVIRONMENT = (
     "SPORTSDATAIO_MLB_PBP_ENDPOINT",
 )
 _MISSING_ASYNC_DESTINATION_CONFIG = object()
+ENABLED_RULE_STATES = {
+    "ENABLED",
+    "ENABLED_WITH_ALL_CLOUDTRAIL_MANAGEMENT_EVENTS",
+}
 
 LEGACY_TOKENS = (
     "MLBBASEPULL",
@@ -366,6 +389,42 @@ def _base_lambda_arn(value: Any) -> str:
     return arn
 
 
+def _download_lambda_artifact(location: str) -> bytes:
+    if not str(location or "").startswith("https://"):
+        raise ValueError("Lambda code location is not an HTTPS URL")
+    artifact = b""
+    for attempt in range(1, 4):
+        request = Request(
+            location,
+            headers={"User-Agent": "inqsi-mlb-deploy-identity-verifier/1.0"},
+            method="GET",
+        )
+        try:
+            with urlopen(request, timeout=120) as response:
+                content_length = response.headers.get("Content-Length")
+                if (
+                    content_length
+                    and int(content_length) > MAX_COMPRESSED_ARTIFACT_BYTES
+                ):
+                    raise ValueError(
+                        "Lambda deployment artifact exceeds the download limit"
+                    )
+                artifact = response.read(MAX_COMPRESSED_ARTIFACT_BYTES + 1)
+            break
+        except HTTPError as exc:
+            if exc.code != 429 and not 500 <= exc.code <= 599:
+                raise
+            if attempt == 3:
+                raise
+        except (URLError, TimeoutError):
+            if attempt == 3:
+                raise
+        time.sleep(2 ** (attempt - 1))
+    if len(artifact) > MAX_COMPRESSED_ARTIFACT_BYTES:
+        raise ValueError("Lambda deployment artifact exceeds the download limit")
+    return artifact
+
+
 def _stack_outputs(cloudformation: Any, stack_name: str) -> Dict[str, str]:
     response = cloudformation.describe_stacks(StackName=stack_name)
     stacks = response.get("Stacks") or []
@@ -378,13 +437,35 @@ def _stack_outputs(cloudformation: Any, stack_name: str) -> Dict[str, str]:
     }
 
 
-def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_template_sha256: str) -> Dict[str, Any]:
+def verify(
+    *,
+    stack_name: str,
+    region: str,
+    expected_git_sha: str,
+    expected_template_sha256: str,
+    expected_deploy_run_id: str,
+    expected_code_manifest: Dict[str, Any],
+) -> Dict[str, Any]:
+    deploy_run_id = str(expected_deploy_run_id or "").strip()
+    if not deploy_run_id:
+        raise ValueError("expected deploy run ID is missing")
     cloudformation = boto3.client("cloudformation", region_name=region)
     lambdas = boto3.client("lambda", region_name=region)
     events = boto3.client("events", region_name=region)
     s3 = boto3.client("s3", region_name=region)
 
     blockers: List[str] = []
+    manifest_functions = expected_code_manifest.get("functions") or {}
+    code_manifest_identity_matches = bool(
+        expected_code_manifest.get("schemaVersion") == MANIFEST_SCHEMA_VERSION
+        and expected_code_manifest.get("expectedGitSha") == expected_git_sha
+        and expected_code_manifest.get("expectedTemplateSha256")
+        == expected_template_sha256
+        and isinstance(manifest_functions, dict)
+        and set(manifest_functions) == set(FUNCTIONS)
+    )
+    if not code_manifest_identity_matches:
+        blockers.append("EXPECTED_LAMBDA_CODE_MANIFEST_IDENTITY_MISMATCH")
     function_proofs: Dict[str, Any] = {}
     function_arns: Dict[str, str] = {}
     trainer_configuration: Dict[str, Any] = {
@@ -449,6 +530,7 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
         environment = (config.get("Environment") or {}).get("Variables") or {}
         actual_git_sha = str(environment.get("INQSI_DEPLOY_GIT_SHA") or "")
         actual_template_sha = str(environment.get("INQSI_DEPLOY_TEMPLATE_SHA256") or "")
+        actual_deploy_run_id = str(environment.get("INQSI_DEPLOY_RUN_ID") or "")
         arn = str(config.get("FunctionArn") or "")
         function_arns[role] = arn
         if actual_git_sha != expected_git_sha:
@@ -457,6 +539,69 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
             blockers.append(f"DEPLOY_TEMPLATE_SHA_MISMATCH:{logical_id}")
 
         configuration_matches = True
+        actual_state = str(config.get("State") or "")
+        actual_update_status = str(config.get("LastUpdateStatus") or "")
+        actual_code_sha = str(config.get("CodeSha256") or "")
+        actual_version = str(config.get("Version") or "")
+        for matches, blocker in (
+            (
+                actual_state == "Active",
+                f"LAMBDA_STATE_NOT_ACTIVE:{logical_id}:{actual_state or 'MISSING'}",
+            ),
+            (
+                actual_update_status == "Successful",
+                f"LAMBDA_LAST_UPDATE_NOT_SUCCESSFUL:{logical_id}:"
+                f"{actual_update_status or 'MISSING'}",
+            ),
+            (bool(actual_code_sha), f"LAMBDA_CODE_SHA256_MISSING:{logical_id}"),
+            (
+                actual_version == "$LATEST",
+                f"LAMBDA_VERSION_NOT_LATEST:{logical_id}:"
+                f"{actual_version or 'MISSING'}",
+            ),
+            (
+                actual_deploy_run_id == deploy_run_id,
+                f"DEPLOY_RUN_ID_MISMATCH:{logical_id}",
+            ),
+        ):
+            if not matches:
+                configuration_matches = False
+                blockers.append(blocker)
+
+        expected_artifact_manifest = manifest_functions.get(logical_id)
+        actual_artifact_manifest = None
+        downloaded_code_sha = None
+        code_sha_matches = False
+        code_artifact_matches = False
+        try:
+            function = lambdas.get_function(FunctionName=physical_id)
+            function_configuration = function.get("Configuration") or {}
+            function_code_sha = str(
+                function_configuration.get("CodeSha256") or ""
+            )
+            if function_code_sha != actual_code_sha:
+                raise ValueError(
+                    "GetFunction and GetFunctionConfiguration CodeSha256 differ"
+                )
+            location = str((function.get("Code") or {}).get("Location") or "")
+            artifact = _download_lambda_artifact(location)
+            downloaded_code_sha = lambda_code_sha256(artifact)
+            code_sha_matches = downloaded_code_sha == actual_code_sha
+            if not code_sha_matches:
+                raise ValueError("downloaded artifact CodeSha256 differs from Lambda")
+            actual_artifact_manifest = zip_content_manifest(artifact)
+            code_artifact_matches = bool(
+                code_manifest_identity_matches
+                and isinstance(expected_artifact_manifest, dict)
+                and actual_artifact_manifest == expected_artifact_manifest
+            )
+            if not code_artifact_matches:
+                raise ValueError("deployed artifact content differs from clean SAM build")
+        except Exception as exc:
+            configuration_matches = False
+            blockers.append(
+                f"LAMBDA_CODE_ARTIFACT_VERIFICATION_FAILED:{logical_id}:{exc}"
+            )
         expected_async_retry_policy = FUNCTION_ASYNC_RETRY_POLICIES.get(role)
         async_retry_policy: Dict[str, Any] = {}
         async_destination_config: Any = None
@@ -639,6 +784,7 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                 *TRAINER_EXPECTED_ENVIRONMENT.keys(),
                 "INQSI_DEPLOY_GIT_SHA",
                 "INQSI_DEPLOY_TEMPLATE_SHA256",
+                "INQSI_DEPLOY_RUN_ID",
             )
             trainer_configuration.update({
                 "handler": actual_handler,
@@ -688,12 +834,27 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
             "functionArn": arn,
             "handler": config.get("Handler"),
             "runtime": config.get("Runtime"),
+            "state": actual_state or None,
+            "lastUpdateStatus": actual_update_status or None,
             "lastModified": config.get("LastModified"),
-            "codeSha256": config.get("CodeSha256"),
-            "version": config.get("Version"),
+            "codeSha256": actual_code_sha or None,
+            "codeSha256Present": bool(actual_code_sha),
+            "downloadedCodeSha256": downloaded_code_sha,
+            "downloadedCodeSha256Matches": code_sha_matches,
+            "expectedCodeContentManifest": expected_artifact_manifest,
+            "deployedCodeContentManifest": actual_artifact_manifest,
+            "codeArtifactMatchesCleanBuild": code_artifact_matches,
+            "version": actual_version or None,
             "deployGitSha": actual_git_sha or None,
             "deployTemplateSha256": actual_template_sha or None,
-            "identityMatches": actual_git_sha == expected_git_sha and actual_template_sha == expected_template_sha256,
+            "deployRunId": actual_deploy_run_id or None,
+            "deployRunIdMatches": actual_deploy_run_id == deploy_run_id,
+            "identityMatches": (
+                actual_git_sha == expected_git_sha
+                and actual_template_sha == expected_template_sha256
+                and actual_deploy_run_id == deploy_run_id
+                and code_artifact_matches
+            ),
             "configurationMatches": configuration_matches,
             "asyncDeliveryPolicy": {
                 "expectedRetryPolicy": expected_async_retry_policy,
@@ -804,6 +965,7 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
             )
 
     regional_rule_inventory: List[Dict[str, Any]] = []
+    regional_rule_inventory_complete = False
     try:
         for rule_name in _all_rule_names(events):
             rule = events.describe_rule(Name=rule_name)
@@ -813,6 +975,7 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                 "schedule": rule.get("ScheduleExpression"),
                 "targets": _targets_for_rule(events, rule_name),
             })
+        regional_rule_inventory_complete = True
     except Exception as exc:
         blockers.append(f"EVENTBRIDGE_REGIONAL_RULE_DISCOVERY_FAILED:{exc}")
 
@@ -831,7 +994,7 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
                 for target in targets
                 if _base_lambda_arn(target.get("Arn")) == base_arn
             ]
-            if rule.get("state") == "ENABLED" and matching_targets:
+            if rule.get("state") in ENABLED_RULE_STATES and matching_targets:
                 enabled_rules.append({
                     "name": rule.get("name"),
                     "state": rule.get("state"),
@@ -1002,11 +1165,11 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
             writer_functions_by_arn[base_arn] = proof
             discovered_writer_functions.append(proof)
 
-        for rule_name in _all_rule_names(events):
-            rule = events.describe_rule(Name=rule_name)
-            if rule.get("State") != "ENABLED":
+        for rule in regional_rule_inventory:
+            if rule.get("state") not in ENABLED_RULE_STATES:
                 continue
-            targets = _targets_for_rule(events, rule_name)
+            rule_name = str(rule.get("name") or "")
+            targets = rule.get("targets") or []
             rule_looks_like_writer = _is_mlb_pull_or_training_writer(rule_name)
             relevant_targets = []
             for target in targets:
@@ -1038,8 +1201,8 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
             if alternate_targets or legacy_named_rule:
                 alternate_writer_rules.append({
                     "name": rule_name,
-                    "state": rule.get("State"),
-                    "schedule": rule.get("ScheduleExpression"),
+                    "state": rule.get("state"),
+                    "schedule": rule.get("schedule"),
                     "legacyNamedRule": legacy_named_rule,
                     "targets": relevant_targets,
                 })
@@ -1066,18 +1229,32 @@ def verify(*, stack_name: str, region: str, expected_git_sha: str, expected_temp
         "region": region,
         "expectedGitSha": expected_git_sha,
         "expectedTemplateSha256": expected_template_sha256,
+        "expectedDeployRunId": deploy_run_id,
+        "expectedCodeManifest": {
+            "schemaVersion": expected_code_manifest.get("schemaVersion"),
+            "expectedGitSha": expected_code_manifest.get("expectedGitSha"),
+            "expectedTemplateSha256": expected_code_manifest.get(
+                "expectedTemplateSha256"
+            ),
+            "identityMatches": code_manifest_identity_matches,
+        },
         "functions": function_proofs,
         "trainerConfiguration": trainer_configuration,
         "providerCredentialBoundary": provider_credential_proof,
         "artifactBucket": artifact_bucket_proof,
         "schedules": schedule_proofs,
+        "eventBridgeDefaultBusInventoryComplete": (
+            regional_rule_inventory_complete
+        ),
         "enabledLegacyRules": alternate_writer_rules,
         "alternateWriterAuthority": {
             "canonicalWriterArns": sorted(canonical_writer_arns),
             "discoveredWriterFunctions": discovered_writer_functions,
             "enabledAlternateRules": alternate_writer_rules,
+            "eventBridgeScope": "default_bus_rules",
             "scanComplete": not any(
                 blocker.startswith("MLB_ALTERNATE_WRITER_DISCOVERY_FAILED:")
+                or blocker.startswith("EVENTBRIDGE_REGIONAL_RULE_DISCOVERY_FAILED:")
                 for blocker in blockers
             ),
         },
@@ -1091,14 +1268,23 @@ def main() -> None:
     parser.add_argument("--region", required=True)
     parser.add_argument("--expected-git-sha", required=True)
     parser.add_argument("--expected-template-sha256", required=True)
+    parser.add_argument("--expected-deploy-run-id", required=True)
+    parser.add_argument("--expected-code-manifest", required=True)
     parser.add_argument("--output", default="runtime_reports/mlb_deploy_identity_latest.json")
     args = parser.parse_args()
 
+    expected_code_manifest = json.loads(
+        Path(args.expected_code_manifest).read_text(encoding="utf-8")
+    )
+    if not isinstance(expected_code_manifest, dict):
+        raise SystemExit("Expected Lambda code manifest must be a JSON object")
     result = verify(
         stack_name=args.stack_name,
         region=args.region,
         expected_git_sha=args.expected_git_sha,
         expected_template_sha256=args.expected_template_sha256,
+        expected_deploy_run_id=args.expected_deploy_run_id,
+        expected_code_manifest=expected_code_manifest,
     )
     output = Path(args.output)
     output.parent.mkdir(parents=True, exist_ok=True)

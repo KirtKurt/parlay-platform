@@ -197,6 +197,17 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             errors.append("production_source_contract_does_not_install_sam_cli")
         if "sam validate --template-file template.yaml" not in contract:
             errors.append("production_source_contract_does_not_validate_sam_template")
+        if (
+            "sam build --no-cached --template-file template.yaml" not in contract
+            or "python scripts/create_mlb_lambda_build_manifest.py" not in contract
+        ):
+            errors.append(
+                "production_source_contract_does_not_build_and_fingerprint_sam_artifacts"
+            )
+        if "tests/unit/test_mlb_lambda_artifact_identity.py" not in contract:
+            errors.append(
+                "production_source_contract_does_not_test_lambda_artifact_identity"
+            )
 
     deploy_path = root / ".github/workflows/deploy.yml"
     deploy = deploy_path.read_text(encoding="utf-8") if deploy_path.is_file() else ""
@@ -248,6 +259,39 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             errors.append("canonical_deploy_does_not_verify_retired_workflows")
         if "python scripts/verify_mlb_bbs_sam_wiring.py" not in deploy:
             errors.append("canonical_deploy_does_not_verify_bbs_wiring")
+        if (
+            "--expected-deploy-run-id" not in deploy
+            or "steps.deploy.outputs.run_id" not in deploy
+            or '"DeployRunId=${DEPLOY_RUN_ID}"' not in deploy
+        ):
+            errors.append("canonical_deploy_does_not_bind_lambda_to_unique_deploy_run")
+        cold_start = deploy.find("Verify built MLB Lambda cold start")
+        build_manifest = deploy.find(
+            "Bind the verified clean SAM build to the deployment identity"
+        )
+        exact_deploy = deploy.find("Deploy exact canonical source")
+        if (
+            "python scripts/create_mlb_lambda_build_manifest.py" not in deploy
+            or "--expected-code-manifest" not in deploy
+            or "--template-file .aws-sam/build/template.yaml" not in deploy
+            or 'PYTHONDONTWRITEBYTECODE: "1"' not in deploy
+            or not (0 <= cold_start < build_manifest < exact_deploy)
+        ):
+            errors.append("canonical_deploy_does_not_bind_live_code_to_verified_sam_build")
+        if (
+            "Preflight Lambda artifact attestation access" not in deploy
+            or "aws lambda get-function" not in deploy
+            or "for attempt in range(1, 4):" not in deploy
+        ):
+            errors.append(
+                "canonical_deploy_does_not_preflight_lambda_artifact_read_access"
+            )
+        if (
+            "CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)"
+            not in deploy
+            or "UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE" in deploy
+        ):
+            errors.append("canonical_deploy_treats_terminal_rollback_as_updateable")
         if '${{ secrets.BBS_API_KEY }}' not in deploy:
             errors.append("canonical_deploy_does_not_consume_exact_bbs_secret")
         if '"BbsApiKey=${BBS_API_KEY_VALUE}"' not in deploy:
@@ -299,6 +343,10 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             (
                 "tests/unit/test_mlb_trainer_invoke_retry.py",
                 "production_source_contract_does_not_test_trainer_invoke_retry",
+            ),
+            (
+                "tests/unit/test_mlb_lambda_artifact_identity.py",
+                "production_source_contract_does_not_test_lambda_artifact_identity",
             ),
             (
                 "python -m py_compile scripts/invoke_mlb_trainer_with_retry.py",

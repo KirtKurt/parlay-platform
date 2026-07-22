@@ -44,8 +44,10 @@ for obsolete in ['MLBProductionIngestVerifyDaily435Et', 'MLBProductionLockVerify
 for required in [
     'DeployGitSha:',
     'DeployTemplateSha256:',
+    'DeployRunId:',
     'INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha',
     'INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256',
+    'INQSI_DEPLOY_RUN_ID: !Ref DeployRunId',
 ]:
     if required not in text:
         violations.append(f'deploy identity contract missing: {required}')
@@ -71,9 +73,22 @@ def _validate_deploy_workflow() -> None:
         '"InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}"',
         '"DeployGitSha=${GITHUB_SHA}"',
         '"DeployTemplateSha256=${DEPLOY_TEMPLATE_SHA256}"',
+        '"DeployRunId=${DEPLOY_RUN_ID}"',
         '--parameter-overrides "${parameter_overrides[@]}"',
+        "--template-file .aws-sam/build/template.yaml",
+        "Bind the verified clean SAM build to the deployment identity",
+        "create_mlb_lambda_build_manifest.py",
+        "runtime_reports/mlb_lambda_build_manifest_deploy.json",
+        "PYTHONDONTWRITEBYTECODE",
+        "Preflight Lambda artifact attestation access",
+        "aws lambda get-function",
+        "for attempt in range(1, 4):",
+        "CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)",
         "Prove exact deployed Lambda identity and schedules",
         "verify_mlb_deploy_identity.py",
+        "--expected-deploy-run-id",
+        "steps.deploy.outputs.run_id",
+        "--expected-code-manifest",
         "Run AWS-native MLB trainer and verify fresh split health",
         "invoke_mlb_trainer_with_retry.py",
         "test_mlb_trainer_invoke_retry.py",
@@ -93,8 +108,16 @@ def _validate_deploy_workflow() -> None:
         "test_mlb_storage_authority.py",
         "test_mlb_rolling_canonical_authority.py",
         "test_mlb_ml_runtime_install_explicit.py",
+        "test_mlb_lambda_artifact_identity.py",
     ]
     missing = [token for token in required if token not in text]
+    cold_start = text.find("Verify built MLB Lambda cold start")
+    build_manifest = text.find(
+        "Bind the verified clean SAM build to the deployment identity"
+    )
+    deploy = text.find("Deploy exact canonical source")
+    if not (0 <= cold_start < build_manifest < deploy):
+        missing.append("verified build manifest must be created after cold start and before deploy")
     verifier = (
         ROOT / "scripts" / "verify_mlb_trainer_deploy_response.py"
     ).read_text(encoding="utf-8")
@@ -116,6 +139,7 @@ def _validate_deploy_workflow() -> None:
             "SPORTSDATAIO_API_KEY_VALUE",
             "SportsDataIoApiKey",
             "secrets.BS_API_KEY",
+            "UPDATE_ROLLBACK_COMPLETE|ROLLBACK_COMPLETE",
         ]
         if token in text
     ]
