@@ -30,9 +30,21 @@ def _load_read_api(monkeypatch, calls, *, runtime_ok=True):
 
     optimization = ModuleType("mlb_ml_optimization_v3")
     optimization.VERSION = "test-optimization"
+
+    scoring = ModuleType("mlb_scoring_run_proof")
+    scoring.VERSION = "test-scoring-proof"
+    scoring.latest_proof = lambda date: {
+        "ok": True,
+        "sport": "mlb",
+        "gameDateEt": date,
+        "version": scoring.VERSION,
+        "proof": {"status": "PASS", "gameDateEt": date, "expectedGameCount": 1},
+    }
+
     monkeypatch.setitem(sys.modules, runtime.__name__, runtime)
     monkeypatch.setitem(sys.modules, engine.__name__, engine)
     monkeypatch.setitem(sys.modules, optimization.__name__, optimization)
+    monkeypatch.setitem(sys.modules, scoring.__name__, scoring)
 
     module_name = "test_mlb_v3_read_api_module"
     spec = importlib.util.spec_from_file_location(module_name, ROOT / "hello_world" / "mlb_v3_read_api.py")
@@ -74,7 +86,9 @@ def test_public_read_api_ignores_store_query_parameter(monkeypatch):
     assert calls == [{"date": "2026-07-16", "store": False, "limit": 17}]
     body = json.loads(response["body"])
     assert body["readOnly"] is True
-    assert body["apiRuntimeVersion"] == "MLB-V3-READ-API-v4-persisted-canonical-v2-shadow"
+    assert body["apiRuntimeVersion"] == "MLB-V3-READ-API-v4.1-persisted-canonical-scoring-proof"
+    assert body["scoringProofComplete"] is True
+    assert body["scoring_run_proof"]["status"] == "PASS"
 
 
 def test_public_read_api_fails_closed_when_runtime_install_is_not_ok(monkeypatch):
@@ -97,6 +111,7 @@ def test_public_read_api_fails_closed_when_runtime_install_is_not_ok(monkeypatch
     assert body["predictions"] == []
     assert body["winner_predictions"] == []
     assert body["count"] == 0
+    assert body["scoring_run_proof"]["status"] == "PASS"
 
     model_response = api.lambda_handler(
         {"rawPath": "/v1/mlb/model/version", "httpMethod": "GET"},
