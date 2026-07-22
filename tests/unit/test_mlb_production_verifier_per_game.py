@@ -38,22 +38,70 @@ def _game_status(
 
 
 def _install_runtime(monkeypatch, lock_status: dict, *, game_count: int = 2) -> None:
+    status_ids = []
+    for row in lock_status.get("perGameStatus") or []:
+        identity = str(row.get("gameIdentity") or row.get("gameId") or "")
+        if identity and identity not in status_ids:
+            status_ids.append(identity)
+    while len(status_ids) < game_count:
+        status_ids.append(f"missing-official-game-{len(status_ids) + 1}")
+    official_ids = status_ids[:game_count]
+    authority_fingerprint = "official-schedule-authority-fixture"
+    lock_status.update(
+        {
+            "ok": True,
+            "officialScheduleBacked": True,
+            "officialScheduleGameCount": game_count,
+            "manifestGameCount": game_count,
+            "verifiedFullSlateGameCount": game_count,
+            "officialScheduleAuthorityFingerprint": authority_fingerprint,
+        }
+    )
     monkeypatch.setattr(verifier, "_now_utc", lambda: NOW)
-    monkeypatch.setattr(verifier.history, "query_pulls", lambda *args: [])
+    monkeypatch.setattr(
+        verifier.history,
+        "query_pulls",
+        lambda *args: [{"pulled_at": NOW.isoformat()}],
+    )
+    monkeypatch.setattr(
+        verifier.history,
+        "verified_full_slate_manifest",
+        lambda *args: {
+            "games": [{"game_id": game_id} for game_id in official_ids],
+            "fullSlateGameCount": game_count,
+            "officialScheduleGameCount": game_count,
+            "officialScheduleBacked": True,
+            "immutableReadbackVerified": True,
+            "fullAuthorityFingerprint": "full-authority-fixture",
+            "officialScheduleAuthorityFingerprint": authority_fingerprint,
+        },
+    )
     monkeypatch.setattr(
         verifier.mlb_game_winner_engine,
         "predict_all",
         lambda *args, **kwargs: {
+            "ok": True,
             "gameCount": game_count,
             "count": game_count,
             "promotedCount": 0,
             "allGamesPredicted": True,
+            "predictions": [{"gameId": game_id} for game_id in official_ids],
         },
     )
     monkeypatch.setattr(
         verifier.mlb_daily_pick_lock,
         "_status_payload",
         lambda *args, **kwargs: lock_status,
+    )
+    monkeypatch.setattr(
+        verifier,
+        "_locked_row_integrity",
+        lambda slate_date, expected, due, evaluate: {
+            "evaluated": evaluate,
+            "authoritySafe": True,
+            "dueCoverageComplete": True,
+            "coverageComplete": True,
+        },
     )
 
 
@@ -135,6 +183,47 @@ def test_missing_individually_due_lock_is_a_blocker(monkeypatch) -> None:
     assert progress["fullSlateVectorEvaluationDue"] is False
 
 
+def test_duplicate_per_game_identity_cannot_hide_a_missing_game(monkeypatch) -> None:
+    lock_status = {
+        "gameCount": 2,
+        "locked": False,
+        "lockDue": True,
+        "lockStatusComplete": False,
+        "dailyCardComplete": False,
+        "perGameStatus": [
+            _game_status(
+                "game-duplicated",
+                NOW - timedelta(minutes=12),
+                outcome_recorded=True,
+                state="LOCKED_CANONICAL",
+            ),
+            _game_status(
+                "game-duplicated",
+                NOW + timedelta(minutes=48),
+                outcome_recorded=False,
+                state="PENDING",
+            ),
+        ],
+    }
+    _install_runtime(monkeypatch, lock_status)
+
+    result = verifier._verification_payload(SLATE, "lock", "test")
+
+    progress = result["lock"]["perGameProgress"]
+    assert result["ok"] is False
+    assert result["blockers"] == [
+        "PER_GAME_LOCK_ROSTER_MEMBERSHIP_MISMATCH",
+        "PER_GAME_LOCK_STATUS_MISSING_OR_INVALID",
+    ]
+    assert progress["statusComplete"] is False
+    assert progress["statusCount"] == 2
+    assert progress["uniqueGameCount"] == 1
+    assert progress["invalidStatusCount"] == 1
+    assert progress["invalidStatuses"][0]["validationErrors"] == [
+        "duplicate_game_identity"
+    ]
+
+
 def test_final_per_game_cutoff_activates_full_slate_vector_coverage(
     monkeypatch,
 ) -> None:
@@ -162,15 +251,23 @@ def test_final_per_game_cutoff_activates_full_slate_vector_coverage(
     _install_runtime(monkeypatch, lock_status)
     observed = {}
 
-    def incomplete_integrity(slate_date, expected_count, evaluate_full_slate):
+    def incomplete_integrity(
+        slate_date, expected_identities, due_identities, evaluate_full_slate
+    ):
         observed.update(
             {
                 "slateDate": slate_date,
-                "expectedCount": expected_count,
+                "expectedIdentities": expected_identities,
+                "dueIdentities": due_identities,
                 "evaluateFullSlate": evaluate_full_slate,
             }
         )
-        return {"evaluated": evaluate_full_slate, "coverageComplete": False}
+        return {
+            "evaluated": evaluate_full_slate,
+            "authoritySafe": True,
+            "dueCoverageComplete": True,
+            "coverageComplete": False,
+        }
 
     monkeypatch.setattr(verifier, "_locked_row_integrity", incomplete_integrity)
 
@@ -183,10 +280,10 @@ def test_final_per_game_cutoff_activates_full_slate_vector_coverage(
     assert progress["dueMissingGameCount"] == 0
     assert observed == {
         "slateDate": SLATE,
-        "expectedCount": 2,
+        "expectedIdentities": ["game-one", "game-two"],
+        "dueIdentities": ["game-one", "game-two"],
         "evaluateFullSlate": True,
     }
     assert result["blockers"] == [
         "LOCKED_ROWS_MISSING_VALID_FROZEN_FINGERPRINTS"
     ]
-

@@ -280,6 +280,46 @@ def test_requires_bounded_retry_for_all_three_deploy_invocations(tmp_path: Path)
     )
 
 
+def test_requires_dynamic_status_to_bind_both_exact_run_artifacts(
+    tmp_path: Path,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "--status-selection-capture-result "
+            "/tmp/mlb-ml-v2-selection-capture.json",
+            "--status-selection-capture-result "
+            "/tmp/mlb-ml-v2-training.json",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_must_query_post_run_status_exactly_once"
+        in authority.verify_repository(root)
+    )
+
+
+def test_requires_lease_retry_on_both_mutating_deploy_probes(
+    tmp_path: Path,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace("--retry-execution-lease", "", 1),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_lease_retry_scope_is_invalid"
+        in authority.verify_repository(root)
+    )
+
+
 def test_requires_capacity_probe_horizon_to_outlast_old_lock_backlog(
     tmp_path: Path,
 ) -> None:

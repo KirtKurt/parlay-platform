@@ -251,6 +251,13 @@ def test_stats_fallback_lock_settles_by_provider_event_alias_when_vector_exclude
 
     assert audited["status"] == "GRADED"
     assert audited["canonicalLockAuthority"]["providerGameId"] == "late-provider-id"
+    assert audited["canonicalLockAuthority"]["officialGamePk"] == "991004"
+    assert audited["canonicalLockAuthority"]["canonicalLockedGameId"] == (
+        "mlb_statsapi:991004"
+    )
+    assert audited["canonicalLockAuthority"]["canonicalLockAtUtc"] == (
+        "2026-07-18T22:25:00+00:00"
+    )
     assert audited["canonicalLockAuthority"]["exactLockVectorValidated"] is False
     assert audited["canonicalLockAuthority"]["officialAuditEligible"] is True
     assert audited["canonicalLockAuthority"]["learningEligible"] is False

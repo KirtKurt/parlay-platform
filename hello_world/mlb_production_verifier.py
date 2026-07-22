@@ -1,11 +1,10 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 from datetime import datetime, timezone
 from decimal import Decimal
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 from zoneinfo import ZoneInfo
 
 import boto3
@@ -15,6 +14,7 @@ import inqsi_pull_history as history
 import mlb_daily_pick_lock
 import mlb_game_winner_engine
 import mlb_ml_clean_cohort_v1
+import mlb_slate_coverage_patch
 
 EASTERN = ZoneInfo("America/New_York")
 SNAPSHOTS_TABLE = os.environ.get("SNAPSHOTS_TABLE", "")
@@ -95,6 +95,79 @@ def _row_game_id(row: Dict[str, Any]) -> str:
     )
 
 
+def _identity_from_value(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    normalized = mlb_slate_coverage_patch.game_identity({"gameId": text})
+    return normalized[len("provider:") :] if normalized.startswith("provider:") else normalized
+
+
+def _row_identity(row: Any) -> str:
+    if not isinstance(row, dict):
+        return ""
+    for key in (
+        "gameIdentity",
+        "gameId",
+        "game_id",
+        "id",
+        "providerGameId",
+        "provider_game_id",
+    ):
+        if row.get(key) not in (None, ""):
+            return _identity_from_value(row.get(key))
+    if (
+        (row.get("homeTeam") or row.get("home_team"))
+        and (row.get("awayTeam") or row.get("away_team"))
+        and (row.get("commenceTime") or row.get("commence_time"))
+    ):
+        normalized = mlb_slate_coverage_patch.game_identity(row)
+        return (
+            normalized[len("provider:") :]
+            if normalized.startswith("provider:")
+            else normalized
+        )
+    return ""
+
+
+def _identity_summary(rows: Any) -> Dict[str, Any]:
+    source = rows if isinstance(rows, list) else []
+    identities = [_row_identity(row) for row in source]
+    valid = [identity for identity in identities if identity]
+    counts: Dict[str, int] = {}
+    for identity in valid:
+        counts[identity] = counts.get(identity, 0) + 1
+    duplicates = sorted(
+        identity for identity, count in counts.items() if count > 1
+    )
+    return {
+        "rawCount": len(source),
+        "validIdentityCount": len(valid),
+        "uniqueCount": len(counts),
+        "gameIdentities": sorted(counts),
+        "duplicateGameIdentities": duplicates,
+        "missingIdentityRowCount": len(source) - len(valid),
+    }
+
+
+def _exact_count(value: Any, expected: int) -> bool:
+    if isinstance(value, bool):
+        return False
+    try:
+        return int(value) == expected and float(value) == float(expected)
+    except (TypeError, ValueError, OverflowError):
+        return False
+
+
+def _count_or_zero(value: Any) -> int:
+    if isinstance(value, bool):
+        return 0
+    try:
+        return max(int(value), 0)
+    except (TypeError, ValueError, OverflowError):
+        return 0
+
+
 def _row_lock_at(row: Dict[str, Any]) -> Optional[datetime]:
     audit = row.get("lockedCardAudit") or {}
     for value in (
@@ -123,19 +196,6 @@ def _is_locked_prediction(row: Dict[str, Any]) -> bool:
     )
 
 
-def _expected_fingerprint(vector: Dict[str, Any]) -> str:
-    source = json.dumps(
-        {
-            "gameId": vector.get("gameId"),
-            "lockAtUtc": vector.get("lockAtUtc"),
-            "features": vector.get("features") or {},
-        },
-        sort_keys=True,
-        default=str,
-    )
-    return hashlib.sha256(source.encode("utf-8")).hexdigest()
-
-
 def _query_stored_predictions(slate_date: str) -> List[Dict[str, Any]]:
     if TABLE is None:
         return []
@@ -143,15 +203,22 @@ def _query_stored_predictions(slate_date: str) -> List[Dict[str, Any]]:
     start_key = None
     while True:
         args: Dict[str, Any] = {
-            "KeyConditionExpression": Key("PK").eq(f"GAME_WINNERS#mlb#{slate_date}"),
+            "KeyConditionExpression": (
+                Key("PK").eq(f"GAME_WINNERS#mlb#{slate_date}")
+                & Key("SK").begins_with("LOCKED#GAME#")
+            ),
             "ConsistentRead": True,
         }
         if start_key:
             args["ExclusiveStartKey"] = start_key
         response = TABLE.query(**args)
         for item in response.get("Items") or []:
-            data = item.get("data") if isinstance(item.get("data"), dict) else item
-            if isinstance(data, dict):
+            if not isinstance(item, dict) or not str(item.get("SK") or "").startswith(
+                "LOCKED#GAME#"
+            ):
+                continue
+            data = item.get("data") if isinstance(item.get("data"), dict) else None
+            if data is not None:
                 rows.append(data)
         start_key = response.get("LastEvaluatedKey")
         if not start_key:
@@ -160,11 +227,15 @@ def _query_stored_predictions(slate_date: str) -> List[Dict[str, Any]]:
 
 def _vector_validation(row: Dict[str, Any]) -> Dict[str, Any]:
     vector = row.get("frozenFeatureVector") or {}
+    if not isinstance(vector, dict):
+        vector = {}
     game_id = _row_game_id(row)
     row_lock = _row_lock_at(row)
     vector_lock = _parse_dt(vector.get("lockAtUtc"))
     source_at = _parse_dt(vector.get("sourcePullAtUtc"))
     fingerprint = str(vector.get("fingerprint") or "")
+    fingerprint_version = str(vector.get("fingerprintVersion") or "")
+    canonical_fingerprint = mlb_ml_clean_cohort_v1.fingerprint_for_vector(vector)
     reasons: List[str] = []
     if not _is_locked_prediction(row):
         reasons.append("not_locked_prediction")
@@ -174,13 +245,19 @@ def _vector_validation(row: Dict[str, Any]) -> Dict[str, Any]:
         reasons.append("missing_frozen_feature_vector")
     if str(vector.get("version") or "") != mlb_ml_clean_cohort_v1.FEATURE_SNAPSHOT_VERSION:
         reasons.append("wrong_frozen_feature_vector_version")
-    if str(vector.get("gameId") or "") != game_id:
+    if _identity_from_value(vector.get("gameId")) != _identity_from_value(game_id):
         reasons.append("frozen_vector_game_identity_mismatch")
     if not isinstance(vector.get("features"), dict) or not vector.get("features"):
         reasons.append("frozen_vector_features_missing")
+    if fingerprint_version != mlb_ml_clean_cohort_v1.FINGERPRINT_VERSION:
+        reasons.append(
+            "missing_fingerprint_version"
+            if not fingerprint_version
+            else "unsupported_fingerprint_version"
+        )
     if not fingerprint:
         reasons.append("missing_fingerprint")
-    elif fingerprint != _expected_fingerprint(vector):
+    elif not canonical_fingerprint or fingerprint != canonical_fingerprint:
         reasons.append("fingerprint_mismatch")
     if not row_lock or not vector_lock or row_lock != vector_lock:
         reasons.append("lock_timestamp_mismatch")
@@ -190,6 +267,11 @@ def _vector_validation(row: Dict[str, Any]) -> Dict[str, Any]:
         "ok": not reasons,
         "gameId": game_id,
         "fingerprint": fingerprint or None,
+        "fingerprintVersion": fingerprint_version or None,
+        "requiredFingerprintVersion": mlb_ml_clean_cohort_v1.FINGERPRINT_VERSION,
+        "canonicalFingerprintMatches": bool(
+            fingerprint and canonical_fingerprint and fingerprint == canonical_fingerprint
+        ),
         "version": vector.get("version"),
         "rowLockAtUtc": row_lock.isoformat() if row_lock else None,
         "vectorLockAtUtc": vector_lock.isoformat() if vector_lock else None,
@@ -199,85 +281,165 @@ def _vector_validation(row: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _locked_row_integrity(
-    slate_date: str, expected_count: int, evaluate_full_slate: bool
+    slate_date: str,
+    expected_identities: Iterable[str],
+    due_identities: Iterable[str],
+    evaluate_full_slate: bool,
 ) -> Dict[str, Any]:
     stored = _query_stored_predictions(slate_date)
+    expected = {
+        _identity_from_value(value) for value in expected_identities if value
+    }
+    due = {_identity_from_value(value) for value in due_identities if value}
     grouped: Dict[str, List[Dict[str, Any]]] = {}
+    missing_identity_row_count = 0
     for row in stored:
-        game_id = _row_game_id(row)
+        game_id = _row_identity(row)
         if game_id:
             grouped.setdefault(game_id, []).append(row)
+        else:
+            missing_identity_row_count += 1
 
     selected: List[Dict[str, Any]] = []
     for candidates in grouped.values():
         evaluated = [(row, _vector_validation(row)) for row in candidates]
         valid = [pair for pair in evaluated if pair[1].get("ok")]
-        if valid:
-            selected.append(max(valid, key=lambda pair: str(pair[0].get("createdAt") or pair[0].get("created_at") or ""))[0])
-        else:
-            selected.append(max(evaluated, key=lambda pair: str(pair[0].get("createdAt") or pair[0].get("created_at") or ""))[0])
+        ranked = valid or evaluated
+        selected.append(
+            max(
+                ranked,
+                key=lambda pair: str(
+                    pair[0].get("createdAt")
+                    or pair[0].get("created_at")
+                    or ""
+                ),
+            )[0]
+        )
 
     checks = [_vector_validation(row) for row in selected]
     valid = [check for check in checks if check.get("ok")]
     invalid = [check for check in checks if not check.get("ok")]
+    stored_identities = set(grouped)
+    valid_identities = {
+        _identity_from_value(check.get("gameId"))
+        for check in valid
+        if check.get("gameId")
+    }
+    duplicate_identities = sorted(
+        identity for identity, rows in grouped.items() if len(rows) > 1
+    )
+    missing_due = sorted(due - valid_identities)
+    unexpected = sorted(stored_identities - expected)
+    missing = sorted(expected - stored_identities)
+    authority_safe = bool(
+        expected
+        and due.issubset(expected)
+        and not duplicate_identities
+        and not unexpected
+        and not invalid
+        and not missing_due
+        and missing_identity_row_count == 0
+    )
     complete = bool(
         evaluate_full_slate
-        and expected_count > 0
-        and len(selected) == expected_count
-        and len(valid) == expected_count
+        and authority_safe
+        and stored_identities == expected
+        and valid_identities == expected
     )
     return {
         "evaluated": bool(evaluate_full_slate),
+        "partialAuthorityEvaluated": True,
         "requiredFeatureVectorVersion": mlb_ml_clean_cohort_v1.FEATURE_SNAPSHOT_VERSION,
-        "expectedGameCount": expected_count,
+        "requiredFingerprintVersion": mlb_ml_clean_cohort_v1.FINGERPRINT_VERSION,
+        "expectedGameCount": len(expected),
+        "expectedGameIdentities": sorted(expected),
+        "dueGameCount": len(due),
+        "dueGameIdentities": sorted(due),
         "rawStoredRowCount": len(stored),
+        "missingIdentityRowCount": missing_identity_row_count,
         "deduplicatedStoredGameCount": len(selected),
+        "storedGameIdentities": sorted(stored_identities),
+        "validGameIdentities": sorted(valid_identities),
+        "missingGameIdentities": missing,
+        "missingDueGameIdentities": missing_due,
+        "unexpectedGameIdentities": unexpected,
+        "duplicateGameIdentities": duplicate_identities,
         "validFingerprintCount": len(valid),
         "invalidFingerprintCount": len(invalid),
+        "dueCoverageComplete": not missing_due,
+        "authoritySafe": authority_safe,
         "coverageComplete": complete,
         "invalidRows": invalid,
         "checks": checks,
-        "policy": "Every locked manifest game must have one stored immutable vector whose fingerprint, game identity, lock timestamp, and pre-lock source timestamp recompute successfully.",
+        "policy": (
+            "Canonical LOCKED#GAME identities must be unique and a subset of "
+            "the official roster; every game past its own T-45 cutoff must "
+            "have a current-v3 immutable vector, and full-roster equality is "
+            "required after the final cutoff."
+        ),
     }
 
 
 def _per_game_lock_progress(
-    lock_status: Dict[str, Any], *, checked_at: datetime, expected_count: int
+    lock_status: Dict[str, Any],
+    *,
+    checked_at: datetime,
+    expected_identities: Iterable[str],
 ) -> Dict[str, Any]:
+    expected = {
+        _identity_from_value(value) for value in expected_identities if value
+    }
+    expected_count = len(expected)
     raw_statuses = lock_status.get("perGameStatus") or []
     statuses = [row for row in raw_statuses if isinstance(row, dict)]
     due: List[Dict[str, Any]] = []
     pending: List[Dict[str, Any]] = []
     invalid: List[Dict[str, Any]] = []
+    seen_game_ids: set[str] = set()
+    valid_cutoffs: List[datetime] = []
 
     for row in statuses:
-        game_id = str(row.get("gameIdentity") or row.get("gameId") or "")
+        game_id = _row_identity(row)
         lock_at = _parse_dt(row.get("scheduledLockAtUtc"))
+        validation_errors: List[str] = []
+        if not game_id:
+            validation_errors.append("game_identity_missing")
+        elif game_id in seen_game_ids:
+            validation_errors.append("duplicate_game_identity")
+        else:
+            seen_game_ids.add(game_id)
+        if not lock_at:
+            validation_errors.append("scheduled_lock_at_missing_or_invalid")
         compact = {
             "gameId": game_id or None,
             "scheduledLockAtUtc": lock_at.isoformat() if lock_at else None,
             "lockStatus": row.get("lockStatus") or row.get("state"),
             "lockOutcomeRecorded": row.get("lockOutcomeRecorded") is True,
             "lockedPrediction": row.get("lockedPrediction") is True,
+            "validationErrors": validation_errors,
         }
-        if not lock_at:
+        if validation_errors:
             invalid.append(compact)
-        elif lock_at <= checked_at:
+            continue
+        valid_cutoffs.append(lock_at)
+        if lock_at <= checked_at:
             due.append(compact)
         else:
             pending.append(compact)
 
     missing_due = [row for row in due if row["lockOutcomeRecorded"] is not True]
-    valid_cutoffs = [
-        _parse_dt(row.get("scheduledLockAtUtc"))
-        for row in statuses
-        if _parse_dt(row.get("scheduledLockAtUtc"))
-    ]
+    observed = set(seen_game_ids)
+    missing_identities = sorted(expected - observed)
+    unexpected_identities = sorted(observed - expected)
     final_cutoff = max(valid_cutoffs) if valid_cutoffs else None
     status_complete = bool(
         expected_count > 0
         and len(statuses) == expected_count
         and len(valid_cutoffs) == expected_count
+        and len(seen_game_ids) == expected_count
+        and not invalid
+        and not missing_identities
+        and not unexpected_identities
     )
     final_cutoff_reached = bool(
         status_complete and final_cutoff and checked_at >= final_cutoff
@@ -289,13 +451,24 @@ def _per_game_lock_progress(
     return {
         "statusComplete": status_complete,
         "statusCount": len(statuses),
+        "uniqueGameCount": len(seen_game_ids),
+        "gameIdentities": sorted(observed),
+        "expectedGameIdentities": sorted(expected),
+        "missingGameIdentities": missing_identities,
+        "unexpectedGameIdentities": unexpected_identities,
         "invalidStatusCount": len(invalid),
         "invalidStatuses": invalid,
         "dueGameCount": len(due),
+        "dueGameIdentities": sorted(
+            str(row.get("gameId") or "") for row in due if row.get("gameId")
+        ),
         "dueTerminalGameCount": len(due) - len(missing_due),
         "dueMissingGameCount": len(missing_due),
         "dueMissingGames": missing_due,
         "pendingGameCount": len(pending),
+        "pendingGameIdentities": sorted(
+            str(row.get("gameId") or "") for row in pending if row.get("gameId")
+        ),
         "finalPerGameCutoffAtUtc": (
             final_cutoff.isoformat() if final_cutoff else None
         ),
@@ -318,31 +491,104 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
     pulls = history.query_pulls("mlb", slate_date, 500)
     latest_pull = pulls[-1] if pulls else {}
     latest_age = _age_minutes(latest_pull.get("pulled_at")) if latest_pull else None
-    predictions = mlb_game_winner_engine.predict_all(slate_date, store=False, limit=500)
-    lock_status = mlb_daily_pick_lock._status_payload(slate_date)
+    raw_predictions = mlb_game_winner_engine.predict_all(
+        slate_date, store=False, limit=500
+    )
+    predictions = raw_predictions if isinstance(raw_predictions, dict) else {}
+    raw_lock_status = mlb_daily_pick_lock._status_payload(slate_date)
+    lock_status = raw_lock_status if isinstance(raw_lock_status, dict) else {}
 
     blockers: List[str] = []
-    game_count = int(predictions.get("gameCount") or 0)
-    prediction_count = int(predictions.get("count") or 0)
-    pull_count = len(pulls)
-    lock_data = lock_status.get("lock") or {}
-    expected_slate_count = int(
-        lock_status.get("gameCount")
-        or lock_data.get("gameCount")
-        or lock_data.get("predictionCount")
-        or game_count
-        or 0
+    roster_error: Optional[str] = None
+    try:
+        roster = history.verified_full_slate_manifest(pulls, slate_date)
+        if not isinstance(roster, dict):
+            raise TypeError("verified roster is not an object")
+    except Exception as exc:
+        roster = {}
+        roster_error = f"{type(exc).__name__}:{exc}"
+    official_games = roster.get("games") if isinstance(roster.get("games"), list) else []
+    official_summary = _identity_summary(official_games)
+    official_identities = official_summary["gameIdentities"]
+    official_count = len(official_identities)
+    official_authority_valid = bool(
+        roster_error is None
+        and roster.get("officialScheduleBacked") is True
+        and roster.get("immutableReadbackVerified") is True
+        and bool(roster.get("fullAuthorityFingerprint"))
+        and official_count > 0
+        and official_summary["rawCount"] == official_count
+        and official_summary["validIdentityCount"] == official_count
+        and not official_summary["duplicateGameIdentities"]
+        and _exact_count(roster.get("fullSlateGameCount"), official_count)
+        and _exact_count(roster.get("officialScheduleGameCount"), official_count)
     )
+    if not official_authority_valid:
+        blockers.append("OFFICIAL_SCHEDULE_AUTHORITY_INVALID")
+
+    prediction_rows = (
+        predictions.get("predictions")
+        if isinstance(predictions.get("predictions"), list)
+        else []
+    )
+    prediction_summary = _identity_summary(prediction_rows)
+    prediction_identity_valid = bool(
+        official_authority_valid
+        and prediction_summary["gameIdentities"] == official_identities
+        and prediction_summary["rawCount"] == official_count
+        and prediction_summary["validIdentityCount"] == official_count
+        and not prediction_summary["duplicateGameIdentities"]
+        and _exact_count(predictions.get("gameCount"), official_count)
+        and _exact_count(predictions.get("count"), official_count)
+    )
+    if predictions.get("ok") is not True:
+        blockers.append("PREDICTION_ENGINE_FAILED")
+    if not prediction_identity_valid:
+        blockers.append("PREDICTION_ROSTER_MEMBERSHIP_MISMATCH")
+
+    lock_official_count = lock_status.get("officialScheduleGameCount")
+    lock_manifest_count = lock_status.get("manifestGameCount")
+    lock_verified_count = lock_status.get("verifiedFullSlateGameCount")
+    lock_authority_valid = bool(
+        official_authority_valid
+        and lock_status.get("officialScheduleBacked") is True
+        and _exact_count(lock_status.get("gameCount"), official_count)
+        and _exact_count(lock_manifest_count, official_count)
+        and _exact_count(lock_verified_count, official_count)
+        and _exact_count(lock_official_count, official_count)
+        and str(lock_status.get("officialScheduleAuthorityFingerprint") or "")
+        == str(roster.get("officialScheduleAuthorityFingerprint") or "")
+        and bool(lock_status.get("officialScheduleAuthorityFingerprint"))
+    )
+    if lock_status.get("ok") is not True:
+        blockers.append("LOCK_STATUS_FAILED")
+    if not lock_authority_valid:
+        blockers.append("LOCK_STATUS_ROSTER_AUTHORITY_MISMATCH")
+
+    game_count = _count_or_zero(predictions.get("gameCount"))
+    prediction_count = _count_or_zero(predictions.get("count"))
+    pull_count = len(pulls)
+    expected_slate_count = official_count
     per_game = _per_game_lock_progress(
         lock_status,
         checked_at=checked_at,
-        expected_count=expected_slate_count,
+        expected_identities=official_identities,
     )
+    if per_game["statusComplete"] is not True:
+        blockers.append("PER_GAME_LOCK_STATUS_MISSING_OR_INVALID")
+    if per_game["gameIdentities"] != official_identities:
+        blockers.append("PER_GAME_LOCK_ROSTER_MEMBERSHIP_MISMATCH")
     integrity = _locked_row_integrity(
         slate_date,
-        expected_slate_count,
+        official_identities,
+        per_game["dueGameIdentities"],
         per_game["fullSlateVectorEvaluationDue"],
     )
+
+    if not integrity.get("authoritySafe"):
+        blockers.append("CANONICAL_LOCK_ROSTER_MEMBERSHIP_MISMATCH")
+    if not integrity.get("dueCoverageComplete"):
+        blockers.append("LOCKED_ROWS_MISSING_VALID_FROZEN_FINGERPRINTS")
 
     if mode in {"continuous", "ingest"}:
         if pull_count == 0:
@@ -357,8 +603,6 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
             blockers.append("INCOMPLETE_SINGLE_GAME_CARD")
 
     if mode in {"continuous", "lock"}:
-        if expected_slate_count > 0 and per_game["statusComplete"] is not True:
-            blockers.append("PER_GAME_LOCK_STATUS_MISSING_OR_INVALID")
         if per_game["dueMissingGameCount"] > 0:
             blockers.append("LOCK_DUE_BUT_NOT_LOCKED")
         if (
@@ -367,6 +611,7 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
         ):
             blockers.append("LOCKED_ROWS_MISSING_VALID_FROZEN_FINGERPRINTS")
 
+    blockers = sorted(set(blockers))
     ok = not blockers
     return {
         "ok": ok,
@@ -383,6 +628,70 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
         "predictionCount": prediction_count,
         "promotedCount": predictions.get("promotedCount"),
         "allGamesPredicted": predictions.get("allGamesPredicted"),
+        "sourceAuthority": {
+            "officialSchedule": {
+                **official_summary,
+                "ok": official_authority_valid,
+                "officialScheduleBacked": roster.get("officialScheduleBacked") is True,
+                "fullSlateGameCount": roster.get("fullSlateGameCount"),
+                "officialScheduleGameCount": roster.get("officialScheduleGameCount"),
+                "immutableReadbackVerified": roster.get("immutableReadbackVerified") is True,
+                "fullAuthorityFingerprint": roster.get("fullAuthorityFingerprint"),
+                "officialScheduleAuthorityFingerprint": roster.get(
+                    "officialScheduleAuthorityFingerprint"
+                ),
+                "error": roster_error,
+            },
+            "predictions": {
+                **prediction_summary,
+                "ok": predictions.get("ok") is True and prediction_identity_valid,
+                "reportedGameCount": predictions.get("gameCount"),
+                "reportedPredictionCount": predictions.get("count"),
+            },
+            "lockStatus": {
+                "ok": lock_status.get("ok") is True and lock_authority_valid,
+                "reportedGameCount": lock_status.get("gameCount"),
+                "reportedManifestGameCount": lock_manifest_count,
+                "reportedVerifiedFullSlateGameCount": lock_verified_count,
+                "reportedOfficialScheduleGameCount": lock_official_count,
+                "officialScheduleBacked": lock_status.get("officialScheduleBacked") is True,
+                "officialScheduleAuthorityFingerprint": lock_status.get(
+                    "officialScheduleAuthorityFingerprint"
+                ),
+            },
+            "canonicalLocks": {
+                "ok": integrity.get("authoritySafe") is True,
+                "storedGameIdentities": integrity.get("storedGameIdentities") or [],
+                "dueGameIdentities": integrity.get("dueGameIdentities") or [],
+                "missingDueGameIdentities": integrity.get(
+                    "missingDueGameIdentities"
+                )
+                or [],
+                "unexpectedGameIdentities": integrity.get(
+                    "unexpectedGameIdentities"
+                )
+                or [],
+                "duplicateGameIdentities": integrity.get(
+                    "duplicateGameIdentities"
+                )
+                or [],
+                "fullRosterEqualityRequired": per_game[
+                    "fullSlateVectorEvaluationDue"
+                ],
+                "fullRosterEqualitySatisfied": integrity.get(
+                    "coverageComplete"
+                )
+                is True,
+            },
+            "identitySetsEqual": bool(
+                official_authority_valid
+                and prediction_identity_valid
+                and lock_authority_valid
+                and per_game["statusComplete"] is True
+                and per_game["gameIdentities"] == official_identities
+                and integrity.get("authoritySafe") is True
+            ),
+        },
         "lock": {
             "locked": bool(lock_status.get("locked")),
             "lockDue": lock_status.get("lockDue"),

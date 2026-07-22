@@ -214,25 +214,114 @@ def verify_repository(root: Path = ROOT) -> List[str]:
     if not deploy:
         errors.append("canonical_deploy_workflow_missing")
     else:
-        status_token = "'{\"mode\":\"status\"}'"
+        status_training_token = (
+            "--status-training-result /tmp/mlb-ml-v2-training.json"
+        )
+        status_selection_token = (
+            "--status-selection-capture-result "
+            "/tmp/mlb-ml-v2-selection-capture.json"
+        )
         training_token = (
-            "'{\"sport\":\"mlb\",\"mode\":\"scheduled\","
+            "--payload '{\"sport\":\"mlb\",\"mode\":\"scheduled\","
             "\"run\":\"aws_native_fixed_prospective_shadow_training\"}'"
         )
         selection_token = (
-            "'{\"sport\":\"mlb\",\"mode\":\"selection_capture\","
+            "--payload '{\"sport\":\"mlb\",\"mode\":\"selection_capture\","
             "\"run\":\"aws_native_prospective_selection_capture\"}'"
         )
         training = deploy.find(training_token)
         selection = deploy.find(selection_token)
-        post_status = deploy.find(status_token)
+        post_status = deploy.find(status_training_token)
         verifier = deploy.find("python scripts/verify_mlb_trainer_deploy_response.py")
-        if deploy.count(status_token) != 1:
+        invoke_helper = "python scripts/invoke_mlb_trainer_with_retry.py"
+        helper_positions = [
+            match.start() for match in re.finditer(re.escape(invoke_helper), deploy)
+        ]
+        if len(helper_positions) != 3:
+            errors.append("canonical_deploy_must_use_exactly_three_bounded_trainer_invokes")
+        if "invoke_mlb_trainer_deploy_probe.py" in deploy:
+            errors.append("canonical_deploy_retains_duplicate_trainer_invoke_helper")
+        if "aws lambda invoke" in deploy:
+            errors.append("canonical_deploy_retains_unbounded_lambda_invoke")
+        if (
+            len(helper_positions) == 3
+            and verifier >= 0
+            and helper_positions[-1] < verifier
+        ):
+            call_ends = [helper_positions[1], helper_positions[2], verifier]
+            calls = [
+                deploy[start:end]
+                for start, end in zip(helper_positions, call_ends)
+            ]
+            call_contracts = (
+                (
+                    calls[0],
+                    (
+                        training_token,
+                        "--response /tmp/mlb-ml-v2-training.json",
+                        "--invocation /tmp/mlb-ml-v2-training-invoke.json",
+                    ),
+                    (selection_token, status_training_token, status_selection_token),
+                ),
+                (
+                    calls[1],
+                    (
+                        selection_token,
+                        "--response /tmp/mlb-ml-v2-selection-capture.json",
+                        "--invocation /tmp/mlb-ml-v2-selection-capture-invoke.json",
+                    ),
+                    (training_token, status_training_token, status_selection_token),
+                ),
+                (
+                    calls[2],
+                    (
+                        status_training_token,
+                        status_selection_token,
+                        "--response /tmp/mlb-ml-v2-status-after.json",
+                        "--invocation /tmp/mlb-ml-v2-status-after-invoke.json",
+                    ),
+                    (training_token, selection_token, "--payload"),
+                ),
+            )
+            for call, required, forbidden in call_contracts:
+                if any(call.count(token) != 1 for token in required) or any(
+                    token in call for token in forbidden
+                ):
+                    errors.append(
+                        "canonical_deploy_trainer_invoke_evidence_pairing_is_invalid"
+                    )
+            mutating_calls = calls[:2]
+            status_call = calls[2]
+            if any(
+                call.count("--retry-execution-lease") != 1
+                for call in mutating_calls
+            ) or "--retry-execution-lease" in status_call:
+                errors.append("canonical_deploy_lease_retry_scope_is_invalid")
+            if any(
+                call.count("--deadline-seconds 1200") != 1
+                for call in mutating_calls
+            ) or "--deadline-seconds" in status_call:
+                errors.append("canonical_deploy_lease_retry_deadline_is_invalid")
+            if any(
+                call.count("--retry-delay-seconds 20") != 1
+                for call in mutating_calls
+            ) or "--retry-delay-seconds" in status_call:
+                errors.append("canonical_deploy_lease_retry_delay_is_invalid")
+        if (
+            deploy.count(status_training_token) != 1
+            or deploy.count(status_selection_token) != 1
+        ):
             errors.append("canonical_deploy_must_query_post_run_status_exactly_once")
         if deploy.count(training_token) != 1:
             errors.append("canonical_deploy_must_invoke_training_exactly_once")
         if deploy.count(selection_token) != 1:
             errors.append("canonical_deploy_must_invoke_selection_capture_exactly_once")
+        if deploy.count("--retry-execution-lease") != 2:
+            errors.append("canonical_deploy_lease_retry_scope_is_invalid")
+        if deploy.count("--deadline-seconds 1200") != 2:
+            errors.append("canonical_deploy_lease_retry_deadline_is_invalid")
+        if deploy.count("--retry-delay-seconds 20") != 2:
+            errors.append("canonical_deploy_lease_retry_delay_is_invalid")
         if not (0 <= training < selection < post_status < verifier):
             errors.append("canonical_deploy_split_run_status_order_is_invalid")
         if verifier < 0 or verifier < post_status:

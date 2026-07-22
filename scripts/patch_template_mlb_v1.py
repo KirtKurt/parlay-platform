@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 TEMPLATE = Path("template.yaml")
@@ -149,6 +150,46 @@ def block_for(s: str, name: str) -> str:
     return "".join(out)
 
 
+def patch_daily_lock_execution_lease(s: str) -> str:
+    """Install the exact outer lock lease without changing schedule policy."""
+
+    marker = "\n  MLBDailyPickLockFunction:\n"
+    start = s.find(marker)
+    if start < 0:
+        raise RuntimeError("MLBDailyPickLockFunction resource missing")
+    tail_start = start + len(marker)
+    next_resource = re.search(
+        r"(?m)^  [A-Za-z][A-Za-z0-9]*:\s*$",
+        s[tail_start:],
+    )
+    end = (
+        tail_start + next_resource.start()
+        if next_resource is not None
+        else len(s)
+    )
+    resource = s[start:end]
+    lease_environment = "          MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'\n"
+    if re.search(
+        r"(?m)^          MLB_LOCK_EXECUTION_LEASE_SECONDS:.*$",
+        resource,
+    ):
+        resource = re.sub(
+            r"(?m)^          MLB_LOCK_EXECUTION_LEASE_SECONDS:.*$",
+            lease_environment.rstrip("\n"),
+            resource,
+        )
+    else:
+        variables_marker = "        Variables:\n"
+        if variables_marker not in resource:
+            raise RuntimeError("daily lock environment Variables marker missing")
+        resource = resource.replace(
+            variables_marker,
+            variables_marker + lease_environment,
+            1,
+        )
+    return s[:start] + resource + s[end:]
+
+
 text = ensure_deploy_identity_parameters(text)
 
 # Remove old/dedicated MLB route functions that caused API Gateway/Lambda 502 on smoke tests.
@@ -159,6 +200,7 @@ for legacy in ["MLBBasePull", "MLBT2", "MLBT3", "MLBT4", "MLBHotKickoff1amET"]:
     text = remove_child_event(text, legacy)
 text = remove_resource(text, "MLBHotPullRecoveryFunction")
 text = patch_mlb_hot_block(text)
+text = patch_daily_lock_execution_lease(text)
 text = text.replace('"days_ahead":1', '"days_ahead":0').replace('"days_ahead": 1', '"days_ahead": 0')
 
 for key, value in [
@@ -190,6 +232,7 @@ text = insert_once(text, "  MLBResultsSchedulerFunction:\n", """
         MaximumRetryAttempts: 0
       Environment:
         Variables:
+          MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'
           MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'
           MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'
           MLB_MIN_PULLS_PER_GAME_FOR_LOCK: '4'
@@ -246,6 +289,7 @@ for required, message in [
     ("MLBDailyPickLockFunction:", "daily lock function missing"),
     ("Path: /v1/mlb/locks/status", "lock status route missing"),
     ("DynamoDBReadPolicy:\n            TableName: !Ref OutcomesTable", "daily lock outcomes read policy missing"),
+    ("MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'", "daily lock execution lease is missing"),
 ]:
     if required not in text:
         violations.append(message)

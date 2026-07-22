@@ -724,6 +724,7 @@ Resources:
       Environment:
         Variables:
           INQSI_ADMIN_API_TOKEN: !Ref InqsiAdminApiToken
+          MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'
           MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME: '45'
           MLB_REQUIRE_ALL_GAMES_FOR_LOCK: 'true'
           MLB_MIN_PULLS_PER_GAME_FOR_LOCK: '4'

@@ -132,6 +132,12 @@ TRAINER_EXECUTION_LEASE_SECONDS = "960"
 TRAINER_ARTIFACT_BUCKET_OUTPUT = "MLBMLArtifactsBucketName"
 TRAINER_FUNCTION_ARN_OUTPUT = "MLBMLTrainingFunctionArn"
 TRAINER_FORBIDDEN_DLQ_ARN_OUTPUT = "MLBMLTrainingDeadLetterQueueArn"
+LOCK_HANDLER = "mlb_daily_pick_lock_protected.lambda_handler"
+LOCK_TIMEOUT_SECONDS = 300
+LOCK_EXECUTION_CONCURRENCY_STRATEGY = "dynamodb_conditional_lease"
+LOCK_EXECUTION_LEASE_SECONDS = "360"
+LOCK_EXECUTION_LEASE_SAFETY_MARGIN_SECONDS = 60
+LOCK_REQUIRED_ENVIRONMENT = ("SNAPSHOTS_TABLE",)
 TRAINER_RETRY_POLICY = {
     "MaximumEventAgeInSeconds": 300,
     "MaximumRetryAttempts": 0,
@@ -468,6 +474,28 @@ def verify(
         blockers.append("EXPECTED_LAMBDA_CODE_MANIFEST_IDENTITY_MISMATCH")
     function_proofs: Dict[str, Any] = {}
     function_arns: Dict[str, str] = {}
+    lock_configuration: Dict[str, Any] = {
+        "expectedHandler": LOCK_HANDLER,
+        "expectedTimeoutSeconds": LOCK_TIMEOUT_SECONDS,
+        "expectedAsyncRetryPolicy": dict(
+            FUNCTION_ASYNC_RETRY_POLICIES["lock"]
+        ),
+        "expectedExecutionLeaseSeconds": int(
+            LOCK_EXECUTION_LEASE_SECONDS
+        ),
+        "requiredEnvironmentKeys": list(LOCK_REQUIRED_ENVIRONMENT),
+        "executionConcurrencyStrategy": (
+            LOCK_EXECUTION_CONCURRENCY_STRATEGY
+        ),
+        "executionLeaseScope": "global_mlb_lock_execution",
+        "executionLeaseSafetyMarginSeconds": (
+            LOCK_EXECUTION_LEASE_SAFETY_MARGIN_SECONDS
+        ),
+        "expiredLeaseReclaim": True,
+        "ownerConditionalRelease": True,
+        "reservedLambdaConcurrencyRequired": False,
+        "matches": False,
+    }
     trainer_configuration: Dict[str, Any] = {
         "expectedHandler": TRAINER_HANDLER,
         "expectedEnvironment": dict(TRAINER_EXPECTED_ENVIRONMENT),
@@ -713,6 +741,119 @@ def verify(
                 blockers.append(
                     f"BBS_AUTHORITY_LEAKED_TO_{role.upper()}:" + ",".join(leaked)
                 )
+        if role == "lock":
+            actual_lock_handler = str(config.get("Handler") or "")
+            actual_lock_timeout = config.get("Timeout")
+            actual_lock_lease_seconds_text = str(
+                environment.get("MLB_LOCK_EXECUTION_LEASE_SECONDS") or ""
+            )
+            try:
+                actual_lock_lease_seconds = int(
+                    actual_lock_lease_seconds_text
+                )
+            except (TypeError, ValueError):
+                actual_lock_lease_seconds = None
+            lock_lease_duration_matches = (
+                actual_lock_lease_seconds_text
+                == LOCK_EXECUTION_LEASE_SECONDS
+            )
+            lock_lease_covers_timeout_safety_bound = bool(
+                isinstance(actual_lock_timeout, int)
+                and actual_lock_lease_seconds is not None
+                and actual_lock_lease_seconds
+                >= actual_lock_timeout
+                + LOCK_EXECUTION_LEASE_SAFETY_MARGIN_SECONDS
+            )
+            missing_lock_environment = [
+                key
+                for key in LOCK_REQUIRED_ENVIRONMENT
+                if not str(environment.get(key) or "").strip()
+            ]
+            if actual_lock_handler != LOCK_HANDLER:
+                configuration_matches = False
+                blockers.append(
+                    "LOCK_HANDLER_MISMATCH:"
+                    f"expected={LOCK_HANDLER}:actual={actual_lock_handler}"
+                )
+            if actual_lock_timeout != LOCK_TIMEOUT_SECONDS:
+                configuration_matches = False
+                blockers.append(
+                    "LOCK_TIMEOUT_MISMATCH:"
+                    f"expected={LOCK_TIMEOUT_SECONDS}:actual={actual_lock_timeout}"
+                )
+            if not lock_lease_duration_matches:
+                configuration_matches = False
+                blockers.append(
+                    "LOCK_EXECUTION_LEASE_DURATION_MISMATCH:"
+                    f"expected={LOCK_EXECUTION_LEASE_SECONDS}:"
+                    f"actual={actual_lock_lease_seconds_text or 'MISSING'}"
+                )
+            if not lock_lease_covers_timeout_safety_bound:
+                configuration_matches = False
+                blockers.append(
+                    "LOCK_EXECUTION_LEASE_TIMEOUT_BOUND_FAILED:"
+                    f"timeout={actual_lock_timeout}:"
+                    f"margin={LOCK_EXECUTION_LEASE_SAFETY_MARGIN_SECONDS}:"
+                    f"lease={actual_lock_lease_seconds_text or 'MISSING'}"
+                )
+            for key in missing_lock_environment:
+                configuration_matches = False
+                blockers.append(f"LOCK_ENVIRONMENT_MISSING:{key}")
+            lock_configuration.update(
+                {
+                    "handler": actual_lock_handler,
+                    "timeoutSeconds": actual_lock_timeout,
+                    "timeoutMatches": (
+                        actual_lock_timeout == LOCK_TIMEOUT_SECONDS
+                    ),
+                    "executionConcurrencyStrategy": (
+                        LOCK_EXECUTION_CONCURRENCY_STRATEGY
+                    ),
+                    "executionLeaseScope": "global_mlb_lock_execution",
+                    "executionLeaseSeconds": actual_lock_lease_seconds,
+                    "executionLeaseDurationMatches": (
+                        lock_lease_duration_matches
+                    ),
+                    "executionLeaseSafetyMarginSeconds": (
+                        LOCK_EXECUTION_LEASE_SAFETY_MARGIN_SECONDS
+                    ),
+                    "executionLeaseCoversTimeoutSafetyBound": (
+                        lock_lease_covers_timeout_safety_bound
+                    ),
+                    "requiredEnvironmentKeys": list(
+                        LOCK_REQUIRED_ENVIRONMENT
+                    ),
+                    "snapshotTable": str(
+                        environment.get("SNAPSHOTS_TABLE") or ""
+                    ),
+                    "requiredEnvironmentPresent": (
+                        not missing_lock_environment
+                    ),
+                    "expiredLeaseReclaim": True,
+                    "ownerConditionalRelease": True,
+                    "reservedLambdaConcurrencyRequired": False,
+                    "asyncRetryPolicy": async_retry_policy,
+                    "asyncRetryPolicyMatches": (
+                        async_retry_policy
+                        == FUNCTION_ASYNC_RETRY_POLICIES["lock"]
+                    ),
+                    "asyncDestinationConfig": async_destination_config,
+                    "asyncDestinationConfigPresent": (
+                        async_destination_config_present
+                    ),
+                    "asyncDestinationConfigValid": (
+                        async_destination_config_valid
+                    ),
+                    "configuredAsyncDestinations": (
+                        configured_async_destinations
+                    ),
+                    "asyncDestinationConfigAbsent": bool(
+                        async_destination_config_valid
+                        and not configured_async_destinations
+                    ),
+                    "matches": configuration_matches,
+                }
+            )
         if role == "trainer":
             actual_handler = str(config.get("Handler") or "")
             function_dead_letter_config = dict(
@@ -1239,6 +1380,7 @@ def verify(
             "identityMatches": code_manifest_identity_matches,
         },
         "functions": function_proofs,
+        "lockConfiguration": lock_configuration,
         "trainerConfiguration": trainer_configuration,
         "providerCredentialBoundary": provider_credential_proof,
         "artifactBucket": artifact_bucket_proof,
