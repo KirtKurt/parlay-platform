@@ -1,0 +1,112 @@
+name: Fix MLB retry-policy bootstrap marker
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/fix-mlb-bootstrap-marker.yml"
+
+permissions:
+  contents: write
+  pull-requests: read
+
+jobs:
+  fix:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact PR head branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - name: Replace broad marker with exact fetch-helper preimage
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/apply-mlb-deploy-probe-policy.yml')
+          source = path.read_text(encoding='utf-8')
+          old = '''          replace_once(
+              "              )\\n\\n"
+              "          base_url = os.environ['API_URL'].rstrip('/')",
+              "              )\\n\\n"
+              "          def transient_retry_delay(exc, remaining):\\n"
+              "              reason = str(exc)\\n"
+              "              lambda_may_still_be_running = any(\\n"
+              "                  marker in reason\\n"
+              "                  for marker in (\\n"
+              "                      'HTTP 504',\\n"
+              "                      'TimeoutError',\\n"
+              "                      'URLError',\\n"
+              "                      'ConnectionError',\\n"
+              "                      'IncompleteRead',\\n"
+              "                  )\\n"
+              "              )\\n"
+              "              delay = 330 if lambda_may_still_be_running else 30\\n"
+              "              return min(delay, remaining), lambda_may_still_be_running\\n\\n"
+              "          base_url = os.environ['API_URL'].rstrip('/')",
+              'retry delay helper',
+          )'''
+          new = '''          replace_once(
+              """          def fetch(url, timeout=45, deadline=None, max_attempts=None):
+              return fetch_json_object(
+                  url,
+                  deadline_monotonic=deadline,
+                  max_wait_seconds=180,
+                  request_timeout_seconds=timeout,
+                  retry_delay_seconds=4,
+                  max_attempts=max_attempts,
+                  headers={
+                      'accept': 'application/json',
+                      'user-agent': 'inqsi-deploy-read-only-lock-lifecycle-smoke/2.0',
+                  },
+              )
+
+          base_url = os.environ['API_URL'].rstrip('/')""",
+              """          def fetch(url, timeout=45, deadline=None, max_attempts=None):
+              return fetch_json_object(
+                  url,
+                  deadline_monotonic=deadline,
+                  max_wait_seconds=180,
+                  request_timeout_seconds=timeout,
+                  retry_delay_seconds=4,
+                  max_attempts=max_attempts,
+                  headers={
+                      'accept': 'application/json',
+                      'user-agent': 'inqsi-deploy-read-only-lock-lifecycle-smoke/2.0',
+                  },
+              )
+
+          def transient_retry_delay(exc, remaining):
+              reason = str(exc)
+              lambda_may_still_be_running = any(
+                  marker in reason
+                  for marker in (
+                      'HTTP 504',
+                      'TimeoutError',
+                      'URLError',
+                      'ConnectionError',
+                      'IncompleteRead',
+                  )
+              )
+              delay = 330 if lambda_may_still_be_running else 30
+              return min(delay, remaining), lambda_may_still_be_running
+
+          base_url = os.environ['API_URL'].rstrip('/')""",
+              'retry delay helper',
+          )'''
+          count = source.count(old)
+          if count != 1:
+              raise SystemExit(f'exact bootstrap marker count is {count}')
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+          git diff --check
+          git rm .github/workflows/fix-mlb-bootstrap-marker.yml
+          git add .github/workflows/apply-mlb-deploy-probe-policy.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "Fix MLB retry-policy bootstrap marker"
+          git push origin HEAD:"${GITHUB_HEAD_REF}"
