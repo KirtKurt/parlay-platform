@@ -1,0 +1,168 @@
+name: Monitor isolated Tennis ML deployment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [agent/tennis-ml-production-deploy]
+    paths:
+      - ".github/workflows/monitor-tennis-deploy.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: parlay-platform-tennis-ml-deployment-monitor
+  cancel-in-progress: true
+
+env:
+  DEPLOY_WORKFLOW: deploy-tennis.yml
+  DEPLOY_BRANCH: agent/tennis-ml-production-deploy
+  DEPLOY_SOURCE_SHA: 5a70551f15cef5f51694b01e9c341a7107df548a
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout monitor branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Wait for exact Tennis deployment and collect evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api --method GET \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/${DEPLOY_WORKFLOW}/runs" \
+            -f branch="$DEPLOY_BRANCH" \
+            -f event=push \
+            -f per_page=20 > /tmp/tennis-deploy-runs.json
+
+          run_id=$(python - <<'PY'
+          import json, os
+          payload = json.load(open('/tmp/tennis-deploy-runs.json'))
+          expected = os.environ['DEPLOY_SOURCE_SHA']
+          matches = [r for r in payload.get('workflow_runs', []) if r.get('head_sha') == expected]
+          if len(matches) != 1:
+              raise SystemExit(f'expected exactly one deployment run for {expected}, found {len(matches)}')
+          print(matches[0]['id'])
+          PY
+          )
+          echo "Monitoring deployment run ${run_id}"
+
+          completed=false
+          for attempt in $(seq 1 300); do
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > /tmp/tennis-deploy-run.json
+            status=$(python -c "import json; print(json.load(open('/tmp/tennis-deploy-run.json')).get('status',''))")
+            conclusion=$(python -c "import json; print(json.load(open('/tmp/tennis-deploy-run.json')).get('conclusion') or '')")
+            echo "attempt=${attempt} status=${status} conclusion=${conclusion}"
+            if [ "$status" = completed ]; then
+              completed=true
+              break
+            fi
+            sleep 12
+          done
+          [ "$completed" = true ] || { echo "deployment run did not complete within monitor deadline"; exit 1; }
+
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" > /tmp/tennis-deploy-jobs.json
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" > /tmp/tennis-deploy-artifacts.json
+
+          rm -rf /tmp/tennis-downloaded-evidence
+          mkdir -p /tmp/tennis-downloaded-evidence
+          set +e
+          gh run download "$run_id" -R "$GITHUB_REPOSITORY" --dir /tmp/tennis-downloaded-evidence
+          download_status=$?
+          set -e
+
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          run = json.load(open('/tmp/tennis-deploy-run.json'))
+          jobs_payload = json.load(open('/tmp/tennis-deploy-jobs.json'))
+          artifacts_payload = json.load(open('/tmp/tennis-deploy-artifacts.json'))
+          evidence_files = list(Path('/tmp/tennis-downloaded-evidence').rglob('tennis-deployment-evidence.json'))
+          evidence = None
+          if len(evidence_files) == 1:
+              try:
+                  evidence = json.loads(evidence_files[0].read_text())
+              except Exception as exc:
+                  evidence = {'parseError': str(exc), 'path': str(evidence_files[0])}
+          elif len(evidence_files) > 1:
+              evidence = {'error': 'multiple_deployment_evidence_files', 'paths': [str(p) for p in evidence_files]}
+
+          payload = {
+              'schemaVersion': 'TENNIS-ML-DEPLOYMENT-MONITOR-v1',
+              'recordedAtUtc': datetime.now(timezone.utc).isoformat(),
+              'repository': os.environ['GITHUB_REPOSITORY'],
+              'deployWorkflow': os.environ['DEPLOY_WORKFLOW'],
+              'deployBranch': os.environ['DEPLOY_BRANCH'],
+              'expectedHeadSha': os.environ['DEPLOY_SOURCE_SHA'],
+              'run': {
+                  'id': run.get('id'),
+                  'runNumber': run.get('run_number'),
+                  'runAttempt': run.get('run_attempt'),
+                  'event': run.get('event'),
+                  'status': run.get('status'),
+                  'conclusion': run.get('conclusion'),
+                  'headSha': run.get('head_sha'),
+                  'createdAt': run.get('created_at'),
+                  'updatedAt': run.get('updated_at'),
+                  'htmlUrl': run.get('html_url'),
+              },
+              'jobs': [
+                  {
+                      'id': job.get('id'),
+                      'name': job.get('name'),
+                      'status': job.get('status'),
+                      'conclusion': job.get('conclusion'),
+                      'startedAt': job.get('started_at'),
+                      'completedAt': job.get('completed_at'),
+                      'htmlUrl': job.get('html_url'),
+                      'steps': [
+                          {
+                              'name': step.get('name'),
+                              'status': step.get('status'),
+                              'conclusion': step.get('conclusion'),
+                              'number': step.get('number'),
+                          }
+                          for step in job.get('steps', [])
+                      ],
+                  }
+                  for job in jobs_payload.get('jobs', [])
+              ],
+              'artifacts': [
+                  {
+                      'id': artifact.get('id'),
+                      'name': artifact.get('name'),
+                      'sizeInBytes': artifact.get('size_in_bytes'),
+                      'expired': artifact.get('expired'),
+                      'createdAt': artifact.get('created_at'),
+                      'expiresAt': artifact.get('expires_at'),
+                  }
+                  for artifact in artifacts_payload.get('artifacts', [])
+              ],
+              'deploymentEvidence': evidence,
+          }
+          if payload['run']['headSha'] != payload['expectedHeadSha']:
+              raise SystemExit('deployment run head SHA mismatch')
+          output = Path('tennis_release/deployment-status.json')
+          output.write_text(json.dumps(payload, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+
+      - name: Publish deployment status to isolated branch
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s tennis_release/deployment-status.json || exit 0
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tennis_release/deployment-status.json
+          git diff --cached --quiet && exit 0
+          git commit -m "Record Tennis ML deployment status"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
