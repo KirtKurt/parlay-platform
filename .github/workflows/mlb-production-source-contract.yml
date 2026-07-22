@@ -156,7 +156,10 @@ jobs:
           python tests/unit/test_mlb_pull_dedupe_guard.py
 
       - name: Verify slate-level production acceptance semantics
-        run: python tests/unit/test_mlb_production_acceptance.py
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: "true"
+        run: python -m pytest -q tests/unit/test_mlb_production_acceptance.py
 
       - name: Verify MLB ML V2, final-label, and probability contracts
         env:
@@ -166,6 +169,8 @@ jobs:
           python -m pytest -q \
             tests/unit/test_mlb_pull_guard_status.py \
             tests/unit/test_mlb_probability_actionability_guard.py \
+            tests/unit/test_mlb_production_verifier_authority.py \
+            tests/unit/test_mlb_production_verifier_per_game.py \
             tests/unit/test_mlb_advanced_context_travel_rest.py \
             tests/unit/test_mlb_bbs_status.py \
             tests/unit/test_mlb_fundamentals_snapshot_v2.py \

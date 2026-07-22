@@ -75,7 +75,7 @@ public-betting split feed yet. There is also no implemented `TRAP` signal.
 The stack defaults `TennisScheduleState` to `DISABLED`. The EventBridge rule is
 an explicit tennis-only resource, and deployment is not accepted unless AWS
 reports that rule as disabled. The pull Lambda, DynamoDB tables, Parquet bucket,
-secrets, logs, and alarms all live in `parlay-platform-tennis-dev`.
+secrets, logs, and alarms all live in `parlay-platform-tennis-canary-dev`.
 
 This canary intentionally creates no SQS resources and configures no reserved
 Lambda concurrency, so its restricted deployment role does not need
@@ -87,6 +87,10 @@ idempotency and the next scheduled collection window provide recovery while
 the collector remains in shadow mode.
 Retained resources use `RetainExceptOnCreate`, preserving established data
 while allowing CloudFormation to clean up an unsuccessful first create.
+
+The workflow does not delete or reuse resources from the earlier failed
+`parlay-platform-tennis-dev` create. The fresh canary stack name avoids that
+boundary entirely; legacy cleanup remains a separate, manually reviewed task.
 
 Use only a dedicated `TENNIS_ODDS_API_KEY`; never substitute the MLB
 `ODDS_API_KEY`. The key is placed in a tennis-owned Secrets Manager secret and
@@ -127,6 +131,6 @@ sam validate --template-file template.yaml
 sam build --template-file template.yaml
 ```
 
-The checked-in canary workflow deploys only `parlay-platform-tennis-dev` and
+The checked-in canary workflow deploys only `parlay-platform-tennis-canary-dev` and
 hardcodes `TennisScheduleState=DISABLED`. Enabling the schedule is a later,
 separately reviewed operation after the disabled canary proof is clean.

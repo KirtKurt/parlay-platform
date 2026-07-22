@@ -2585,7 +2585,9 @@ def test_dynamic_template_keeps_one_minute_lock_check_and_invariant():
     invariant = (ROOT / "scripts" / "verify_mlb_schedule_invariants.py").read_text()
     assert "MLBDailyPickLockEveryMinute" in patcher
     assert "Schedule: rate(1 minute)" in patcher
+    assert "MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'" in patcher
     assert "MLBDailyPickLockEveryMinute" in invariant
+    assert "MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'" in invariant
 
 
 def test_per_game_daily_card_remains_authoritative_for_settlement_fallback():

@@ -43,6 +43,17 @@ def _success(*, function_error=None):
     return value
 
 
+def _function_error(error_type: str):
+    return {
+        "StatusCode": 200,
+        "ExecutedVersion": "$LATEST",
+        "FunctionError": "Unhandled",
+        "Payload": io.BytesIO(
+            json.dumps({"errorType": error_type, "errorMessage": "redacted"}).encode()
+        ),
+    }
+
+
 def test_retries_only_pre_admission_throttling_with_bounded_backoff():
     client = FakeLambda(
         [
@@ -264,3 +275,202 @@ def test_main_removes_stale_evidence_before_nonretryable_failure(
 
     assert not response_path.exists()
     assert not invocation_path.exists()
+
+
+def test_retries_exact_execution_lease_contention_under_separate_deadline():
+    client = FakeLambda(
+        [_function_error("ExecutionLeaseUnavailable"), _success()]
+    )
+    clock = iter((100.0,))
+    sleeps = []
+
+    response, metadata = invoke_retry.invoke_with_retry(
+        client=client,
+        function_name="trainer",
+        payload='{"mode":"scheduled"}',
+        retry_execution_lease=True,
+        lease_retry_deadline_seconds=1200,
+        lease_retry_delay_seconds=20,
+        monotonic=lambda: next(clock),
+        sleep=sleeps.append,
+    )
+
+    assert json.loads(response) == {"ok": True}
+    assert metadata["StatusCode"] == 200
+    assert sleeps == [20]
+    assert len(client.calls) == 2
+
+
+def test_full_throttle_backoff_cannot_shorten_stale_lease_recovery_window():
+    lease_rejections = 48  # 48 * 20s covers the 960-second trainer lease.
+    client = FakeLambda(
+        [_client_error("TooManyRequestsException")] * 8
+        + [
+            _function_error("ExecutionLeaseUnavailable")
+            for _ in range(lease_rejections)
+        ]
+        + [_success()]
+    )
+    clock = {"now": 0.0}
+    sleeps = []
+
+    def sleep(seconds):
+        sleeps.append(seconds)
+        clock["now"] += seconds
+
+    response, metadata = invoke_retry.invoke_with_retry(
+        client=client,
+        function_name="trainer",
+        payload='{"mode":"scheduled"}',
+        retry_execution_lease=True,
+        lease_retry_deadline_seconds=1200,
+        lease_retry_delay_seconds=20,
+        monotonic=lambda: clock["now"],
+        sleep=sleep,
+    )
+
+    assert json.loads(response) == {"ok": True}
+    assert metadata["StatusCode"] == 200
+    assert sleeps[:8] == [5, 10, 20, 40, 60, 60, 60, 60]
+    assert sleeps[8:] == [20] * lease_rejections
+    assert clock["now"] == 315 + 960
+    assert len(client.calls) == 8 + lease_rejections + 1
+
+
+def test_lease_contention_is_not_retried_without_explicit_scope():
+    client = FakeLambda([_function_error("ExecutionLeaseUnavailable")])
+
+    response, metadata = invoke_retry.invoke_with_retry(
+        client=client,
+        function_name="trainer",
+        payload='{"mode":"scheduled"}',
+        sleep=lambda _seconds: pytest.fail("must not sleep"),
+    )
+
+    assert json.loads(response)["errorType"] == "ExecutionLeaseUnavailable"
+    assert metadata["FunctionError"] == "Unhandled"
+    assert len(client.calls) == 1
+
+
+@pytest.mark.parametrize("mode", ("status", "manual_review", "unknown"))
+def test_lease_retry_rejects_non_scheduler_modes_before_invoke(mode):
+    client = FakeLambda([_success()])
+
+    with pytest.raises(
+        invoke_retry.DeployInvokeError,
+        match="execution_lease_retry_mode_invalid",
+    ):
+        invoke_retry.invoke_with_retry(
+            client=client,
+            function_name="trainer",
+            payload=json.dumps({"mode": mode}),
+            retry_execution_lease=True,
+        )
+
+    assert client.calls == []
+
+
+def test_other_function_error_is_never_retried_even_when_lease_retry_enabled():
+    client = FakeLambda([_function_error("TrainingContractError")])
+
+    _response, metadata = invoke_retry.invoke_with_retry(
+        client=client,
+        function_name="trainer",
+        payload='{"mode":"selection_capture"}',
+        retry_execution_lease=True,
+        sleep=lambda _seconds: pytest.fail("must not sleep"),
+    )
+
+    assert metadata["FunctionError"] == "Unhandled"
+    assert len(client.calls) == 1
+
+
+def test_lease_retry_fails_before_sleep_when_deadline_cannot_fit_delay():
+    client = FakeLambda(
+        [
+            _function_error("ExecutionLeaseUnavailable"),
+            _function_error("ExecutionLeaseUnavailable"),
+        ]
+    )
+    clock = iter((100.0, 1281.0))
+    sleeps = []
+
+    with pytest.raises(
+        invoke_retry.DeployInvokeError,
+        match="execution_lease_retry_deadline_exceeded",
+    ):
+        invoke_retry.invoke_with_retry(
+            client=client,
+            function_name="trainer",
+            payload='{"mode":"scheduled"}',
+            retry_execution_lease=True,
+            lease_retry_deadline_seconds=1200,
+            lease_retry_delay_seconds=20,
+            monotonic=lambda: next(clock),
+            sleep=sleeps.append,
+        )
+
+    assert sleeps == [20]
+    assert len(client.calls) == 2
+
+
+def test_status_request_is_bound_to_validated_result_run_ids():
+    assert invoke_retry.build_status_request(
+        {"executionMode": "training", "runId": "training:abc-1"},
+        {
+            "executionMode": "selection_capture",
+            "runId": "capture:abc-2",
+        },
+    ) == {
+        "mode": "status",
+        "trainingRunId": "training:abc-1",
+        "selectionCaptureRunId": "capture:abc-2",
+    }
+
+    with pytest.raises(invoke_retry.DeployInvokeError, match="training_run_id_invalid"):
+        invoke_retry.build_status_request(
+            {"executionMode": "training", "runId": "bad run id"},
+            {"executionMode": "selection_capture", "runId": "capture-1"},
+        )
+
+
+def test_main_builds_exact_status_payload_from_result_files(tmp_path, monkeypatch):
+    training = tmp_path / "training.json"
+    selection = tmp_path / "selection.json"
+    response_path = tmp_path / "status.json"
+    invocation_path = tmp_path / "status-invocation.json"
+    training.write_text(
+        json.dumps({"executionMode": "training", "runId": "training-1"}),
+        encoding="utf-8",
+    )
+    selection.write_text(
+        json.dumps(
+            {"executionMode": "selection_capture", "runId": "capture-1"}
+        ),
+        encoding="utf-8",
+    )
+    client = FakeLambda([_success()])
+    monkeypatch.setattr(invoke_retry.boto3, "client", lambda *_args, **_kwargs: client)
+
+    assert invoke_retry.main(
+        [
+            "--function-name",
+            "trainer",
+            "--region",
+            "us-east-1",
+            "--status-training-result",
+            str(training),
+            "--status-selection-capture-result",
+            str(selection),
+            "--response",
+            str(response_path),
+            "--invocation",
+            str(invocation_path),
+        ]
+    ) == 0
+
+    assert json.loads(client.calls[0]["Payload"]) == {
+        "mode": "status",
+        "trainingRunId": "training-1",
+        "selectionCaptureRunId": "capture-1",
+    }

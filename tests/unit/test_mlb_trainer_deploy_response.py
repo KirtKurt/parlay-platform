@@ -22,6 +22,12 @@ TEMPLATE_SHA = "b" * 64
 STARTED = "2026-07-22T12:00:00+00:00"
 
 
+def _sign_status(payload):
+    payload["statusFingerprintVersion"] = verifier.STATUS_FINGERPRINT_VERSION
+    payload["statusFingerprint"] = verifier._status_fingerprint(payload)
+    return payload
+
+
 def test_deploy_lease_contract_exactly_matches_runtime_attestation() -> None:
     assert verifier.EXECUTION_CONCURRENCY_CONTROL == (
         aws_training.execution_concurrency_control(acquired_for_run=True)
@@ -60,6 +66,7 @@ def _payloads():
         "ok": True,
         "status": "ACCUMULATING_TRAIN",
         "executionMode": "training",
+        "runId": "training-run-1",
         "createdAtUtc": "2026-07-22T12:00:01+00:00",
         "championChanged": False,
         "automaticPromotionEnabled": False,
@@ -75,12 +82,15 @@ def _payloads():
         "ok": True,
         "status": "WAITING_FOR_PERSISTED_CHALLENGER",
         "executionMode": "selection_capture",
+        "runId": "selection-run-1",
         "createdAtUtc": "2026-07-22T12:00:02+00:00",
         "historicalTrainingScanInvoked": False,
         "modelTrained": False,
         "liveInferenceAuthority": False,
         "statusFingerprintVersion": verifier.STATUS_FINGERPRINT_VERSION,
     }
+    _sign_status(training)
+    _sign_status(selection)
     after = {
         **common,
         "ok": True,
@@ -94,13 +104,35 @@ def _payloads():
             "ok": True,
             "executionMode": "training",
             "deploymentIdentityMatches": True,
+            "errors": [],
             "latestRun": copy.deepcopy(training),
         },
         "selectionCaptureHealth": {
             "ok": True,
             "executionMode": "selection_capture",
             "deploymentIdentityMatches": True,
+            "errors": [],
             "latestRun": copy.deepcopy(selection),
+        },
+        "requestedRunEvidence": {
+            "training": {
+                "ok": True,
+                "found": True,
+                "requestedRunId": training["runId"],
+                "executionMode": "training",
+                "run": copy.deepcopy(training),
+                "deploymentIdentityMatches": True,
+                "errors": [],
+            },
+            "selectionCapture": {
+                "ok": True,
+                "found": True,
+                "requestedRunId": selection["runId"],
+                "executionMode": "selection_capture",
+                "run": copy.deepcopy(selection),
+                "deploymentIdentityMatches": True,
+                "errors": [],
+            },
         },
     }
     return training, selection, after
@@ -223,7 +255,7 @@ def test_accepts_fresh_split_run_and_status_health() -> None:
             lambda training, selection, after: after["trainingHealth"][
                 "latestRun"
             ].update({"status": "STALE"}),
-            "training_latest_run_does_not_match_deploy_run",
+            "training_latest_run_status_fingerprint_mismatch",
         ),
         (
             lambda training, selection, after: training.update(
@@ -287,8 +319,15 @@ def test_function_error_diagnostic_redacts_secrets_and_log_injection() -> None:
         response={
             "errorType": "RuntimeError",
             "errorMessage": (
-                "x-api-key: bbs_live_secret Authorization=Bearer-token "
-                "apiKey=query-secret AKIAABCDEFGHIJKLMNOP "
+                "x-api-key: bbs_live_secret "
+                "Authorization: Bearer bearer-credential "
+                "authorization=Basic basic-credential "
+                "apiKey=query-secret "
+                "AWS_SECRET_ACCESS_KEY=aws-secret "
+                "sessionToken=session-secret "
+                "ghp_abcdefghijklmnopqrstuvwxyz1234567890 "
+                "github_pat_abcdefghijklmnopqrstuvwxyz1234567890 "
+                "AKIAABCDEFGHIJKLMNOP "
                 "arn:aws:lambda:us-east-1:123456789012:function:name\r\nforged"
             ),
             "requestId": "123456789012",
@@ -299,8 +338,13 @@ def test_function_error_diagnostic_redacts_secrets_and_log_injection() -> None:
     rendered = json.dumps(diagnostic, sort_keys=True)
     for secret in (
         "bbs_live_secret",
-        "Bearer-token",
+        "bearer-credential",
+        "basic-credential",
         "query-secret",
+        "aws-secret",
+        "session-secret",
+        "ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+        "github_pat_abcdefghijklmnopqrstuvwxyz1234567890",
         "AKIAABCDEFGHIJKLMNOP",
         "123456789012",
         "arn:aws",
@@ -330,4 +374,49 @@ def test_successful_invocation_emits_no_failure_diagnostic() -> None:
             invocation={"StatusCode": 200},
         )
         is None
+    )
+
+
+def test_exact_run_evidence_survives_a_newer_latest_status_race() -> None:
+    training, selection, after = _payloads()
+    newer_training = copy.deepcopy(training)
+    newer_training.update(
+        {
+            "runId": "training-run-2",
+            "createdAtUtc": "2026-07-22T12:00:05+00:00",
+            "status": "NEWER_SCHEDULED_RUN",
+        }
+    )
+    newer_training.pop("statusFingerprint", None)
+    _sign_status(newer_training)
+    after["trainingHealth"]["latestRun"] = newer_training
+
+    assert _verify(training, selection, after) == []
+
+
+def test_rejects_requested_run_substitution_even_if_latest_is_healthy() -> None:
+    training, selection, after = _payloads()
+    exact = after["requestedRunEvidence"]["training"]["run"]
+    exact["runId"] = "substituted-run"
+    exact.pop("statusFingerprint", None)
+    _sign_status(exact)
+
+    errors = _verify(training, selection, after)
+
+    assert "training_requested_run_does_not_match_deploy_run" in errors
+    assert "training_requested_run_record_id_mismatch" in errors
+
+
+def test_verifier_status_fingerprint_matches_runtime_canonical_numbers() -> None:
+    payload = {
+        "runId": "roundtrip-run",
+        "nested": {
+            "integralFloat": 90.0,
+            "integralDecimal": aws_training.Decimal("90.00"),
+            "negativeZero": -0.0,
+        },
+    }
+
+    assert verifier._status_fingerprint(payload) == aws_training._status_fingerprint(
+        payload
     )

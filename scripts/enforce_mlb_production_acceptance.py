@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -19,6 +20,16 @@ import mlb_ml_experiment_v2 as experiment
 
 V2_TRAINING_STATUS_MAX_AGE_MINUTES = 8.0 * 60.0
 V2_SELECTION_CAPTURE_STATUS_MAX_AGE_MINUTES = 45.0
+PRODUCTION_ACCEPTANCE_SCOPE_VERSION = (
+    "MLB-PRODUCTION-ACCEPTANCE-SCOPE-v3-canonical-finalized-outcomes"
+)
+PRODUCTION_ACCEPTANCE_SCOPE_FINGERPRINT_VERSION = (
+    "MLB-PRODUCTION-ACCEPTANCE-SCOPE-SHA256-v3"
+)
+PRODUCTION_ACCEPTANCE_ROWS_FINGERPRINT_VERSION = (
+    "MLB-PRODUCTION-ACCEPTANCE-RAW-ROWS-SHA256-v1"
+)
+LOCK_MINUTES_BEFORE_GAME = 45
 
 
 def _load(path: Path) -> Dict[str, Any]:
@@ -52,6 +63,461 @@ def _parse_dt(value: Any) -> Optional[datetime]:
         return parsed.astimezone(timezone.utc)
     except Exception:
         return None
+
+
+def _scope_fingerprint(value: Dict[str, Any]) -> str:
+    material = {
+        key: item
+        for key, item in value.items()
+        if key != "scopeFingerprint"
+    }
+    encoded = json.dumps(
+        material,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _pct(numerator: int, denominator: int) -> Optional[float]:
+    return round(numerator / denominator * 100.0, 2) if denominator else None
+
+
+def _pct_matches(actual: Any, expected: Optional[float]) -> bool:
+    if expected is None:
+        return actual is None
+    parsed = _float(actual)
+    return parsed is not None and abs(parsed - expected) < 0.001
+
+
+def _official_outcome_binding_errors(proof: Any) -> list[str]:
+    try:
+        from scripts.run_mlb_ml_v3_audit_report import (
+            _audit_row_official_outcome_binding_errors as validate_binding,
+        )
+    except ImportError:
+        from run_mlb_ml_v3_audit_report import (  # type: ignore
+            _audit_row_official_outcome_binding_errors as validate_binding,
+        )
+    if not isinstance(proof, dict):
+        return ["official_finalized_game_outcome_authority_missing"]
+    row = {
+        key: proof.get(key)
+        for key in (
+            "awayTeam",
+            "homeTeam",
+            "awayScore",
+            "homeScore",
+            "winner",
+            "predictedWinner",
+            "correct",
+        )
+    }
+    return validate_binding(
+        row,
+        proof.get("officialOutcomeAuthority"),
+        expected_slate_date_et=str(proof.get("slateDateEt") or ""),
+        expected_official_game_pk=str(proof.get("officialGamePk") or ""),
+    )
+
+
+def _post_cutoff_scope_valid(
+    value: Any,
+    *,
+    audit: Optional[Dict[str, Any]] = None,
+) -> bool:
+    if not isinstance(value, dict):
+        return False
+    expected_identity = {
+        "experimentVersion": experiment.VERSION,
+        "experimentId": experiment.PRODUCTION_EXPERIMENT_ID,
+        "releaseContractId": experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        "releaseCutoffUtc": experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
+    }
+    if value.get("experimentIdentity") != expected_identity:
+        return False
+    if value.get("releaseCutoffUtc") != experiment.PRODUCTION_RELEASE_CUTOFF_UTC:
+        return False
+    cutoff = _parse_dt(value.get("releaseCutoffUtc"))
+    if cutoff is None:
+        return False
+    integer_fields = (
+        "sourceRowCount",
+        "unscopedInvalidRowCount",
+        "preCutoffQuarantinedFinalGameCount",
+        "postCutoffCompletedFinalGameCount",
+        "postCutoffGradedPredictionCount",
+        "postCutoffMissingPredictionCount",
+        "postCutoffOfficialPredictionCount",
+        "postCutoffExactOfficialGameIdCount",
+        "postCutoffCanonicalAuthorityCount",
+        "postCutoffOfficialOutcomeAuthorityCount",
+        "postCutoffCanonicalLockAtOrAfterCutoffCount",
+        "postCutoffFinalizedSlateCount",
+        "postCutoffExactFullSlateCount",
+        "postCutoffFullSlateCoverageDefectCount",
+    )
+    if any(
+        not isinstance(value.get(field), int)
+        or isinstance(value.get(field), bool)
+        or value.get(field) < 0
+        for field in integer_fields
+    ):
+        return False
+    if not (
+        value.get("ok") is True
+        and value.get("version") == PRODUCTION_ACCEPTANCE_SCOPE_VERSION
+        and value.get("scopeBasis")
+        == "scheduled_game_tminus45_at_or_after_release_cutoff"
+        and value.get("scheduledLockOffsetMinutes") == LOCK_MINUTES_BEFORE_GAME
+        and value.get("canonicalLockMustAlsoBeAtOrAfterReleaseCutoff") is True
+        and value.get("exactOfficialGameIdRequired") is True
+        and value.get("exactOfficialFinalizedSlateRequired") is True
+        and value.get("exactOfficialFinalOutcomeRequired") is True
+        and value.get("sourceRowsFingerprintVersion")
+        == PRODUCTION_ACCEPTANCE_ROWS_FINGERPRINT_VERSION
+        and re.fullmatch(
+            r"[0-9a-f]{64}", str(value.get("sourceRowsFingerprint") or "")
+        )
+        and re.fullmatch(
+            r"[0-9a-f]{64}",
+            str(value.get("canonicalFinalizedSlateEvidenceFingerprint") or ""),
+        )
+        and value.get("scopeFingerprintVersion")
+        == PRODUCTION_ACCEPTANCE_SCOPE_FINGERPRINT_VERSION
+        and re.fullmatch(r"[0-9a-f]{64}", str(value.get("scopeFingerprint") or ""))
+        and value.get("scopeFingerprint") == _scope_fingerprint(value)
+    ):
+        return False
+
+    construction_blockers = value.get("scopeConstructionBlockers")
+    errors = value.get("errors")
+    invalid_rows = value.get("invalidTimeRows")
+    quarantined_games = value.get("preCutoffQuarantinedGames")
+    proofs = value.get("postCutoffGameProofs")
+    official_game_pks = value.get("postCutoffOfficialGamePks")
+    defects = value.get("postCutoffDefects")
+    blocker_codes = value.get("postCutoffBlockerCodes")
+    coverage = value.get("coverage")
+    finalized_slate_proofs = value.get("postCutoffFinalizedSlateProofs")
+    first_complete_slate_proof = value.get(
+        "firstCompletePostCutoffSlateProof"
+    )
+    if not (
+        isinstance(construction_blockers, list)
+        and not construction_blockers
+        and isinstance(errors, list)
+        and not errors
+        and isinstance(invalid_rows, list)
+        and isinstance(quarantined_games, list)
+        and isinstance(proofs, list)
+        and isinstance(official_game_pks, list)
+        and isinstance(defects, list)
+        and isinstance(blocker_codes, list)
+        and isinstance(coverage, dict)
+        and isinstance(finalized_slate_proofs, list)
+        and isinstance(first_complete_slate_proof, dict)
+    ):
+        return False
+
+    source = value["sourceRowCount"]
+    invalid = value["unscopedInvalidRowCount"]
+    quarantined = value["preCutoffQuarantinedFinalGameCount"]
+    completed = value["postCutoffCompletedFinalGameCount"]
+    if not (
+        invalid == len(invalid_rows) == 0
+        and quarantined == len(quarantined_games)
+        and completed == len(proofs)
+        and source == invalid + quarantined + completed
+    ):
+        return False
+    for game in quarantined_games:
+        if not isinstance(game, dict):
+            return False
+        commence = _parse_dt(game.get("commenceTime"))
+        scheduled = _parse_dt(game.get("scheduledLockAtUtc"))
+        if (
+            commence is None
+            or scheduled is None
+            or scheduled
+            != commence - timedelta(minutes=LOCK_MINUTES_BEFORE_GAME)
+            or scheduled >= cutoff
+        ):
+            return False
+
+    derived_defects = []
+    derived_blocker_codes = set()
+    graded = official = exact_ids = canonical_authorities = 0
+    official_outcome_authorities = post_cutoff_locks = 0
+    graded_correct = official_correct = 0
+    accepted_official_ids = set()
+    derived_official_game_pks = []
+    for proof in proofs:
+        if not isinstance(proof, dict):
+            return False
+        commence = _parse_dt(proof.get("commenceTime"))
+        scheduled = _parse_dt(proof.get("scheduledLockAtUtc"))
+        if (
+            commence is None
+            or scheduled is None
+            or scheduled
+            != commence - timedelta(minutes=LOCK_MINUTES_BEFORE_GAME)
+            or scheduled < cutoff
+        ):
+            return False
+        proof_blockers = proof.get("blockers")
+        if not isinstance(proof_blockers, list) or proof_blockers != sorted(
+            set(proof_blockers)
+        ):
+            return False
+        derived_blocker_codes.update(proof_blockers)
+        accepted = proof.get("acceptedCanonicalGrade") is True
+        if accepted != (not proof_blockers):
+            return False
+        outcome_binding_errors = _official_outcome_binding_errors(proof)
+        outcome_authority_proven = not outcome_binding_errors
+        if proof.get("officialOutcomeAuthorityProven") is not outcome_authority_proven:
+            return False
+        if any(error not in proof_blockers for error in outcome_binding_errors):
+            return False
+        official_outcome_authorities += int(outcome_authority_proven)
+        if proof.get("exactOfficialGameIdProven") is True:
+            exact_ids += 1
+            derived_official_game_pks.append(str(proof.get("officialGamePk") or ""))
+        if proof.get("canonicalAuthorityProven") is True:
+            canonical_authorities += 1
+        if proof.get("canonicalLockAtOrAfterCutoffProven") is True:
+            post_cutoff_locks += 1
+        if accepted:
+            official_pk = str(proof.get("officialGamePk") or "")
+            lock_at = _parse_dt(proof.get("canonicalLockAtUtc"))
+            authority_lock_at = _parse_dt(
+                proof.get("canonicalAuthorityLockAtUtc")
+            )
+            if not (
+                proof.get("completed") is True
+                and proof.get("status") == "GRADED"
+                and isinstance(proof.get("correct"), bool)
+                and proof.get("canonicalAuthorityProven") is True
+                and proof.get("officialOutcomeAuthorityProven") is True
+                and proof.get("exactOfficialGameIdProven") is True
+                and proof.get("canonicalLockAtOrAfterCutoffProven") is True
+                and re.fullmatch(r"[0-9]+", official_pk)
+                and official_pk not in accepted_official_ids
+                and lock_at is not None
+                and authority_lock_at == lock_at
+                and lock_at >= cutoff
+                and str(proof.get("canonicalSourcePk") or "").startswith(
+                    "GAME_WINNERS#mlb#"
+                )
+                and str(proof.get("canonicalSourceSk") or "").startswith(
+                    "LOCKED#GAME#"
+                )
+            ):
+                return False
+            accepted_official_ids.add(official_pk)
+            graded += 1
+            graded_correct += int(proof["correct"] is True)
+            if proof.get("officialPrediction") is True:
+                official += 1
+                official_correct += int(proof["correct"] is True)
+        else:
+            derived_defects.append(
+                {
+                    key: proof.get(key)
+                    for key in (
+                        "gameId",
+                        "officialGamePk",
+                        "scheduledLockAtUtc",
+                        "canonicalLockAtUtc",
+                        "status",
+                        "blockers",
+                    )
+                }
+            )
+
+    missing = completed - graded
+    exact_full_slate_count = 0
+    full_slate_defect_count = 0
+    finalized_slate_dates = set()
+    for slate_proof in finalized_slate_proofs:
+        if not isinstance(slate_proof, dict):
+            return False
+        slate_date = str(slate_proof.get("slateDateEt") or "")
+        expected = slate_proof.get("officialGamePks")
+        observed = slate_proof.get("observedOfficialGamePks")
+        missing_pks = slate_proof.get("missingOfficialGamePks")
+        unexpected_pks = slate_proof.get("unexpectedOfficialGamePks")
+        duplicate_pks = slate_proof.get("duplicateObservedOfficialGamePks")
+        noncanonical_pks = slate_proof.get("noncanonicalOfficialGamePks")
+        slate_errors = slate_proof.get("errors")
+        if not (
+            slate_date
+            and slate_date not in finalized_slate_dates
+            and isinstance(expected, list)
+            and expected == sorted(set(expected))
+            and expected
+            and isinstance(observed, list)
+            and observed == sorted(observed)
+            and isinstance(missing_pks, list)
+            and isinstance(unexpected_pks, list)
+            and isinstance(duplicate_pks, list)
+            and isinstance(noncanonical_pks, list)
+            and isinstance(slate_errors, list)
+            and slate_errors == sorted(set(slate_errors))
+            and isinstance(slate_proof.get("unidentifiedAuditRowCount"), int)
+            and not isinstance(slate_proof.get("unidentifiedAuditRowCount"), bool)
+            and slate_proof.get("unidentifiedAuditRowCount") >= 0
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(slate_proof.get("officialGameSetFingerprint") or ""),
+            )
+            and re.fullmatch(
+                r"[0-9a-f]{64}",
+                str(slate_proof.get("authorityFingerprint") or ""),
+            )
+        ):
+            return False
+        finalized_slate_dates.add(slate_date)
+        slate_rows = [proof for proof in proofs if proof.get("slateDateEt") == slate_date]
+        derived_observed = sorted(
+            str(proof.get("officialGamePk") or "")
+            for proof in slate_rows
+            if str(proof.get("officialGamePk") or "")
+        )
+        derived_duplicates = sorted(
+            game_pk
+            for game_pk in set(derived_observed)
+            if derived_observed.count(game_pk) > 1
+        )
+        expected_set = set(expected)
+        derived_missing = sorted(expected_set - set(derived_observed))
+        derived_unexpected = sorted(set(derived_observed) - expected_set)
+        derived_noncanonical = sorted(
+            str(proof.get("officialGamePk") or "")
+            for proof in slate_rows
+            if (
+                proof.get("acceptedCanonicalGrade") is not True
+                and str(proof.get("officialGamePk") or "") in expected_set
+            )
+        )
+        unidentified = sum(
+            not str(proof.get("officialGamePk") or "") for proof in slate_rows
+        )
+        derived_slate_errors = []
+        if derived_missing:
+            derived_slate_errors.append("official_finalized_slate_missing_audit_rows")
+        if derived_unexpected:
+            derived_slate_errors.append("audit_rows_not_in_official_finalized_slate")
+        if derived_duplicates:
+            derived_slate_errors.append("duplicate_audit_official_game_pk")
+        if derived_noncanonical or unidentified:
+            derived_slate_errors.append("official_slate_rows_not_all_canonically_graded")
+        if len(slate_rows) != len(expected):
+            derived_slate_errors.append("official_finalized_slate_row_count_mismatch")
+        derived_slate_errors = sorted(set(derived_slate_errors))
+        achieved = not derived_slate_errors
+        if not (
+            slate_proof.get("officialGameCount") == len(expected)
+            and slate_proof.get("observedAuditRowCount") == len(slate_rows)
+            and observed == derived_observed
+            and missing_pks == derived_missing
+            and unexpected_pks == derived_unexpected
+            and duplicate_pks == derived_duplicates
+            and noncanonical_pks == derived_noncanonical
+            and slate_proof.get("unidentifiedAuditRowCount") == unidentified
+            and slate_errors == derived_slate_errors
+            and slate_proof.get("exactFullSlateSettlementProven") is achieved
+        ):
+            return False
+        exact_full_slate_count += int(achieved)
+        full_slate_defect_count += int(not achieved)
+
+    qualifying_dates = [
+        proof["slateDateEt"]
+        for proof in finalized_slate_proofs
+        if proof.get("exactFullSlateSettlementProven") is True
+    ]
+    if not (
+        value["postCutoffFinalizedSlateCount"] == len(finalized_slate_proofs)
+        and value["postCutoffExactFullSlateCount"] == exact_full_slate_count
+        and value["postCutoffFullSlateCoverageDefectCount"]
+        == full_slate_defect_count
+        and value.get("fullSlateSettlementCoverageOk")
+        is (full_slate_defect_count == 0)
+        and first_complete_slate_proof.get("achieved")
+        is bool(qualifying_dates)
+        and first_complete_slate_proof.get("qualifyingSlateDateEt")
+        == (qualifying_dates[0] if qualifying_dates else None)
+        and first_complete_slate_proof.get("evaluatedFinalizedSlateCount")
+        == len(finalized_slate_proofs)
+        and first_complete_slate_proof.get("exactFullSlateCount")
+        == exact_full_slate_count
+        and isinstance(first_complete_slate_proof.get("authority"), str)
+        and bool(first_complete_slate_proof.get("authority"))
+    ):
+        return False
+
+    if not (
+        value["postCutoffGradedPredictionCount"] == graded
+        and value["postCutoffMissingPredictionCount"] == missing
+        and value["postCutoffOfficialPredictionCount"] == official
+        and value["postCutoffExactOfficialGameIdCount"] == exact_ids
+        and value["postCutoffCanonicalAuthorityCount"] == canonical_authorities
+        and value["postCutoffOfficialOutcomeAuthorityCount"]
+        == official_outcome_authorities
+        and value["postCutoffCanonicalLockAtOrAfterCutoffCount"]
+        == post_cutoff_locks
+        and official_game_pks == sorted(derived_official_game_pks)
+        and defects == derived_defects
+        and blocker_codes == sorted(derived_blocker_codes)
+        and value.get("settlementCoverageOk")
+        is (missing == 0 and full_slate_defect_count == 0)
+        and _pct_matches(
+            value.get("postCutoffOfficialAccuracyPct"),
+            _pct(official_correct, official),
+        )
+        and _pct_matches(
+            value.get("postCutoffAllGamesAccuracyPct"),
+            _pct(graded_correct, graded),
+        )
+    ):
+        return False
+
+    expected_coverage = {
+        "canonicalGradedPct": _pct(graded, completed),
+        "canonicalAuthorityPct": _pct(canonical_authorities, completed),
+        "officialOutcomeAuthorityPct": _pct(
+            official_outcome_authorities, completed
+        ),
+        "exactOfficialGameIdPct": _pct(exact_ids, completed),
+        "canonicalLockAtOrAfterCutoffPct": _pct(post_cutoff_locks, completed),
+        "officialPredictionPct": _pct(official, completed),
+        "canonicalGradedComplete": graded == completed,
+        "officialOutcomeAuthorityComplete": (
+            official_outcome_authorities == completed
+        ),
+        "exactOfficialGameIdComplete": exact_ids == completed,
+        "canonicalLockAtOrAfterCutoffComplete": post_cutoff_locks == completed,
+    }
+    if coverage != expected_coverage:
+        return False
+    if audit is not None:
+        try:
+            from scripts.run_mlb_ml_v3_audit_report import (
+                _post_cutoff_production_acceptance_scope as rebuild_scope,
+            )
+        except ImportError:
+            from run_mlb_ml_v3_audit_report import (  # type: ignore
+                _post_cutoff_production_acceptance_scope as rebuild_scope,
+            )
+        try:
+            if rebuild_scope(audit) != value:
+                return False
+        except Exception:
+            return False
+    return True
 
 
 def _mode_status_health(
@@ -182,20 +648,66 @@ def build_acceptance(
     else:
         infrastructure_blockers.append("AWS_BACKED_ML_AUDIT_TIMESTAMP_MISSING")
 
-    completed = _int(summary.get("completedFinalGames"))
-    graded = _int(summary.get("gradedPredictionCount"))
-    missing = _int(summary.get("missingPredictionCount"))
-    official_count = _int(summary.get("officialPredictionCount"))
-    official_accuracy = _float(summary.get("rolling24hOfficialAccuracyPct"))
-    all_games_accuracy = _float(summary.get("rolling24hAllGamesAccuracyPct"))
+    legacy_completed = _int(summary.get("completedFinalGames"))
+    legacy_graded = _int(summary.get("gradedPredictionCount"))
+    legacy_missing = _int(summary.get("missingPredictionCount"))
+    legacy_official_count = _int(summary.get("officialPredictionCount"))
+    legacy_official_accuracy = _float(
+        summary.get("rolling24hOfficialAccuracyPct")
+    )
+    legacy_all_games_accuracy = _float(
+        summary.get("rolling24hAllGamesAccuracyPct")
+    )
+    post_cutoff_scope = audit.get("productionAcceptanceScope")
+    invalid_scope_missing_official_accuracy = bool(
+        isinstance(post_cutoff_scope, dict)
+        and _int(post_cutoff_scope.get("postCutoffGradedPredictionCount")) > 0
+        and _int(post_cutoff_scope.get("postCutoffOfficialPredictionCount")) > 0
+        and post_cutoff_scope.get("postCutoffOfficialAccuracyPct") is None
+    )
+    post_cutoff_scope_valid = _post_cutoff_scope_valid(
+        post_cutoff_scope,
+        audit=audit,
+    )
+    if not post_cutoff_scope_valid:
+        infrastructure_blockers.append(
+            "POST_CUTOFF_SETTLEMENT_SCOPE_MISSING_OR_INVALID"
+        )
+        post_cutoff_scope = {}
+    completed = _int(post_cutoff_scope.get("postCutoffCompletedFinalGameCount"))
+    graded = _int(post_cutoff_scope.get("postCutoffGradedPredictionCount"))
+    missing = _int(post_cutoff_scope.get("postCutoffMissingPredictionCount"))
+    official_count = _int(
+        post_cutoff_scope.get("postCutoffOfficialPredictionCount")
+    )
+    official_accuracy = _float(
+        post_cutoff_scope.get("postCutoffOfficialAccuracyPct")
+    )
+    all_games_accuracy = _float(
+        post_cutoff_scope.get("postCutoffAllGamesAccuracyPct")
+    )
+    full_slate_coverage_defect_count = _int(
+        post_cutoff_scope.get("postCutoffFullSlateCoverageDefectCount")
+    )
     target = _float(summary.get("targetAccuracyPct")) or 90.0
 
     if completed > graded or missing > 0:
         infrastructure_blockers.append("COMPLETED_GAMES_WITHOUT_IMMUTABLE_GRADEABLE_PREDICTIONS")
+    if full_slate_coverage_defect_count > 0:
+        infrastructure_blockers.append(
+            "OFFICIAL_FINALIZED_SLATE_COVERAGE_INCOMPLETE"
+        )
     if completed > 0 and official_count == 0:
         infrastructure_blockers.append("NO_OFFICIAL_PREDICTIONS_FOR_COMPLETED_WINDOW")
+    elif official_count != completed:
+        infrastructure_blockers.append("OFFICIAL_PREDICTION_COVERAGE_INCOMPLETE")
 
-    if graded == 0:
+    if graded == 0 and invalid_scope_missing_official_accuracy:
+        accuracy_status = "UNMEASURABLE_OFFICIAL_ACCURACY_MISSING"
+        infrastructure_blockers.append(
+            "AUTHORITATIVE_OFFICIAL_ACCURACY_MISSING_FOR_GRADED_ROWS"
+        )
+    elif graded == 0:
         accuracy_status = "UNMEASURABLE_NO_GRADED_PREDICTIONS"
     elif official_accuracy is None:
         accuracy_status = "UNMEASURABLE_OFFICIAL_ACCURACY_MISSING"
@@ -287,7 +799,29 @@ def build_acceptance(
     v2_validation = _int(v2_counts.get("validation"))
     v2_prospective = _int(v2_counts.get("prospectiveTest"))
     v2_total = v2_train + v2_validation + v2_prospective
-    v2_milestones = v2_training.get("milestones") or {}
+    reported_v2_milestones = v2_training.get("milestones") or {}
+    training_latest = (
+        (v2_training.get("trainingHealth") or {}).get("latestRun") or {}
+    )
+    status_v2_milestones = training_latest.get("milestones") or {}
+    milestone_status_agreement = bool(
+        isinstance(reported_v2_milestones, dict)
+        and isinstance(status_v2_milestones, dict)
+        and reported_v2_milestones == status_v2_milestones
+    )
+    if not milestone_status_agreement:
+        infrastructure_blockers.append("AWS_V2_MILESTONE_STATUS_MISMATCH")
+    v2_milestones = (
+        status_v2_milestones if milestone_status_agreement else {}
+    )
+    first_full_clean_slate_proof = (
+        v2_milestones.get("firstFullCleanSlateProof")
+        if isinstance(v2_milestones.get("firstFullCleanSlateProof"), dict)
+        else {}
+    )
+    first_full_clean_slate_achieved = bool(
+        first_full_clean_slate_proof.get("achieved") is True
+    )
     v2_milestone_counts = v2_milestones.get("counts") or {}
     v2_selected = _int(
         v2_milestone_counts.get("settledProspectiveSelectedRecommendations")
@@ -334,6 +868,17 @@ def build_acceptance(
             "verifierOk": verifier.get("ok"),
         },
         "settlementAndAccuracy": {
+            "scopeValid": post_cutoff_scope_valid,
+            "scopeVersion": post_cutoff_scope.get("version"),
+            "scopeFingerprintVersion": post_cutoff_scope.get(
+                "scopeFingerprintVersion"
+            ),
+            "scopeFingerprint": post_cutoff_scope.get("scopeFingerprint"),
+            "experimentIdentity": post_cutoff_scope.get("experimentIdentity"),
+            "releaseCutoffUtc": post_cutoff_scope.get("releaseCutoffUtc"),
+            "preCutoffQuarantinedFinalGameCount": post_cutoff_scope.get(
+                "preCutoffQuarantinedFinalGameCount"
+            ),
             "completedFinalGames": completed,
             "gradedPredictionCount": graded,
             "missingPredictionCount": missing,
@@ -341,6 +886,46 @@ def build_acceptance(
             "rolling24hOfficialAccuracyPct": official_accuracy,
             "rolling24hAllGamesAccuracyPct": all_games_accuracy,
             "auditAgeMinutes": audit_age_minutes,
+            "postCutoffDefects": post_cutoff_scope.get("postCutoffDefects")
+            or [],
+            "postCutoffBlockerCodes": post_cutoff_scope.get(
+                "postCutoffBlockerCodes"
+            )
+            or [],
+            "postCutoffOfficialGamePks": post_cutoff_scope.get(
+                "postCutoffOfficialGamePks"
+            )
+            or [],
+            "postCutoffFinalizedSlateCount": post_cutoff_scope.get(
+                "postCutoffFinalizedSlateCount"
+            ),
+            "postCutoffExactFullSlateCount": post_cutoff_scope.get(
+                "postCutoffExactFullSlateCount"
+            ),
+            "postCutoffFullSlateCoverageDefectCount": (
+                full_slate_coverage_defect_count
+            ),
+            "postCutoffFinalizedSlateProofs": post_cutoff_scope.get(
+                "postCutoffFinalizedSlateProofs"
+            )
+            or [],
+            "firstCompletePostCutoffSlateProof": post_cutoff_scope.get(
+                "firstCompletePostCutoffSlateProof"
+            )
+            or {},
+            "fullSlateSettlementCoverageOk": post_cutoff_scope.get(
+                "fullSlateSettlementCoverageOk"
+            ),
+            "coverage": post_cutoff_scope.get("coverage") or {},
+            "legacyRolling24hDiagnostic": {
+                "completedFinalGames": legacy_completed,
+                "gradedPredictionCount": legacy_graded,
+                "missingPredictionCount": legacy_missing,
+                "officialPredictionCount": legacy_official_count,
+                "officialAccuracyPct": legacy_official_accuracy,
+                "allGamesAccuracyPct": legacy_all_games_accuracy,
+                "acceptanceAuthority": False,
+            },
         },
         "mlDisposition": {
             "cleanRowCount": clean_rows,
@@ -389,6 +974,11 @@ def build_acceptance(
                 "totalRows": v2_total,
                 "settledProspectiveSelectedRecommendations": v2_selected,
                 "milestoneStage": v2_milestones.get("stage"),
+                "milestoneStatusAgreement": milestone_status_agreement,
+                "firstFullCleanSlateProof": first_full_clean_slate_proof,
+                "firstFullCleanSlateProofAchieved": (
+                    first_full_clean_slate_achieved
+                ),
                 "projectedFullCleanSlatesRemaining": v2_milestones.get(
                     "projectedFullCleanSlatesRemaining"
                 ),
@@ -406,7 +996,10 @@ def build_acceptance(
         "unproven": [
             item
             for item, condition in [
-                ("one complete uncontaminated live slate", not infrastructure_ok),
+                (
+                    "one complete uncontaminated live slate",
+                    not first_full_clean_slate_achieved,
+                ),
                 ("500 clean V2 rows across fixed 300/100/100 partitions", v2_total < 500),
                 ("100 sealed prospective-test rows", v2_prospective < 100),
                 (

@@ -433,17 +433,24 @@ jobs:
             --region "${{ secrets.AWS_REGION }}" \
             --payload '{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}' \
             --response /tmp/mlb-ml-v2-training.json \
-            --invocation /tmp/mlb-ml-v2-training-invoke.json
+            --invocation /tmp/mlb-ml-v2-training-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
           python scripts/invoke_mlb_trainer_with_retry.py \
             --function-name "$TRAINER_ARN" \
             --region "${{ secrets.AWS_REGION }}" \
             --payload '{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}' \
             --response /tmp/mlb-ml-v2-selection-capture.json \
-            --invocation /tmp/mlb-ml-v2-selection-capture-invoke.json
+            --invocation /tmp/mlb-ml-v2-selection-capture-invoke.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
           python scripts/invoke_mlb_trainer_with_retry.py \
             --function-name "$TRAINER_ARN" \
             --region "${{ secrets.AWS_REGION }}" \
-            --payload '{"mode":"status"}' \
+            --status-training-result /tmp/mlb-ml-v2-training.json \
+            --status-selection-capture-result /tmp/mlb-ml-v2-selection-capture.json \
             --response /tmp/mlb-ml-v2-status-after.json \
             --invocation /tmp/mlb-ml-v2-status-after-invoke.json
           # Fail closed unless trainingHealth and selectionCaptureHealth both

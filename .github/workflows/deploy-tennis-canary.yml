@@ -10,12 +10,13 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read
   contents: read
 
 # Never share or cancel the production/MLB deployment lock. A deployment that
 # has begun is allowed to finish so CloudFormation is not abandoned mid-update.
 concurrency:
-  group: parlay-platform-tennis-dev-canary
+  group: parlay-platform-tennis-canary-dev
   cancel-in-progress: false
 
 jobs:
@@ -29,7 +30,7 @@ jobs:
     env:
       AWS_REGION: us-east-1
       AWS_DEFAULT_REGION: us-east-1
-      TENNIS_STACK_NAME: parlay-platform-tennis-dev
+      TENNIS_STACK_NAME: parlay-platform-tennis-canary-dev
 
     steps:
       - name: Checkout exact source commit
@@ -155,306 +156,85 @@ jobs:
           PY
           date +%s > /tmp/mlb-continuity-start-epoch
 
-      - name: Recover only the immediately prior failed disabled tennis canary
+      - name: Require latest successful push-triggered MLB deployment
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          stack_status=$(aws cloudformation describe-stacks \
-            --stack-name "$TENNIS_STACK_NAME" \
-            --region us-east-1 \
-            --query 'Stacks[0].StackStatus' \
-            --output text 2>/dev/null || echo STACK_MISSING)
-          if [ "$stack_status" != "ROLLBACK_COMPLETE" ]; then
-            echo "No failed initial tennis stack requires recovery: $stack_status"
-            exit 0
-          fi
-
-          aws cloudformation describe-stacks \
-            --stack-name "$TENNIS_STACK_NAME" \
-            --region us-east-1 \
-            --output json > /tmp/failed-tennis-stack.json
-          aws cloudformation describe-stack-events \
-            --stack-name "$TENNIS_STACK_NAME" \
-            --region us-east-1 \
-            --output json > /tmp/failed-tennis-events.json
-          aws cloudformation list-stack-resources \
-            --stack-name "$TENNIS_STACK_NAME" \
-            --region us-east-1 \
-            --output json > /tmp/failed-tennis-resources.json
+          gh api \
+            --method GET \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/deploy.yml/runs" \
+            -f branch=main \
+            -f event=push \
+            -f per_page=1 \
+            > /tmp/latest-main-mlb-deploy-run.json
           python - <<'PY'
           import json
+          import os
           import re
           from pathlib import Path
 
-          stack = json.loads(Path("/tmp/failed-tennis-stack.json").read_text())["Stacks"][0]
-          parameters = {
-              row["ParameterKey"]: row.get("ParameterValue", "")
-              for row in stack.get("Parameters", [])
-          }
-          expected = {
-              "TennisScheduleState": "DISABLED",
-              "DeployGitSha": "24aaf52651294b2a2d478dd5e49b516ae3149210",
-              "DeployTemplateSha256": (
-                  "8cd7b8d864c60e29638261f85809879773e6694628d2d7c833e05c7c85e7c2cc"
-              ),
-          }
-          mismatches = {
-              key: {"expected": value, "actual": parameters.get(key)}
-              for key, value in expected.items()
-              if parameters.get(key) != value
-          }
-          if stack.get("StackName") != "parlay-platform-tennis-dev" or mismatches:
-              raise SystemExit(
-                  f"Refusing to recover a stack outside the failed tennis boundary: {mismatches}"
-              )
-
-          events = json.loads(Path("/tmp/failed-tennis-events.json").read_text())
-          failures = [
-              {
-                  "logicalId": row.get("LogicalResourceId"),
-                  "type": row.get("ResourceType"),
-                  "status": row.get("ResourceStatus"),
-                  "reason": row.get("ResourceStatusReason"),
-              }
-              for row in events.get("StackEvents", [])
-              if str(row.get("ResourceStatus", "")).endswith("_FAILED")
-          ]
-          print("Prior failed tennis create events:")
-          print(json.dumps(failures, indent=2, sort_keys=True))
-          denied_queue = [
-              row
-              for row in failures
-              if row.get("logicalId") == "TennisPullDeadLetterQueue"
-              and row.get("type") == "AWS::SQS::Queue"
-              and "sqs:createqueue" in str(row.get("reason") or "").lower()
-              and "accessdenied" in str(row.get("reason") or "").lower()
-          ]
-          if len(denied_queue) != 1:
-              raise SystemExit(
-                  "Prior tennis failure was not the reviewed sqs:CreateQueue denial"
-              )
-
-          resources = json.loads(Path("/tmp/failed-tennis-resources.json").read_text())
-          allowed_retained = {
-              "TennisSnapshotsTable": "AWS::DynamoDB::Table",
-              "TennisSignalsTable": "AWS::DynamoDB::Table",
-              "TennisArchiveBucket": "AWS::S3::Bucket",
-              "TennisOddsApiSecret": "AWS::SecretsManager::Secret",
-              "TennisBbsApiSecret": "AWS::SecretsManager::Secret",
-          }
-          retained = []
-          safe_id = re.compile(r"^[A-Za-z0-9:/._+=@-]+$")
-          for row in resources.get("StackResourceSummaries", []):
-              logical_id = str(row.get("LogicalResourceId") or "")
-              resource_type = str(row.get("ResourceType") or "")
-              physical_id = str(row.get("PhysicalResourceId") or "")
-              if not logical_id.startswith("Tennis"):
-                  raise SystemExit(f"Non-tennis resource found in failed stack: {logical_id}")
-              if row.get("ResourceStatus") != "DELETE_SKIPPED":
-                  continue
-              if (
-                  allowed_retained.get(logical_id) != resource_type
-                  or not safe_id.fullmatch(physical_id)
-              ):
-                  raise SystemExit(
-                      f"Unexpected retained failed-stack resource: {logical_id} {resource_type}"
-                  )
-              retained.append(
-                  {"logicalId": logical_id, "type": resource_type, "physicalId": physical_id}
-              )
-          if {row["logicalId"] for row in retained} != set(allowed_retained):
-              raise SystemExit(
-                  "Failed canary retained-resource set does not match the reviewed five resources"
-              )
-          Path("/tmp/failed-tennis-retained.json").write_text(
-              json.dumps(retained, sort_keys=True)
+          payload = json.loads(
+              Path("/tmp/latest-main-mlb-deploy-run.json").read_text()
           )
-          print("Verified retained failed-canary resources:")
-          print(json.dumps(retained, indent=2, sort_keys=True))
-          PY
-
-          while IFS=$'\t' read -r logical_id resource_type physical_id; do
-            [ -n "$logical_id" ] || continue
-            case "$logical_id:$resource_type" in
-              TennisSnapshotsTable:AWS::DynamoDB::Table)
-                expected_data_class=pre-match-snapshots
-                table_arn=$(aws dynamodb describe-table \
-                  --table-name "$physical_id" \
-                  --region us-east-1 \
-                  --query 'Table.TableArn' \
-                  --output text)
-                aws dynamodb list-tags-of-resource \
-                  --resource-arn "$table_arn" \
-                  --region us-east-1 \
-                  --output json > /tmp/failed-tennis-resource-tags.json
-                ;;
-              TennisSignalsTable:AWS::DynamoDB::Table)
-                expected_data_class=shadow-features
-                table_arn=$(aws dynamodb describe-table \
-                  --table-name "$physical_id" \
-                  --region us-east-1 \
-                  --query 'Table.TableArn' \
-                  --output text)
-                aws dynamodb list-tags-of-resource \
-                  --resource-arn "$table_arn" \
-                  --region us-east-1 \
-                  --output json > /tmp/failed-tennis-resource-tags.json
-                ;;
-              TennisArchiveBucket:AWS::S3::Bucket)
-                expected_data_class=immutable-parquet-training-archive
-                aws s3api get-bucket-tagging \
-                  --bucket "$physical_id" \
-                  --region us-east-1 \
-                  --output json > /tmp/failed-tennis-resource-tags.json
-                ;;
-              TennisOddsApiSecret:AWS::SecretsManager::Secret)
-                expected_data_class=tennis-pull-only
-                aws secretsmanager describe-secret \
-                  --secret-id "$physical_id" \
-                  --region us-east-1 \
-                  --output json > /tmp/failed-tennis-resource-tags.json
-                ;;
-              TennisBbsApiSecret:AWS::SecretsManager::Secret)
-                expected_data_class=tennis-results-probe-only
-                aws secretsmanager describe-secret \
-                  --secret-id "$physical_id" \
-                  --region us-east-1 \
-                  --output json > /tmp/failed-tennis-resource-tags.json
-                ;;
-              *)
-                echo "::error::Unexpected failed-canary resource identity: $logical_id $resource_type"
-                exit 1
-                ;;
-            esac
-
-            FAILED_TENNIS_LOGICAL_ID="$logical_id" \
-            FAILED_TENNIS_RESOURCE_TYPE="$resource_type" \
-            FAILED_TENNIS_EXPECTED_CLASS="$expected_data_class" python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-
-          payload = json.loads(Path("/tmp/failed-tennis-resource-tags.json").read_text())
-          tag_rows = payload.get("Tags") or payload.get("TagSet") or []
-          tags = {
-              str(row.get("Key")): str(row.get("Value"))
-              for row in tag_rows
+          runs = payload.get("workflow_runs")
+          if not isinstance(runs, list) or len(runs) != 1:
+              raise SystemExit(
+                  "Could not resolve exactly one latest push-triggered main deploy.yml run"
+              )
+          run = runs[0]
+          expected = {
+              "event": "push",
+              "head_branch": "main",
+              "path": ".github/workflows/deploy.yml",
+              "status": "completed",
+              "conclusion": "success",
           }
-          expected = {"inqsi:sport": "tennis"}
-          if os.environ["FAILED_TENNIS_RESOURCE_TYPE"] == "AWS::SecretsManager::Secret":
-              expected["inqsi:consumer"] = os.environ["FAILED_TENNIS_EXPECTED_CLASS"]
-              if payload.get("DeletedDate"):
-                  raise SystemExit("Failed-canary secret is already pending deletion")
-          else:
-              expected["inqsi:data-class"] = os.environ["FAILED_TENNIS_EXPECTED_CLASS"]
           mismatches = {
-              key: {"expected": value, "actual": tags.get(key)}
+              key: {"expected": value, "actual": run.get(key)}
               for key, value in expected.items()
-              if tags.get(key) != value
+              if run.get(key) != value
           }
+          repository = run.get("head_repository") or {}
+          expected_repository = os.environ["GITHUB_REPOSITORY"]
+          if repository.get("full_name") != expected_repository:
+              mismatches["head_repository"] = {
+                  "expected": expected_repository,
+                  "actual": repository.get("full_name"),
+              }
+          head_sha = str(run.get("head_sha") or "")
+          if not re.fullmatch(r"[0-9a-f]{40}", head_sha):
+              mismatches["head_sha"] = {
+                  "expected": "40 lowercase hexadecimal characters",
+                  "actual": head_sha,
+              }
           if mismatches:
               raise SystemExit(
-                  f"Refusing cleanup for mistagged {os.environ['FAILED_TENNIS_LOGICAL_ID']}: "
-                  f"{mismatches}"
+                  "Latest push-triggered main MLB deployment is not successful: "
+                  + json.dumps(mismatches, sort_keys=True)
               )
-          PY
-          done < <(
-            python - <<'PY'
-          import json
-          from pathlib import Path
-
-          for row in json.loads(Path("/tmp/failed-tennis-retained.json").read_text()):
-              print(f"{row['logicalId']}\t{row['type']}\t{row['physicalId']}")
-          PY
+          Path("/tmp/latest-main-mlb-deploy-head-sha").write_text(head_sha + "\n")
+          print(
+              "Verified latest push-triggered main deploy.yml run: "
+              f"id={run.get('id')} head={head_sha} conclusion=success"
           )
-          echo "All five retained resources are exact, tennis-tagged failed-canary resources."
-
-          while IFS=$'\t' read -r resource_type physical_id; do
-            [ -n "$resource_type" ] || continue
-            case "$resource_type" in
-              AWS::DynamoDB::Table)
-                item_count=$(aws dynamodb scan \
-                  --table-name "$physical_id" \
-                  --region us-east-1 \
-                  --consistent-read \
-                  --select COUNT \
-                  --query Count \
-                  --output text)
-                test "$item_count" = "0" || {
-                  echo "::error::Refusing to delete nonempty failed-canary table: $physical_id"
-                  exit 1
-                }
-                aws dynamodb delete-table \
-                  --table-name "$physical_id" \
-                  --region us-east-1 >/dev/null
-                aws dynamodb wait table-not-exists \
-                  --table-name "$physical_id" \
-                  --region us-east-1
-                ;;
-              AWS::S3::Bucket)
-                FAILED_TENNIS_BUCKET="$physical_id" python - <<'PY'
-          import json
-          import os
-          import subprocess
-
-          payload = json.loads(
-              subprocess.check_output(
-                  [
-                      "aws", "s3api", "list-object-versions",
-                      "--bucket", os.environ["FAILED_TENNIS_BUCKET"],
-                      "--region", "us-east-1", "--output", "json",
-                  ],
-                  text=True,
-              )
-          )
-          if payload.get("Versions") or payload.get("DeleteMarkers"):
-              raise SystemExit("Refusing to delete a nonempty failed-canary archive bucket")
           PY
-                aws s3api delete-bucket \
-                  --bucket "$physical_id" \
-                  --region us-east-1
-                ;;
-              AWS::SecretsManager::Secret)
-                aws secretsmanager delete-secret \
-                  --secret-id "$physical_id" \
-                  --region us-east-1 \
-                  --recovery-window-in-days 7 >/dev/null
-                ;;
-              AWS::Logs::LogGroup)
-                stream_count=$(aws logs describe-log-streams \
-                  --log-group-name "$physical_id" \
-                  --region us-east-1 \
-                  --limit 1 \
-                  --query 'length(logStreams)' \
-                  --output text)
-                test "$stream_count" = "0" || {
-                  echo "::error::Refusing to delete a nonempty failed-canary log group: $physical_id"
-                  exit 1
-                }
-                aws logs delete-log-group \
-                  --log-group-name "$physical_id" \
-                  --region us-east-1
-                ;;
-              *)
-                echo "::error::Unexpected retained resource type: $resource_type"
-                exit 1
-                ;;
-            esac
-          done < <(
-            python - <<'PY'
-          import json
-          from pathlib import Path
 
-          for row in json.loads(Path("/tmp/failed-tennis-retained.json").read_text()):
-              print(f"{row['type']}\t{row['physicalId']}")
-          PY
-          )
-          aws cloudformation delete-stack \
-            --stack-name "$TENNIS_STACK_NAME" \
-            --region us-east-1
-          aws cloudformation wait stack-delete-complete \
-            --stack-name "$TENNIS_STACK_NAME" \
-            --region us-east-1
-          echo "Recovered only verified-empty resources from the failed disabled tennis create."
+          git fetch --no-tags origin \
+            +refs/heads/main:refs/remotes/origin/main
+          run_head_sha=$(< /tmp/latest-main-mlb-deploy-head-sha)
+          git cat-file -e "${run_head_sha}^{commit}"
+          if ! git merge-base --is-ancestor "$run_head_sha" origin/main; then
+            echo "::error::Latest successful MLB deploy run is not an ancestor of origin/main"
+            exit 1
+          fi
+          main_tip=$(git rev-parse origin/main)
+          if [ "$run_head_sha" != "$main_tip" ]; then
+            echo "Main includes later commits that did not create a newer push-triggered deploy.yml run."
+            echo "The successful deploy head remains an ancestor, which safely permits runtime_reports-only commits."
+          fi
 
       - name: Create but do not execute tennis change set
         id: create_changeset
@@ -464,16 +244,46 @@ jobs:
           DEPLOY_TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
         run: |
           set -euo pipefail
+          stack_error=/tmp/tennis-stack-before-error.txt
+          : > "$stack_error"
           if aws cloudformation describe-stacks \
             --stack-name "$TENNIS_STACK_NAME" \
             --region us-east-1 \
-            --output json > /tmp/tennis-stack-before.json 2>/dev/null; then
+            --output json > /tmp/tennis-stack-before.json 2> "$stack_error"; then
             echo "stack_existed=true" >> "$GITHUB_OUTPUT"
+            python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          stack = json.loads(Path("/tmp/tennis-stack-before.json").read_text())["Stacks"][0]
+          expected_name = os.environ["TENNIS_STACK_NAME"]
+          parameters = {
+              row["ParameterKey"]: row.get("ParameterValue", "")
+              for row in stack.get("Parameters", [])
+          }
+          if stack.get("StackName") != expected_name:
+              raise SystemExit("Existing stack is outside the tennis canary boundary")
+          if stack.get("StackStatus") not in {"CREATE_COMPLETE", "UPDATE_COMPLETE"}:
+              raise SystemExit(f"Existing tennis canary is not healthy: {stack.get('StackStatus')}")
+          if parameters.get("TennisScheduleState") != "DISABLED":
+              raise SystemExit("Existing tennis canary schedule is not disabled")
+          PY
             aws cloudformation list-change-sets \
               --stack-name "$TENNIS_STACK_NAME" \
               --region us-east-1 \
               --output json > /tmp/tennis-change-sets-before.json
           else
+            if ! grep -Fq \
+                "An error occurred (ValidationError) when calling the DescribeStacks operation:" \
+                "$stack_error" || \
+              ! grep -Fq \
+                "Stack with id $TENNIS_STACK_NAME does not exist" \
+                "$stack_error"; then
+              cat "$stack_error" >&2
+              echo "::error::Unable to prove the fresh tennis canary stack is absent" >&2
+              exit 1
+            fi
             echo "stack_existed=false" >> "$GITHUB_OUTPUT"
             printf '{"Summaries":[]}\n' > /tmp/tennis-change-sets-before.json
           fi
@@ -553,10 +363,11 @@ jobs:
             --output json > /tmp/tennis-change-set.json
           python - <<'PY'
           import json
+          import os
           from pathlib import Path
 
           change_set = json.loads(Path("/tmp/tennis-change-set.json").read_text())
-          if change_set.get("StackName") != "parlay-platform-tennis-dev":
+          if change_set.get("StackName") != os.environ["TENNIS_STACK_NAME"]:
               raise SystemExit("Change set targets a stack outside the tennis canary boundary")
           if change_set.get("Status") != "CREATE_COMPLETE":
               raise SystemExit(f"Change set is not ready: {change_set.get('Status')}")
@@ -590,11 +401,17 @@ jobs:
           fi
 
           for attempt in $(seq 1 90); do
-            status=$(aws cloudformation describe-stacks \
-              --stack-name "$TENNIS_STACK_NAME" \
-              --region us-east-1 \
-              --query 'Stacks[0].StackStatus' \
-              --output text 2>/dev/null || echo STACK_MISSING)
+            status_error=/tmp/tennis-stack-status-error.txt
+            : > "$status_error"
+            if ! status=$(aws cloudformation describe-stacks \
+                --stack-name "$TENNIS_STACK_NAME" \
+                --region us-east-1 \
+                --query 'Stacks[0].StackStatus' \
+                --output text 2> "$status_error"); then
+              cat "$status_error" >&2
+              echo "::error::Unable to read the tennis canary stack status" >&2
+              exit 1
+            fi
             echo "Tennis CloudFormation status: $status"
             case "$status" in
               CREATE_COMPLETE|UPDATE_COMPLETE)
@@ -817,7 +634,7 @@ jobs:
               --descending \
               --limit 1 \
               --query 'logStreams[0].lastEventTimestamp' \
-              --output text 2>/dev/null || echo 0)
+              --output text)
             case "$latest_log_ms" in
               None|*[!0-9]*) latest_log_ms=0 ;;
             esac
