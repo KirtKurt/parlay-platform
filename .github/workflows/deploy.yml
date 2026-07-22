@@ -121,6 +121,8 @@ jobs:
           regression_tests=(
             tests/unit/test_mlb_published_prediction_authority.py
             tests/unit/test_mlb_daily_per_game_lock.py
+            tests/unit/test_mlb_lock_status_request_cache.py
+            tests/unit/test_mlb_public_per_game_authority.py
             tests/unit/test_mlb_storage_authority.py
             tests/unit/test_mlb_rolling_canonical_authority.py
             tests/unit/test_mlb_official_schedule_authority.py
@@ -153,7 +155,6 @@ jobs:
           optional_tests=(
             tests/unit/test_mlb_manual_pull_manifest.py
             tests/unit/test_mlb_official_prediction_semantics.py
-            tests/unit/test_mlb_public_per_game_authority.py
             tests/unit/test_mlb_production_verifier_authority.py
             tests/unit/test_mlb_daily_pick_lock_runtime.py
           )
@@ -557,13 +558,13 @@ jobs:
           import urllib.parse
           from scripts.mlb_deploy_http_probe import fetch_json_object
 
-          def fetch(url, timeout=45, deadline=None):
+          def fetch(url, timeout=45, deadline=None, retry_delay=4):
               return fetch_json_object(
                   url,
                   deadline_monotonic=deadline,
                   max_wait_seconds=180,
                   request_timeout_seconds=timeout,
-                  retry_delay_seconds=4,
+                  retry_delay_seconds=retry_delay,
                   headers={
                       'accept': 'application/json',
                       'user-agent': 'inqsi-deploy-read-only-lock-lifecycle-smoke/2.0',
@@ -583,6 +584,11 @@ jobs:
                   status_url,
                   timeout=max(1, min(45, remaining)),
                   deadline=deadline,
+                  # API Gateway can end the client request while the shared
+                  # 300-second lock Lambda is still completing its read-only
+                  # status calculation. Do not create an overlapping herd of
+                  # status invocations after a transport timeout.
+                  retry_delay=300,
               )
               if (
                   payload.get('officialScheduleBacked') is True
