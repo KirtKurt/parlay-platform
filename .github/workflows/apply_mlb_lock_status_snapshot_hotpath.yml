@@ -51,19 +51,38 @@ jobs:
             pytest
           python -m pytest -q tests/unit/test_mlb_lock_status_request_cache.py
 
-      - name: Commit exact candidate and remove temporary applicator
+      - name: Publish exact tested candidate onto latest branch head
         shell: bash
         run: |
           set -euo pipefail
-          rm .github/patches/apply_mlb_lock_status_snapshot_hotpath.py
-          rm .github/patches/fix_snapshot_patcher_target.py
-          rm .github/workflows/apply_mlb_lock_status_snapshot_hotpath.yml
+          git diff --binary -- \
+            hello_world/inqsi_pull_history.py \
+            hello_world/mlb_daily_per_game_lock_patch.py \
+            tests/unit/test_mlb_lock_status_request_cache.py \
+            >/tmp/tested-candidate.patch
+          test -s /tmp/tested-candidate.patch
+
+          git fetch origin agent/mlb-lock-status-snapshot-hotpath
+          git reset --hard origin/agent/mlb-lock-status-snapshot-hotpath
+          git apply --check /tmp/tested-candidate.patch
+          git apply /tmp/tested-candidate.patch
+          python -m py_compile \
+            hello_world/inqsi_pull_history.py \
+            hello_world/mlb_daily_per_game_lock_patch.py \
+            tests/unit/test_mlb_lock_status_request_cache.py
+          git diff --check
+
           rm -f \
+            .github/patches/apply_mlb_lock_status_snapshot_hotpath.py \
+            .github/patches/fix_snapshot_patcher_target.py \
+            .github/workflows/apply_mlb_lock_status_snapshot_hotpath.yml \
             snapshot_apply_workflow_runs.json \
             snapshot_apply_failure_tail.txt \
             snapshot_apply_workflow_runs_v2.json \
-            snapshot_apply_failure_tail_v2.txt
+            snapshot_apply_failure_tail_v2.txt \
+            snapshot_apply_workflow_runs_v3.json
           rmdir .github/patches 2>/dev/null || true
+
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
