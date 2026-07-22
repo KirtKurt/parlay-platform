@@ -28,6 +28,7 @@ jobs:
           test "$(git hash-object hello_world/inqsi_pull_history.py)" = "5f6dfece6d07aa4ba986c61e4bfe8e972f91d9de"
           test "$(git hash-object hello_world/mlb_daily_per_game_lock_patch.py)" = "734fa341ccb1dad03c1c0269f8b1008c7457ac70"
           test "$(git hash-object tests/unit/test_mlb_lock_status_request_cache.py)" = "1b92604fe44767f6100f2904ea381e4deb35c780"
+          python .github/patches/fix_snapshot_patcher_target.py
           python .github/patches/apply_mlb_lock_status_snapshot_hotpath.py
           python -m py_compile \
             hello_world/inqsi_pull_history.py \
@@ -47,6 +48,7 @@ jobs:
         run: |
           set -euo pipefail
           rm .github/patches/apply_mlb_lock_status_snapshot_hotpath.py
+          rm .github/patches/fix_snapshot_patcher_target.py
           rm .github/workflows/apply_mlb_lock_status_snapshot_hotpath.yml
           rmdir .github/patches 2>/dev/null || true
           git config user.name "github-actions[bot]"
