@@ -674,6 +674,139 @@ def test_exact_batch_cache_retries_unprocessed_without_partial_publication(
     assert sleeps == [patch._STATUS_BATCH_RETRY_DELAY_SECONDS]
 
 
+def test_exact_batch_cache_consumes_progressive_single_partition_pages(
+    monkeypatch,
+):
+    class Table:
+        name = "parlay_platform_snapshots"
+
+        def __init__(self):
+            self.get_calls = 0
+            self.items = {
+                ("PULLS#mlb#2026-07-21", f"PULL#{index:03d}"): {
+                    "PK": "PULLS#mlb#2026-07-21",
+                    "SK": f"PULL#{index:03d}",
+                    "value": index,
+                }
+                for index in range(65)
+            }
+
+        def get_item(self, *, Key, ConsistentRead):
+            assert ConsistentRead is True
+            self.get_calls += 1
+            item = self.items.get((Key["PK"], Key["SK"]))
+            return {"Item": copy.deepcopy(item)} if item else {}
+
+    table = Table()
+    keys = [
+        {"PK": "PULLS#mlb#2026-07-21", "SK": f"PULL#{index:03d}"}
+        for index in range(65)
+    ]
+
+    def handler(request_items, _call):
+        request = request_items[table.name]
+        assert request["ConsistentRead"] is True
+        pending = list(request["Keys"])
+        processed = pending[:8]
+        unprocessed = pending[8:]
+        return {
+            "Responses": {
+                table.name: [
+                    copy.deepcopy(table.items[(key["PK"], key["SK"])])
+                    for key in processed
+                ]
+            },
+            "UnprocessedKeys": (
+                {
+                    table.name: {
+                        "Keys": copy.deepcopy(unprocessed),
+                        "ConsistentRead": True,
+                    }
+                }
+                if unprocessed
+                else {}
+            ),
+        }
+
+    resource = _BatchResource(table, handler=handler)
+    sleeps = []
+    monkeypatch.setattr(patch.time, "sleep", sleeps.append)
+
+    with patch._status_read_scope():
+        assert patch._prime_status_exact_items(table, resource, keys) is True
+        assert len(patch._STATUS_READ_CACHE.get()["consistentItems"]) == len(keys)
+        assert patch._consistent_item(table, keys[0])["value"] == 0
+        assert patch._consistent_item(table, keys[-1])["value"] == 64
+
+    assert len(resource.calls) == 9
+    assert [
+        len(next(iter(call.values()))["Keys"])
+        for call in resource.calls
+    ] == [65, 57, 49, 41, 33, 25, 17, 9, 1]
+    assert sleeps == [patch._STATUS_BATCH_RETRY_DELAY_SECONDS] * 8
+    assert table.get_calls == 0
+
+
+def test_exact_batch_cache_progressive_pages_obey_call_bound(
+    monkeypatch,
+):
+    class Table:
+        name = "parlay_platform_snapshots"
+
+        def __init__(self):
+            self.get_calls = 0
+            self.items = {
+                ("PK", f"SK#{index:03d}"): {
+                    "PK": "PK",
+                    "SK": f"SK#{index:03d}",
+                    "value": index,
+                }
+                for index in range(10)
+            }
+
+        def get_item(self, *, Key, ConsistentRead):
+            assert ConsistentRead is True
+            self.get_calls += 1
+            item = self.items.get((Key["PK"], Key["SK"]))
+            return {"Item": copy.deepcopy(item)} if item else {}
+
+    table = Table()
+    keys = [
+        {"PK": "PK", "SK": f"SK#{index:03d}"}
+        for index in range(10)
+    ]
+
+    def handler(request_items, _call):
+        pending = list(request_items[table.name]["Keys"])
+        processed = pending[:1]
+        unprocessed = pending[1:]
+        return {
+            "Responses": {
+                table.name: [
+                    copy.deepcopy(table.items[(key["PK"], key["SK"])])
+                    for key in processed
+                ]
+            },
+            "UnprocessedKeys": (
+                {table.name: {"Keys": copy.deepcopy(unprocessed)}}
+                if unprocessed
+                else {}
+            ),
+        }
+
+    resource = _BatchResource(table, handler=handler)
+    monkeypatch.setattr(patch, "_STATUS_BATCH_MAX_CALLS_PER_PHASE", 4)
+    monkeypatch.setattr(patch.time, "sleep", lambda _seconds: None)
+
+    with patch._status_read_scope():
+        assert patch._prime_status_exact_items(table, resource, keys) is False
+        assert patch._STATUS_READ_CACHE.get()["consistentItems"] == {}
+        assert patch._consistent_item(table, keys[0])["value"] == 0
+
+    assert len(resource.calls) == 4
+    assert table.get_calls == 1
+
+
 @pytest.mark.parametrize(
     "malformed",
     (

@@ -83,8 +83,13 @@ _STATUS_READ_CACHE: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
 _STATUS_MISSING_ITEM = object()
 _STATUS_BATCH_MAX_KEYS = 100
 _STATUS_BATCH_MAX_PHASE_KEYS = 600
+_STATUS_BATCH_MAX_CALLS_PER_PHASE = 64
+# Progressive DynamoDB pages may exceed three calls when one partition holds
+# large immutable pull rows. Only consecutive no-progress responses consume
+# this retry budget; the total phase call ceiling remains the hard bound.
 _STATUS_BATCH_MAX_ATTEMPTS = 3
 _STATUS_BATCH_RETRY_DELAY_SECONDS = 0.025
+_STATUS_BATCH_MAX_RETRY_DELAY_SECONDS = 0.2
 
 
 @contextmanager
@@ -165,8 +170,11 @@ def _prime_status_exact_items(
     """Batch-read a bounded exact-key phase into the request-local cache.
 
     No result from this phase is published until every requested key is either
-    returned or authoritatively absent. Any transport, shape, or residual
-    unprocessed-key failure leaves the original point-read paths available.
+    returned or authoritatively absent. Progressive UnprocessedKeys pages may
+    continue past three calls under the hard phase-call ceiling; only repeated
+    no-progress responses exhaust the retry budget. Any transport, shape, or
+    residual unprocessed-key failure leaves the original point-read paths
+    available.
     """
     request_cache = _STATUS_READ_CACHE.get()
     item_cache = (
@@ -206,10 +214,15 @@ def _prime_status_exact_items(
         return True
 
     local_results: Dict[Tuple[str, str], Any] = {}
+    batch_calls = 0
     try:
         for offset in range(0, len(requested), _STATUS_BATCH_MAX_KEYS):
             pending = requested[offset : offset + _STATUS_BATCH_MAX_KEYS]
-            for attempt in range(_STATUS_BATCH_MAX_ATTEMPTS):
+            stagnant_attempts = 0
+            while pending:
+                if batch_calls >= _STATUS_BATCH_MAX_CALLS_PER_PHASE:
+                    raise RuntimeError("status batch read exceeded its call bound")
+                batch_calls += 1
                 pending_tokens = {(key["PK"], key["SK"]) for key in pending}
                 response = resource.batch_get_item(
                     RequestItems={
@@ -279,9 +292,18 @@ def _prime_status_exact_items(
                     local_results[token] = _STATUS_MISSING_ITEM
                 if not next_pending:
                     break
-                if attempt + 1 >= _STATUS_BATCH_MAX_ATTEMPTS:
+
+                made_progress = len(next_pending) < len(pending)
+                stagnant_attempts = 0 if made_progress else stagnant_attempts + 1
+                if stagnant_attempts >= _STATUS_BATCH_MAX_ATTEMPTS:
                     raise RuntimeError("status batch read left unprocessed keys")
-                time.sleep(_STATUS_BATCH_RETRY_DELAY_SECONDS * (2 ** attempt))
+                delay_attempt = max(stagnant_attempts - 1, 0)
+                time.sleep(
+                    min(
+                        _STATUS_BATCH_RETRY_DELAY_SECONDS * (2 ** delay_attempt),
+                        _STATUS_BATCH_MAX_RETRY_DELAY_SECONDS,
+                    )
+                )
                 pending = next_pending
     except Exception:
         return False
