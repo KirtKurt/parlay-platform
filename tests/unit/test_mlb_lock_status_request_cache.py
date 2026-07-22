@@ -5,6 +5,7 @@ import importlib
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
+from types import SimpleNamespace
 
 import pytest
 
@@ -448,6 +449,159 @@ def test_full_persisted_prediction_route_has_bounded_large_slate_reads(
     assert len(resource.calls) == 3
     assert uncached_counts["getItem"] <= 200
     assert uncached_counts["query"] <= GAME_COUNT + 1
+
+
+def test_precomputed_slot_fingerprints_preserve_exact_canonical_output(
+    monkeypatch,
+):
+    games = _games("2026-07-13T22:00:00+00:00")
+    raw = [
+        pull("2026-07-13T01:00:00+00:00", games, "raw-a"),
+        pull("2026-07-13T01:01:00+00:00", games, "raw-b"),
+        pull("2026-07-13T01:15:00+00:00", games, "raw-c"),
+    ]
+    original = history_contract.pull_payload_fingerprint
+    expected = history_contract.canonicalize_pull_slots(
+        raw,
+        sport="mlb",
+        slate=SLATE,
+    )
+    precomputed = {id(row): original(row) for row in raw}
+    calls = 0
+
+    def counted(value):
+        nonlocal calls
+        calls += 1
+        return original(value)
+
+    monkeypatch.setattr(history_contract, "pull_payload_fingerprint", counted)
+    actual = history_contract.canonicalize_pull_slots(
+        raw,
+        sport="mlb",
+        slate=SLATE,
+        _precomputed_fingerprints=precomputed,
+    )
+
+    assert actual == expected
+    assert calls == 0
+
+
+def test_status_query_reuses_strongly_consistent_pull_rows_and_hashes_once(
+    monkeypatch,
+):
+    games = _games("2026-07-13T22:00:00+00:00")
+    raw = [
+        pull("2026-07-13T01:00:00+00:00", games, "raw-a"),
+        pull("2026-07-13T01:01:00+00:00", games, "raw-b"),
+        pull("2026-07-13T01:15:00+00:00", games, "raw-c"),
+    ]
+
+    class Table:
+        name = "parlay_platform_snapshots"
+
+        def __init__(self):
+            self.get_calls = 0
+
+        def get_item(self, **_kwargs):
+            self.get_calls += 1
+            raise AssertionError("strongly consistent query rows must be reused")
+
+    table = Table()
+    items = []
+    keys = []
+    for index, row in enumerate(raw):
+        key = {
+            "PK": f"PULLS#mlb#{SLATE}",
+            "SK": f"PULL#legacy#{index}",
+        }
+        keys.append(key)
+        stored = copy.deepcopy(row)
+        stored["canonicalPullStorage"] = {
+            "pk": key["PK"],
+            "sk": key["SK"],
+            "recordType": "pull_run",
+        }
+        items.append({
+            **key,
+            "record_type": "pull_run",
+            "data": stored,
+        })
+
+    monkeypatch.setattr(history_contract, "PULLS", table)
+    monkeypatch.setattr(
+        history_contract,
+        "_query_pull_items",
+        lambda sport, slate, limit: copy.deepcopy(items),
+    )
+    original = history_contract.pull_payload_fingerprint
+    calls = 0
+
+    def counted(value):
+        nonlocal calls
+        calls += 1
+        return original(value)
+
+    monkeypatch.setattr(history_contract, "pull_payload_fingerprint", counted)
+    module = SimpleNamespace(
+        history=history_contract,
+        _pulls_for_date=lambda _slate: (_ for _ in ()).throw(
+            AssertionError("optimized status query unexpectedly fell back")
+        ),
+    )
+
+    with patch._status_read_scope():
+        canonical = patch._status_query_pulls(module, SLATE)
+        assert len(canonical) == 2
+        assert patch._STATUS_READ_CACHE.get()["canonicalPulls"][id(canonical)] is canonical
+        for key in keys:
+            cached = patch._consistent_item(table, key)
+            assert cached["record_type"] == "pull_run"
+            assert "canonicalPullStorage" not in cached["data"]
+            first = patch._status_pull_payload_fingerprint(table, key, cached["data"])
+            second = patch._status_pull_payload_fingerprint(table, key, cached["data"])
+            assert first == second
+
+    assert calls == len(raw)
+    assert table.get_calls == 0
+
+
+def test_status_scoring_compacts_raw_variants_but_writer_keeps_them(
+    locked_scale_module,
+):
+    module = locked_scale_module
+    pulls = history_contract.canonicalize_pull_slots(
+        module.history.pulls,
+        sport="mlb",
+        slate=SLATE,
+    )
+    manifest = list(
+        (module.history.pulls[-1].get("provider_schedule_manifest") or {}).get(
+            "games"
+        )
+        or []
+    )
+    target_game = manifest[0]
+
+    writer_scoring = patch._scoring_pulls(module, pulls, target_game)
+    assert writer_scoring
+    assert "_canonicalSlotRawPulls" in writer_scoring[0]
+
+    with patch._status_read_scope() as request_cache:
+        request_cache["canonicalPulls"][id(pulls)] = pulls
+        status_scoring = patch._scoring_pulls(module, pulls, target_game)
+
+    assert status_scoring
+    assert all("_canonicalSlotRawPulls" not in row for row in status_scoring)
+    assert all(len(row.get("games") or []) == 1 for row in status_scoring)
+    assert patch._source_window_entries(
+        module,
+        writer_scoring,
+        target_game,
+    ) == patch._source_window_entries(
+        module,
+        status_scoring,
+        target_game,
+    )
 
 
 def test_status_cache_shares_absence_but_retries_transport_errors():
