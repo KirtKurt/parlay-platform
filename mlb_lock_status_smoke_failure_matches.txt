@@ -1,0 +1,650 @@
+2026-07-22T04:53:15.6967607Z Collecting boto3-stubs>=1.41.0 (from boto3-stubs[apigateway,cloudformation,ecr,iam,kinesis,lambda,s3,schemas,secretsmanager,signer,sqs,stepfunctions,sts,xray]>=1.41.0->aws-sam-cli==1.*)
+2026-07-22T04:53:15.7006000Z   Downloading boto3_stubs-1.43.53-py3-none-any.whl.metadata (156 kB)
+2026-07-22T04:53:16.1666311Z Collecting python-dotenv<1.3,>=1.0 (from aws-sam-cli==1.*)
+2026-07-22T04:53:16.1702807Z   Downloading python_dotenv-1.2.2-py3-none-any.whl.metadata (27 kB)
+2026-07-22T04:53:16.1757838Z Requirement already satisfied: setuptools in /home/runner/work/_temp/setup-sam-QnLCs7/.venv/lib/python3.11/site-packages (from aws_lambda_builders==1.65.0->aws-sam-cli==1.*) (83.0.0)
+2026-07-22T04:53:16.1761900Z Requirement already satisfied: wheel in /home/runner/work/_temp/setup-sam-QnLCs7/.venv/lib/python3.11/site-packages (from aws_lambda_builders==1.65.0->aws-sam-cli==1.*) (0.47.0)
+2026-07-22T04:53:16.3061629Z Collecting pydantic~=2.13.3 (from aws-sam-translator==1.111.0->aws-sam-cli==1.*)
+2026-07-22T04:53:16.3101430Z   Downloading pydantic-2.13.4-py3-none-any.whl.metadata (109 kB)
+2026-07-22T04:53:16.5049363Z Collecting botocore<1.44.0,>=1.43.38 (from boto3==1.43.38->boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-22T04:53:16.5087547Z   Downloading botocore-1.43.53-py3-none-any.whl.metadata (5.6 kB)
+2026-07-22T04:53:16.5264049Z Collecting s3transfer<0.20.0,>=0.19.0 (from boto3==1.43.38->boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-22T04:53:16.5304696Z   Downloading s3transfer-0.19.1-py3-none-any.whl.metadata (1.7 kB)
+2026-07-22T04:53:16.5647394Z Collecting python-dateutil<3.0.0,>=2.1 (from botocore<1.44.0,>=1.43.38->boto3==1.43.38->boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-22T04:53:16.5685574Z   Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+2026-07-22T04:53:16.5892729Z Collecting urllib3!=2.2.0,<3,>=1.25.4 (from botocore<1.44.0,>=1.43.38->boto3==1.43.38->boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-22T04:53:16.5934578Z   Downloading urllib3-2.7.0-py3-none-any.whl.metadata (6.9 kB)
+2026-07-22T04:53:16.9295389Z Collecting awscrt==0.36.0 (from botocore[crt]<2.0a0,>=1.21.0; extra == "crt"->boto3[crt]==1.43.38->aws-sam-cli==1.*)
+2026-07-22T04:53:16.9337274Z   Downloading awscrt-0.36.0-cp311-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl.metadata (11 kB)
+2026-07-22T04:53:16.9502537Z Collecting jsonpatch (from cfn-lint<1.53,>=1.51.3->aws-sam-cli==1.*)
+2026-07-22T04:53:16.9539876Z   Downloading jsonpatch-1.33-py2.py3-none-any.whl.metadata (3.0 kB)
+2026-07-22T04:53:16.9733355Z Collecting networkx<4,>=2.4 (from cfn-lint<1.53,>=1.51.3->aws-sam-cli==1.*)
+2026-07-22T04:53:16.9767544Z   Downloading networkx-3.6.1-py3-none-any.whl.metadata (6.8 kB)
+2026-07-22T04:53:16.9947853Z Collecting sympy>=1.14.0 (from cfn-lint<1.53,>=1.51.3->aws-sam-cli==1.*)
+2026-07-22T04:53:16.9985854Z   Downloading sympy-1.14.0-py3-none-any.whl.metadata (12 kB)
+---
+2026-07-22T04:53:40.3022041Z     "githubConnected": false,
+2026-07-22T04:53:40.3022527Z     "plan": "free",
+2026-07-22T04:53:40.3022984Z     "schemaFingerprint": "7a7bd2c6b450a14175b518dc124dde863e9ce614f5c84a35f07e3691e6ed3f62"
+2026-07-22T04:53:40.3023514Z   },
+2026-07-22T04:53:40.3023731Z   "activation": {
+2026-07-22T04:53:40.3024038Z     "captureCoverage": "PARTIAL_SINGLE_UTC_DATE_PROBE",
+2026-07-22T04:53:40.3024426Z     "completeSlateCoverageClaimed": false,
+2026-07-22T04:53:40.3024759Z     "completenessCredit": false,
+2026-07-22T04:53:40.3025044Z     "mode": "SHADOW_ONLY",
+2026-07-22T04:53:40.3025357Z     "officialIdentityCredit": false,
+2026-07-22T04:53:40.3025667Z     "predictionAuthority": false,
+2026-07-22T04:53:40.3025978Z     "providerIdentityGateSatisfied": false,
+2026-07-22T04:53:40.3026315Z     "reviewMilestoneDefined": false,
+2026-07-22T04:53:40.3026864Z     "runtimeQuarantineRequired": true,
+2026-07-22T04:53:40.3027296Z     "schemaActivationEligible": false,
+2026-07-22T04:53:40.3027623Z     "sourceActivationEligible": false,
+2026-07-22T04:53:40.3027942Z     "trainingEligibility": false
+2026-07-22T04:53:40.3028217Z   },
+2026-07-22T04:53:40.3028439Z   "authentication": "VERIFIED_REDACTED",
+2026-07-22T04:53:40.3028937Z   "contractVersion": "MLB-BBS-LIVE-CONTRACT-v3-shadow-quarantine-schema-drift",
+2026-07-22T04:53:40.3029434Z   "keyEnvironmentName": "BBS_API_KEY",
+2026-07-22T04:53:40.3029760Z   "keyTransport": "AUTHORIZATION_BEARER",
+2026-07-22T04:53:40.3030074Z   "mlbMatches": {
+2026-07-22T04:53:40.3030309Z     "confidence": null,
+---
+2026-07-22T04:53:40.5125644Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T04:53:40.5126094Z   AWS_DEFAULT_REGION: ***
+2026-07-22T04:53:40.5126378Z   AWS_REGION: ***
+2026-07-22T04:53:40.5126893Z   AWS_ACCESS_KEY_ID: ***
+2026-07-22T04:53:40.5127245Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T04:53:40.5127501Z ##[endgroup]
+2026-07-22T04:53:40.5468174Z {
+2026-07-22T04:53:40.5468798Z   "credentialConsumer": "MLBAuditedPullFunction",
+2026-07-22T04:53:40.5469504Z   "credentialStorage": "AWS_SECRETS_MANAGER",
+2026-07-22T04:53:40.5469923Z   "functionCountChecked": 14,
+2026-07-22T04:53:40.5470266Z   "ok": true,
+2026-07-22T04:53:40.5470578Z   "retiredActivationPathsAbsent": 9,
+2026-07-22T04:53:40.5470965Z   "secretName": "BBS_API_KEY",
+2026-07-22T04:53:40.5471302Z   "shadowOnly": true
+2026-07-22T04:53:40.5471577Z }
+2026-07-22T04:53:41.1506620Z MLB daily 1:00 AM ET pull-start gate verification passed.
+2026-07-22T04:53:41.6651808Z MLB per-game canonical public coverage and doubleheader-safe audit verified
+2026-07-22T04:53:42.1381727Z MLB immutable locked storage verified: live rows remain mutable; legacy locked writes are suppressed; only immutable per-game stages may enter LOCKED#GAME; selection locks either verify an exact vector or carry an explicit training exclusion; and tampered, changed, or corrupt legacy collisions fail closed.
+2026-07-22T04:53:42.4330101Z MLB daily lock ML vector preservation verified: exact vector, fingerprint, timestamps, semantics, selected price, and blank pregame labels survive compaction; invalid vectors remain explicit training exclusions while valid winner selections retain immutable storage authority.
+2026-07-22T04:53:42.5346082Z MLB targets verified: every game retains a locked winner, 90% is dashboard-only, legacy V1 is inert, and AWS V2 uses prospective market-skill/manual-first promotion.
+2026-07-22T04:53:43.5035348Z MLB ML optimization diagnostics verified: legacy V1 feature/join/runtime checks remain non-authoritative; production proof is r3 future-cutover fixed whole-slate 300/100/100 with manual-first shadow approval and no runtime activation
+2026-07-22T04:53:43.6890082Z MLB ML promotion safety verified: legacy V1 authority is inert, GitHub has no write path, V2 uses fixed prospective market-skill gates, 90% is dashboard-only, and first approval is manual, shadow-only, and cannot activate runtime authority.
+2026-07-22T04:53:43.9537863Z MLB frozen feature integrity verified: DynamoDB Decimal round-trip, lock-safe temporal and missingness provenance, bound identity/source/selected-price context, and tamper rejection pass
+2026-07-22T04:53:44.3045941Z MLB temporal and missingness features verified: lock-bounded multi-horizon summaries, explicit source masks, v2 vectors with v3 bound fingerprints, DDB null-label preservation, parsimonious model dimensions, final-only label joins, and exact-odds coverage only.
+---
+2026-07-22T04:54:58.3035304Z ##[endgroup]
+2026-07-22T04:54:58.3142053Z Deploy Git SHA: 52b0ee85c5d7e12f8f4e18406c961e6b71d04eb4
+2026-07-22T04:54:58.3143074Z Canonical template SHA-256: 899e91877e22da7be833774161ff38253b6b7831ff9924d24a8d12c069eef13a
+2026-07-22T04:54:58.3196365Z ##[group]Run set -euo pipefail
+2026-07-22T04:54:58.3197061Z [36;1mset -euo pipefail[0m
+2026-07-22T04:54:58.3197331Z [36;1mrm -rf .aws-sam[0m
+2026-07-22T04:54:58.3197651Z [36;1msam build --no-cached --template-file template.yaml[0m
+2026-07-22T04:54:58.3250236Z shell: /usr/bin/bash -e {0}
+2026-07-22T04:54:58.3250493Z env:
+2026-07-22T04:54:58.3250777Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T04:54:58.3251234Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T04:54:58.3251677Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T04:54:58.3252073Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T04:54:58.3252465Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T04:54:58.3252872Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T04:54:58.3253251Z   AWS_DEFAULT_REGION: ***
+2026-07-22T04:54:58.3253510Z   AWS_REGION: ***
+2026-07-22T04:54:58.3253786Z   AWS_ACCESS_KEY_ID: ***
+2026-07-22T04:54:58.3254121Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T04:54:58.3254369Z ##[endgroup]
+2026-07-22T04:54:59.4082275Z Building codeuri: /home/runner/work/parlay-platform/parlay-platform/backend/src runtime: python3.11 architecture: x86_64 functions: InqsiBackendApiFunction
+2026-07-22T04:54:59.4088876Z Building codeuri: /home/runner/work/parlay-platform/parlay-platform/hello_world runtime: python3.11 architecture: x86_64 functions: MLBV3ReadFunction, ApiFunction, MLBAuditedPullFunction, MLBSignalApiFunction, MLBDailyPickLockFunction, MLBProductionVerifierFunction, MLBResultsSchedulerFunction, MLBMLTrainingFunction, SoccerSchedulerFunction, SoccerSignalApiFunction, SoccerResultsAuditFunction, SoccerAppApiFunction, InqsiAutopsySchedulerFunction
+2026-07-22T04:54:59.4353765Z  Running PythonPipBuilder:ResolveDependencies
+2026-07-22T04:54:59.4354769Z  Running PythonPipBuilder:ResolveDependencies
+---
+2026-07-22T04:55:01.8331471Z [36;1m                    'Lambda deployment package preflight returned no bytes'[0m
+2026-07-22T04:55:01.8331854Z [36;1m                )[0m
+2026-07-22T04:55:01.8332104Z [36;1m        break[0m
+2026-07-22T04:55:01.8332378Z [36;1m    except urllib.error.HTTPError as exc:[0m
+2026-07-22T04:55:01.8332758Z [36;1m        if exc.code != 429 and not 500 <= exc.code <= 599:[0m
+2026-07-22T04:55:01.8333093Z [36;1m            raise[0m
+2026-07-22T04:55:01.8333532Z [36;1m        if attempt == 3:[0m
+2026-07-22T04:55:01.8333810Z [36;1m            raise[0m
+2026-07-22T04:55:01.8334101Z [36;1m    except (urllib.error.URLError, TimeoutError):[0m
+2026-07-22T04:55:01.8334446Z [36;1m        if attempt == 3:[0m
+2026-07-22T04:55:01.8334701Z [36;1m            raise[0m
+2026-07-22T04:55:01.8334958Z [36;1m    time.sleep(2 ** (attempt - 1))[0m
+2026-07-22T04:55:01.8335247Z [36;1mPY[0m
+2026-07-22T04:55:01.8335448Z [36;1mdone[0m
+2026-07-22T04:55:01.8393140Z shell: /usr/bin/bash -e {0}
+2026-07-22T04:55:01.8393409Z env:
+2026-07-22T04:55:01.8393703Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T04:55:01.8394175Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T04:55:01.8394630Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T04:55:01.8395026Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T04:55:01.8395434Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T04:55:01.8395839Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T04:55:01.8396224Z   AWS_DEFAULT_REGION: ***
+2026-07-22T04:55:01.8396480Z   AWS_REGION: ***
+---
+2026-07-22T04:56:21.7732398Z         "uncompressedBytes": 4479004
+2026-07-22T04:56:21.7732662Z       },
+2026-07-22T04:56:21.7732890Z       "deployedCodeContentManifest": {
+2026-07-22T04:56:21.7733373Z         "contentManifestSha256": "efa01035eaa953aa0a3614e978348b684e62572572da211f76d24123126796ed",
+2026-07-22T04:56:21.7733850Z         "fileCount": 281,
+2026-07-22T04:56:21.7734107Z         "uncompressedBytes": 4479004
+2026-07-22T04:56:21.7734369Z       },
+2026-07-22T04:56:21.7734611Z       "codeArtifactMatchesCleanBuild": true,
+2026-07-22T04:56:21.7735046Z       "version": "$LATEST",
+2026-07-22T04:56:21.7735375Z       "deployGitSha": "52b0ee85c5d7e12f8f4e18406c961e6b71d04eb4",
+2026-07-22T04:56:21.7735923Z       "deployTemplateSha256": "899e91877e22da7be833774161ff38253b6b7831ff9924d24a8d12c069eef13a",
+2026-07-22T04:56:21.7736403Z       "deployRunId": "29892220179-1",
+2026-07-22T04:56:21.7736940Z       "deployRunIdMatches": true,
+2026-07-22T04:56:21.7737237Z       "identityMatches": true,
+2026-07-22T04:56:21.7737511Z       "configurationMatches": true,
+2026-07-22T04:56:21.7737810Z       "asyncDeliveryPolicy": {
+2026-07-22T04:56:21.7738084Z         "expectedRetryPolicy": {
+2026-07-22T04:56:21.7738383Z           "MaximumEventAgeInSeconds": 300,
+2026-07-22T04:56:21.7738689Z           "MaximumRetryAttempts": 0
+2026-07-22T04:56:21.7738961Z         },
+2026-07-22T04:56:21.7739171Z         "actualRetryPolicy": {
+2026-07-22T04:56:21.7739443Z           "MaximumEventAgeInSeconds": 300,
+2026-07-22T04:56:21.7739757Z           "MaximumRetryAttempts": 0
+2026-07-22T04:56:21.7740023Z         },
+---
+2026-07-22T04:56:21.7757394Z         "destinationConfigValid": true,
+2026-07-22T04:56:21.7757698Z         "configuredDestinations": {},
+2026-07-22T04:56:21.7757990Z         "destinationConfigAbsent": true
+2026-07-22T04:56:21.7758261Z       }
+2026-07-22T04:56:21.7758449Z     }
+2026-07-22T04:56:21.7758632Z   },
+2026-07-22T04:56:21.7758855Z   "lockConfiguration": {
+2026-07-22T04:56:21.7759199Z     "expectedHandler": "mlb_daily_pick_lock_protected.lambda_handler",
+2026-07-22T04:56:21.7759600Z     "expectedTimeoutSeconds": 300,
+2026-07-22T04:56:21.7759901Z     "expectedAsyncRetryPolicy": {
+2026-07-22T04:56:21.7760196Z       "MaximumEventAgeInSeconds": 60,
+2026-07-22T04:56:21.7760494Z       "MaximumRetryAttempts": 0
+2026-07-22T04:56:21.7760749Z     },
+2026-07-22T04:56:21.7760975Z     "expectedExecutionLeaseSeconds": 360,
+2026-07-22T04:56:21.7761289Z     "requiredEnvironmentKeys": [
+2026-07-22T04:56:21.7761556Z       "SNAPSHOTS_TABLE"
+2026-07-22T04:56:21.7761783Z     ],
+2026-07-22T04:56:21.7762072Z     "executionConcurrencyStrategy": "dynamodb_conditional_lease",
+2026-07-22T04:56:21.7762491Z     "executionLeaseScope": "global_mlb_lock_execution",
+2026-07-22T04:56:21.7762857Z     "executionLeaseSafetyMarginSeconds": 60,
+2026-07-22T04:56:21.7763178Z     "expiredLeaseReclaim": true,
+2026-07-22T04:56:21.7763461Z     "ownerConditionalRelease": true,
+2026-07-22T04:56:21.7763781Z     "reservedLambdaConcurrencyRequired": false,
+2026-07-22T04:56:21.7764098Z     "matches": true,
+---
+2026-07-22T04:56:21.7763461Z     "ownerConditionalRelease": true,
+2026-07-22T04:56:21.7763781Z     "reservedLambdaConcurrencyRequired": false,
+2026-07-22T04:56:21.7764098Z     "matches": true,
+2026-07-22T04:56:21.7764395Z     "handler": "mlb_daily_pick_lock_protected.lambda_handler",
+2026-07-22T04:56:21.7764749Z     "timeoutSeconds": 300,
+2026-07-22T04:56:21.7765008Z     "timeoutMatches": true,
+2026-07-22T04:56:21.7765274Z     "executionLeaseSeconds": 360,
+2026-07-22T04:56:21.7765574Z     "executionLeaseDurationMatches": true,
+2026-07-22T04:56:21.7765927Z     "executionLeaseCoversTimeoutSafetyBound": true,
+2026-07-22T04:56:21.7766297Z     "snapshotTable": "parlay_platform_snapshots",
+2026-07-22T04:56:21.7766747Z     "requiredEnvironmentPresent": true,
+2026-07-22T04:56:21.7767046Z     "asyncRetryPolicy": {
+2026-07-22T04:56:21.7767314Z       "MaximumEventAgeInSeconds": 60,
+2026-07-22T04:56:21.7767606Z       "MaximumRetryAttempts": 0
+2026-07-22T04:56:21.7767850Z     },
+2026-07-22T04:56:21.7768069Z     "asyncRetryPolicyMatches": true,
+2026-07-22T04:56:21.7768358Z     "asyncDestinationConfig": {
+2026-07-22T04:56:21.7768623Z       "OnSuccess": {},
+2026-07-22T04:56:21.7768850Z       "OnFailure": {}
+2026-07-22T04:56:21.7769064Z     },
+2026-07-22T04:56:21.7769298Z     "asyncDestinationConfigPresent": true,
+2026-07-22T04:56:21.7769623Z     "asyncDestinationConfigValid": true,
+2026-07-22T04:56:21.7769938Z     "configuredAsyncDestinations": {},
+2026-07-22T04:56:21.7770387Z     "asyncDestinationConfigAbsent": true
+---
+2026-07-22T04:56:21.7775962Z       "MLB_ML_ARTIFACTS_BUCKET",
+2026-07-22T04:56:21.7776228Z       "SNAPSHOTS_TABLE",
+2026-07-22T04:56:21.7776469Z       "OUTCOMES_TABLE"
+2026-07-22T04:56:21.7776894Z     ],
+2026-07-22T04:56:21.7777119Z     "expectedAsyncRetryPolicy": {
+2026-07-22T04:56:21.7777421Z       "MaximumEventAgeInSeconds": 300,
+2026-07-22T04:56:21.7777727Z       "MaximumRetryAttempts": 0
+2026-07-22T04:56:21.7777976Z     },
+2026-07-22T04:56:21.7778194Z     "expectedTimeoutSeconds": 900,
+2026-07-22T04:56:21.7778563Z     "executionConcurrencyStrategy": "dynamodb_conditional_lease",
+2026-07-22T04:56:21.7778982Z     "reservedLambdaConcurrencyRequired": false,
+2026-07-22T04:56:21.7779329Z     "sqsFailureDestinationRequired": false,
+2026-07-22T04:56:21.7779632Z     "matches": true,
+2026-07-22T04:56:21.7779910Z     "handler": "mlb_ml_aws_training_v1.lambda_handler",
+2026-07-22T04:56:21.7780573Z     "functionArn": "arn:aws:lambda:***:735707987003:function:parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
+2026-07-22T04:56:21.7781490Z     "stackOutputFunctionArn": "arn:aws:lambda:***:735707987003:function:parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
+2026-07-22T04:56:21.7782101Z     "timeoutSeconds": 900,
+2026-07-22T04:56:21.7782358Z     "timeoutMatches": true,
+2026-07-22T04:56:21.7782636Z     "reservedConcurrentExecutions": null,
+2026-07-22T04:56:21.7782960Z     "reservedConcurrencyAbsent": true,
+2026-07-22T04:56:21.7783261Z     "executionLeaseSeconds": 960,
+2026-07-22T04:56:21.7783557Z     "functionDeadLetterConfig": {},
+2026-07-22T04:56:21.7783868Z     "functionDeadLetterConfigAbsent": true,
+2026-07-22T04:56:21.7784178Z     "asyncRetryPolicy": {
+---
+2026-07-22T04:56:21.7792091Z       "INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION": "false",
+2026-07-22T04:56:21.7792441Z       "INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED": "false",
+2026-07-22T04:56:21.7792774Z       "INQSI_MLB_ML_AUTO_PROMOTE": "false",
+2026-07-22T04:56:21.7793158Z       "INQSI_DEPLOY_GIT_SHA": "52b0ee85c5d7e12f8f4e18406c961e6b71d04eb4",
+2026-07-22T04:56:21.7793731Z       "INQSI_DEPLOY_TEMPLATE_SHA256": "899e91877e22da7be833774161ff38253b6b7831ff9924d24a8d12c069eef13a",
+2026-07-22T04:56:21.7794239Z       "INQSI_DEPLOY_RUN_ID": "29892220179-1"
+2026-07-22T04:56:21.7794512Z     }
+2026-07-22T04:56:21.7794822Z   },
+2026-07-22T04:56:21.7795047Z   "lockExecutionConfiguration": {
+2026-07-22T04:56:21.7795410Z     "strategy": "dynamodb_global_all_mutating_conditional_lease",
+2026-07-22T04:56:21.7795793Z     "expectedTimeoutSeconds": 300,
+2026-07-22T04:56:21.7796080Z     "expectedLeaseSeconds": 360,
+2026-07-22T04:56:21.7796387Z     "scope": "scheduled_manual_and_forced_lock_runs",
+2026-07-22T04:56:21.7796978Z     "statusReadsAcquireLease": false,
+2026-07-22T04:56:21.7797269Z     "matches": true,
+2026-07-22T04:56:21.7797512Z     "timeoutSeconds": 300,
+2026-07-22T04:56:21.7797763Z     "leaseSeconds": 360,
+2026-07-22T04:56:21.7798021Z     "leaseOutlivesTimeout": true
+2026-07-22T04:56:21.7798271Z   },
+2026-07-22T04:56:21.7798488Z   "providerCredentialBoundary": {
+2026-07-22T04:56:21.7798784Z     "provider": "Big Balls Sports Data",
+2026-07-22T04:56:21.7799095Z     "exactGithubSecretName": "BBS_API_KEY",
+2026-07-22T04:56:21.7799455Z     "runtimeSecretArnEnvironment": "BBS_API_SECRET_ARN",
+2026-07-22T04:56:21.7799801Z     "consumerRole": "ingest",
+---
+2026-07-22T04:56:21.7792774Z       "INQSI_MLB_ML_AUTO_PROMOTE": "false",
+2026-07-22T04:56:21.7793158Z       "INQSI_DEPLOY_GIT_SHA": "52b0ee85c5d7e12f8f4e18406c961e6b71d04eb4",
+2026-07-22T04:56:21.7793731Z       "INQSI_DEPLOY_TEMPLATE_SHA256": "899e91877e22da7be833774161ff38253b6b7831ff9924d24a8d12c069eef13a",
+2026-07-22T04:56:21.7794239Z       "INQSI_DEPLOY_RUN_ID": "29892220179-1"
+2026-07-22T04:56:21.7794512Z     }
+2026-07-22T04:56:21.7794822Z   },
+2026-07-22T04:56:21.7795047Z   "lockExecutionConfiguration": {
+2026-07-22T04:56:21.7795410Z     "strategy": "dynamodb_global_all_mutating_conditional_lease",
+2026-07-22T04:56:21.7795793Z     "expectedTimeoutSeconds": 300,
+2026-07-22T04:56:21.7796080Z     "expectedLeaseSeconds": 360,
+2026-07-22T04:56:21.7796387Z     "scope": "scheduled_manual_and_forced_lock_runs",
+2026-07-22T04:56:21.7796978Z     "statusReadsAcquireLease": false,
+2026-07-22T04:56:21.7797269Z     "matches": true,
+2026-07-22T04:56:21.7797512Z     "timeoutSeconds": 300,
+2026-07-22T04:56:21.7797763Z     "leaseSeconds": 360,
+2026-07-22T04:56:21.7798021Z     "leaseOutlivesTimeout": true
+2026-07-22T04:56:21.7798271Z   },
+2026-07-22T04:56:21.7798488Z   "providerCredentialBoundary": {
+2026-07-22T04:56:21.7798784Z     "provider": "Big Balls Sports Data",
+2026-07-22T04:56:21.7799095Z     "exactGithubSecretName": "BBS_API_KEY",
+2026-07-22T04:56:21.7799455Z     "runtimeSecretArnEnvironment": "BBS_API_SECRET_ARN",
+2026-07-22T04:56:21.7799801Z     "consumerRole": "ingest",
+2026-07-22T04:56:21.7810616Z     "secretArnPresentOnIngest": true,
+2026-07-22T04:56:21.7811048Z     "shadowEnvironmentMatches": true,
+---
+2026-07-22T04:56:21.7795410Z     "strategy": "dynamodb_global_all_mutating_conditional_lease",
+2026-07-22T04:56:21.7795793Z     "expectedTimeoutSeconds": 300,
+2026-07-22T04:56:21.7796080Z     "expectedLeaseSeconds": 360,
+2026-07-22T04:56:21.7796387Z     "scope": "scheduled_manual_and_forced_lock_runs",
+2026-07-22T04:56:21.7796978Z     "statusReadsAcquireLease": false,
+2026-07-22T04:56:21.7797269Z     "matches": true,
+2026-07-22T04:56:21.7797512Z     "timeoutSeconds": 300,
+2026-07-22T04:56:21.7797763Z     "leaseSeconds": 360,
+2026-07-22T04:56:21.7798021Z     "leaseOutlivesTimeout": true
+2026-07-22T04:56:21.7798271Z   },
+2026-07-22T04:56:21.7798488Z   "providerCredentialBoundary": {
+2026-07-22T04:56:21.7798784Z     "provider": "Big Balls Sports Data",
+2026-07-22T04:56:21.7799095Z     "exactGithubSecretName": "BBS_API_KEY",
+2026-07-22T04:56:21.7799455Z     "runtimeSecretArnEnvironment": "BBS_API_SECRET_ARN",
+2026-07-22T04:56:21.7799801Z     "consumerRole": "ingest",
+2026-07-22T04:56:21.7810616Z     "secretArnPresentOnIngest": true,
+2026-07-22T04:56:21.7811048Z     "shadowEnvironmentMatches": true,
+2026-07-22T04:56:21.7811387Z     "plaintextKeyEnvironmentAbsent": true,
+2026-07-22T04:56:21.7811746Z     "retiredProviderEnvironmentAbsent": true,
+2026-07-22T04:56:21.7812133Z     "otherCanonicalFunctionsWithoutBbsAuthority": true
+2026-07-22T04:56:21.7812466Z   },
+2026-07-22T04:56:21.7812670Z   "artifactBucket": {
+2026-07-22T04:56:21.7812950Z     "stackOutputKey": "MLBMLArtifactsBucketName",
+2026-07-22T04:56:21.7813415Z     "bucketName": "parlay-platform-dev-mlbmlartifactsbucket-rtsuugrwreet",
+---
+2026-07-22T04:56:21.7847122Z     "trainer": {
+2026-07-22T04:56:21.7847686Z       "functionArn": "arn:aws:lambda:***:735707987003:function:parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
+2026-07-22T04:56:21.7848274Z       "enabledRules": [
+2026-07-22T04:56:21.7848499Z         {
+2026-07-22T04:56:21.7848883Z           "name": "parlay-platform-dev-MLBMLTrainingFunctionMLBMLSelec-2gy1nra44jOD",
+2026-07-22T04:56:21.7849362Z           "state": "ENABLED",
+2026-07-22T04:56:21.7849628Z           "schedule": "cron(4/15 * * * ? *)",
+2026-07-22T04:56:21.7849927Z           "targetArns": [
+2026-07-22T04:56:21.7850452Z             "arn:aws:lambda:***:735707987003:function:parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP"
+2026-07-22T04:56:21.7850970Z           ],
+2026-07-22T04:56:21.7851186Z           "matchingTargets": [
+2026-07-22T04:56:21.7851433Z             {
+2026-07-22T04:56:21.7851836Z               "Id": "MLBMLTrainingFunctionMLBMLSelectionCaptureEvery15MinLambdaTarget",
+2026-07-22T04:56:21.7852622Z               "Arn": "arn:aws:lambda:***:735707987003:function:parlay-platform-dev-MLBMLTrainingFunction-iRuv5ciajzdP",
+2026-07-22T04:56:21.7853403Z               "Input": "{\"sport\":\"mlb\",\"mode\":\"selection_capture\",\"run\":\"aws_native_prospective_selection_capture\"}",
+2026-07-22T04:56:21.7853925Z               "RetryPolicy": {
+2026-07-22T04:56:21.7854206Z                 "MaximumRetryAttempts": 0,
+2026-07-22T04:56:21.7854530Z                 "MaximumEventAgeInSeconds": 300
+2026-07-22T04:56:21.7854827Z               }
+2026-07-22T04:56:21.7855027Z             }
+2026-07-22T04:56:21.7855225Z           ]
+2026-07-22T04:56:21.7855416Z         },
+2026-07-22T04:56:21.7855604Z         {
+2026-07-22T04:56:21.7855992Z           "name": "parlay-platform-dev-MLBMLTrainingFunctionMLBMLTrain-1RAINiCehnzz",
+---
+2026-07-22T04:56:21.7889055Z           "schedule": "cron(9/15 * * * ? *)",
+2026-07-22T04:56:21.7889344Z           "targetArns": [
+2026-07-22T04:56:21.7889857Z             "arn:aws:lambda:***:735707987003:function:parlay-platform-dev-SoccerSchedulerFunction-xwqyvPSylA6r"
+2026-07-22T04:56:21.7890373Z           ],
+2026-07-22T04:56:21.7890581Z           "matchingTargets": [
+2026-07-22T04:56:21.7890823Z             {
+2026-07-22T04:56:21.7891154Z               "Id": "SoccerSchedulerFunctionSoccerHotEvery15MinLambdaTarget",
+2026-07-22T04:56:21.7891855Z               "Arn": "arn:aws:lambda:***:735707987003:function:parlay-platform-dev-SoccerSchedulerFunction-xwqyvPSylA6r",
+2026-07-22T04:56:21.7892504Z               "Input": "{\"sport\":\"soccer\",\"t\":\"HOT\",\"run\":\"hot_pull_audited\"}",
+2026-07-22T04:56:21.7892979Z               "RetryPolicy": {
+2026-07-22T04:56:21.7893434Z                 "MaximumRetryAttempts": 0,
+2026-07-22T04:56:21.7893972Z                 "MaximumEventAgeInSeconds": 300
+2026-07-22T04:56:21.7894483Z               }
+2026-07-22T04:56:21.7894814Z             }
+2026-07-22T04:56:21.7895014Z           ]
+2026-07-22T04:56:21.7895207Z         }
+2026-07-22T04:56:21.7895393Z       ],
+2026-07-22T04:56:21.7895603Z       "expectedSchedules": [
+2026-07-22T04:56:21.7895857Z         "cron(9/15 * * * ? *)"
+2026-07-22T04:56:21.7896086Z       ],
+2026-07-22T04:56:21.7896289Z       "exactMatch": true,
+2026-07-22T04:56:21.7896551Z       "targetTopologyMatches": true,
+2026-07-22T04:56:21.7897097Z       "retryPolicyMatches": true,
+2026-07-22T04:56:21.7897381Z       "deadLetterQueueAbsent": true,
+---
+2026-07-22T04:56:31.9795322Z [36;1m  --payload '{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}' \[0m
+2026-07-22T04:56:31.9795858Z [36;1m  --response /tmp/mlb-ml-v2-training.json \[0m
+2026-07-22T04:56:31.9796248Z [36;1m  --invocation /tmp/mlb-ml-v2-training-invoke.json \[0m
+2026-07-22T04:56:31.9796854Z [36;1m  --retry-execution-lease \[0m
+2026-07-22T04:56:31.9797203Z [36;1m  --deadline-seconds 1200 \[0m
+2026-07-22T04:56:31.9797486Z [36;1m  --retry-delay-seconds 20[0m
+2026-07-22T04:56:31.9797825Z [36;1mpython scripts/invoke_mlb_trainer_with_retry.py \[0m
+2026-07-22T04:56:31.9798194Z [36;1m  --function-name "$TRAINER_ARN" \[0m
+2026-07-22T04:56:31.9798504Z [36;1m  --region "***" \[0m
+2026-07-22T04:56:31.9798983Z [36;1m  --payload '{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}' \[0m
+2026-07-22T04:56:31.9799575Z [36;1m  --response /tmp/mlb-ml-v2-selection-capture.json \[0m
+2026-07-22T04:56:31.9800057Z [36;1m  --invocation /tmp/mlb-ml-v2-selection-capture-invoke.json \[0m
+2026-07-22T04:56:31.9800459Z [36;1m  --retry-execution-lease \[0m
+2026-07-22T04:56:31.9800745Z [36;1m  --deadline-seconds 1200 \[0m
+2026-07-22T04:56:31.9801025Z [36;1m  --retry-delay-seconds 20[0m
+2026-07-22T04:56:31.9801361Z [36;1mpython scripts/invoke_mlb_trainer_with_retry.py \[0m
+2026-07-22T04:56:31.9801726Z [36;1m  --function-name "$TRAINER_ARN" \[0m
+2026-07-22T04:56:31.9802034Z [36;1m  --region "***" \[0m
+2026-07-22T04:56:31.9802374Z [36;1m  --status-training-result /tmp/mlb-ml-v2-training.json \[0m
+2026-07-22T04:56:31.9802897Z [36;1m  --status-selection-capture-result /tmp/mlb-ml-v2-selection-capture.json \[0m
+2026-07-22T04:56:31.9803403Z [36;1m  --response /tmp/mlb-ml-v2-status-after.json \[0m
+2026-07-22T04:56:31.9803808Z [36;1m  --invocation /tmp/mlb-ml-v2-status-after-invoke.json[0m
+2026-07-22T04:56:31.9804285Z [36;1m# Fail closed unless trainingHealth and selectionCaptureHealth both[0m
+2026-07-22T04:56:31.9804788Z [36;1m# attest deploymentIdentityMatches for the exact runs above.[0m
+---
+2026-07-22T04:56:35.5346003Z [36;1m    raise SystemExit('Live MLB promotion policy is stale')[0m
+2026-07-22T04:56:35.5346440Z [36;1mif payload.get('legacyV1AuthorityEnabled') is not False:[0m
+2026-07-22T04:56:35.5347109Z [36;1m    raise SystemExit('Legacy V1 authority is not disabled')[0m
+2026-07-22T04:56:35.5347563Z [36;1mif payload.get('awsNativeTrainingInstalled') is not True:[0m
+2026-07-22T04:56:35.5348030Z [36;1m    raise SystemExit('AWS-native V2 training is not installed')[0m
+2026-07-22T04:56:35.5348492Z [36;1mif payload.get('awsNativeTrainingAuthority') is not False:[0m
+2026-07-22T04:56:35.5349007Z [36;1m    raise SystemExit('AWS-native V2 training incorrectly claims live authority')[0m
+2026-07-22T04:56:35.5349853Z [36;1mif payload.get('awsNativeTrainingHealthSource') != 'separate_mode_specific_status_contract':[0m
+2026-07-22T04:56:35.5350460Z [36;1m    raise SystemExit('AWS-native V2 training health source is stale')[0m
+2026-07-22T04:56:35.5350979Z [36;1mif payload.get('firstPromotionRequiresManualReview') is not True:[0m
+2026-07-22T04:56:35.5351476Z [36;1m    raise SystemExit('Manual-first V2 promotion is not enforced')[0m
+2026-07-22T04:56:35.5351989Z [36;1mif payload.get('manualReviewCreatesShadowApprovalOnly') is not True:[0m
+2026-07-22T04:56:35.5352475Z [36;1m    raise SystemExit('Manual V2 review is not shadow-only')[0m
+2026-07-22T04:56:35.5352929Z [36;1mif payload.get('v2InferenceConsumerInstalled') is not False:[0m
+2026-07-22T04:56:35.5353410Z [36;1m    raise SystemExit('Unreviewed V2 inference consumer is installed')[0m
+2026-07-22T04:56:35.5353929Z [36;1mif payload.get('runtimeAuthorityActivationAvailable') is not False:[0m
+2026-07-22T04:56:35.5354662Z [36;1m    raise SystemExit('Unreviewed V2 runtime authority activation is available')[0m
+2026-07-22T04:56:35.5355181Z [36;1mruntime = payload.get('ml_runtime_install') or {}[0m
+2026-07-22T04:56:35.5355539Z [36;1mif runtime.get('ok') is not True:[0m
+2026-07-22T04:56:35.5355927Z [36;1m    raise SystemExit('Live MLB runtime installation is not healthy')[0m
+2026-07-22T04:56:35.5356941Z [36;1mif runtime.get('version') != 'MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-aws-v2-shadow-manual-first':[0m
+2026-07-22T04:56:35.5357695Z [36;1m    raise SystemExit('Live MLB runtime contract is stale')[0m
+2026-07-22T04:56:35.5358072Z [36;1msteps = runtime.get('steps') or {}[0m
+2026-07-22T04:56:35.5358371Z [36;1mfor name in ([0m
+---
+2026-07-22T04:56:35.8111472Z   "manualReviewCreatesShadowApprovalOnly": true,
+2026-07-22T04:56:35.8112036Z   "mlDirectionPolicy": "persisted_rules_market_direction_v2_shadow_only_no_v2_runtime_consumer",
+2026-07-22T04:56:35.8112724Z   "mlReliabilityPolicy": "reliability_probability_is_never_team_win_probability",
+2026-07-22T04:56:35.8113340Z   "ml_optimization_version": "MLB-ML-OPTIMIZATION-v3.3-retired-diagnostic-only",
+2026-07-22T04:56:35.8113810Z   "ml_runtime_install": {
+2026-07-22T04:56:35.8114080Z     "accuracyTargetPolicy": {
+2026-07-22T04:56:35.8114429Z       "automaticPromotionAfterApplicableGates": false,
+2026-07-22T04:56:35.8114784Z       "errors": [],
+2026-07-22T04:56:35.8115043Z       "everyGameRetainsOfficialPick": true,
+2026-07-22T04:56:35.8115431Z       "everyGameRetainsVisibleLockedPrediction": true,
+2026-07-22T04:56:35.8115831Z       "firstPromotionRequiresManualReview": true,
+2026-07-22T04:56:35.8116262Z       "individualGameOfficialPickProbabilityFloorPct": 60.0,
+2026-07-22T04:56:35.8116901Z       "legacyV1AuthorityEnabled": false,
+2026-07-22T04:56:35.8117269Z       "maximumReliabilityCalibrationError": 0.1,
+2026-07-22T04:56:35.8117626Z       "minimumCleanOfficial": 500,
+2026-07-22T04:56:35.8117947Z       "minimumExactOddsCoveragePct": 90.0,
+2026-07-22T04:56:35.8118311Z       "minimumOutcomeUntouchedAccuracyPct": 90.0,
+2026-07-22T04:56:35.8118690Z       "minimumRolling24hSlateAccuracyPct": 90.0,
+2026-07-22T04:56:35.8119049Z       "minimumSelectedUntouchedTest": 100,
+2026-07-22T04:56:35.8119374Z       "minimumUntouchedTest": 100,
+2026-07-22T04:56:35.8119861Z       "multipleReversalsRequireIndependentConfirmationForOfficialStatus": true,
+2026-07-22T04:56:35.8120349Z       "ok": true,
+2026-07-22T04:56:35.8120561Z       "patched": [
+2026-07-22T04:56:35.8120831Z         "runtime_safety_90pct_exact_odds_calibration",
+---
+2026-07-22T04:56:35.8194651Z [36;1m        url,[0m
+2026-07-22T04:56:35.8194907Z [36;1m        deadline_monotonic=deadline,[0m
+2026-07-22T04:56:35.8195232Z [36;1m        max_wait_seconds=180,[0m
+2026-07-22T04:56:35.8195553Z [36;1m        request_timeout_seconds=timeout,[0m
+2026-07-22T04:56:35.8195873Z [36;1m        retry_delay_seconds=4,[0m
+2026-07-22T04:56:35.8196175Z [36;1m        max_attempts=max_attempts,[0m
+2026-07-22T04:56:35.8196463Z [36;1m        headers={[0m
+2026-07-22T04:56:35.8197010Z [36;1m            'accept': 'application/json',[0m
+2026-07-22T04:56:35.8197457Z [36;1m            'user-agent': 'inqsi-deploy-read-only-lock-lifecycle-smoke/2.0',[0m
+2026-07-22T04:56:35.8197871Z [36;1m        },[0m
+2026-07-22T04:56:35.8198089Z [36;1m    )[0m
+2026-07-22T04:56:35.8198290Z [36;1m[0m
+2026-07-22T04:56:35.8198543Z [36;1mbase_url = os.environ['API_URL'].rstrip('/')[0m
+2026-07-22T04:56:35.8198903Z [36;1mstatus_url = base_url + '/v1/mlb/locks/status'[0m
+2026-07-22T04:56:35.8199428Z [36;1mexpected_schedule_version = 'MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date'[0m
+2026-07-22T04:56:35.8199956Z [36;1mdeadline = time.monotonic() + 20 * 60[0m
+2026-07-22T04:56:35.8200251Z [36;1mattempt = 0[0m
+2026-07-22T04:56:35.8200483Z [36;1mwhile True:[0m
+2026-07-22T04:56:35.8200742Z [36;1m    remaining = deadline - time.monotonic()[0m
+2026-07-22T04:56:35.8201058Z [36;1m    if remaining <= 0:[0m
+2026-07-22T04:56:35.8201533Z [36;1m        raise SystemExit('No official-schedule-backed durable roster appeared within 20 minutes')[0m
+2026-07-22T04:56:35.8202031Z [36;1m    payload = fetch([0m
+2026-07-22T04:56:35.8202292Z [36;1m        status_url,[0m
+2026-07-22T04:56:35.8202563Z [36;1m        timeout=max(1, min(45, remaining)),[0m
+---
+2026-07-22T04:56:35.8198543Z [36;1mbase_url = os.environ['API_URL'].rstrip('/')[0m
+2026-07-22T04:56:35.8198903Z [36;1mstatus_url = base_url + '/v1/mlb/locks/status'[0m
+2026-07-22T04:56:35.8199428Z [36;1mexpected_schedule_version = 'MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date'[0m
+2026-07-22T04:56:35.8199956Z [36;1mdeadline = time.monotonic() + 20 * 60[0m
+2026-07-22T04:56:35.8200251Z [36;1mattempt = 0[0m
+2026-07-22T04:56:35.8200483Z [36;1mwhile True:[0m
+2026-07-22T04:56:35.8200742Z [36;1m    remaining = deadline - time.monotonic()[0m
+2026-07-22T04:56:35.8201058Z [36;1m    if remaining <= 0:[0m
+2026-07-22T04:56:35.8201533Z [36;1m        raise SystemExit('No official-schedule-backed durable roster appeared within 20 minutes')[0m
+2026-07-22T04:56:35.8202031Z [36;1m    payload = fetch([0m
+2026-07-22T04:56:35.8202292Z [36;1m        status_url,[0m
+2026-07-22T04:56:35.8202563Z [36;1m        timeout=max(1, min(45, remaining)),[0m
+2026-07-22T04:56:35.8202875Z [36;1m        deadline=deadline,[0m
+2026-07-22T04:56:35.8203241Z [36;1m        # One client delivery per outer attempt prevents a timed-out[0m
+2026-07-22T04:56:35.8203709Z [36;1m        # API Gateway request from spawning an overlapping retry[0m
+2026-07-22T04:56:35.8204107Z [36;1m        # herd against the shared lock Lambda.[0m
+2026-07-22T04:56:35.8204597Z [36;1m        max_attempts=1,[0m
+2026-07-22T04:56:35.8204852Z [36;1m    )[0m
+2026-07-22T04:56:35.8205057Z [36;1m    if ([0m
+2026-07-22T04:56:35.8205337Z [36;1m        payload.get('officialScheduleBacked') is True[0m
+2026-07-22T04:56:35.8205870Z [36;1m        and payload.get('officialScheduleAuthorityVersion') == expected_schedule_version[0m
+2026-07-22T04:56:35.8206475Z [36;1m        and payload.get('officialScheduleAuthoritativeStartTimes') is True[0m
+2026-07-22T04:56:35.8207116Z [36;1m    ):[0m
+2026-07-22T04:56:35.8207328Z [36;1m        break[0m
+---
+2026-07-22T04:56:35.8205337Z [36;1m        payload.get('officialScheduleBacked') is True[0m
+2026-07-22T04:56:35.8205870Z [36;1m        and payload.get('officialScheduleAuthorityVersion') == expected_schedule_version[0m
+2026-07-22T04:56:35.8206475Z [36;1m        and payload.get('officialScheduleAuthoritativeStartTimes') is True[0m
+2026-07-22T04:56:35.8207116Z [36;1m    ):[0m
+2026-07-22T04:56:35.8207328Z [36;1m        break[0m
+2026-07-22T04:56:35.8207567Z [36;1m    attempt += 1[0m
+2026-07-22T04:56:35.8207853Z [36;1m    remaining = deadline - time.monotonic()[0m
+2026-07-22T04:56:35.8208179Z [36;1m    if remaining <= 0:[0m
+2026-07-22T04:56:35.8208652Z [36;1m        raise SystemExit('No official-schedule-backed durable roster appeared within 20 minutes')[0m
+2026-07-22T04:56:35.8209331Z [36;1m    print(f'Waiting for the next scheduled official MLB roster pull (attempt {attempt})')[0m
+2026-07-22T04:56:35.8209822Z [36;1m    time.sleep(min(30, remaining))[0m
+2026-07-22T04:56:35.8210271Z [36;1m[0m
+2026-07-22T04:56:35.8210549Z [36;1mprint(json.dumps(payload, indent=2, default=str))[0m
+2026-07-22T04:56:35.8210875Z [36;1m[0m
+2026-07-22T04:56:35.8211076Z [36;1mrequired = ([0m
+2026-07-22T04:56:35.8211299Z [36;1m    'ok',[0m
+2026-07-22T04:56:35.8211516Z [36;1m    'sport',[0m
+2026-07-22T04:56:35.8211739Z [36;1m    'slateDateEt',[0m
+2026-07-22T04:56:35.8211989Z [36;1m    'modelVersion',[0m
+2026-07-22T04:56:35.8212244Z [36;1m    'lockPolicy',[0m
+2026-07-22T04:56:35.8212508Z [36;1m    'lockMinutesBeforeEachGame',[0m
+2026-07-22T04:56:35.8212865Z [36;1m    'readinessCheckpointsMinutesBeforeGame',[0m
+2026-07-22T04:56:35.8213258Z [36;1m    'playabilityCheckpointsMinutesBeforeGame',[0m
+2026-07-22T04:56:35.8213593Z [36;1m    'gameCount',[0m
+---
+2026-07-22T04:56:35.8216434Z [36;1m    'canonicalPredictionComplete',[0m
+2026-07-22T04:56:35.8216977Z [36;1m    'operationalDefect',[0m
+2026-07-22T04:56:35.8217268Z [36;1m    'perGameLockInstallation',[0m
+2026-07-22T04:56:35.8217576Z [36;1m    'mlLockVectorPreservation',[0m
+2026-07-22T04:56:35.8217863Z [36;1m    'perGameStatus',[0m
+2026-07-22T04:56:35.8218107Z [36;1m)[0m
+2026-07-22T04:56:35.8218405Z [36;1mmissing = [name for name in required if name not in payload][0m
+2026-07-22T04:56:35.8218778Z [36;1mif missing:[0m
+2026-07-22T04:56:35.8219134Z [36;1m    raise SystemExit(f'Live MLB lock status is missing fields: {missing}')[0m
+2026-07-22T04:56:35.8219664Z [36;1mif payload.get('ok') is not True or payload.get('sport') != 'mlb':[0m
+2026-07-22T04:56:35.8220121Z [36;1m    raise SystemExit('Live MLB lock status is unhealthy')[0m
+2026-07-22T04:56:35.8220707Z [36;1mif payload.get('modelVersion') != 'INQSI-MLB-DAILY-LOCK-v5-tminus45-readiness-release-status':[0m
+2026-07-22T04:56:35.8221384Z [36;1m    raise SystemExit(f"Live MLB lock model is stale: {payload.get('modelVersion')}")[0m
+2026-07-22T04:56:35.8221893Z [36;1mif payload.get('lockMinutesBeforeEachGame') != 45:[0m
+2026-07-22T04:56:35.8222349Z [36;1m    raise SystemExit('Live MLB lock status does not retain T-minus-45')[0m
+2026-07-22T04:56:35.8222886Z [36;1mif payload.get('readinessCheckpointsMinutesBeforeGame') != [60, 50]:[0m
+2026-07-22T04:56:35.8223475Z [36;1m    raise SystemExit('Live MLB readiness checkpoints are not T-minus-60 and T-minus-50')[0m
+2026-07-22T04:56:35.8224326Z [36;1mif payload.get('playabilityCheckpointsMinutesBeforeGame') != [30, 15]:[0m
+2026-07-22T04:56:35.8224929Z [36;1m    raise SystemExit('Live MLB playability checkpoints are not T-minus-30 and T-minus-15')[0m
+2026-07-22T04:56:35.8225500Z [36;1minstallation = payload.get('perGameLockInstallation') or {}[0m
+2026-07-22T04:56:35.8225909Z [36;1mif installation.get('ok') is not True:[0m
+2026-07-22T04:56:35.8226341Z [36;1m    raise SystemExit('Live MLB per-game lock installation is unhealthy')[0m
+2026-07-22T04:56:35.8227304Z [36;1mif installation.get('fixVersion') != 'MLB-LOCK-RUNTIME-FIX-v5-official-schedule-lifecycle-vector-separation':[0m
+2026-07-22T04:56:35.8228076Z [36;1m    raise SystemExit(f"Live MLB lock fix is stale: {installation.get('fixVersion')}")[0m
+---
+2026-07-22T04:56:35.8217268Z [36;1m    'perGameLockInstallation',[0m
+2026-07-22T04:56:35.8217576Z [36;1m    'mlLockVectorPreservation',[0m
+2026-07-22T04:56:35.8217863Z [36;1m    'perGameStatus',[0m
+2026-07-22T04:56:35.8218107Z [36;1m)[0m
+2026-07-22T04:56:35.8218405Z [36;1mmissing = [name for name in required if name not in payload][0m
+2026-07-22T04:56:35.8218778Z [36;1mif missing:[0m
+2026-07-22T04:56:35.8219134Z [36;1m    raise SystemExit(f'Live MLB lock status is missing fields: {missing}')[0m
+2026-07-22T04:56:35.8219664Z [36;1mif payload.get('ok') is not True or payload.get('sport') != 'mlb':[0m
+2026-07-22T04:56:35.8220121Z [36;1m    raise SystemExit('Live MLB lock status is unhealthy')[0m
+2026-07-22T04:56:35.8220707Z [36;1mif payload.get('modelVersion') != 'INQSI-MLB-DAILY-LOCK-v5-tminus45-readiness-release-status':[0m
+2026-07-22T04:56:35.8221384Z [36;1m    raise SystemExit(f"Live MLB lock model is stale: {payload.get('modelVersion')}")[0m
+2026-07-22T04:56:35.8221893Z [36;1mif payload.get('lockMinutesBeforeEachGame') != 45:[0m
+2026-07-22T04:56:35.8222349Z [36;1m    raise SystemExit('Live MLB lock status does not retain T-minus-45')[0m
+2026-07-22T04:56:35.8222886Z [36;1mif payload.get('readinessCheckpointsMinutesBeforeGame') != [60, 50]:[0m
+2026-07-22T04:56:35.8223475Z [36;1m    raise SystemExit('Live MLB readiness checkpoints are not T-minus-60 and T-minus-50')[0m
+2026-07-22T04:56:35.8224326Z [36;1mif payload.get('playabilityCheckpointsMinutesBeforeGame') != [30, 15]:[0m
+2026-07-22T04:56:35.8224929Z [36;1m    raise SystemExit('Live MLB playability checkpoints are not T-minus-30 and T-minus-15')[0m
+2026-07-22T04:56:35.8225500Z [36;1minstallation = payload.get('perGameLockInstallation') or {}[0m
+2026-07-22T04:56:35.8225909Z [36;1mif installation.get('ok') is not True:[0m
+2026-07-22T04:56:35.8226341Z [36;1m    raise SystemExit('Live MLB per-game lock installation is unhealthy')[0m
+2026-07-22T04:56:35.8227304Z [36;1mif installation.get('fixVersion') != 'MLB-LOCK-RUNTIME-FIX-v5-official-schedule-lifecycle-vector-separation':[0m
+2026-07-22T04:56:35.8228076Z [36;1m    raise SystemExit(f"Live MLB lock fix is stale: {installation.get('fixVersion')}")[0m
+2026-07-22T04:56:35.8228666Z [36;1mif installation.get('officialScheduleAuthorityRequired') is not True:[0m
+2026-07-22T04:56:35.8229273Z [36;1m    raise SystemExit('Live MLB lock runtime does not require official schedule authority')[0m
+---
+2026-07-22T04:56:35.8218405Z [36;1mmissing = [name for name in required if name not in payload][0m
+2026-07-22T04:56:35.8218778Z [36;1mif missing:[0m
+2026-07-22T04:56:35.8219134Z [36;1m    raise SystemExit(f'Live MLB lock status is missing fields: {missing}')[0m
+2026-07-22T04:56:35.8219664Z [36;1mif payload.get('ok') is not True or payload.get('sport') != 'mlb':[0m
+2026-07-22T04:56:35.8220121Z [36;1m    raise SystemExit('Live MLB lock status is unhealthy')[0m
+2026-07-22T04:56:35.8220707Z [36;1mif payload.get('modelVersion') != 'INQSI-MLB-DAILY-LOCK-v5-tminus45-readiness-release-status':[0m
+2026-07-22T04:56:35.8221384Z [36;1m    raise SystemExit(f"Live MLB lock model is stale: {payload.get('modelVersion')}")[0m
+2026-07-22T04:56:35.8221893Z [36;1mif payload.get('lockMinutesBeforeEachGame') != 45:[0m
+2026-07-22T04:56:35.8222349Z [36;1m    raise SystemExit('Live MLB lock status does not retain T-minus-45')[0m
+2026-07-22T04:56:35.8222886Z [36;1mif payload.get('readinessCheckpointsMinutesBeforeGame') != [60, 50]:[0m
+2026-07-22T04:56:35.8223475Z [36;1m    raise SystemExit('Live MLB readiness checkpoints are not T-minus-60 and T-minus-50')[0m
+2026-07-22T04:56:35.8224326Z [36;1mif payload.get('playabilityCheckpointsMinutesBeforeGame') != [30, 15]:[0m
+2026-07-22T04:56:35.8224929Z [36;1m    raise SystemExit('Live MLB playability checkpoints are not T-minus-30 and T-minus-15')[0m
+2026-07-22T04:56:35.8225500Z [36;1minstallation = payload.get('perGameLockInstallation') or {}[0m
+2026-07-22T04:56:35.8225909Z [36;1mif installation.get('ok') is not True:[0m
+2026-07-22T04:56:35.8226341Z [36;1m    raise SystemExit('Live MLB per-game lock installation is unhealthy')[0m
+2026-07-22T04:56:35.8227304Z [36;1mif installation.get('fixVersion') != 'MLB-LOCK-RUNTIME-FIX-v5-official-schedule-lifecycle-vector-separation':[0m
+2026-07-22T04:56:35.8228076Z [36;1m    raise SystemExit(f"Live MLB lock fix is stale: {installation.get('fixVersion')}")[0m
+2026-07-22T04:56:35.8228666Z [36;1mif installation.get('officialScheduleAuthorityRequired') is not True:[0m
+2026-07-22T04:56:35.8229273Z [36;1m    raise SystemExit('Live MLB lock runtime does not require official schedule authority')[0m
+2026-07-22T04:56:35.8230047Z [36;1mif installation.get('selectionLockIndependentOfTrainingVector') is not True:[0m
+2026-07-22T04:56:35.8230704Z [36;1m    raise SystemExit('Live MLB selection lock still depends on training-vector eligibility')[0m
+2026-07-22T04:56:35.8231309Z [36;1mvector_installation = payload.get('mlLockVectorPreservation') or {}[0m
+2026-07-22T04:56:35.8231909Z [36;1mif vector_installation.get('selectionLockIndependentOfTrainingVector') is not True:[0m
+---
+2026-07-22T04:56:35.8407045Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T04:56:35.8407450Z   API_URL: https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/
+2026-07-22T04:56:35.8407828Z ##[endgroup]
+2026-07-22T04:56:35.9689757Z Traceback (most recent call last):
+2026-07-22T04:56:35.9698529Z   File "<stdin>", line 31, in <module>
+2026-07-22T04:56:35.9699234Z   File "<stdin>", line 9, in fetch
+2026-07-22T04:56:35.9700250Z   File "/home/runner/work/parlay-platform/parlay-platform/scripts/mlb_deploy_http_probe.py", line 137, in fetch_json_object
+2026-07-22T04:56:35.9701355Z     raise TransientHttpProbeExhausted(
+2026-07-22T04:56:35.9702334Z scripts.mlb_deploy_http_probe.TransientHttpProbeExhausted: JSON probe attempt limit exhausted after 1 attempts: HTTP 500
+2026-07-22T04:56:35.9791747Z ##[error]Process completed with exit code 1.
+2026-07-22T04:56:35.9869569Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T04:56:35.9871399Z ##[group]Run actions/upload-artifact@v4
+2026-07-22T04:56:35.9871690Z with:
+2026-07-22T04:56:35.9871936Z   name: mlb-deployment-identity-29892220179
+2026-07-22T04:56:35.9872502Z   path: runtime_reports/mlb_lambda_build_manifest_deploy.json
+runtime_reports/mlb_deploy_identity_latest.json
+
+2026-07-22T04:56:35.9873257Z   if-no-files-found: warn
+2026-07-22T04:56:35.9873520Z   compression-level: 6
+2026-07-22T04:56:35.9873758Z   overwrite: false
+2026-07-22T04:56:35.9873996Z   include-hidden-files: false
+2026-07-22T04:56:35.9874247Z env:
+2026-07-22T04:56:35.9874522Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T04:56:35.9875002Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+---
+2026-07-22T04:56:35.8407450Z   API_URL: https://7nz8g8unyd.execute-api.***.amazonaws.com/Prod/
+2026-07-22T04:56:35.8407828Z ##[endgroup]
+2026-07-22T04:56:35.9689757Z Traceback (most recent call last):
+2026-07-22T04:56:35.9698529Z   File "<stdin>", line 31, in <module>
+2026-07-22T04:56:35.9699234Z   File "<stdin>", line 9, in fetch
+2026-07-22T04:56:35.9700250Z   File "/home/runner/work/parlay-platform/parlay-platform/scripts/mlb_deploy_http_probe.py", line 137, in fetch_json_object
+2026-07-22T04:56:35.9701355Z     raise TransientHttpProbeExhausted(
+2026-07-22T04:56:35.9702334Z scripts.mlb_deploy_http_probe.TransientHttpProbeExhausted: JSON probe attempt limit exhausted after 1 attempts: HTTP 500
+2026-07-22T04:56:35.9791747Z ##[error]Process completed with exit code 1.
+2026-07-22T04:56:35.9869569Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T04:56:35.9871399Z ##[group]Run actions/upload-artifact@v4
+2026-07-22T04:56:35.9871690Z with:
+2026-07-22T04:56:35.9871936Z   name: mlb-deployment-identity-29892220179
+2026-07-22T04:56:35.9872502Z   path: runtime_reports/mlb_lambda_build_manifest_deploy.json
+runtime_reports/mlb_deploy_identity_latest.json
+
+2026-07-22T04:56:35.9873257Z   if-no-files-found: warn
+2026-07-22T04:56:35.9873520Z   compression-level: 6
+2026-07-22T04:56:35.9873758Z   overwrite: false
+2026-07-22T04:56:35.9873996Z   include-hidden-files: false
+2026-07-22T04:56:35.9874247Z env:
+2026-07-22T04:56:35.9874522Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T04:56:35.9875002Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T04:56:35.9875454Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+---
+2026-07-22T04:56:36.3461489Z Uploaded bytes 4506
+2026-07-22T04:56:36.3604935Z Finished uploading artifact content to blob storage!
+2026-07-22T04:56:36.3606035Z SHA256 digest of uploaded artifact zip is b4daf157812b867b1b702ee74a97104aa13df81ac09f93728236ba086ff4e02d
+2026-07-22T04:56:36.3608830Z Finalizing artifact upload
+2026-07-22T04:56:36.6650387Z Artifact mlb-deployment-identity-29892220179.zip successfully finalized. Artifact ID 8518685865
+2026-07-22T04:56:36.6651388Z Artifact mlb-deployment-identity-29892220179 has been successfully uploaded! Final size is 4506 bytes. Artifact ID is 8518685865
+2026-07-22T04:56:36.6657175Z Artifact download URL: https://github.com/KirtKurt/parlay-platform/actions/runs/29892220179/artifacts/8518685865
+2026-07-22T04:56:36.6837122Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T04:56:36.6838504Z Post job cleanup.
+2026-07-22T04:56:36.7952683Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T04:56:36.7954236Z Post job cleanup.
+2026-07-22T04:56:36.8848979Z [command]/usr/bin/git version
+2026-07-22T04:56:36.8903731Z git version 2.54.0
+2026-07-22T04:56:36.8947061Z Temporarily overriding HOME='/home/runner/work/_temp/8110ae14-67f4-4428-9b7a-a03ab166e9be' before making global git config changes
+2026-07-22T04:56:36.8948883Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-22T04:56:36.8954035Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-22T04:56:36.9000402Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-22T04:56:36.9039649Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-22T04:56:36.9352196Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-22T04:56:36.9381720Z http.https://github.com/.extraheader
+2026-07-22T04:56:36.9393446Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-22T04:56:36.9427334Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-22T04:56:36.9672479Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-22T04:56:36.9719284Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+---
