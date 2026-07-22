@@ -1,0 +1,69 @@
+name: Diagnose first Tennis ML deployment
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [agent/tennis-ml-production-deploy]
+    paths:
+      - ".github/workflows/diagnose-tennis-deploy.yml"
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      FAILED_JOB_ID: "88905988086"
+      FAILED_RUN_ID: "29914785597"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Download and reduce masked job log
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" > /tmp/job-log-download
+          if unzip -t /tmp/job-log-download >/dev/null 2>&1; then
+            unzip -p /tmp/job-log-download > /tmp/job.log
+          else
+            cp /tmp/job-log-download /tmp/job.log
+          fi
+          python - <<'PY'
+          import os, re
+          from pathlib import Path
+          text = Path('/tmp/job.log').read_text(errors='replace')
+          text = re.sub(r'\x1b\[[0-9;]*m', '', text)
+          lines = text.splitlines()
+          terms = re.compile(r'(##\[error\]|::error::|traceback|accessdenied|validationerror|missing dedicated|must be independently|no such file|command not found|failed|failure|error:)', re.I)
+          hits=[]
+          for i,line in enumerate(lines):
+              if terms.search(line):
+                  a=max(0,i-5); b=min(len(lines),i+8)
+                  hits.extend(lines[a:b])
+                  hits.append('---')
+          tail=lines[-180:]
+          out = [
+              f'run_id={os.environ["FAILED_RUN_ID"]}',
+              f'job_id={os.environ["FAILED_JOB_ID"]}',
+              '',
+              '=== MATCHED ERROR CONTEXT ===',
+              *hits,
+              '',
+              '=== LOG TAIL ===',
+              *tail,
+          ]
+          Path('tennis_release/deploy-diagnostic-29914785597.txt').write_text('\n'.join(out)+'\n')
+          PY
+      - name: Publish masked diagnostic
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tennis_release/deploy-diagnostic-29914785597.txt
+          git commit -m "Record first Tennis deployment diagnostic"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
