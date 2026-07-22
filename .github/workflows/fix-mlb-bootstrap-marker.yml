@@ -29,27 +29,14 @@ jobs:
 
           path = Path('.github/workflows/apply-mlb-deploy-probe-policy.yml')
           source = path.read_text(encoding='utf-8')
-          old = '''          replace_once(
-              "              )\\n\\n"
-              "          base_url = os.environ['API_URL'].rstrip('/')",
-              "              )\\n\\n"
-              "          def transient_retry_delay(exc, remaining):\\n"
-              "              reason = str(exc)\\n"
-              "              lambda_may_still_be_running = any(\\n"
-              "                  marker in reason\\n"
-              "                  for marker in (\\n"
-              "                      'HTTP 504',\\n"
-              "                      'TimeoutError',\\n"
-              "                      'URLError',\\n"
-              "                      'ConnectionError',\\n"
-              "                      'IncompleteRead',\\n"
-              "                  )\\n"
-              "              )\\n"
-              "              delay = 330 if lambda_may_still_be_running else 30\\n"
-              "              return min(delay, remaining), lambda_may_still_be_running\\n\\n"
-              "          base_url = os.environ['API_URL'].rstrip('/')",
-              'retry delay helper',
+          start_marker = '''          replace_once(
+              "              )\\n\\n"'''
+          end_marker = '''              'retry delay helper',
           )'''
+          if source.count(start_marker) != 1:
+              raise SystemExit(f'broad helper start marker count is {source.count(start_marker)}')
+          start = source.index(start_marker)
+          end = source.index(end_marker, start) + len(end_marker)
           new = '''          replace_once(
               """          def fetch(url, timeout=45, deadline=None, max_attempts=None):
               return fetch_json_object(
@@ -98,10 +85,7 @@ jobs:
           base_url = os.environ['API_URL'].rstrip('/')""",
               'retry delay helper',
           )'''
-          count = source.count(old)
-          if count != 1:
-              raise SystemExit(f'exact bootstrap marker count is {count}')
-          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          path.write_text(source[:start] + new + source[end:], encoding='utf-8')
           PY
           git diff --check
           git rm .github/workflows/fix-mlb-bootstrap-marker.yml
