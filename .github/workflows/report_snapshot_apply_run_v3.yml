@@ -1,0 +1,56 @@
+name: Report snapshot applicator run v3
+
+on:
+  push:
+    branches:
+      - agent/mlb-lock-status-snapshot-hotpath
+    paths:
+      - .github/workflows/report_snapshot_apply_run_v3.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mlb-lock-status-snapshot-hotpath
+          fetch-depth: 0
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os, urllib.parse, urllib.request
+          from pathlib import Path
+          api = os.environ['GITHUB_API_URL'].rstrip('/')
+          repo = os.environ['GITHUB_REPOSITORY']
+          query = urllib.parse.urlencode({'branch':'agent/mlb-lock-status-snapshot-hotpath','event':'push','per_page':100})
+          request = urllib.request.Request(
+              f'{api}/repos/{repo}/actions/runs?{query}',
+              headers={
+                  'Accept':'application/vnd.github+json',
+                  'Authorization':f"Bearer {os.environ['GH_TOKEN']}",
+                  'X-GitHub-Api-Version':'2022-11-28',
+                  'User-Agent':'parlay-platform-snapshot-applicator-reporter/3.0',
+              },
+          )
+          with urllib.request.urlopen(request, timeout=30) as response:
+              payload = json.load(response)
+          runs = [{key: run.get(key) for key in ('id','name','status','conclusion','head_sha','run_number','run_attempt','html_url','created_at','updated_at')} for run in payload.get('workflow_runs',[]) if run.get('name') == 'Apply MLB lock-status snapshot hotpath']
+          Path('snapshot_apply_workflow_runs_v3.json').write_text(json.dumps({'runs':runs}, indent=2, sort_keys=True)+'\n', encoding='utf-8')
+          PY
+      - shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/report_snapshot_apply_run_v3.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Record snapshot applicator run v3"
+          git push origin HEAD:agent/mlb-lock-status-snapshot-hotpath
