@@ -1,0 +1,256 @@
+run_id=29914785597
+job_id=88905988086
+
+=== MATCHED ERROR CONTEXT ===
+2026-07-22T11:12:00.6686691Z tar: tennis_predictive_platform_v1/tests/test_autonomous_ml.py: time stamp 2026-07-22 12:00:00 is 2879.331907398 s in the future
+2026-07-22T11:12:00.6688020Z tar: tennis_predictive_platform_v1/tests/test_pull_history.py: time stamp 2026-07-22 12:00:00 is 2879.331841228 s in the future
+2026-07-22T11:12:00.6689531Z tar: tennis_predictive_platform_v1/tests/test_ml_features.py: time stamp 2026-07-22 12:00:00 is 2879.331772844 s in the future
+2026-07-22T11:12:00.6690852Z tar: tennis_predictive_platform_v1/tests/test_archive_paths.py: time stamp 2026-07-22 12:00:00 is 2879.331709489 s in the future
+2026-07-22T11:12:00.6692221Z tar: tennis_predictive_platform_v1/tests/test_espn_results_provider.py: time stamp 2026-07-22 12:00:00 is 2879.331645171 s in the future
+2026-07-22T11:12:00.6693683Z tar: tennis_predictive_platform_v1/tests/test_scheduled_failure_signals.py: time stamp 2026-07-22 12:00:00 is 2879.331569537 s in the future
+2026-07-22T11:12:00.6695092Z tar: tennis_predictive_platform_v1/tests/test_schedule.py: time stamp 2026-07-22 12:00:00 is 2879.331494874 s in the future
+2026-07-22T11:12:00.6696404Z tar: tennis_predictive_platform_v1/tests/test_odds_discovery.py: time stamp 2026-07-22 12:00:00 is 2879.331430807 s in the future
+2026-07-22T11:12:00.6697789Z tar: tennis_predictive_platform_v1/tests/test_outcome_training_join.py: time stamp 2026-07-22 12:00:00 is 2879.331343906 s in the future
+2026-07-22T11:12:00.6699311Z tar: tennis_predictive_platform_v1/tests/test_lock_guardrails.py: time stamp 2026-07-22 12:00:00 is 2879.331273189 s in the future
+2026-07-22T11:12:00.6700633Z tar: tennis_predictive_platform_v1/tests/test_engine_parity.py: time stamp 2026-07-22 12:00:00 is 2879.331205957 s in the future
+2026-07-22T11:12:00.6702432Z tar: tennis_predictive_platform_v1/tests/conftest.py: time stamp 2026-07-22 12:00:00 is 2879.331126046 s in the future
+2026-07-22T11:12:00.6703752Z tar: tennis_predictive_platform_v1/tests/test_ingest_all_matches.py: time stamp 2026-07-22 12:00:00 is 2879.331047227 s in the future
+---
+2026-07-22T11:12:48.1727194Z ##[endgroup]
+2026-07-22T11:12:48.3473064Z Proceeding with IAM user credentials
+2026-07-22T11:12:48.3576519Z ##[group]Run set -euo pipefail
+2026-07-22T11:12:48.3576864Z set -euo pipefail
+2026-07-22T11:12:48.3577191Z test -n "${TENNIS_ODDS_API_KEY_VALUE:-}" || {
+2026-07-22T11:12:48.3577641Z   echo "::error::Missing dedicated TENNIS_ODDS_API_KEY repository secret"
+2026-07-22T11:12:48.3578039Z   exit 1
+2026-07-22T11:12:48.3578259Z }
+2026-07-22T11:12:48.3579071Z if [ -n "${MLB_ODDS_API_KEY_VALUE:-}" ] && [ "$TENNIS_ODDS_API_KEY_VALUE" = "$MLB_ODDS_API_KEY_VALUE" ]; then
+2026-07-22T11:12:48.3580171Z   echo "::error::TENNIS_ODDS_API_KEY must be independently provisioned, not the MLB ODDS_API_KEY"
+2026-07-22T11:12:48.3580925Z   exit 1
+2026-07-22T11:12:48.3581253Z fi
+2026-07-22T11:12:48.3581583Z ./scripts/deploy_aws.sh
+---
+2026-07-22T11:12:48.3577191Z test -n "${TENNIS_ODDS_API_KEY_VALUE:-}" || {
+2026-07-22T11:12:48.3577641Z   echo "::error::Missing dedicated TENNIS_ODDS_API_KEY repository secret"
+2026-07-22T11:12:48.3578039Z   exit 1
+2026-07-22T11:12:48.3578259Z }
+2026-07-22T11:12:48.3579071Z if [ -n "${MLB_ODDS_API_KEY_VALUE:-}" ] && [ "$TENNIS_ODDS_API_KEY_VALUE" = "$MLB_ODDS_API_KEY_VALUE" ]; then
+2026-07-22T11:12:48.3580171Z   echo "::error::TENNIS_ODDS_API_KEY must be independently provisioned, not the MLB ODDS_API_KEY"
+2026-07-22T11:12:48.3580925Z   exit 1
+2026-07-22T11:12:48.3581253Z fi
+2026-07-22T11:12:48.3581583Z ./scripts/deploy_aws.sh
+2026-07-22T11:12:48.3673947Z shell: /usr/bin/bash -e {0}
+2026-07-22T11:12:48.3674237Z env:
+2026-07-22T11:12:48.3674479Z   AWS_REGION: us-east-1
+2026-07-22T11:12:48.3674799Z   AWS_DEFAULT_REGION: us-east-1
+---
+2026-07-22T11:12:48.3678859Z   AWS_ACCESS_KEY_ID: ***
+2026-07-22T11:12:48.3679233Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T11:12:48.3679499Z   TENNIS_ODDS_API_KEY_VALUE: 
+2026-07-22T11:12:48.3679830Z   MLB_ODDS_API_KEY_VALUE: ***
+2026-07-22T11:12:48.3680236Z ##[endgroup]
+2026-07-22T11:12:48.3801086Z ##[error]Missing dedicated TENNIS_ODDS_API_KEY repository secret
+2026-07-22T11:12:48.3810689Z ##[error]Process completed with exit code 1.
+2026-07-22T11:12:48.3890158Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T11:12:48.3891386Z ##[group]Run actions/upload-artifact@v4
+2026-07-22T11:12:48.3891671Z with:
+2026-07-22T11:12:48.3892041Z   name: tennis-ml-deployment-evidence-5a70551f15cef5f51694b01e9c341a7107df548a
+2026-07-22T11:12:48.3893393Z   path: /tmp/tennis-deployment-evidence.json
+/tmp/tennis-stack-after.json
+---
+2026-07-22T11:12:48.3679233Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T11:12:48.3679499Z   TENNIS_ODDS_API_KEY_VALUE: 
+2026-07-22T11:12:48.3679830Z   MLB_ODDS_API_KEY_VALUE: ***
+2026-07-22T11:12:48.3680236Z ##[endgroup]
+2026-07-22T11:12:48.3801086Z ##[error]Missing dedicated TENNIS_ODDS_API_KEY repository secret
+2026-07-22T11:12:48.3810689Z ##[error]Process completed with exit code 1.
+2026-07-22T11:12:48.3890158Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T11:12:48.3891386Z ##[group]Run actions/upload-artifact@v4
+2026-07-22T11:12:48.3891671Z with:
+2026-07-22T11:12:48.3892041Z   name: tennis-ml-deployment-evidence-5a70551f15cef5f51694b01e9c341a7107df548a
+2026-07-22T11:12:48.3893393Z   path: /tmp/tennis-deployment-evidence.json
+/tmp/tennis-stack-after.json
+/tmp/tennis-resources-after.json
+---
+
+=== LOG TAIL ===
+2026-07-22T11:12:33.9944757Z Using cached pyyaml-6.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (806 kB)
+2026-07-22T11:12:34.0020325Z Downloading requests-2.34.2-py3-none-any.whl (73 kB)
+2026-07-22T11:12:34.0115497Z Downloading charset_normalizer-3.4.9-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (221 kB)
+2026-07-22T11:12:34.0215707Z Downloading idna-3.18-py3-none-any.whl (65 kB)
+2026-07-22T11:12:34.0315949Z Downloading rich-15.0.0-py3-none-any.whl (310 kB)
+2026-07-22T11:12:34.0362548Z Using cached pygments-2.20.0-py3-none-any.whl (1.2 MB)
+2026-07-22T11:12:34.0438586Z Downloading ruamel_yaml-0.19.1-py3-none-any.whl (118 kB)
+2026-07-22T11:12:34.0473915Z Using cached s3transfer-0.19.1-py3-none-any.whl (90 kB)
+2026-07-22T11:12:34.0488206Z Using cached typing_extensions-4.16.0-py3-none-any.whl (45 kB)
+2026-07-22T11:12:34.0502543Z Using cached urllib3-2.7.0-py3-none-any.whl (131 kB)
+2026-07-22T11:12:34.0517005Z Using cached annotated_types-0.7.0-py3-none-any.whl (13 kB)
+2026-07-22T11:12:34.0530773Z Using cached attrs-26.1.0-py3-none-any.whl (67 kB)
+2026-07-22T11:12:34.0603645Z Downloading binaryornot-0.6.0-py3-none-any.whl (14 kB)
+2026-07-22T11:12:34.0699575Z Downloading blinker-1.9.0-py3-none-any.whl (8.5 kB)
+2026-07-22T11:12:34.0789859Z Downloading boto3_stubs-1.43.53-py3-none-any.whl (70 kB)
+2026-07-22T11:12:34.0943577Z Downloading mypy_boto3_apigateway-1.43.0-py3-none-any.whl (51 kB)
+2026-07-22T11:12:34.1039756Z Downloading mypy_boto3_cloudformation-1.43.38-py3-none-any.whl (72 kB)
+2026-07-22T11:12:34.1135512Z Downloading mypy_boto3_ecr-1.43.0-py3-none-any.whl (43 kB)
+2026-07-22T11:12:34.1250933Z Downloading mypy_boto3_iam-1.43.29-py3-none-any.whl (95 kB)
+2026-07-22T11:12:34.1344952Z Downloading mypy_boto3_kinesis-1.43.0-py3-none-any.whl (33 kB)
+2026-07-22T11:12:34.1441007Z Downloading mypy_boto3_lambda-1.43.48-py3-none-any.whl (61 kB)
+2026-07-22T11:12:34.1534355Z Downloading mypy_boto3_s3-1.43.50-py3-none-any.whl (86 kB)
+2026-07-22T11:12:34.1634345Z Downloading mypy_boto3_schemas-1.43.0-py3-none-any.whl (28 kB)
+2026-07-22T11:12:34.1724118Z Downloading mypy_boto3_secretsmanager-1.43.0-py3-none-any.whl (27 kB)
+2026-07-22T11:12:34.1814113Z Downloading mypy_boto3_signer-1.43.0-py3-none-any.whl (28 kB)
+2026-07-22T11:12:34.1902594Z Downloading mypy_boto3_sqs-1.43.0-py3-none-any.whl (33 kB)
+2026-07-22T11:12:34.1990416Z Downloading mypy_boto3_stepfunctions-1.43.7-py3-none-any.whl (36 kB)
+2026-07-22T11:12:34.2080527Z Downloading mypy_boto3_sts-1.43.0-py3-none-any.whl (20 kB)
+2026-07-22T11:12:34.2172103Z Downloading mypy_boto3_xray-1.43.0-py3-none-any.whl (36 kB)
+2026-07-22T11:12:34.2261389Z Downloading certifi-2026.7.22-py3-none-any.whl (136 kB)
+2026-07-22T11:12:34.2354952Z Downloading cffi-2.1.0-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.whl (217 kB)
+2026-07-22T11:12:34.2450837Z Downloading itsdangerous-2.2.0-py3-none-any.whl (16 kB)
+2026-07-22T11:12:34.2483606Z Using cached jsonschema_specifications-2025.9.1-py3-none-any.whl (18 kB)
+2026-07-22T11:12:34.2559502Z Downloading markdown_it_py-4.2.0-py3-none-any.whl (91 kB)
+2026-07-22T11:12:34.2651089Z Downloading mdurl-0.1.2-py3-none-any.whl (10.0 kB)
+2026-07-22T11:12:34.2743183Z Downloading markupsafe-3.0.3-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (22 kB)
+2026-07-22T11:12:34.2835918Z Downloading python_slugify-8.0.4-py2.py3-none-any.whl (10 kB)
+2026-07-22T11:12:34.2928030Z Downloading pytz-2026.2-py2.py3-none-any.whl (510 kB)
+2026-07-22T11:12:34.2976652Z Using cached referencing-0.37.0-py3-none-any.whl (26 kB)
+2026-07-22T11:12:34.2991563Z Using cached regex-2026.7.19-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (801 kB)
+2026-07-22T11:12:34.3008975Z Using cached rpds_py-2026.6.3-cp311-cp311-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (371 kB)
+2026-07-22T11:12:34.3024290Z Using cached six-1.17.0-py2.py3-none-any.whl (11 kB)
+2026-07-22T11:12:34.3037987Z Using cached sympy-1.14.0-py3-none-any.whl (6.3 MB)
+2026-07-22T11:12:34.3074695Z Using cached mpmath-1.3.0-py3-none-any.whl (536 kB)
+2026-07-22T11:12:34.3150058Z Downloading text_unidecode-1.3-py2.py3-none-any.whl (78 kB)
+2026-07-22T11:12:34.3191234Z Using cached typing_inspection-0.4.2-py3-none-any.whl (14 kB)
+2026-07-22T11:12:34.3264123Z Downloading werkzeug-3.1.8-py3-none-any.whl (226 kB)
+2026-07-22T11:12:34.3357782Z Downloading arrow-1.4.0-py3-none-any.whl (68 kB)
+2026-07-22T11:12:34.3452671Z Downloading botocore_stubs-1.43.14-py3-none-any.whl (67 kB)
+2026-07-22T11:12:34.3487634Z Using cached jsonpatch-1.33-py2.py3-none-any.whl (12 kB)
+2026-07-22T11:12:34.3501803Z Using cached jsonpointer-3.1.1-py3-none-any.whl (7.7 kB)
+2026-07-22T11:12:34.3573596Z Downloading pycparser-3.0-py3-none-any.whl (48 kB)
+2026-07-22T11:12:34.3687946Z Downloading types_awscrt-0.34.1-py3-none-any.whl (45 kB)
+2026-07-22T11:12:34.3780566Z Downloading types_s3transfer-0.16.0-py3-none-any.whl (19 kB)
+2026-07-22T11:12:34.3873588Z Downloading tzdata-2026.3-py2.py3-none-any.whl (348 kB)
+2026-07-22T11:12:34.6671800Z Installing collected packages: text-unidecode, pytz, mpmath, chevron, watchdog, urllib3, tzlocal, tzdata, typing_extensions, types-s3transfer, types-awscrt, tomlkit, sympy, six, ruamel_yaml, rpds-py, regex, PyYAML, python-slugify, python-dotenv, pygments, pycparser, networkx, mdurl, markupsafe, jsonpointer, jmespath, itsdangerous, idna, click, charset_normalizer, certifi, blinker, binaryornot, awscrt, attrs, annotated-types, werkzeug, typing-inspection, requests, referencing, python-dateutil, pydantic-core, mypy-boto3-xray, mypy-boto3-sts, mypy-boto3-stepfunctions, mypy-boto3-sqs, mypy-boto3-signer, mypy-boto3-secretsmanager, mypy-boto3-schemas, mypy-boto3-s3, mypy-boto3-lambda, mypy-boto3-kinesis, mypy-boto3-iam, mypy-boto3-ecr, mypy-boto3-cloudformation, mypy-boto3-apigateway, markdown-it-py, jsonpatch, Jinja2, cffi, botocore-stubs, aws_lambda_builders, rich, pydantic, jsonschema-specifications, Flask, docker, dateparser, cryptography, botocore, boto3-stubs, arrow, s3transfer, pyopenssl, jsonschema, cookiecutter, boto3, aws-sam-translator, cfn-lint, aws-sam-cli
+2026-07-22T11:12:41.0585790Z   Attempting uninstall: PyYAML
+2026-07-22T11:12:41.0604242Z     Found existing installation: PyYAML 5.4.1
+2026-07-22T11:12:41.0633282Z     Uninstalling PyYAML-5.4.1:
+2026-07-22T11:12:41.0643903Z       Successfully uninstalled PyYAML-5.4.1
+2026-07-22T11:12:47.4491130Z 
+2026-07-22T11:12:47.4529320Z Successfully installed Flask-3.1.3 Jinja2-3.1.6 PyYAML-6.0.3 annotated-types-0.7.0 arrow-1.4.0 attrs-26.1.0 aws-sam-cli-1.163.0 aws-sam-translator-1.111.0 aws_lambda_builders-1.65.0 awscrt-0.36.0 binaryornot-0.6.0 blinker-1.9.0 boto3-1.43.38 boto3-stubs-1.43.53 botocore-1.43.53 botocore-stubs-1.43.14 certifi-2026.7.22 cffi-2.1.0 cfn-lint-1.52.1 charset_normalizer-3.4.9 chevron-0.14.0 click-8.1.8 cookiecutter-2.7.1 cryptography-48.0.1 dateparser-1.4.1 docker-7.1.0 idna-3.18 itsdangerous-2.2.0 jmespath-1.1.0 jsonpatch-1.33 jsonpointer-3.1.1 jsonschema-4.26.0 jsonschema-specifications-2025.9.1 markdown-it-py-4.2.0 markupsafe-3.0.3 mdurl-0.1.2 mpmath-1.3.0 mypy-boto3-apigateway-1.43.0 mypy-boto3-cloudformation-1.43.38 mypy-boto3-ecr-1.43.0 mypy-boto3-iam-1.43.29 mypy-boto3-kinesis-1.43.0 mypy-boto3-lambda-1.43.48 mypy-boto3-s3-1.43.50 mypy-boto3-schemas-1.43.0 mypy-boto3-secretsmanager-1.43.0 mypy-boto3-signer-1.43.0 mypy-boto3-sqs-1.43.0 mypy-boto3-stepfunctions-1.43.7 mypy-boto3-sts-1.43.0 mypy-boto3-xray-1.43.0 networkx-3.6.1 pycparser-3.0 pydantic-2.13.4 pydantic-core-2.46.4 pygments-2.20.0 pyopenssl-26.2.0 python-dateutil-2.9.0.post0 python-dotenv-1.2.2 python-slugify-8.0.4 pytz-2026.2 referencing-0.37.0 regex-2026.7.19 requests-2.34.2 rich-15.0.0 rpds-py-2026.6.3 ruamel_yaml-0.19.1 s3transfer-0.19.1 six-1.17.0 sympy-1.14.0 text-unidecode-1.3 tomlkit-0.15.0 types-awscrt-0.34.1 types-s3transfer-0.16.0 typing-inspection-0.4.2 typing_extensions-4.16.0 tzdata-2026.3 tzlocal-5.3.1 urllib3-2.7.0 watchdog-4.0.2 werkzeug-3.1.8
+2026-07-22T11:12:48.1719935Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T11:12:48.1721266Z ##[group]Run aws-actions/configure-aws-credentials@v4
+2026-07-22T11:12:48.1721590Z with:
+2026-07-22T11:12:48.1721934Z   aws-access-key-id: ***
+2026-07-22T11:12:48.1722292Z   aws-secret-access-key: ***
+2026-07-22T11:12:48.1722556Z   aws-region: us-east-1
+2026-07-22T11:12:48.1722805Z   audience: sts.amazonaws.com
+2026-07-22T11:12:48.1723075Z   output-env-credentials: true
+2026-07-22T11:12:48.1723337Z env:
+2026-07-22T11:12:48.1723557Z   AWS_REGION: us-east-1
+2026-07-22T11:12:48.1723800Z   AWS_DEFAULT_REGION: us-east-1
+2026-07-22T11:12:48.1724106Z   TENNIS_STACK_NAME: parlay-platform-tennis-ml-prod
+2026-07-22T11:12:48.1724493Z   MLB_STACK_NAME: parlay-platform-dev
+2026-07-22T11:12:48.1724841Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.1725271Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T11:12:48.1725693Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.1726094Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.1726488Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.1726865Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T11:12:48.1727194Z ##[endgroup]
+2026-07-22T11:12:48.3473064Z Proceeding with IAM user credentials
+2026-07-22T11:12:48.3576519Z ##[group]Run set -euo pipefail
+2026-07-22T11:12:48.3576864Z set -euo pipefail
+2026-07-22T11:12:48.3577191Z test -n "${TENNIS_ODDS_API_KEY_VALUE:-}" || {
+2026-07-22T11:12:48.3577641Z   echo "::error::Missing dedicated TENNIS_ODDS_API_KEY repository secret"
+2026-07-22T11:12:48.3578039Z   exit 1
+2026-07-22T11:12:48.3578259Z }
+2026-07-22T11:12:48.3579071Z if [ -n "${MLB_ODDS_API_KEY_VALUE:-}" ] && [ "$TENNIS_ODDS_API_KEY_VALUE" = "$MLB_ODDS_API_KEY_VALUE" ]; then
+2026-07-22T11:12:48.3580171Z   echo "::error::TENNIS_ODDS_API_KEY must be independently provisioned, not the MLB ODDS_API_KEY"
+2026-07-22T11:12:48.3580925Z   exit 1
+2026-07-22T11:12:48.3581253Z fi
+2026-07-22T11:12:48.3581583Z ./scripts/deploy_aws.sh
+2026-07-22T11:12:48.3673947Z shell: /usr/bin/bash -e {0}
+2026-07-22T11:12:48.3674237Z env:
+2026-07-22T11:12:48.3674479Z   AWS_REGION: us-east-1
+2026-07-22T11:12:48.3674799Z   AWS_DEFAULT_REGION: us-east-1
+2026-07-22T11:12:48.3675117Z   TENNIS_STACK_NAME: parlay-platform-tennis-ml-prod
+2026-07-22T11:12:48.3675630Z   MLB_STACK_NAME: parlay-platform-dev
+2026-07-22T11:12:48.3675993Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.3676421Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T11:12:48.3676948Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.3677336Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.3677721Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.3678100Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T11:12:48.3678859Z   AWS_ACCESS_KEY_ID: ***
+2026-07-22T11:12:48.3679233Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T11:12:48.3679499Z   TENNIS_ODDS_API_KEY_VALUE: 
+2026-07-22T11:12:48.3679830Z   MLB_ODDS_API_KEY_VALUE: ***
+2026-07-22T11:12:48.3680236Z ##[endgroup]
+2026-07-22T11:12:48.3801086Z ##[error]Missing dedicated TENNIS_ODDS_API_KEY repository secret
+2026-07-22T11:12:48.3810689Z ##[error]Process completed with exit code 1.
+2026-07-22T11:12:48.3890158Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T11:12:48.3891386Z ##[group]Run actions/upload-artifact@v4
+2026-07-22T11:12:48.3891671Z with:
+2026-07-22T11:12:48.3892041Z   name: tennis-ml-deployment-evidence-5a70551f15cef5f51694b01e9c341a7107df548a
+2026-07-22T11:12:48.3893393Z   path: /tmp/tennis-deployment-evidence.json
+/tmp/tennis-stack-after.json
+/tmp/tennis-resources-after.json
+/tmp/tennis-model-version.json
+/tmp/tennis-ml-status.json
+/tmp/tennis-ingest-smoke.json
+/tmp/tennis-outcome-smoke.json
+/tmp/tennis-training-smoke.json
+/tmp/mlb-stack-before.sha256
+/tmp/mlb-stack-after.sha256
+
+2026-07-22T11:12:48.3894604Z   if-no-files-found: warn
+2026-07-22T11:12:48.3894852Z   retention-days: 30
+2026-07-22T11:12:48.3895143Z   compression-level: 6
+2026-07-22T11:12:48.3895377Z   overwrite: false
+2026-07-22T11:12:48.3895726Z   include-hidden-files: false
+2026-07-22T11:12:48.3896074Z env:
+2026-07-22T11:12:48.3896324Z   AWS_REGION: us-east-1
+2026-07-22T11:12:48.3896674Z   AWS_DEFAULT_REGION: us-east-1
+2026-07-22T11:12:48.3896988Z   TENNIS_STACK_NAME: parlay-platform-tennis-ml-prod
+2026-07-22T11:12:48.3897331Z   MLB_STACK_NAME: parlay-platform-dev
+2026-07-22T11:12:48.3897671Z   pythonLocation: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.3898110Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib/pkgconfig
+2026-07-22T11:12:48.3898791Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.3899235Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.3899668Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.11.15/x64
+2026-07-22T11:12:48.3900059Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.11.15/x64/lib
+2026-07-22T11:12:48.3900582Z   AWS_ACCESS_KEY_ID: ***
+2026-07-22T11:12:48.3900937Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T11:12:48.3901192Z ##[endgroup]
+2026-07-22T11:12:48.5622447Z (node:2469) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+2026-07-22T11:12:48.5623180Z (Use `node --trace-deprecation ...` to show where the warning was created)
+2026-07-22T11:12:48.5717811Z Multiple search paths detected. Calculating the least common ancestor of all paths
+2026-07-22T11:12:48.5724369Z The least common ancestor is /tmp. This will be the root directory of the artifact
+2026-07-22T11:12:48.5731726Z ##[warning]No files were found with the provided path: /tmp/tennis-deployment-evidence.json
+/tmp/tennis-stack-after.json
+/tmp/tennis-resources-after.json
+/tmp/tennis-model-version.json
+/tmp/tennis-ml-status.json
+/tmp/tennis-ingest-smoke.json
+/tmp/tennis-outcome-smoke.json
+/tmp/tennis-training-smoke.json
+/tmp/mlb-stack-before.sha256
+/tmp/mlb-stack-after.sha256. No artifacts will be uploaded.
+2026-07-22T11:12:48.5919448Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T11:12:48.5920657Z Post job cleanup.
+2026-07-22T11:12:48.7125426Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T11:12:48.7126602Z Post job cleanup.
+2026-07-22T11:12:48.8025487Z [command]/usr/bin/git version
+2026-07-22T11:12:48.8072177Z git version 2.54.0
+2026-07-22T11:12:48.8110250Z Temporarily overriding HOME='/home/runner/work/_temp/eb2e947f-07e3-4a9a-8adf-ed69589efe54' before making global git config changes
+2026-07-22T11:12:48.8112130Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-22T11:12:48.8117148Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-22T11:12:48.8162737Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-22T11:12:48.8212224Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-22T11:12:48.8499496Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-22T11:12:48.8530841Z http.https://github.com/.extraheader
+2026-07-22T11:12:48.8544803Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-22T11:12:48.8584217Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-22T11:12:48.8920337Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-22T11:12:48.8939711Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-22T11:12:48.9366346Z Cleaning up orphan processes
+2026-07-22T11:12:48.9627663Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/setup-python@v5, actions/upload-artifact@v4, aws-actions/configure-aws-credentials@v4, aws-actions/setup-sam@v2. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
