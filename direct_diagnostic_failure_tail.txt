@@ -1,0 +1,180 @@
+2026-07-22T03:58:22.4355265Z [36;1muri = urllib.parse.unquote(os.environ["FUNCTION_ARN"])[0m
+2026-07-22T03:58:22.4356282Z [36;1mmatch = re.search(r"/functions/(arn:[^/]+)/invocations$", uri)[0m
+2026-07-22T03:58:22.4357345Z [36;1mif not match:[0m
+2026-07-22T03:58:22.4358458Z [36;1m    raise SystemExit("Unable to resolve lock-status Lambda from API integration")[0m
+2026-07-22T03:58:22.4359591Z [36;1mprint(match.group(1).rsplit(":", 1)[-1])[0m
+2026-07-22T03:58:22.4360298Z [36;1mPY[0m
+2026-07-22T03:58:22.4360843Z [36;1mfunction_name=$(cat /tmp/function_name.txt)[0m
+2026-07-22T03:58:22.4361645Z [36;1maws lambda get-function-configuration \[0m
+2026-07-22T03:58:22.4362413Z [36;1m  --function-name "$function_name" \[0m
+2026-07-22T03:58:22.4363109Z [36;1m  --region "$region" \[0m
+2026-07-22T03:58:22.4364657Z [36;1m  --query '{FunctionName:FunctionName,Timeout:Timeout,MemorySize:MemorySize,LastModified:LastModified,RevisionId:RevisionId,Runtime:Runtime}' \[0m
+2026-07-22T03:58:22.4366344Z [36;1m  --output json >/tmp/function_configuration.json[0m
+2026-07-22T03:58:22.4367327Z [36;1m[0m
+2026-07-22T03:58:22.4367840Z [36;1mcat >/tmp/lock_status_event.json <<'JSON'[0m
+2026-07-22T03:58:22.4368510Z [36;1m{[0m
+2026-07-22T03:58:22.4368992Z [36;1m  "resource": "/v1/mlb/locks/status",[0m
+2026-07-22T03:58:22.4369681Z [36;1m  "path": "/v1/mlb/locks/status",[0m
+2026-07-22T03:58:22.4370322Z [36;1m  "httpMethod": "GET",[0m
+2026-07-22T03:58:22.4371387Z [36;1m  "headers": {"accept": "application/json", "user-agent": "inqsi-direct-lock-status-diagnostic/1.0"},[0m
+2026-07-22T03:58:22.4372532Z [36;1m  "multiValueHeaders": {},[0m
+2026-07-22T03:58:22.4373165Z [36;1m  "queryStringParameters": null,[0m
+2026-07-22T03:58:22.4373898Z [36;1m  "multiValueQueryStringParameters": null,[0m
+2026-07-22T03:58:22.4374803Z [36;1m  "pathParameters": null,[0m
+2026-07-22T03:58:22.4375423Z [36;1m  "stageVariables": null,[0m
+2026-07-22T03:58:22.4376020Z [36;1m  "requestContext": {[0m
+2026-07-22T03:58:22.4376947Z [36;1m    "resourcePath": "/v1/mlb/locks/status",[0m
+2026-07-22T03:58:22.4377682Z [36;1m    "httpMethod": "GET",[0m
+2026-07-22T03:58:22.4378335Z [36;1m    "path": "/Prod/v1/mlb/locks/status",[0m
+2026-07-22T03:58:22.4379024Z [36;1m    "stage": "Prod",[0m
+2026-07-22T03:58:22.4380023Z [36;1m    "identity": {"sourceIp": "127.0.0.1", "userAgent": "inqsi-direct-lock-status-diagnostic/1.0"},[0m
+2026-07-22T03:58:22.4381209Z [36;1m    "requestId": "direct-lock-status-diagnostic"[0m
+2026-07-22T03:58:22.4381930Z [36;1m  },[0m
+2026-07-22T03:58:22.4382377Z [36;1m  "body": null,[0m
+2026-07-22T03:58:22.4382909Z [36;1m  "isBase64Encoded": false[0m
+2026-07-22T03:58:22.4383489Z [36;1m}[0m
+2026-07-22T03:58:22.4383904Z [36;1mJSON[0m
+2026-07-22T03:58:22.4384339Z [36;1m[0m
+2026-07-22T03:58:22.4384789Z [36;1mdirect_start=$(date +%s%3N)[0m
+2026-07-22T03:58:22.4385663Z [36;1maws --cli-connect-timeout 10 --cli-read-timeout 360 lambda invoke \[0m
+2026-07-22T03:58:22.4386831Z [36;1m  --function-name "$function_name" \[0m
+2026-07-22T03:58:22.4387520Z [36;1m  --region "$region" \[0m
+2026-07-22T03:58:22.4388217Z [36;1m  --payload fileb:///tmp/lock_status_event.json \[0m
+2026-07-22T03:58:22.4389032Z [36;1m  --cli-binary-format raw-in-base64-out \[0m
+2026-07-22T03:58:22.4389729Z [36;1m  --log-type Tail \[0m
+2026-07-22T03:58:22.4390321Z [36;1m  /tmp/direct_lambda_response.json \[0m
+2026-07-22T03:58:22.4391006Z [36;1m  >/tmp/direct_lambda_meta.json[0m
+2026-07-22T03:58:22.4391640Z [36;1mdirect_end=$(date +%s%3N)[0m
+2026-07-22T03:58:22.4392360Z [36;1mdirect_elapsed_ms=$((direct_end - direct_start))[0m
+2026-07-22T03:58:22.4393084Z [36;1m[0m
+2026-07-22T03:58:22.4393926Z [36;1mAPI_URL="$api_url" DIRECT_MS="$direct_elapsed_ms" TARGET_SHA="$TARGET_SHA" python - <<'PY'[0m
+2026-07-22T03:58:22.4394994Z [36;1mimport base64[0m
+2026-07-22T03:58:22.4395488Z [36;1mimport json[0m
+2026-07-22T03:58:22.4395963Z [36;1mimport os[0m
+2026-07-22T03:58:22.4396434Z [36;1mimport time[0m
+2026-07-22T03:58:22.4397125Z [36;1mimport urllib.error[0m
+2026-07-22T03:58:22.4397690Z [36;1mimport urllib.request[0m
+2026-07-22T03:58:22.4398270Z [36;1mfrom pathlib import Path[0m
+2026-07-22T03:58:22.4398839Z [36;1m[0m
+2026-07-22T03:58:22.4399628Z [36;1mmeta = json.loads(Path("/tmp/direct_lambda_meta.json").read_text(encoding="utf-8"))[0m
+2026-07-22T03:58:22.4401294Z [36;1mraw_response = json.loads(Path("/tmp/direct_lambda_response.json").read_text(encoding="utf-8"))[0m
+2026-07-22T03:58:22.4402473Z [36;1mdirect_body = raw_response.get("body")[0m
+2026-07-22T03:58:22.4403132Z [36;1mtry:[0m
+2026-07-22T03:58:22.4403991Z [36;1m    decoded_body = json.loads(direct_body) if isinstance(direct_body, str) else direct_body[0m
+2026-07-22T03:58:22.4405061Z [36;1mexcept json.JSONDecodeError:[0m
+2026-07-22T03:58:22.4405691Z [36;1m    decoded_body = None[0m
+2026-07-22T03:58:22.4406889Z [36;1mlog_tail = base64.b64decode(meta.get("LogResult") or "").decode("utf-8", errors="replace")[0m
+2026-07-22T03:58:22.4407933Z [36;1m[0m
+2026-07-22T03:58:22.4408566Z [36;1murl = os.environ["API_URL"].rstrip("/") + "/v1/mlb/locks/status"[0m
+2026-07-22T03:58:22.4409454Z [36;1mrequest = urllib.request.Request([0m
+2026-07-22T03:58:22.4410081Z [36;1m    url,[0m
+2026-07-22T03:58:22.4410535Z [36;1m    headers={[0m
+2026-07-22T03:58:22.4411090Z [36;1m        "accept": "application/json",[0m
+2026-07-22T03:58:22.4411949Z [36;1m        "user-agent": "inqsi-warmed-lock-status-diagnostic/1.0",[0m
+2026-07-22T03:58:22.4412764Z [36;1m    },[0m
+2026-07-22T03:58:22.4413199Z [36;1m)[0m
+2026-07-22T03:58:22.4413645Z [36;1mstarted = time.monotonic()[0m
+2026-07-22T03:58:22.4414244Z [36;1mhttp_status = None[0m
+2026-07-22T03:58:22.4414783Z [36;1mhttp_error = None[0m
+2026-07-22T03:58:22.4415328Z [36;1mhttp_payload = None[0m
+2026-07-22T03:58:22.4416002Z [36;1mtry:[0m
+2026-07-22T03:58:22.4416949Z [36;1m    with urllib.request.urlopen(request, timeout=40) as response:[0m
+2026-07-22T03:58:22.4417893Z [36;1m        http_status = int(response.getcode())[0m
+2026-07-22T03:58:22.4418604Z [36;1m        raw = response.read()[0m
+2026-07-22T03:58:22.4419318Z [36;1m        http_payload = json.loads(raw.decode("utf-8"))[0m
+2026-07-22T03:58:22.4420120Z [36;1mexcept urllib.error.HTTPError as exc:[0m
+2026-07-22T03:58:22.4420827Z [36;1m    http_status = int(exc.code)[0m
+2026-07-22T03:58:22.4421487Z [36;1m    http_error = f"HTTP {exc.code}"[0m
+2026-07-22T03:58:22.4422154Z [36;1mexcept Exception as exc:[0m
+2026-07-22T03:58:22.4422819Z [36;1m    http_error = f"{type(exc).__name__}:{exc}"[0m
+2026-07-22T03:58:22.4423723Z [36;1mhttp_elapsed_ms = round((time.monotonic() - started) * 1000)[0m
+2026-07-22T03:58:22.4424531Z [36;1m[0m
+2026-07-22T03:58:22.4425018Z [36;1mfunction_configuration = json.loads([0m
+2026-07-22T03:58:22.4425970Z [36;1m    Path("/tmp/function_configuration.json").read_text(encoding="utf-8")[0m
+2026-07-22T03:58:22.4427122Z [36;1m)[0m
+2026-07-22T03:58:22.4427564Z [36;1mreport_lines = [[0m
+2026-07-22T03:58:22.4428104Z [36;1m    line[0m
+2026-07-22T03:58:22.4428638Z [36;1m    for line in log_tail.splitlines()[0m
+2026-07-22T03:58:22.4429603Z [36;1m    if "REPORT RequestId:" in line or "Task timed out" in line or "ERROR" in line[0m
+2026-07-22T03:58:22.4430545Z [36;1m][0m
+2026-07-22T03:58:22.4430981Z [36;1mreport = {[0m
+2026-07-22T03:58:22.4431556Z [36;1m    "targetSha": os.environ["TARGET_SHA"],[0m
+2026-07-22T03:58:22.4432304Z [36;1m    "function": function_configuration,[0m
+2026-07-22T03:58:22.4432991Z [36;1m    "directInvoke": {[0m
+2026-07-22T03:58:22.4433647Z [36;1m        "elapsedMs": int(os.environ["DIRECT_MS"]),[0m
+2026-07-22T03:58:22.4434488Z [36;1m        "statusCode": raw_response.get("statusCode"),[0m
+2026-07-22T03:58:22.4435356Z [36;1m        "functionError": meta.get("FunctionError"),[0m
+2026-07-22T03:58:22.4436231Z [36;1m        "executedVersion": meta.get("ExecutedVersion"),[0m
+2026-07-22T03:58:22.4437174Z [36;1m        "payloadSummary": {[0m
+2026-07-22T03:58:22.4437821Z [36;1m            key: decoded_body.get(key)[0m
+2026-07-22T03:58:22.4438481Z [36;1m            for key in ([0m
+2026-07-22T03:58:22.4439052Z [36;1m                "ok",[0m
+2026-07-22T03:58:22.4439602Z [36;1m                "sport",[0m
+2026-07-22T03:58:22.4440184Z [36;1m                "slateDateEt",[0m
+2026-07-22T03:58:22.4440971Z [36;1m                "gameCount",[0m
+2026-07-22T03:58:22.4441576Z [36;1m                "pullCount",[0m
+2026-07-22T03:58:22.4442230Z [36;1m                "lockedPredictionCount",[0m
+2026-07-22T03:58:22.4442960Z [36;1m                "lockedStatusCount",[0m
+2026-07-22T03:58:22.4443653Z [36;1m                "operationalDefect",[0m
+2026-07-22T03:58:22.4444295Z [36;1m            )[0m
+2026-07-22T03:58:22.4445003Z [36;1m            if isinstance(decoded_body, dict) and key in decoded_body[0m
+2026-07-22T03:58:22.4445861Z [36;1m        },[0m
+2026-07-22T03:58:22.4446407Z [36;1m        "reportLines": report_lines[-8:],[0m
+2026-07-22T03:58:22.4447196Z [36;1m    },[0m
+2026-07-22T03:58:22.4447664Z [36;1m    "warmedHttp": {[0m
+2026-07-22T03:58:22.4448267Z [36;1m        "elapsedMs": http_elapsed_ms,[0m
+2026-07-22T03:58:22.4448963Z [36;1m        "statusCode": http_status,[0m
+2026-07-22T03:58:22.4449613Z [36;1m        "error": http_error,[0m
+2026-07-22T03:58:22.4450238Z [36;1m        "payloadSummary": {[0m
+2026-07-22T03:58:22.4450880Z [36;1m            key: http_payload.get(key)[0m
+2026-07-22T03:58:22.4451546Z [36;1m            for key in ([0m
+2026-07-22T03:58:22.4452132Z [36;1m                "ok",[0m
+2026-07-22T03:58:22.4452676Z [36;1m                "sport",[0m
+2026-07-22T03:58:22.4453254Z [36;1m                "slateDateEt",[0m
+2026-07-22T03:58:22.4453862Z [36;1m                "gameCount",[0m
+2026-07-22T03:58:22.4454471Z [36;1m                "pullCount",[0m
+2026-07-22T03:58:22.4455243Z [36;1m                "lockedPredictionCount",[0m
+2026-07-22T03:58:22.4455970Z [36;1m                "lockedStatusCount",[0m
+2026-07-22T03:58:22.4456778Z [36;1m                "operationalDefect",[0m
+2026-07-22T03:58:22.4457420Z [36;1m            )[0m
+2026-07-22T03:58:22.4458137Z [36;1m            if isinstance(http_payload, dict) and key in http_payload[0m
+2026-07-22T03:58:22.4458968Z [36;1m        },[0m
+2026-07-22T03:58:22.4459446Z [36;1m    },[0m
+2026-07-22T03:58:22.4459888Z [36;1m}[0m
+2026-07-22T03:58:22.4460483Z [36;1mPath("live_lock_status_diagnostic.json").write_text([0m
+2026-07-22T03:58:22.4461389Z [36;1m    json.dumps(report, indent=2, sort_keys=True) + "\n",[0m
+2026-07-22T03:58:22.4462161Z [36;1m    encoding="utf-8",[0m
+2026-07-22T03:58:22.4462691Z [36;1m)[0m
+2026-07-22T03:58:22.4463113Z [36;1mPY[0m
+2026-07-22T03:58:22.4548925Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-22T03:58:22.4549732Z env:
+2026-07-22T03:58:22.4550268Z   AWS_DEFAULT_REGION: ***
+2026-07-22T03:58:22.4550830Z   AWS_REGION: ***
+2026-07-22T03:58:22.4551364Z   AWS_ACCESS_KEY_ID: ***
+2026-07-22T03:58:22.4552090Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T03:58:22.4552648Z   AWS_MAX_ATTEMPTS: 1
+2026-07-22T03:58:22.4553231Z   TARGET_SHA: 246daecb3960518fb59bb69c6891989d50fb7308
+2026-07-22T03:58:22.4553937Z ##[endgroup]
+2026-07-22T03:58:27.6177711Z 
+2026-07-22T03:58:27.6178631Z aws: [ERROR]: An error occurred (NotFoundException) when calling the GetResources operation (reached max retries: 0): Invalid API identifier specified 735707987003:7nz8g8unyd
+2026-07-22T03:58:27.6179608Z None
+2026-07-22T03:58:27.6937406Z ##[error]Process completed with exit code 254.
+2026-07-22T03:58:27.7109045Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T03:58:27.7110455Z Post job cleanup.
+2026-07-22T03:58:27.8281283Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T03:58:27.8282705Z Post job cleanup.
+2026-07-22T03:58:27.9128988Z [command]/usr/bin/git version
+2026-07-22T03:58:27.9170901Z git version 2.54.0
+2026-07-22T03:58:27.9212775Z Temporarily overriding HOME='/home/runner/work/_temp/507a900f-1185-47a1-ade5-285bb5d5e9b4' before making global git config changes
+2026-07-22T03:58:27.9214421Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-22T03:58:27.9219567Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-22T03:58:27.9268368Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-22T03:58:27.9301465Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-22T03:58:27.9557882Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-22T03:58:27.9582631Z http.https://github.com/.extraheader
+2026-07-22T03:58:27.9596149Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-22T03:58:27.9632296Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-22T03:58:27.9907554Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-22T03:58:27.9937830Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-22T03:58:28.0360421Z Cleaning up orphan processes
+2026-07-22T03:58:28.0684637Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, aws-actions/configure-aws-credentials@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
