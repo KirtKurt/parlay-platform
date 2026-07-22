@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Run the installed MLB scoring engine read-only and explain storage eligibility.
+"""Diagnose the installed MLB scoring engine without writing production data.
 
-This diagnostic intentionally calls ``predict_all(..., store=False)``. It may
-read live DynamoDB state but must not write candidate or locked predictions.
+Two paths are exercised:
+
+1. ``store=False`` reproduces the public persisted-read authority.
+2. ``store=True`` is run with ``_store_prediction`` temporarily replaced by a
+   no-op interceptor. This activates the protected candidate-generation path
+   and all of its storage-validation wrappers while preventing DynamoDB writes.
 """
 
 from __future__ import annotations
@@ -13,12 +17,12 @@ import json
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 from zoneinfo import ZoneInfo
 
 SLATE_TZ = ZoneInfo("America/New_York")
 PROOF_TYPE = "MLB_SCORING_ENGINE_READ_ONLY_DIAGNOSTIC"
-VERSION = "MLB-SCORING-ENGINE-DIAGNOSTIC-v1"
+VERSION = "MLB-SCORING-ENGINE-DIAGNOSTIC-v2-public-vs-protected-no-write"
 
 
 def _plain(value: Any) -> Any:
@@ -33,6 +37,33 @@ def _plain(value: Any) -> Any:
 
 def _error_text(exc: Exception) -> str:
     return f"{type(exc).__name__}: {exc}"
+
+
+def _summary(result: Dict[str, Any]) -> Dict[str, Any]:
+    fields = (
+        "ok",
+        "count",
+        "gameCount",
+        "pullCount",
+        "rawPullCount",
+        "allGamesPredicted",
+        "stored",
+        "storedCount",
+        "preLockStoredCount",
+        "preLockStorageCandidateCount",
+        "preLockStorageComplete",
+        "preLockStorageErrors",
+        "canonicalLockedStorageCandidateCount",
+        "canonicalLockedStoredCount",
+        "canonicalLockedStorageComplete",
+        "canonicalLockedStorageErrors",
+        "canonicalLockedStorageSuppressedUnauthorizedCount",
+        "operationalDefect",
+        "predictionCoverageComplete",
+        "displayStatusCoverageComplete",
+        "readAuthority",
+    )
+    return {field: _plain(result.get(field)) for field in fields if field in result}
 
 
 def _row_validation(engine: Any, row: Dict[str, Any]) -> Dict[str, Any]:
@@ -68,6 +99,74 @@ def _row_validation(engine: Any, row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _diagnostic_rows(engine: Any, result: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int, int]:
+    predictions = [row for row in (result.get("predictions") or []) if isinstance(row, dict)]
+    rows: List[Dict[str, Any]] = []
+    validation_failure_count = 0
+    probability_failure_count = 0
+    for row in predictions:
+        validation = _row_validation(engine, row)
+        if not validation["storageEligible"]:
+            validation_failure_count += 1
+        if validation["probabilityContractErrors"]:
+            probability_failure_count += 1
+        rows.append({
+            "gameId": row.get("gameId"),
+            "gameIdentity": row.get("gameIdentity"),
+            "officialGamePk": row.get("officialGamePk"),
+            "awayTeam": row.get("awayTeam"),
+            "homeTeam": row.get("homeTeam"),
+            "commenceTime": row.get("commenceTime"),
+            "predictedWinner": row.get("predictedWinner"),
+            "predictedSide": row.get("predictedSide"),
+            "score": row.get("score"),
+            "winProbabilityPct": row.get("winProbabilityPct"),
+            "displayPrediction": row.get("displayPrediction"),
+            "lockedPrediction": row.get("lockedPrediction"),
+            "officialPrediction": row.get("officialPrediction"),
+            "officialPredictionStatus": row.get("officialPredictionStatus"),
+            "recommendationStatus": row.get("recommendationStatus"),
+            "blockedReasons": row.get("blockedReasons") or [],
+            "preLockStore": _plain(row.get("preLockStore")),
+            "preLockStoreError": row.get("preLockStoreError"),
+            "canonicalLockedStoreSuppressed": row.get("canonicalLockedStoreSuppressed"),
+            "canonicalLockedStoreSuppressionReason": row.get("canonicalLockedStoreSuppressionReason"),
+            **validation,
+        })
+    return rows, validation_failure_count, probability_failure_count
+
+
+def _candidate_generation_no_write(engine: Any, slate_date: str) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+    intercepted: List[Dict[str, Any]] = []
+    original_store = getattr(engine, "_store_prediction", None)
+    if not callable(original_store):
+        raise RuntimeError("engine_store_prediction_interceptor_target_unavailable")
+
+    def no_write_store(row: Dict[str, Any]) -> Dict[str, Any]:
+        intercepted.append({
+            "gameId": row.get("gameId"),
+            "gameIdentity": row.get("gameIdentity"),
+            "officialGamePk": row.get("officialGamePk"),
+            "predictedWinner": row.get("predictedWinner"),
+            "predictedSide": row.get("predictedSide"),
+            "lockedPrediction": row.get("lockedPrediction"),
+            "officialPredictionStatus": row.get("officialPredictionStatus"),
+        })
+        return {
+            "ok": True,
+            "stored": False,
+            "diagnosticNoWrite": True,
+            "storageClass": "INTERCEPTED_READ_ONLY_DIAGNOSTIC",
+        }
+
+    engine._store_prediction = no_write_store
+    try:
+        result = engine.predict_all(slate_date, store=True, limit=500)
+    finally:
+        engine._store_prediction = original_store
+    return _plain(result or {}), intercepted
+
+
 def build_report(slate_date: str) -> Dict[str, Any]:
     now = datetime.now(timezone.utc)
     runtime_status: Dict[str, Any]
@@ -94,80 +193,37 @@ def build_report(slate_date: str) -> Dict[str, Any]:
             "secretExposed": False,
         }
 
+    public_result: Dict[str, Any] = {}
+    public_error: Optional[str] = None
     try:
-        result = _plain(engine.predict_all(slate_date, store=False, limit=500))
+        public_result = _plain(engine.predict_all(slate_date, store=False, limit=500) or {})
     except Exception as exc:
-        return {
-            "ok": False,
-            "proofType": PROOF_TYPE,
-            "version": VERSION,
-            "createdAtUtc": now.isoformat().replace("+00:00", "Z"),
-            "createdAtEt": now.astimezone(SLATE_TZ).isoformat(),
-            "slateDateEt": slate_date,
-            "readOnly": True,
-            "runtimeInstall": runtime_status,
-            "engine": getattr(engine, "ENGINE", None),
-            "modelVersion": getattr(engine, "MODEL_VERSION", None),
-            "engineRunError": _error_text(exc),
-            "secretExposed": False,
-        }
+        public_error = _error_text(exc)
 
-    predictions = [row for row in (result.get("predictions") or []) if isinstance(row, dict)]
-    rows = []
-    validation_failure_count = 0
-    probability_failure_count = 0
-    for row in predictions:
-        validation = _row_validation(engine, row)
-        if not validation["storageEligible"]:
-            validation_failure_count += 1
-        if validation["probabilityContractErrors"]:
-            probability_failure_count += 1
-        rows.append({
-            "gameId": row.get("gameId"),
-            "gameIdentity": row.get("gameIdentity"),
-            "officialGamePk": row.get("officialGamePk"),
-            "awayTeam": row.get("awayTeam"),
-            "homeTeam": row.get("homeTeam"),
-            "commenceTime": row.get("commenceTime"),
-            "predictedWinner": row.get("predictedWinner"),
-            "predictedSide": row.get("predictedSide"),
-            "score": row.get("score"),
-            "winProbabilityPct": row.get("winProbabilityPct"),
-            "displayPrediction": row.get("displayPrediction"),
-            "lockedPrediction": row.get("lockedPrediction"),
-            "officialPrediction": row.get("officialPrediction"),
-            "officialPredictionStatus": row.get("officialPredictionStatus"),
-            "recommendationStatus": row.get("recommendationStatus"),
-            "blockedReasons": row.get("blockedReasons") or [],
-            **validation,
-        })
+    candidate_result: Dict[str, Any] = {}
+    candidate_error: Optional[str] = None
+    intercepted: List[Dict[str, Any]] = []
+    try:
+        candidate_result, intercepted = _candidate_generation_no_write(engine, slate_date)
+    except Exception as exc:
+        candidate_error = _error_text(exc)
 
-    summary_fields = (
-        "ok",
-        "count",
-        "gameCount",
-        "pullCount",
-        "allGamesPredicted",
-        "stored",
-        "storedCount",
-        "preLockStoredCount",
-        "preLockStorageCandidateCount",
-        "preLockStorageComplete",
-        "preLockStorageErrors",
-        "canonicalLockedStorageCandidateCount",
-        "canonicalLockedStoredCount",
-        "canonicalLockedStorageComplete",
-        "operationalDefect",
-    )
-    result_summary = {field: result.get(field) for field in summary_fields if field in result}
+    rows, validation_failures, probability_failures = _diagnostic_rows(engine, candidate_result)
+    public_rows = [row for row in (public_result.get("predictions") or []) if isinstance(row, dict)]
     return {
-        "ok": bool(result.get("ok")) and len(predictions) > 0,
+        "ok": candidate_error is None and bool(candidate_result.get("ok")) and len(rows) > 0,
         "proofType": PROOF_TYPE,
         "version": VERSION,
         "createdAtUtc": now.isoformat().replace("+00:00", "Z"),
         "createdAtEt": now.astimezone(SLATE_TZ).isoformat(),
         "slateDateEt": slate_date,
         "readOnly": True,
+        "writePrevention": {
+            "method": "temporarily_replace_engine__store_prediction_with_no_op",
+            "interceptedStoreAttemptCount": len(intercepted),
+            "interceptedRows": intercepted,
+            "productionWritesPerformed": False,
+        },
         "runtimeInstall": runtime_status,
         "engine": getattr(engine, "ENGINE", None),
         "modelVersion": getattr(engine, "MODEL_VERSION", None),
@@ -176,12 +232,20 @@ def build_report(slate_date: str) -> Dict[str, Any]:
             for key, value in vars(engine).items()
             if key.startswith("MLB_") and key.endswith("_VERSION") and isinstance(value, (str, int, float, bool))
         },
-        "resultSummary": result_summary,
-        "calculatedPredictionCount": len(predictions),
-        "storageValidationPassCount": len(predictions) - validation_failure_count,
-        "storageValidationFailureCount": validation_failure_count,
-        "probabilityContractFailureCount": probability_failure_count,
-        "rows": rows,
+        "publicPersistedRead": {
+            "error": public_error,
+            "summary": _summary(public_result),
+            "predictionCount": len(public_rows),
+        },
+        "protectedCandidateGenerationNoWrite": {
+            "error": candidate_error,
+            "summary": _summary(candidate_result),
+            "calculatedPredictionCount": len(rows),
+            "storageValidationPassCount": len(rows) - validation_failures,
+            "storageValidationFailureCount": validation_failures,
+            "probabilityContractFailureCount": probability_failures,
+            "rows": rows,
+        },
         "secretExposed": False,
     }
 
@@ -195,12 +259,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     path = Path(args.output)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
+    candidate = report.get("protectedCandidateGenerationNoWrite") or {}
     print(json.dumps({
         "ok": report.get("ok"),
-        "calculatedPredictionCount": report.get("calculatedPredictionCount"),
-        "storageValidationPassCount": report.get("storageValidationPassCount"),
-        "storageValidationFailureCount": report.get("storageValidationFailureCount"),
-        "resultSummary": report.get("resultSummary"),
+        "publicPersistedPredictionCount": (report.get("publicPersistedRead") or {}).get("predictionCount"),
+        "candidateCalculatedPredictionCount": candidate.get("calculatedPredictionCount"),
+        "candidateStorageValidationPassCount": candidate.get("storageValidationPassCount"),
+        "candidateStorageValidationFailureCount": candidate.get("storageValidationFailureCount"),
+        "interceptedStoreAttemptCount": (report.get("writePrevention") or {}).get("interceptedStoreAttemptCount"),
         "output": str(path),
     }, indent=2, default=str))
     return 0
