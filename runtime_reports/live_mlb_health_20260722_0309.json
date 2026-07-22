@@ -1,0 +1,99 @@
+{
+  "allWorking": false,
+  "checkedAtEt": "2026-07-22T03:12:54.144185-04:00",
+  "checkedAtUtc": "2026-07-22T07:12:54.144185+00:00",
+  "checks": {
+    "allFunctionsActive": true,
+    "coverageConsistent": true,
+    "healthOk": true,
+    "latestPullFresh": true,
+    "lockStatusNoOperationalDefect": true,
+    "lockStatusOfficial": true,
+    "lockStatusOk": true,
+    "lockStatusToday": true,
+    "lockStatusWithinGatewayDeadline": true,
+    "predictionsNoOperationalDefect": true,
+    "predictionsOk": true,
+    "pullOfficialScheduleBacked": false,
+    "pullsPresent": true,
+    "todayIsJuly22": true
+  },
+  "currentPullPipeline": {
+    "canonicalSlotKeyCount": 9,
+    "latestPullAgeMinutes": 12.462,
+    "latestPullAtUtc": "2026-07-22T07:00:26.430608+00:00",
+    "latestPullId": "mlb_v1_2026-07-22_2026_07_22T07_00_26_430608_00_00",
+    "manifestGameCount": 17,
+    "officialScheduleAuthoritativeRoster": null,
+    "officialScheduleAuthoritativeStartTimes": null,
+    "officialScheduleAuthoritySource": null,
+    "officialScheduleAuthorityVersion": "MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date",
+    "storedPullCount": 9
+  },
+  "functions": {
+    "MLBAuditedPullFunction": {
+      "codeSha256": "xo+USL5cyzCX1CIjF8U6xUHo77HdjQ1Wx6yvv1Ksre8=",
+      "lastModified": "2026-07-22T05:52:06.000+0000",
+      "lastUpdateStatus": "Successful",
+      "name": "parlay-platform-dev-MLBAuditedPullFunction-xYdYJJKZMe4M",
+      "state": "Active"
+    },
+    "MLBDailyPickLockFunction": {
+      "codeSha256": "xo+USL5cyzCX1CIjF8U6xUHo77HdjQ1Wx6yvv1Ksre8=",
+      "lastModified": "2026-07-22T05:52:06.000+0000",
+      "lastUpdateStatus": "Successful",
+      "name": "parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP",
+      "state": "Active"
+    },
+    "MLBV3ReadFunction": {
+      "codeSha256": "xo+USL5cyzCX1CIjF8U6xUHo77HdjQ1Wx6yvv1Ksre8=",
+      "lastModified": "2026-07-22T05:52:06.000+0000",
+      "lastUpdateStatus": "Successful",
+      "name": "parlay-platform-dev-MLBV3ReadFunction-QnN5BEYDgbli",
+      "state": "Active"
+    }
+  },
+  "http": {
+    "health": {
+      "elapsedMs": 82.397,
+      "error": null,
+      "ok": true,
+      "statusCode": 200
+    },
+    "lockStatus": {
+      "canonicalPredictionComplete": false,
+      "elapsedMs": 3009.59,
+      "error": null,
+      "gameCount": 17,
+      "lockStatusComplete": false,
+      "lockedPredictionCount": 0,
+      "lockedStatusCount": 0,
+      "modelVersion": "INQSI-MLB-DAILY-LOCK-v5-tminus45-readiness-release-status",
+      "noPredictionDataCount": 0,
+      "officialScheduleAuthoritativeStartTimes": true,
+      "officialScheduleBacked": true,
+      "officialScheduleGameCount": 17,
+      "ok": true,
+      "operationalDefect": false,
+      "pullCount": 9,
+      "slateDateEt": "2026-07-22",
+      "sport": "mlb",
+      "statusCode": 200
+    },
+    "predictions": {
+      "elapsedMs": 4004.512,
+      "error": null,
+      "gameCount": 17,
+      "modelVersion": "INQSI-MLB-SINGLE-GAME-ML-v2.1-aws-sam-production+last-prelock-promotion-authority-v1",
+      "officialPredictionCount": 0,
+      "ok": true,
+      "operationalDefect": false,
+      "predictionCount": 17,
+      "sport": "mlb",
+      "statusCode": 200,
+      "winnerCount": 0
+    }
+  },
+  "slateDateEt": "2026-07-22",
+  "targetMainSha": "e8c755895692c8d3faf27271442c513b2621c784"
+}
