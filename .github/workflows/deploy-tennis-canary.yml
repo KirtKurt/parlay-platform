@@ -69,6 +69,37 @@ jobs:
             echo "Dedicated TENNIS_ODDS_API_KEY is absent; this is allowed only because the canary schedule is disabled."
           fi
 
+      - name: Diagnose an earlier failed tennis stack before retrying
+        run: |
+          set -euo pipefail
+          stack_status=$(aws cloudformation describe-stacks \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo STACK_MISSING)
+          if [ "$stack_status" != "ROLLBACK_COMPLETE" ]; then
+            echo "No failed tennis stack requires diagnosis: $stack_status"
+            exit 0
+          fi
+
+          aws cloudformation describe-stack-events \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --query "StackEvents[?ResourceStatus=='CREATE_FAILED'].[Timestamp,LogicalResourceId,ResourceType,ResourceStatusReason]" \
+            --output json > /tmp/tennis-create-failures.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          failures = json.loads(Path("/tmp/tennis-create-failures.json").read_text())
+          print("Original tennis CREATE_FAILED events:")
+          print(json.dumps(failures, indent=2, default=str))
+          if not failures:
+              raise SystemExit("ROLLBACK_COMPLETE stack has no visible CREATE_FAILED event")
+          PY
+          echo "::error::A prior tennis canary stack is ROLLBACK_COMPLETE; diagnosis printed above. No deployment action was taken."
+          exit 86
+
       - name: Install tennis validation dependencies
         run: |
           set -euo pipefail
