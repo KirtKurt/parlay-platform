@@ -154,7 +154,13 @@ def _attach_runtime_status(response: Any) -> Any:
 
 
 def _raise_scheduled_delegate_failure(event: Dict[str, Any], response: Any) -> None:
-    """Make EventBridge observe a failed delegated HOT pull as a failed invocation."""
+    """Make EventBridge observe a failed delegated HOT pull as a failed invocation.
+
+    The storage contract is lifecycle-aware. Open pre-lock predictions must be
+    durably written, while post-cutoff status rows such as ``MISSED_LOCK`` or
+    ``LOCKED_NO_PREDICTION_DATA`` are evidence, not prediction candidates.
+    """
+
     if not _is_scheduled(event) or not isinstance(response, dict):
         return
     body = response.get("body")
@@ -223,24 +229,62 @@ def _raise_scheduled_delegate_failure(event: Dict[str, Any], response: Any) -> N
                     candidate_failures.append(
                         f"winner_prediction_failed:{game_date or 'unknown'}"
                     )
-                if result.get("allGamesPredicted") is not True:
-                    candidate_failures.append(
-                        f"winner_prediction_coverage_incomplete:{game_date or 'unknown'}"
+
+                lifecycle_aware = result.get("preLockStorageLifecycleAware") is True
+                if lifecycle_aware:
+                    lifecycle_complete = (
+                        result.get("displayStatusCoverageComplete") is True
+                        and result.get("lifecycleCoverageComplete") is True
                     )
-                if result.get("preLockStorageComplete") is False:
-                    candidate_failures.append(
-                        f"prelock_storage_incomplete:{game_date or 'unknown'}"
-                    )
-                try:
-                    candidate_count = int(result.get("preLockStorageCandidateCount") or 0)
-                    stored_count = int(result.get("preLockStoredCount") or 0)
-                    game_count = int(result.get("gameCount") or 0)
-                except Exception:
-                    candidate_count = stored_count = game_count = -1
-                if candidate_count <= 0 or candidate_count != stored_count or candidate_count != game_count:
-                    candidate_failures.append(
-                        f"prelock_candidate_count_mismatch:{game_date or 'unknown'}"
-                    )
+                    if result.get("allGamesPredicted") is not True and not lifecycle_complete:
+                        candidate_failures.append(
+                            f"winner_prediction_coverage_incomplete:{game_date or 'unknown'}"
+                        )
+                    if result.get("preLockStorageComplete") is not True:
+                        candidate_failures.append(
+                            f"prelock_storage_incomplete:{game_date or 'unknown'}"
+                        )
+                    try:
+                        candidate_count = int(result.get("preLockStorageCandidateCount") or 0)
+                        stored_count = int(result.get("preLockStoredCount") or 0)
+                        game_count = int(result.get("gameCount") or 0)
+                        disposition_count = int(result.get("preLockStorageDispositionCount") or 0)
+                    except Exception:
+                        candidate_count = stored_count = game_count = disposition_count = -1
+                    if candidate_count != stored_count:
+                        candidate_failures.append(
+                            f"prelock_candidate_count_mismatch:{game_date or 'unknown'}"
+                        )
+                    if (
+                        result.get("preLockStorageDispositionComplete") is not True
+                        or disposition_count != game_count
+                    ):
+                        candidate_failures.append(
+                            f"prelock_storage_disposition_incomplete:{game_date or 'unknown'}"
+                        )
+                else:
+                    # Compatibility path for an older delegate result. It keeps
+                    # the original strict all-games candidate contract until the
+                    # lifecycle-aware finalizer is installed in the same artifact.
+                    if result.get("allGamesPredicted") is not True:
+                        candidate_failures.append(
+                            f"winner_prediction_coverage_incomplete:{game_date or 'unknown'}"
+                        )
+                    if result.get("preLockStorageComplete") is False:
+                        candidate_failures.append(
+                            f"prelock_storage_incomplete:{game_date or 'unknown'}"
+                        )
+                    try:
+                        candidate_count = int(result.get("preLockStorageCandidateCount") or 0)
+                        stored_count = int(result.get("preLockStoredCount") or 0)
+                        game_count = int(result.get("gameCount") or 0)
+                    except Exception:
+                        candidate_count = stored_count = game_count = -1
+                    if candidate_count <= 0 or candidate_count != stored_count or candidate_count != game_count:
+                        candidate_failures.append(
+                            f"prelock_candidate_count_mismatch:{game_date or 'unknown'}"
+                        )
+
                 if game_date not in manifest_counts or game_count != manifest_counts.get(game_date):
                     candidate_failures.append(
                         f"winner_prediction_manifest_count_mismatch:{game_date or 'unknown'}"
