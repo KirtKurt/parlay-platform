@@ -15,7 +15,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout exact candidate branch
+      - name: Checkout exact benchmark branch
         uses: actions/checkout@v4
         with:
           ref: agent/benchmark-mlb-lock-status-snapshot-hotpath
@@ -36,14 +36,13 @@ jobs:
         env:
           AWS_MAX_ATTEMPTS: "1"
           FUNCTION_NAME: parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP
-          BASE_SHA: 246daecb3960518fb59bb69c6891989d50fb7308
-          CANDIDATE_REF: agent/mlb-lock-status-snapshot-hotpath
+          BASE_SHA: eb0dc7fe964d6d206cf9510d2b1d202246a128ca
+          CANDIDATE_SHA: 286cd6ba782366bdf2a3a7c1d7b401f1e9424921
         shell: bash
         run: |
           set -euo pipefail
-          candidate_sha=$(git rev-parse "$CANDIDATE_REF")
           git worktree add --detach /tmp/baseline "$BASE_SHA"
-          git worktree add --detach /tmp/candidate "$candidate_sha"
+          git worktree add --detach /tmp/candidate "$CANDIDATE_SHA"
           aws lambda get-function-configuration \
             --function-name "$FUNCTION_NAME" \
             --region "${{ secrets.AWS_REGION }}" \
@@ -119,7 +118,7 @@ jobs:
           timeout 300 python /tmp/run_status.py /tmp/baseline /tmp baseline
           timeout 180 python /tmp/run_status.py /tmp/candidate /tmp candidate
 
-          BASE_SHA="$BASE_SHA" CANDIDATE_SHA="$candidate_sha" python - <<'PY'
+          BASE_SHA="$BASE_SHA" CANDIDATE_SHA="$CANDIDATE_SHA" python - <<'PY'
           import json
           import os
           from pathlib import Path
