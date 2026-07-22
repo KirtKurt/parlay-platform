@@ -6,6 +6,7 @@ on:
       - ".github/workflows/verify-live-mlb-deploy-159222cd.yml"
       - "scripts/verify_live_mlb_deploy_159222cd.py"
       - "scripts/run_live_mlb_deploy_verifier_159222cd.py"
+      - "scripts/extract_mlb_deploy_failure_29887607193.py"
 
 permissions:
   actions: read
@@ -25,12 +26,20 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SUMMARY_PATH: live_mlb_deploy_verification.json
         run: python scripts/run_live_mlb_deploy_verifier_159222cd.py
+      - name: Extract exact failed deployment log
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/extract_mlb_deploy_failure_29887607193.py
       - name: Upload compact verification evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: live-mlb-deploy-verification-${{ github.run_id }}
-          path: live_mlb_deploy_verification.json
+          path: |
+            live_mlb_deploy_verification.json
+            mlb_deploy_failure_summary.json
+            mlb_deploy_failure_excerpt.txt
           if-no-files-found: error
           retention-days: 3
       - name: Enforce verification result
