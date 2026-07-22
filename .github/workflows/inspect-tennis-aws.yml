@@ -1,0 +1,83 @@
+name: Inspect existing Tennis AWS boundary
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [agent/tennis-ml-production-deploy]
+    paths:
+      - ".github/workflows/inspect-tennis-aws.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      - name: Inventory existing Tennis-owned AWS resources
+        run: |
+          set -euo pipefail
+          aws secretsmanager list-secrets --region us-east-1 --output json > /tmp/secrets.json
+          aws cloudformation list-stacks --region us-east-1 --stack-status-filter \
+            CREATE_IN_PROGRESS CREATE_FAILED CREATE_COMPLETE ROLLBACK_IN_PROGRESS ROLLBACK_FAILED ROLLBACK_COMPLETE \
+            DELETE_IN_PROGRESS DELETE_FAILED UPDATE_IN_PROGRESS UPDATE_COMPLETE_CLEANUP_IN_PROGRESS UPDATE_COMPLETE \
+            UPDATE_FAILED UPDATE_ROLLBACK_IN_PROGRESS UPDATE_ROLLBACK_FAILED UPDATE_ROLLBACK_COMPLETE_CLEANUP_IN_PROGRESS \
+            UPDATE_ROLLBACK_COMPLETE REVIEW_IN_PROGRESS IMPORT_IN_PROGRESS IMPORT_COMPLETE IMPORT_ROLLBACK_IN_PROGRESS \
+            IMPORT_ROLLBACK_FAILED IMPORT_ROLLBACK_COMPLETE --output json > /tmp/stacks.json
+          aws dynamodb list-tables --region us-east-1 --output json > /tmp/tables.json
+          aws lambda list-functions --region us-east-1 --max-items 10000 --output json > /tmp/functions.json
+          aws events list-rules --region us-east-1 --limit 100 --output json > /tmp/rules.json
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          def load(path): return json.load(open(path))
+          secrets=[]
+          for row in load('/tmp/secrets.json').get('SecretList', []):
+              text=' '.join(str(row.get(k) or '') for k in ('Name','Description')).lower()
+              tags={str(t.get('Key')):str(t.get('Value')) for t in row.get('Tags', [])}
+              if 'tennis' in text or str(tags.get('inqsi:sport','')).lower()=='tennis':
+                  secrets.append({
+                    'name':row.get('Name'),'arn':row.get('ARN'),'description':row.get('Description'),
+                    'deletedDate':str(row.get('DeletedDate') or '') or None,
+                    'lastChangedDate':str(row.get('LastChangedDate') or '') or None,
+                    'tags':tags,
+                  })
+          stacks=[
+            {'name':r.get('StackName'),'status':r.get('StackStatus'),'creationTime':str(r.get('CreationTime') or ''),'lastUpdatedTime':str(r.get('LastUpdatedTime') or '') or None}
+            for r in load('/tmp/stacks.json').get('StackSummaries', []) if 'tennis' in str(r.get('StackName') or '').lower()
+          ]
+          tables=[x for x in load('/tmp/tables.json').get('TableNames', []) if 'tennis' in x.lower()]
+          functions=[
+            {'name':r.get('FunctionName'),'arn':r.get('FunctionArn'),'lastModified':r.get('LastModified'),'runtime':r.get('Runtime')}
+            for r in load('/tmp/functions.json').get('Functions', []) if 'tennis' in str(r.get('FunctionName') or '').lower()
+          ]
+          rules=[
+            {'name':r.get('Name'),'arn':r.get('Arn'),'state':r.get('State'),'scheduleExpression':r.get('ScheduleExpression')}
+            for r in load('/tmp/rules.json').get('Rules', []) if 'tennis' in str(r.get('Name') or '').lower()
+          ]
+          payload={
+            'schemaVersion':'TENNIS-AWS-INVENTORY-v1',
+            'recordedAtUtc':datetime.now(timezone.utc).isoformat(),
+            'region':'us-east-1','secrets':secrets,'stacks':stacks,'tables':tables,'functions':functions,'rules':rules,
+          }
+          Path('tennis_release/aws-tennis-inventory.json').write_text(json.dumps(payload,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(payload,indent=2,sort_keys=True))
+          PY
+      - name: Publish non-secret AWS inventory
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tennis_release/aws-tennis-inventory.json
+          git commit -m "Record existing Tennis AWS inventory"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
