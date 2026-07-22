@@ -6,6 +6,7 @@ on:
     branches: [agent/tennis-ml-production-deploy]
     paths:
       - "tennis_release/**"
+      - ".github/tennis-release/**"
       - ".github/workflows/deploy-tennis.yml"
 
 permissions:
@@ -32,7 +33,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Reconstruct and verify checksum-pinned Tennis source
+      - name: Reconstruct, verify, and apply credential-blocked deployment gate
         run: |
           set -euo pipefail
           cat tennis_release/chunks/tennis_predictive_platform_v1.tar.xz.b64.part-* \
@@ -40,6 +41,9 @@ jobs:
           sha256sum -c tennis_release/tennis_predictive_platform_v1.tar.xz.sha256
           rm -rf tennis_predictive_platform_v1
           tar -xJf tennis_release/tennis_predictive_platform_v1.tar.xz
+          patch -d tennis_predictive_platform_v1 -p1 \
+            < .github/tennis-release/credential-blocked-deploy.patch
+          bash -n tennis_predictive_platform_v1/scripts/deploy_aws.sh
           test -x tennis_predictive_platform_v1/scripts/deploy_aws.sh
           test -f tennis_predictive_platform_v1/src/tennis_espn_results.py
 
@@ -73,14 +77,20 @@ jobs:
           MLB_ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
           set -euo pipefail
-          test -n "${TENNIS_ODDS_API_KEY_VALUE:-}" || {
-            echo "::error::Missing dedicated TENNIS_ODDS_API_KEY repository secret"
-            exit 1
-          }
-          if [ -n "${MLB_ODDS_API_KEY_VALUE:-}" ] && [ "$TENNIS_ODDS_API_KEY_VALUE" = "$MLB_ODDS_API_KEY_VALUE" ]; then
-            echo "::error::TENNIS_ODDS_API_KEY must be independently provisioned, not the MLB ODDS_API_KEY"
-            exit 1
+          if [ -n "${TENNIS_ODDS_API_KEY_VALUE:-}" ]; then
+            if [ -n "${MLB_ODDS_API_KEY_VALUE:-}" ] && [ "$TENNIS_ODDS_API_KEY_VALUE" = "$MLB_ODDS_API_KEY_VALUE" ]; then
+              echo "::error::TENNIS_ODDS_API_KEY must be independently provisioned, not the MLB ODDS_API_KEY"
+              exit 1
+            fi
+            TENNIS_SCHEDULE_STATE=ENABLED
+            TENNIS_CREDENTIAL_STATUS=READY
+          else
+            TENNIS_ODDS_API_KEY_VALUE=CREDENTIAL_BLOCKED_NO_DEDICATED_KEY
+            TENNIS_SCHEDULE_STATE=DISABLED
+            TENNIS_CREDENTIAL_STATUS=CREDENTIAL_BLOCKED
+            echo "Dedicated Tennis odds credential is unavailable; deploying isolated infrastructure with every schedule disabled."
           fi
+          export TENNIS_ODDS_API_KEY_VALUE TENNIS_SCHEDULE_STATE TENNIS_CREDENTIAL_STATUS
           ./scripts/deploy_aws.sh
 
       - name: Upload exact Tennis deployment evidence
