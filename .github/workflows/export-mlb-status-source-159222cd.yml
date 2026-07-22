@@ -1,0 +1,38 @@
+name: Export MLB status source 159222cd
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/export-mlb-status-source-159222cd.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact deployed source
+        uses: actions/checkout@v4
+        with:
+          ref: 159222cd145ae0ba727970775abda22f956fb97c
+          fetch-depth: 1
+      - name: Upload exact status implementation and tests
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-status-source-159222cd
+          path: |
+            hello_world/mlb_daily_per_game_lock_patch.py
+            hello_world/mlb_daily_pick_lock.py
+            hello_world/mlb_daily_pick_lock_protected.py
+            hello_world/inqsi_pull_history.py
+            hello_world/inqsi_public_predictions.py
+            hello_world/mlb_v3_read_api.py
+            tests/unit/test_mlb_lock_status_request_cache.py
+            tests/unit/test_mlb_public_per_game_authority.py
+            tests/unit/test_mlb_daily_per_game_lock.py
+            tests/unit/test_mlb_daily_pick_lock_runtime.py
+            scripts/mlb_deploy_http_probe.py
+            .github/workflows/deploy.yml
+          if-no-files-found: error
+          retention-days: 3
