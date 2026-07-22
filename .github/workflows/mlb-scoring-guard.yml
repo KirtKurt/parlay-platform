@@ -59,7 +59,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Build and enforce live MLB scoring proof
+      - name: Build live MLB scoring proof
         env:
           SNAPSHOTS_TABLE: parlay_platform_snapshots
           SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
@@ -69,8 +69,29 @@ jobs:
           SLATE_DATE=$(TZ=America/New_York date +%F)
           python scripts/mlb_scoring_guard_status.py \
             --slate-date "$SLATE_DATE" \
-            --output runtime_reports/mlb_scoring_guard_status_latest.json \
-            --enforce
+            --output runtime_reports/mlb_scoring_guard_status_latest.json
+
+      - name: Enforce scoring coverage after deployment
+        if: (github.event_name == 'schedule' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          proof = json.loads(
+              Path('runtime_reports/mlb_scoring_guard_status_latest.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          if proof.get('guardPassed') is not True:
+              raise SystemExit(
+                  'MLB scoring guard failed: '
+                  + json.dumps({
+                      'summary': proof.get('summary'),
+                      'blockers': proof.get('blockers'),
+                  }, sort_keys=True, default=str)
+              )
+          PY
 
       - name: Upload scoring proof
         if: always()
