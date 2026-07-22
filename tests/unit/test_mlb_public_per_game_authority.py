@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import importlib
 import sys
+from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -594,9 +595,10 @@ def test_canonical_query_failure_keeps_every_live_row_prelock(monkeypatch):
     engine.history.PULLS = BrokenTable()
     _install(engine)
 
-    result = engine.predict_all(SLATE, store=False)
+    result = engine.read_persisted_predictions(SLATE, store=False)
 
     assert result["locked"] is False
+    assert result["operationalDefect"] is True
     assert result["slatePredictionLock"]["canonicalReadOperational"] is False
     assert "ddb unavailable" in result["slatePredictionLock"]["canonicalReadError"]
     assert result["officialPredictionCount"] == 0
@@ -609,6 +611,36 @@ def test_runtime_version_exposes_last_prelock_promotion_authority_marker():
 
     assert "verified-stage-promotion-authority" in mlb_ml_runtime_install_v3.VERSION
     assert coverage.AUTHORITY_VERSION == "MLB-LAST-PRELOCK-PROMOTION-AUTHORITY-v1-canonical-read-overlay"
+
+
+def test_persisted_reader_uses_one_read_scope_without_scoping_writer(monkeypatch):
+    engine = _engine([])
+    _install(engine)
+    events = []
+    original_scope = per_game._status_read_scope
+
+    @contextmanager
+    def read_scope():
+        events.append("enter")
+        try:
+            with original_scope() as state:
+                yield state
+        finally:
+            events.append("exit")
+
+    monkeypatch.setattr(per_game, "_status_read_scope", read_scope)
+
+    uncached = engine.predict_all(SLATE, store=False)
+    cached = engine.read_persisted_predictions(SLATE, store=False)
+
+    assert cached == uncached
+    assert events == ["enter", "exit"]
+    assert per_game._STATUS_READ_CACHE.get() is None
+
+    events.clear()
+    engine.predict_all(SLATE, store=True)
+    engine.read_persisted_predictions(SLATE, store=True)
+    assert events == []
 
 
 def test_legacy_immutable_lock_suppresses_ambiguous_probability_authority(monkeypatch):
