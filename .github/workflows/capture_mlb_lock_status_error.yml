@@ -1,0 +1,147 @@
+name: Capture MLB lock-status error payload
+
+on:
+  push:
+    branches:
+      - agent/report-mlb-deploy-246daecb
+    paths:
+      - .github/workflows/capture_mlb_lock_status_error.yml
+
+permissions:
+  contents: write
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout reporting branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/report-mlb-deploy-246daecb
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Capture direct and HTTP error evidence
+        env:
+          AWS_MAX_ATTEMPTS: "1"
+          FUNCTION_NAME: parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP
+        shell: bash
+        run: |
+          set -euo pipefail
+          region="${{ secrets.AWS_REGION }}"
+          api_url=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue | [0]" \
+            --output text)
+          cat >/tmp/event.json <<'JSON'
+          {
+            "resource": "/v1/mlb/locks/status",
+            "path": "/v1/mlb/locks/status",
+            "httpMethod": "GET",
+            "headers": {"accept": "application/json", "user-agent": "inqsi-lock-status-error-capture/1.0"},
+            "multiValueHeaders": {},
+            "queryStringParameters": null,
+            "multiValueQueryStringParameters": null,
+            "pathParameters": null,
+            "stageVariables": null,
+            "requestContext": {
+              "resourcePath": "/v1/mlb/locks/status",
+              "httpMethod": "GET",
+              "path": "/Prod/v1/mlb/locks/status",
+              "stage": "Prod",
+              "identity": {"sourceIp": "127.0.0.1", "userAgent": "inqsi-lock-status-error-capture/1.0"},
+              "requestId": "lock-status-error-capture"
+            },
+            "body": null,
+            "isBase64Encoded": false
+          }
+          JSON
+          aws --cli-connect-timeout 10 --cli-read-timeout 60 lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "$region" \
+            --payload fileb:///tmp/event.json \
+            --cli-binary-format raw-in-base64-out \
+            --log-type Tail \
+            /tmp/direct_response.json \
+            >/tmp/direct_meta.json
+          API_URL="$api_url" python - <<'PY'
+          import base64
+          import json
+          import os
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          meta = json.loads(Path('/tmp/direct_meta.json').read_text(encoding='utf-8'))
+          direct = json.loads(Path('/tmp/direct_response.json').read_text(encoding='utf-8'))
+          raw_direct_body = direct.get('body')
+          try:
+              direct_body = json.loads(raw_direct_body) if isinstance(raw_direct_body, str) else raw_direct_body
+          except json.JSONDecodeError:
+              direct_body = raw_direct_body
+          log_tail = base64.b64decode(meta.get('LogResult') or '').decode('utf-8', errors='replace')
+
+          url = os.environ['API_URL'].rstrip('/') + '/v1/mlb/locks/status'
+          request = urllib.request.Request(
+              url,
+              headers={'accept': 'application/json', 'user-agent': 'inqsi-lock-status-error-capture/1.0'},
+          )
+          http_status = None
+          http_body = None
+          http_exception = None
+          try:
+              with urllib.request.urlopen(request, timeout=40) as response:
+                  http_status = int(response.getcode())
+                  raw = response.read().decode('utf-8', errors='replace')
+          except urllib.error.HTTPError as exc:
+              http_status = int(exc.code)
+              raw = exc.read().decode('utf-8', errors='replace')
+          except Exception as exc:
+              raw = ''
+              http_exception = f'{type(exc).__name__}:{exc}'
+          try:
+              http_body = json.loads(raw) if raw else None
+          except json.JSONDecodeError:
+              http_body = raw[:20000]
+
+          report = {
+              'direct': {
+                  'statusCode': direct.get('statusCode'),
+                  'functionError': meta.get('FunctionError'),
+                  'body': direct_body,
+                  'logTail': log_tail[-12000:],
+              },
+              'http': {
+                  'statusCode': http_status,
+                  'exception': http_exception,
+                  'body': http_body,
+              },
+          }
+          Path('live_lock_status_error_payload.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Publish sanitized evidence and remove workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp live_lock_status_error_payload.json /tmp/live_lock_status_error_payload.json
+          git fetch origin agent/report-mlb-deploy-246daecb
+          git checkout -B agent/report-mlb-deploy-246daecb origin/agent/report-mlb-deploy-246daecb
+          cp /tmp/live_lock_status_error_payload.json live_lock_status_error_payload.json
+          rm .github/workflows/capture_mlb_lock_status_error.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Record live MLB lock-status application error"
+          git push origin HEAD:agent/report-mlb-deploy-246daecb
