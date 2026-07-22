@@ -1,6 +1,12 @@
 name: MLB Scoring Guard
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-scoring-guard.yml'
+      - 'scripts/mlb_scoring_guard_status.py'
+      - 'tests/unit/test_mlb_scoring_guard_status.py'
   push:
     paths:
       - '.github/workflows/mlb-scoring-guard.yml'
