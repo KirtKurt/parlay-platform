@@ -4,6 +4,13 @@ import json
 import os
 from typing import Any, Dict, Optional
 
+mlb_scoring_run_proof = None
+_scoring_proof_import_error = None
+try:
+    import mlb_scoring_run_proof
+except Exception as exc:
+    _scoring_proof_import_error = str(exc)
+
 mlb_ml_runtime_install_v3 = None
 try:
     import mlb_ml_runtime_install_v3
@@ -36,6 +43,7 @@ _REQUIRED_RUNTIME_STEPS = {
     "canonicalProbabilityAndPersistedPrelockAuthority",
     "providerNeutralCalibrationAndActionability",
     "legacyFinalGateDisabled",
+    "scoringRunProof",
 }
 
 if isinstance(_raw_runtime_status, dict):
@@ -61,6 +69,15 @@ if not isinstance(_runtime_steps, dict):
     ML_RUNTIME_INSTALL_STATUS["steps"] = _runtime_steps
     ML_RUNTIME_INSTALL_STATUS["errors"].append(
         "mlb_ml_runtime_install_v3.install() returned invalid step status"
+    )
+
+_runtime_steps["scoringRunProof"] = mlb_scoring_run_proof is not None
+ML_RUNTIME_INSTALL_STATUS["scoringProofVersion"] = getattr(
+    mlb_scoring_run_proof, "VERSION", None
+)
+if _scoring_proof_import_error:
+    ML_RUNTIME_INSTALL_STATUS["errors"].append(
+        f"mlb_scoring_run_proof import failed: {_scoring_proof_import_error}"
     )
 
 _missing_runtime_steps = sorted(
@@ -247,6 +264,13 @@ def _raise_scheduled_delegate_failure(event: Dict[str, Any], response: Any) -> N
                     )
             if winner_dates != set(manifest_counts):
                 candidate_failures.append("winner_prediction_manifest_date_mismatch")
+        scoring_proofs = payload.get("scoring_proofs")
+        if payload.get("scoringProofComplete") is not True:
+            candidate_failures.append("scoring_run_proof_incomplete")
+        if not isinstance(scoring_proofs, list) or len(scoring_proofs) != len(manifest_counts):
+            candidate_failures.append("scoring_run_proof_count_mismatch")
+        elif any(not isinstance(item, dict) or item.get("ok") is not True for item in scoring_proofs):
+            candidate_failures.append("scoring_run_proof_failed")
     if status_code >= 400 or payload.get("ok") is False or candidate_failures:
         if candidate_failures:
             payload = dict(payload)
@@ -293,5 +317,6 @@ def lambda_handler(event, context):
     if auth_error is not None:
         return auth_error
     response = _attach_runtime_status(mlb_manual_pull.lambda_handler(event, context))
+    response = mlb_scoring_run_proof.attach_and_store(response, event)
     _raise_scheduled_delegate_failure(event, response)
     return response
