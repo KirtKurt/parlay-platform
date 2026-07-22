@@ -197,6 +197,24 @@ if ingest_resource.count('MaximumEventAgeInSeconds: 300') != 2:
     violations.append('canonical MLB pull must bound Lambda and EventBridge retry age to five minutes')
 if ingest_resource.count('MaximumRetryAttempts: 1') != 2:
     violations.append('canonical MLB pull must retain exactly one bounded idempotent retry')
+if 'Timeout: 600' not in ingest_resource:
+    violations.append('canonical MLB pull timeout must allow full-slate winner persistence')
+if 'MemorySize: 2048' not in ingest_resource:
+    violations.append('canonical MLB pull memory must provide sufficient scoring CPU capacity')
+manual_pull_source = Path('hello_world/mlb_manual_pull.py').read_text()
+if 'scheduled_ingestion_prioritizes_durable_game_winner_persistence' not in manual_pull_source:
+    violations.append('scheduled MLB pull does not skip redundant read-only hot-side rebuilding')
+try:
+    canonical_store_position = manual_pull_source.index('canonical = _store_canonical_pull_history')
+    winner_store_position = manual_pull_source.index('game_winner_prediction_results.append', canonical_store_position)
+    movement_store_position = manual_pull_source.index('hot_movement_feature_results.append', canonical_store_position)
+    audit_position = manual_pull_source.index('_record_snapshot_audit_safe', canonical_store_position)
+    hot_side_position = manual_pull_source.index('_build_read_only_hot_sides', canonical_store_position)
+    shadow_position = manual_pull_source.index('_capture_bbs_shadow_safe', canonical_store_position)
+    if not canonical_store_position < winner_store_position < movement_store_position < audit_position < hot_side_position < shadow_position:
+        violations.append('durable MLB winner persistence is not prioritized ahead of optional diagnostics')
+except ValueError:
+    violations.append('MLB scoring priority markers are missing from the canonical pull writer')
 if '"days_ahead":0' not in text and '"days_ahead": 0' not in text:
     violations.append('same-day days_ahead=0 input missing')
 if "MLB_PULL_START_AT_ET: '01:00'" not in text:
