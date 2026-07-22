@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -17,6 +18,7 @@ import mlb_ml_experiment_v2 as experiment
 
 
 NOW = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+ACTIVATION_NOW = datetime(2026, 7, 21, 23, 0, tzinfo=timezone.utc)
 
 
 class CapturedDynamoRequest(RuntimeError):
@@ -110,6 +112,14 @@ def test_status_fingerprint_survives_dynamodb_numeric_round_trip():
 
 
 def new_manifest(sealed=False):
+    activation = experiment.release_activation(
+        experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
+        release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        release_cutoff_utc=experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
+        activated_at_utc=ACTIVATION_NOW.isoformat(),
+        deployment_git_sha="a" * 40,
+        deployment_template_sha256="b" * 64,
+    )
     value = experiment.new_manifest(
         experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
         release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
@@ -119,7 +129,8 @@ def new_manifest(sealed=False):
             "outcome": list(aws_training.dual_model.OUTCOME_FEATURES),
             "reliability": list(aws_training.dual_model.RELIABILITY_FEATURES),
         },
-        created_at_utc="2026-07-21T00:00:00+00:00",
+        created_at_utc=ACTIVATION_NOW.isoformat(),
+        release_activation=activation,
     )
     if sealed:
         for name, count in {
@@ -224,9 +235,27 @@ class FakeStore:
         self.statuses = []
         self.latest_statuses = {}
         self.run_statuses = {}
-        self.lease_owner = None
+        self.lease_owners = {}
         self.lease_acquisitions = []
         self.lease_releases = []
+
+    @property
+    def lease_owner(self):
+        return self.lease_owners.get("state_mutation") or self.lease_owners.get(
+            "selection_capture"
+        )
+
+    @lease_owner.setter
+    def lease_owner(self, value):
+        if value is None:
+            self.lease_owners.clear()
+            return
+        mode = str(value).split(":", 1)[0]
+        domain = aws_training.EXECUTION_LEASE_DOMAIN_BY_MODE.get(
+            mode,
+            "state_mutation",
+        )
+        self.lease_owners[domain] = value
 
     def load_manifest(self, experiment_id):
         return copy.deepcopy(self.manifest)
@@ -320,9 +349,10 @@ class FakeStore:
         acquired_at,
         lease_seconds,
     ):
-        if self.lease_owner is not None:
+        domain = aws_training._execution_lease_domain(execution_mode)
+        if self.lease_owners.get(domain) is not None:
             raise aws_training.ExecutionLeaseUnavailable("active lease")
-        self.lease_owner = owner_token
+        self.lease_owners[domain] = owner_token
         self.lease_acquisitions.append(
             {
                 "experimentId": experiment_id,
@@ -335,8 +365,10 @@ class FakeStore:
         expires = acquired_at + aws_training.timedelta(seconds=lease_seconds)
         return {
             "PK": aws_training.EXECUTION_LEASE_PK,
-            "SK": aws_training.EXECUTION_LEASE_SK,
+            "SK": aws_training._execution_lease_key(execution_mode),
             "record_type": aws_training.EXECUTION_LEASE_RECORD_TYPE,
+            "version": aws_training.EXECUTION_LEASE_VERSION,
+            "lease_domain": domain,
             "experiment_id": experiment_id,
             "lease_owner": owner_token,
             "execution_mode": execution_mode,
@@ -345,12 +377,23 @@ class FakeStore:
             "lease_expires_at_epoch": int(expires.timestamp()),
         }
 
-    def release_execution_lease(self, experiment_id, *, owner_token):
-        if self.lease_owner != owner_token:
+    def release_execution_lease(
+        self,
+        experiment_id,
+        *,
+        owner_token,
+        execution_mode,
+    ):
+        domain = aws_training._execution_lease_domain(execution_mode)
+        if self.lease_owners.get(domain) != owner_token:
             raise aws_training.ConditionalStateConflict("stale lease owner")
-        self.lease_owner = None
+        self.lease_owners.pop(domain, None)
         self.lease_releases.append(
-            {"experimentId": experiment_id, "ownerToken": owner_token}
+            {
+                "experimentId": experiment_id,
+                "ownerToken": owner_token,
+                "executionMode": execution_mode,
+            }
         )
 
     def commit_candidate(
@@ -423,8 +466,12 @@ def attest_test_execution_lease(training, execution_mode="training"):
     training.attest_execution_lease_acquired(
         {
             "PK": aws_training.EXECUTION_LEASE_PK,
-            "SK": aws_training.EXECUTION_LEASE_SK,
+            "SK": aws_training._execution_lease_key(execution_mode),
             "record_type": aws_training.EXECUTION_LEASE_RECORD_TYPE,
+            "version": aws_training.EXECUTION_LEASE_VERSION,
+            "lease_domain": aws_training._execution_lease_domain(
+                execution_mode
+            ),
             "experiment_id": experiment.PRODUCTION_EXPERIMENT_ID,
             "lease_owner": owner_token,
             "execution_mode": execution_mode,
@@ -436,12 +483,19 @@ def attest_test_execution_lease(training, execution_mode="training"):
     return training
 
 
-def service(store, auto=False, lease_mode="training"):
+def service(
+    store,
+    auto=False,
+    *,
+    now=NOW,
+    service_config=None,
+    lease_mode="training",
+):
     training = aws_training.TrainingService(
         store,
-        config(auto=auto),
+        service_config or config(auto=auto),
         row_loader=lambda _config: [],
-        now=lambda: NOW,
+        now=lambda: now,
     )
     return (
         attest_test_execution_lease(training, lease_mode)
@@ -502,7 +556,7 @@ def patch_sealed_training(monkeypatch):
 
 def test_accumulation_registers_no_model_or_champion():
     store = FakeStore()
-    result = service(store).run()
+    result = service(store, now=ACTIVATION_NOW).run()
     assert result["ok"] is True
     assert result["modelTrained"] is False
     assert result["championChanged"] is False
@@ -577,7 +631,7 @@ def test_mutating_service_entrypoints_reject_the_wrong_lease_mode(
 
 
 def test_r2_cutoff_rejects_july20_and_every_pre_boundary_lock():
-    manifest_value = service(FakeStore())._new_manifest()
+    manifest_value = service(FakeStore(), now=ACTIVATION_NOW)._new_manifest()
     assert manifest_value["releaseCutoffUtc"] == "2026-07-22T04:00:00+00:00"
     row = {
         "gameId": "mlb_statsapi:cutoff-proof",
@@ -601,6 +655,214 @@ def test_r2_cutoff_rejects_july20_and_every_pre_boundary_lock():
     )
     _, boundary_reasons = experiment.validate_record(at_boundary, manifest_value)
     assert "pre_release_or_missing_lock_timestamp" not in boundary_reasons
+
+
+def test_new_r3_manifest_records_one_digest_bound_release_activation() -> None:
+    calls = []
+
+    def clock():
+        calls.append(ACTIVATION_NOW)
+        return ACTIVATION_NOW
+
+    training = aws_training.TrainingService(
+        FakeStore(),
+        config(),
+        row_loader=lambda _config: [],
+        now=clock,
+    )
+    manifest_value = training._new_manifest()
+
+    assert calls == [ACTIVATION_NOW]
+    assert manifest_value["createdAtUtc"] == ACTIVATION_NOW.isoformat()
+    assert manifest_value["releaseActivation"] == {
+        "version": experiment.RELEASE_ACTIVATION_VERSION,
+        "experimentId": experiment.PRODUCTION_EXPERIMENT_ID,
+        "releaseContractId": experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        "releaseCutoffUtc": experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
+        "activatedAtUtc": ACTIVATION_NOW.isoformat(),
+        "deploymentIdentity": {
+            "gitSha": "a" * 40,
+            "templateSha256": "b" * 64,
+        },
+        "immutable": True,
+    }
+    assert manifest_value["manifestDigest"] == experiment.manifest_digest(
+        manifest_value
+    )
+
+
+@pytest.mark.parametrize(
+    "activation_time",
+    (
+        datetime(2026, 7, 22, 4, 0, tzinfo=timezone.utc),
+        datetime(2026, 7, 22, 4, 0, 0, 1, tzinfo=timezone.utc),
+    ),
+)
+def test_r3_manifest_cannot_be_initialized_at_or_after_cutoff(
+    activation_time,
+) -> None:
+    store = FakeStore()
+
+    with pytest.raises(
+        aws_training.TrainingContractError,
+        match="strictly before the release cutoff",
+    ):
+        service(store, now=activation_time).run()
+
+    assert store.manifest is None
+    assert store.statuses == []
+
+
+def test_persisted_activation_allows_future_safe_deploy_identity() -> None:
+    initial = new_manifest()
+    initial_activation = copy.deepcopy(initial["releaseActivation"])
+    future_config = aws_training.TrainingConfig(
+        artifacts_bucket="versioned-artifacts",
+        experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
+        release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        release_cutoff_utc=experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
+        feature_vector_version="vector-v2",
+        deployment_git_sha="c" * 40,
+        deployment_template_sha256="d" * 64,
+    )
+    store = FakeStore(initial)
+
+    result = service(
+        store,
+        now=NOW,
+        service_config=future_config,
+    ).run()
+
+    assert result["ok"] is True
+    assert result["deploymentIdentity"] == {
+        "gitSha": "c" * 40,
+        "templateSha256": "d" * 64,
+    }
+    assert store.manifest["releaseActivation"] == initial_activation
+    assert store.manifest["releaseActivation"]["deploymentIdentity"] != result[
+        "deploymentIdentity"
+    ]
+
+
+def test_persisted_activation_tampering_fails_manifest_digest_validation() -> None:
+    tampered = new_manifest()
+    tampered["releaseActivation"]["deploymentIdentity"]["gitSha"] = "e" * 40
+    store = FakeStore(tampered)
+
+    with pytest.raises(
+        aws_training.TrainingContractError,
+        match="manifest digest is invalid",
+    ):
+        service(store)._load_or_create_manifest()
+
+
+def test_persisted_marker_missing_after_cutoff_fails_closed() -> None:
+    markerless = experiment.new_manifest(
+        experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
+        release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        release_cutoff_utc=experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
+        feature_vector_version="vector-v2",
+        model_feature_schemas={
+            "outcome": list(aws_training.dual_model.OUTCOME_FEATURES),
+            "reliability": list(aws_training.dual_model.RELIABILITY_FEATURES),
+        },
+        created_at_utc=ACTIVATION_NOW.isoformat(),
+    )
+    store = FakeStore(markerless)
+
+    with pytest.raises(
+        aws_training.TrainingContractError,
+        match="release activation is absent at or after the cutoff",
+    ):
+        service(store, now=NOW)._load_or_create_manifest()
+
+
+def test_markerless_pre_cutoff_r3_manifest_is_activated_once_with_cas() -> None:
+    created_at = "2026-07-21T20:00:00+00:00"
+    markerless = experiment.new_manifest(
+        experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
+        release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        release_cutoff_utc=experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
+        feature_vector_version="vector-v2",
+        model_feature_schemas={
+            "outcome": list(aws_training.dual_model.OUTCOME_FEATURES),
+            "reliability": list(aws_training.dual_model.RELIABILITY_FEATURES),
+        },
+        created_at_utc=created_at,
+    )
+    original_digest = markerless["manifestDigest"]
+    store = FakeStore(markerless)
+
+    activated = service(store, now=ACTIVATION_NOW)._load_or_create_manifest()
+
+    assert activated["revision"] == 1
+    assert activated["updatedAtUtc"] == ACTIVATION_NOW.isoformat()
+    assert activated["manifestDigest"] != original_digest
+    assert activated["manifestDigest"] == experiment.manifest_digest(activated)
+    assert activated["releaseActivation"] == {
+        "version": experiment.RELEASE_ACTIVATION_VERSION,
+        "experimentId": experiment.PRODUCTION_EXPERIMENT_ID,
+        "releaseContractId": experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        "releaseCutoffUtc": experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
+        "activatedAtUtc": ACTIVATION_NOW.isoformat(),
+        "deploymentIdentity": {
+            "gitSha": "a" * 40,
+            "templateSha256": "b" * 64,
+        },
+        "immutable": True,
+    }
+
+    second = service(store, now=NOW)._load_or_create_manifest()
+    assert second == activated
+    assert second["revision"] == 1
+
+
+def test_scheduled_lambda_activates_markerless_manifest_before_strict_consumers(
+    monkeypatch,
+) -> None:
+    created_at = "2026-07-21T20:00:00+00:00"
+    markerless = experiment.new_manifest(
+        experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
+        release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        release_cutoff_utc=experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
+        feature_vector_version="vector-v2",
+        model_feature_schemas={
+            "outcome": list(aws_training.dual_model.OUTCOME_FEATURES),
+            "reliability": list(aws_training.dual_model.RELIABILITY_FEATURES),
+        },
+        created_at_utc=created_at,
+    )
+    store = FakeStore(markerless)
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: [],
+        now=lambda: ACTIVATION_NOW,
+    )
+    monkeypatch.setattr(aws_training, "_service", lambda: training)
+    context = type(
+        "Context",
+        (),
+        {
+            "aws_request_id": "activation-request",
+            "get_remaining_time_in_millis": lambda self: 900_000,
+        },
+    )()
+
+    result = aws_training.lambda_handler({"mode": "scheduled"}, context)
+
+    assert result["ok"] is True
+    assert store.manifest["createdAtUtc"] == created_at
+    assert store.manifest["releaseActivation"]["activatedAtUtc"] == (
+        ACTIVATION_NOW.isoformat()
+    )
+    assert store.manifest["releaseActivation"]["deploymentIdentity"] == {
+        "gitSha": "a" * 40,
+        "templateSha256": "b" * 64,
+    }
+    assert store.manifest["manifestDigest"] == experiment.manifest_digest(
+        store.manifest
+    )
 
 
 def test_persisted_feature_schema_change_requires_a_new_experiment_id():
@@ -843,7 +1105,7 @@ def test_status_rejects_a_fingerprint_valid_run_without_acquired_lease_evidence(
 def test_selection_capture_mode_records_a_healthy_waiting_heartbeat():
     store = FakeStore()
 
-    result = service(store).capture_selections()
+    result = service(store, lease_mode="selection_capture").capture_selections()
 
     assert result["ok"] is True
     assert result["executionMode"] == "selection_capture"
@@ -904,7 +1166,7 @@ def test_repeated_selection_capture_is_idempotent_and_preserves_first_timestamp(
     assert store.selections[0]["capturedAtUtc"] == first_timestamp
 
 
-def test_capture_uses_one_decision_timestamp_for_the_entire_invocation(monkeypatch):
+def test_capture_uses_fresh_pre_commence_timestamp_for_each_row(monkeypatch):
     import mlb_canonical_final_labels_v1 as labels
 
     rows = [
@@ -947,10 +1209,197 @@ def test_capture_uses_one_decision_timestamp_for_the_entire_invocation(monkeypat
 
     assert result["ok"] is True
     assert result["capturedCount"] == 2
-    assert len(now_calls) == 1
+    assert len(now_calls) == 3
     assert {entry["capturedAtUtc"] for entry in store.selections} == {
-        NOW.isoformat()
+        (NOW + aws_training.timedelta(minutes=1)).isoformat(),
+        (NOW + aws_training.timedelta(minutes=2)).isoformat(),
     }
+
+
+def test_capture_retries_only_manifest_cas_with_fresh_time_and_digest(monkeypatch):
+    import mlb_canonical_final_labels_v1 as labels
+
+    row = {
+        "gameId": "mlb_statsapi:manifest-race",
+        "officialGamePk": "manifest-race",
+        "slateDateEt": "2026-09-01",
+        "commenceTime": "2026-09-01T14:00:00+00:00",
+        "featureSnapshot": {"fingerprint": "a" * 64},
+        "canonicalLockAuthority": {"learningEligible": True},
+    }
+    monkeypatch.setattr(
+        labels,
+        "load_canonical_locked_rows_without_labels",
+        lambda **kwargs: {"ok": True, "rows": [copy.deepcopy(row)]},
+    )
+    score_calls = []
+    monkeypatch.setattr(
+        aws_training.dual_model,
+        "score_unlabeled_lock",
+        lambda row, challenger: score_calls.append(row["gameId"])
+        or {"reliabilityProbability": 0.72},
+    )
+
+    class RacingStore(FakeStore):
+        def __init__(self, manifest):
+            super().__init__(manifest)
+            self.record_attempts = 0
+
+        def record_selection(self, entry):
+            self.record_attempts += 1
+            if self.record_attempts == 1:
+                self.manifest["revision"] += 1
+                self.manifest["updatedAtUtc"] = (
+                    NOW + aws_training.timedelta(minutes=1)
+                ).isoformat()
+                self.manifest["manifestDigest"] = experiment.manifest_digest(
+                    self.manifest
+                )
+                raise aws_training.ManifestStateConflict("manifest advanced")
+            return super().record_selection(entry)
+
+    clock = iter(
+        (
+            NOW,
+            NOW + aws_training.timedelta(minutes=1),
+            NOW + aws_training.timedelta(minutes=2),
+        )
+    )
+    store = RacingStore(new_manifest(sealed=True))
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: [],
+        now=lambda: next(clock),
+    )
+
+    result = training._capture_selections(
+        copy.deepcopy(store.manifest), frozen_challenger(store.manifest)
+    )
+
+    assert result["ok"] is True
+    assert result["capturedCount"] == 1
+    assert store.record_attempts == 2
+    assert score_calls == [row["gameId"], row["gameId"]]
+    assert store.selections[0]["experimentManifestDigest"] == store.manifest[
+        "manifestDigest"
+    ]
+    assert store.selections[0]["capturedAtUtc"] == (
+        NOW + aws_training.timedelta(minutes=2)
+    ).isoformat()
+
+
+def test_capture_manifest_retry_crossing_commence_is_honest_skip(monkeypatch):
+    import mlb_canonical_final_labels_v1 as labels
+
+    row = {
+        "gameId": "mlb_statsapi:manifest-race-started",
+        "officialGamePk": "manifest-race-started",
+        "slateDateEt": "2026-09-01",
+        "commenceTime": "2026-09-01T14:00:00+00:00",
+        "featureSnapshot": {"fingerprint": "b" * 64},
+        "canonicalLockAuthority": {"learningEligible": True},
+    }
+    monkeypatch.setattr(
+        labels,
+        "load_canonical_locked_rows_without_labels",
+        lambda **kwargs: {"ok": True, "rows": [copy.deepcopy(row)]},
+    )
+    monkeypatch.setattr(
+        aws_training.dual_model,
+        "score_unlabeled_lock",
+        lambda row, challenger: {"reliabilityProbability": 0.72},
+    )
+
+    class RacingStore(FakeStore):
+        def __init__(self, manifest):
+            super().__init__(manifest)
+            self.record_attempts = 0
+
+        def record_selection(self, entry):
+            self.record_attempts += 1
+            self.manifest["revision"] += 1
+            self.manifest["updatedAtUtc"] = "2026-09-01T13:59:30+00:00"
+            self.manifest["manifestDigest"] = experiment.manifest_digest(
+                self.manifest
+            )
+            raise aws_training.ManifestStateConflict("manifest advanced")
+
+    clock = iter(
+        (
+            NOW,
+            aws_training.datetime(2026, 9, 1, 13, 59, tzinfo=aws_training.timezone.utc),
+            aws_training.datetime(2026, 9, 1, 14, 0, tzinfo=aws_training.timezone.utc),
+        )
+    )
+    store = RacingStore(new_manifest(sealed=True))
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: [],
+        now=lambda: next(clock),
+    )
+
+    result = training._capture_selections(
+        copy.deepcopy(store.manifest), frozen_challenger(store.manifest)
+    )
+
+    assert result["ok"] is True
+    assert result["capturedCount"] == 0
+    assert result["skippedCount"] == 1
+    assert result["skipReasonCounts"] == {"capture_not_before_commence": 1}
+    assert store.record_attempts == 1
+    assert store.selections == []
+
+
+def test_capture_does_not_retry_immutable_selection_conflict(monkeypatch):
+    import mlb_canonical_final_labels_v1 as labels
+
+    row = {
+        "gameId": "mlb_statsapi:immutable-conflict",
+        "officialGamePk": "immutable-conflict",
+        "slateDateEt": "2026-09-01",
+        "commenceTime": "2026-09-01T14:00:00+00:00",
+        "featureSnapshot": {"fingerprint": "c" * 64},
+        "canonicalLockAuthority": {"learningEligible": True},
+    }
+    monkeypatch.setattr(
+        labels,
+        "load_canonical_locked_rows_without_labels",
+        lambda **kwargs: {"ok": True, "rows": [copy.deepcopy(row)]},
+    )
+    monkeypatch.setattr(
+        aws_training.dual_model,
+        "score_unlabeled_lock",
+        lambda row, challenger: {"reliabilityProbability": 0.72},
+    )
+
+    class ConflictingStore(FakeStore):
+        def __init__(self, manifest):
+            super().__init__(manifest)
+            self.record_attempts = 0
+
+        def record_selection(self, entry):
+            self.record_attempts += 1
+            raise aws_training.ConditionalStateConflict(
+                "immutable prospective selection changed"
+            )
+
+    store = ConflictingStore(new_manifest(sealed=True))
+    training = aws_training.TrainingService(
+        store,
+        config(),
+        row_loader=lambda _config: [],
+        now=lambda: NOW,
+    )
+
+    result = training._capture_selections(
+        copy.deepcopy(store.manifest), frozen_challenger(store.manifest)
+    )
+
+    assert result["ok"] is False
+    assert store.record_attempts == 1
+    assert result["errors"][0]["type"] == "ConditionalStateConflict"
 
 
 def test_capture_skips_only_pre_cutover_or_already_started_games(monkeypatch):
@@ -1048,7 +1497,7 @@ def test_capture_rejects_tampered_challenger_binding_before_scoring():
         aws_training.TrainingContractError,
         match="persisted challenger manifest binding is invalid: bound_train_partition",
     ):
-        service(store).capture_selections()
+        service(store, lease_mode="selection_capture").capture_selections()
 
     assert store.selections == []
 
@@ -1082,7 +1531,7 @@ def test_lambda_failure_records_unhealthy_mode_status_before_reraising(monkeypat
         row_loader=lambda _config: (_ for _ in ()).throw(
             RuntimeError("canonical label read failed")
         ),
-        now=lambda: NOW,
+        now=lambda: ACTIVATION_NOW,
     )
     monkeypatch.setattr(aws_training, "_service", lambda: failing)
     context = type("Context", (), {"aws_request_id": "request-123"})()
@@ -1096,7 +1545,9 @@ def test_lambda_failure_records_unhealthy_mode_status_before_reraising(monkeypat
     assert latest["status"] == "TRAINING_INVOCATION_FAILED"
     assert latest["failure"] == {
         "type": "RuntimeError",
-        "message": "canonical label read failed",
+        "code": "INTERNAL_ERROR",
+        "message": "MLB ML invocation failed",
+        "redacted": "true",
     }
     assert latest["executionConcurrencyControl"]["acquiredForRun"] is True
     assert store.lease_owner is None
@@ -1108,11 +1559,11 @@ def test_lambda_failure_records_unhealthy_mode_status_before_reraising(monkeypat
     ("mode", "expected_execution_mode"),
     (("scheduled", "training"), ("selection_capture", "selection_capture")),
 )
-def test_lambda_mutating_modes_share_lease_and_release_after_success(
+def test_lambda_mutating_modes_use_isolated_lease_domains_and_release_after_success(
     monkeypatch, mode, expected_execution_mode
 ):
     store = FakeStore()
-    training = service(store, lease_mode=None)
+    training = service(store, now=ACTIVATION_NOW, lease_mode=None)
     monkeypatch.setattr(aws_training, "_service", lambda: training)
     context = type(
         "Context",
@@ -1127,32 +1578,15 @@ def test_lambda_mutating_modes_share_lease_and_release_after_success(
 
     assert result["ok"] is True
     assert result["executionMode"] == expected_execution_mode
-    assert result["executionConcurrencyControl"] == {
-        "version": aws_training.EXECUTION_LEASE_VERSION,
-        "strategy": "dynamodb_conditional_lease",
-        "scope": "one_global_lease_across_experiments_and_modes",
-        "leasePartitionKey": aws_training.EXECUTION_LEASE_PK,
-        "migrationAnchorExperimentId": (
-            aws_training.EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
-        ),
-        "leaseKey": aws_training.EXECUTION_LEASE_SK,
-        "leaseSeconds": aws_training.EXECUTION_LEASE_SECONDS,
-        "protectedExecutionModes": [
-            "manual_review",
-            "selection_capture",
-            "training",
-        ],
-        "acquiredForRun": True,
-        "expiredLeaseReclaimEnabled": True,
-        "ownerConditionalRelease": True,
-        "reservedLambdaConcurrencyRequired": False,
-    }
+    assert result["executionConcurrencyControl"] == (
+        aws_training.execution_concurrency_control(acquired_for_run=True)
+    )
     assert store.lease_acquisitions[0]["executionMode"] == expected_execution_mode
     assert store.lease_owner is None
     assert len(store.lease_releases) == 1
 
 
-def test_scheduled_training_captures_before_a_colliding_capture_invocation(
+def test_scheduled_training_does_not_block_independent_selection_capture(
     monkeypatch,
 ):
     import mlb_canonical_final_labels_v1 as labels
@@ -1190,10 +1624,10 @@ def test_scheduled_training_captures_before_a_colliding_capture_invocation(
     )
     services = iter((scheduled_service, colliding_capture_service))
     monkeypatch.setattr(aws_training, "_service", lambda: next(services))
-    collision_observed = []
+    capture_results = []
 
-    def training_after_capture():
-        assert len(store.selections) == 1
+    def training_while_capture_runs():
+        assert store.selections == []
         inner_context = type(
             "Context",
             (),
@@ -1202,11 +1636,11 @@ def test_scheduled_training_captures_before_a_colliding_capture_invocation(
                 "get_remaining_time_in_millis": lambda self: 900_000,
             },
         )()
-        with pytest.raises(aws_training.ExecutionLeaseUnavailable):
+        capture_results.append(
             aws_training.lambda_handler(
                 {"mode": "selection_capture"}, inner_context
             )
-        collision_observed.append(True)
+        )
         return scheduled_service._save_run_status(
             {
                 "ok": True,
@@ -1217,7 +1651,7 @@ def test_scheduled_training_captures_before_a_colliding_capture_invocation(
             }
         )
 
-    monkeypatch.setattr(scheduled_service, "run", training_after_capture)
+    monkeypatch.setattr(scheduled_service, "run", training_while_capture_runs)
     outer_context = type(
         "Context",
         (),
@@ -1229,82 +1663,42 @@ def test_scheduled_training_captures_before_a_colliding_capture_invocation(
 
     result = aws_training.lambda_handler({"mode": "scheduled"}, outer_context)
 
-    assert collision_observed == [True]
+    assert len(capture_results) == 1
+    assert capture_results[0]["ok"] is True
+    assert capture_results[0]["executionMode"] == "selection_capture"
     assert len(store.selections) == 1
     assert result["selectionCaptureBeforeTraining"] == {
-        "ok": True,
-        "status": "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE",
-        "capturedCount": 1,
-        "existingCount": 0,
-        "selectedCount": 1,
-        "skippedCount": 0,
-        "collisionPolicy": (
-            "capture_before_training_under_shared_execution_lease"
-        ),
+        "status": "OWNED_BY_INDEPENDENT_SELECTION_CAPTURE_CADENCE",
+        "invokedByTraining": False,
+        "healthEvaluatedByTraining": False,
+        "independentHeartbeatRequired": True,
+        "collisionPolicy": "separate_global_lease_domain",
         "selectionWritesIdempotent": True,
+        "manifestConditionCheckRequired": True,
     }
     assert result["statusFingerprint"] == aws_training._status_fingerprint(result)
     assert store.latest_statuses["training"] == result
     assert store.lease_owner is None
-    assert len(store.lease_acquisitions) == 1
-    assert len(store.lease_releases) == 1
+    assert {
+        acquisition["executionMode"]
+        for acquisition in store.lease_acquisitions
+    } == {"training", "selection_capture"}
+    assert len(store.lease_releases) == 2
 
 
-def test_scheduled_training_reuses_one_capture_and_refreshes_final_manifest_health(
-    monkeypatch,
-):
-    patch_sealed_training(monkeypatch)
-    capture_calls = []
-
-    def capture_once(self, manifest, challenger):
-        capture_calls.append(manifest["manifestDigest"])
-        return {
-            "ok": True,
-            "capturedCount": 1,
-            "existingCount": 0,
-            "selectedCount": 1,
-            "skippedCount": 0,
-            "errors": [],
-        }
-
-    monkeypatch.setattr(
-        aws_training.TrainingService, "_capture_selections", capture_once
-    )
-    store = FakeStore(new_manifest(sealed=True))
-    training = service(store)
-    before_digest = store.manifest["manifestDigest"]
-
-    result = training.run_scheduled()
-
-    assert result["ok"] is True
-    assert store.manifest["manifestDigest"] != before_digest
-    assert capture_calls == [before_digest]
-    latest_capture = store.latest_statuses["selection_capture"]
-    assert latest_capture["status"] == (
-        "SCHEDULED_SELECTION_CAPTURE_HEARTBEAT_FINALIZED"
-    )
-    assert latest_capture["manifestDigest"] == store.manifest["manifestDigest"]
-    assert latest_capture["selectionEvidenceRecapturedAfterTraining"] is False
-    assert latest_capture["heartbeatBoundAfterTraining"] is True
-    assert latest_capture["trainingRunId"] == result["runId"]
-    assert latest_capture["sourceSelectionStatusRunId"]
-    assert latest_capture["statusFingerprint"] == (
-        aws_training._status_fingerprint(latest_capture)
-    )
-
-    immediate = training.status()
-    assert immediate["ok"] is True
-    assert immediate["trainingHealth"]["ok"] is True
-    assert immediate["selectionCaptureHealth"]["ok"] is True
-    assert immediate["selectionCaptureHealth"]["errors"] == []
-
-
-@pytest.mark.parametrize("mode", ("scheduled", "selection_capture", "manual_review"))
+@pytest.mark.parametrize(
+    ("mode", "active_owner"),
+    (
+        ("scheduled", "training:active-owner"),
+        ("selection_capture", "selection_capture:active-owner"),
+        ("manual_review", "training:active-owner"),
+    ),
+)
 def test_lambda_lease_contention_is_retryable_without_overwriting_health(
-    monkeypatch, mode
+    monkeypatch, mode, active_owner
 ):
     store = FakeStore()
-    store.lease_owner = "training:active-owner"
+    store.lease_owner = active_owner
     existing = healthy_status("training", status="ACTIVE_TRAINING_HEALTH")
     store.latest_statuses["training"] = copy.deepcopy(existing)
     training = aws_training.TrainingService(
@@ -1323,7 +1717,7 @@ def test_lambda_lease_contention_is_retryable_without_overwriting_health(
 
     assert store.latest_statuses["training"] == existing
     assert store.statuses == []
-    assert store.lease_owner == "training:active-owner"
+    assert store.lease_owner == active_owner
     assert store.lease_releases == []
 
 
@@ -1339,7 +1733,9 @@ def test_ambiguous_lease_acquire_failure_makes_no_unlocked_status_write(
 
     store.acquire_execution_lease = ambiguous_failure
     monkeypatch.setattr(
-        aws_training, "_service", lambda: service(store, lease_mode=None)
+        aws_training,
+        "_service",
+        lambda: service(store, now=ACTIVATION_NOW, lease_mode=None),
     )
     context = type("Context", (), {"aws_request_id": "ambiguous-request"})()
 
@@ -1393,7 +1789,9 @@ def test_release_failure_turns_success_into_retryable_invocation_failure(
 
     store.release_execution_lease = release_failed
     monkeypatch.setattr(
-        aws_training, "_service", lambda: service(store, lease_mode=None)
+        aws_training,
+        "_service",
+        lambda: service(store, now=ACTIVATION_NOW, lease_mode=None),
     )
     context = type("Context", (), {"aws_request_id": "release-failure"})()
 
@@ -1415,7 +1813,7 @@ def test_release_failure_does_not_mask_primary_training_failure(monkeypatch):
         row_loader=lambda _config: (_ for _ in ()).throw(
             RuntimeError("primary canonical read failure")
         ),
-        now=lambda: NOW,
+        now=lambda: ACTIVATION_NOW,
     )
 
     def release_failed(*args, **kwargs):
@@ -1605,7 +2003,7 @@ def test_conditional_manifest_conflict_stops_before_artifacts_or_pointer():
     store = FakeStore()
     store.fail_next_save = True
     with pytest.raises(aws_training.ConditionalStateConflict):
-        service(store).run()
+        service(store, now=ACTIVATION_NOW).run()
     assert store.artifact_calls == 0
     assert store.candidates == {}
     assert store.champion is None
@@ -1688,7 +2086,7 @@ def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest(monkeypatch):
         },
     )
 
-    store = FakeStore()
+    store = FakeStore(new_manifest())
     training = aws_training.TrainingService(
         store,
         cutoff_config,
@@ -1776,9 +2174,138 @@ class ConditionalWriteError(RuntimeError):
     response = {"Error": {"Code": "ConditionalCheckFailedException"}}
 
 
+class TransactionCanceledError(RuntimeError):
+    response = {"Error": {"Code": "TransactionCanceledException"}}
+
+
+class MemoryClient:
+    def __init__(self, table):
+        self.table = table
+
+    @staticmethod
+    def _deserialize(values):
+        if not values:
+            return {}
+        dynamodb_types = {"B", "BOOL", "BS", "L", "M", "N", "NS", "NULL", "S", "SS"}
+        if not all(
+            isinstance(value, dict)
+            and len(value) == 1
+            and next(iter(value)) in dynamodb_types
+            for value in values.values()
+        ):
+            return copy.deepcopy(values)
+        from boto3.dynamodb.types import TypeDeserializer
+
+        deserializer = TypeDeserializer()
+        return {key: deserializer.deserialize(value) for key, value in values.items()}
+
+    def transact_write_items(self, *, TransactItems):
+        staged = copy.deepcopy(self.table.items)
+        for operation in TransactItems:
+            if "ConditionCheck" in operation:
+                check = operation["ConditionCheck"]
+                key_value = self._deserialize(check["Key"])
+                key = (key_value["PK"], key_value["SK"])
+                existing = staged.get(key) or {}
+                values = self._deserialize(
+                    check.get("ExpressionAttributeValues") or {}
+                )
+                if ":revision" in values:
+                    if (
+                        existing.get("revision") != values.get(":revision")
+                        or existing.get("manifestDigest") != values.get(":digest")
+                    ):
+                        raise TransactionCanceledError("manifest condition failed")
+                else:
+                    legacy_active = bool(
+                        existing
+                        and "version" not in existing
+                        and existing.get("record_type")
+                        == values.get(":record_type")
+                        and isinstance(existing.get("lease_expires_at_epoch"), int)
+                        and existing["lease_expires_at_epoch"] > values.get(":now")
+                    )
+                    unknown = bool(
+                        existing
+                        and existing.get("version") != values.get(":version")
+                        and not legacy_active
+                        and not (
+                            "version" not in existing
+                            and existing.get("record_type")
+                            == values.get(":record_type")
+                            and isinstance(
+                                existing.get("lease_expires_at_epoch"), int
+                            )
+                            and existing["lease_expires_at_epoch"]
+                            <= values.get(":now")
+                        )
+                    )
+                    if legacy_active or unknown:
+                        raise TransactionCanceledError(
+                            "legacy shared lease fence failed"
+                        )
+            elif "Put" in operation:
+                put = operation["Put"]
+                item = self._deserialize(put["Item"])
+                key = (item["PK"], item["SK"])
+                if put.get("ConditionExpression") and key in staged:
+                    values = self._deserialize(
+                        put.get("ExpressionAttributeValues") or {}
+                    )
+                    existing = staged[key]
+                    expiry = existing.get("lease_expires_at_epoch")
+                    expiry_is_number = isinstance(expiry, int) and not isinstance(
+                        expiry, bool
+                    )
+                    if ":sentinel_record_type" in values:
+                        exact_expired_legacy = bool(
+                            existing.get("record_type")
+                            == values.get(":legacy_record_type")
+                            and "version" not in existing
+                            and expiry_is_number
+                            and expiry <= values.get(":now", -1)
+                        )
+                        exact_sentinel = bool(
+                            existing.get("record_type")
+                            == values.get(":sentinel_record_type")
+                            and existing.get("version")
+                            == values.get(":sentinel_version")
+                            and existing.get("lease_owner")
+                            == values.get(":sentinel_owner")
+                            and existing.get("execution_mode")
+                            == values.get(":sentinel_mode")
+                            and existing.get("experiment_id")
+                            == values.get(":migration_anchor")
+                            and expiry_is_number
+                        )
+                        allowed = exact_expired_legacy or exact_sentinel
+                    elif ":lease_domain" in values:
+                        allowed = bool(
+                            existing.get("record_type")
+                            == values.get(":record_type")
+                            and existing.get("version") == values.get(":version")
+                            and existing.get("lease_domain")
+                            == values.get(":lease_domain")
+                            and expiry_is_number
+                            and expiry <= values.get(":now", -1)
+                        )
+                    else:
+                        allowed = False
+                    if not allowed:
+                        raise TransactionCanceledError(
+                            "immutable put condition failed"
+                        )
+                staged[key] = copy.deepcopy(item)
+            else:
+                raise AssertionError(f"unsupported transaction: {operation}")
+        self.table.items = staged
+        return {}
+
+
 class MemoryTable:
     def __init__(self):
         self.items = {}
+        self.meta = SimpleNamespace(client=MemoryClient(self))
 
     def put_item(self, *, Item, ConditionExpression=None, **kwargs):
         key = (Item["PK"], Item["SK"])
@@ -1787,8 +2314,39 @@ class MemoryTable:
         ):
             existing = self.items.get(key)
             now = kwargs["ExpressionAttributeValues"][":now"]
-            if existing and existing.get("lease_expires_at_epoch", now + 1) > now:
-                raise ConditionalWriteError("active execution lease")
+            if existing and not (
+                isinstance(existing.get("lease_expires_at_epoch"), int)
+                and existing["lease_expires_at_epoch"] <= now
+            ):
+                raise ConditionalWriteError("active legacy execution lease")
+        elif ConditionExpression and "lease_expires_at_epoch" in ConditionExpression:
+            existing = self.items.get(key)
+            values = kwargs["ExpressionAttributeValues"]
+            now = values[":now"]
+            if existing:
+                current_contract = bool(
+                    existing.get("record_type") == values.get(":record_type")
+                    and existing.get("version") == values.get(":version")
+                    and existing.get("lease_domain") == values.get(":lease_domain")
+                )
+                legacy_contract = bool(
+                    values.get(":lease_domain") == "state_mutation"
+                    and existing.get("record_type") == values.get(":record_type")
+                    and "version" not in existing
+                )
+                expired = bool(
+                    isinstance(existing.get("lease_expires_at_epoch"), int)
+                    and existing["lease_expires_at_epoch"] <= now
+                )
+                malformed_current = bool(
+                    current_contract
+                    and "lease_expires_at_epoch" not in existing
+                )
+                if not (
+                    malformed_current
+                    or (expired and (current_contract or legacy_contract))
+                ):
+                    raise ConditionalWriteError("active execution lease")
         elif ConditionExpression and "attribute_not_exists" in ConditionExpression:
             if key in self.items:
                 raise ConditionalWriteError("conditional write failed")
@@ -1800,12 +2358,16 @@ class MemoryTable:
     ):
         key = (Key["PK"], Key["SK"])
         existing = self.items.get(key)
-        if ConditionExpression == "lease_owner = :owner" and (
-            not existing
-            or existing.get("lease_owner")
-            != (ExpressionAttributeValues or {}).get(":owner")
-        ):
-            raise ConditionalWriteError("stale execution lease owner")
+        if ConditionExpression and "lease_owner = :owner" in ConditionExpression:
+            values = ExpressionAttributeValues or {}
+            if (
+                not existing
+                or existing.get("lease_owner") != values.get(":owner")
+                or existing.get("record_type") != values.get(":record_type")
+                or existing.get("version") != values.get(":version")
+                or existing.get("lease_domain") != values.get(":lease_domain")
+            ):
+                raise ConditionalWriteError("stale execution lease owner")
         self.items.pop(key, None)
         return {}
 
@@ -1942,7 +2504,94 @@ def test_real_boto_resource_serializes_candidate_transaction_once():
     assert puts[1]["Item"]["artifactDigest"] == {"S": "candidate-digest"}
 
 
-def test_global_lease_reuses_live_r2_key_and_serializes_new_r3_runtime():
+def test_real_boto_resource_serializes_mode_lease_and_sentinel_once():
+    store, captured = real_resource_transaction_store()
+
+    with pytest.raises(CapturedDynamoRequest, match="before network I/O"):
+        store.acquire_execution_lease(
+            experiment.PRODUCTION_EXPERIMENT_ID,
+            owner_token="request-shape-owner",
+            execution_mode="training",
+            acquired_at=NOW,
+            lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
+        )
+
+    puts = [entry["Put"] for entry in captured["body"]["TransactItems"]]
+    assert len(puts) == 2
+    domain, sentinel = puts
+    assert domain["Item"]["PK"] == {"S": aws_training.EXECUTION_LEASE_PK}
+    assert domain["Item"]["SK"] == {
+        "S": aws_training.STATE_MUTATION_EXECUTION_LEASE_SK
+    }
+    assert domain["Item"]["lease_expires_at_epoch"] == {
+        "N": str(
+            int(
+                (
+                    NOW
+                    + aws_training.timedelta(
+                        seconds=aws_training.EXECUTION_LEASE_SECONDS
+                    )
+                ).timestamp()
+            )
+        )
+    }
+    assert domain["ExpressionAttributeValues"][":number_type"] == {"S": "N"}
+    assert sentinel["Item"]["SK"] == {
+        "S": aws_training.LEGACY_SHARED_EXECUTION_LEASE_SK
+    }
+    assert sentinel["Item"]["experiment_id"] == {
+        "S": aws_training.EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
+    }
+    assert sentinel["ExpressionAttributeValues"][":migration_anchor"] == {
+        "S": aws_training.EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
+    }
+
+
+def test_real_boto_resource_serializes_selection_manifest_condition_once():
+    store, captured = real_resource_transaction_store()
+    manifest = new_manifest(sealed=True)
+    row = {
+        "gameId": "mlb_statsapi:selection-request-shape",
+        "officialGamePk": "selection-request-shape",
+        "slateDateEt": "2026-09-01",
+        "commenceTime": "2026-09-01T14:00:00+00:00",
+        "featureSnapshot": {"fingerprint": "f" * 64},
+    }
+    entry = experiment.selection_ledger_entry(
+        manifest,
+        row,
+        reliability_probability=0.72,
+        deployment_identity={"gitSha": "a" * 40, "templateSha256": "b" * 64},
+        captured_at_utc=NOW.isoformat(),
+    )
+    store.load_manifest = lambda _experiment_id: copy.deepcopy(manifest)
+    store.table.get_item = lambda **_kwargs: {}
+
+    with pytest.raises(CapturedDynamoRequest, match="before network I/O"):
+        store.record_selection(entry)
+
+    condition = captured["body"]["TransactItems"][0]["ConditionCheck"]
+    selection = captured["body"]["TransactItems"][1]["Put"]
+    assert condition["Key"] == {
+        "PK": {"S": aws_training._experiment_pk(experiment.PRODUCTION_EXPERIMENT_ID)},
+        "SK": {"S": aws_training.MANIFEST_SK},
+    }
+    assert condition["ExpressionAttributeValues"] == {
+        ":revision": {"N": str(manifest["revision"])},
+        ":digest": {"S": manifest["manifestDigest"]},
+    }
+    assert selection["Item"]["PK"] == {
+        "S": aws_training._experiment_pk(experiment.PRODUCTION_EXPERIMENT_ID)
+    }
+    assert selection["Item"]["data"]["M"]["recordIdentity"] == {
+        "S": entry["recordIdentity"]
+    }
+    assert selection["Item"]["data"]["M"]["reliabilityProbability"] == {
+        "N": "0.72"
+    }
+
+
+def test_mode_isolated_leases_allow_v2_training_and_selection_capture_together():
     store, table = execution_lease_store()
 
     acquired = store.acquire_execution_lease(
@@ -1968,20 +2617,243 @@ def test_global_lease_reuses_live_r2_key_and_serializes_new_r3_runtime():
     assert acquired["lease_expires_at_epoch"] == int(
         (NOW + aws_training.timedelta(seconds=aws_training.EXECUTION_LEASE_SECONDS)).timestamp()
     )
+    capture = store.acquire_execution_lease(
+        experiment.PRODUCTION_EXPERIMENT_ID,
+        owner_token="new-r3-capture-owner",
+        execution_mode="selection_capture",
+        acquired_at=NOW + aws_training.timedelta(minutes=1),
+        lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
+    )
+
+    assert capture["SK"] == aws_training.SELECTION_CAPTURE_EXECUTION_LEASE_SK
+    assert capture["lease_domain"] == "selection_capture"
+    assert len(table.items) == 3
+    assert {
+        value["lease_owner"]
+        for (_pk, sk), value in table.items.items()
+        if sk != aws_training.LEGACY_SHARED_EXECUTION_LEASE_SK
+    } == {"live-r2-training-owner", "new-r3-capture-owner"}
+    sentinel = table.items[
+        (
+            aws_training.EXECUTION_LEASE_PK,
+            aws_training.LEGACY_SHARED_EXECUTION_LEASE_SK,
+        )
+    ]
+    assert sentinel["version"] == aws_training.LEGACY_EXECUTION_SENTINEL_VERSION
+    assert sentinel["lease_expires_at_epoch"] == int(
+        (
+            NOW
+            + aws_training.timedelta(minutes=1)
+            + aws_training.timedelta(seconds=aws_training.EXECUTION_LEASE_SECONDS)
+        ).timestamp()
+    )
+
+
+def test_selection_capture_fences_active_versionless_legacy_shared_lease():
+    store, table = execution_lease_store()
+    state_key = (
+        aws_training.EXECUTION_LEASE_PK,
+        aws_training.LEGACY_SHARED_EXECUTION_LEASE_SK,
+    )
+    table.items[state_key] = {
+        "PK": state_key[0],
+        "SK": state_key[1],
+        "record_type": aws_training.EXECUTION_LEASE_RECORD_TYPE,
+        "experiment_id": (
+            aws_training.EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
+        ),
+        "lease_owner": "legacy-shared-owner",
+        "execution_mode": "selection_capture",
+        "lease_expires_at_epoch": int(
+            (
+                NOW
+                + aws_training.timedelta(
+                    seconds=aws_training.EXECUTION_LEASE_SECONDS
+                )
+            ).timestamp()
+        ),
+    }
+
     with pytest.raises(
-        aws_training.ExecutionLeaseUnavailable, match="holds the execution lease"
+        aws_training.ExecutionLeaseUnavailable,
+        match="holds the execution lease",
     ):
         store.acquire_execution_lease(
             experiment.PRODUCTION_EXPERIMENT_ID,
             owner_token="new-r3-capture-owner",
             execution_mode="selection_capture",
-            acquired_at=NOW + aws_training.timedelta(minutes=1),
+            acquired_at=NOW,
             lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
         )
-    assert len(table.items) == 1
-    assert next(iter(table.items.values()))["lease_owner"] == (
-        "live-r2-training-owner"
+
+    assert set(table.items) == {state_key}
+
+
+def test_new_sentinel_fences_old_runtime_then_expires_for_rollback():
+    store, table = execution_lease_store()
+    store.acquire_execution_lease(
+        experiment.PRODUCTION_EXPERIMENT_ID,
+        owner_token="new-r3-training-owner",
+        execution_mode="training",
+        acquired_at=NOW,
+        lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
     )
+    legacy_key = {
+        "PK": aws_training.EXECUTION_LEASE_PK,
+        "SK": aws_training.LEGACY_SHARED_EXECUTION_LEASE_SK,
+    }
+    old_item = {
+        **legacy_key,
+        "record_type": aws_training.EXECUTION_LEASE_RECORD_TYPE,
+        "experiment_id": aws_training.EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID,
+        "lease_owner": "rolled-back-old-owner",
+        "execution_mode": "training",
+        "lease_expires_at_epoch": int(
+            (
+                NOW
+                + aws_training.timedelta(
+                    seconds=aws_training.EXECUTION_LEASE_SECONDS * 2
+                )
+            ).timestamp()
+        ),
+    }
+
+    with pytest.raises(ConditionalWriteError, match="active legacy"):
+        table.put_item(
+            Item=old_item,
+            ConditionExpression=(
+                "attribute_not_exists(PK) OR lease_expires_at_epoch <= :now"
+            ),
+            ExpressionAttributeValues={":now": int(NOW.timestamp())},
+        )
+
+    sentinel_expiry = table.items[
+        (
+            aws_training.EXECUTION_LEASE_PK,
+            aws_training.LEGACY_SHARED_EXECUTION_LEASE_SK,
+        )
+    ]["lease_expires_at_epoch"]
+    table.put_item(
+        Item=old_item,
+        ConditionExpression=(
+            "attribute_not_exists(PK) OR lease_expires_at_epoch <= :now"
+        ),
+        ExpressionAttributeValues={":now": sentinel_expiry},
+    )
+    assert table.items[(legacy_key["PK"], legacy_key["SK"])][
+        "lease_owner"
+    ] == "rolled-back-old-owner"
+
+
+def test_malformed_sentinel_anchor_fails_closed_without_overwrite():
+    store, table = execution_lease_store()
+    key = (
+        aws_training.EXECUTION_LEASE_PK,
+        aws_training.LEGACY_SHARED_EXECUTION_LEASE_SK,
+    )
+    table.items[key] = {
+        "PK": key[0],
+        "SK": key[1],
+        "record_type": aws_training.LEGACY_EXECUTION_SENTINEL_RECORD_TYPE,
+        "version": aws_training.LEGACY_EXECUTION_SENTINEL_VERSION,
+        "experiment_id": "wrong-migration-anchor",
+        "lease_owner": aws_training.LEGACY_EXECUTION_SENTINEL_OWNER,
+        "execution_mode": aws_training.LEGACY_EXECUTION_SENTINEL_MODE,
+        "lease_expires_at_epoch": int(
+            (
+                NOW
+                + aws_training.timedelta(
+                    seconds=aws_training.EXECUTION_LEASE_SECONDS
+                )
+            ).timestamp()
+        ),
+    }
+
+    with pytest.raises(
+        aws_training.TrainingContractError,
+        match="migration sentinel is invalid",
+    ):
+        store.acquire_execution_lease(
+            experiment.PRODUCTION_EXPERIMENT_ID,
+            owner_token="new-owner",
+            execution_mode="training",
+            acquired_at=NOW,
+            lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
+        )
+    assert table.items[key]["experiment_id"] == "wrong-migration-anchor"
+
+
+def test_malformed_current_domain_expiry_fails_closed_without_overwrite():
+    store, table = execution_lease_store()
+    store.acquire_execution_lease(
+        experiment.PRODUCTION_EXPERIMENT_ID,
+        owner_token="first-owner",
+        execution_mode="training",
+        acquired_at=NOW,
+        lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
+    )
+    domain_key = (
+        aws_training.EXECUTION_LEASE_PK,
+        aws_training.STATE_MUTATION_EXECUTION_LEASE_SK,
+    )
+    table.items[domain_key].pop("lease_expires_at_epoch")
+
+    with pytest.raises(
+        aws_training.TrainingContractError,
+        match="domain expiry is invalid",
+    ):
+        store.acquire_execution_lease(
+            experiment.PRODUCTION_EXPERIMENT_ID,
+            owner_token="replacement-owner",
+            execution_mode="training",
+            acquired_at=NOW + aws_training.timedelta(minutes=20),
+            lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
+        )
+    assert table.items[domain_key]["lease_owner"] == "first-owner"
+
+
+def test_cross_domain_sentinel_transaction_conflict_uses_deploy_retry_contract():
+    store, table = execution_lease_store()
+    sentinel_key = (
+        aws_training.EXECUTION_LEASE_PK,
+        aws_training.LEGACY_SHARED_EXECUTION_LEASE_SK,
+    )
+    table.items[sentinel_key] = {
+        "PK": sentinel_key[0],
+        "SK": sentinel_key[1],
+        "record_type": aws_training.LEGACY_EXECUTION_SENTINEL_RECORD_TYPE,
+        "version": aws_training.LEGACY_EXECUTION_SENTINEL_VERSION,
+        "experiment_id": (
+            aws_training.EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
+        ),
+        "lease_owner": aws_training.LEGACY_EXECUTION_SENTINEL_OWNER,
+        "execution_mode": aws_training.LEGACY_EXECUTION_SENTINEL_MODE,
+        "lease_expires_at_epoch": int(
+            (
+                NOW
+                + aws_training.timedelta(
+                    seconds=aws_training.EXECUTION_LEASE_SECONDS
+                )
+            ).timestamp()
+        ),
+    }
+
+    class ConflictingClient:
+        def transact_write_items(self, **_kwargs):
+            raise TransactionCanceledError("cross-domain sentinel refresh")
+
+    table.meta.client = ConflictingClient()
+
+    with pytest.raises(aws_training.ExecutionLeaseUnavailable) as error:
+        store.acquire_execution_lease(
+            experiment.PRODUCTION_EXPERIMENT_ID,
+            owner_token="capture-owner",
+            execution_mode="selection_capture",
+            acquired_at=NOW,
+            lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
+        )
+
+    assert str(error.value) == aws_training.EXECUTION_LEASE_UNAVAILABLE_MESSAGE
 
 
 def test_real_store_r3_lease_attests_against_global_migration_key():
@@ -2013,6 +2885,7 @@ def test_real_store_r3_lease_attests_against_global_migration_key():
         "experimentId": experiment.PRODUCTION_EXPERIMENT_ID,
         "leaseOwner": owner,
         "executionMode": "training",
+        "leaseDomain": "state_mutation",
         "leaseExpiresAtEpoch": int(
             (
                 NOW
@@ -2040,7 +2913,7 @@ def test_expired_execution_lease_is_reclaimed_and_stale_owner_cannot_release_it(
     replacement = store.acquire_execution_lease(
         experiment.PRODUCTION_EXPERIMENT_ID,
         owner_token="replacement-owner",
-        execution_mode="selection_capture",
+        execution_mode="training",
         acquired_at=reclaimed_at,
         lease_seconds=aws_training.EXECUTION_LEASE_SECONDS,
     )
@@ -2053,13 +2926,24 @@ def test_expired_execution_lease_is_reclaimed_and_stale_owner_cannot_release_it(
         store.release_execution_lease(
             experiment.PRODUCTION_EXPERIMENT_ID,
             owner_token="expired-owner",
+            execution_mode="training",
         )
-    assert next(iter(table.items.values()))["lease_owner"] == "replacement-owner"
+    state_key = (
+        aws_training.EXECUTION_LEASE_PK,
+        aws_training.STATE_MUTATION_EXECUTION_LEASE_SK,
+    )
+    assert table.items[state_key]["lease_owner"] == "replacement-owner"
     store.release_execution_lease(
         experiment.PRODUCTION_EXPERIMENT_ID,
         owner_token="replacement-owner",
+        execution_mode="training",
     )
-    assert table.items == {}
+    assert set(table.items) == {
+        (
+            aws_training.EXECUTION_LEASE_PK,
+            aws_training.LEGACY_SHARED_EXECUTION_LEASE_SK,
+        )
+    }
 
 
 def test_execution_lease_duration_must_match_timeout_safe_retry_contract():
@@ -2084,6 +2968,8 @@ def selection_store_and_entry(*, probability=0.72, captured_at=NOW):
     table.items[(aws_training._experiment_pk(experiment.PRODUCTION_EXPERIMENT_ID), aws_training.MANIFEST_SK)] = {
         "PK": aws_training._experiment_pk(experiment.PRODUCTION_EXPERIMENT_ID),
         "SK": aws_training.MANIFEST_SK,
+        "revision": manifest["revision"],
+        "manifestDigest": manifest["manifestDigest"],
         "data": copy.deepcopy(manifest),
     }
     store = aws_training.AwsTrainingStore(
@@ -2140,6 +3026,69 @@ def test_selection_store_retry_preserves_first_capture_and_rejects_changed_decis
         match="immutable prospective selection changed",
     ):
         store.record_selection(changed)
+
+
+def test_selection_store_bridges_valid_legacy_v1_to_v2_across_deployments():
+    store, table, manifest, row, current = selection_store_and_entry()
+    legacy = copy.deepcopy(current)
+    legacy["idempotencyFingerprintVersion"] = (
+        experiment.SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V1
+    )
+    legacy["idempotencyFingerprint"] = experiment.selection_idempotency_fingerprint(
+        legacy
+    )
+    legacy["decisionFingerprint"] = experiment.selection_decision_fingerprint(legacy)
+    legacy["recordFingerprint"] = experiment.selection_record_fingerprint(legacy)
+    identity_hash = aws_training.hashlib.sha256(
+        legacy["recordIdentity"].encode("utf-8")
+    ).hexdigest()
+    key = (
+        aws_training._experiment_pk(experiment.PRODUCTION_EXPERIMENT_ID),
+        f"{aws_training.SELECTION_SK_PREFIX}{legacy['slateDateEt']}#{identity_hash}",
+    )
+    table.items[key] = {
+        "PK": key[0],
+        "SK": key[1],
+        "record_type": aws_training.SELECTION_RECORD_TYPE,
+        "artifactDigest": legacy["challengerArtifactDigest"],
+        "decisionFingerprint": legacy["decisionFingerprint"],
+        "recordFingerprint": legacy["recordFingerprint"],
+        "created_at": legacy["capturedAtUtc"],
+        "data": copy.deepcopy(legacy),
+    }
+    retry = experiment.selection_ledger_entry(
+        manifest,
+        row,
+        reliability_probability=0.72,
+        deployment_identity={"gitSha": "c" * 40, "templateSha256": "d" * 64},
+        captured_at_utc=(NOW + aws_training.timedelta(minutes=5)).isoformat(),
+    )
+
+    result = store.record_selection(retry)
+
+    assert result["created"] is False
+    assert result["capturedAtUtc"] == legacy["capturedAtUtc"]
+    assert result["recordFingerprint"] == legacy["recordFingerprint"]
+    assert table.items[key]["data"] == legacy
+
+    changed = experiment.selection_ledger_entry(
+        manifest,
+        row,
+        reliability_probability=0.71,
+        deployment_identity={"gitSha": "c" * 40, "templateSha256": "d" * 64},
+        captured_at_utc=(NOW + aws_training.timedelta(minutes=5)).isoformat(),
+    )
+    with pytest.raises(
+        aws_training.ConditionalStateConflict,
+        match="immutable prospective selection changed",
+    ):
+        store.record_selection(changed)
+
+    with pytest.raises(
+        aws_training.TrainingContractError,
+        match="current semantic idempotency",
+    ):
+        store.record_selection(legacy)
 
 
 def test_selection_store_validates_semantics_and_complete_readback_envelope():

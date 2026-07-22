@@ -31,6 +31,14 @@ MANIFEST = experiment.new_manifest(
         "reliability": list(trainer.dual_model.RELIABILITY_FEATURES),
     },
     created_at_utc="2026-07-21T00:00:00+00:00",
+    release_activation=experiment.release_activation(
+        experiment_id=EXPERIMENT_ID,
+        release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        release_cutoff_utc="2026-07-22T04:00:00+00:00",
+        activated_at_utc="2026-07-21T01:00:00+00:00",
+        deployment_git_sha=DEPLOYMENT["gitSha"],
+        deployment_template_sha256=DEPLOYMENT["templateSha256"],
+    ),
 )
 
 
@@ -737,6 +745,65 @@ def test_stable_manifest_and_recaptured_statuses_pass(monkeypatch) -> None:
     assert result["ok"] is True
     assert result["manifestReadStable"] is True
     assert result["manifestReadBefore"] == result["manifestReadAfter"]
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_error"),
+    (
+        ("missing", "release_activation_missing"),
+        ("tampered_identity", "release_activation_git_identity_invalid"),
+        (
+            "at_cutoff",
+            "release_activation_not_strictly_before_cutoff",
+        ),
+    ),
+)
+def test_release_activation_invalidity_fails_recurring_audit(
+    monkeypatch,
+    mutation,
+    expected_error,
+) -> None:
+    manifest = copy.deepcopy(MANIFEST)
+    if mutation == "missing":
+        manifest.pop("releaseActivation", None)
+    elif mutation == "tampered_identity":
+        manifest["releaseActivation"]["deploymentIdentity"]["gitSha"] = (
+            "not-a-valid-git-sha"
+        )
+    else:
+        manifest["releaseActivation"]["activatedAtUtc"] = (
+            manifest["releaseCutoffUtc"]
+        )
+    manifest["manifestDigest"] = experiment.manifest_digest(manifest)
+    _install_table(
+        monkeypatch,
+        {
+            (PK, "MANIFEST"): manifest,
+            (PK, "STATUS#LATEST#TRAINING"): _status(
+                "training",
+                1,
+                manifest_digest=manifest["manifestDigest"],
+            ),
+            (PK, "STATUS#LATEST#SELECTION_CAPTURE"): _status(
+                "selection_capture",
+                1,
+                manifest_digest=manifest["manifestDigest"],
+            ),
+        },
+    )
+
+    result = audit_report._read_v2_training_state(now_utc=NOW)
+
+    assert result["ok"] is False
+    assert result["manifestValid"] is True
+    assert result["releaseActivationValid"] is False
+    assert expected_error in result["releaseActivationErrors"]
+    assert "current_manifest_release_activation_invalid" in result[
+        "trainingHealth"
+    ]["errors"]
+    assert "current_manifest_release_activation_invalid" in result[
+        "selectionCaptureHealth"
+    ]["errors"]
 
 
 def test_real_dynamodb_numeric_round_trip_preserves_manifest_and_status_health(

@@ -288,13 +288,13 @@ def test_readiness_write_failure_cannot_block_a_due_game_lock():
     module = build_module([source], "2026-07-13T17:15:05+00:00")
     original_put = module.TABLE.put_item
 
-    def put_with_readiness_failure(Item, ConditionExpression=None):
+    def put_with_readiness_failure(Item, **kwargs):
         if (
             Item.get("record_type") == patch.READINESS_RECORD_TYPE
             and Item.get("game_id") == later["game_id"]
         ):
             raise RuntimeError("injected readiness write failure")
-        return original_put(Item=Item, ConditionExpression=ConditionExpression)
+        return original_put(Item=Item, **kwargs)
 
     module.TABLE.put_item = put_with_readiness_failure
     result = module.run_lock(SLATE)
@@ -317,13 +317,13 @@ def test_stage_failure_for_one_game_does_not_block_another_due_game():
     module = build_module([source], "2026-07-13T17:15:05+00:00")
     original_put = module.TABLE.put_item
 
-    def put_with_stage_failure(Item, ConditionExpression=None):
+    def put_with_stage_failure(Item, **kwargs):
         if (
             Item.get("record_type") == patch.STAGE_RECORD_TYPE
             and Item.get("game_id") == G1["game_id"]
         ):
             raise RuntimeError("injected stage write failure")
-        return original_put(Item=Item, ConditionExpression=ConditionExpression)
+        return original_put(Item=Item, **kwargs)
 
     module.TABLE.put_item = put_with_stage_failure
     result = module.run_lock(SLATE)
@@ -349,13 +349,13 @@ def test_terminal_outcome_failure_for_one_game_does_not_block_valid_peer():
     persist_candidate(module, valid, source)
     original_put = module.TABLE.put_item
 
-    def put_with_outcome_failure(Item, ConditionExpression=None):
+    def put_with_outcome_failure(Item, **kwargs):
         if (
             Item.get("record_type") == patch.LOCK_OUTCOME_RECORD_TYPE
             and Item.get("game_id") == missing["game_id"]
         ):
             raise RuntimeError("injected terminal outcome write failure")
-        return original_put(Item=Item, ConditionExpression=ConditionExpression)
+        return original_put(Item=Item, **kwargs)
 
     module.TABLE.put_item = put_with_outcome_failure
     result = module.run_lock(SLATE)

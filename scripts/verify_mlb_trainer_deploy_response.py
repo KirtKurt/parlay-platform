@@ -15,26 +15,45 @@ TRAINER_VERSION = "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-sha
 EXPERIMENT_VERSION = "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
 EXPERIMENT_ID = "mlb-v2-2026-07-22-future-prospective-r3"
 RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
+RELEASE_ACTIVATION_VERSION = "MLB-ML-RELEASE-ACTIVATION-v1"
 STATUS_FINGERPRINT_VERSION = (
     "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical"
 )
 EXECUTION_CONCURRENCY_CONTROL = {
-    "version": "MLB-ML-EXECUTION-LEASE-v1-shared-ddb-conditional",
-    "strategy": "dynamodb_conditional_lease",
-    "scope": "one_global_lease_across_experiments_and_modes",
+    "version": "MLB-ML-EXECUTION-LEASE-v2-mode-isolated-ddb-conditional",
+    "strategy": "dynamodb_mode_isolated_conditional_leases",
+    "scope": "global_across_experiments_with_isolated_mutation_domains",
     "leasePartitionKey": (
         "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2"
     ),
     "migrationAnchorExperimentId": (
         "mlb-v2-2026-07-21-future-prospective-r2"
     ),
-    "leaseKey": "EXECUTION_LEASE",
+    "leaseKeys": {
+        "state_mutation": "EXECUTION_LEASE#STATE_MUTATION",
+        "selection_capture": "EXECUTION_LEASE#SELECTION_CAPTURE",
+    },
+    "legacySharedLeaseSentinelKey": "EXECUTION_LEASE",
+    "legacySharedLeaseSentinelVersion": (
+        "MLB-ML-EXECUTION-SENTINEL-v2-renewable-expiring"
+    ),
+    "legacySharedLeaseSentinelRenewedOnAcquire": True,
+    "legacySharedLeaseSentinelExpiresWithLease": True,
+    "rollbackSelfRecoverySeconds": 960,
+    "bidirectionalLegacyRuntimeFence": True,
     "leaseSeconds": 960,
     "protectedExecutionModes": [
         "manual_review",
         "selection_capture",
         "training",
     ],
+    "modeLeaseDomains": {
+        "manual_review": "state_mutation",
+        "training": "state_mutation",
+        "selection_capture": "selection_capture",
+    },
+    "trainingCannotBlockSelectionCapture": True,
+    "selectionWriteManifestConditionCheck": True,
     "acquiredForRun": True,
     "expiredLeaseReclaimEnabled": True,
     "ownerConditionalRelease": True,
@@ -72,6 +91,95 @@ def _parse_time(value: Any) -> Optional[datetime]:
         return parsed.astimezone(timezone.utc)
     except Exception:
         return None
+
+
+def _is_hex(value: Any, length: int) -> bool:
+    text = str(value or "")
+    if len(text) != length:
+        return False
+    try:
+        int(text, 16)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def _canonical(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _canonical(value[key]) for key in sorted(value, key=str)}
+    if isinstance(value, (list, tuple)):
+        return [_canonical(item) for item in value]
+    if isinstance(value, float):
+        if value != value or value in {float("inf"), float("-inf")}:
+            raise ValueError("non-finite manifest value")
+        return format(value, ".17g")
+    if isinstance(value, (str, int, bool)) or value is None:
+        return value
+    return str(value)
+
+
+def _manifest_digest(manifest: Dict[str, Any]) -> str:
+    material = {
+        key: value for key, value in manifest.items() if key != "manifestDigest"
+    }
+    encoded = json.dumps(
+        _canonical(material),
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def _release_activation_errors(manifest: Dict[str, Any]) -> List[str]:
+    marker = manifest.get("releaseActivation")
+    if not isinstance(marker, dict):
+        return ["manifest_release_activation_missing"]
+    errors: List[str] = []
+    if set(marker) != {
+        "version",
+        "experimentId",
+        "releaseContractId",
+        "releaseCutoffUtc",
+        "activatedAtUtc",
+        "deploymentIdentity",
+        "immutable",
+    }:
+        errors.append("manifest_release_activation_fields_mismatch")
+    if marker.get("version") != RELEASE_ACTIVATION_VERSION:
+        errors.append("manifest_release_activation_version_mismatch")
+    if marker.get("experimentId") != manifest.get("experimentId"):
+        errors.append("manifest_release_activation_experiment_mismatch")
+    if marker.get("releaseContractId") != manifest.get("releaseContractId"):
+        errors.append("manifest_release_activation_contract_mismatch")
+    if marker.get("releaseCutoffUtc") != manifest.get("releaseCutoffUtc"):
+        errors.append("manifest_release_activation_cutoff_mismatch")
+
+    activated = _parse_time(marker.get("activatedAtUtc"))
+    created = _parse_time(manifest.get("createdAtUtc"))
+    cutoff = _parse_time(RELEASE_CUTOFF_UTC)
+    if activated is None:
+        errors.append("manifest_release_activation_timestamp_invalid")
+    elif cutoff is None or activated >= cutoff:
+        errors.append("manifest_release_activation_not_before_cutoff")
+    if created is None:
+        errors.append("manifest_release_activation_created_at_invalid")
+    elif activated is not None and activated < created:
+        errors.append("manifest_release_activation_predates_manifest_creation")
+
+    identity = marker.get("deploymentIdentity")
+    if not isinstance(identity, dict):
+        errors.append("manifest_release_activation_identity_missing")
+    else:
+        if set(identity) != {"gitSha", "templateSha256"}:
+            errors.append("manifest_release_activation_identity_fields_mismatch")
+        if not _is_hex(identity.get("gitSha"), 40):
+            errors.append("manifest_release_activation_git_identity_invalid")
+        if not _is_hex(identity.get("templateSha256"), 64):
+            errors.append("manifest_release_activation_template_identity_invalid")
+    if marker.get("immutable") is not True:
+        errors.append("manifest_release_activation_not_immutable")
+    return sorted(set(errors))
 
 
 def _identity_errors(
@@ -245,6 +353,15 @@ def verify(
         errors.append("selection_capture_invoked_historical_training_scan")
     if selection_capture.get("modelTrained") is not False:
         errors.append("selection_capture_trained_model")
+    selection_status = str(selection_capture.get("status") or "")
+    if selection_status not in {
+        "WAITING_FOR_PERSISTED_CHALLENGER",
+        "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE",
+    }:
+        errors.append("selection_capture_status_invalid_after_training_initialization")
+    expected_ready = selection_status == "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE"
+    if selection_capture.get("selectionCaptureReady") is not expected_ready:
+        errors.append("selection_capture_readiness_marker_mismatch")
 
     for prefix, payload in (
         ("training", training),
@@ -286,9 +403,29 @@ def verify(
         errors.append("manifest_created_at_invalid")
     elif release_cutoff is None or manifest_created >= release_cutoff:
         errors.append("manifest_not_created_before_release_cutoff")
+    errors.extend(_release_activation_errors(manifest))
     manifest_digest = str(manifest.get("manifestDigest") or "")
     if not manifest_digest:
         errors.append("manifest_digest_missing")
+    elif not _is_hex(manifest_digest, 64):
+        errors.append("manifest_digest_invalid")
+    else:
+        try:
+            if manifest_digest != _manifest_digest(manifest):
+                errors.append("manifest_digest_mismatch")
+        except Exception:
+            errors.append("manifest_digest_mismatch")
+    activation = manifest.get("releaseActivation") or {}
+    activated = _parse_time(activation.get("activatedAtUtc"))
+    if started is not None and activated is not None and activated >= started:
+        errors.extend(
+            _identity_errors(
+                activation.get("deploymentIdentity"),
+                expected_git_sha=expected_git_sha,
+                expected_template_sha256=expected_template_sha256,
+                prefix="manifest_release_activation_current_deploy",
+            )
+        )
     if (
         training.get("experimentManifestDigest")
         and training.get("experimentManifestDigest") != manifest_digest

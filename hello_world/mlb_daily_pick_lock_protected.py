@@ -148,6 +148,38 @@ _source_window_stabilization_seconds = getattr(
     "MLB_LOCK_SOURCE_WINDOW_STABILIZATION_SECONDS",
     None,
 )
+_expected_lock_execution_lease_version = getattr(
+    mlb_daily_per_game_lock_patch,
+    "LOCK_EXECUTION_LEASE_VERSION",
+    None,
+)
+_lock_execution_lease_version = getattr(
+    mlb_daily_pick_lock,
+    "MLB_LOCK_EXECUTION_LEASE_VERSION",
+    None,
+)
+_lock_execution_lease_seconds = getattr(
+    mlb_daily_pick_lock,
+    "MLB_LOCK_EXECUTION_LEASE_SECONDS",
+    None,
+)
+_lock_execution_lease_scope = getattr(
+    mlb_daily_pick_lock,
+    "MLB_LOCK_EXECUTION_LEASE_SCOPE",
+    None,
+)
+_lock_execution_lease_ready = bool(
+    _expected_lock_execution_lease_version
+    and _lock_execution_lease_version == _expected_lock_execution_lease_version
+    and _lock_execution_lease_seconds == 360
+    and _lock_execution_lease_scope == "global_all_mutating_lock_invocations"
+    and getattr(
+        mlb_daily_pick_lock,
+        "MLB_LOCK_EXECUTION_LEGACY_ROLLOUT_BRIDGE",
+        False,
+    )
+    is True
+)
 _lifecycle_ready = bool(
     _expected_readiness_version
     and _readiness_version == _expected_readiness_version
@@ -179,6 +211,7 @@ PER_GAME_LOCK_STATUS = {
         and _lifecycle_ready
         and _selection_vector_separation_ready
         and _official_schedule_authority_ready
+        and _lock_execution_lease_ready
         and LOCK_EXECUTION_LEASE_SECONDS
         == LOCK_EXECUTION_LEASE_REQUIRED_SECONDS
     ),
@@ -210,6 +243,10 @@ PER_GAME_LOCK_STATUS = {
     "officialScheduleAuthorityRequired": _official_schedule_authority_ready,
     "officialScheduleAuthorityVersion": _official_schedule_authority_version,
     "selectionLockIndependentOfTrainingVector": _selection_vector_separation_ready,
+    "globalAllMutatingLockExecutionLease": _lock_execution_lease_ready,
+    "lockExecutionLeaseVersion": _lock_execution_lease_version,
+    "lockExecutionLeaseSeconds": _lock_execution_lease_seconds,
+    "legacyRuntimeLeaseRolloutBridge": _lock_execution_lease_ready,
     "lockExecutionConcurrency": {
         "version": LOCK_EXECUTION_LEASE_VERSION,
         "strategy": "dynamodb_conditional_lease",

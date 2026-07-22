@@ -270,6 +270,9 @@ def _load_handler(
     per_game.READINESS_VERSION = "test-readiness-version"
     per_game.LOCK_OUTCOME_VERSION = "test-lock-outcome-version"
     per_game.RELEASE_ASSESSMENT_VERSION = "test-playability-version"
+    per_game.LOCK_EXECUTION_LEASE_VERSION = (
+        "MLB-LOCK-EXECUTION-LEASE-v2-global-all-mutating"
+    )
 
     def apply_per_game(module):
         assert module is daily_lock
@@ -282,6 +285,14 @@ def _load_handler(
         module.MLB_LOCK_OUTCOME_VERSION = "test-lock-outcome-version"
         module.MLB_PLAYABILITY_ASSESSMENT_VERSION = "test-playability-version"
         module.MLB_LOCK_SOURCE_WINDOW_STABILIZATION_SECONDS = 0
+        module.MLB_LOCK_EXECUTION_LEASE_VERSION = (
+            per_game.LOCK_EXECUTION_LEASE_VERSION
+        )
+        module.MLB_LOCK_EXECUTION_LEASE_SECONDS = 360
+        module.MLB_LOCK_EXECUTION_LEASE_SCOPE = (
+            "global_all_mutating_lock_invocations"
+        )
+        module.MLB_LOCK_EXECUTION_LEGACY_ROLLOUT_BRIDGE = True
         module.LOCK_POLICY = "test-policy"
 
     per_game.apply = apply_per_game

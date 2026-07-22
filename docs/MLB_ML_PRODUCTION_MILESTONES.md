@@ -21,7 +21,7 @@ or wagering playability.
 | 5. Fundamentals V2 | Each persisted candidate carries an immutable, fingerprinted pregame snapshot with per-group source identity, retrieval time, applicable effective time, and explicit missingness. The T-45 vector binds that already-persisted snapshot; it does not fetch or reconstruct fundamentals while locking. | No neutral zero fill, postgame reconstruction, or closing-line value in pregame features; T-30/T-15 news can block release but cannot rewrite T-45. Unavailable or incomplete source groups make the row training-ineligible without suppressing its winner lock. |
 | 6. Fixed experiment | Whole slate dates are assigned once to 300 training, 100 validation, and 100 future prospective-test games. | The first model uses ten prespecified features, regularization, frozen missingness masks, and no cross-date leakage. |
 | 7. Realistic promotion | Challenger must beat the same-time de-vigged market on Brier score and log loss, remain calibrated, and avoid accuracy regression. | Minimum 500 clean games, 100 prospective-test games, calibration error <= 0.08, at least +1 percentage-point accuracy lift, and 100 prospectively selected recommendations before playability authority. |
-| 8. AWS-native learning | EventBridge runs the full trainer/evaluator every six hours and a lightweight immutable pre-outcome selection capture every 15 minutes. Training, selection capture, and manual shadow review share one global, atomic, expiring, owner-checked DynamoDB execution lease across experiment versions; versioned datasets and models live in S3, while experiment state and approved shadow pointers live in DynamoDB. Trainer Lambda and EventBridge delivery have zero asynchronous retry fan-out and no failure destination; the next fixed-cadence event is the retry. This requires neither SQS nor account-level reserved concurrency. Official labels are written separately after FINAL. | GitHub tests and deploys code only. The first candidate approval is manual and shadow-only; live authority requires a separately reviewed V2 inference integration. |
+| 8. AWS-native learning | EventBridge runs the full trainer/evaluator every six hours and a lightweight immutable pre-outcome selection capture every 15 minutes. Training/manual review and selection capture use separate atomic, expiring, owner-checked DynamoDB lease domains so a long fit cannot suppress pregame capture. Every V2 acquisition atomically renews an expiring sentinel on the legacy shared key, preventing overlap with an older runtime while allowing rollback to recover after 960 seconds. Versioned datasets and models live in S3; experiment state and approved shadow pointers live in DynamoDB. Scheduled delivery has zero asynchronous retry fan-out and no failure destination. | GitHub tests and deploys code only. The first candidate approval is manual and shadow-only; live authority requires a separately reviewed V2 inference integration. |
 
 ## Realistic data milestones
 
@@ -112,6 +112,14 @@ cannot make stale or out-of-band code pass.
   `2026-07-22T04:00:00+00:00`. Any July 20 or July 21 game, or any lock timestamp before that
   instant is historical, even if its record happens to resemble the V2 schema,
   and cannot enter an r3 partition.
+- The immutable r3 activation marker must be created and digest-bound to the
+  exact deployed Git/template identity strictly before the cutoff. The
+  canonical deploy performs a read-only DynamoDB preflight after
+  CloudFormation is updateable and immediately before `sam deploy`; a missing
+  marker is allowed only with at least 90 minutes of remaining lead. Once a
+  marker exists, every later deploy must match and revalidate it. Missing,
+  late, malformed, or tampered activation evidence fails closed and cannot be
+  repaired by backdating.
 - A game counts toward the milestones below only after its current lock,
   complete pregame V2 snapshot, frozen vector, write-once official label, and
   full-slate-final status all pass their current validators. Historical rows
@@ -124,24 +132,26 @@ cannot make stale or out-of-band code pass.
   scheduled run succeeds. Adding a durable failure archive is an explicit
   future IAM-expansion milestone. The account cannot allocate another
   reserved Lambda concurrency slot while retaining AWS's required unreserved
-  pool, so all three mutating modes and all experiment versions instead share
-  a 960-second DynamoDB lease. Its permanent partition key deliberately reuses
-  the live r2 experiment lease partition. That migration anchor makes an
-  in-flight r2 owner and the new r3 runtime contend on the same item during the
-  first deployment; future experiment versions continue using that same key.
-  That lease outlives the 900-second Lambda timeout, lets the next recurring
-  invocation recover a timed-out owner, reclaims expired owners,
-  and can be released only by its current owner. This preserves single-writer
-  execution without a new AWS resource or IAM permission. Removing SQS and the
-  account-level reservation does not change S3 versioning, partition gates,
-  promotion controls, or shadow-only runtime authority.
+  pool. V2 therefore uses a 960-second state-mutation lease for training/manual
+  review and an independent 960-second selection-capture lease. Both are
+  globally anchored to the live r2 partition and acquired in the same
+  transaction as a renewable sentinel on r2's legacy `EXECUTION_LEASE` key.
+  An in-flight old owner blocks V2; a live V2 sentinel blocks an old runtime;
+  malformed lease state fails closed. The sentinel is never deleted on V2
+  release and expires naturally, so rollback recovers without a manual table
+  mutation. Owner-conditional domain release and expiry reclaim preserve
+  single-writer mutation within each domain while training and capture can run
+  concurrently.
 - The lease safety proof is bound to the deployed 900-second Lambda timeout,
   which the live deployment verifier checks together with the 960-second lease
   and the absence of reserved concurrency. Authoritative writes retain their
   existing compare-and-swap/transaction conditions; they do not add a separate
-  fencing token to every write. An early crash may therefore leave the lease
-  until expiry. The next 15-minute capture or six-hour training schedule
-  recovers it, while stale mode-specific
+  fencing token to every write. Selection writes additionally condition-check
+  the exact manifest revision/digest in their DynamoDB transaction and retry a
+  genuine manifest CAS race at most three times with a fresh pre-commence
+  timestamp; immutable-decision conflicts are never retried. An early crash may
+  leave its domain lease until expiry. The next 15-minute capture or six-hour
+  training schedule recovers it, while stale mode-specific
   health keeps audit and promotion authority fail-closed in the interim.
 
 ## Lambda capacity safety record
@@ -151,8 +161,11 @@ Lambda concurrency slots and can reject even a single trainer initialization
 with `ConcurrentInvocationLimitExceeded`. Capacity protection is therefore a
 release contract, not an optional optimization:
 
-- The one-minute lock keeps its cadence under a 330-second, owner-checked
-  DynamoDB single-flight lease. Before the first lifecycle checkpoint it skips
+- The one-minute lock keeps its cadence under a 360-second, owner-checked,
+  global all-mutating DynamoDB single-flight lease. Scheduled, manual, and
+  force modes cannot bypass it. During rollout, the new global acquisition
+  also acquires the previous/current/next ET-date legacy keys, so an in-flight
+  older per-slate runtime cannot overlap. Before the first lifecycle checkpoint it skips
   `_progress`; non-due active minutes use one read-only progress snapshot; and
   T-45 plus missed-lock repair retain the complete fail-closed path. After the
   last start, one write-once reconciliation marks missing locks terminal for the
@@ -181,6 +194,13 @@ release contract, not an optional optimization:
   AWS schedule.
 - Reserved concurrency remains forbidden until the account quota is raised;
   restoring it at the current quota would reproduce the failed deployment.
+- Canonical deployment invokes training, capture, and status through one
+  checked helper with independent bounded capacity budgets. It retries only
+  pre-admission Lambda capacity errors and the exact admitted
+  `ExecutionLeaseUnavailable` contract for mutating modes; status never retries
+  an admitted function error, and ambiguous/network/authentication failures
+  fail closed. Evidence files are written atomically only after an accepted
+  response and stale outputs are removed before every invocation.
 
 Any prediction policy, feature definition, label rule, cohort schema, partition
 boundary, or threshold change creates a new experiment version and a new future

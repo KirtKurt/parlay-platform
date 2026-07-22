@@ -224,6 +224,11 @@ TRAINER_EXPECTED_ENVIRONMENT = {
     "INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED": "false",
     "INQSI_MLB_ML_AUTO_PROMOTE": "false",
 }
+LOCK_TIMEOUT_SECONDS = 300
+LOCK_EXECUTION_LEASE_SECONDS = "360"
+LOCK_EXPECTED_ENVIRONMENT = {
+    "MLB_LOCK_EXECUTION_LEASE_SECONDS": LOCK_EXECUTION_LEASE_SECONDS,
+}
 TRAINER_REQUIRED_ENVIRONMENT = (
     "MLB_ML_ARTIFACTS_BUCKET",
     "SNAPSHOTS_TABLE",
@@ -505,6 +510,14 @@ def verify(
         "executionConcurrencyStrategy": TRAINER_EXECUTION_CONCURRENCY_STRATEGY,
         "reservedLambdaConcurrencyRequired": False,
         "sqsFailureDestinationRequired": False,
+        "matches": False,
+    }
+    lock_execution_configuration: Dict[str, Any] = {
+        "strategy": "dynamodb_global_all_mutating_conditional_lease",
+        "expectedTimeoutSeconds": LOCK_TIMEOUT_SECONDS,
+        "expectedLeaseSeconds": int(LOCK_EXECUTION_LEASE_SECONDS),
+        "scope": "scheduled_manual_and_forced_lock_runs",
+        "statusReadsAcquireLease": False,
         "matches": False,
     }
     provider_credential_proof: Dict[str, Any] = {
@@ -968,6 +981,46 @@ def verify(
                 },
                 "matches": configuration_matches,
             })
+        if role == "lock":
+            actual_timeout = config.get("Timeout")
+            if actual_timeout != LOCK_TIMEOUT_SECONDS:
+                configuration_matches = False
+                blockers.append(
+                    "LOCK_TIMEOUT_MISMATCH:"
+                    f"expected={LOCK_TIMEOUT_SECONDS}:actual={actual_timeout}"
+                )
+            for key, expected_value in LOCK_EXPECTED_ENVIRONMENT.items():
+                actual_value = str(environment.get(key) or "")
+                if actual_value != expected_value:
+                    configuration_matches = False
+                    blockers.append(
+                        f"LOCK_ENVIRONMENT_MISMATCH:{key}:"
+                        f"expected={expected_value}:actual={actual_value}"
+                    )
+            lock_execution_configuration.update(
+                {
+                    "timeoutSeconds": actual_timeout,
+                    "leaseSeconds": int(
+                        str(
+                            environment.get("MLB_LOCK_EXECUTION_LEASE_SECONDS")
+                            or "0"
+                        )
+                    ),
+                    "leaseOutlivesTimeout": bool(
+                        actual_timeout == LOCK_TIMEOUT_SECONDS
+                        and int(
+                            str(
+                                environment.get(
+                                    "MLB_LOCK_EXECUTION_LEASE_SECONDS"
+                                )
+                                or "0"
+                            )
+                        )
+                        > LOCK_TIMEOUT_SECONDS
+                    ),
+                    "matches": configuration_matches,
+                }
+            )
 
         function_proofs[logical_id] = {
             "role": role,
@@ -1382,6 +1435,7 @@ def verify(
         "functions": function_proofs,
         "lockConfiguration": lock_configuration,
         "trainerConfiguration": trainer_configuration,
+        "lockExecutionConfiguration": lock_execution_configuration,
         "providerCredentialBoundary": provider_credential_proof,
         "artifactBucket": artifact_bucket_proof,
         "schedules": schedule_proofs,

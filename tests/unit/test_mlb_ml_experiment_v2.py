@@ -359,6 +359,9 @@ def test_selection_ledger_binds_pre_outcome_decision_after_cutover():
     )
 
     assert entry["selected"] is True
+    assert entry["idempotencyFingerprintVersion"] == (
+        experiment.SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V2
+    )
     assert entry["outcomeKnownAtCapture"] is False
     assert entry["prospectiveCutoverAtUtc"] == "2026-09-01T00:00:00+00:00"
     assert experiment.selection_ledger_validation_errors(
@@ -402,6 +405,161 @@ def test_selection_ledger_binds_pre_outcome_decision_after_cutover():
     )
     assert "selection_record_fingerprint_mismatch" in capture_errors
     assert "selection_decision_fingerprint_mismatch" in capture_errors
+
+
+def test_selection_v2_idempotency_is_stable_across_deployment_capture_and_manifest():
+    _, bound = _manifest_with_bound_challenger(
+        bound_at_utc="2026-09-01T00:00:00+00:00"
+    )
+    row = identity_rows(
+        days=1,
+        games_per_day=1,
+        first=date(2026, 9, 2),
+    )[0]
+    row.pop("labelRetrievedAtUtc")
+    first = experiment.selection_ledger_entry(
+        bound,
+        row,
+        reliability_probability=0.7,
+        deployment_identity=DEPLOYMENT_IDENTITY,
+        captured_at_utc="2026-09-02T20:00:00+00:00",
+    )
+
+    revised_manifest = copy.deepcopy(bound)
+    revised_manifest["updatedAtUtc"] = "2026-09-02T19:00:00+00:00"
+    revised_manifest["manifestDigest"] = experiment.manifest_digest(revised_manifest)
+    revised_deployment = {
+        "gitSha": "c" * 40,
+        "templateSha256": "d" * 64,
+    }
+    deployment_only_retry = experiment.selection_ledger_entry(
+        bound,
+        row,
+        reliability_probability=0.7,
+        deployment_identity=revised_deployment,
+        captured_at_utc="2026-09-02T20:00:00+00:00",
+    )
+    retry = experiment.selection_ledger_entry(
+        revised_manifest,
+        row,
+        reliability_probability=0.7,
+        deployment_identity=revised_deployment,
+        captured_at_utc="2026-09-02T20:05:00+00:00",
+    )
+
+    assert retry["experimentManifestDigest"] != first["experimentManifestDigest"]
+    assert retry["deploymentIdentity"] != first["deploymentIdentity"]
+    assert retry["capturedAtUtc"] != first["capturedAtUtc"]
+    assert retry["idempotencyFingerprint"] == first["idempotencyFingerprint"]
+    assert deployment_only_retry["idempotencyFingerprint"] == (
+        first["idempotencyFingerprint"]
+    )
+    assert experiment.selection_semantic_fingerprint(first) == first[
+        "idempotencyFingerprint"
+    ]
+    assert experiment.selection_semantic_fingerprint(retry) == (
+        experiment.selection_semantic_fingerprint(first)
+    )
+    assert deployment_only_retry["decisionFingerprint"] != first[
+        "decisionFingerprint"
+    ]
+    assert deployment_only_retry["recordFingerprint"] != first[
+        "recordFingerprint"
+    ]
+    assert retry["decisionFingerprint"] != first["decisionFingerprint"]
+    assert retry["recordFingerprint"] != first["recordFingerprint"]
+
+
+def test_selection_legacy_v1_fingerprint_still_validates_and_compares_semantically():
+    _, bound = _manifest_with_bound_challenger(
+        bound_at_utc="2026-09-01T00:00:00+00:00"
+    )
+    row = identity_rows(
+        days=1,
+        games_per_day=1,
+        first=date(2026, 9, 2),
+    )[0]
+    row.pop("labelRetrievedAtUtc")
+    current = experiment.selection_ledger_entry(
+        bound,
+        row,
+        reliability_probability=0.7,
+        deployment_identity=DEPLOYMENT_IDENTITY,
+        captured_at_utc="2026-09-02T20:00:00+00:00",
+    )
+    legacy = copy.deepcopy(current)
+    legacy["idempotencyFingerprintVersion"] = (
+        experiment.SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V1
+    )
+    legacy["idempotencyFingerprint"] = experiment.selection_idempotency_fingerprint(
+        legacy
+    )
+    legacy["decisionFingerprint"] = experiment.selection_decision_fingerprint(legacy)
+    legacy["recordFingerprint"] = experiment.selection_record_fingerprint(legacy)
+
+    assert legacy["idempotencyFingerprint"] == (
+        "bff12a0259f7bdfc42e1a7be86521a6a4185327bda7bf950c5f2a4702dd6eaa3"
+    )
+    assert legacy["decisionFingerprint"] == (
+        "a2ac86f2c5e2ba0402187d21813443f2d565a494b25d1e12b64c441f801c4bfd"
+    )
+    assert legacy["recordFingerprint"] == (
+        "437a8c78a0bc1522a5e655ce30bc63e2e1be03f6dcfb294071d660165020f432"
+    )
+    assert experiment.selection_ledger_validation_errors(
+        legacy,
+        bound,
+        row=row,
+        challenger_artifact_digest="a" * 64,
+    ) == []
+    assert experiment.selection_semantic_fingerprint(legacy) == (
+        current["idempotencyFingerprint"]
+    )
+    assert legacy["idempotencyFingerprint"] != current["idempotencyFingerprint"]
+
+    tampered_legacy = copy.deepcopy(legacy)
+    tampered_legacy["deploymentIdentity"]["gitSha"] = "e" * 40
+    tamper_errors = experiment.selection_ledger_validation_errors(
+        tampered_legacy,
+        bound,
+        row=row,
+        challenger_artifact_digest="a" * 64,
+    )
+    assert "selection_idempotency_fingerprint_mismatch" in tamper_errors
+    assert "selection_decision_fingerprint_mismatch" in tamper_errors
+    assert "selection_record_fingerprint_mismatch" in tamper_errors
+
+
+def test_selection_v2_material_decision_change_is_not_idempotent():
+    _, bound = _manifest_with_bound_challenger(
+        bound_at_utc="2026-09-01T00:00:00+00:00"
+    )
+    row = identity_rows(
+        days=1,
+        games_per_day=1,
+        first=date(2026, 9, 2),
+    )[0]
+    row.pop("labelRetrievedAtUtc")
+    first = experiment.selection_ledger_entry(
+        bound,
+        row,
+        reliability_probability=0.7,
+        deployment_identity=DEPLOYMENT_IDENTITY,
+        captured_at_utc="2026-09-02T20:00:00+00:00",
+    )
+    changed = experiment.selection_ledger_entry(
+        bound,
+        row,
+        reliability_probability=0.71,
+        deployment_identity=DEPLOYMENT_IDENTITY,
+        captured_at_utc="2026-09-02T20:05:00+00:00",
+    )
+
+    assert changed["selected"] is first["selected"] is True
+    assert changed["idempotencyFingerprint"] != first["idempotencyFingerprint"]
+    assert experiment.selection_semantic_fingerprint(changed) != (
+        experiment.selection_semantic_fingerprint(first)
+    )
 
 
 def test_selection_ledger_rejects_pre_cutover_game_or_capture():
@@ -534,6 +692,76 @@ def test_feature_limit_is_enforced_per_model_not_on_union():
             release_cutoff_utc="2026-07-21T00:00:00+00:00",
             feature_vector_version="v2",
             model_feature_schemas={"outcome": [f"x{i}" for i in range(11)]},
+        )
+
+
+def test_generic_manifest_may_omit_release_activation() -> None:
+    assert "releaseActivation" not in manifest()
+
+
+def test_release_activation_is_validated_and_bound_into_manifest_digest() -> None:
+    activated_at = "2026-07-21T00:00:00+00:00"
+    cutoff = "2026-07-21T01:00:00+00:00"
+    activation = experiment.release_activation(
+        experiment_id="mlb-v2-activation-test",
+        release_contract_id="release-activation-test",
+        release_cutoff_utc=cutoff,
+        activated_at_utc=activated_at,
+        deployment_git_sha="a" * 40,
+        deployment_template_sha256="b" * 64,
+    )
+    created = experiment.new_manifest(
+        experiment_id="mlb-v2-activation-test",
+        release_contract_id="release-activation-test",
+        release_cutoff_utc=cutoff,
+        feature_vector_version="MLB-VECTOR-v2",
+        model_feature_schemas=FEATURE_SCHEMAS,
+        created_at_utc=activated_at,
+        release_activation=activation,
+    )
+
+    assert created["releaseActivation"] == activation
+    assert created["manifestDigest"] == experiment.manifest_digest(created)
+    original_digest = created["manifestDigest"]
+    created["releaseActivation"]["deploymentIdentity"]["gitSha"] = "c" * 40
+    assert experiment.manifest_digest(created) != original_digest
+
+
+def test_release_activation_rejects_exact_cutoff_and_activation_before_creation() -> None:
+    cutoff = "2026-07-22T04:00:00+00:00"
+    with pytest.raises(
+        experiment.ExperimentContractError,
+        match="strictly before the release cutoff",
+    ):
+        experiment.release_activation(
+            experiment_id="mlb-v2-activation-test",
+            release_contract_id="release-activation-test",
+            release_cutoff_utc=cutoff,
+            activated_at_utc=cutoff,
+            deployment_git_sha="a" * 40,
+            deployment_template_sha256="b" * 64,
+        )
+
+    activation = experiment.release_activation(
+        experiment_id="mlb-v2-activation-test",
+        release_contract_id="release-activation-test",
+        release_cutoff_utc=cutoff,
+        activated_at_utc="2026-07-22T03:59:58+00:00",
+        deployment_git_sha="a" * 40,
+        deployment_template_sha256="b" * 64,
+    )
+    with pytest.raises(
+        experiment.ExperimentContractError,
+        match="release_activation_predates_manifest_creation",
+    ):
+        experiment.new_manifest(
+            experiment_id="mlb-v2-activation-test",
+            release_contract_id="release-activation-test",
+            release_cutoff_utc=cutoff,
+            feature_vector_version="MLB-VECTOR-v2",
+            model_feature_schemas=FEATURE_SCHEMAS,
+            created_at_utc="2026-07-22T03:59:59+00:00",
+            release_activation=activation,
         )
 
 

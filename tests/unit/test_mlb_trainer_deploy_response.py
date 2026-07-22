@@ -20,6 +20,9 @@ import mlb_ml_aws_training_v1 as aws_training
 GIT_SHA = "a" * 40
 TEMPLATE_SHA = "b" * 64
 STARTED = "2026-07-22T12:00:00+00:00"
+INITIAL_GIT_SHA = "c" * 40
+INITIAL_TEMPLATE_SHA = "d" * 64
+ACTIVATED_AT = "2026-07-21T23:00:00+00:00"
 
 
 def _sign_status(payload):
@@ -54,10 +57,22 @@ def _payloads():
         "experimentId": verifier.EXPERIMENT_ID,
         "releaseContractId": verifier.EXPERIMENT_ID,
         "releaseCutoffUtc": verifier.RELEASE_CUTOFF_UTC,
-        "createdAtUtc": "2026-07-21T23:00:00+00:00",
-        "manifestDigest": "manifest-digest",
+        "createdAtUtc": ACTIVATED_AT,
+        "releaseActivation": {
+            "version": verifier.RELEASE_ACTIVATION_VERSION,
+            "experimentId": verifier.EXPERIMENT_ID,
+            "releaseContractId": verifier.EXPERIMENT_ID,
+            "releaseCutoffUtc": verifier.RELEASE_CUTOFF_UTC,
+            "activatedAtUtc": ACTIVATED_AT,
+            "deploymentIdentity": {
+                "gitSha": INITIAL_GIT_SHA,
+                "templateSha256": INITIAL_TEMPLATE_SHA,
+            },
+            "immutable": True,
+        },
         "phase": "ACCUMULATING_TRAIN",
     }
+    manifest["manifestDigest"] = verifier._manifest_digest(manifest)
     training = {
         **common,
         "executionConcurrencyControl": copy.deepcopy(
@@ -82,6 +97,7 @@ def _payloads():
         "ok": True,
         "status": "WAITING_FOR_PERSISTED_CHALLENGER",
         "executionMode": "selection_capture",
+        "selectionCaptureReady": False,
         "runId": "selection-run-1",
         "createdAtUtc": "2026-07-22T12:00:02+00:00",
         "historicalTrainingScanInvoked": False,
@@ -138,14 +154,21 @@ def _payloads():
     return training, selection, after
 
 
-def _verify(training, selection, after, invocation_metadata=None):
+def _verify(
+    training,
+    selection,
+    after,
+    invocation_metadata=None,
+    *,
+    run_started_at=STARTED,
+):
     return verifier.verify(
         training=training,
         selection_capture=selection,
         status_after=after,
         invocation_metadata=invocation_metadata
         or tuple({"StatusCode": 200} for _ in range(3)),
-        run_started_at=STARTED,
+        run_started_at=run_started_at,
         expected_git_sha=GIT_SHA,
         expected_template_sha256=TEMPLATE_SHA,
     )
@@ -153,6 +176,79 @@ def _verify(training, selection, after, invocation_metadata=None):
 
 def test_accepts_fresh_split_run_and_status_health() -> None:
     assert _verify(*_payloads()) == []
+
+
+def test_accepts_future_deploy_identity_without_rewriting_initial_activation() -> None:
+    training, selection, after = _payloads()
+
+    marker_identity = after["manifest"]["releaseActivation"]["deploymentIdentity"]
+    assert marker_identity != after["deploymentIdentity"]
+    assert _verify(training, selection, after) == []
+
+
+def test_markerless_migration_attestation_must_bind_current_deploy_identity() -> None:
+    training, selection, after = _payloads()
+    initial_run_started = "2026-07-21T22:00:00+00:00"
+    manifest = after["manifest"]
+    manifest["createdAtUtc"] = "2026-07-21T20:00:00+00:00"
+    manifest["manifestDigest"] = verifier._manifest_digest(manifest)
+
+    assert manifest["releaseActivation"]["activatedAtUtc"] == ACTIVATED_AT
+    assert manifest["releaseActivation"]["activatedAtUtc"] != manifest[
+        "createdAtUtc"
+    ]
+
+    assert (
+        "manifest_release_activation_current_deploy_git_identity_mismatch"
+        in _verify(
+            training,
+            selection,
+            after,
+            run_started_at=initial_run_started,
+        )
+    )
+
+    marker = manifest["releaseActivation"]
+    marker["deploymentIdentity"] = copy.deepcopy(after["deploymentIdentity"])
+    manifest["manifestDigest"] = verifier._manifest_digest(manifest)
+    assert _verify(
+        training,
+        selection,
+        after,
+        run_started_at=initial_run_started,
+    ) == []
+
+
+def test_rejects_activation_at_exact_cutoff_even_with_recomputed_digest() -> None:
+    training, selection, after = _payloads()
+    manifest = after["manifest"]
+    manifest["createdAtUtc"] = verifier.RELEASE_CUTOFF_UTC
+    manifest["releaseActivation"]["activatedAtUtc"] = verifier.RELEASE_CUTOFF_UTC
+    manifest["manifestDigest"] = verifier._manifest_digest(manifest)
+
+    assert "manifest_release_activation_not_before_cutoff" in _verify(
+        training, selection, after
+    )
+
+
+def test_rejects_digest_bound_activation_tampering() -> None:
+    training, selection, after = _payloads()
+    after["manifest"]["releaseActivation"]["deploymentIdentity"]["gitSha"] = (
+        "e" * 40
+    )
+
+    assert "manifest_digest_mismatch" in _verify(training, selection, after)
+
+
+def test_rejects_missing_release_activation() -> None:
+    training, selection, after = _payloads()
+    manifest = after["manifest"]
+    manifest.pop("releaseActivation")
+    manifest["manifestDigest"] = verifier._manifest_digest(manifest)
+
+    assert "manifest_release_activation_missing" in _verify(
+        training, selection, after
+    )
 
 
 @pytest.mark.parametrize(

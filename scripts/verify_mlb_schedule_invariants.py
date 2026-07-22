@@ -103,6 +103,8 @@ def _verify_explicit_lock_runtime_install() -> None:
         'doubleheaderGame2EventDrivenPlayabilityRecheck',
         'officialScheduleAuthorityRequired',
         'selectionLockIndependentOfTrainingVector',
+        'globalAllMutatingLockExecutionLease',
+        'legacyRuntimeLeaseRolloutBridge',
     ):
         if token not in source:
             violations.append(f'protected MLB lock handler missing lifecycle attestation: {token}')
@@ -221,7 +223,7 @@ required_template_strings = {
     'MLBProductionVerifierFunction': 'AWS production verifier function missing',
     'MLBProductionVerifierEvery5Min': '5-minute AWS production verifier schedule missing',
     'MLB_DAILY_LOCK_MINUTES_BEFORE_FIRST_GAME': 'lock T-minus env missing',
-    "MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'": 'daily lock execution lease is missing',
+    "MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'": 'global all-mutating MLB lock lease is missing',
     '/v1/mlb/locks/run': 'manual lock route missing',
     '/v1/mlb/locks/status': 'lock status route missing',
     '/v1/mlb/locks/today': 'lock today route missing',
@@ -234,7 +236,7 @@ required_template_strings = {
     'Input: \'{"sport":"mlb","mode":"scheduled","run":"aws_native_fixed_prospective_shadow_training"}\'': 'AWS-native MLB ML full training event input is stale',
     'Input: \'{"sport":"mlb","mode":"selection_capture","run":"aws_native_prospective_selection_capture"}\'': 'AWS-native MLB ML selection capture event input is stale',
     'EventInvokeConfig:': 'AWS-native MLB ML async failure policy missing',
-    'dynamodb:TransactWriteItems': 'AWS-native MLB ML transactional candidate permission missing',
+    'dynamodb:ConditionCheckItem': 'AWS-native MLB ML manifest condition-check permission missing',
     "MLB_ML_EXECUTION_LEASE_SECONDS: '960'": 'AWS-native MLB ML trainer execution lease is missing',
     's3:GetObjectVersion': 'AWS-native MLB ML trainer cannot read an exact frozen challenger version',
     "MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-07-22-future-prospective-r3'": 'AWS-native MLB ML trainer experiment identity is stale',
@@ -255,6 +257,7 @@ for forbidden, message in {
     'AWS::SQS::Queue': 'SAM deployment still requires SQS queue creation',
     'sqs:SendMessage': 'AWS-native MLB ML trainer still carries SQS send authority',
     'ReservedConcurrentExecutions:': 'AWS-native MLB ML trainer still requires unavailable account-level reserved concurrency',
+    'dynamodb:TransactWriteItems': 'AWS-native MLB ML trainer carries an ineffective transaction API permission',
 }.items():
     if forbidden in text:
         violations.append(message)

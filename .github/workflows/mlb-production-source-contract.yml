@@ -187,6 +187,7 @@ jobs:
             tests/unit/test_mlb_deploy_http_probe.py \
             tests/unit/test_mlb_lambda_artifact_identity.py \
             tests/unit/test_mlb_trainer_invoke_retry.py \
+            tests/unit/test_mlb_release_activation_predeploy.py \
             tests/unit/test_mlb_trainer_deploy_response.py \
             tests/unit/test_mlb_workflow_authority.py \
             tests/unit/test_run_mlb_ml_v3_audit_report.py
@@ -195,6 +196,7 @@ jobs:
         run: |
           python -m py_compile scripts/stabilize_mlb_deploy_source.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
+          python -m py_compile scripts/verify_mlb_release_activation_predeploy.py
           python -m py_compile scripts/mlb_deploy_http_probe.py
           python -m py_compile scripts/mlb_lambda_artifact_identity.py
           python -m py_compile scripts/create_mlb_lambda_build_manifest.py

@@ -12,6 +12,7 @@ VERSION = "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
 PRODUCTION_EXPERIMENT_ID = "mlb-v2-2026-07-22-future-prospective-r3"
 PRODUCTION_RELEASE_CONTRACT_ID = PRODUCTION_EXPERIMENT_ID
 PRODUCTION_RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
+RELEASE_ACTIVATION_VERSION = "MLB-ML-RELEASE-ACTIVATION-v1"
 PARTITION_ORDER = ("train", "validation", "prospectiveTest")
 PARTITION_MINIMUMS = {"train": 300, "validation": 100, "prospectiveTest": 100}
 FIRST_FULL_CLEAN_SLATE_PROOF_ROWS = 15
@@ -28,8 +29,20 @@ REQUIRED_FUNDAMENTALS_VERSION = "MLB-FUNDAMENTALS-SNAPSHOT-v2-immutable-source-p
 REQUIRED_FUNDAMENTALS_FINGERPRINT_VERSION = "INQSI-EXACT-TYPED-JSON-SHA256-v1"
 SELECTION_LEDGER_VERSION = "MLB-ML-PROSPECTIVE-SELECTION-LEDGER-v2-fingerprinted-decision"
 SELECTION_DECISION_FINGERPRINT_VERSION = "MLB-ML-SELECTION-DECISION-SHA256-v1"
-SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION = (
+SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V1 = (
     "MLB-ML-SELECTION-IDEMPOTENCY-SHA256-v1"
+)
+SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V2 = (
+    "MLB-ML-SELECTION-IDEMPOTENCY-SHA256-v2-semantic"
+)
+SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION = (
+    SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V2
+)
+SUPPORTED_SELECTION_IDEMPOTENCY_FINGERPRINT_VERSIONS = frozenset(
+    {
+        SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V1,
+        SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V2,
+    }
 )
 SELECTION_RECORD_FINGERPRINT_VERSION = "MLB-ML-SELECTION-RECORD-SHA256-v1"
 SELECTION_LEDGER_FIELDS = frozenset(
@@ -235,6 +248,113 @@ def manifest_digest(manifest: Dict[str, Any]) -> str:
     return digest(_manifest_payload(manifest))
 
 
+def release_activation(
+    *,
+    experiment_id: str,
+    release_contract_id: str,
+    release_cutoff_utc: str,
+    activated_at_utc: str,
+    deployment_git_sha: str,
+    deployment_template_sha256: str,
+) -> Dict[str, Any]:
+    """Create the immutable, digest-bound proof that an experiment began in time."""
+    cutoff = _parse_dt(release_cutoff_utc)
+    activated = _parse_dt(activated_at_utc)
+    if not str(experiment_id or "").strip():
+        raise ExperimentContractError("release activation experiment ID is required")
+    if not str(release_contract_id or "").strip():
+        raise ExperimentContractError("release activation contract ID is required")
+    if cutoff is None or activated is None:
+        raise ExperimentContractError(
+            "release activation timestamps must be ISO-8601 timestamps"
+        )
+    if activated >= cutoff:
+        raise ExperimentContractError(
+            "release activation must occur strictly before the release cutoff"
+        )
+    for value, length, name in (
+        (deployment_git_sha, 40, "git SHA"),
+        (deployment_template_sha256, 64, "template SHA-256"),
+    ):
+        text = str(value or "")
+        if len(text) != length or not _is_hex_digest(text, length):
+            raise ExperimentContractError(
+                f"release activation deployment {name} is invalid"
+            )
+    return {
+        "version": RELEASE_ACTIVATION_VERSION,
+        "experimentId": str(experiment_id),
+        "releaseContractId": str(release_contract_id),
+        "releaseCutoffUtc": cutoff.isoformat(),
+        "activatedAtUtc": activated.isoformat(),
+        "deploymentIdentity": {
+            "gitSha": str(deployment_git_sha),
+            "templateSha256": str(deployment_template_sha256),
+        },
+        "immutable": True,
+    }
+
+
+def release_activation_errors(
+    value: Any,
+    *,
+    expected_experiment_id: str,
+    expected_release_contract_id: str,
+    expected_release_cutoff_utc: str,
+    expected_created_at_utc: str,
+) -> List[str]:
+    """Validate persisted activation without tying it to a later deployment."""
+    if not isinstance(value, Mapping):
+        return ["release_activation_missing"]
+    errors: List[str] = []
+    allowed_fields = {
+        "version",
+        "experimentId",
+        "releaseContractId",
+        "releaseCutoffUtc",
+        "activatedAtUtc",
+        "deploymentIdentity",
+        "immutable",
+    }
+    if set(value) != allowed_fields:
+        errors.append("release_activation_fields_mismatch")
+    if value.get("version") != RELEASE_ACTIVATION_VERSION:
+        errors.append("release_activation_version_mismatch")
+    if value.get("experimentId") != expected_experiment_id:
+        errors.append("release_activation_experiment_identity_mismatch")
+    if value.get("releaseContractId") != expected_release_contract_id:
+        errors.append("release_activation_contract_identity_mismatch")
+
+    cutoff = _parse_dt(expected_release_cutoff_utc)
+    marker_cutoff = _parse_dt(value.get("releaseCutoffUtc"))
+    activated = _parse_dt(value.get("activatedAtUtc"))
+    created = _parse_dt(expected_created_at_utc)
+    if cutoff is None or marker_cutoff != cutoff:
+        errors.append("release_activation_cutoff_mismatch")
+    if activated is None:
+        errors.append("release_activation_timestamp_invalid")
+    elif cutoff is not None and activated >= cutoff:
+        errors.append("release_activation_not_strictly_before_cutoff")
+    if created is None:
+        errors.append("release_activation_manifest_created_at_invalid")
+    elif activated is not None and activated < created:
+        errors.append("release_activation_predates_manifest_creation")
+
+    identity = value.get("deploymentIdentity")
+    if not isinstance(identity, Mapping):
+        errors.append("release_activation_deployment_identity_missing")
+    else:
+        if set(identity) != {"gitSha", "templateSha256"}:
+            errors.append("release_activation_deployment_identity_fields_mismatch")
+        if not _is_hex_digest(identity.get("gitSha"), 40):
+            errors.append("release_activation_git_identity_invalid")
+        if not _is_hex_digest(identity.get("templateSha256"), 64):
+            errors.append("release_activation_template_identity_invalid")
+    if value.get("immutable") is not True:
+        errors.append("release_activation_not_immutable")
+    return sorted(set(errors))
+
+
 def _partition() -> Dict[str, Any]:
     return {
         "minimumRows": 0,
@@ -258,6 +378,7 @@ def new_manifest(
     feature_names: Optional[Sequence[str]] = None,
     model_feature_schemas: Optional[Mapping[str, Sequence[str]]] = None,
     created_at_utc: Optional[str] = None,
+    release_activation: Optional[Mapping[str, Any]] = None,
 ) -> Dict[str, Any]:
     schemas = {
         str(model): [str(name) for name in names]
@@ -287,6 +408,22 @@ def new_manifest(
     partitions = {name: _partition() for name in PARTITION_ORDER}
     for name, minimum in PARTITION_MINIMUMS.items():
         partitions[name]["minimumRows"] = minimum
+    created_at = created_at_utc or datetime.now(timezone.utc).isoformat()
+    if _parse_dt(created_at) is None:
+        raise ExperimentContractError("created_at_utc must be an ISO-8601 timestamp")
+    if release_activation is not None:
+        activation_errors = release_activation_errors(
+            release_activation,
+            expected_experiment_id=experiment_id,
+            expected_release_contract_id=release_contract_id,
+            expected_release_cutoff_utc=release_cutoff_utc,
+            expected_created_at_utc=created_at,
+        )
+        if activation_errors:
+            raise ExperimentContractError(
+                "release activation is invalid: " + ",".join(activation_errors)
+            )
+
     manifest = {
         "ok": True,
         "version": VERSION,
@@ -299,7 +436,7 @@ def new_manifest(
         "featureNames": all_names,
         "modelFeatureSchemas": schemas,
         "featureSchemaFingerprint": digest(schemas),
-        "createdAtUtc": created_at_utc or datetime.now(timezone.utc).isoformat(),
+        "createdAtUtc": created_at,
         "revision": 0,
         "phase": "ACCUMULATING_TRAIN",
         "partitions": partitions,
@@ -332,6 +469,8 @@ def new_manifest(
             "move between partitions."
         ),
     }
+    if release_activation is not None:
+        manifest["releaseActivation"] = copy.deepcopy(dict(release_activation))
     manifest["manifestDigest"] = manifest_digest(manifest)
     return manifest
 
@@ -886,31 +1025,60 @@ def _selection_deployment_identity(value: Mapping[str, Any]) -> Dict[str, str]:
     return identity
 
 
-def _selection_idempotency_material(entry: Mapping[str, Any]) -> Dict[str, Any]:
+_SELECTION_SEMANTIC_FIELDS = (
+    "version",
+    "experimentId",
+    "releaseContractId",
+    "challengerArtifactDigest",
+    "challengerArtifact",
+    "recordIdentity",
+    "gameId",
+    "officialGamePk",
+    "slateDateEt",
+    "commenceTime",
+    "prospectiveCutoverAtUtc",
+    "reliabilityProbability",
+    "selectedThreshold",
+    "selected",
+    "outcomeKnownAtCapture",
+    "writeOnce",
+    "liveInferenceAuthority",
+)
+
+
+def _selection_semantic_material(entry: Mapping[str, Any]) -> Dict[str, Any]:
     return {
         key: copy.deepcopy(entry.get(key))
-        for key in (
-            "version",
-            "experimentId",
-            "releaseContractId",
-            "challengerArtifactDigest",
-            "challengerArtifact",
-            "recordIdentity",
-            "gameId",
-            "officialGamePk",
-            "slateDateEt",
-            "commenceTime",
-            "prospectiveCutoverAtUtc",
-            "reliabilityProbability",
-            "selectedThreshold",
-            "selected",
-            "outcomeKnownAtCapture",
-            "writeOnce",
-            "liveInferenceAuthority",
-            "deploymentIdentity",
-            "idempotencyFingerprintVersion",
-        )
+        for key in _SELECTION_SEMANTIC_FIELDS
     }
+
+
+def selection_semantic_fingerprint(entry: Mapping[str, Any]) -> str:
+    """Normalize a schema-validated legacy-v1 or v2 record to its v2 identity."""
+    material = _selection_semantic_material(entry)
+    material["idempotencyFingerprintVersion"] = (
+        SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V2
+    )
+    return digest(material)
+
+
+def _selection_idempotency_material(entry: Mapping[str, Any]) -> Dict[str, Any]:
+    version = entry.get("idempotencyFingerprintVersion")
+    material = _selection_semantic_material(entry)
+    if version == SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V1:
+        material["deploymentIdentity"] = copy.deepcopy(
+            entry.get("deploymentIdentity")
+        )
+        material["idempotencyFingerprintVersion"] = copy.deepcopy(version)
+        return material
+    if version != SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V2:
+        raise ExperimentContractError(
+            "selection idempotency fingerprint version is unsupported"
+        )
+    material["idempotencyFingerprintVersion"] = (
+        SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V2
+    )
+    return material
 
 
 def selection_idempotency_fingerprint(entry: Mapping[str, Any]) -> str:
@@ -920,6 +1088,7 @@ def selection_idempotency_fingerprint(entry: Mapping[str, Any]) -> str:
 def _selection_decision_material(entry: Mapping[str, Any]) -> Dict[str, Any]:
     return {
         **_selection_idempotency_material(entry),
+        "deploymentIdentity": copy.deepcopy(entry.get("deploymentIdentity")),
         "experimentManifestDigest": copy.deepcopy(
             entry.get("experimentManifestDigest")
         ),
@@ -991,7 +1160,10 @@ def selection_ledger_schema_reasons(entry: Mapping[str, Any]) -> List[str]:
         errors.append("selection_write_once_marker_missing")
     if entry.get("liveInferenceAuthority") is not False:
         errors.append("selection_shadow_authority_marker_invalid")
-    if entry.get("idempotencyFingerprintVersion") != SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION:
+    if (
+        entry.get("idempotencyFingerprintVersion")
+        not in SUPPORTED_SELECTION_IDEMPOTENCY_FINGERPRINT_VERSIONS
+    ):
         errors.append("selection_idempotency_fingerprint_version_mismatch")
     try:
         expected_idempotency = selection_idempotency_fingerprint(entry)

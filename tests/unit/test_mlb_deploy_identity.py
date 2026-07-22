@@ -126,11 +126,9 @@ class FakeLambda:
                 )
             if role == "lock":
                 handler = deploy_identity.LOCK_HANDLER
+                environment.update(deploy_identity.LOCK_EXPECTED_ENVIRONMENT)
                 environment.update(
                     {
-                        "MLB_LOCK_EXECUTION_LEASE_SECONDS": (
-                            deploy_identity.LOCK_EXECUTION_LEASE_SECONDS
-                        ),
                         "SNAPSHOTS_TABLE": "snapshots",
                     }
                 )
@@ -1128,6 +1126,8 @@ def test_template_preserves_retries_without_requiring_sqs_create() -> None:
     trainer = template.split("  MLBMLTrainingFunction:\n", 1)[1].split(
         "\n  SoccerSchedulerFunction:\n", 1
     )[0]
+    assert "dynamodb:ConditionCheckItem" in trainer
+    assert "dynamodb:TransactWriteItems" not in trainer
     assert trainer.count("MaximumEventAgeInSeconds: 3600") == 1
     assert trainer.count("MaximumEventAgeInSeconds: 300") == 2
 
@@ -1145,8 +1145,12 @@ def test_rejects_trainer_schedule_with_swapped_invocation_modes(aws) -> None:
 
 
 def test_deploy_initializes_both_trainer_modes_before_status_acceptance() -> None:
-    workflow = (
-        Path(__file__).resolve().parents[2] / ".github" / "workflows" / "deploy.yml"
+    root = Path(__file__).resolve().parents[2]
+    workflow = (root / ".github" / "workflows" / "deploy.yml").read_text(
+        encoding="utf-8"
+    )
+    invoke_helper = (
+        root / "scripts" / "invoke_mlb_trainer_with_retry.py"
     ).read_text(encoding="utf-8")
     training_payload = (
         "'{\"sport\":\"mlb\",\"mode\":\"scheduled\","
@@ -1170,7 +1174,11 @@ def test_deploy_initializes_both_trainer_modes_before_status_acceptance() -> Non
     assert workflow.count("--retry-execution-lease") == 2
     assert workflow.count("--deadline-seconds 1200") == 2
     assert workflow.count("--retry-delay-seconds 20") == 2
+    assert "connect_timeout=10" in invoke_helper
+    assert "read_timeout=1000" in invoke_helper
+    assert 'retries={"total_max_attempts": 1, "mode": "standard"}' in invoke_helper
     assert "invoke_with_capacity_retry" not in workflow
+    assert "aws lambda invoke" not in workflow
     assert "Prove shared Lambda capacity recovered before trainer initialization" in workflow
     assert "--expected-deploy-run-id" in workflow
     assert "steps.deploy.outputs.run_id" in workflow

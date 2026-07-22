@@ -22,6 +22,8 @@ def _copy_contract(tmp_path: Path) -> Path:
         "hello_world/mlb_signal_api.py",
         "hello_world/mlb_manual_pull.py",
         "hello_world/mlb_result_signals.py",
+        "scripts/verify_mlb_release_activation_predeploy.py",
+        "scripts/invoke_mlb_trainer_with_retry.py",
     ):
         source = ROOT / relative
         target = tmp_path / relative
@@ -40,6 +42,73 @@ def test_pull_request_contract_installs_and_validates_sam() -> None:
     )
     assert "uses: aws-actions/setup-sam@v2" in contract
     assert "sam validate --template-file template.yaml" in contract
+
+
+def test_release_activation_gate_is_tested_compiled_and_immediately_predeploy() -> None:
+    contract = (ROOT / ".github/workflows/mlb-production-source-contract.yml").read_text(
+        encoding="utf-8"
+    )
+    deploy = (ROOT / ".github/workflows/deploy.yml").read_text(encoding="utf-8")
+    step_names = [
+        line.removeprefix("      - name: ")
+        for line in deploy.splitlines()
+        if line.startswith("      - name: ")
+    ]
+    wait = step_names.index("Wait for CloudFormation updateability")
+    gate = step_names.index(
+        "Enforce durable MLB r3 release activation before SAM deploy"
+    )
+    sam_deploy = step_names.index("Deploy exact canonical source")
+
+    assert "tests/unit/test_mlb_release_activation_predeploy.py" in contract
+    assert (
+        "python -m py_compile scripts/verify_mlb_release_activation_predeploy.py"
+        in contract
+    )
+    assert gate == wait + 1
+    assert sam_deploy == gate + 1
+
+
+def test_rejects_missing_release_activation_predeploy_call(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "python scripts/verify_mlb_release_activation_predeploy.py",
+            "python scripts/missing_release_activation_gate.py",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_must_run_release_activation_predeploy_once"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_step_inserted_between_updateability_and_activation_gate(
+    tmp_path: Path,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "      - name: Enforce durable MLB r3 release activation before SAM deploy\n",
+            "      - name: Unsafe intervening step\n"
+            "        run: echo unsafe\n\n"
+            "      - name: Enforce durable MLB r3 release activation before SAM deploy\n",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_release_activation_step_order_invalid"
+        in authority.verify_repository(root)
+    )
 
 
 def test_production_acceptance_heavy_verifier_is_manual_only() -> None:
@@ -74,6 +143,74 @@ def test_rejects_removal_of_capacity_safe_postdeploy_http_probe(
         )
         for error in authority.verify_repository(root)
     )
+
+
+def test_rejects_missing_trainer_invoke_retry_helper(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    (root / "scripts/invoke_mlb_trainer_with_retry.py").unlink()
+
+    assert (
+        "canonical_trainer_invoke_retry_helper_missing"
+        in authority.verify_repository(root)
+    )
+
+
+def test_rejects_deploy_that_bypasses_one_trainer_retry_helper_call(
+    tmp_path: Path,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace("python scripts/invoke_mlb_trainer_with_retry.py", "python", 1),
+        encoding="utf-8",
+    )
+
+    errors = authority.verify_repository(root)
+    assert (
+        "canonical_deploy_must_use_bounded_invoke_retry_exactly_three_times"
+        in errors
+    )
+
+
+def test_rejects_reintroduced_inline_aws_trainer_invoke(tmp_path: Path) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    deploy.write_text(
+        deploy.read_text(encoding="utf-8")
+        + "\n# invoke_with_capacity_retry\n# aws lambda invoke\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_retains_unsafe_inline_trainer_invoke"
+        in authority.verify_repository(root)
+    )
+
+
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    (
+        (
+            "            tests/unit/test_mlb_trainer_invoke_retry.py \\\n",
+            "production_source_contract_does_not_test_trainer_invoke_retry",
+        ),
+        (
+            "          python -m py_compile scripts/invoke_mlb_trainer_with_retry.py\n",
+            "production_source_contract_does_not_compile_trainer_invoke_retry",
+        ),
+    ),
+)
+def test_source_contract_must_execute_trainer_retry_checks(
+    tmp_path: Path, token: str, expected: str
+) -> None:
+    root = _copy_contract(tmp_path)
+    contract = root / ".github/workflows/mlb-production-source-contract.yml"
+    text = contract.read_text(encoding="utf-8")
+    assert token in text
+    contract.write_text(text.replace(token, "", 1), encoding="utf-8")
+
+    assert expected in authority.verify_repository(root)
 
 
 @pytest.mark.parametrize("trigger", ("push", "schedule"))

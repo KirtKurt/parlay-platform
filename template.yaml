@@ -868,7 +868,7 @@ Resources:
         - Statement:
             - Effect: Allow
               Action:
-                - dynamodb:TransactWriteItems
+                - dynamodb:ConditionCheckItem
               Resource: !GetAtt SnapshotsTable.Arn
         - Statement:
             - Effect: Allow

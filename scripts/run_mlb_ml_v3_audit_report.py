@@ -1153,6 +1153,24 @@ def _read_v2_training_state(*, now_utc=None, deployed_identity=None) -> dict:
         and manifest.get("manifestDigest")
         == experiment.manifest_digest(manifest)
     )
+    release_activation_errors = (
+        experiment.release_activation_errors(
+            manifest.get("releaseActivation"),
+            expected_experiment_id=str(manifest.get("experimentId") or ""),
+            expected_release_contract_id=str(
+                manifest.get("releaseContractId") or ""
+            ),
+            expected_release_cutoff_utc=str(
+                manifest.get("releaseCutoffUtc") or ""
+            ),
+            expected_created_at_utc=str(manifest.get("createdAtUtc") or ""),
+        )
+        if manifest_valid
+        else ["release_activation_manifest_invalid"]
+    )
+    release_activation_valid = bool(
+        manifest_valid and not release_activation_errors
+    )
     current_manifest_digest = manifest.get("manifestDigest") if manifest_valid else None
 
     def status_health(status, *, execution_mode, maximum_age_minutes):
@@ -1188,6 +1206,8 @@ def _read_v2_training_state(*, now_utc=None, deployed_identity=None) -> dict:
             errors.append("status_execution_lease_contract_mismatch")
         if not manifest_valid:
             errors.append("current_manifest_missing_or_invalid")
+        elif not release_activation_valid:
+            errors.append("current_manifest_release_activation_invalid")
         elif not manifest_read_stable:
             errors.append("manifest_changed_during_status_read")
         elif present and status.get("manifestDigest") != current_manifest_digest:
@@ -1247,6 +1267,7 @@ def _read_v2_training_state(*, now_utc=None, deployed_identity=None) -> dict:
             and deployment_identity_agreement
             and experiment_id == experiment.PRODUCTION_EXPERIMENT_ID
             and manifest_read_stable
+            and release_activation_valid
         ),
         "readOnly": True,
         "experimentId": experiment_id,
@@ -1257,6 +1278,10 @@ def _read_v2_training_state(*, now_utc=None, deployed_identity=None) -> dict:
         "manifestReadAfter": manifest_read_after,
         "manifestPresent": bool(manifest),
         "manifestValid": manifest_valid if manifest else None,
+        "releaseActivationValid": (
+            release_activation_valid if manifest else None
+        ),
+        "releaseActivationErrors": release_activation_errors if manifest else [],
         "manifestPhase": manifest.get("phase"),
         "partitionCounts": {
             name: int(((manifest.get("partitions") or {}).get(name) or {}).get("rowCount") or 0)
@@ -1364,6 +1389,11 @@ def main() -> int:
             failures.append("legacy_github_optimization_write_authority_not_disabled")
         if v2_training.get("manifestPresent") and v2_training.get("manifestValid") is not True:
             failures.append("aws_v2_experiment_manifest_invalid")
+        if (
+            v2_training.get("manifestPresent")
+            and v2_training.get("releaseActivationValid") is not True
+        ):
+            failures.append("aws_v2_release_activation_invalid")
         if (v2_training.get("trainingHealth") or {}).get("ok") is not True:
             failures.append("aws_v2_training_status_unhealthy_stale_or_invalid")
         if (v2_training.get("selectionCaptureHealth") or {}).get("ok") is not True:
