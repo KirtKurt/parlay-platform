@@ -1,0 +1,386 @@
+name: Resume and attest MLB retry deployment
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/resume-and-attest-mlb-retry-deployment.yml"
+
+permissions:
+  actions: write
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: resume-attest-mlb-retry-deployment
+  cancel-in-progress: true
+
+jobs:
+  attest:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      TARGET_HEAD: agent/mlb-deploy-heavy-read-retry-policy-final-v4
+      TARGET_TITLE: Fix MLB deploy heavy-read retry policy
+      SOURCE_WORKFLOW: MLB Production Source Contract
+      DEPLOY_WORKFLOW: Deploy SAM to AWS
+      SUCCESS_TAG: mlb-retry-deployed-success-20260722
+      API_BASE: https://7nz8g8unyd.execute-api.us-east-1.amazonaws.com/Prod
+    steps:
+      - name: Resume exact merge and deployment, then attest success
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+
+          import io
+          import json
+          import os
+          import time
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          import zipfile
+          from pathlib import Path
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          target_head = os.environ['TARGET_HEAD']
+          target_title = os.environ['TARGET_TITLE']
+          source_name = os.environ['SOURCE_WORKFLOW']
+          deploy_name = os.environ['DEPLOY_WORKFLOW']
+          success_tag = os.environ['SUCCESS_TAG']
+          api_base = os.environ['API_BASE'].rstrip('/')
+          api = 'https://api.github.com'
+          output = Path('/tmp/mlb-retry-resume-attestation.json')
+          summary: dict[str, object] = {'ok': False, 'targetHead': target_head}
+
+          def call(method: str, path: str, payload=None, *, raw=False):
+              data = None if payload is None else json.dumps(payload).encode()
+              request = urllib.request.Request(
+                  api + path,
+                  data=data,
+                  method=method,
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'Authorization': f'Bearer {token}',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'User-Agent': 'parlay-platform-resume-attestor/1.0',
+                      **({'Content-Type': 'application/json'} if data is not None else {}),
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=120) as response:
+                      body = response.read()
+                      status = response.getcode()
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode('utf-8', 'replace')
+                  raise RuntimeError(
+                      f'{method} {path} returned {exc.code}: {body[:2000]}'
+                  ) from exc
+              if raw:
+                  return body
+              if status == 204 or not body:
+                  return {}
+              return json.loads(body.decode())
+
+          def emit(name, value):
+              print(name + ' ' + json.dumps(value, sort_keys=True, default=str), flush=True)
+
+          def exact_pr() -> dict:
+              query = urllib.parse.urlencode({
+                  'state': 'all',
+                  'head': f'KirtKurt:{target_head}',
+                  'base': 'main',
+                  'per_page': 100,
+              })
+              pulls = call('GET', f'/repos/{repo}/pulls?{query}')
+              matches = [
+                  item for item in pulls
+                  if isinstance(item, dict) and item.get('title') == target_title
+              ]
+              if len(matches) != 1:
+                  raise RuntimeError(f'expected one exact PR, found {len(matches)}')
+              return matches[0]
+
+          def source_green(head_sha: str) -> dict:
+              deadline = time.monotonic() + 45 * 60
+              while time.monotonic() < deadline:
+                  query = urllib.parse.urlencode({
+                      'head_sha': head_sha,
+                      'event': 'pull_request',
+                      'per_page': 100,
+                  })
+                  runs = call('GET', f'/repos/{repo}/actions/runs?{query}').get('workflow_runs') or []
+                  matches = [
+                      run for run in runs
+                      if run.get('head_sha') == head_sha and run.get('name') == source_name
+                  ]
+                  if matches:
+                      run = max(matches, key=lambda item: int(item.get('run_number') or 0))
+                      emit('SOURCE_POLL', {
+                          'id': run.get('id'),
+                          'status': run.get('status'),
+                          'conclusion': run.get('conclusion'),
+                      })
+                      if run.get('status') == 'completed':
+                          if run.get('conclusion') != 'success':
+                              raise RuntimeError(f'source contract is {run.get("conclusion")}')
+                          return run
+                  time.sleep(15)
+              raise RuntimeError('source contract deadline exhausted')
+
+          def merge_if_needed(pr: dict) -> tuple[int, str]:
+              number = int(pr['number'])
+              head_sha = str((pr.get('head') or {}).get('sha') or '')
+              files = call('GET', f'/repos/{repo}/pulls/{number}/files?per_page=100')
+              names = sorted(item.get('filename') for item in files if isinstance(item, dict))
+              expected = sorted([
+                  '.github/workflows/deploy.yml',
+                  'tests/unit/test_mlb_deploy_heavy_read_retry_policy.py',
+              ])
+              if names != expected:
+                  raise RuntimeError(f'PR file scope mismatch: {names}')
+              if pr.get('merged_at'):
+                  merge_sha = str(pr.get('merge_commit_sha') or '')
+                  if not merge_sha:
+                      refreshed = call('GET', f'/repos/{repo}/pulls/{number}')
+                      merge_sha = str(refreshed.get('merge_commit_sha') or '')
+                  if not merge_sha:
+                      raise RuntimeError('merged PR has no merge SHA')
+                  return number, merge_sha
+
+              source_green(head_sha)
+              compare = call('GET', f'/repos/{repo}/compare/main...{head_sha}')
+              if int(compare.get('behind_by') or 0) != 0 or int(compare.get('ahead_by') or 0) != 1:
+                  raise RuntimeError('candidate is not exactly one commit ahead of main')
+              deadline = time.monotonic() + 10 * 60
+              while time.monotonic() < deadline:
+                  refreshed = call('GET', f'/repos/{repo}/pulls/{number}')
+                  if refreshed.get('mergeable') is True:
+                      if refreshed.get('draft') is True:
+                          call('PATCH', f'/repos/{repo}/pulls/{number}', {'draft': False})
+                      merge = call('PUT', f'/repos/{repo}/pulls/{number}/merge', {
+                          'sha': head_sha,
+                          'merge_method': 'squash',
+                          'commit_title': target_title,
+                          'commit_message': 'Retry completed transient heavy reads while draining ambiguous Lambda deliveries.',
+                      })
+                      if merge.get('merged') is not True:
+                          raise RuntimeError('merge rejected: ' + json.dumps(merge))
+                      return number, str(merge.get('sha') or '')
+                  if refreshed.get('mergeable') is False:
+                      raise RuntimeError(f'PR is not mergeable: {refreshed.get("mergeable_state")}')
+                  time.sleep(10)
+              raise RuntimeError('mergeability deadline exhausted')
+
+          def deployment_for(merge_sha: str) -> dict:
+              deadline = time.monotonic() + 55 * 60
+              dispatched = False
+              first_seen = time.monotonic()
+              while time.monotonic() < deadline:
+                  query = urllib.parse.urlencode({
+                      'head_sha': merge_sha,
+                      'branch': 'main',
+                      'per_page': 100,
+                  })
+                  runs = call('GET', f'/repos/{repo}/actions/runs?{query}').get('workflow_runs') or []
+                  matches = [
+                      run for run in runs
+                      if run.get('head_sha') == merge_sha
+                      and run.get('head_branch') == 'main'
+                      and run.get('name') == deploy_name
+                      and run.get('event') in {'push', 'workflow_dispatch'}
+                  ]
+                  if not matches and not dispatched and time.monotonic() - first_seen >= 20:
+                      call('POST', f'/repos/{repo}/actions/workflows/deploy.yml/dispatches', {'ref': 'main'})
+                      dispatched = True
+                      emit('DEPLOY_DISPATCHED', {'headSha': merge_sha})
+                      time.sleep(10)
+                      continue
+                  if matches:
+                      run = max(matches, key=lambda item: (
+                          int(item.get('run_number') or 0), int(item.get('run_attempt') or 0)
+                      ))
+                      emit('DEPLOY_POLL', {
+                          'id': run.get('id'),
+                          'event': run.get('event'),
+                          'status': run.get('status'),
+                          'conclusion': run.get('conclusion'),
+                      })
+                      if run.get('status') == 'completed':
+                          if run.get('conclusion') != 'success':
+                              raise RuntimeError(f'exact deployment is {run.get("conclusion")}')
+                          return run
+                  time.sleep(20)
+              raise RuntimeError('deployment deadline exhausted')
+
+          def deployment_identity(run: dict, merge_sha: str) -> dict:
+              run_id = int(run['id'])
+              attempt = int(run.get('run_attempt') or 1)
+              jobs = call('GET', f'/repos/{repo}/actions/runs/{run_id}/jobs?filter=latest&per_page=100').get('jobs') or []
+              deploy_jobs = [job for job in jobs if job.get('name') == 'deploy']
+              if len(deploy_jobs) != 1 or deploy_jobs[0].get('conclusion') != 'success':
+                  raise RuntimeError('deploy job is not uniquely successful')
+              artifacts = call('GET', f'/repos/{repo}/actions/runs/{run_id}/artifacts?per_page=100').get('artifacts') or []
+              expected_name = f'mlb-deployment-identity-{run_id}'
+              matches = [a for a in artifacts if a.get('name') == expected_name and a.get('expired') is False]
+              if len(matches) != 1:
+                  raise RuntimeError(f'identity artifact count is {len(matches)}')
+              archive = call('GET', f'/repos/{repo}/actions/artifacts/{matches[0]["id"]}/zip', raw=True)
+              with zipfile.ZipFile(io.BytesIO(archive)) as bundle:
+                  files = sorted(bundle.namelist())
+                  names = [name for name in files if name.endswith('mlb_deploy_identity_latest.json')]
+                  if len(names) != 1:
+                      raise RuntimeError('identity JSON count is not one')
+                  proof = json.loads(bundle.read(names[0]).decode())
+              expected_run = f'{run_id}-{attempt}'
+              if proof.get('ok') is not True or proof.get('expectedGitSha') != merge_sha or proof.get('expectedDeployRunId') != expected_run:
+                  raise RuntimeError('top-level deployment identity mismatch')
+              functions = proof.get('functions') or {}
+              bad = {}
+              for name, item in functions.items():
+                  errors = []
+                  if not isinstance(item, dict):
+                      errors.append('non_object')
+                  else:
+                      for field in ('identityMatches', 'configurationMatches', 'codeArtifactMatchesCleanBuild'):
+                          if item.get(field) is not True:
+                              errors.append(field)
+                      if item.get('deployGitSha') != merge_sha:
+                          errors.append('deployGitSha')
+                      if item.get('deployRunId') != expected_run:
+                          errors.append('deployRunId')
+                  if errors:
+                      bad[name] = errors
+              if bad:
+                  raise RuntimeError('function identity mismatch: ' + json.dumps(bad))
+              return {
+                  'runId': run_id,
+                  'runAttempt': attempt,
+                  'event': run.get('event'),
+                  'artifactId': matches[0].get('id'),
+                  'artifactDigest': matches[0].get('digest'),
+                  'functionCount': len(functions),
+                  'allFunctionArtifactsMatch': True,
+              }
+
+          def read(path: str) -> dict:
+              deadline = time.monotonic() + (180 if path == '/v1/health' else 20 * 60)
+              attempts = 0
+              last = None
+              while time.monotonic() < deadline:
+                  attempts += 1
+                  request = urllib.request.Request(
+                      api_base + path,
+                      headers={'Accept': 'application/json', 'User-Agent': 'parlay-platform-resume-attestor/1.0'},
+                  )
+                  started = time.monotonic()
+                  ambiguous = False
+                  try:
+                      with urllib.request.urlopen(request, timeout=60) as response:
+                          status = int(response.getcode())
+                          raw = response.read()
+                  except urllib.error.HTTPError as exc:
+                      status = int(exc.code)
+                      raw = exc.read()
+                      ambiguous = status == 504
+                  except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as exc:
+                      status = None
+                      raw = b''
+                      ambiguous = True
+                      last = {'error': type(exc).__name__}
+                  elapsed = round(time.monotonic() - started, 3)
+                  payload = None
+                  if raw:
+                      try:
+                          payload = json.loads(raw.decode())
+                      except Exception:
+                          ambiguous = True
+                  if status == 200 and isinstance(payload, dict):
+                      if payload.get('ok') is not True:
+                          raise RuntimeError(f'{path} reports unhealthy payload')
+                      if path != '/v1/health' and payload.get('sport') != 'mlb':
+                          raise RuntimeError(f'{path} sport mismatch')
+                      return {
+                          'httpStatus': status,
+                          'elapsedSeconds': elapsed,
+                          'attempts': attempts,
+                          'ok': payload.get('ok'),
+                          'sport': payload.get('sport'),
+                          'slateDateEt': payload.get('slateDateEt'),
+                          'gameCount': payload.get('gameCount'),
+                          'lockedPredictionCount': payload.get('lockedPredictionCount'),
+                          'officialPredictionCount': payload.get('officialPredictionCount'),
+                          'lockedStatusCount': payload.get('lockedStatusCount'),
+                          'noPredictionDataCount': payload.get('noPredictionDataCount'),
+                          'operationalDefect': payload.get('operationalDefect'),
+                      }
+                  last = {'status': status, 'payload': payload, 'elapsed': elapsed}
+                  remaining = deadline - time.monotonic()
+                  if remaining <= 0:
+                      break
+                  time.sleep(min(330 if ambiguous else 30, remaining))
+              raise RuntimeError(f'{path} exhausted: {last}')
+
+          def set_success_tag(merge_sha: str) -> None:
+              try:
+                  call('POST', f'/repos/{repo}/git/refs', {
+                      'ref': f'refs/tags/{success_tag}',
+                      'sha': merge_sha,
+                  })
+              except RuntimeError as exc:
+                  if 'returned 422' not in str(exc):
+                      raise
+                  call('PATCH', f'/repos/{repo}/git/refs/tags/{success_tag}', {
+                      'sha': merge_sha,
+                      'force': True,
+                  })
+
+          error = None
+          try:
+              pr = exact_pr()
+              number, merge_sha = merge_if_needed(pr)
+              if not merge_sha:
+                  raise RuntimeError('merge SHA is empty')
+              summary['pullRequest'] = {'number': number, 'url': pr.get('html_url')}
+              summary['mergeSha'] = merge_sha
+              run = deployment_for(merge_sha)
+              summary['deployment'] = deployment_identity(run, merge_sha)
+              summary['livePublicReads'] = {
+                  'health': read('/v1/health'),
+                  'lockStatus': read('/v1/mlb/locks/status'),
+                  'predictions': read('/v1/mlb/predictions'),
+              }
+              set_success_tag(merge_sha)
+              summary['successTag'] = success_tag
+              summary['ok'] = True
+              for number_to_close in (62, 64, 65):
+                  try:
+                      item = call('GET', f'/repos/{repo}/pulls/{number_to_close}')
+                      if item.get('state') == 'open' and item.get('merged_at') is None:
+                          call('PATCH', f'/repos/{repo}/pulls/{number_to_close}', {'state': 'closed'})
+                  except Exception as cleanup_exc:
+                      emit('CLEANUP_WARNING', {'pr': number_to_close, 'error': str(cleanup_exc)})
+              emit('ATTESTATION_OK', summary)
+          except Exception as exc:
+              error = exc
+              summary['errorType'] = type(exc).__name__
+              summary['error'] = str(exc)
+              emit('ATTESTATION_FAILED', summary)
+          finally:
+              output.write_text(json.dumps(summary, indent=2, sort_keys=True, default=str) + '\n')
+          if error is not None:
+              raise error
+          PY
+
+      - name: Upload resumable attestation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-retry-resume-attestation-${{ github.run_id }}
+          path: /tmp/mlb-retry-resume-attestation.json
+          if-no-files-found: error
+          retention-days: 7
