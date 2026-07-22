@@ -102,6 +102,7 @@ def _status_read_scope():
     token = _STATUS_READ_CACHE.set({
         "consistentItems": {},
         "canonicalPulls": {},
+        "pullFingerprints": {},
     })
     try:
         yield _STATUS_READ_CACHE.get()
@@ -146,6 +147,121 @@ def _status_cached_item(
             None if cached is _STATUS_MISSING_ITEM else copy.deepcopy(cached),
         )
     return False, None
+
+
+def _status_pull_payload_fingerprint(
+    table: Any,
+    key: Dict[str, str],
+    pull: Dict[str, Any],
+) -> str:
+    """Hash one immutable pull at most once within a read-only status request."""
+    request_cache = _STATUS_READ_CACHE.get()
+    fingerprint_cache = (
+        request_cache.get("pullFingerprints")
+        if isinstance(request_cache, dict)
+        else None
+    )
+    cache_key = _status_item_cache_key(table, key)
+    if isinstance(fingerprint_cache, dict) and cache_key in fingerprint_cache:
+        return str(fingerprint_cache[cache_key])
+    fingerprint = history_contract.pull_payload_fingerprint(pull)
+    if isinstance(fingerprint_cache, dict):
+        fingerprint_cache[cache_key] = fingerprint
+    return fingerprint
+
+
+def _status_query_pulls(module: Any, slate: str) -> List[Dict[str, Any]]:
+    """Read and canonicalize one exact pull snapshot without rereading its rows.
+
+    Production's private item reader performs a strongly consistent DynamoDB
+    query. Its exact outer items are safe to publish into this request's item
+    cache, while their data rows are canonicalized with one precomputed hash per
+    raw pull. Injected adapters without that reader retain the original path.
+    """
+    request_cache = _STATUS_READ_CACHE.get()
+    item_cache = (
+        request_cache.get("consistentItems")
+        if isinstance(request_cache, dict)
+        else None
+    )
+    canonical_cache = (
+        request_cache.get("canonicalPulls")
+        if isinstance(request_cache, dict)
+        else None
+    )
+    fingerprint_cache = (
+        request_cache.get("pullFingerprints")
+        if isinstance(request_cache, dict)
+        else None
+    )
+    table = getattr(module.history, "PULLS", None)
+    item_reader = getattr(module.history, "_query_pull_items", None)
+    canonicalize = getattr(module.history, "canonicalize_pull_slots", None)
+    if (
+        not isinstance(item_cache, dict)
+        or table is None
+        or not callable(item_reader)
+        or not callable(canonicalize)
+    ):
+        return module._pulls_for_date(slate)
+
+    raw_items = item_reader("mlb", slate, 500)
+    raw_pulls: List[Dict[str, Any]] = []
+    precomputed: Dict[int, str] = {}
+    filter_pull = getattr(module.history, "_filter_mlb_model_pull", None)
+    parser = getattr(module.history, "_parse_utc", None)
+    for item in raw_items:
+        if not isinstance(item, dict) or item.get("record_type") != "pull_run":
+            continue
+        pull = copy.deepcopy(item.get("data") or {})
+        if not isinstance(pull, dict) or not pull:
+            continue
+        key = {
+            "PK": str(item.get("PK") or ""),
+            "SK": str(item.get("SK") or ""),
+        }
+        if not key["PK"] or not key["SK"]:
+            continue
+
+        persisted_item = copy.deepcopy(item)
+        persisted_pull = persisted_item.get("data") or {}
+        if isinstance(persisted_pull, dict):
+            persisted_pull.pop("canonicalPullStorage", None)
+        item_cache[_status_item_cache_key(table, key)] = persisted_item
+
+        filtered = filter_pull(pull) if callable(filter_pull) else pull
+        if not isinstance(filtered, dict):
+            continue
+        fingerprint = history_contract.pull_payload_fingerprint(filtered)
+        precomputed[id(filtered)] = fingerprint
+        raw_pulls.append(filtered)
+        if isinstance(fingerprint_cache, dict):
+            fingerprint_cache[_status_item_cache_key(table, key)] = (
+                fingerprint
+                if filtered is pull
+                else history_contract.pull_payload_fingerprint(persisted_pull)
+            )
+
+    def pulled_at(value: Dict[str, Any]) -> datetime:
+        parsed = parser(value.get("pulled_at")) if callable(parser) else None
+        return parsed or datetime.min.replace(tzinfo=timezone.utc)
+
+    raw_pulls.sort(
+        key=lambda pull: (
+            pulled_at(pull),
+            str(pull.get("pull_id") or ""),
+            precomputed[id(pull)],
+        )
+    )
+    canonical = canonicalize(
+        raw_pulls,
+        sport="mlb",
+        slate=slate,
+        _precomputed_fingerprints=precomputed,
+    )[:500]
+    if isinstance(canonical_cache, dict):
+        canonical_cache[id(canonical)] = canonical
+    return canonical
 
 
 def _status_batch_resource(table: Any, *owners: Any) -> Optional[Any]:
@@ -1115,7 +1231,17 @@ def _scoring_pulls(
         matching = _matching_game(pull, game)
         if not matching:
             continue
-        scoped = copy.deepcopy(pull)
+        if isinstance(request_cache, dict):
+            # Status validation never selects a new candidate from raw variants.
+            # Keep exact slot/storage/provenance fields, but avoid copying every
+            # full-slate game and raw duplicate once per game in the manifest.
+            scoped = {
+                key: copy.deepcopy(value)
+                for key, value in pull.items()
+                if key not in {"games", "_canonicalSlotRawPulls"}
+            }
+        else:
+            scoped = copy.deepcopy(pull)
         scoped["games"] = [copy.deepcopy(matching)]
         selected.append(scoped)
     return selected
@@ -2744,7 +2870,11 @@ def _candidate_snapshot_authority_errors(table: Any, item: Dict[str, Any]) -> Li
             source_item.get("record_type") != "pull_run"
             or str(source_pull.get("pull_id") or "") != source_id
             or _parse_iso(source_pull.get("pulled_at")) != _parse_iso(source_at_text)
-            or history_contract.pull_payload_fingerprint(source_pull)
+            or _status_pull_payload_fingerprint(
+                table,
+                source_key,
+                source_pull,
+            )
             != str(proof.get("predictionSourcePullFingerprint") or "")
         ):
             errors.append("candidate_source_pull_readback_mismatch")
@@ -2799,10 +2929,11 @@ def _source_window_authority_errors(table: Any, item: Dict[str, Any]) -> List[st
         timestamps.append(pulled_at)
         if not cutoff or pulled_at > cutoff:
             errors.append("bound_source_window_pull_after_cutoff")
-        pull_item = _consistent_item(table, {
+        pull_key = {
             "PK": entry.get("pullStoragePk") or f"PULLS#mlb#{item.get('slate_date')}",
             "SK": entry.get("pullStorageSk") or f"PULL#{entry.get('pulledAtUtc')}#{pull_id}",
-        })
+        }
+        pull_item = _consistent_item(table, pull_key)
         if not pull_item:
             errors.append(f"bound_source_window_pull_readback_missing:{index}")
             continue
@@ -2815,7 +2946,7 @@ def _source_window_authority_errors(table: Any, item: Dict[str, Any]) -> List[st
         ):
             errors.append(f"bound_source_window_pull_readback_mismatch:{index}")
             continue
-        if history_contract.pull_payload_fingerprint(pull) != str(
+        if _status_pull_payload_fingerprint(table, pull_key, pull) != str(
             entry.get("canonicalPullFingerprint") or ""
         ):
             errors.append(f"bound_source_window_pull_fingerprint_mismatch:{index}")
@@ -5485,7 +5616,11 @@ def apply(module: Any) -> Any:
         daily_key = {"PK": module._lock_pk(slate), "SK": module._lock_sk()}
         daily_cached, daily_item = _status_cached_item(module.TABLE, daily_key)
         raw_existing = daily_item if daily_cached else module._get_lock_item(slate)
-        pulls = sorted(module._pulls_for_date(slate), key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc))
+        pulls = sorted(
+            _status_query_pulls(module, slate),
+            key=lambda pull: _pull_at(module, pull)
+            or datetime.min.replace(tzinfo=timezone.utc),
+        )
         manifest = module._latest_games_for_date(slate, pulls)
         # Pull discovery determines the durable manifest and therefore the
         # exact immutable keys this read can consume. Batch only those keys;
