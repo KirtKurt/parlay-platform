@@ -35,6 +35,7 @@ def fetch_json_object(
     max_wait_seconds: float = 180.0,
     request_timeout_seconds: float = 20.0,
     retry_delay_seconds: float = 4.0,
+    max_attempts: Optional[int] = None,
     headers: Optional[Mapping[str, str]] = None,
     opener: Callable[..., Any] = urllib.request.urlopen,
     monotonic: Callable[[], float] = time.monotonic,
@@ -44,14 +45,22 @@ def fetch_json_object(
 
     Calls are strictly sequential. HTTP 429, HTTP 5xx, transport errors, and
     truncated/invalid JSON are retried only until the supplied monotonic
-    deadline. Other HTTP statuses and valid non-object payloads fail
-    immediately because they indicate a deployment contract error.
+    deadline or optional attempt limit. Other HTTP statuses and valid
+    non-object payloads fail immediately because they indicate a deployment
+    contract error.
     """
 
     if not url:
         raise PermanentHttpProbeError("probe URL is empty")
-    if request_timeout_seconds <= 0 or retry_delay_seconds < 0:
-        raise ValueError("probe timeout and retry delay must be non-negative")
+    if (
+        request_timeout_seconds <= 0
+        or retry_delay_seconds < 0
+        or (max_attempts is not None and max_attempts <= 0)
+    ):
+        raise ValueError(
+            "probe timeout/max attempts must be positive and retry delay "
+            "must be non-negative"
+        )
     deadline = (
         float(deadline_monotonic)
         if deadline_monotonic is not None
@@ -124,6 +133,11 @@ def fetch_json_object(
                 )
             return payload
 
+        if max_attempts is not None and attempt >= max_attempts:
+            raise TransientHttpProbeExhausted(
+                f"JSON probe attempt limit exhausted after {attempt} attempts: "
+                f"{last_transient}"
+            )
         remaining = deadline - monotonic()
         if remaining <= 0:
             raise TransientHttpProbeExhausted(

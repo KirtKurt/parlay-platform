@@ -186,3 +186,61 @@ def test_expired_shared_deadline_makes_no_request() -> None:
             sleep=clock.sleep,
         )
     assert calls == 0
+
+
+@pytest.mark.parametrize("failure", ("timeout", "http_504", "truncated"))
+def test_single_attempt_heavy_probe_never_retries_failed_delivery(
+    failure: str,
+) -> None:
+    clock = Clock()
+    calls = 0
+
+    class TruncatedResponse(Response):
+        def read(self) -> bytes:
+            raise http.client.IncompleteRead(b'{"ok":', 8)
+
+    def opener(_request, *, timeout):
+        nonlocal calls
+        calls += 1
+        assert timeout > 0
+        if failure == "timeout":
+            raise TimeoutError("gateway integration still running")
+        if failure == "http_504":
+            raise urllib.error.HTTPError(
+                "https://example.test",
+                504,
+                "gateway timeout",
+                {},
+                io.BytesIO(),
+            )
+        return TruncatedResponse(200, {})
+
+    with pytest.raises(
+        probe.TransientHttpProbeExhausted,
+        match="attempt limit exhausted after 1 attempts",
+    ):
+        probe.fetch_json_object(
+            "https://example.test/status",
+            max_wait_seconds=1200,
+            request_timeout_seconds=45,
+            retry_delay_seconds=4,
+            max_attempts=1,
+            opener=opener,
+            monotonic=clock.monotonic,
+            sleep=clock.sleep,
+        )
+    assert calls == 1
+    assert clock.sleeps == []
+
+
+def test_single_attempt_heavy_probe_accepts_valid_json_object() -> None:
+    clock = Clock()
+    result = probe.fetch_json_object(
+        "https://example.test/status",
+        max_attempts=1,
+        opener=lambda _request, timeout: Response(200, {"ok": True}),
+        monotonic=clock.monotonic,
+        sleep=clock.sleep,
+    )
+    assert result == {"ok": True}
+    assert clock.sleeps == []

@@ -192,10 +192,20 @@ def _stage_binding_errors(
 
 def _read_verified_stage(table: Any, row: Dict[str, Any], *, canonical_row: bool) -> Tuple[Optional[Dict[str, Any]], List[str]]:
     expected_key = _stage_key(row)
+    cached = False
+    stage = None
     try:
-        stage = table.get_item(Key=expected_key, ConsistentRead=True).get("Item")
-    except Exception as exc:
-        return None, [f"stage_consistent_read_failed:{type(exc).__name__}:{exc}"]
+        import mlb_daily_per_game_lock_patch as per_game
+
+        cached, stage = per_game._status_cached_item(table, expected_key)
+    except Exception:
+        cached = False
+        stage = None
+    if not cached:
+        try:
+            stage = table.get_item(Key=expected_key, ConsistentRead=True).get("Item")
+        except Exception as exc:
+            return None, [f"stage_consistent_read_failed:{type(exc).__name__}:{exc}"]
     if not isinstance(stage, dict):
         return None, ["verified_stage_not_found"]
     errors = _stage_binding_errors(table, stage, row, expected_key, canonical_row=canonical_row)

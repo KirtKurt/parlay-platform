@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import copy
 import importlib
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from types import SimpleNamespace
 
 import pytest
-from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
 
 from tests.unit.test_mlb_daily_per_game_lock import (
     build_module,
@@ -26,6 +25,36 @@ GAME_COUNT = 15
 PULL_COUNT = 65
 
 
+class _BatchResource:
+    def __init__(self, table, *, handler=None):
+        self.table = table
+        self.handler = handler
+        self.calls = []
+
+    def batch_get_item(self, *, RequestItems):
+        self.calls.append(copy.deepcopy(RequestItems))
+        if self.handler is not None:
+            return self.handler(RequestItems, len(self.calls))
+        table_name, request = next(iter(RequestItems.items()))
+        items = []
+        for key in request.get("Keys") or []:
+            item = self.table.items.get((key["PK"], key["SK"]))
+            if item is not None:
+                items.append(copy.deepcopy(item))
+        return {
+            "Responses": {table_name: items},
+            "UnprocessedKeys": {},
+        }
+
+
+def _install_batch_reader(module):
+    module.TABLE.name = "parlay_platform_snapshots"
+    resource = _BatchResource(module.TABLE)
+    module.DDB = resource
+    module.history.DDB = resource
+    return resource
+
+
 def _games(start: str):
     return [game(f"scale-{index}", start) for index in range(GAME_COUNT)]
 
@@ -40,6 +69,26 @@ def _pulls(games):
         )
         for index in range(PULL_COUNT)
     ]
+
+
+def _live_shaped_duplicate_pulls(games):
+    first = datetime.fromisoformat("2026-07-13T00:00:00+00:00")
+    rows = []
+    for slot in range(80):
+        repeats = 3 if slot < 58 else 2
+        for duplicate in range(repeats):
+            pulled_at = first + timedelta(
+                minutes=15 * slot + duplicate,
+            )
+            rows.append(
+                pull(
+                    pulled_at.isoformat(),
+                    games,
+                    f"live-{slot:03d}-{duplicate}",
+                )
+            )
+    assert len(rows) == 218
+    return rows
 
 
 @contextmanager
@@ -65,116 +114,9 @@ def _count_table_reads(table):
         table.query = original_query
 
 
-def _ddb_value(value):
-    if isinstance(value, float):
-        return Decimal(str(value))
-    if isinstance(value, dict):
-        return {str(key): _ddb_value(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_ddb_value(item) for item in value]
-    return value
-
-
 @contextmanager
-def _batch_capable_table(
-    table,
-    *,
-    fail_every_call: bool = False,
-    malformed_first_response: bool = False,
-    return_one_unprocessed_once: bool = False,
-):
-    serializer = TypeSerializer()
-    deserializer = TypeDeserializer()
-    counts = {
-        "batchGetItem": 0,
-        "keys": 0,
-        "maxKeys": 0,
-        "consistentReads": 0,
-        "identities": set(),
-    }
-
-    class BatchClient:
-        meta = SimpleNamespace(region_name="us-east-1")
-
-        def __init__(self):
-            self.returned_unprocessed = False
-
-        def batch_get_item(self, *, RequestItems):
-            counts["batchGetItem"] += 1
-            if fail_every_call:
-                raise TimeoutError("injected batch read failure")
-            if malformed_first_response and counts["batchGetItem"] == 1:
-                return {
-                    "Responses": {
-                        "parlay_platform_snapshots": [{"PK": {"S": "ambiguous"}}]
-                    }
-                }
-
-            assert list(RequestItems) == ["parlay_platform_snapshots"]
-            request = RequestItems["parlay_platform_snapshots"]
-            assert request.get("ConsistentRead") is True
-            wire_keys = list(request.get("Keys") or [])
-            assert len(wire_keys) <= 100
-            decoded_keys = [
-                {
-                    name: deserializer.deserialize(value)
-                    for name, value in wire_key.items()
-                }
-                for wire_key in wire_keys
-            ]
-            identities = {(key["PK"], key["SK"]) for key in decoded_keys}
-            assert len(identities) == len(decoded_keys)
-            counts["keys"] += len(wire_keys)
-            counts["maxKeys"] = max(counts["maxKeys"], len(wire_keys))
-            counts["consistentReads"] += 1
-            counts["identities"].update(identities)
-
-            unprocessed = []
-            if (
-                return_one_unprocessed_once
-                and wire_keys
-                and not self.returned_unprocessed
-            ):
-                self.returned_unprocessed = True
-                unprocessed = [wire_keys[-1]]
-                wire_keys = wire_keys[:-1]
-
-            items = []
-            for wire_key in wire_keys:
-                key = {
-                    name: deserializer.deserialize(value)
-                    for name, value in wire_key.items()
-                }
-                item = table.items.get((key["PK"], key["SK"]))
-                if item is None:
-                    continue
-                items.append({
-                    name: serializer.serialize(_ddb_value(value))
-                    for name, value in item.items()
-                })
-            response = {"Responses": {"parlay_platform_snapshots": items}}
-            if unprocessed:
-                response["UnprocessedKeys"] = {
-                    "parlay_platform_snapshots": {"Keys": unprocessed}
-                }
-            return response
-
-    sentinel = object()
-    previous_name = getattr(table, "name", sentinel)
-    previous_meta = getattr(table, "meta", sentinel)
-    table.name = "parlay_platform_snapshots"
-    table.meta = SimpleNamespace(client=BatchClient())
-    try:
-        yield counts
-    finally:
-        if previous_name is sentinel:
-            delattr(table, "name")
-        else:
-            table.name = previous_name
-        if previous_meta is sentinel:
-            delattr(table, "meta")
-        else:
-            table.meta = previous_meta
+def _without_status_read_cache():
+    yield None
 
 
 @pytest.fixture(scope="module")
@@ -198,37 +140,26 @@ def locked_scale_module():
 
 def test_locked_status_request_cache_preserves_payload_and_bounds_reads(
     locked_scale_module,
+    monkeypatch,
 ):
     module = locked_scale_module
-    # This is the exact #57 request-cache behavior without BatchGet support.
-    with _count_table_reads(module.TABLE) as sequential_counts:
-        sequential = module._status_payload(SLATE)
+    resource = _install_batch_reader(module)
+    with monkeypatch.context() as context:
+        context.setattr(patch, "_status_read_scope", _without_status_read_cache)
+        with _count_table_reads(module.TABLE) as uncached_counts:
+            uncached = module._status_payload(SLATE)
 
-    with _batch_capable_table(module.TABLE) as batch_counts:
-        with _count_table_reads(module.TABLE) as cached_counts:
-            cached = module._status_payload(SLATE)
+    with _count_table_reads(module.TABLE) as cached_counts:
+        cached = module._status_payload(SLATE)
 
-    assert cached == sequential
+    assert cached == uncached
     assert cached["gameCount"] == GAME_COUNT
     assert cached["pullCount"] == PULL_COUNT
     assert cached["lockedPredictionCount"] == GAME_COUNT
-    assert cached_counts["getItem"] <= 35
+    assert cached_counts["getItem"] == 1
     assert cached_counts["query"] == GAME_COUNT
-    assert batch_counts["batchGetItem"] <= 5
-    assert batch_counts["maxKeys"] <= 100
-    assert batch_counts["keys"] >= GAME_COUNT * 8
-    first_stage = next(
-        item
-        for item in module.TABLE.items.values()
-        if item.get("record_type") == patch.STAGE_RECORD_TYPE
-    )
-    first_source = (first_stage.get("source_window") or {}).get("pulls")[0]
-    assert (
-        f"PULLS#mlb#{SLATE}",
-        f"PULL#{first_source['pulledAtUtc']}#{first_source['pullId']}",
-    ) in batch_counts["identities"]
-    assert sequential_counts["getItem"] >= 200
-    assert sequential_counts["getItem"] > cached_counts["getItem"] * 6
+    assert len(resource.calls) == 3
+    assert uncached_counts["getItem"] > cached_counts["getItem"] * 8
 
 
 def test_prelock_status_15_games_65_pulls_has_bounded_reads():
@@ -238,84 +169,42 @@ def test_prelock_status_15_games_65_pulls_has_bounded_reads():
         "2026-07-13T15:00:00+00:00",
         seed=False,
     )
+    resource = _install_batch_reader(module)
 
-    with _batch_capable_table(module.TABLE) as batch_counts:
-        with _count_table_reads(module.TABLE) as counts:
-            payload = module._status_payload(SLATE)
+    with _count_table_reads(module.TABLE) as counts:
+        payload = module._status_payload(SLATE)
 
     assert payload["gameCount"] == GAME_COUNT
     assert payload["pullCount"] == PULL_COUNT
     assert payload["lockedPredictionCount"] == 0
     assert len(payload["perGameStatus"]) == GAME_COUNT
     assert payload["operationalDefect"] is False
-    assert counts["getItem"] <= 20
+    assert counts["getItem"] <= 5
     assert counts["query"] == GAME_COUNT
-    assert batch_counts["batchGetItem"] == 2
-    assert batch_counts["keys"] == GAME_COUNT * 8
+    assert len(resource.calls) == 2
 
 
 def test_batch_status_snapshot_failure_falls_back_without_changing_payload(
     locked_scale_module,
+    monkeypatch,
 ):
     module = locked_scale_module
-    with _count_table_reads(module.TABLE) as baseline_counts:
-        baseline = module._status_payload(SLATE)
+    _install_batch_reader(module)
+    baseline = module._status_payload(SLATE)
 
-    with _batch_capable_table(module.TABLE, fail_every_call=True) as batch_counts:
+    def fail_batch(_request_items, _call_number):
+        raise TimeoutError("injected batch read failure")
+
+    failing_resource = _BatchResource(module.TABLE, handler=fail_batch)
+    with monkeypatch.context() as context:
+        context.setattr(module, "DDB", failing_resource)
+        context.setattr(module.history, "DDB", failing_resource)
         with _count_table_reads(module.TABLE) as fallback_counts:
             fallback = module._status_payload(SLATE)
 
     assert fallback == baseline
-    assert batch_counts["batchGetItem"] >= 1
-    assert fallback_counts == baseline_counts
-
-
-def test_batch_status_snapshot_retries_only_unprocessed_keys(
-    locked_scale_module,
-):
-    module = locked_scale_module
-    keys = [
-        {"PK": item[0], "SK": item[1]}
-        for item in list(module.TABLE.items)[:3]
-    ]
-    assert len(keys) == 3
-
-    with _batch_capable_table(
-        module.TABLE,
-        return_one_unprocessed_once=True,
-    ) as batch_counts:
-        with _count_table_reads(module.TABLE) as direct_counts:
-            with patch._status_read_scope():
-                patch._prime_consistent_items(module.TABLE, keys)
-                observed = [patch._consistent_item(module.TABLE, key) for key in keys]
-
-    assert all(isinstance(item, dict) for item in observed)
-    assert direct_counts["getItem"] == 0
-    assert batch_counts["batchGetItem"] == 2
-    assert batch_counts["keys"] == 4
-
-
-def test_malformed_batch_response_is_not_cached_as_absence(
-    locked_scale_module,
-):
-    module = locked_scale_module
-    keys = [
-        {"PK": item[0], "SK": item[1]}
-        for item in list(module.TABLE.items)[:3]
-    ]
-
-    with _batch_capable_table(
-        module.TABLE,
-        malformed_first_response=True,
-    ) as batch_counts:
-        with _count_table_reads(module.TABLE) as direct_counts:
-            with patch._status_read_scope():
-                patch._prime_consistent_items(module.TABLE, keys)
-                observed = [patch._consistent_item(module.TABLE, key) for key in keys]
-
-    assert all(isinstance(item, dict) for item in observed)
-    assert batch_counts["batchGetItem"] == 1
-    assert direct_counts["getItem"] == len(keys)
+    assert len(failing_resource.calls) >= 1
+    assert fallback_counts["getItem"] > 0
 
 
 def test_status_scope_preserves_strict_stage_and_canonical_read_failures(
@@ -333,29 +222,127 @@ def test_status_scope_preserves_strict_stage_and_canonical_read_failures(
     stage_key = patch._stage_key(module, SLATE, target_game)
     stage = module.TABLE.items[(stage_key["PK"], stage_key["SK"])]
     row = (stage.get("data") or {}).get("row") or {}
-    canonical_key = patch._canonical_locked_key(row)
-    original_get_item = module.TABLE.get_item
+    identity = str(
+        row.get("gameIdentity")
+        or row.get("gameId")
+        or row.get("game_id")
+    )
+    commence = str(row.get("commenceTime") or row.get("commence_time"))
+    canonical_key = {
+        "PK": f"GAME_WINNERS#mlb#{SLATE}",
+        "SK": f"LOCKED#GAME#{commence}#{identity}",
+    }
 
-    for failed_key, reader in (
+    for table, failed_key, reader in (
         (
+            module.TABLE,
             stage_key,
             lambda: patch._get_stage(module, SLATE, target_game),
         ),
         (
+            module.history.PULLS,
             canonical_key,
             lambda: patch._canonical_readback(module, row),
         ),
     ):
+        original_get_item = table.get_item
+
         def failing_get_item(*, Key, ConsistentRead=False):
             if Key == failed_key:
                 raise TimeoutError("injected strict read failure")
             return original_get_item(Key=Key, ConsistentRead=ConsistentRead)
 
         with monkeypatch.context() as context:
-            context.setattr(module.TABLE, "get_item", failing_get_item)
+            context.setattr(table, "get_item", failing_get_item)
             with patch._status_read_scope():
                 with pytest.raises(TimeoutError, match="injected strict read failure"):
                     reader()
+
+
+def test_candidate_legacy_source_pull_reference_is_in_exact_inventory():
+    primary_key = {"PK": "LOCKED_PICKS#mlb#2026-07-13", "SK": "STAGE"}
+    pulled_at = "2026-07-13T16:45:00+00:00"
+    item = {
+        **primary_key,
+        "record_type": patch.STAGE_RECORD_TYPE,
+        "candidate_proof": {
+            "pk": "LOCKED_PICKS#mlb#2026-07-13",
+            "sk": "PRELOCK_CANDIDATE#1",
+            "predictionSourcePullAtUtc": pulled_at,
+            "predictionSourcePullId": "legacy-source",
+        },
+        "data": {"row": {}},
+    }
+
+    class Table:
+        name = "parlay_platform_snapshots"
+        items = {(primary_key["PK"], primary_key["SK"]): item}
+
+        def get_item(self, *, Key, ConsistentRead):
+            assert ConsistentRead is True
+            stored = self.items.get((Key["PK"], Key["SK"]))
+            return {"Item": copy.deepcopy(stored)} if stored else {}
+
+    table = Table()
+    resource = _BatchResource(table)
+    with patch._status_read_scope():
+        assert patch._prime_status_exact_items(
+            table,
+            resource,
+            [primary_key],
+        ) is True
+        references = patch._status_authority_reference_keys(
+            table,
+            [primary_key],
+            SLATE,
+        )
+
+    assert {
+        "PK": f"PULLS#mlb#{SLATE}",
+        "SK": f"PULL#{pulled_at}#legacy-source",
+    } in references
+
+
+def test_live_shaped_218_raw_rows_80_slots_stays_exact_key_bounded():
+    games = _games("2026-07-13T22:00:00+00:00")
+    module = build_module(
+        _live_shaped_duplicate_pulls(games),
+        "2026-07-13T15:00:00+00:00",
+        seed=False,
+    )
+    original_query = module.history.query_pulls
+
+    def canonical_query(sport, date=None, limit=500):
+        raw = original_query(sport, date, 500)
+        return history_contract.canonicalize_pull_slots(
+            raw,
+            sport=sport,
+            slate=date,
+        )[:limit]
+
+    module.history.query_pulls = canonical_query
+    resource = _install_batch_reader(module)
+
+    with _count_table_reads(module.TABLE) as counts:
+        payload = module._status_payload(SLATE)
+
+    raw_pull_items = [
+        item
+        for item in module.TABLE.items.values()
+        if item.get("record_type") == "pull_run"
+    ]
+    assert len(raw_pull_items) == 218
+    assert payload["pullCount"] == 80
+    assert payload["gameCount"] == GAME_COUNT
+    assert payload["lockedPredictionCount"] == 0
+    assert payload["operationalDefect"] is False
+    assert counts["getItem"] <= 5
+    assert counts["query"] == GAME_COUNT
+    assert len(resource.calls) == 2
+    assert sum(
+        len(next(iter(call.values()))["Keys"])
+        for call in resource.calls
+    ) == GAME_COUNT * 8
 
 
 def test_persisted_prediction_read_scope_canonicalizes_large_pull_set_once(
@@ -419,6 +406,7 @@ def test_full_persisted_prediction_route_has_bounded_large_slate_reads(
     monkeypatch,
 ):
     module = locked_scale_module
+    resource = _install_batch_reader(module)
     engine = module.mlb_game_winner_engine
     for source_pull in module.history.pulls:
         monkeypatch.setitem(source_pull, "source", "the_odds_api")
@@ -455,8 +443,9 @@ def test_full_persisted_prediction_route_has_bounded_large_slate_reads(
     assert cached == uncached
     assert cached["readAuthority"] == "persisted_prelock_and_canonical_locked_only"
     assert len(cached["predictions"]) == GAME_COUNT
-    assert cached_counts["getItem"] <= 200
+    assert cached_counts["getItem"] <= 5
     assert cached_counts["query"] <= GAME_COUNT + 1
+    assert len(resource.calls) == 3
     assert uncached_counts["getItem"] <= 200
     assert uncached_counts["query"] <= GAME_COUNT + 1
 
@@ -538,3 +527,260 @@ def test_status_cache_is_nested_exception_safe_and_returns_independent_copies():
 
     assert table.calls == 1
     assert patch._STATUS_READ_CACHE.get() is None
+
+
+def test_exact_batch_cache_chunks_native_keys_and_proves_absence():
+    class Table:
+        name = "parlay_platform_snapshots"
+
+        def __init__(self):
+            self.items = {
+                ("PK", f"SK#{index:03d}"): {
+                    "PK": "PK",
+                    "SK": f"SK#{index:03d}",
+                    "data": {"index": index},
+                }
+                for index in range(205)
+            }
+            self.get_calls = 0
+
+        def get_item(self, *, Key, ConsistentRead):
+            assert ConsistentRead is True
+            self.get_calls += 1
+            item = self.items.get((Key["PK"], Key["SK"]))
+            return {"Item": copy.deepcopy(item)} if item else {}
+
+    table = Table()
+    resource = _BatchResource(table)
+    keys = [
+        {"PK": "PK", "SK": f"SK#{index:03d}"}
+        for index in range(206)
+    ]
+
+    with patch._status_read_scope():
+        assert patch._prime_status_exact_items(table, resource, keys) is True
+        first = patch._consistent_item(table, keys[0])
+        first["data"]["index"] = -1
+        assert patch._consistent_item(table, keys[0])["data"]["index"] == 0
+        assert patch._consistent_item(table, keys[-1]) is None
+
+    assert table.get_calls == 0
+    assert [
+        len(next(iter(call.values()))["Keys"])
+        for call in resource.calls
+    ] == [100, 100, 6]
+    assert all(
+        next(iter(call.values()))["ConsistentRead"] is True
+        for call in resource.calls
+    )
+
+
+def test_exact_batch_cache_uses_native_boto3_resource_response():
+    import boto3
+    from botocore.stub import Stubber
+
+    resource = boto3.resource(
+        "dynamodb",
+        region_name="us-east-1",
+        aws_access_key_id="test",
+        aws_secret_access_key="test",
+    )
+    table = resource.Table("parlay_platform_snapshots")
+    key = {"PK": "PK", "SK": "SK"}
+    stubber = Stubber(resource.meta.client)
+    stubber.add_response(
+        "batch_get_item",
+        {
+            "Responses": {
+                table.name: [
+                    {
+                        "PK": {"S": "PK"},
+                        "SK": {"S": "SK"},
+                        "value": {"N": "2"},
+                    }
+                ]
+            },
+            "UnprocessedKeys": {},
+        },
+        {
+            "RequestItems": {
+                table.name: {
+                    "Keys": [
+                        {
+                            "PK": "PK",
+                            "SK": "SK",
+                        }
+                    ],
+                    "ConsistentRead": True,
+                }
+            }
+        },
+    )
+
+    with stubber, patch._status_read_scope():
+        assert patch._prime_status_exact_items(table, resource, [key]) is True
+        assert patch._consistent_item(table, key) == {
+            "PK": "PK",
+            "SK": "SK",
+            "value": Decimal("2"),
+        }
+    stubber.assert_no_pending_responses()
+
+
+def test_exact_batch_cache_retries_unprocessed_without_partial_publication(
+    monkeypatch,
+):
+    class Table:
+        name = "parlay_platform_snapshots"
+        items = {
+            ("PK", "A"): {"PK": "PK", "SK": "A", "value": 1},
+            ("PK", "B"): {"PK": "PK", "SK": "B", "value": 2},
+        }
+
+    table = Table()
+    keys = [{"PK": "PK", "SK": "A"}, {"PK": "PK", "SK": "B"}]
+
+    def handler(request_items, call_number):
+        request = request_items[table.name]
+        assert request["ConsistentRead"] is True
+        if call_number == 1:
+            assert patch._STATUS_READ_CACHE.get()["consistentItems"] == {}
+            return {
+                "Responses": {table.name: [copy.deepcopy(table.items[("PK", "A")])]},
+                "UnprocessedKeys": {
+                    table.name: {
+                        "Keys": [{"PK": "PK", "SK": "B"}],
+                        "ConsistentRead": True,
+                    }
+                },
+            }
+        assert patch._STATUS_READ_CACHE.get()["consistentItems"] == {}
+        assert request["Keys"] == [{"PK": "PK", "SK": "B"}]
+        return {
+            "Responses": {table.name: [copy.deepcopy(table.items[("PK", "B")])]},
+            "UnprocessedKeys": {},
+        }
+
+    resource = _BatchResource(table, handler=handler)
+    sleeps = []
+    monkeypatch.setattr(patch.time, "sleep", sleeps.append)
+
+    with patch._status_read_scope():
+        assert patch._prime_status_exact_items(table, resource, keys) is True
+        assert patch._consistent_item(table, keys[0])["value"] == 1
+        assert patch._consistent_item(table, keys[1])["value"] == 2
+
+    assert len(resource.calls) == 2
+    assert sleeps == [patch._STATUS_BATCH_RETRY_DELAY_SECONDS]
+
+
+@pytest.mark.parametrize(
+    "malformed",
+    (
+        {"Responses": {}, "UnprocessedKeys": {}},
+        {
+            "Responses": {"parlay_platform_snapshots": None},
+            "UnprocessedKeys": {},
+        },
+        {
+            "Responses": {"parlay_platform_snapshots": []},
+            "UnprocessedKeys": {"parlay_platform_snapshots": None},
+        },
+        {
+            "Responses": {"parlay_platform_snapshots": []},
+            "UnprocessedKeys": {
+                "parlay_platform_snapshots": {"Keys": None},
+            },
+        },
+        {
+            "Responses": {
+                "parlay_platform_snapshots": [
+                    {"PK": "PK", "SK": "UNREQUESTED"},
+                ]
+            },
+            "UnprocessedKeys": {},
+        },
+        {
+            "Responses": {"parlay_platform_snapshots": []},
+            "UnprocessedKeys": {"unexpected_table": {"Keys": []}},
+        },
+    ),
+)
+def test_malformed_exact_batch_never_publishes_cached_absence(malformed):
+    key = {"PK": "PK", "SK": "A"}
+
+    class Table:
+        name = "parlay_platform_snapshots"
+
+        def __init__(self):
+            self.calls = 0
+
+        def get_item(self, *, Key, ConsistentRead):
+            assert Key == key
+            assert ConsistentRead is True
+            self.calls += 1
+            return {"Item": {**key, "value": "point-read"}}
+
+    table = Table()
+    resource = _BatchResource(
+        table,
+        handler=lambda _request, _call: copy.deepcopy(malformed),
+    )
+    with patch._status_read_scope():
+        assert patch._prime_status_exact_items(table, resource, [key]) is False
+        assert patch._consistent_item(table, key)["value"] == "point-read"
+    assert table.calls == 1
+
+
+def test_residual_unprocessed_exact_batch_falls_back_without_cache(
+    monkeypatch,
+):
+    key = {"PK": "PK", "SK": "A"}
+
+    class Table:
+        name = "parlay_platform_snapshots"
+
+        def __init__(self):
+            self.calls = 0
+
+        def get_item(self, *, Key, ConsistentRead):
+            self.calls += 1
+            return {"Item": {**Key, "value": "fallback"}}
+
+    table = Table()
+
+    def handler(request_items, _call):
+        return {
+            "Responses": {table.name: []},
+            "UnprocessedKeys": {
+                table.name: {
+                    "Keys": copy.deepcopy(request_items[table.name]["Keys"]),
+                    "ConsistentRead": True,
+                }
+            },
+        }
+
+    resource = _BatchResource(table, handler=handler)
+    monkeypatch.setattr(patch.time, "sleep", lambda _seconds: None)
+    with patch._status_read_scope():
+        assert patch._prime_status_exact_items(table, resource, [key]) is False
+        assert patch._consistent_item(table, key)["value"] == "fallback"
+    assert len(resource.calls) == patch._STATUS_BATCH_MAX_ATTEMPTS
+    assert table.calls == 1
+
+
+def test_exact_batch_phase_rejects_unbounded_key_inventory():
+    class Table:
+        name = "parlay_platform_snapshots"
+        items = {}
+
+    table = Table()
+    resource = _BatchResource(table)
+    keys = [
+        {"PK": "PK", "SK": f"SK#{index}"}
+        for index in range(patch._STATUS_BATCH_MAX_PHASE_KEYS + 1)
+    ]
+    with patch._status_read_scope():
+        assert patch._prime_status_exact_items(table, resource, keys) is False
+        assert patch._STATUS_READ_CACHE.get()["consistentItems"] == {}
+    assert resource.calls == []

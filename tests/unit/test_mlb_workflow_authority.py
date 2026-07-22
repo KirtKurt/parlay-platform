@@ -145,36 +145,7 @@ def test_rejects_removal_of_capacity_safe_postdeploy_http_probe(
     )
 
 
-@pytest.mark.parametrize(
-    ("old", "new"),
-    (
-        ("retry_delay=300", "retry_delay=4"),
-        ("retry_delay_seconds=retry_delay", "retry_delay_seconds=4"),
-    ),
-)
-def test_rejects_amplifying_lock_status_timeout_retries(
-    tmp_path: Path,
-    old: str,
-    new: str,
-) -> None:
-    root = _copy_contract(tmp_path)
-    deploy = root / ".github/workflows/deploy.yml"
-    text = deploy.read_text(encoding="utf-8")
-    deploy.write_text(
-        text.replace(old, new, 1)
-        + "\n# A detached marker must not satisfy the status-call contract.\n"
-        + "# retry_delay=300 retry_delay_seconds=retry_delay\n",
-        encoding="utf-8",
-    )
-
-    errors = authority.verify_repository(root)
-    assert (
-        "canonical_deploy_lock_status_timeout_drain_backoff_is_invalid"
-        in errors
-    )
-
-
-def test_rejects_lock_status_probe_without_active_shared_deadline(
+def test_rejects_heavy_probe_wrapper_that_drops_attempt_limit(
     tmp_path: Path,
 ) -> None:
     root = _copy_contract(tmp_path)
@@ -182,16 +153,84 @@ def test_rejects_lock_status_probe_without_active_shared_deadline(
     text = deploy.read_text(encoding="utf-8")
     deploy.write_text(
         text.replace(
-            "                  deadline=deadline,",
-            "                  deadline=None,\n"
-            "                  # deadline=deadline, detached spoof",
+            "                  max_attempts=max_attempts,\n",
+            "",
             1,
         ),
         encoding="utf-8",
     )
 
+    assert any(
+        error.endswith("max_attempts=max_attempts,")
+        for error in authority.verify_repository(root)
+    )
+
+
+@pytest.mark.parametrize(
+    "occurrence",
+    (1, 2),
+)
+def test_rejects_status_or_prediction_probe_delivery_retries(
+    tmp_path: Path,
+    occurrence: int,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    marker = "                  max_attempts=1,"
+    assert text.count(marker) == 2
+    offset = 0
+    position = -1
+    for _ in range(occurrence):
+        position = text.index(marker, offset)
+        offset = position + len(marker)
+    mutated = (
+        text[:position]
+        + marker.replace("=1", "=2")
+        + text[position + len(marker):]
+    )
+    deploy.write_text(
+        mutated,
+        encoding="utf-8",
+    )
+
     assert (
-        "canonical_deploy_lock_status_probe_call_is_invalid"
+        "canonical_deploy_heavy_read_probe_must_attempt_each_delivery_once"
+        in authority.verify_repository(root)
+    )
+
+
+@pytest.mark.parametrize(
+    ("deadline_line", "replacement"),
+    (
+        ("                  deadline=deadline,", "                  deadline=None,"),
+        (
+            "                  deadline=prediction_deadline,",
+            "                  deadline=None,",
+        ),
+    ),
+)
+def test_rejects_status_or_prediction_probe_without_active_deadline(
+    tmp_path: Path,
+    deadline_line: str,
+    replacement: str,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    assert deadline_line in text
+    deploy.write_text(
+        text.replace(
+            deadline_line,
+            replacement,
+            1,
+        )
+        + "\n# Detached deadline=deadline, deadline=prediction_deadline markers.\n",
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_heavy_read_probe_deadlines_are_invalid"
         in authority.verify_repository(root)
     )
 

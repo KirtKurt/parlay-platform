@@ -215,6 +215,17 @@ def _status_record(
     if table is None:
         return None, "status_table_not_configured"
     try:
+        import mlb_daily_per_game_lock_patch as per_game
+
+        cached, cached_item = per_game._status_cached_item(
+            table,
+            {"PK": _status_pk(lock_module, slate), "SK": sk},
+        )
+        if cached:
+            return cached_item, None
+    except Exception:
+        pass
+    try:
         item = table.get_item(
             Key={"PK": _status_pk(lock_module, slate), "SK": sk},
             ConsistentRead=True,
@@ -1469,6 +1480,22 @@ def apply(lock_module: Any):
             pulls,
             slate,
         )
+        try:
+            import mlb_daily_per_game_lock_patch as per_game
+
+            per_game._prime_status_manifest_items(
+                module,
+                module.history.PULLS,
+                slate,
+                manifest,
+                lock_minutes=lock_module.LOCK_MINUTES,
+                resource_owner=lock_module,
+            )
+        except Exception:
+            # Exact-key batching is a read optimization only. Any unavailable
+            # adapter or malformed batch response leaves the established
+            # strongly consistent point reads authoritative.
+            pass
         # Derive every timing field from the verified full schedule rather than
         # mixing that roster with the latest pull's older manifest proof.
         state = _manifest_lock_state(lock_module, pulls, manifest)

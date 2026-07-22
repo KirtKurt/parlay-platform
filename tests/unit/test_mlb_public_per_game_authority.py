@@ -615,6 +615,28 @@ def test_runtime_version_exposes_last_prelock_promotion_authority_marker():
 
 def test_persisted_reader_uses_one_read_scope_without_scoping_writer(monkeypatch):
     engine = _engine([])
+    table = engine.history.PULLS
+    table.name = "parlay_platform_snapshots"
+
+    class BatchResource:
+        def __init__(self):
+            self.calls = 0
+
+        def batch_get_item(self, *, RequestItems):
+            self.calls += 1
+            request = RequestItems[table.name]
+            rows = []
+            for key in request.get("Keys") or []:
+                item = table.by_key.get((key["PK"], key["SK"]))
+                if item is not None:
+                    rows.append(copy.deepcopy(item))
+            return {
+                "Responses": {table.name: rows},
+                "UnprocessedKeys": {},
+            }
+
+    resource = BatchResource()
+    engine.history.DDB = resource
     _install(engine)
     events = []
     original_scope = per_game._status_read_scope
@@ -636,11 +658,14 @@ def test_persisted_reader_uses_one_read_scope_without_scoping_writer(monkeypatch
     assert cached == uncached
     assert events == ["enter", "exit"]
     assert per_game._STATUS_READ_CACHE.get() is None
+    assert resource.calls > 0
 
     events.clear()
+    read_calls = resource.calls
     engine.predict_all(SLATE, store=True)
     engine.read_persisted_predictions(SLATE, store=True)
     assert events == []
+    assert resource.calls == read_calls
 
 
 def test_legacy_immutable_lock_suppresses_ambiguous_probability_authority(monkeypatch):

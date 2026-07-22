@@ -558,13 +558,14 @@ jobs:
           import urllib.parse
           from scripts.mlb_deploy_http_probe import fetch_json_object
 
-          def fetch(url, timeout=45, deadline=None, retry_delay=4):
+          def fetch(url, timeout=45, deadline=None, max_attempts=None):
               return fetch_json_object(
                   url,
                   deadline_monotonic=deadline,
                   max_wait_seconds=180,
                   request_timeout_seconds=timeout,
-                  retry_delay_seconds=retry_delay,
+                  retry_delay_seconds=4,
+                  max_attempts=max_attempts,
                   headers={
                       'accept': 'application/json',
                       'user-agent': 'inqsi-deploy-read-only-lock-lifecycle-smoke/2.0',
@@ -584,11 +585,10 @@ jobs:
                   status_url,
                   timeout=max(1, min(45, remaining)),
                   deadline=deadline,
-                  # API Gateway can end the client request while the shared
-                  # 300-second lock Lambda is still completing its read-only
-                  # status calculation. Do not create an overlapping herd of
-                  # status invocations after a transport timeout.
-                  retry_delay=300,
+                  # One client delivery per outer attempt prevents a timed-out
+                  # API Gateway request from spawning an overlapping retry
+                  # herd against the shared lock Lambda.
+                  max_attempts=1,
               )
               if (
                   payload.get('officialScheduleBacked') is True
@@ -750,6 +750,7 @@ jobs:
               predictions = fetch(
                   prediction_url,
                   deadline=prediction_deadline,
+                  max_attempts=1,
               )
               winner_rows = [
                   row
