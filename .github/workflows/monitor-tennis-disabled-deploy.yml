@@ -34,19 +34,30 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api --method GET \
-            "/repos/${GITHUB_REPOSITORY}/actions/workflows/${DEPLOY_WORKFLOW}/runs" \
-            -f branch="$DEPLOY_BRANCH" -f event=push -f per_page=30 \
-            > /tmp/tennis-deploy-runs.json
-          run_id=$(python - <<'PY'
+          run_id=""
+          for discovery_attempt in $(seq 1 60); do
+            gh api --method GET \
+              "/repos/${GITHUB_REPOSITORY}/actions/workflows/${DEPLOY_WORKFLOW}/runs" \
+              -f branch="$DEPLOY_BRANCH" -f event=push -f per_page=30 \
+              > /tmp/tennis-deploy-runs.json
+            run_id=$(python - <<'PY'
           import json, os
           payload=json.load(open('/tmp/tennis-deploy-runs.json'))
           rows=[r for r in payload.get('workflow_runs',[]) if r.get('head_sha')==os.environ['DEPLOY_SOURCE_SHA']]
-          if len(rows)!=1:
-              raise SystemExit(f"expected one exact deployment run, found {len(rows)}")
-          print(rows[0]['id'])
+          if len(rows)>1:
+              raise SystemExit(f"multiple exact deployment runs found: {len(rows)}")
+          print(rows[0]['id'] if rows else '')
           PY
-          )
+            )
+            if [ -n "$run_id" ]; then
+              echo "Found exact deployment run ${run_id}"
+              break
+            fi
+            echo "Exact deployment run not indexed yet: discovery_attempt=${discovery_attempt}"
+            sleep 5
+          done
+          [ -n "$run_id" ] || { echo "exact deployment run was not found"; exit 1; }
+
           completed=false
           for attempt in $(seq 1 300); do
             gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > /tmp/run.json
