@@ -19,5 +19,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          gh api "/repos/${GITHUB_REPOSITORY}/actions/jobs/88834244373/logs" > /tmp/bootstrap.log
-          tail -n 100 /tmp/bootstrap.log
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/jobs/88834632067/logs" > /tmp/bootstrap.log
+          tail -n 120 /tmp/bootstrap.log
