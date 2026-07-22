@@ -1,0 +1,220 @@
+2026-07-22T04:03:23.5651760Z Proceeding with IAM user credentials
+2026-07-22T04:03:23.5778403Z ##[group]Run set -euo pipefail
+2026-07-22T04:03:23.5779109Z [36;1mset -euo pipefail[0m
+2026-07-22T04:03:23.5779677Z [36;1mregion="***"[0m
+2026-07-22T04:03:23.5779926Z [36;1mstack="parlay-platform-dev"[0m
+2026-07-22T04:03:23.5780252Z [36;1mapi_url=$(aws cloudformation describe-stacks \[0m
+2026-07-22T04:03:23.5780857Z [36;1m  --stack-name "$stack" \[0m
+2026-07-22T04:03:23.5781120Z [36;1m  --region "$region" \[0m
+2026-07-22T04:03:23.5781477Z [36;1m  --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue | [0]" \[0m
+2026-07-22T04:03:23.5781835Z [36;1m  --output text)[0m
+2026-07-22T04:03:23.5782149Z [36;1mapi_physical_id=$(aws cloudformation list-stack-resources \[0m
+2026-07-22T04:03:23.5782480Z [36;1m  --stack-name "$stack" \[0m
+2026-07-22T04:03:23.5782728Z [36;1m  --region "$region" \[0m
+2026-07-22T04:03:23.5783172Z [36;1m  --query "StackResourceSummaries[?LogicalResourceId=='ServerlessRestApi'].PhysicalResourceId | [0]" \[0m
+2026-07-22T04:03:23.5783665Z [36;1m  --output text)[0m
+2026-07-22T04:03:23.5783910Z [36;1mapi_id="${api_physical_id##*:}"[0m
+2026-07-22T04:03:23.5784180Z [36;1mtest -n "$api_id"[0m
+2026-07-22T04:03:23.5784421Z [36;1mtest "$api_id" != "None"[0m
+2026-07-22T04:03:23.5784707Z [36;1mresource_id=$(aws apigateway get-resources \[0m
+2026-07-22T04:03:23.5785008Z [36;1m  --rest-api-id "$api_id" \[0m
+2026-07-22T04:03:23.5785269Z [36;1m  --region "$region" \[0m
+2026-07-22T04:03:23.5785507Z [36;1m  --limit 500 \[0m
+2026-07-22T04:03:23.5785786Z [36;1m  --query "items[?path=='/v1/mlb/locks/status'].id | [0]" \[0m
+2026-07-22T04:03:23.5786102Z [36;1m  --output text)[0m
+2026-07-22T04:03:23.5786343Z [36;1mtest -n "$resource_id"[0m
+2026-07-22T04:03:23.5786584Z [36;1mtest "$resource_id" != "None"[0m
+2026-07-22T04:03:23.5786889Z [36;1mintegration_uri=$(aws apigateway get-integration \[0m
+2026-07-22T04:03:23.5787202Z [36;1m  --rest-api-id "$api_id" \[0m
+2026-07-22T04:03:23.5787465Z [36;1m  --resource-id "$resource_id" \[0m
+2026-07-22T04:03:23.5787732Z [36;1m  --http-method GET \[0m
+2026-07-22T04:03:23.5787971Z [36;1m  --region "$region" \[0m
+2026-07-22T04:03:23.5788205Z [36;1m  --query uri \[0m
+2026-07-22T04:03:23.5788426Z [36;1m  --output text)[0m
+2026-07-22T04:03:23.5788755Z [36;1mFUNCTION_ARN="$integration_uri" python - <<'PY' >/tmp/function_name.txt[0m
+2026-07-22T04:03:23.5789106Z [36;1mimport os[0m
+2026-07-22T04:03:23.5789323Z [36;1mimport re[0m
+2026-07-22T04:03:23.5789540Z [36;1mimport urllib.parse[0m
+2026-07-22T04:03:23.5789765Z [36;1m[0m
+2026-07-22T04:03:23.5790023Z [36;1muri = urllib.parse.unquote(os.environ["FUNCTION_ARN"])[0m
+2026-07-22T04:03:23.5790557Z [36;1mmatch = re.search(r"/functions/(arn:[^/]+)/invocations$", uri)[0m
+2026-07-22T04:03:23.5790880Z [36;1mif not match:[0m
+2026-07-22T04:03:23.5791223Z [36;1m    raise SystemExit("Unable to resolve lock-status Lambda from API integration")[0m
+2026-07-22T04:03:23.5791628Z [36;1mprint(match.group(1).rsplit(":", 1)[-1])[0m
+2026-07-22T04:03:23.5791906Z [36;1mPY[0m
+2026-07-22T04:03:23.5792143Z [36;1mfunction_name=$(cat /tmp/function_name.txt)[0m
+2026-07-22T04:03:23.5792450Z [36;1maws lambda get-function-configuration \[0m
+2026-07-22T04:03:23.5792766Z [36;1m  --function-name "$function_name" \[0m
+2026-07-22T04:03:23.5793043Z [36;1m  --region "$region" \[0m
+2026-07-22T04:03:23.5793783Z [36;1m  --query '{FunctionName:FunctionName,Timeout:Timeout,MemorySize:MemorySize,LastModified:LastModified,RevisionId:RevisionId,Runtime:Runtime}' \[0m
+2026-07-22T04:03:23.5794372Z [36;1m  --output json >/tmp/function_configuration.json[0m
+2026-07-22T04:03:23.5794679Z [36;1m[0m
+2026-07-22T04:03:23.5794919Z [36;1mcat >/tmp/lock_status_event.json <<'JSON'[0m
+2026-07-22T04:03:23.5795200Z [36;1m{[0m
+2026-07-22T04:03:23.5795425Z [36;1m  "resource": "/v1/mlb/locks/status",[0m
+2026-07-22T04:03:23.5795706Z [36;1m  "path": "/v1/mlb/locks/status",[0m
+2026-07-22T04:03:23.5795980Z [36;1m  "httpMethod": "GET",[0m
+2026-07-22T04:03:23.5796592Z [36;1m  "headers": {"accept": "application/json", "user-agent": "inqsi-direct-lock-status-diagnostic/2.0"},[0m
+2026-07-22T04:03:23.5797049Z [36;1m  "multiValueHeaders": {},[0m
+2026-07-22T04:03:23.5797316Z [36;1m  "queryStringParameters": null,[0m
+2026-07-22T04:03:23.5797633Z [36;1m  "multiValueQueryStringParameters": null,[0m
+2026-07-22T04:03:23.5797935Z [36;1m  "pathParameters": null,[0m
+2026-07-22T04:03:23.5798191Z [36;1m  "stageVariables": null,[0m
+2026-07-22T04:03:23.5798447Z [36;1m  "requestContext": {[0m
+2026-07-22T04:03:23.5798716Z [36;1m    "resourcePath": "/v1/mlb/locks/status",[0m
+2026-07-22T04:03:23.5799010Z [36;1m    "httpMethod": "GET",[0m
+2026-07-22T04:03:23.5799279Z [36;1m    "path": "/Prod/v1/mlb/locks/status",[0m
+2026-07-22T04:03:23.5799559Z [36;1m    "stage": "Prod",[0m
+2026-07-22T04:03:23.5799950Z [36;1m    "identity": {"sourceIp": "127.0.0.1", "userAgent": "inqsi-direct-lock-status-diagnostic/2.0"},[0m
+2026-07-22T04:03:23.5800549Z [36;1m    "requestId": "direct-lock-status-diagnostic-v2"[0m
+2026-07-22T04:03:23.5800857Z [36;1m  },[0m
+2026-07-22T04:03:23.5801068Z [36;1m  "body": null,[0m
+2026-07-22T04:03:23.5801309Z [36;1m  "isBase64Encoded": false[0m
+2026-07-22T04:03:23.5801554Z [36;1m}[0m
+2026-07-22T04:03:23.5801753Z [36;1mJSON[0m
+2026-07-22T04:03:23.5801950Z [36;1m[0m
+2026-07-22T04:03:23.5802156Z [36;1mdirect_start=$(date +%s%3N)[0m
+2026-07-22T04:03:23.5802509Z [36;1maws --cli-connect-timeout 10 --cli-read-timeout 360 lambda invoke \[0m
+2026-07-22T04:03:23.5802886Z [36;1m  --function-name "$function_name" \[0m
+2026-07-22T04:03:23.5803168Z [36;1m  --region "$region" \[0m
+2026-07-22T04:03:23.5803462Z [36;1m  --payload fileb:///tmp/lock_status_event.json \[0m
+2026-07-22T04:03:23.5803797Z [36;1m  --cli-binary-format raw-in-base64-out \[0m
+2026-07-22T04:03:23.5804086Z [36;1m  --log-type Tail \[0m
+2026-07-22T04:03:23.5804361Z [36;1m  /tmp/direct_lambda_response.json \[0m
+2026-07-22T04:03:23.5804647Z [36;1m  >/tmp/direct_lambda_meta.json[0m
+2026-07-22T04:03:23.5804918Z [36;1mdirect_end=$(date +%s%3N)[0m
+2026-07-22T04:03:23.5805214Z [36;1mdirect_elapsed_ms=$((direct_end - direct_start))[0m
+2026-07-22T04:03:23.5805503Z [36;1m[0m
+2026-07-22T04:03:23.5805733Z [36;1mstart_ms=$((($(date +%s) - 2400) * 1000))[0m
+2026-07-22T04:03:23.5806018Z [36;1maws logs filter-log-events \[0m
+2026-07-22T04:03:23.5806334Z [36;1m  --log-group-name "/aws/lambda/$function_name" \[0m
+2026-07-22T04:03:23.5806640Z [36;1m  --region "$region" \[0m
+2026-07-22T04:03:23.5806899Z [36;1m  --start-time "$start_ms" \[0m
+2026-07-22T04:03:23.5807164Z [36;1m  --limit 10000 \[0m
+2026-07-22T04:03:23.5807423Z [36;1m  --output json >/tmp/log_events.json[0m
+2026-07-22T04:03:23.5807691Z [36;1m[0m
+2026-07-22T04:03:23.5808042Z [36;1mAPI_URL="$api_url" DIRECT_MS="$direct_elapsed_ms" TARGET_SHA="$TARGET_SHA" python - <<'PY'[0m
+2026-07-22T04:03:23.5808446Z [36;1mimport base64[0m
+2026-07-22T04:03:23.5808677Z [36;1mimport json[0m
+2026-07-22T04:03:23.5808894Z [36;1mimport os[0m
+2026-07-22T04:03:23.5809111Z [36;1mimport time[0m
+2026-07-22T04:03:23.5809332Z [36;1mimport urllib.error[0m
+2026-07-22T04:03:23.5809588Z [36;1mimport urllib.request[0m
+2026-07-22T04:03:23.5809844Z [36;1mfrom pathlib import Path[0m
+2026-07-22T04:03:23.5810089Z [36;1m[0m
+2026-07-22T04:03:23.5810520Z [36;1mmeta = json.loads(Path("/tmp/direct_lambda_meta.json").read_text(encoding="utf-8"))[0m
+2026-07-22T04:03:23.5811204Z [36;1mraw_response = json.loads(Path("/tmp/direct_lambda_response.json").read_text(encoding="utf-8"))[0m
+2026-07-22T04:03:23.5811647Z [36;1mdirect_body = raw_response.get("body")[0m
+2026-07-22T04:03:23.5811919Z [36;1mtry:[0m
+2026-07-22T04:03:23.5812271Z [36;1m    decoded_body = json.loads(direct_body) if isinstance(direct_body, str) else direct_body[0m
+2026-07-22T04:03:23.5812680Z [36;1mexcept json.JSONDecodeError:[0m
+2026-07-22T04:03:23.5812954Z [36;1m    decoded_body = None[0m
+2026-07-22T04:03:23.5813450Z [36;1mlog_tail = base64.b64decode(meta.get("LogResult") or "").decode("utf-8", errors="replace")[0m
+2026-07-22T04:03:23.5813844Z [36;1m[0m
+2026-07-22T04:03:23.5814121Z [36;1murl = os.environ["API_URL"].rstrip("/") + "/v1/mlb/locks/status"[0m
+2026-07-22T04:03:23.5814485Z [36;1mrequest = urllib.request.Request([0m
+2026-07-22T04:03:23.5814747Z [36;1m    url,[0m
+2026-07-22T04:03:23.5814964Z [36;1m    headers={[0m
+2026-07-22T04:03:23.5815225Z [36;1m        "accept": "application/json",[0m
+2026-07-22T04:03:23.5815585Z [36;1m        "user-agent": "inqsi-warmed-lock-status-diagnostic/2.0",[0m
+2026-07-22T04:03:23.5815914Z [36;1m    },[0m
+2026-07-22T04:03:23.5816121Z [36;1m)[0m
+2026-07-22T04:03:23.5816336Z [36;1mstarted = time.monotonic()[0m
+2026-07-22T04:03:23.5816595Z [36;1mhttp_status = None[0m
+2026-07-22T04:03:23.5816843Z [36;1mhttp_error = None[0m
+2026-07-22T04:03:23.5817088Z [36;1mhttp_payload = None[0m
+2026-07-22T04:03:23.5817326Z [36;1mtry:[0m
+2026-07-22T04:03:23.5817616Z [36;1m    with urllib.request.urlopen(request, timeout=40) as response:[0m
+2026-07-22T04:03:23.5818001Z [36;1m        http_status = int(response.getcode())[0m
+2026-07-22T04:03:23.5818364Z [36;1m        http_payload = json.loads(response.read().decode("utf-8"))[0m
+2026-07-22T04:03:23.5818746Z [36;1mexcept urllib.error.HTTPError as exc:[0m
+2026-07-22T04:03:23.5819050Z [36;1m    http_status = int(exc.code)[0m
+2026-07-22T04:03:23.5819340Z [36;1m    http_error = f"HTTP {exc.code}"[0m
+2026-07-22T04:03:23.5819624Z [36;1mexcept Exception as exc:[0m
+2026-07-22T04:03:23.5820049Z [36;1m    http_error = f"{type(exc).__name__}:{exc}"[0m
+2026-07-22T04:03:23.5820590Z [36;1mhttp_elapsed_ms = round((time.monotonic() - started) * 1000)[0m
+2026-07-22T04:03:23.5820920Z [36;1m[0m
+2026-07-22T04:03:23.5821282Z [36;1mevents = json.loads(Path("/tmp/log_events.json").read_text(encoding="utf-8")).get("events", [])[0m
+2026-07-22T04:03:23.5821698Z [36;1mselected_events = [][0m
+2026-07-22T04:03:23.5821951Z [36;1mfor event in events:[0m
+2026-07-22T04:03:23.5822247Z [36;1m    message = str(event.get("message") or "").strip()[0m
+2026-07-22T04:03:23.5822733Z [36;1m    if any(token in message for token in ("REPORT RequestId:", "Task timed out", "status batch read", "ERROR")):[0m
+2026-07-22T04:03:23.5823185Z [36;1m        selected_events.append({[0m
+2026-07-22T04:03:23.5823491Z [36;1m            "timestamp": event.get("timestamp"),[0m
+2026-07-22T04:03:23.5823796Z [36;1m            "message": message[-4000:],[0m
+2026-07-22T04:03:23.5824113Z [36;1m            "logStreamName": event.get("logStreamName"),[0m
+2026-07-22T04:03:23.5824407Z [36;1m        })[0m
+2026-07-22T04:03:23.5824649Z [36;1mfunction_configuration = json.loads([0m
+2026-07-22T04:03:23.5825029Z [36;1m    Path("/tmp/function_configuration.json").read_text(encoding="utf-8")[0m
+2026-07-22T04:03:23.5825375Z [36;1m)[0m
+2026-07-22T04:03:23.5825579Z [36;1msummary_keys = ([0m
+2026-07-22T04:03:23.5825865Z [36;1m    "ok", "sport", "slateDateEt", "gameCount", "pullCount",[0m
+2026-07-22T04:03:23.5826285Z [36;1m    "lockedPredictionCount", "lockedStatusCount", "operationalDefect",[0m
+2026-07-22T04:03:23.5826633Z [36;1m)[0m
+2026-07-22T04:03:23.5826832Z [36;1mreport = {[0m
+2026-07-22T04:03:23.5827077Z [36;1m    "targetSha": os.environ["TARGET_SHA"],[0m
+2026-07-22T04:03:23.5827376Z [36;1m    "function": function_configuration,[0m
+2026-07-22T04:03:23.5827660Z [36;1m    "directInvoke": {[0m
+2026-07-22T04:03:23.5828069Z [36;1m        "elapsedMs": int(os.environ["DIRECT_MS"]),[0m
+2026-07-22T04:03:23.5828402Z [36;1m        "statusCode": raw_response.get("statusCode"),[0m
+2026-07-22T04:03:23.5828738Z [36;1m        "functionError": meta.get("FunctionError"),[0m
+2026-07-22T04:03:23.5829088Z [36;1m        "executedVersion": meta.get("ExecutedVersion"),[0m
+2026-07-22T04:03:23.5829399Z [36;1m        "payloadSummary": {[0m
+2026-07-22T04:03:23.5829670Z [36;1m            key: decoded_body.get(key)[0m
+2026-07-22T04:03:23.5829949Z [36;1m            for key in summary_keys[0m
+2026-07-22T04:03:23.5830641Z [36;1m            if isinstance(decoded_body, dict) and key in decoded_body[0m
+2026-07-22T04:03:23.5830997Z [36;1m        },[0m
+2026-07-22T04:03:23.5831219Z [36;1m        "logTail": [[0m
+2026-07-22T04:03:23.5831492Z [36;1m            line for line in log_tail.splitlines()[0m
+2026-07-22T04:03:23.5831903Z [36;1m            if any(token in line for token in ("REPORT RequestId:", "Task timed out", "ERROR"))[0m
+2026-07-22T04:03:23.5832291Z [36;1m        ][-12:],[0m
+2026-07-22T04:03:23.5832509Z [36;1m    },[0m
+2026-07-22T04:03:23.5832722Z [36;1m    "warmedHttp": {[0m
+2026-07-22T04:03:23.5832976Z [36;1m        "elapsedMs": http_elapsed_ms,[0m
+2026-07-22T04:03:23.5833262Z [36;1m        "statusCode": http_status,[0m
+2026-07-22T04:03:23.5833537Z [36;1m        "error": http_error,[0m
+2026-07-22T04:03:23.5833796Z [36;1m        "payloadSummary": {[0m
+2026-07-22T04:03:23.5834064Z [36;1m            key: http_payload.get(key)[0m
+2026-07-22T04:03:23.5834345Z [36;1m            for key in summary_keys[0m
+2026-07-22T04:03:23.5834696Z [36;1m            if isinstance(http_payload, dict) and key in http_payload[0m
+2026-07-22T04:03:23.5835018Z [36;1m        },[0m
+2026-07-22T04:03:23.5835227Z [36;1m    },[0m
+2026-07-22T04:03:23.5835467Z [36;1m    "cloudWatchEvents": selected_events[-80:],[0m
+2026-07-22T04:03:23.5835744Z [36;1m}[0m
+2026-07-22T04:03:23.5836020Z [36;1mPath("live_lock_status_diagnostic_v2.json").write_text([0m
+2026-07-22T04:03:23.5836395Z [36;1m    json.dumps(report, indent=2, sort_keys=True) + "\n",[0m
+2026-07-22T04:03:23.5836702Z [36;1m    encoding="utf-8",[0m
+2026-07-22T04:03:23.5836935Z [36;1m)[0m
+2026-07-22T04:03:23.5837137Z [36;1mPY[0m
+2026-07-22T04:03:23.5911138Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-22T04:03:23.5911495Z env:
+2026-07-22T04:03:23.5911832Z   AWS_DEFAULT_REGION: ***
+2026-07-22T04:03:23.5912095Z   AWS_REGION: ***
+2026-07-22T04:03:23.5912339Z   AWS_ACCESS_KEY_ID: ***
+2026-07-22T04:03:23.5912655Z   AWS_SECRET_ACCESS_KEY: ***
+2026-07-22T04:03:23.5912912Z   AWS_MAX_ATTEMPTS: 1
+2026-07-22T04:03:23.5913180Z   TARGET_SHA: 246daecb3960518fb59bb69c6891989d50fb7308
+2026-07-22T04:03:23.5913468Z ##[endgroup]
+2026-07-22T04:03:28.1916248Z 
+2026-07-22T04:03:28.2612471Z aws: [ERROR]: An error occurred (NotFoundException) when calling the GetResources operation (reached max retries: 0): Invalid API identifier specified 735707987003:7nz8g8unyd
+2026-07-22T04:03:28.2613275Z None
+2026-07-22T04:03:28.2624364Z ##[error]Process completed with exit code 254.
+2026-07-22T04:03:28.2731175Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T04:03:28.2732116Z Post job cleanup.
+2026-07-22T04:03:28.3679317Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T04:03:28.3681149Z Post job cleanup.
+2026-07-22T04:03:28.4367561Z [command]/usr/bin/git version
+2026-07-22T04:03:28.4397912Z git version 2.54.0
+2026-07-22T04:03:28.4425784Z Temporarily overriding HOME='/home/runner/work/_temp/e55a18ba-001d-4fb8-b2f7-bf68088e9a08' before making global git config changes
+2026-07-22T04:03:28.4426887Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-22T04:03:28.4429725Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-22T04:03:28.4652949Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-22T04:03:28.4693909Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-22T04:03:28.4956654Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-22T04:03:28.4983650Z http.https://github.com/.extraheader
+2026-07-22T04:03:28.4994658Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-22T04:03:28.5042932Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-22T04:03:28.5291172Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-22T04:03:28.5326957Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-22T04:03:28.5662784Z Cleaning up orphan processes
+2026-07-22T04:03:28.5918670Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, aws-actions/configure-aws-credentials@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
