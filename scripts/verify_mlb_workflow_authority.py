@@ -527,6 +527,14 @@ def verify_repository(root: Path = ROOT) -> List[str]:
                 "production_source_contract_does_not_test_per_game_lock",
             ),
             (
+                "tests/unit/test_mlb_lock_status_request_cache.py",
+                "production_source_contract_does_not_test_lock_status_request_cache",
+            ),
+            (
+                "tests/unit/test_mlb_public_per_game_authority.py",
+                "production_source_contract_does_not_test_public_per_game_authority",
+            ),
+            (
                 "tests/unit/test_mlb_trainer_invoke_retry.py",
                 "production_source_contract_does_not_test_trainer_invoke_retry",
             ),

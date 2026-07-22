@@ -490,6 +490,14 @@ def test_requires_capacity_probe_horizon_to_outlast_old_lock_backlog(
             "tests/unit/test_mlb_daily_per_game_lock.py",
             "production_source_contract_does_not_test_per_game_lock",
         ),
+        (
+            "tests/unit/test_mlb_lock_status_request_cache.py",
+            "production_source_contract_does_not_test_lock_status_request_cache",
+        ),
+        (
+            "tests/unit/test_mlb_public_per_game_authority.py",
+            "production_source_contract_does_not_test_public_per_game_authority",
+        ),
     ),
 )
 def test_requires_lock_contracts_in_premerge_source_gate(
