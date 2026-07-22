@@ -1,0 +1,247 @@
+2026-07-22T04:33:33.8180242Z Current runner version: '2.336.0'
+2026-07-22T04:33:33.8204350Z ##[group]Runner Image Provisioner
+2026-07-22T04:33:33.8205570Z Hosted Compute Agent
+2026-07-22T04:33:33.8206230Z Version: 20260707.563
+2026-07-22T04:33:33.8206847Z Commit: 02667638d2b423fbc733a8e32a88b44996a3ba6e
+2026-07-22T04:33:33.8207545Z Build Date: 2026-07-07T19:33:50Z
+2026-07-22T04:33:33.8208292Z Worker ID: {ea4d90c6-42aa-446c-b296-e45c414e8c6f}
+2026-07-22T04:33:33.8209031Z Azure Region: westus2
+2026-07-22T04:33:33.8209655Z ##[endgroup]
+2026-07-22T04:33:33.8211142Z ##[group]Operating System
+2026-07-22T04:33:33.8211771Z Ubuntu
+2026-07-22T04:33:33.8212351Z 24.04.4
+2026-07-22T04:33:33.8212891Z LTS
+2026-07-22T04:33:33.8213373Z ##[endgroup]
+2026-07-22T04:33:33.8213978Z ##[group]Runner Image
+2026-07-22T04:33:33.8214982Z Image: ubuntu-24.04
+2026-07-22T04:33:33.8215621Z Version: 20260714.240.1
+2026-07-22T04:33:33.8216928Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260714.240/images/ubuntu/Ubuntu2404-Readme.md
+2026-07-22T04:33:33.8218760Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260714.240
+2026-07-22T04:33:33.8219718Z ##[endgroup]
+2026-07-22T04:33:33.8220855Z ##[group]GITHUB_TOKEN Permissions
+2026-07-22T04:33:33.8222781Z Contents: write
+2026-07-22T04:33:33.8223380Z Metadata: read
+2026-07-22T04:33:33.8224031Z ##[endgroup]
+2026-07-22T04:33:33.8226364Z Secret source: Actions
+2026-07-22T04:33:33.8227552Z Prepare workflow directory
+2026-07-22T04:33:33.8567769Z Prepare all required actions
+2026-07-22T04:33:33.8634103Z Getting action download info
+2026-07-22T04:33:34.2295687Z Download action repository 'actions/checkout@v4' (SHA:11d5960a326750d5838078e36cf38b85af677262)
+2026-07-22T04:33:34.6443055Z Complete job name: apply
+2026-07-22T04:33:34.7370421Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T04:33:34.7379497Z ##[group]Run actions/checkout@v4
+2026-07-22T04:33:34.7380233Z with:
+2026-07-22T04:33:34.7380721Z   ref: agent/mlb-lock-status-snapshot-hotpath
+2026-07-22T04:33:34.7381314Z   fetch-depth: 0
+2026-07-22T04:33:34.7381787Z   repository: KirtKurt/parlay-platform
+2026-07-22T04:33:34.7385624Z   token: ***
+2026-07-22T04:33:34.7386062Z   ssh-strict: true
+2026-07-22T04:33:34.7386516Z   ssh-user: git
+2026-07-22T04:33:34.7386959Z   persist-credentials: true
+2026-07-22T04:33:34.7387444Z   clean: true
+2026-07-22T04:33:34.7387881Z   sparse-checkout-cone-mode: true
+2026-07-22T04:33:34.7388393Z   fetch-tags: false
+2026-07-22T04:33:34.7388882Z   show-progress: true
+2026-07-22T04:33:34.7389323Z   lfs: false
+2026-07-22T04:33:34.7389727Z   submodules: false
+2026-07-22T04:33:34.7390166Z   set-safe-directory: true
+2026-07-22T04:33:34.7390668Z   allow-unsafe-pr-checkout: false
+2026-07-22T04:33:34.7391440Z ##[endgroup]
+2026-07-22T04:33:34.8397412Z Syncing repository: KirtKurt/parlay-platform
+2026-07-22T04:33:34.8400099Z ##[group]Getting Git version info
+2026-07-22T04:33:34.8401371Z Working directory is '/home/runner/work/parlay-platform/parlay-platform'
+2026-07-22T04:33:34.8403162Z [command]/usr/bin/git version
+2026-07-22T04:33:34.8490772Z git version 2.54.0
+2026-07-22T04:33:34.8513049Z ##[endgroup]
+2026-07-22T04:33:34.8528710Z Temporarily overriding HOME='/home/runner/work/_temp/9d664c78-0bfc-4fef-a32e-086ef5094a71' before making global git config changes
+2026-07-22T04:33:34.8531142Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-22T04:33:34.8534109Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-22T04:33:34.8590595Z Deleting the contents of '/home/runner/work/parlay-platform/parlay-platform'
+2026-07-22T04:33:34.8594172Z ##[group]Initializing the repository
+2026-07-22T04:33:34.8600041Z [command]/usr/bin/git init /home/runner/work/parlay-platform/parlay-platform
+2026-07-22T04:33:34.8733428Z hint: Using 'master' as the name for the initial branch. This default branch name
+2026-07-22T04:33:34.8735442Z hint: will change to "main" in Git 3.0. To configure the initial branch name
+2026-07-22T04:33:34.8737397Z hint: to use in all of your new repositories, which will suppress this warning,
+2026-07-22T04:33:34.8738688Z hint: call:
+2026-07-22T04:33:34.8739607Z hint:
+2026-07-22T04:33:34.8740633Z hint: 	git config --global init.defaultBranch <name>
+2026-07-22T04:33:34.8742124Z hint:
+2026-07-22T04:33:34.8743227Z hint: Names commonly chosen instead of 'master' are 'main', 'trunk' and
+2026-07-22T04:33:34.8745278Z hint: 'development'. The just-created branch can be renamed via this command:
+2026-07-22T04:33:34.8746691Z hint:
+2026-07-22T04:33:34.8747520Z hint: 	git branch -m <name>
+2026-07-22T04:33:34.8748443Z hint:
+2026-07-22T04:33:34.8749613Z hint: Disable this message with "git config set advice.defaultBranchName false"
+2026-07-22T04:33:34.8752611Z Initialized empty Git repository in /home/runner/work/parlay-platform/parlay-platform/.git/
+2026-07-22T04:33:34.8756488Z [command]/usr/bin/git remote add origin https://github.com/KirtKurt/parlay-platform
+2026-07-22T04:33:34.8848053Z ##[endgroup]
+2026-07-22T04:33:34.8849526Z ##[group]Disabling automatic garbage collection
+2026-07-22T04:33:34.8853224Z [command]/usr/bin/git config --local gc.auto 0
+2026-07-22T04:33:34.8897746Z ##[endgroup]
+2026-07-22T04:33:34.8899344Z ##[group]Setting up auth
+2026-07-22T04:33:34.8904940Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-22T04:33:34.8959073Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-22T04:33:34.9369327Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-22T04:33:34.9410521Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-22T04:33:34.9679817Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-22T04:33:34.9718432Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-22T04:33:34.9949281Z [command]/usr/bin/git config --local http.https://github.com/.extraheader AUTHORIZATION: basic ***
+2026-07-22T04:33:34.9989240Z ##[endgroup]
+2026-07-22T04:33:34.9990097Z ##[group]Fetching the repository
+2026-07-22T04:33:34.9999606Z [command]/usr/bin/git -c protocol.version=2 fetch --prune --no-recurse-submodules origin +refs/heads/*:refs/remotes/origin/* +refs/tags/*:refs/tags/*
+2026-07-22T04:33:39.4438593Z From https://github.com/KirtKurt/parlay-platform
+2026-07-22T04:33:39.4442759Z  * [new branch]      agent/fix-mlb-lock-runtime-timeout -> origin/agent/fix-mlb-lock-runtime-timeout
+2026-07-22T04:33:39.4447396Z  * [new branch]      agent/fix-mlb-lock-timeout -> origin/agent/fix-mlb-lock-timeout
+2026-07-22T04:33:39.4451387Z  * [new branch]      agent/fix-mlb-manifest-cutoff-membership -> origin/agent/fix-mlb-manifest-cutoff-membership
+2026-07-22T04:33:39.4455667Z  * [new branch]      agent/fix-mlb-official-quality-validation -> origin/agent/fix-mlb-official-quality-validation
+2026-07-22T04:33:39.4458978Z  * [new branch]      agent/lower-mlb-rolling-target-80 -> origin/agent/lower-mlb-rolling-target-80
+2026-07-22T04:33:39.4462249Z  * [new branch]      agent/mlb-audit-2026-07-21-signal-quality -> origin/agent/mlb-audit-2026-07-21-signal-quality
+2026-07-22T04:33:39.4465783Z  * [new branch]      agent/mlb-audit-ddb-normalization -> origin/agent/mlb-audit-ddb-normalization
+2026-07-22T04:33:39.4468945Z  * [new branch]      agent/mlb-aws-single-game-ml-prod -> origin/agent/mlb-aws-single-game-ml-prod
+2026-07-22T04:33:39.4472389Z  * [new branch]      agent/mlb-aws-single-game-ml-prod-v2 -> origin/agent/mlb-aws-single-game-ml-prod-v2
+2026-07-22T04:33:39.4476723Z  * [new branch]      agent/mlb-batchget-progress-pages -> origin/agent/mlb-batchget-progress-pages
+2026-07-22T04:33:39.4480000Z  * [new branch]      agent/mlb-bbs-preflight-fix -> origin/agent/mlb-bbs-preflight-fix
+2026-07-22T04:33:39.4482238Z  * [new branch]      agent/mlb-bbs-r3-final  -> origin/agent/mlb-bbs-r3-final
+2026-07-22T04:33:39.4484818Z  * [new branch]      agent/mlb-bbs-r3-release -> origin/agent/mlb-bbs-r3-release
+2026-07-22T04:33:39.4487728Z  * [new branch]      agent/mlb-bbs-source-attribution-fix -> origin/agent/mlb-bbs-source-attribution-fix
+2026-07-22T04:33:39.4491015Z  * [new branch]      agent/mlb-deploy-lambda-invoke-retry -> origin/agent/mlb-deploy-lambda-invoke-retry
+2026-07-22T04:33:39.4494132Z  * [new branch]      agent/mlb-empty-async-destination -> origin/agent/mlb-empty-async-destination
+2026-07-22T04:33:39.4497851Z  * [new branch]      agent/mlb-exclude-all-star-from-accuracy -> origin/agent/mlb-exclude-all-star-from-accuracy
+2026-07-22T04:33:39.4501607Z  * [new branch]      agent/mlb-exhibition-final-score-audit-filter -> origin/agent/mlb-exhibition-final-score-audit-filter
+2026-07-22T04:33:39.4504903Z  * [new branch]      agent/mlb-final-throttle-fix -> origin/agent/mlb-final-throttle-fix
+2026-07-22T04:33:39.4507986Z  * [new branch]      agent/mlb-lock-status-batch-read-hotfix-r3 -> origin/agent/mlb-lock-status-batch-read-hotfix-r3
+2026-07-22T04:33:39.4511570Z  * [new branch]      agent/mlb-lock-status-request-cache-live-fix -> origin/agent/mlb-lock-status-request-cache-live-fix
+2026-07-22T04:33:39.4515438Z  * [new branch]      agent/mlb-lock-status-scaling-final -> origin/agent/mlb-lock-status-scaling-final
+2026-07-22T04:33:39.4518798Z  * [new branch]      agent/mlb-lock-status-snapshot-hotpath -> origin/agent/mlb-lock-status-snapshot-hotpath
+2026-07-22T04:33:39.4521976Z  * [new branch]      agent/mlb-lock-status-v6-release -> origin/agent/mlb-lock-status-v6-release
+2026-07-22T04:33:39.4525171Z  * [new branch]      agent/mlb-market-anchor-flip-safety -> origin/agent/mlb-market-anchor-flip-safety
+2026-07-22T04:33:39.4528851Z  * [new branch]      agent/mlb-ml-deploy-secret-fix -> origin/agent/mlb-ml-deploy-secret-fix
+2026-07-22T04:33:39.4532393Z  * [new branch]      agent/mlb-ml-production-v1 -> origin/agent/mlb-ml-production-v1
+2026-07-22T04:33:39.4535924Z  * [new branch]      agent/mlb-ml-production-v1-deploy-trigger -> origin/agent/mlb-ml-production-v1-deploy-trigger
+2026-07-22T04:33:39.4539095Z  * [new branch]      agent/mlb-no-sqs-release -> origin/agent/mlb-no-sqs-release
+2026-07-22T04:33:39.4542272Z  * [new branch]      agent/mlb-probability-direction-integrity -> origin/agent/mlb-probability-direction-integrity
+2026-07-22T04:33:39.4545898Z  * [new branch]      agent/mlb-production-80-lock-60 -> origin/agent/mlb-production-80-lock-60
+2026-07-22T04:33:39.4549236Z  * [new branch]      agent/mlb-public-read-real-payload-hotfix -> origin/agent/mlb-public-read-real-payload-hotfix
+2026-07-22T04:33:39.4552903Z  * [new branch]      agent/mlb-r3-production-integrity-final -> origin/agent/mlb-r3-production-integrity-final
+2026-07-22T04:33:39.4556425Z  * [new branch]      agent/mlb-rolling-audit-pytest -> origin/agent/mlb-rolling-audit-pytest
+2026-07-22T04:33:39.4559169Z  * [new branch]      agent/mlb-trainer-ddb-lease -> origin/agent/mlb-trainer-ddb-lease
+2026-07-22T04:33:39.4562156Z  * [new branch]      agent/mlb-trainer-runtime-diagnostic -> origin/agent/mlb-trainer-runtime-diagnostic
+2026-07-22T04:33:39.4565691Z  * [new branch]      agent/mlb-trainer-status-fingerprint -> origin/agent/mlb-trainer-status-fingerprint
+2026-07-22T04:33:39.4568880Z  * [new branch]      agent/report-mlb-deploy-246daecb -> origin/agent/report-mlb-deploy-246daecb
+2026-07-22T04:33:39.4571839Z  * [new branch]      agent/stabilize-mlb-production -> origin/agent/stabilize-mlb-production
+2026-07-22T04:33:39.4575109Z  * [new branch]      agent/verify-mlb-deploy-159222cd -> origin/agent/verify-mlb-deploy-159222cd
+2026-07-22T04:33:39.4578433Z  * [new branch]      agent/verify-mlb-deploy-246daecb -> origin/agent/verify-mlb-deploy-246daecb
+2026-07-22T04:33:39.4581931Z  * [new branch]      codex/fix-mlb-15min-predictive-platform -> origin/codex/fix-mlb-15min-predictive-platform
+2026-07-22T04:33:39.4586006Z  * [new branch]      codex/install-mlb-predictive-platform-v1 -> origin/codex/install-mlb-predictive-platform-v1
+2026-07-22T04:33:39.4591123Z  * [new branch]      codex/mlb-exact-read-batching-20260722 -> origin/codex/mlb-exact-read-batching-20260722
+2026-07-22T04:33:39.4595161Z  * [new branch]      codex/mlb-line-movement-15m-audit-fix -> origin/codex/mlb-line-movement-15m-audit-fix
+2026-07-22T04:33:39.4600223Z  * [new branch]      codex/mlb-r3-integrity-20260722-0127 -> origin/codex/mlb-r3-integrity-20260722-0127
+2026-07-22T04:33:39.4603939Z  * [new branch]      codex/tennis-ml-structure -> origin/codex/tennis-ml-structure
+2026-07-22T04:33:39.4606863Z  * [new branch]      codex/update-15m-pipeline -> origin/codex/update-15m-pipeline
+2026-07-22T04:33:39.4610164Z  * [new branch]      deploy-pull-history-final -> origin/deploy-pull-history-final
+2026-07-22T04:33:39.4613048Z  * [new branch]      deploy-pull-history-final10 -> origin/deploy-pull-history-final10
+2026-07-22T04:33:39.4615849Z  * [new branch]      deploy-pull-history-final2 -> origin/deploy-pull-history-final2
+2026-07-22T04:33:39.4618366Z  * [new branch]      deploy-pull-history-final3 -> origin/deploy-pull-history-final3
+2026-07-22T04:33:39.4621512Z  * [new branch]      deploy-pull-history-final4 -> origin/deploy-pull-history-final4
+2026-07-22T04:33:39.4625668Z  * [new branch]      deploy-pull-history-final5 -> origin/deploy-pull-history-final5
+2026-07-22T04:33:39.4629842Z  * [new branch]      deploy-pull-history-final6 -> origin/deploy-pull-history-final6
+2026-07-22T04:33:39.4634049Z  * [new branch]      deploy-pull-history-final7 -> origin/deploy-pull-history-final7
+2026-07-22T04:33:39.4638339Z  * [new branch]      deploy-pull-history-final8 -> origin/deploy-pull-history-final8
+2026-07-22T04:33:39.4642376Z  * [new branch]      deploy-pull-history-final9 -> origin/deploy-pull-history-final9
+2026-07-22T04:33:39.4645975Z  * [new branch]      deploy-pull-history-route -> origin/deploy-pull-history-route
+2026-07-22T04:33:39.4649518Z  * [new branch]      deploy-pull-history-route-2 -> origin/deploy-pull-history-route-2
+2026-07-22T04:33:39.4652732Z  * [new branch]      deploy-pull-history-route-3 -> origin/deploy-pull-history-route-3
+2026-07-22T04:33:39.4656002Z  * [new branch]      deploy-pull-history-route-4 -> origin/deploy-pull-history-route-4
+2026-07-22T04:33:39.4658766Z  * [new branch]      deploy-pull-history-route-5 -> origin/deploy-pull-history-route-5
+2026-07-22T04:33:39.4661421Z  * [new branch]      deploy-pull-history-v15-2 -> origin/deploy-pull-history-v15-2
+2026-07-22T04:33:39.4665332Z  * [new branch]      deploy-pull-history-v15-2b -> origin/deploy-pull-history-v15-2b
+2026-07-22T04:33:39.4669051Z  * [new branch]      deploy-pull-history-v15-2c -> origin/deploy-pull-history-v15-2c
+2026-07-22T04:33:39.4671513Z  * [new branch]      deploy-pull-history-v15-2d -> origin/deploy-pull-history-v15-2d
+2026-07-22T04:33:39.4673999Z  * [new branch]      deploy-pull-history-v15-2e -> origin/deploy-pull-history-v15-2e
+2026-07-22T04:33:39.4677456Z  * [new branch]      deploy-pull-history-v15-2g -> origin/deploy-pull-history-v15-2g
+2026-07-22T04:33:39.4681354Z  * [new branch]      deploy-pull-history-v15-2h -> origin/deploy-pull-history-v15-2h
+2026-07-22T04:33:39.4685464Z  * [new branch]      deploy-pull-history-v15-2i -> origin/deploy-pull-history-v15-2i
+2026-07-22T04:33:39.4689670Z  * [new branch]      deploy-pull-history-v15-2k -> origin/deploy-pull-history-v15-2k
+2026-07-22T04:33:39.4693734Z  * [new branch]      deploy-pull-history-v15-2l -> origin/deploy-pull-history-v15-2l
+2026-07-22T04:33:39.4698077Z  * [new branch]      deploy-pull-history-v15-2m -> origin/deploy-pull-history-v15-2m
+2026-07-22T04:33:39.4700833Z  * [new branch]      deploy-pull-history-v15-2n -> origin/deploy-pull-history-v15-2n
+2026-07-22T04:33:39.4704096Z  * [new branch]      deploy-pull-history-working -> origin/deploy-pull-history-working
+2026-07-22T04:33:39.4708418Z  * [new branch]      deploy-pull-history-working-2 -> origin/deploy-pull-history-working-2
+2026-07-22T04:33:39.4713205Z  * [new branch]      deploy-pull-history-working-4 -> origin/deploy-pull-history-working-4
+2026-07-22T04:33:39.4717337Z  * [new branch]      feature/inqsi-backend-v1 -> origin/feature/inqsi-backend-v1
+2026-07-22T04:33:39.4720462Z  * [new branch]      fix/mlb-fingerprint-legacy-hardening -> origin/fix/mlb-fingerprint-legacy-hardening
+2026-07-22T04:33:39.4723624Z  * [new branch]      fix/mlb-lambda-cold-start-runtime -> origin/fix/mlb-lambda-cold-start-runtime
+2026-07-22T04:33:39.4727562Z  * [new branch]      fix/mlb-lock-runtime    -> origin/fix/mlb-lock-runtime
+2026-07-22T04:33:39.4731647Z  * [new branch]      fix/mlb-lock-status-cutover-smoke -> origin/fix/mlb-lock-status-cutover-smoke
+2026-07-22T04:33:39.4735298Z  * [new branch]      fix/mlb-pregame-fingerprint-canonicalization -> origin/fix/mlb-pregame-fingerprint-canonicalization
+2026-07-22T04:33:39.4739161Z  * [new branch]      frontend-riskcheck-v0-1 -> origin/frontend-riskcheck-v0-1
+2026-07-22T04:33:39.4742528Z  * [new branch]      inqsi-mlb-v1-core       -> origin/inqsi-mlb-v1-core
+2026-07-22T04:33:39.4745615Z  * [new branch]      main                    -> origin/main
+2026-07-22T04:33:39.4748419Z  * [new branch]      mlb-15min-only          -> origin/mlb-15min-only
+2026-07-22T04:33:39.4752021Z  * [new branch]      mlb-advanced-context-layer -> origin/mlb-advanced-context-layer
+2026-07-22T04:33:39.4756235Z  * [new branch]      mlb-b1-settlement-deploy -> origin/mlb-b1-settlement-deploy
+2026-07-22T04:33:39.4760128Z  * [new branch]      mlb-hot-pull-start-fix  -> origin/mlb-hot-pull-start-fix
+2026-07-22T04:33:39.4763618Z  * [new branch]      mlb-issues-fix          -> origin/mlb-issues-fix
+2026-07-22T04:33:39.4766522Z  * [new branch]      mlb-production-v2-final -> origin/mlb-production-v2-final
+2026-07-22T04:33:39.4770674Z  * [new branch]      mlb-production-v2-final-current -> origin/mlb-production-v2-final-current
+2026-07-22T04:33:39.4775466Z  * [new branch]      mlb-production-v2-hardening -> origin/mlb-production-v2-hardening
+2026-07-22T04:33:39.4779620Z  * [new branch]      mlb-protected-write-routes -> origin/mlb-protected-write-routes
+2026-07-22T04:33:39.4783493Z  * [new branch]      mlb-result-signal-learning -> origin/mlb-result-signal-learning
+2026-07-22T04:33:39.4787536Z  * [new branch]      mlb-signal-learning-20260625 -> origin/mlb-signal-learning-20260625
+2026-07-22T04:33:39.4789859Z  * [new branch]      mlb-v1-infra-wiring     -> origin/mlb-v1-infra-wiring
+2026-07-22T04:33:39.4792236Z  * [new branch]      ops/deploy-mlb-lock-cutover-fix -> origin/ops/deploy-mlb-lock-cutover-fix
+2026-07-22T04:33:39.4796907Z ##[endgroup]
+2026-07-22T04:33:39.4799564Z ##[group]Determining the checkout info
+2026-07-22T04:33:39.4802169Z [command]/usr/bin/git branch --list --remote origin/agent/mlb-lock-status-snapshot-hotpath
+2026-07-22T04:33:39.4804303Z   origin/agent/mlb-lock-status-snapshot-hotpath
+2026-07-22T04:33:39.4807854Z ##[endgroup]
+2026-07-22T04:33:39.4808865Z [command]/usr/bin/git sparse-checkout disable
+2026-07-22T04:33:39.4811728Z [command]/usr/bin/git config --local --unset-all extensions.worktreeConfig
+2026-07-22T04:33:39.4815742Z ##[group]Checking out the ref
+2026-07-22T04:33:39.4818556Z [command]/usr/bin/git checkout --progress --force -B agent/mlb-lock-status-snapshot-hotpath refs/remotes/origin/agent/mlb-lock-status-snapshot-hotpath
+2026-07-22T04:33:39.5817546Z Switched to a new branch 'agent/mlb-lock-status-snapshot-hotpath'
+2026-07-22T04:33:39.5822546Z branch 'agent/mlb-lock-status-snapshot-hotpath' set up to track 'origin/agent/mlb-lock-status-snapshot-hotpath'.
+2026-07-22T04:33:39.5841651Z ##[endgroup]
+2026-07-22T04:33:39.5893403Z [command]/usr/bin/git log -1 --format=%H
+2026-07-22T04:33:39.5923066Z f337678d3b5df8e90cd04786a42578fb14c85760
+2026-07-22T04:33:39.6215919Z ##[group]Run set -euo pipefail
+2026-07-22T04:33:39.6217240Z [36;1mset -euo pipefail[0m
+2026-07-22T04:33:39.6219270Z [36;1mtest "$(git hash-object hello_world/inqsi_pull_history.py)" = "5f6dfece6d07aa4ba986c61e4bfe8e972f91d9de"[0m
+2026-07-22T04:33:39.6222445Z [36;1mtest "$(git hash-object hello_world/mlb_daily_per_game_lock_patch.py)" = "734fa341ccb1dad03c1c0269f8b1008c7457ac70"[0m
+2026-07-22T04:33:39.6226063Z [36;1mtest "$(git hash-object tests/unit/test_mlb_lock_status_request_cache.py)" = "1b92604fe44767f6100f2904ea381e4deb35c780"[0m
+2026-07-22T04:33:39.6228663Z [36;1mpython .github/patches/fix_snapshot_patcher_target.py[0m
+2026-07-22T04:33:39.6230588Z [36;1mpython .github/patches/apply_mlb_lock_status_snapshot_hotpath.py[0m
+2026-07-22T04:33:39.6232289Z [36;1mpython -m py_compile \[0m
+2026-07-22T04:33:39.6233513Z [36;1m  hello_world/inqsi_pull_history.py \[0m
+2026-07-22T04:33:39.6235208Z [36;1m  hello_world/mlb_daily_per_game_lock_patch.py \[0m
+2026-07-22T04:33:39.6236869Z [36;1m  tests/unit/test_mlb_lock_status_request_cache.py[0m
+2026-07-22T04:33:39.6238276Z [36;1mgit diff --check[0m
+2026-07-22T04:33:39.6322225Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-22T04:33:39.6323694Z ##[endgroup]
+2026-07-22T04:33:39.6718828Z Narrowed status-only pull query replacement
+2026-07-22T04:33:39.7081377Z Applied MLB lock-status request snapshot hotpath
+2026-07-22T04:33:39.9108919Z ##[group]Run set -euo pipefail
+2026-07-22T04:33:39.9109321Z [36;1mset -euo pipefail[0m
+2026-07-22T04:33:39.9109850Z [36;1mpython -m pip install --disable-pip-version-check --quiet -r hello_world/requirements.txt[0m
+2026-07-22T04:33:39.9110521Z [36;1mpython -m pytest -q tests/unit/test_mlb_lock_status_request_cache.py[0m
+2026-07-22T04:33:39.9169103Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-07-22T04:33:39.9169533Z ##[endgroup]
+2026-07-22T04:33:43.8090905Z /usr/bin/python: No module named pytest
+2026-07-22T04:33:43.8138846Z ##[error]Process completed with exit code 1.
+2026-07-22T04:33:43.8356179Z Node 20 is being deprecated. This workflow is running with Node 24 by default. If you need to temporarily use Node 20, you can set the ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION=true environment variable. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+2026-07-22T04:33:43.8357737Z Post job cleanup.
+2026-07-22T04:33:43.9186138Z [command]/usr/bin/git version
+2026-07-22T04:33:43.9229259Z git version 2.54.0
+2026-07-22T04:33:43.9271714Z Temporarily overriding HOME='/home/runner/work/_temp/e666cedf-33d7-410a-af53-6d3680f252bb' before making global git config changes
+2026-07-22T04:33:43.9273294Z Adding repository directory to the temporary git global config as a safe directory
+2026-07-22T04:33:43.9278251Z [command]/usr/bin/git config --global --add safe.directory /home/runner/work/parlay-platform/parlay-platform
+2026-07-22T04:33:43.9316358Z [command]/usr/bin/git config --local --name-only --get-regexp core\.sshCommand
+2026-07-22T04:33:43.9352301Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'core\.sshCommand' && git config --local --unset-all 'core.sshCommand' || :"
+2026-07-22T04:33:43.9597023Z [command]/usr/bin/git config --local --name-only --get-regexp http\.https\:\/\/github\.com\/\.extraheader
+2026-07-22T04:33:43.9625383Z http.https://github.com/.extraheader
+2026-07-22T04:33:43.9637273Z [command]/usr/bin/git config --local --unset-all http.https://github.com/.extraheader
+2026-07-22T04:33:43.9672016Z [command]/usr/bin/git submodule foreach --recursive sh -c "git config --local --name-only --get-regexp 'http\.https\:\/\/github\.com\/\.extraheader' && git config --local --unset-all 'http.https://github.com/.extraheader' || :"
+2026-07-22T04:33:43.9939533Z [command]/usr/bin/git config --local --name-only --get-regexp ^includeIf\.gitdir:
+2026-07-22T04:33:43.9976474Z [command]/usr/bin/git submodule foreach --recursive git config --local --show-origin --name-only --get-regexp remote.origin.url
+2026-07-22T04:33:44.0381958Z Cleaning up orphan processes
+2026-07-22T04:33:44.0818597Z ##[warning]Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
