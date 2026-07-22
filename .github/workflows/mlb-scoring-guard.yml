@@ -8,14 +8,18 @@ on:
       - 'scripts/mlb_scoring_guard_status.py'
       - 'scripts/diagnose_mlb_scoring_engine.py'
       - 'scripts/diagnose_mlb_pull_lambda_runtime.py'
+      - 'scripts/apply_mlb_scoring_runtime_fix.py'
       - 'tests/unit/test_mlb_scoring_guard_status.py'
+      - 'tests/unit/test_mlb_scoring_runtime_capacity.py'
   push:
     paths:
       - '.github/workflows/mlb-scoring-guard.yml'
       - 'scripts/mlb_scoring_guard_status.py'
       - 'scripts/diagnose_mlb_scoring_engine.py'
       - 'scripts/diagnose_mlb_pull_lambda_runtime.py'
+      - 'scripts/apply_mlb_scoring_runtime_fix.py'
       - 'tests/unit/test_mlb_scoring_guard_status.py'
+      - 'tests/unit/test_mlb_scoring_runtime_capacity.py'
   workflow_dispatch:
   schedule:
     - cron: '7/15 * * * *'
@@ -32,20 +36,49 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'push' && github.ref_name || '' }}
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
+      - name: Apply canonical scoring runtime migration on the repair branch
+        if: github.event_name == 'push' && github.ref_name == 'agent/mlb-scoring-run-proof'
+        run: python scripts/apply_mlb_scoring_runtime_fix.py
+
+      - name: Verify capacity and priority regressions
+        if: github.event_name == 'push' && github.ref_name == 'agent/mlb-scoring-run-proof'
+        run: python -m pytest -q tests/unit/test_mlb_scoring_runtime_capacity.py
+
+      - name: Commit canonical source migration
+        if: github.event_name == 'push' && github.ref_name == 'agent/mlb-scoring-run-proof'
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add template.yaml hello_world/mlb_manual_pull.py
+          if git diff --cached --quiet; then
+            echo 'Canonical MLB scoring runtime fix is already applied.'
+          else
+            git commit -m 'Fix MLB scoring runtime timeout and priority'
+            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
+            git push origin "HEAD:${GITHUB_REF_NAME}"
+          fi
 
       - name: Install read-only guard runtime
         run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
 
       - name: Verify scoring guard semantics
         run: |
-          python -m pytest -q tests/unit/test_mlb_scoring_guard_status.py
+          python -m pytest -q \
+            tests/unit/test_mlb_scoring_guard_status.py \
+            tests/unit/test_mlb_scoring_runtime_capacity.py
           python -m py_compile \
             scripts/diagnose_mlb_scoring_engine.py \
-            scripts/diagnose_mlb_pull_lambda_runtime.py
+            scripts/diagnose_mlb_pull_lambda_runtime.py \
+            scripts/apply_mlb_scoring_runtime_fix.py
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
