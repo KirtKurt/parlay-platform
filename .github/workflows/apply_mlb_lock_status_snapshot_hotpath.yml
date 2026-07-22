@@ -1,0 +1,56 @@
+name: Apply MLB lock-status snapshot hotpath
+
+on:
+  push:
+    branches:
+      - agent/mlb-lock-status-snapshot-hotpath
+    paths:
+      - .github/workflows/apply_mlb_lock_status_snapshot_hotpath.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout exact branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/mlb-lock-status-snapshot-hotpath
+          fetch-depth: 0
+
+      - name: Verify exact pre-images and apply reviewed patcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git hash-object hello_world/inqsi_pull_history.py)" = "5f6dfece6d07aa4ba986c61e4bfe8e972f91d9de"
+          test "$(git hash-object hello_world/mlb_daily_per_game_lock_patch.py)" = "734fa341ccb1dad03c1c0269f8b1008c7457ac70"
+          test "$(git hash-object tests/unit/test_mlb_lock_status_request_cache.py)" = "1b92604fe44767f6100f2904ea381e4deb35c780"
+          python .github/patches/apply_mlb_lock_status_snapshot_hotpath.py
+          python -m py_compile \
+            hello_world/inqsi_pull_history.py \
+            hello_world/mlb_daily_per_game_lock_patch.py \
+            tests/unit/test_mlb_lock_status_request_cache.py
+          git diff --check
+
+      - name: Run focused immutable read-path regressions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check --quiet -r hello_world/requirements.txt
+          python -m pytest -q tests/unit/test_mlb_lock_status_request_cache.py
+
+      - name: Commit exact candidate and remove temporary applicator
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/patches/apply_mlb_lock_status_snapshot_hotpath.py
+          rm .github/workflows/apply_mlb_lock_status_snapshot_hotpath.yml
+          rmdir .github/patches 2>/dev/null || true
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Bound MLB lock-status immutable snapshot work"
+          git push origin HEAD:agent/mlb-lock-status-snapshot-hotpath
