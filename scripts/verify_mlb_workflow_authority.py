@@ -34,6 +34,39 @@ RELEASE_ACTIVATION_PREDEPLOY_SCRIPT = (
 )
 
 
+def _workflow_step_body(source: str, name: str) -> str:
+    matches = list(
+        re.finditer(
+            rf"(?ms)^      - name: {re.escape(name)}\s*$\n"
+            r"(?P<body>.*?)(?=^      - name: |\Z)",
+            source,
+        )
+    )
+    return matches[0].group("body") if len(matches) == 1 else ""
+
+
+def _active_python_keyword_values(source: str, keyword: str) -> List[str]:
+    return [
+        match.group("value").strip()
+        for match in re.finditer(
+            rf"(?m)^[ \t]*{re.escape(keyword)}[ \t]*=[ \t]*"
+            r"(?P<value>[^,#\n]+?)[ \t]*,[ \t]*(?:#.*)?$",
+            source,
+        )
+    ]
+
+
+def _shell_array_body(source: str, name: str) -> str:
+    matches = list(
+        re.finditer(
+            rf"(?ms)^[ \t]*{re.escape(name)}=\(\s*$\n"
+            r"(?P<body>.*?)(?=^[ \t]*\)\s*$)",
+            source,
+        )
+    )
+    return matches[0].group("body") if len(matches) == 1 else ""
+
+
 def _verify_read_only_hot_sides(root: Path) -> List[str]:
     errors: List[str] = []
     template_path = root / "template.yaml"
@@ -435,6 +468,76 @@ def verify_repository(root: Path = ROOT) -> List[str]:
                     "canonical_deploy_capacity_backpressure_missing:"
                     + required_capacity_token
                 )
+        status_step = _workflow_step_body(
+            deploy,
+            "Smoke test read-only MLB lock status",
+        )
+        fetch_helper = re.search(
+            r"(?ms)^\s+def fetch\(url, timeout=45, deadline=None, retry_delay=4\):\n"
+            r"(?P<body>.*?)(?=^\s+base_url =)",
+            status_step,
+        )
+        status_fetches = list(
+            re.finditer(
+                r"(?ms)^\s+payload = fetch\(\s*status_url,"
+                r"(?P<body>.*?)^\s+\)\s*$",
+                status_step,
+            )
+        )
+        fetch_helper_body = fetch_helper.group("body") if fetch_helper else ""
+        status_fetch_body = (
+            status_fetches[0].group("body") if len(status_fetches) == 1 else ""
+        )
+        if (
+            not status_step
+            or fetch_helper is None
+            or _active_python_keyword_values(
+                fetch_helper_body,
+                "retry_delay_seconds",
+            )
+            != ["retry_delay"]
+            or len(status_fetches) != 1
+            or _active_python_keyword_values(
+                status_fetch_body,
+                "retry_delay",
+            )
+            != ["300"]
+        ):
+            errors.append(
+                "canonical_deploy_lock_status_timeout_drain_backoff_is_invalid"
+            )
+        if (
+            len(status_fetches) != 1
+            or _active_python_keyword_values(
+                status_fetch_body,
+                "deadline",
+            )
+            != ["deadline"]
+        ):
+            errors.append("canonical_deploy_lock_status_probe_call_is_invalid")
+
+        regression_tests = _shell_array_body(deploy, "regression_tests")
+        for required_scale_test, error in (
+            (
+                "tests/unit/test_mlb_lock_status_request_cache.py",
+                "canonical_deploy_does_not_require_lock_status_scale_regression",
+            ),
+            (
+                "tests/unit/test_mlb_public_per_game_authority.py",
+                "canonical_deploy_does_not_require_public_read_scale_regression",
+            ),
+        ):
+            if (
+                not regression_tests
+                or len(
+                    re.findall(
+                        rf"(?m)^[ \t]+{re.escape(required_scale_test)}[ \t]*$",
+                        regression_tests,
+                    )
+                )
+                != 1
+            ):
+                errors.append(error)
         if deploy.count("python scripts/invoke_mlb_trainer_with_retry.py") != 3:
             errors.append(
                 "canonical_deploy_must_use_bounded_invoke_retry_exactly_three_times"

@@ -50,6 +50,43 @@ fingerprint keeps the milestone unachieved.
 
 ## Release boundary and proof status
 
+### July 22 r3 activation checkpoint
+
+Production PR #58 and its immediate main-branch successor activated the r3
+release before the prospective cutoff. The durable activation marker passed
+its exact Git/template identity gate, the deployed Lambda artifacts and both
+EventBridge cadences matched the release, and exact AWS-native training plus
+selection-capture initialization passed. BBS authentication and its
+shadow-only boundary also passed. These are infrastructure proofs only: the
+eligible-game count remains zero until a complete post-cutoff slate satisfies
+the current lock, V2 fundamentals, vector, official-label, and finalized-slate
+validators.
+
+The replacement deployment run `29883376598` then failed at the read-only
+`/locks/status` acceptance probe after 39 transport timeouts over 20 minutes.
+The deployed status assembler was performing 232 sequential strongly
+consistent `GetItem` calls plus 15 diagnostic `Query` calls for a normal
+15-game locked slate. The corrective release preserves every immutable
+validator and writer boundary while request-scoped `BatchGetItem` priming
+reduces that production-shaped path to at most five strongly consistent
+batches, at most 35 individual reads, and the same 15 diagnostic queries.
+Batch failures, malformed responses, and unprocessed keys fall back to the
+original strict reads; they never create cached absence. The deploy probe also
+waits for a timed-out Lambda to drain before retrying, preventing its own
+acceptance test from amplifying shared concurrency.
+
+The pre-publish hotfix checkpoint passed 815 unit tests, the 79-test embedded
+production-invariant chain, the standalone BBS/official-lock/pull-dedupe
+verifiers, compile checks, and the deployment-transform fixed-point check.
+SAM build/validation, exact-source CI, and live HTTP timing remain deployment
+acceptance evidence and cannot be substituted by this local checkpoint.
+
+This performance repair earns no 15/140/300/400/500 data milestone and does
+not change predictions, weights, playability, cohort admission, or shadow-only
+promotion authority. Its operational acceptance requires an exact-source CI
+pass, a green replacement SAM deployment, and a live status response within
+the API deadline.
+
 ### July 22 pre-deploy source checkpoint
 
 The incremental release built on production PRs #50-#55 passed 697 unit tests.

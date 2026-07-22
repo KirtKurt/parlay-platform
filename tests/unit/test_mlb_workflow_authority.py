@@ -145,6 +145,92 @@ def test_rejects_removal_of_capacity_safe_postdeploy_http_probe(
     )
 
 
+@pytest.mark.parametrize(
+    ("old", "new"),
+    (
+        ("retry_delay=300", "retry_delay=4"),
+        ("retry_delay_seconds=retry_delay", "retry_delay_seconds=4"),
+    ),
+)
+def test_rejects_amplifying_lock_status_timeout_retries(
+    tmp_path: Path,
+    old: str,
+    new: str,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(old, new, 1)
+        + "\n# A detached marker must not satisfy the status-call contract.\n"
+        + "# retry_delay=300 retry_delay_seconds=retry_delay\n",
+        encoding="utf-8",
+    )
+
+    errors = authority.verify_repository(root)
+    assert (
+        "canonical_deploy_lock_status_timeout_drain_backoff_is_invalid"
+        in errors
+    )
+
+
+def test_rejects_lock_status_probe_without_active_shared_deadline(
+    tmp_path: Path,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    deploy.write_text(
+        text.replace(
+            "                  deadline=deadline,",
+            "                  deadline=None,\n"
+            "                  # deadline=deadline, detached spoof",
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert (
+        "canonical_deploy_lock_status_probe_call_is_invalid"
+        in authority.verify_repository(root)
+    )
+
+
+@pytest.mark.parametrize(
+    ("required_test", "expected_error"),
+    (
+        (
+            "tests/unit/test_mlb_lock_status_request_cache.py",
+            "canonical_deploy_does_not_require_lock_status_scale_regression",
+        ),
+        (
+            "tests/unit/test_mlb_public_per_game_authority.py",
+            "canonical_deploy_does_not_require_public_read_scale_regression",
+        ),
+    ),
+)
+def test_rejects_scale_regression_moved_to_optional_tests(
+    tmp_path: Path,
+    required_test: str,
+    expected_error: str,
+) -> None:
+    root = _copy_contract(tmp_path)
+    deploy = root / ".github/workflows/deploy.yml"
+    text = deploy.read_text(encoding="utf-8")
+    required_line = f"            {required_test}\n"
+    assert required_line in text
+    deploy.write_text(
+        text.replace(required_line, "", 1).replace(
+            "          optional_tests=(\n",
+            "          optional_tests=(\n" + required_line,
+            1,
+        ),
+        encoding="utf-8",
+    )
+
+    assert expected_error in authority.verify_repository(root)
+
+
 def test_rejects_missing_trainer_invoke_retry_helper(tmp_path: Path) -> None:
     root = _copy_contract(tmp_path)
     (root / "scripts/invoke_mlb_trainer_with_retry.py").unlink()
