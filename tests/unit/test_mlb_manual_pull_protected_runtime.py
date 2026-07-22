@@ -31,10 +31,12 @@ REQUIRED_RUNTIME_STEPS = {
     "canonicalProbabilityAndPersistedPrelockAuthority",
     "providerNeutralCalibrationAndActionability",
     "legacyFinalGateDisabled",
+    "scoringRunProof",
 }
 STUB_MODULE_NAMES = (
     "mlb_ml_runtime_install_v3",
     "mlb_manual_pull",
+    "mlb_scoring_run_proof",
 )
 
 
@@ -55,6 +57,7 @@ def _load_handler(
     runtime_error=None,
     delegate_payload=None,
     delegate_status=200,
+    scoring_proof_ok=True,
 ):
     events = []
     delegate_calls = []
@@ -71,6 +74,48 @@ def _load_handler(
         }
 
     manual_pull.lambda_handler = delegate
+
+    scoring = ModuleType("mlb_scoring_run_proof")
+    scoring.VERSION = "MLB-SCORING-RUN-PROOF-test"
+
+    def attach_and_store(response, event):
+        out = dict(response)
+        payload = json.loads(out.get("body") or "{}")
+        if payload.get("ok") is not True or int(out.get("statusCode") or 200) >= 400:
+            return response
+        manifests = payload.get("provider_schedule_manifests") or []
+        if scoring_proof_ok:
+            payload["scoringProofComplete"] = True
+            payload["scoringProofStatus"] = "PASS"
+            payload["scoring_proofs"] = [
+                {
+                    "ok": True,
+                    "status": "PASS",
+                    "gameDateEt": manifest.get("game_date_et"),
+                }
+                for manifest in manifests
+                if isinstance(manifest, dict)
+            ]
+        else:
+            payload["ok"] = False
+            payload["error"] = "MLB_SCORING_RUN_PROOF_FAILED"
+            payload["scoringProofComplete"] = False
+            payload["scoringProofStatus"] = "FAIL"
+            payload["scoring_proofs"] = [
+                {
+                    "ok": False,
+                    "status": "FAIL",
+                    "gameDateEt": manifest.get("game_date_et"),
+                    "blockers": ["injected_scoring_failure"],
+                }
+                for manifest in manifests
+                if isinstance(manifest, dict)
+            ]
+            out["statusCode"] = 500
+        out["body"] = json.dumps(payload)
+        return out
+
+    scoring.attach_and_store = attach_and_store
 
     runtime = ModuleType("mlb_ml_runtime_install_v3")
     runtime.VERSION = RUNTIME_VERSION
@@ -89,6 +134,7 @@ def _load_handler(
     previous = {name: sys.modules.get(name) for name in STUB_MODULE_NAMES}
     module_name = f"_test_mlb_manual_pull_protected_{uuid.uuid4().hex}"
     try:
+        sys.modules["mlb_scoring_run_proof"] = scoring
         sys.modules["mlb_ml_runtime_install_v3"] = runtime
         sys.modules.pop("mlb_manual_pull", None)
         spec = importlib.util.spec_from_file_location(module_name, HANDLER)
@@ -143,6 +189,7 @@ def test_installs_and_attests_exact_runtime_before_importing_or_serving_writer()
         assert payload["mlRuntimeInstallation"]["version"] == RUNTIME_VERSION
         assert payload["mlRuntimeInstallation"]["expectedVersion"] == RUNTIME_VERSION
         assert payload["mlRuntimeInstallation"]["candidateWriterImported"] is True
+        assert payload["mlRuntimeInstallation"]["scoringProofVersion"] == "MLB-SCORING-RUN-PROOF-test"
         assert payload["mlRuntimeInstallation"]["steps"] == {
             name: True for name in REQUIRED_RUNTIME_STEPS
         }
@@ -198,7 +245,7 @@ def test_runtime_installer_exception_fails_closed_without_importing_writer():
         payload = _body(response)
 
         assert response["statusCode"] == 500
-        assert payload["status"]["errors"] == ["injected install failure"]
+        assert "injected install failure" in payload["status"]["errors"]
         assert payload["status"]["candidateWriterImported"] is False
         assert handler.mlb_manual_pull is None
         assert events == ["runtime_install"]
@@ -327,7 +374,10 @@ def test_scheduled_full_provider_manifest_and_candidate_coverage_succeeds():
         response = handler.lambda_handler(
             {"sport": "mlb", "run": "rolling_open_hot_pull"}, None
         )
+        payload = _body(response)
         assert response["statusCode"] == 200
+        assert payload["scoringProofComplete"] is True
+        assert payload["scoring_proofs"][0]["ok"] is True
         assert len(delegate_calls) == 1
 
 
@@ -340,5 +390,19 @@ def test_scheduled_prediction_count_must_equal_full_provider_manifest_count():
                 {"sport": "mlb", "run": "rolling_open_hot_pull"}, None
             ),
             "winner_prediction_manifest_count_mismatch:2026-07-16",
+        )
+        assert len(delegate_calls) == 1
+
+
+def test_scheduled_scoring_proof_failure_raises_after_candidate_storage():
+    with _load_handler(
+        delegate_payload=_complete_manifest_payload(),
+        scoring_proof_ok=False,
+    ) as (handler, _, delegate_calls):
+        _assert_runtime_error(
+            lambda: handler.lambda_handler(
+                {"sport": "mlb", "run": "rolling_open_hot_pull"}, None
+            ),
+            "scoring_run_proof_incomplete",
         )
         assert len(delegate_calls) == 1
