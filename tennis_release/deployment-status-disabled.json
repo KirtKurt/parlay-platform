@@ -1,0 +1,438 @@
+{
+  "artifacts": [
+    {
+      "createdAt": "2026-07-22T11:26:18Z",
+      "expired": false,
+      "expiresAt": "2026-08-21T11:26:18Z",
+      "id": 8527760410,
+      "name": "tennis-ml-deployment-evidence-bc9a068270731ab4afe86f016ae118aea875372b",
+      "sizeInBytes": 8346
+    }
+  ],
+  "deploymentEvidence": {
+    "apiUrl": "https://70n1e5cuda.execute-api.us-east-1.amazonaws.com/prod",
+    "collectionLeadHours": 10,
+    "credentialStatus": "CREDENTIAL_BLOCKED",
+    "gitSha": "bc9a068270731ab4afe86f016ae118aea875372b",
+    "liveIngestionVerified": false,
+    "mlbStackFingerprintAfter": "6c1c3440b276a015659b43ef60286ca94599cefd76dcf9716f5c554bc8851581",
+    "mlbStackFingerprintBefore": "6c1c3440b276a015659b43ef60286ca94599cefd76dcf9716f5c554bc8851581",
+    "ok": true,
+    "operationalStatus": "CREDENTIAL_BLOCKED",
+    "resourceCount": 50,
+    "resources": [
+      {
+        "logicalId": "TennisApi",
+        "physicalId": "70n1e5cuda",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::ApiGateway::RestApi"
+      },
+      {
+        "logicalId": "TennisApiDeployment03e72d0d31",
+        "physicalId": "e32c1v",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::ApiGateway::Deployment"
+      },
+      {
+        "logicalId": "TennisApiStage",
+        "physicalId": "prod",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::ApiGateway::Stage"
+      },
+      {
+        "logicalId": "TennisArchiveBucket",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennisarchivebucket-nqgx0aakohyc",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::S3::Bucket"
+      },
+      {
+        "logicalId": "TennisCoreApiErrorsAlarm",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-core-api-errors",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::CloudWatch::Alarm"
+      },
+      {
+        "logicalId": "TennisCoreApiFunction",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-core-api",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Function"
+      },
+      {
+        "logicalId": "TennisCoreApiFunctionGameWinnersCompatibilityApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisCoreApiFunctionGameWinnersCompatibilityApiPermissi-Hi0Gut571mC3",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisCoreApiFunctionGamesCompatibilityApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisCoreApiFunctionGamesCompatibilityApiPermissionStag-plf4eq48tTXr",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisCoreApiFunctionMatchesApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisCoreApiFunctionMatchesApiPermissionStage-8D8zROCuFe5A",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisCoreApiFunctionMlStatusApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisCoreApiFunctionMlStatusApiPermissionStage-S0pUxq6z9663",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisCoreApiFunctionModelVersionApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisCoreApiFunctionModelVersionApiPermissionStage-VBEwyMtfFwQZ",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisCoreApiFunctionPredictionsApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisCoreApiFunctionPredictionsApiPermissionStage-fJfB64MaAXHt",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisCoreApiFunctionRole",
+        "physicalId": "parlay-platform-tennis-ml-TennisCoreApiFunctionRole-vXgI2Zn9u6Dv",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::IAM::Role"
+      },
+      {
+        "logicalId": "TennisCoreApiFunctionTodayApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisCoreApiFunctionTodayApiPermissionStage-SwI3cdEqK0nW",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisCoreApiLogGroup",
+        "physicalId": "/aws/lambda/parlay-platform-tennis-ml-prod-tennis-core-api",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Logs::LogGroup"
+      },
+      {
+        "logicalId": "TennisIngestErrorsAlarm",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-ingest-errors",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::CloudWatch::Alarm"
+      },
+      {
+        "logicalId": "TennisIngestFunction",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-ingest",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Function"
+      },
+      {
+        "logicalId": "TennisIngestFunctionPullApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisIngestFunctionPullApiPermissionStage-sPy0t3pYdn6d",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisIngestFunctionRole",
+        "physicalId": "parlay-platform-tennis-ml--TennisIngestFunctionRole-PmxdcQABKw9X",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::IAM::Role"
+      },
+      {
+        "logicalId": "TennisIngestInvokePermission",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisIngestInvokePermission-59YLPIs2p5Gc",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisIngestLogGroup",
+        "physicalId": "/aws/lambda/parlay-platform-tennis-ml-prod-tennis-ingest",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Logs::LogGroup"
+      },
+      {
+        "logicalId": "TennisIngestSchedule",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-ingest-every-15-minutes",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Events::Rule"
+      },
+      {
+        "logicalId": "TennisLockErrorsAlarm",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-lock-errors",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::CloudWatch::Alarm"
+      },
+      {
+        "logicalId": "TennisLockFunction",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-lock",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Function"
+      },
+      {
+        "logicalId": "TennisLockFunctionLockRunApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisLockFunctionLockRunApiPermissionStage-MmS7RPmPa6LZ",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisLockFunctionLockStatusApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisLockFunctionLockStatusApiPermissionStage-huM9S9TJaYrH",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisLockFunctionLockTodayApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisLockFunctionLockTodayApiPermissionStage-JQudCNglf9ZJ",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisLockFunctionRole",
+        "physicalId": "parlay-platform-tennis-ml-pr-TennisLockFunctionRole-S543sPN3z138",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::IAM::Role"
+      },
+      {
+        "logicalId": "TennisLockInvokePermission",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisLockInvokePermission-kdBqPhJHZWOV",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisLockLogGroup",
+        "physicalId": "/aws/lambda/parlay-platform-tennis-ml-prod-tennis-lock",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Logs::LogGroup"
+      },
+      {
+        "logicalId": "TennisLockSchedule",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-lock-every-minute",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Events::Rule"
+      },
+      {
+        "logicalId": "TennisModelsTable",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-models",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::DynamoDB::Table"
+      },
+      {
+        "logicalId": "TennisOutcomeErrorsAlarm",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-outcome-errors",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::CloudWatch::Alarm"
+      },
+      {
+        "logicalId": "TennisOutcomeFunction",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-outcomes",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Function"
+      },
+      {
+        "logicalId": "TennisOutcomeFunctionOutcomeSyncApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisOutcomeFunctionOutcomeSyncApiPermissionStage-LXWVPvsTqsaG",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisOutcomeFunctionRole",
+        "physicalId": "parlay-platform-tennis-ml-TennisOutcomeFunctionRole-dS8s64GR8YhP",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::IAM::Role"
+      },
+      {
+        "logicalId": "TennisOutcomeInvokePermission",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisOutcomeInvokePermission-GxJXyp68ajV6",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisOutcomeLogGroup",
+        "physicalId": "/aws/lambda/parlay-platform-tennis-ml-prod-tennis-outcomes",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Logs::LogGroup"
+      },
+      {
+        "logicalId": "TennisOutcomeSchedule",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-outcomes-every-6-hours",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Events::Rule"
+      },
+      {
+        "logicalId": "TennisOutcomesTable",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-outcomes",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::DynamoDB::Table"
+      },
+      {
+        "logicalId": "TennisPredictionsTable",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-predictions",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::DynamoDB::Table"
+      },
+      {
+        "logicalId": "TennisSignalLedgerTable",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-signal-ledger",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::DynamoDB::Table"
+      },
+      {
+        "logicalId": "TennisSnapshotsTable",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-snapshots",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::DynamoDB::Table"
+      },
+      {
+        "logicalId": "TennisTrainingErrorsAlarm",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-training-errors",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::CloudWatch::Alarm"
+      },
+      {
+        "logicalId": "TennisTrainingFunction",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-training",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Function"
+      },
+      {
+        "logicalId": "TennisTrainingFunctionRole",
+        "physicalId": "parlay-platform-tennis-ml-TennisTrainingFunctionRol-4KmDyLygunEa",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::IAM::Role"
+      },
+      {
+        "logicalId": "TennisTrainingFunctionTrainingRunApiPermissionStage",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisTrainingFunctionTrainingRunApiPermissionStage-oloLa7XUasxp",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisTrainingInvokePermission",
+        "physicalId": "parlay-platform-tennis-ml-prod-TennisTrainingInvokePermission-jTQK8JYGsowQ",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Lambda::Permission"
+      },
+      {
+        "logicalId": "TennisTrainingLogGroup",
+        "physicalId": "/aws/lambda/parlay-platform-tennis-ml-prod-tennis-training",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Logs::LogGroup"
+      },
+      {
+        "logicalId": "TennisTrainingSchedule",
+        "physicalId": "parlay-platform-tennis-ml-prod-tennis-training-daily",
+        "status": "CREATE_COMPLETE",
+        "type": "AWS::Events::Rule"
+      }
+    ],
+    "resultSource": "espn_public_tennis_scoreboard_exact_crosswalk",
+    "scheduleState": "DISABLED",
+    "sport": "tennis",
+    "stackName": "parlay-platform-tennis-ml-prod",
+    "stackStatus": "CREATE_COMPLETE",
+    "templateSha256": "cddbd630702a808000eb924aa033316ae7af89ca519ccd56ed79566167cfea5f"
+  },
+  "expectedHeadSha": "bc9a068270731ab4afe86f016ae118aea875372b",
+  "jobs": [
+    {
+      "completedAt": "2026-07-22T11:26:20Z",
+      "conclusion": "success",
+      "htmlUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/29915458012/job/88908156958",
+      "id": 88908156958,
+      "name": "deploy-tennis",
+      "startedAt": "2026-07-22T11:22:37Z",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Checkout exact release commit",
+          "number": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reconstruct, verify, and apply credential-blocked deployment gate",
+          "number": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Python 3.11",
+          "number": 4,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install validation dependencies",
+          "number": 5,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup AWS SAM",
+          "number": 6,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Configure established AWS deployment credentials",
+          "number": 7,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Deploy and verify isolated Tennis stack",
+          "number": 8,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload exact Tennis deployment evidence",
+          "number": 9,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Configure established AWS deployment credentials",
+          "number": 16,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Setup Python 3.11",
+          "number": 17,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Checkout exact release commit",
+          "number": 18,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 19,
+          "status": "completed"
+        }
+      ]
+    }
+  ],
+  "recordedAtUtc": "2026-07-22T11:26:26.009418+00:00",
+  "run": {
+    "conclusion": "success",
+    "createdAt": "2026-07-22T11:22:34Z",
+    "event": "push",
+    "headSha": "bc9a068270731ab4afe86f016ae118aea875372b",
+    "htmlUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/29915458012",
+    "id": 29915458012,
+    "runAttempt": 1,
+    "runNumber": 2,
+    "status": "completed",
+    "updatedAt": "2026-07-22T11:26:21Z"
+  },
+  "schemaVersion": "TENNIS-ML-CREDENTIAL-BLOCKED-DEPLOY-MONITOR-v1"
+}
