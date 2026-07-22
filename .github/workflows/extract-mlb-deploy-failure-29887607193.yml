@@ -1,0 +1,37 @@
+name: Extract MLB deploy failure 29887607193
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/extract-mlb-deploy-failure-29887607193.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print compact failed-step evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/jobs/88821292056/logs" > /tmp/deploy.log
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          lines = Path('/tmp/deploy.log').read_text(encoding='utf-8-sig', errors='replace').splitlines()
+          pattern = re.compile(r'(?i)(smoke test read-only mlb lock status|traceback|timeout|timed out|transienthttpprobeexhausted|http 5\d\d|504|exception|process completed|locks/status|batchget|batch_get)')
+          selected = set(range(max(0, len(lines) - 100), len(lines)))
+          for index, line in enumerate(lines):
+              if pattern.search(line):
+                  selected.update(range(max(0, index - 5), min(len(lines), index + 9)))
+          previous = None
+          for index in sorted(selected):
+              if previous is not None and index > previous + 1:
+                  print(f'--- omitted {index - previous - 1} lines ---')
+              print(f'{index + 1}: {lines[index]}')
+              previous = index
+          PY
