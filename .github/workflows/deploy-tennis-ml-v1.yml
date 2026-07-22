@@ -20,7 +20,8 @@ jobs:
       TENNIS_STACK_NAME: inqsi-tennis-v1
       RELEASE_SHA256: dbc456f51a89d3b5fa2c16668577f6e90a7f125e5357cb93be92523a14391112
       TENNIS_AWS_DEPLOY_ROLE_ARN: ${{ secrets.TENNIS_AWS_DEPLOY_ROLE_ARN }}
-      TENNIS_ODDS_API_KEY: ${{ secrets.TENNIS_ODDS_API_KEY }}
+      TENNIS_ODDS_API_KEY: ${{ secrets.TENNIS_ODDS_API_KEY || secrets.ODDS_API_KEY }}
+      TENNIS_CREDENTIAL_SOURCE: ${{ secrets.TENNIS_ODDS_API_KEY != '' && 'dedicated_tennis_secret' || 'existing_provider_secret' }}
     steps:
       - uses: actions/checkout@v4
         with: {fetch-depth: 0}
@@ -40,7 +41,9 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-1
       - name: Validate, deploy, and prove isolation
-        run: bash tennis_release/deploy-tennis-ml-v1.sh
+        run: |
+          echo "Tennis provider credential source: ${TENNIS_CREDENTIAL_SOURCE}"
+          bash tennis_release/deploy-tennis-ml-v1.sh
       - if: always()
         uses: actions/upload-artifact@v4
         with:
