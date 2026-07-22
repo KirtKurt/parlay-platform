@@ -67,19 +67,34 @@ The replacement deployment run `29883376598` then failed at the read-only
 The deployed status assembler was performing 232 sequential strongly
 consistent `GetItem` calls plus 15 diagnostic `Query` calls for a normal
 15-game locked slate. The corrective release preserves every immutable
-validator and writer boundary while request-scoped `BatchGetItem` priming
-reduces that production-shaped path to at most five strongly consistent
-batches, at most 35 individual reads, and the same 15 diagnostic queries.
-Batch failures, malformed responses, and unprocessed keys fall back to the
-original strict reads; they never create cached absence. The deploy probe also
-waits for a timed-out Lambda to drain before retrying, preventing its own
-acceptance test from amplifying shared concurrency.
+validator and writer boundary while request-scoped, native DynamoDB
+ServiceResource `BatchGetItem` priming reduces the production-shaped status
+test to three strongly consistent batches, five direct reads, and the same 15
+diagnostic queries. The persisted-prediction test uses three batches, three
+direct manifest reads, and 16 bounded queries. Every batch is capped at 100
+exact keys, each phase is capped at 600 keys, and results are published to the
+request cache only after the entire phase proves presence or absence. Transport
+failures, malformed responses, and residual unprocessed keys fall back to the
+original strict reads; they never create cached absence. The deploy probe
+submits exactly one client delivery for each status or prediction attempt,
+preventing its own acceptance test from creating overlapping Lambda work after
+a transport timeout. Valid HTTP 200 responses that report a not-yet-ready
+roster or prediction set retain their outer polling deadline.
 
 The pre-publish hotfix checkpoint passed 815 unit tests, the 79-test embedded
 production-invariant chain, the standalone BBS/official-lock/pull-dedupe
 verifiers, compile checks, and the deployment-transform fixed-point check.
 SAM build/validation, exact-source CI, and live HTTP timing remain deployment
 acceptance evidence and cannot be substituted by this local checkpoint.
+
+The reconciled native-resource follow-up passed 832 repository unit tests and
+209 focused lock, storage, public-authority, probe, and workflow regressions.
+It also passed the BBS least-privilege wiring verifier, daily-pull start gate,
+workflow-authority verifier, official prediction-semantics verifier, and all 35
+production-acceptance unit checks. The canonical source transform, schedule
+invariant runner, SAM validation/build, exact-source identity, and live HTTP
+timing remain CI/AWS acceptance evidence; this checkpoint does not substitute
+for them.
 
 This performance repair earns no 15/140/300/400/500 data milestone and does
 not change predictions, weights, playability, cohort admission, or shadow-only

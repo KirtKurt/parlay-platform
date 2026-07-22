@@ -462,6 +462,8 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             "scripts/mlb_deploy_http_probe.py",
             "from scripts.mlb_deploy_http_probe import fetch_json_object",
             "deadline=deadline",
+            "def fetch(url, timeout=45, deadline=None, max_attempts=None):",
+            "max_attempts=max_attempts,",
         ):
             if required_capacity_token not in deploy:
                 errors.append(
@@ -473,7 +475,7 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             "Smoke test read-only MLB lock status",
         )
         fetch_helper = re.search(
-            r"(?ms)^\s+def fetch\(url, timeout=45, deadline=None, retry_delay=4\):\n"
+            r"(?ms)^\s+def fetch\(url, timeout=45, deadline=None, max_attempts=None\):\n"
             r"(?P<body>.*?)(?=^\s+base_url =)",
             status_step,
         )
@@ -484,27 +486,45 @@ def verify_repository(root: Path = ROOT) -> List[str]:
                 status_step,
             )
         )
+        prediction_fetches = list(
+            re.finditer(
+                r"(?ms)^\s+predictions = fetch\(\s*prediction_url,"
+                r"(?P<body>.*?)^\s+\)\s*$",
+                status_step,
+            )
+        )
         fetch_helper_body = fetch_helper.group("body") if fetch_helper else ""
         status_fetch_body = (
             status_fetches[0].group("body") if len(status_fetches) == 1 else ""
+        )
+        prediction_fetch_body = (
+            prediction_fetches[0].group("body")
+            if len(prediction_fetches) == 1
+            else ""
         )
         if (
             not status_step
             or fetch_helper is None
             or _active_python_keyword_values(
                 fetch_helper_body,
-                "retry_delay_seconds",
+                "max_attempts",
             )
-            != ["retry_delay"]
+            != ["max_attempts"]
             or len(status_fetches) != 1
             or _active_python_keyword_values(
                 status_fetch_body,
-                "retry_delay",
+                "max_attempts",
             )
-            != ["300"]
+            != ["1"]
+            or len(prediction_fetches) != 1
+            or _active_python_keyword_values(
+                prediction_fetch_body,
+                "max_attempts",
+            )
+            != ["1"]
         ):
             errors.append(
-                "canonical_deploy_lock_status_timeout_drain_backoff_is_invalid"
+                "canonical_deploy_heavy_read_probe_must_attempt_each_delivery_once"
             )
         if (
             len(status_fetches) != 1
@@ -513,8 +533,14 @@ def verify_repository(root: Path = ROOT) -> List[str]:
                 "deadline",
             )
             != ["deadline"]
+            or len(prediction_fetches) != 1
+            or _active_python_keyword_values(
+                prediction_fetch_body,
+                "deadline",
+            )
+            != ["prediction_deadline"]
         ):
-            errors.append("canonical_deploy_lock_status_probe_call_is_invalid")
+            errors.append("canonical_deploy_heavy_read_probe_deadlines_are_invalid")
 
         regression_tests = _shell_array_body(deploy, "regression_tests")
         for required_scale_test, error in (

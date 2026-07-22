@@ -12,8 +12,6 @@ from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import uuid4
 
-from boto3.dynamodb.types import TypeDeserializer, TypeSerializer
-
 import inqsi_pull_history as history_contract
 import mlb_official_schedule_authority as official_schedule_contract
 from mlb_slate_coverage_patch import (
@@ -83,6 +81,10 @@ _STATUS_READ_CACHE: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
     default=None,
 )
 _STATUS_MISSING_ITEM = object()
+_STATUS_BATCH_MAX_KEYS = 100
+_STATUS_BATCH_MAX_PHASE_KEYS = 600
+_STATUS_BATCH_MAX_ATTEMPTS = 3
+_STATUS_BATCH_RETRY_DELAY_SECONDS = 0.025
 
 
 @contextmanager
@@ -110,6 +112,341 @@ def _table_cache_identity(table: Any) -> Tuple[Any, ...]:
     client = getattr(getattr(table, "meta", None), "client", None)
     region = getattr(getattr(client, "meta", None), "region_name", None)
     return ("dynamodb", str(region or ""), str(name))
+
+
+def _status_item_cache_key(table: Any, key: Dict[str, str]) -> Tuple[Any, ...]:
+    return (
+        _table_cache_identity(table),
+        str(key.get("PK") or ""),
+        str(key.get("SK") or ""),
+    )
+
+
+def _status_cached_item(
+    table: Any,
+    key: Dict[str, str],
+) -> Tuple[bool, Optional[Dict[str, Any]]]:
+    """Distinguish an exact cached absence from a key not loaded in this request."""
+    request_cache = _STATUS_READ_CACHE.get()
+    item_cache = (
+        request_cache.get("consistentItems")
+        if isinstance(request_cache, dict)
+        else None
+    )
+    cache_key = _status_item_cache_key(table, key)
+    if isinstance(item_cache, dict) and cache_key in item_cache:
+        cached = item_cache[cache_key]
+        return (
+            True,
+            None if cached is _STATUS_MISSING_ITEM else copy.deepcopy(cached),
+        )
+    return False, None
+
+
+def _status_batch_resource(table: Any, *owners: Any) -> Optional[Any]:
+    """Find the boto3 DynamoDB resource that owns a named production table."""
+    table_name = getattr(table, "name", None) or getattr(table, "table_name", None)
+    if not table_name:
+        return None
+    for owner in owners:
+        candidates = (owner, getattr(owner, "history", None))
+        for candidate in candidates:
+            resource = getattr(candidate, "DDB", None)
+            if callable(getattr(resource, "batch_get_item", None)):
+                return resource
+    return None
+
+
+def _prime_status_exact_items(
+    table: Any,
+    resource: Any,
+    keys: Iterable[Dict[str, str]],
+) -> bool:
+    """Batch-read a bounded exact-key phase into the request-local cache.
+
+    No result from this phase is published until every requested key is either
+    returned or authoritatively absent. Any transport, shape, or residual
+    unprocessed-key failure leaves the original point-read paths available.
+    """
+    request_cache = _STATUS_READ_CACHE.get()
+    item_cache = (
+        request_cache.get("consistentItems")
+        if isinstance(request_cache, dict)
+        else None
+    )
+    table_name = getattr(table, "name", None) or getattr(table, "table_name", None)
+    if (
+        table is None
+        or not str(table_name or "")
+        or not callable(getattr(resource, "batch_get_item", None))
+        or not isinstance(item_cache, dict)
+    ):
+        return False
+
+    requested: List[Dict[str, str]] = []
+    seen_requested = set()
+    for raw_key in keys:
+        if not isinstance(raw_key, dict):
+            return False
+        key = {
+            "PK": str(raw_key.get("PK") or ""),
+            "SK": str(raw_key.get("SK") or ""),
+        }
+        if not key["PK"] or not key["SK"]:
+            return False
+        token = (key["PK"], key["SK"])
+        if token in seen_requested:
+            continue
+        seen_requested.add(token)
+        if _status_item_cache_key(table, key) not in item_cache:
+            requested.append(key)
+        if len(requested) > _STATUS_BATCH_MAX_PHASE_KEYS:
+            return False
+    if not requested:
+        return True
+
+    local_results: Dict[Tuple[str, str], Any] = {}
+    try:
+        for offset in range(0, len(requested), _STATUS_BATCH_MAX_KEYS):
+            pending = requested[offset : offset + _STATUS_BATCH_MAX_KEYS]
+            for attempt in range(_STATUS_BATCH_MAX_ATTEMPTS):
+                pending_tokens = {(key["PK"], key["SK"]) for key in pending}
+                response = resource.batch_get_item(
+                    RequestItems={
+                        str(table_name): {
+                            "Keys": copy.deepcopy(pending),
+                            "ConsistentRead": True,
+                        }
+                    }
+                )
+                if not isinstance(response, dict):
+                    raise RuntimeError("status batch read returned a non-object response")
+                responses = response.get("Responses")
+                if (
+                    not isinstance(responses, dict)
+                    or str(table_name) not in responses
+                    or any(name != str(table_name) for name in responses)
+                ):
+                    raise RuntimeError("status batch read returned an unknown table")
+                returned_items = responses[str(table_name)]
+                if not isinstance(returned_items, list):
+                    raise RuntimeError("status batch read returned non-list items")
+                returned_tokens = set()
+                for item in returned_items:
+                    if not isinstance(item, dict):
+                        raise RuntimeError("status batch read returned a non-object item")
+                    token = (str(item.get("PK") or ""), str(item.get("SK") or ""))
+                    if token not in pending_tokens or token in returned_tokens:
+                        raise RuntimeError("status batch read returned an invalid key")
+                    returned_tokens.add(token)
+                    local_results[token] = copy.deepcopy(item)
+
+                unprocessed = response.get("UnprocessedKeys", {})
+                if not isinstance(unprocessed, dict) or any(
+                    name != str(table_name) for name in unprocessed
+                ):
+                    raise RuntimeError("status batch read returned unknown unprocessed keys")
+                if str(table_name) in unprocessed:
+                    table_unprocessed = unprocessed[str(table_name)]
+                    if (
+                        not isinstance(table_unprocessed, dict)
+                        or "Keys" not in table_unprocessed
+                        or not isinstance(table_unprocessed["Keys"], list)
+                    ):
+                        raise RuntimeError("status batch read returned malformed unprocessed keys")
+                    next_pending_raw = table_unprocessed["Keys"]
+                else:
+                    next_pending_raw = []
+                next_pending: List[Dict[str, str]] = []
+                next_tokens = set()
+                for raw_key in next_pending_raw:
+                    if not isinstance(raw_key, dict):
+                        raise RuntimeError("status batch read returned malformed key")
+                    key = {
+                        "PK": str(raw_key.get("PK") or ""),
+                        "SK": str(raw_key.get("SK") or ""),
+                    }
+                    token = (key["PK"], key["SK"])
+                    if (
+                        token not in pending_tokens
+                        or token in returned_tokens
+                        or token in next_tokens
+                    ):
+                        raise RuntimeError("status batch read returned an invalid unprocessed key")
+                    next_tokens.add(token)
+                    next_pending.append(key)
+                for token in pending_tokens - returned_tokens - next_tokens:
+                    local_results[token] = _STATUS_MISSING_ITEM
+                if not next_pending:
+                    break
+                if attempt + 1 >= _STATUS_BATCH_MAX_ATTEMPTS:
+                    raise RuntimeError("status batch read left unprocessed keys")
+                time.sleep(_STATUS_BATCH_RETRY_DELAY_SECONDS * (2 ** attempt))
+                pending = next_pending
+    except Exception:
+        return False
+
+    if set(local_results) != {
+        (key["PK"], key["SK"])
+        for key in requested
+    }:
+        return False
+    for key in requested:
+        token = (key["PK"], key["SK"])
+        cached = local_results[token]
+        item_cache[_status_item_cache_key(table, key)] = (
+            _STATUS_MISSING_ITEM
+            if cached is _STATUS_MISSING_ITEM
+            else copy.deepcopy(cached)
+        )
+    return True
+
+
+def _status_manifest_primary_keys(
+    module: Any,
+    slate: str,
+    manifest: Iterable[Dict[str, Any]],
+) -> List[Dict[str, str]]:
+    keys: List[Dict[str, str]] = []
+    for game in manifest:
+        keys.extend([
+            _stage_key(module, slate, game),
+            _lock_outcome_key(module, slate, game),
+            *[
+                _readiness_key(module, slate, game, minutes)
+                for minutes in READINESS_CHECKPOINT_MINUTES
+            ],
+            *[
+                _release_key(module, slate, game, checkpoint)
+                for checkpoint in (
+                    "T_MINUS_30",
+                    "T_MINUS_15",
+                    "EVENT_GAME1_PENDING",
+                    "EVENT_GAME1_FINAL",
+                )
+            ],
+        ])
+    return keys
+
+
+def _status_authority_reference_keys(
+    table: Any,
+    primary_keys: Iterable[Dict[str, str]],
+    slate: str,
+) -> List[Dict[str, str]]:
+    keys: List[Dict[str, str]] = []
+
+    def add(pk: Any, sk: Any) -> None:
+        if str(pk or "") and str(sk or ""):
+            keys.append({"PK": str(pk), "SK": str(sk)})
+
+    for key in primary_keys:
+        cached, item = _status_cached_item(table, key)
+        if not cached or not isinstance(item, dict):
+            continue
+        authority = item.get("provider_manifest_authority") or {}
+        if isinstance(authority, dict):
+            add(authority.get("pk"), authority.get("sk"))
+            for nested_name in ("membershipAuthority", "scheduleRevisionAuthority"):
+                nested = authority.get(nested_name) or {}
+                if isinstance(nested, dict):
+                    add(nested.get("pk"), nested.get("sk"))
+        proof = item.get("candidate_proof") or {}
+        if isinstance(proof, dict):
+            add(proof.get("pk"), proof.get("sk"))
+            source_pull_id = str(proof.get("predictionSourcePullId") or "")
+            source_pull_at = str(proof.get("predictionSourcePullAtUtc") or "")
+            add(
+                proof.get("predictionSourcePullStoragePk")
+                or (f"PULLS#mlb#{slate}" if source_pull_id and source_pull_at else None),
+                proof.get("predictionSourcePullStorageSk")
+                or (
+                    f"PULL#{source_pull_at}#{source_pull_id}"
+                    if source_pull_id and source_pull_at
+                    else None
+                ),
+            )
+        source_window = item.get("source_window") or {}
+        entries = (
+            source_window.get("pulls") or []
+            if isinstance(source_window, dict)
+            else []
+        )
+        if isinstance(entries, list):
+            for entry in entries:
+                if isinstance(entry, dict):
+                    add(
+                        entry.get("pullStoragePk") or f"PULLS#mlb#{slate}",
+                        entry.get("pullStorageSk")
+                        or (
+                            f"PULL#{entry.get('pulledAtUtc')}#{entry.get('pullId')}"
+                            if entry.get("pulledAtUtc") and entry.get("pullId")
+                            else None
+                        ),
+                    )
+        if item.get("record_type") == STAGE_RECORD_TYPE:
+            row = ((item.get("data") or {}).get("row") or {})
+            identity = str(
+                row.get("gameIdentity")
+                or row.get("gameId")
+                or row.get("game_id")
+                or ""
+            )
+            commence = str(
+                row.get("commenceTime")
+                or row.get("commence_time")
+                or ""
+            )
+            add(
+                f"GAME_WINNERS#mlb#{slate}",
+                f"LOCKED#GAME#{commence}#{identity}" if identity and commence else None,
+            )
+    return keys
+
+
+def _prime_status_manifest_items(
+    owner: Any,
+    table: Any,
+    slate: str,
+    manifest: Iterable[Dict[str, Any]],
+    *,
+    lock_minutes: int = REQUIRED_LOCK_MINUTES,
+    resource_owner: Any = None,
+) -> Dict[str, bool]:
+    """Prime only the exact immutable rows consumed by a public read."""
+    resource = _status_batch_resource(table, owner, resource_owner)
+    key_owner = resource_owner or owner
+    manifest_rows = list(manifest)
+    try:
+        if not callable(getattr(key_owner, "_lock_pk", None)):
+            class PublicReadKeyOwner:
+                LOCK_MINUTES = int(lock_minutes)
+
+                @staticmethod
+                def _lock_pk(value: str) -> str:
+                    return f"LOCKED_PICKS#mlb#{value}"
+
+            key_owner = PublicReadKeyOwner()
+        if int(getattr(key_owner, "LOCK_MINUTES")) != int(lock_minutes):
+            raise ValueError("status key owner lock policy mismatch")
+        primary_keys = _status_manifest_primary_keys(
+            key_owner,
+            slate,
+            manifest_rows,
+        )
+    except Exception:
+        return {"primary": False, "authority": False}
+    primary_ok = _prime_status_exact_items(table, resource, primary_keys)
+    authority_keys = (
+        _status_authority_reference_keys(table, primary_keys, slate)
+        if primary_ok
+        else []
+    )
+    authority_ok = bool(
+        primary_ok
+        and _prime_status_exact_items(table, resource, authority_keys)
+    )
+    return {"primary": primary_ok, "authority": authority_ok}
 
 
 class LockExecutionLeaseCorrupt(RuntimeError):
@@ -1961,6 +2298,9 @@ def _consistent_item_result(
     table: Any,
     key: Dict[str, str],
 ) -> Tuple[Optional[Dict[str, Any]], Optional[Exception]]:
+    cached, cached_item = _status_cached_item(table, key)
+    if cached:
+        return cached_item, None
     request_cache = _STATUS_READ_CACHE.get()
     item_cache = (
         request_cache.get("consistentItems")
@@ -1972,12 +2312,6 @@ def _consistent_item_result(
         str(key.get("PK") or ""),
         str(key.get("SK") or ""),
     )
-    if isinstance(item_cache, dict) and cache_key in item_cache:
-        cached = item_cache[cache_key]
-        return (
-            None if cached is _STATUS_MISSING_ITEM else copy.deepcopy(cached),
-            None,
-        )
     try:
         item = table.get_item(Key=key, ConsistentRead=True).get("Item")
     except Exception as exc:
@@ -1997,257 +2331,6 @@ def _consistent_item_result(
 
 def _consistent_item(table: Any, key: Dict[str, str]) -> Optional[Dict[str, Any]]:
     return _consistent_item_result(table, key)[0]
-
-
-def _prime_consistent_items(
-    table: Any,
-    keys: Iterable[Dict[str, str]],
-) -> None:
-    """Batch-prime immutable status reads while preserving fail-closed fallback."""
-    request_cache = _STATUS_READ_CACHE.get()
-    item_cache = (
-        request_cache.get("consistentItems")
-        if isinstance(request_cache, dict)
-        else None
-    )
-    table_name = getattr(table, "name", None) or getattr(table, "table_name", None)
-    client = getattr(getattr(table, "meta", None), "client", None)
-    batch_get = getattr(client, "batch_get_item", None)
-    if not isinstance(item_cache, dict) or not table_name or not callable(batch_get):
-        return
-
-    table_identity = _table_cache_identity(table)
-    pending: List[Dict[str, str]] = []
-    seen = set()
-    for raw_key in keys:
-        key = {
-            "PK": str((raw_key or {}).get("PK") or ""),
-            "SK": str((raw_key or {}).get("SK") or ""),
-        }
-        identity = (key["PK"], key["SK"])
-        cache_key = (table_identity, *identity)
-        if not all(identity) or identity in seen or cache_key in item_cache:
-            continue
-        seen.add(identity)
-        pending.append(key)
-    if not pending:
-        return
-
-    serializer = TypeSerializer()
-    deserializer = TypeDeserializer()
-    for offset in range(0, len(pending), 100):
-        remaining = pending[offset : offset + 100]
-        for _attempt in range(3):
-            if not remaining:
-                break
-            submitted = {(key["PK"], key["SK"]) for key in remaining}
-            wire_keys = [
-                {name: serializer.serialize(value) for name, value in key.items()}
-                for key in remaining
-            ]
-            try:
-                response = batch_get(
-                    RequestItems={
-                        str(table_name): {
-                            "Keys": wire_keys,
-                            "ConsistentRead": True,
-                        }
-                    }
-                )
-            except Exception:
-                # Individual strongly consistent reads remain the correctness
-                # fallback. Never turn a transport failure into cached absence.
-                break
-
-            returned = {}
-            responses = response.get("Responses") if isinstance(response, dict) else None
-            raw_items = (
-                responses.get(str(table_name), [])
-                if isinstance(responses, dict)
-                else None
-            )
-            unprocessed_root = (
-                response.get("UnprocessedKeys") or {}
-                if isinstance(response, dict)
-                else None
-            )
-            raw_unprocessed_entry = (
-                unprocessed_root.get(str(table_name), {})
-                if isinstance(unprocessed_root, dict)
-                else None
-            )
-            raw_unprocessed = (
-                raw_unprocessed_entry.get("Keys", [])
-                if isinstance(raw_unprocessed_entry, dict)
-                else None
-            )
-            if not isinstance(raw_items, list) or not isinstance(raw_unprocessed, list):
-                break
-
-            malformed = False
-            for raw_item in raw_items:
-                try:
-                    item = {
-                        name: deserializer.deserialize(value)
-                        for name, value in raw_item.items()
-                    }
-                except Exception:
-                    malformed = True
-                    break
-                identity = (str(item.get("PK") or ""), str(item.get("SK") or ""))
-                if (
-                    not all(identity)
-                    or identity not in submitted
-                    or identity in returned
-                ):
-                    malformed = True
-                    break
-                returned[identity] = item
-
-            unprocessed = []
-            unprocessed_identities = set()
-            for raw_key in raw_unprocessed if not malformed else []:
-                try:
-                    key = {
-                        name: deserializer.deserialize(value)
-                        for name, value in raw_key.items()
-                    }
-                except Exception:
-                    malformed = True
-                    break
-                identity = (str(key.get("PK") or ""), str(key.get("SK") or ""))
-                if (
-                    not all(identity)
-                    or identity not in submitted
-                    or identity in unprocessed_identities
-                    or identity in returned
-                ):
-                    malformed = True
-                    break
-                unprocessed_identities.add(identity)
-                unprocessed.append({"PK": identity[0], "SK": identity[1]})
-            if malformed:
-                # An ambiguous response cannot prove either presence or
-                # absence. Leave this whole batch uncached for strict reads.
-                break
-
-            processed = submitted - unprocessed_identities
-            for identity in processed:
-                cache_key = (table_identity, *identity)
-                returned_item = returned.get(identity)
-                item_cache[cache_key] = (
-                    copy.deepcopy(returned_item)
-                    if isinstance(returned_item, dict)
-                    else _STATUS_MISSING_ITEM
-                )
-            remaining = unprocessed
-            if remaining and _attempt < 2:
-                time.sleep(0.05 * (2 ** _attempt))
-
-
-def _canonical_locked_key(row: Dict[str, Any]) -> Dict[str, str]:
-    identity = str(
-        row.get("gameIdentity")
-        or row.get("gameId")
-        or row.get("game_id")
-        or "unknown"
-    )
-    commence = str(row.get("commenceTime") or row.get("commence_time") or "unknown")
-    slate = str(row.get("slate_date") or row.get("slateDateEt") or "unknown")
-    return {
-        "PK": f"GAME_WINNERS#mlb#{slate}",
-        "SK": f"LOCKED#GAME#{commence}#{identity}",
-    }
-
-
-def _authority_pointer_keys(item: Dict[str, Any]) -> List[Dict[str, str]]:
-    keys: List[Dict[str, str]] = []
-    slate = str(item.get("slate_date") or "")
-
-    def add(pointer: Any) -> None:
-        if not isinstance(pointer, dict):
-            return
-        pk = str(pointer.get("pk") or "")
-        sk = str(pointer.get("sk") or "")
-        if pk and sk:
-            keys.append({"PK": pk, "SK": sk})
-
-    authority = item.get("provider_manifest_authority") or {}
-    add(authority)
-    add(authority.get("membershipAuthority"))
-    add(authority.get("scheduleRevisionAuthority"))
-    candidate = item.get("candidate_proof") or {}
-    add(candidate)
-    source_pull_id = str(candidate.get("predictionSourcePullId") or "")
-    source_pull_at = str(candidate.get("predictionSourcePullAtUtc") or "")
-    source_pull_pk = str(candidate.get("predictionSourcePullStoragePk") or "")
-    source_pull_sk = str(candidate.get("predictionSourcePullStorageSk") or "")
-    if source_pull_id and source_pull_at and (source_pull_pk or slate):
-        keys.append({
-            "PK": source_pull_pk or f"PULLS#mlb#{slate}",
-            "SK": source_pull_sk or f"PULL#{source_pull_at}#{source_pull_id}",
-        })
-    for entry in (item.get("source_window") or {}).get("pulls") or []:
-        if not isinstance(entry, dict):
-            continue
-        pk = str(entry.get("pullStoragePk") or "")
-        sk = str(entry.get("pullStorageSk") or "")
-        pull_id = str(entry.get("pullId") or "")
-        pulled_at = str(entry.get("pulledAtUtc") or "")
-        if pull_id and pulled_at and (pk or slate):
-            keys.append({
-                "PK": pk or f"PULLS#mlb#{slate}",
-                "SK": sk or f"PULL#{pulled_at}#{pull_id}",
-            })
-    return keys
-
-
-def _prime_status_request_reads(
-    module: Any,
-    slate: str,
-    manifest: List[Dict[str, Any]],
-) -> None:
-    """Collapse a full 15-game immutable status snapshot into bounded batches."""
-    primary_keys: List[Dict[str, str]] = []
-    for game in manifest:
-        primary_keys.extend(
-            [
-                _stage_key(module, slate, game),
-                _lock_outcome_key(module, slate, game),
-                *[
-                    _readiness_key(module, slate, game, minutes)
-                    for minutes in READINESS_CHECKPOINT_MINUTES
-                ],
-                *[
-                    _release_key(module, slate, game, checkpoint)
-                    for checkpoint in (
-                        "T_MINUS_30",
-                        "T_MINUS_15",
-                        "EVENT_GAME1_PENDING",
-                        "EVENT_GAME1_FINAL",
-                    )
-                ],
-            ]
-        )
-    _prime_consistent_items(module.TABLE, primary_keys)
-
-    authority_keys: List[Dict[str, str]] = []
-    canonical_keys: List[Dict[str, str]] = []
-    for game in manifest:
-        stage = _consistent_item(module.TABLE, _stage_key(module, slate, game))
-        outcome = _consistent_item(
-            module.TABLE,
-            _lock_outcome_key(module, slate, game),
-        )
-        if isinstance(stage, dict):
-            authority_keys.extend(_authority_pointer_keys(stage))
-            row = copy.deepcopy((stage.get("data") or {}).get("row") or {})
-            if row:
-                canonical_keys.append(_canonical_locked_key(row))
-        if isinstance(outcome, dict):
-            authority_keys.extend(_authority_pointer_keys(outcome))
-    _prime_consistent_items(module.TABLE, authority_keys)
-    _prime_consistent_items(module.history.PULLS, canonical_keys)
 
 
 def _provider_manifest_authority_errors(table: Any, item: Dict[str, Any]) -> List[str]:
@@ -5377,9 +5460,21 @@ def apply(module: Any) -> Any:
         }
         if module.TABLE is None:
             return {**base, "ok": False, "error": "SNAPSHOTS_TABLE not configured", "locked": False, "lock": None}
-        raw_existing = module._get_lock_item(slate)
+        daily_key = {"PK": module._lock_pk(slate), "SK": module._lock_sk()}
+        daily_cached, daily_item = _status_cached_item(module.TABLE, daily_key)
+        raw_existing = daily_item if daily_cached else module._get_lock_item(slate)
         pulls = sorted(module._pulls_for_date(slate), key=lambda pull: _pull_at(module, pull) or datetime.min.replace(tzinfo=timezone.utc))
         manifest = module._latest_games_for_date(slate, pulls)
+        # Pull discovery determines the durable manifest and therefore the
+        # exact immutable keys this read can consume. Batch only those keys;
+        # append-only history partitions remain bounded prefix queries.
+        _prime_status_manifest_items(
+            module,
+            module.TABLE,
+            slate,
+            manifest,
+            lock_minutes=module.LOCK_MINUTES,
+        )
         roster_observability: Dict[str, Any] = {
             "verifiedFullSlateManifestVersion": None,
             "rosterAuthorityMode": "INJECTED_ADAPTER_OR_LEGACY",
@@ -5419,7 +5514,6 @@ def apply(module: Any) -> Any:
             except Exception as exc:
                 roster_observability["rosterAuthorityReadError"] = f"{type(exc).__name__}:{exc}"
         now = module._now_utc().astimezone(timezone.utc)
-        _prime_status_request_reads(module, slate, manifest)
         progress = _progress(module, slate, pulls, manifest, now, ensure_canonical=False) if manifest else {"games": [], "stagedCount": 0, "canonicalCount": 0, "lockedPredictionCount": 0, "lockOutcomeCount": 0, "noPredictionDataCount": 0, "playableCount": 0, "blockedCount": 0, "trainingEligibleCount": 0, "playabilityValidationErrorCount": 0, "playabilityLifecycleErrorCount": 0, "pendingCount": 0, "stabilizingCount": 0, "dueMissingCount": 0, "missedCount": 0}
         daily_authority_errors = (
             _daily_authority_errors(module, slate, raw_existing, manifest, progress)
@@ -5517,8 +5611,9 @@ def apply(module: Any) -> Any:
         }
 
     def status_payload(slate_date: Optional[str] = None) -> Dict[str, Any]:
+        slate = slate_date or module._today_et()
         with _status_read_scope():
-            return _status_payload_uncached(slate_date)
+            return _status_payload_uncached(slate)
 
     def _run_lock_once(
         slate_date: Optional[str] = None,
