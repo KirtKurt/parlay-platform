@@ -1,0 +1,219 @@
+name: Replay MLB lock status for July 21
+
+on:
+  push:
+    branches:
+      - agent/report-mlb-deploy-246daecb
+    paths:
+      - .github/workflows/replay_mlb_lock_status_july21.yml
+
+permissions:
+  contents: write
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout reporting branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/report-mlb-deploy-246daecb
+          fetch-depth: 0
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Replay exact July 21 status request
+        env:
+          AWS_MAX_ATTEMPTS: "1"
+          FUNCTION_NAME: parlay-platform-dev-MLBDailyPickLockFunction-BQIhMFw1k5YP
+          TARGET_SHA: 246daecb3960518fb59bb69c6891989d50fb7308
+        shell: bash
+        run: |
+          set -u -o pipefail
+          region="${{ secrets.AWS_REGION }}"
+          api_url=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region "$region" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue | [0]" \
+            --output text)
+          cat >/tmp/event.json <<'JSON'
+          {
+            "resource": "/v1/mlb/locks/status",
+            "path": "/v1/mlb/locks/status",
+            "httpMethod": "GET",
+            "headers": {"accept": "application/json", "user-agent": "inqsi-lock-status-july21-replay/1.0"},
+            "multiValueHeaders": {},
+            "queryStringParameters": {"date": "2026-07-21"},
+            "multiValueQueryStringParameters": {"date": ["2026-07-21"]},
+            "pathParameters": null,
+            "stageVariables": null,
+            "requestContext": {
+              "resourcePath": "/v1/mlb/locks/status",
+              "httpMethod": "GET",
+              "path": "/Prod/v1/mlb/locks/status",
+              "stage": "Prod",
+              "identity": {"sourceIp": "127.0.0.1", "userAgent": "inqsi-lock-status-july21-replay/1.0"},
+              "requestId": "lock-status-july21-replay"
+            },
+            "body": null,
+            "isBase64Encoded": false
+          }
+          JSON
+
+          started_epoch_ms=$(date +%s%3N)
+          started_epoch_s=$(date +%s)
+          set +e
+          aws --cli-connect-timeout 10 --cli-read-timeout 360 lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "$region" \
+            --payload fileb:///tmp/event.json \
+            --cli-binary-format raw-in-base64-out \
+            --log-type Tail \
+            /tmp/direct_response.json \
+            >/tmp/direct_meta.json 2>/tmp/direct_stderr.txt
+          invoke_exit=$?
+          set -e
+          ended_epoch_ms=$(date +%s%3N)
+          elapsed_ms=$((ended_epoch_ms - started_epoch_ms))
+
+          sleep 5
+          log_start_ms=$(((started_epoch_s - 30) * 1000))
+          aws logs filter-log-events \
+            --log-group-name "/aws/lambda/$FUNCTION_NAME" \
+            --region "$region" \
+            --start-time "$log_start_ms" \
+            --limit 10000 \
+            --output json >/tmp/log_events.json
+
+          API_URL="$api_url" ELAPSED_MS="$elapsed_ms" INVOKE_EXIT="$invoke_exit" TARGET_SHA="$TARGET_SHA" python - <<'PY'
+          import base64
+          import json
+          import os
+          import re
+          import urllib.error
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          def load_json(path, default):
+              try:
+                  return json.loads(Path(path).read_text(encoding='utf-8'))
+              except Exception:
+                  return default
+
+          meta = load_json('/tmp/direct_meta.json', {})
+          response = load_json('/tmp/direct_response.json', {})
+          stderr = Path('/tmp/direct_stderr.txt').read_text(encoding='utf-8', errors='replace')
+          log_tail = ''
+          try:
+              log_tail = base64.b64decode(meta.get('LogResult') or '').decode('utf-8', errors='replace')
+          except Exception:
+              pass
+          request_ids = re.findall(r'(?:START|END|REPORT) RequestId: ([0-9a-f-]+)', log_tail)
+          request_id = request_ids[0] if request_ids else None
+
+          raw_body = response.get('body')
+          try:
+              body = json.loads(raw_body) if isinstance(raw_body, str) else raw_body
+          except json.JSONDecodeError:
+              body = raw_body
+
+          events = load_json('/tmp/log_events.json', {}).get('events', [])
+          matching_events = []
+          for event in events:
+              message = str(event.get('message') or '').strip()
+              if request_id and request_id not in message:
+                  continue
+              matching_events.append({
+                  'timestamp': event.get('timestamp'),
+                  'logStreamName': event.get('logStreamName'),
+                  'message': message[-12000:],
+              })
+
+          summary_fields = (
+              'ok', 'sport', 'slateDateEt', 'gameCount', 'pullCount',
+              'lockedPredictionCount', 'lockedStatusCount', 'noPredictionDataCount',
+              'operationalDefect', 'officialScheduleBacked', 'error',
+          )
+
+          http_url = os.environ['API_URL'].rstrip('/') + '/v1/mlb/locks/status?' + urllib.parse.urlencode({'date': '2026-07-21'})
+          http_status = None
+          http_error = None
+          http_body = None
+          http_started = __import__('time').monotonic()
+          try:
+              request = urllib.request.Request(
+                  http_url,
+                  headers={'accept': 'application/json', 'user-agent': 'inqsi-lock-status-july21-http-replay/1.0'},
+              )
+              with urllib.request.urlopen(request, timeout=40) as http_response:
+                  http_status = int(http_response.getcode())
+                  raw_http = http_response.read().decode('utf-8', errors='replace')
+          except urllib.error.HTTPError as exc:
+              http_status = int(exc.code)
+              raw_http = exc.read().decode('utf-8', errors='replace')
+              http_error = f'HTTP {exc.code}'
+          except Exception as exc:
+              raw_http = ''
+              http_error = f'{type(exc).__name__}:{exc}'
+          http_elapsed_ms = round((__import__('time').monotonic() - http_started) * 1000)
+          try:
+              http_body = json.loads(raw_http) if raw_http else None
+          except json.JSONDecodeError:
+              http_body = raw_http[:20000]
+
+          report = {
+              'targetSha': os.environ['TARGET_SHA'],
+              'slateDateEt': '2026-07-21',
+              'directInvoke': {
+                  'cliExitCode': int(os.environ['INVOKE_EXIT']),
+                  'elapsedMs': int(os.environ['ELAPSED_MS']),
+                  'functionError': meta.get('FunctionError'),
+                  'statusCode': response.get('statusCode'),
+                  'requestId': request_id,
+                  'stderr': stderr[-8000:],
+                  'logTail': log_tail[-12000:],
+                  'payloadSummary': {
+                      key: body.get(key)
+                      for key in summary_fields
+                      if isinstance(body, dict) and key in body
+                  },
+              },
+              'cloudWatchEventsForRequest': matching_events[-100:],
+              'httpReplay': {
+                  'elapsedMs': http_elapsed_ms,
+                  'statusCode': http_status,
+                  'error': http_error,
+                  'payloadSummary': {
+                      key: http_body.get(key)
+                      for key in summary_fields
+                      if isinstance(http_body, dict) and key in http_body
+                  },
+              },
+          }
+          Path('live_lock_status_july21_replay.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Publish sanitized replay and remove workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp live_lock_status_july21_replay.json /tmp/live_lock_status_july21_replay.json
+          git fetch origin agent/report-mlb-deploy-246daecb
+          git checkout -B agent/report-mlb-deploy-246daecb origin/agent/report-mlb-deploy-246daecb
+          cp /tmp/live_lock_status_july21_replay.json live_lock_status_july21_replay.json
+          rm .github/workflows/replay_mlb_lock_status_july21.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Record July 21 MLB lock-status replay"
+          git push origin HEAD:agent/report-mlb-deploy-246daecb
