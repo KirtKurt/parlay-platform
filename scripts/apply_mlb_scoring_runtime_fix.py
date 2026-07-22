@@ -3,7 +3,8 @@
 
 The migration is idempotent. It updates the canonical SAM template and moves
 persistent winner generation ahead of optional diagnostics in the HOT pull
-writer. It never calls AWS.
+writer. It never calls AWS. The branch migration workflow executes this file
+and commits only the resulting canonical source changes.
 """
 
 from __future__ import annotations
