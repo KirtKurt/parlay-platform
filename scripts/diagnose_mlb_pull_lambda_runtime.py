@@ -2,9 +2,9 @@
 """Inspect the MLB pull Lambda runtime and recent logs without changing AWS.
 
 The report is deliberately narrow and credential-safe. It records function
-configuration, Lambda REPORT durations, timeout markers, and classified scorer
-failures. Raw environment values and arbitrary application payloads are never
-written.
+configuration, Lambda REPORT durations, timeout markers, and selected scoring
+failure fields. Raw environment values and arbitrary application payloads are
+never written.
 """
 
 from __future__ import annotations
@@ -20,7 +20,7 @@ from typing import Any, Dict, List, Optional, Sequence
 import boto3
 
 PROOF_TYPE = "MLB_PULL_LAMBDA_RUNTIME_READ_ONLY_DIAGNOSTIC"
-VERSION = "MLB-PULL-LAMBDA-RUNTIME-DIAGNOSTIC-v1"
+VERSION = "MLB-PULL-LAMBDA-RUNTIME-DIAGNOSTIC-v2-timeout-and-storage-details"
 REPORT_RE = re.compile(
     r"REPORT RequestId:\s*(?P<request>[^\s]+).*?"
     r"Duration:\s*(?P<duration>[0-9.]+)\s*ms.*?"
@@ -28,8 +28,11 @@ REPORT_RE = re.compile(
     r"Memory Size:\s*(?P<memory>[0-9]+)\s*MB.*?"
     r"Max Memory Used:\s*(?P<max_memory>[0-9]+)\s*MB"
 )
+REPORT_STATUS_RE = re.compile(r"\bStatus:\s*([A-Za-z_]+)", re.I)
+REPORT_ERROR_TYPE_RE = re.compile(r"\bError Type:\s*([^\s]+)", re.I)
 TIMEOUT_RE = re.compile(r"Task timed out after\s*([0-9.]+)\s*seconds", re.I)
 REQUEST_RE = re.compile(r"(?:RequestId:|requestId[:=])\s*([A-Za-z0-9-]+)", re.I)
+FAILURE_MARKER = "MLB_SCHEDULED_PULL_FAILED:"
 
 
 def _iso(ms: int) -> str:
@@ -60,7 +63,7 @@ def _query_events(logs: Any, log_group: str, start_ms: int, end_ms: int) -> List
 def _classifications(message: str) -> List[str]:
     classes = []
     checks = {
-        "SCHEDULED_PULL_FAILED": "MLB_SCHEDULED_PULL_FAILED",
+        "SCHEDULED_PULL_FAILED": FAILURE_MARKER,
         "SCHEDULED_RUNTIME_PREREQUISITE_FAILED": "MLB_SCHEDULED_PULL_PREREQUISITE_FAILED",
         "WINNER_ENGINE_UNAVAILABLE": "mlb_game_winner_engine_unavailable",
         "PRELOCK_STORAGE_INCOMPLETE": "prelock_storage_incomplete",
@@ -76,6 +79,59 @@ def _classifications(message: str) -> List[str]:
     if TIMEOUT_RE.search(message):
         classes.append("TASK_TIMEOUT")
     return classes
+
+
+def _safe_list(value: Any, limit: int = 100) -> List[str]:
+    if not isinstance(value, list):
+        return []
+    return [str(item)[:500] for item in value[:limit]]
+
+
+def _failure_payload(message: str) -> Optional[Dict[str, Any]]:
+    if FAILURE_MARKER not in message:
+        return None
+    raw = message.split(FAILURE_MARKER, 1)[1].strip()
+    try:
+        value, _end = json.JSONDecoder().raw_decode(raw)
+    except Exception:
+        return None
+    return value if isinstance(value, dict) else None
+
+
+def _failure_details(payload: Dict[str, Any]) -> Dict[str, Any]:
+    winner_rows = []
+    for result in payload.get("game_winner_predictions") or []:
+        if not isinstance(result, dict):
+            continue
+        winner_rows.append({
+            "gameDateEt": result.get("game_date_et"),
+            "ok": result.get("ok"),
+            "gameCount": result.get("gameCount"),
+            "predictionCount": result.get("count"),
+            "allGamesPredicted": result.get("allGamesPredicted"),
+            "operationalDefect": result.get("operationalDefect"),
+            "preLockStorageCandidateCount": result.get("preLockStorageCandidateCount"),
+            "preLockStoredCount": result.get("preLockStoredCount"),
+            "preLockStorageComplete": result.get("preLockStorageComplete"),
+            "preLockStorageErrors": _safe_list(result.get("preLockStorageErrors")),
+            "canonicalLockedStorageCandidateCount": result.get("canonicalLockedStorageCandidateCount"),
+            "canonicalLockedStoredCount": result.get("canonicalLockedStoredCount"),
+            "canonicalLockedStorageComplete": result.get("canonicalLockedStorageComplete"),
+            "canonicalLockedStorageSuppressedUnauthorizedCount": result.get("canonicalLockedStorageSuppressedUnauthorizedCount"),
+            "error": str(result.get("error"))[:500] if result.get("error") else None,
+        })
+    runtime = payload.get("mlRuntimeInstallation") or {}
+    return {
+        "providerGameCount": payload.get("count"),
+        "providerScheduleManifestComplete": payload.get("providerScheduleManifestComplete"),
+        "candidatePersistenceFailures": _safe_list(payload.get("candidatePersistenceFailures")),
+        "winnerResults": winner_rows,
+        "runtimeInstall": {
+            "ok": runtime.get("ok") if isinstance(runtime, dict) else None,
+            "version": runtime.get("version") if isinstance(runtime, dict) else None,
+            "missingRequiredSteps": _safe_list(runtime.get("missingRequiredSteps")) if isinstance(runtime, dict) else [],
+        },
+    }
 
 
 def build_report(
@@ -109,6 +165,7 @@ def build_report(
     reports: List[Dict[str, Any]] = []
     timeouts: List[Dict[str, Any]] = []
     classified_errors: List[Dict[str, Any]] = []
+    scheduled_failures: List[Dict[str, Any]] = []
     start_count = 0
     end_count = 0
     for event in events:
@@ -120,6 +177,8 @@ def build_report(
             end_count += 1
         report_match = REPORT_RE.search(message)
         if report_match:
+            status_match = REPORT_STATUS_RE.search(message)
+            error_type_match = REPORT_ERROR_TYPE_RE.search(message)
             row = {
                 "timestampUtc": _iso(timestamp),
                 "requestId": report_match.group("request"),
@@ -127,8 +186,17 @@ def build_report(
                 "billedDurationMs": int(report_match.group("billed")),
                 "memorySizeMb": int(report_match.group("memory")),
                 "maxMemoryUsedMb": int(report_match.group("max_memory")),
+                "status": status_match.group(1).lower() if status_match else None,
+                "errorType": error_type_match.group(1) if error_type_match else None,
             }
             reports.append(row)
+            if row["status"] == "timeout":
+                timeouts.append({
+                    "timestampUtc": row["timestampUtc"],
+                    "requestId": row["requestId"],
+                    "timeoutSecondsObserved": timeout_seconds,
+                    "source": "lambda_report_status",
+                })
         timeout_match = TIMEOUT_RE.search(message)
         if timeout_match:
             request_match = REQUEST_RE.search(message)
@@ -136,9 +204,17 @@ def build_report(
                 "timestampUtc": _iso(timestamp),
                 "requestId": request_match.group(1) if request_match else None,
                 "timeoutSecondsObserved": float(timeout_match.group(1)),
+                "source": "task_timeout_log_line",
             })
-        classes = _classifications(message)
-        classes = [value for value in classes if value != "TASK_TIMEOUT"]
+        payload = _failure_payload(message)
+        if payload is not None:
+            request_match = REQUEST_RE.search(message)
+            scheduled_failures.append({
+                "timestampUtc": _iso(timestamp),
+                "requestId": request_match.group(1) if request_match else None,
+                **_failure_details(payload),
+            })
+        classes = [value for value in _classifications(message) if value != "TASK_TIMEOUT"]
         if classes:
             request_match = REQUEST_RE.search(message)
             classified_errors.append({
@@ -150,14 +226,21 @@ def build_report(
     reports.sort(key=lambda row: row["timestampUtc"])
     timeouts.sort(key=lambda row: row["timestampUtc"])
     classified_errors.sort(key=lambda row: row["timestampUtc"])
+    scheduled_failures.sort(key=lambda row: row["timestampUtc"])
     max_duration_ms = max((row["durationMs"] for row in reports), default=None)
     near_timeout_count = sum(
         1
         for row in reports
         if timeout_seconds and row["durationMs"] >= timeout_seconds * 1000 * 0.90
     )
-    if timeouts:
-        diagnosis = "CONFIRMED_TASK_TIMEOUTS_IN_LOG_WINDOW"
+    hard_ceiling_count = sum(
+        1
+        for row in reports
+        if timeout_seconds and row["durationMs"] >= timeout_seconds * 1000 - 1.0
+    )
+    timeout_status_count = sum(1 for row in reports if row.get("status") == "timeout")
+    if timeouts or hard_ceiling_count:
+        diagnosis = "CONFIRMED_TIMEOUT_CEILING_REACHED"
     elif near_timeout_count:
         diagnosis = "NEAR_TIMEOUT_RUNTIME_PRESSURE"
     elif classified_errors:
@@ -201,8 +284,11 @@ def build_report(
             "endCount": end_count,
             "reportCount": len(reports),
             "timeoutCount": len(timeouts),
+            "timeoutStatusCount": timeout_status_count,
             "nearTimeoutCount": near_timeout_count,
+            "hardCeilingCount": hard_ceiling_count,
             "classifiedErrorCount": len(classified_errors),
+            "scheduledFailurePayloadCount": len(scheduled_failures),
             "maxDurationMs": max_duration_ms,
             "configuredTimeoutMs": timeout_seconds * 1000,
             "diagnosis": diagnosis,
@@ -210,6 +296,7 @@ def build_report(
         "recentReports": reports[-30:],
         "timeouts": timeouts[-30:],
         "classifiedErrors": classified_errors[-50:],
+        "scheduledFailureDetails": scheduled_failures[-20:],
         "secretExposed": False,
     }
 
@@ -247,6 +334,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         "ok": report.get("ok"),
         "functionName": (report.get("stack") or {}).get("functionName"),
         "summary": report.get("summary"),
+        "latestScheduledFailure": (report.get("scheduledFailureDetails") or [None])[-1],
         "output": str(path),
     }, indent=2, default=str))
     return 0
