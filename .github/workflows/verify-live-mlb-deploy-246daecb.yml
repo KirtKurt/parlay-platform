@@ -1,0 +1,138 @@
+name: Verify live MLB deployment 246daecb
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/verify-live-mlb-deploy-246daecb.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - name: Checkout diagnostic branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Prepare exact read-only verifier
+        run: |
+          set -euo pipefail
+          git fetch origin agent/verify-mlb-deploy-159222cd
+          git show origin/agent/verify-mlb-deploy-159222cd:scripts/verify_live_mlb_deploy_159222cd.py \
+            > /tmp/verify_live_mlb_deploy_246daecb.py
+          git show origin/agent/verify-mlb-deploy-159222cd:scripts/run_live_mlb_deploy_verifier_159222cd.py \
+            > /tmp/run_live_mlb_deploy_verifier_246daecb.py
+          sed -i \
+            's/159222cd145ae0ba727970775abda22f956fb97c/246daecb3960518fb59bb69c6891989d50fb7308/g; s/159222cd/246daecb/g' \
+            /tmp/verify_live_mlb_deploy_246daecb.py
+          sed -i \
+            's/verify_live_mlb_deploy_159222cd/verify_live_mlb_deploy_246daecb/g' \
+            /tmp/run_live_mlb_deploy_verifier_246daecb.py
+
+      - name: Collect exact deployment, identity, and live-read evidence
+        id: verify
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PYTHONPATH: /tmp
+          SUMMARY_PATH: live_mlb_deploy_246daecb.json
+        run: python /tmp/run_live_mlb_deploy_verifier_246daecb.py
+
+      - name: Drain and independently probe after failed deployment
+        if: steps.verify.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          sleep 330
+          python - <<'PY'
+          from __future__ import annotations
+          import json
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          base = 'https://7nz8g8unyd.execute-api.us-east-1.amazonaws.com/Prod'
+          output = {
+              'targetGitSha': '246daecb3960518fb59bb69c6891989d50fb7308',
+              'readOnly': True,
+              'fullDrainBeforeProbeSeconds': 330,
+              'probes': [],
+          }
+          for path, label in (
+              ('/v1/health', 'health'),
+              ('/v1/mlb/locks/status', 'lockStatusAfterDrain'),
+              ('/v1/mlb/predictions', 'predictionsAfterDrain'),
+          ):
+              started = time.monotonic()
+              request = urllib.request.Request(
+                  base + path,
+                  headers={
+                      'accept': 'application/json',
+                      'user-agent': 'inqsi-exact-main-deploy-verifier/1.0',
+                  },
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      status = int(response.getcode())
+                      payload = json.loads(response.read().decode('utf-8'))
+                  result = {
+                      'label': label,
+                      'path': path,
+                      'httpStatus': status,
+                      'elapsedSeconds': round(time.monotonic() - started, 3),
+                      'ok': payload.get('ok') if isinstance(payload, dict) else None,
+                      'sport': payload.get('sport') if isinstance(payload, dict) else None,
+                      'slateDateEt': payload.get('slateDateEt') if isinstance(payload, dict) else None,
+                      'gameCount': payload.get('gameCount') if isinstance(payload, dict) else None,
+                      'lockedPredictionCount': payload.get('lockedPredictionCount') if isinstance(payload, dict) else None,
+                      'lockedStatusCount': payload.get('lockedStatusCount') if isinstance(payload, dict) else None,
+                      'officialPredictionCount': payload.get('officialPredictionCount') if isinstance(payload, dict) else None,
+                      'operationalDefect': payload.get('operationalDefect') if isinstance(payload, dict) else None,
+                  }
+              except urllib.error.HTTPError as exc:
+                  result = {
+                      'label': label,
+                      'path': path,
+                      'httpStatus': int(exc.code),
+                      'elapsedSeconds': round(time.monotonic() - started, 3),
+                      'error': exc.read().decode('utf-8', 'replace')[:1000],
+                  }
+              except Exception as exc:
+                  result = {
+                      'label': label,
+                      'path': path,
+                      'elapsedSeconds': round(time.monotonic() - started, 3),
+                      'errorType': type(exc).__name__,
+                      'error': str(exc),
+                  }
+              output['probes'].append(result)
+              print(json.dumps(result, sort_keys=True), flush=True)
+          Path('live_mlb_post_failure_probe_246daecb.json').write_text(
+              json.dumps(output, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Upload compact verification evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-mlb-deploy-verification-${{ github.run_id }}
+          path: |
+            live_mlb_deploy_246daecb.json
+            live_mlb_post_failure_probe_246daecb.json
+          if-no-files-found: warn
+          retention-days: 3
+
+      - name: Enforce exact deployment acceptance
+        if: always()
+        env:
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+        run: |
+          cat live_mlb_deploy_246daecb.json
+          test "$VERIFY_OUTCOME" = "success"
