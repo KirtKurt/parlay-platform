@@ -1,0 +1,117 @@
+name: MLB Scoring Guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'template.yaml'
+      - 'hello_world/mlb_manual_pull.py'
+      - 'scripts/verify_mlb_schedule_invariants.py'
+      - 'scripts/mlb_scoring_guard_status.py'
+      - 'tests/unit/test_mlb_scoring_guard_status.py'
+      - 'tests/unit/test_mlb_scoring_runtime_capacity.py'
+      - '.github/workflows/mlb-scoring-guard.yml'
+  push:
+    paths:
+      - 'template.yaml'
+      - 'hello_world/mlb_manual_pull.py'
+      - 'scripts/verify_mlb_schedule_invariants.py'
+      - 'scripts/mlb_scoring_guard_status.py'
+      - 'tests/unit/test_mlb_scoring_guard_status.py'
+      - 'tests/unit/test_mlb_scoring_runtime_capacity.py'
+      - '.github/workflows/mlb-scoring-guard.yml'
+  workflow_dispatch:
+  schedule:
+    - cron: '7/15 * * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-scoring-guard-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
+
+jobs:
+  scoring-proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install read-only guard runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+
+      - name: Verify scoring guard and runtime-capacity contracts
+        run: |
+          python -m pytest -q \
+            tests/unit/test_mlb_scoring_guard_status.py \
+            tests/unit/test_mlb_scoring_runtime_capacity.py
+          python scripts/verify_mlb_schedule_invariants.py
+          python -m py_compile scripts/mlb_scoring_guard_status.py
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Build live MLB scoring proof
+        env:
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          SLATE_DATE=$(TZ=America/New_York date +%F)
+          python scripts/mlb_scoring_guard_status.py \
+            --slate-date "$SLATE_DATE" \
+            --output runtime_reports/mlb_scoring_guard_status_latest.json
+
+      - name: Enforce scoring coverage after deployment
+        if: (github.event_name == 'schedule' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          proof = json.loads(
+              Path('runtime_reports/mlb_scoring_guard_status_latest.json').read_text(
+                  encoding='utf-8'
+              )
+          )
+          if proof.get('guardPassed') is not True:
+              raise SystemExit(
+                  'MLB scoring guard failed: '
+                  + json.dumps({
+                      'summary': proof.get('summary'),
+                      'blockers': proof.get('blockers'),
+                  }, sort_keys=True, default=str)
+              )
+          PY
+
+      - name: Upload scoring proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-scoring-guard-${{ github.run_id }}
+          path: runtime_reports/mlb_scoring_guard_status_latest.json
+          if-no-files-found: error
+
+      - name: Publish latest successful scheduled proof
+        if: success() && github.event_name == 'schedule' && github.ref == 'refs/heads/main'
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime_reports/mlb_scoring_guard_status_latest.json
+          if git diff --cached --quiet; then
+            echo 'No scoring proof change'
+          else
+            git commit -m 'Update MLB scoring guard read-only proof'
+            git pull --rebase --autostash origin main
+            git push origin HEAD:main
+          fi
