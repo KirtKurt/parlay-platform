@@ -119,19 +119,39 @@ jobs:
                   'ok': row.get('ok'),
                   'gameCount': row.get('gameCount'),
                   'predictionCount': row.get('count'),
+                  'allGamesPredicted': row.get('allGamesPredicted'),
+                  'displayStatusCoverageComplete': row.get('displayStatusCoverageComplete'),
+                  'lifecycleCoverageComplete': row.get('lifecycleCoverageComplete'),
+                  'preLockStorageLifecycleAware': row.get('preLockStorageLifecycleAware'),
                   'preLockStorageCandidateCount': row.get('preLockStorageCandidateCount'),
                   'preLockStoredCount': row.get('preLockStoredCount'),
                   'preLockStorageComplete': row.get('preLockStorageComplete'),
-                  'allGamesPredicted': row.get('allGamesPredicted'),
+                  'preLockStorageLifecycleSkippedCount': row.get('preLockStorageLifecycleSkippedCount'),
+                  'preLockStorageDispositionCount': row.get('preLockStorageDispositionCount'),
+                  'preLockStorageDispositionComplete': row.get('preLockStorageDispositionComplete'),
                   'operationalDefect': row.get('operationalDefect'),
               })
           if not winner_summary:
               raise SystemExit('Post-deploy pull returned no game-winner result')
           for row in winner_summary:
-              if row.get('ok') is not True or row.get('allGamesPredicted') is not True or row.get('preLockStorageComplete') is not True:
-                  raise SystemExit('Post-deploy winner persistence incomplete: ' + json.dumps(row, sort_keys=True, default=str))
-              if int(row.get('preLockStoredCount') or 0) != int(row.get('gameCount') or -1):
-                  raise SystemExit('Post-deploy stored/game count mismatch: ' + json.dumps(row, sort_keys=True, default=str))
+              game_count = int(row.get('gameCount') or 0)
+              candidate_count = int(row.get('preLockStorageCandidateCount') or 0)
+              stored_count = int(row.get('preLockStoredCount') or 0)
+              disposition_count = int(row.get('preLockStorageDispositionCount') or 0)
+              lifecycle_complete = (
+                  row.get('displayStatusCoverageComplete') is True
+                  and row.get('lifecycleCoverageComplete') is True
+              )
+              if row.get('ok') is not True:
+                  raise SystemExit('Post-deploy winner engine result failed: ' + json.dumps(row, sort_keys=True, default=str))
+              if row.get('preLockStorageLifecycleAware') is not True:
+                  raise SystemExit('Post-deploy lifecycle-aware storage contract is missing: ' + json.dumps(row, sort_keys=True, default=str))
+              if row.get('preLockStorageComplete') is not True or candidate_count != stored_count:
+                  raise SystemExit('Post-deploy open-candidate persistence incomplete: ' + json.dumps(row, sort_keys=True, default=str))
+              if row.get('preLockStorageDispositionComplete') is not True or disposition_count != game_count:
+                  raise SystemExit('Post-deploy storage disposition does not cover the slate: ' + json.dumps(row, sort_keys=True, default=str))
+              if row.get('allGamesPredicted') is not True and not lifecycle_complete:
+                  raise SystemExit('Post-deploy winner/lifecycle coverage incomplete: ' + json.dumps(row, sort_keys=True, default=str))
 
           Path('/tmp/mlb-post-deploy-invocation.json').write_text(json.dumps({
               'functionName': function_name,
@@ -146,7 +166,7 @@ jobs:
           }, indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
           PY
 
-      - name: Enforce persisted full-slate scoring coverage
+      - name: Build current full-slate scoring coverage proof
         env:
           SNAPSHOTS_TABLE: parlay_platform_snapshots
           SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
@@ -157,8 +177,7 @@ jobs:
           SLATE_DATE=$(TZ=America/New_York date +%F)
           python scripts/mlb_scoring_guard_status.py \
             --slate-date "$SLATE_DATE" \
-            --output runtime_reports/mlb_scoring_guard_status_latest.json \
-            --enforce
+            --output runtime_reports/mlb_scoring_guard_status_latest.json
 
       - name: Check post-deploy Lambda runtime health
         env:
@@ -169,7 +188,7 @@ jobs:
             --hours 2 \
             --output runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
 
-      - name: Build immutable post-deploy acceptance proof
+      - name: Build immutable cutoff-aware post-deploy acceptance proof
         env:
           TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
         run: |
@@ -177,7 +196,7 @@ jobs:
           python - <<'PY'
           import json
           import os
-          from datetime import datetime, timezone
+          from datetime import datetime, timedelta, timezone
           from pathlib import Path
 
           invocation = json.loads(Path('/tmp/mlb-post-deploy-invocation.json').read_text(encoding='utf-8'))
@@ -188,6 +207,7 @@ jobs:
           deployed_at = datetime.fromisoformat(str(deployed_at_raw).replace('Z', '+00:00'))
           if deployed_at.tzinfo is None:
               deployed_at = deployed_at.replace(tzinfo=timezone.utc)
+
           post_deploy_timeouts = []
           for row in runtime.get('timeouts') or []:
               stamp = datetime.fromisoformat(str(row.get('timestampUtc')).replace('Z', '+00:00'))
@@ -196,8 +216,50 @@ jobs:
               if stamp >= deployed_at:
                   post_deploy_timeouts.append(row)
 
+          post_deploy_scheduled_failures = []
+          for row in runtime.get('classifiedErrors') or []:
+              stamp = datetime.fromisoformat(str(row.get('timestampUtc')).replace('Z', '+00:00'))
+              if stamp.tzinfo is None:
+                  stamp = stamp.replace(tzinfo=timezone.utc)
+              classifications = set(row.get('classifications') or [])
+              if stamp >= deployed_at and classifications & {
+                  'SCHEDULED_PULL_FAILED',
+                  'PRELOCK_STORAGE_INCOMPLETE',
+                  'WINNER_COVERAGE_INCOMPLETE',
+              }:
+                  post_deploy_scheduled_failures.append(row)
+
+          now = datetime.now(timezone.utc)
+          game_cutoffs = []
+          for game in scoring.get('games') or []:
+              start_raw = game.get('commenceTime')
+              if not start_raw:
+                  continue
+              start = datetime.fromisoformat(str(start_raw).replace('Z', '+00:00'))
+              if start.tzinfo is None:
+                  start = start.replace(tzinfo=timezone.utc)
+              game_cutoffs.append(start - timedelta(minutes=45))
+          all_cutoffs_passed = bool(game_cutoffs) and all(now >= cutoff for cutoff in game_cutoffs)
+
+          winner_results = invocation.get('winnerResults') or []
+          open_candidate_count = sum(int(row.get('preLockStorageCandidateCount') or 0) for row in winner_results)
+          lifecycle_skipped_count = sum(int(row.get('preLockStorageLifecycleSkippedCount') or 0) for row in winner_results)
+          lifecycle_disposition_complete = bool(winner_results) and all(
+              row.get('preLockStorageLifecycleAware') is True
+              and row.get('preLockStorageComplete') is True
+              and row.get('preLockStorageDispositionComplete') is True
+              and int(row.get('preLockStorageDispositionCount') or 0) == int(row.get('gameCount') or -1)
+              and int(row.get('preLockStoredCount') or 0) == int(row.get('preLockStorageCandidateCount') or 0)
+              for row in winner_results
+          )
+          historical_slate_cutoff_exception = bool(
+              all_cutoffs_passed
+              and open_candidate_count == 0
+              and lifecycle_disposition_complete
+          )
+
           blockers = []
-          if scoring.get('guardPassed') is not True:
+          if scoring.get('guardPassed') is not True and not historical_slate_cutoff_exception:
               blockers.append('scoring_guard_failed')
           if invocation.get('timeoutSeconds', 0) < 600:
               blockers.append('timeout_not_600')
@@ -205,21 +267,32 @@ jobs:
               blockers.append('memory_not_2048')
           if invocation.get('deployedGitSha') != os.environ['TARGET_DEPLOY_SHA']:
               blockers.append('deploy_sha_mismatch')
+          if not lifecycle_disposition_complete:
+              blockers.append('lifecycle_storage_disposition_incomplete')
           if post_deploy_timeouts:
               blockers.append('new_timeout_after_deploy')
+          if post_deploy_scheduled_failures:
+              blockers.append('new_scheduled_scoring_failure_after_deploy')
 
           report = {
               'ok': not blockers,
               'proofType': 'MLB_SCORING_FIX_POST_DEPLOY_ACCEPTANCE',
-              'version': 'MLB-SCORING-FIX-POST-DEPLOY-v1',
+              'version': 'MLB-SCORING-FIX-POST-DEPLOY-v2-cutoff-aware',
               'createdAtUtc': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
               'deployedCommit': os.environ['TARGET_DEPLOY_SHA'],
               'lambdaConfiguration': invocation,
               'scoringGuardPassed': scoring.get('guardPassed') is True,
               'scoringSummary': scoring.get('summary'),
               'scoringBlockers': scoring.get('blockers') or [],
+              'allCurrentSlateCutoffsPassed': all_cutoffs_passed,
+              'historicalSlateAcceptedWithoutLateBackfill': historical_slate_cutoff_exception,
+              'openPreLockCandidateCount': open_candidate_count,
+              'lifecycleSkippedCount': lifecycle_skipped_count,
+              'lifecycleStorageDispositionComplete': lifecycle_disposition_complete,
               'postDeployTimeoutCount': len(post_deploy_timeouts),
               'postDeployTimeouts': post_deploy_timeouts,
+              'postDeployScheduledFailureCount': len(post_deploy_scheduled_failures),
+              'postDeployScheduledFailures': post_deploy_scheduled_failures,
               'blockers': blockers,
               'secretExposed': False,
           }
