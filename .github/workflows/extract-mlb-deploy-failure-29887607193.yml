@@ -13,7 +13,7 @@ jobs:
   extract:
     runs-on: ubuntu-latest
     steps:
-      - name: Print compact failed-step evidence
+      - name: Print terminal failed-step evidence first
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -23,15 +23,15 @@ jobs:
           import re
           from pathlib import Path
           lines = Path('/tmp/deploy.log').read_text(encoding='utf-8-sig', errors='replace').splitlines()
-          pattern = re.compile(r'(?i)(smoke test read-only mlb lock status|traceback|timeout|timed out|transienthttpprobeexhausted|http 5\d\d|504|exception|process completed|locks/status|batchget|batch_get)')
-          selected = set(range(max(0, len(lines) - 100), len(lines)))
-          for index, line in enumerate(lines):
-              if pattern.search(line):
-                  selected.update(range(max(0, index - 5), min(len(lines), index + 9)))
-          previous = None
-          for index in sorted(selected):
-              if previous is not None and index > previous + 1:
-                  print(f'--- omitted {index - previous - 1} lines ---')
-              print(f'{index + 1}: {lines[index]}')
-              previous = index
+          start = max(0, len(lines) - 1200)
+          pattern = re.compile(r'(?i)(traceback|transienthttpprobeexhausted|deadline exhausted|no official-schedule-backed|timeout(error)?|timed out|http 504|process completed with exit code|locks/status)')
+          hits = [index for index in range(start, len(lines)) if pattern.search(lines[index])]
+          printed = set()
+          for hit in reversed(hits[-50:]):
+              print(f'=== HIT {hit + 1}: {lines[hit]} ===')
+              for index in range(max(start, hit - 4), min(len(lines), hit + 9)):
+                  if index not in printed:
+                      print(f'{index + 1}: {lines[index]}')
+                      printed.add(index)
+          print(f'=== LOG_LINES {len(lines)} HITS {len(hits)} ===')
           PY
