@@ -260,10 +260,14 @@ def _pull_integrity_errors(
     return sorted(set(errors))
 
 
-def _slot_input_metadata(pull: Dict[str, Any]) -> Dict[str, Any]:
+def _slot_input_metadata(
+    pull: Dict[str, Any],
+    *,
+    fingerprint: Optional[str] = None,
+) -> Dict[str, Any]:
     metadata = pull.get("canonicalPullSlot") or {}
     if metadata.get("version") != PULL_SLOT_VERSION:
-        fingerprint = pull_payload_fingerprint(pull)
+        fingerprint = fingerprint or pull_payload_fingerprint(pull)
         return {
             "rawPullCount": 1,
             "validPullCount": 1,
@@ -287,13 +291,26 @@ def canonicalize_pull_slots(
     *,
     sport: Optional[str] = None,
     slate: Optional[str] = None,
+    _precomputed_fingerprints: Optional[Dict[int, str]] = None,
 ) -> List[Dict[str, Any]]:
     """Return one deterministic integrity-valid pull per UTC quarter-hour.
 
     The earliest valid row wins. Raw rows remain immutable in DynamoDB; the
     attached metadata makes any historical duplicate contamination explicit to
     scorers and the T-minus-45 training gate.
+
+    ``_precomputed_fingerprints`` is an internal read-path optimization. Values
+    are keyed by object identity and are accepted only for the exact objects
+    supplied by the caller; all other rows are fingerprinted normally.
     """
+    fingerprint_cache = dict(_precomputed_fingerprints or {})
+
+    def fingerprint_for(pull: Dict[str, Any]) -> str:
+        token = id(pull)
+        if token not in fingerprint_cache:
+            fingerprint_cache[token] = pull_payload_fingerprint(pull)
+        return fingerprint_cache[token]
+
     grouped: Dict[
         str,
         List[Tuple[datetime, int, str, str, Dict[str, Any], Dict[str, Any]]],
@@ -302,7 +319,7 @@ def canonicalize_pull_slots(
     raw_count_by_slot: Dict[str, int] = {}
     raw_ids_by_slot: Dict[str, List[str]] = {}
     raw_fingerprints_by_slot: Dict[str, List[str]] = {}
-    raw_variants_by_slot: Dict[str, List[Dict[str, Any]]] = {}
+    raw_variants_by_slot: Dict[str, List[Tuple[Dict[str, Any], str]]] = {}
     for input_index, raw in enumerate(pulls or []):
         if not isinstance(raw, dict):
             continue
@@ -311,7 +328,8 @@ def canonicalize_pull_slots(
         if pulled_at is None or slot is None:
             continue
         slot_text = slot.isoformat()
-        inherited = _slot_input_metadata(raw)
+        raw_fingerprint = fingerprint_for(raw)
+        inherited = _slot_input_metadata(raw, fingerprint=raw_fingerprint)
         raw_count_by_slot[slot_text] = raw_count_by_slot.get(slot_text, 0) + int(
             inherited["rawPullCount"]
         )
@@ -328,17 +346,22 @@ def canonicalize_pull_slots(
         for variant in variants:
             if not isinstance(variant, dict):
                 continue
+            variant_fingerprint = (
+                raw_fingerprint if variant is raw else fingerprint_for(variant)
+            )
             raw_variant = copy.deepcopy(variant)
             raw_variant.pop("canonicalPullSlot", None)
             raw_variant.pop("_canonicalSlotRawPulls", None)
-            raw_variants_by_slot.setdefault(slot_text, []).append(raw_variant)
+            raw_variants_by_slot.setdefault(slot_text, []).append(
+                (raw_variant, variant_fingerprint)
+            )
         errors = _pull_integrity_errors(raw, sport=sport, slate=slate)
         if errors:
             invalid_by_slot[slot_text] = invalid_by_slot.get(slot_text, 0) + max(
                 int(inherited["invalidPullCount"]), 1
             )
             continue
-        fingerprint = pull_payload_fingerprint(raw)
+        fingerprint = raw_fingerprint
         grouped.setdefault(slot_text, []).append(
             (
                 pulled_at,
@@ -383,15 +406,18 @@ def canonicalize_pull_slots(
             "rawPullIds": raw_ids,
             "rawPullFingerprints": raw_fingerprints,
         }
-        canonical["_canonicalSlotRawPulls"] = sorted(
-            raw_variants_by_slot.get(slot_text, []),
-            key=lambda pull: (
-                _parse_utc(pull.get("pulled_at"))
-                or datetime.min.replace(tzinfo=timezone.utc),
-                str(pull.get("pull_id") or ""),
-                pull_payload_fingerprint(pull),
-            ),
-        )
+        canonical["_canonicalSlotRawPulls"] = [
+            variant
+            for variant, _ in sorted(
+                raw_variants_by_slot.get(slot_text, []),
+                key=lambda entry: (
+                    _parse_utc(entry[0].get("pulled_at"))
+                    or datetime.min.replace(tzinfo=timezone.utc),
+                    str(entry[0].get("pull_id") or ""),
+                    entry[1],
+                ),
+            )
+        ]
         selected.append(canonical)
     return selected
 
