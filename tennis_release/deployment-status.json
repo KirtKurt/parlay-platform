@@ -1,0 +1,113 @@
+{
+  "artifacts": [],
+  "deployBranch": "agent/tennis-ml-production-deploy",
+  "deployWorkflow": "deploy-tennis.yml",
+  "deploymentEvidence": null,
+  "expectedHeadSha": "5a70551f15cef5f51694b01e9c341a7107df548a",
+  "jobs": [
+    {
+      "completedAt": "2026-07-22T11:12:50Z",
+      "conclusion": "failure",
+      "htmlUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/29914785597/job/88905988086",
+      "id": 88905988086,
+      "name": "deploy-tennis",
+      "startedAt": "2026-07-22T11:11:54Z",
+      "status": "completed",
+      "steps": [
+        {
+          "conclusion": "success",
+          "name": "Set up job",
+          "number": 1,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Checkout exact release commit",
+          "number": 2,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Reconstruct and verify checksum-pinned Tennis source",
+          "number": 3,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup Python 3.11",
+          "number": 4,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Install validation dependencies",
+          "number": 5,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Setup AWS SAM",
+          "number": 6,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Configure established AWS deployment credentials",
+          "number": 7,
+          "status": "completed"
+        },
+        {
+          "conclusion": "failure",
+          "name": "Deploy and verify isolated Tennis stack",
+          "number": 8,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Upload exact Tennis deployment evidence",
+          "number": 9,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Configure established AWS deployment credentials",
+          "number": 16,
+          "status": "completed"
+        },
+        {
+          "conclusion": "skipped",
+          "name": "Post Setup Python 3.11",
+          "number": 17,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Post Checkout exact release commit",
+          "number": 18,
+          "status": "completed"
+        },
+        {
+          "conclusion": "success",
+          "name": "Complete job",
+          "number": 19,
+          "status": "completed"
+        }
+      ]
+    }
+  ],
+  "recordedAtUtc": "2026-07-22T11:14:14.984774+00:00",
+  "repository": "KirtKurt/parlay-platform",
+  "run": {
+    "conclusion": "failure",
+    "createdAt": "2026-07-22T11:11:51Z",
+    "event": "push",
+    "headSha": "5a70551f15cef5f51694b01e9c341a7107df548a",
+    "htmlUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/29914785597",
+    "id": 29914785597,
+    "runAttempt": 1,
+    "runNumber": 1,
+    "status": "completed",
+    "updatedAt": "2026-07-22T11:12:51Z"
+  },
+  "schemaVersion": "TENNIS-ML-DEPLOYMENT-MONITOR-v1"
+}
