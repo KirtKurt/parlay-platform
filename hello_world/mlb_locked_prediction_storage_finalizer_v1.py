@@ -3,8 +3,20 @@ from __future__ import annotations
 from contextvars import ContextVar
 from typing import Any, Dict, List, Tuple
 
-VERSION = "MLB-LOCKED-PREDICTION-STORAGE-FINALIZER-v4-selection-vector-separated"
+VERSION = "MLB-LOCKED-PREDICTION-STORAGE-FINALIZER-v5-lifecycle-aware"
 UNAUTHORIZED_LOCKED_WRITE = "immutable_per_game_stage_authority_missing"
+LIFECYCLE_ONLY_STATUSES = frozenset({
+    "LOCKED_NO_PREDICTION_DATA",
+    "LOCK_DUE_CANONICAL_MISSING",
+    "MISSED_LOCK",
+    "POSTPONED",
+    "CANCELLED",
+    "CANCELED",
+})
+LIFECYCLE_ONLY_DISPLAY_GROUPS = frozenset({
+    "lock_failure",
+    "lock_outcome_no_prediction_data",
+})
 _STORAGE_REQUEST_ACTIVE: ContextVar[bool] = ContextVar(
     "inqsi_mlb_prediction_storage_request_active",
     default=False,
@@ -44,6 +56,34 @@ def _row_locked(row: Dict[str, Any]) -> bool:
     )
 
 
+def _lifecycle_statuses(row: Dict[str, Any]) -> List[str]:
+    per_game = row.get("perGameCanonicalLock") or {}
+    values = (
+        row.get("lockStatus"),
+        row.get("officialPredictionStatus"),
+        row.get("recommendationStatus"),
+        per_game.get("status") if isinstance(per_game, dict) else None,
+    )
+    return sorted({str(value).strip().upper() for value in values if value not in (None, "")})
+
+
+def _lifecycle_only_storage_row(row: Dict[str, Any]) -> bool:
+    """Return True when the row is status evidence, not a pre-lock prediction.
+
+    Once a game's immutable cutoff has passed, public authority may return a
+    ``MISSED_LOCK`` or terminal ``LOCKED_NO_PREDICTION_DATA`` row. Those rows
+    must remain visible, but they must never be sent to the pre-lock prediction
+    writer or counted as failed candidate persistence.
+    """
+
+    statuses = set(_lifecycle_statuses(row))
+    display_group = str(row.get("displayGroup") or "").strip().lower()
+    return bool(
+        statuses & LIFECYCLE_ONLY_STATUSES
+        or display_group in LIFECYCLE_ONLY_DISPLAY_GROUPS
+    )
+
+
 def _validate_row(row: Dict[str, Any]) -> List[str]:
     import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 
@@ -65,13 +105,15 @@ def _store_final(module: Any, result: Dict[str, Any], requested: bool) -> Dict[s
         return result
 
     # The result is intentionally not run back through the legacy official
-    # semantics enhancer here.  That enhancer can mark an entire mixed result
-    # locked from a slate-level flag.  Storage authority belongs to each row:
+    # semantics enhancer here. That enhancer can mark an entire mixed result
+    # locked from a slate-level flag. Storage authority belongs to each row:
     # only the immutable per-game stage may create a canonical LOCKED#GAME row.
     out = result
     stored_count = 0
     pre_lock_stored_count = 0
     pre_lock_candidate_count = 0
+    lifecycle_skipped_count = 0
+    lifecycle_skipped_statuses: set[str] = set()
     canonical_stored_count = 0
     canonical_candidate_count = 0
     suppressed_locked_count = 0
@@ -94,6 +136,14 @@ def _store_final(module: Any, result: Dict[str, Any], requested: bool) -> Dict[s
                 canonical_storage_errors[_game_id(row)] = sorted(set(row_errors))
                 row["canonicalLockedStoreError"] = ",".join(sorted(set(row_errors)))
                 continue
+        elif _lifecycle_only_storage_row(row):
+            lifecycle_skipped_count += 1
+            statuses = _lifecycle_statuses(row)
+            lifecycle_skipped_statuses.update(statuses)
+            row["preLockStoreSkipped"] = True
+            row["preLockStoreSkipReason"] = "post_cutoff_lifecycle_status_not_a_prediction_candidate"
+            row["preLockStoreSkippedStatuses"] = statuses
+            continue
         else:
             pre_lock_candidate_count += 1
 
@@ -131,6 +181,13 @@ def _store_final(module: Any, result: Dict[str, Any], requested: bool) -> Dict[s
         pre_lock_candidate_count == pre_lock_stored_count
         and not pre_lock_storage_errors
     )
+    storage_disposition_count = (
+        pre_lock_candidate_count
+        + lifecycle_skipped_count
+        + canonical_candidate_count
+        + suppressed_locked_count
+    )
+    storage_disposition_complete = storage_disposition_count == len(rows)
     out.update({
         "stored": stored_count > 0,
         "storedCount": stored_count,
@@ -138,6 +195,12 @@ def _store_final(module: Any, result: Dict[str, Any], requested: bool) -> Dict[s
         "preLockStorageCandidateCount": pre_lock_candidate_count,
         "preLockStorageComplete": pre_lock_storage_complete,
         "preLockStorageErrors": pre_lock_storage_errors,
+        "preLockStorageLifecycleAware": True,
+        "preLockStorageLifecycleSkippedCount": lifecycle_skipped_count,
+        "preLockStorageLifecycleSkippedStatuses": sorted(lifecycle_skipped_statuses),
+        "preLockStorageDispositionCount": storage_disposition_count,
+        "preLockStorageRowCount": len(rows),
+        "preLockStorageDispositionComplete": storage_disposition_complete,
         "canonicalLockedStorageCandidateCount": canonical_candidate_count,
         "canonicalLockedStoredCount": canonical_stored_count,
         "canonicalLockedStorageErrors": canonical_storage_errors,
@@ -147,14 +210,18 @@ def _store_final(module: Any, result: Dict[str, Any], requested: bool) -> Dict[s
         "canonicalLockedStorageAuthority": "consistent-read verified immutable T-minus-45 stage",
         "canonicalLockedStorageSuppressedEarlyWrites": True,
     })
+    if not storage_disposition_complete:
+        out["ok"] = False
+        out["operationalDefect"] = True
+        out["allGamesPredicted"] = False
     if canonical_candidate_count and not canonical_storage_complete:
         out["ok"] = False
         out["operationalDefect"] = True
         out["allGamesPredicted"] = False
     if pre_lock_candidate_count and not pre_lock_storage_complete:
         # The lock can only promote a prediction that was durably persisted
-        # before cutoff.  Never report a successful HOT candidate run when one
-        # or more pre-lock rows failed storage.
+        # before cutoff. Never report a successful HOT candidate run when one
+        # or more open pre-lock rows failed storage.
         out["ok"] = False
         out["operationalDefect"] = True
         out["allGamesPredicted"] = False
