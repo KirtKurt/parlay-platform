@@ -1,6 +1,6 @@
 # MLB ML production milestones
 
-Last updated: 2026-07-21 UTC
+Last updated: 2026-07-22 UTC
 
 ## Objective
 
@@ -32,9 +32,12 @@ The 15-game figure is planning math, not the first-slate achievement rule.
 `FIRST_FULL_CLEAN_SLATE_PROOF_ACHIEVED` requires one nonempty, officially
 finalized slate whose fingerprinted MLB `gamePk` set exactly equals that same
 immutable slate's unique, current, post-cutoff clean eligible `gamePk` set.
-Clean games from different dates are never combined for this proof. A terminal
-no-prediction game, duplicate ID, missing row, unexpected row, stale vector, or
-tampered official-set fingerprint keeps the milestone unachieved.
+Every scoped row must also match that exact Stats API FINAL record's teams,
+home and away scores, derived winner, derived correctness, official source URL,
+and source-payload fingerprint. Clean games from different dates are never
+combined for this proof. A terminal no-prediction game, duplicate ID, missing
+row, unexpected row, stale vector, tampered outcome, or tampered official-set
+fingerprint keeps the milestone unachieved.
 
 | Milestone | Eligible games | Approximate full 15-game slates | Authority unlocked |
 |---|---:|---:|---|
@@ -46,6 +49,36 @@ tampered official-set fingerprint keeps the milestone unachieved.
 | Selected recommendation reliability | 100 prospectively selected | Data-dependent | Playability-promotion review may begin |
 
 ## Release boundary and proof status
+
+### July 22 pre-deploy source checkpoint
+
+The incremental release built on production PRs #50-#55 passed 697 unit tests.
+Non-additive focused gates included 111 PR #55 audit/fingerprint/trainer tests,
+316 independently audited artifact/deploy/trainer/lock tests, and the 67-test
+embedded production-invariant chain. Deployment transforms were
+source-idempotent, workflow authority and BBS shadow-only wiring passed, all
+changed Python files compiled, and `git diff --check` was clean.
+
+This is code evidence only. It does not earn the first clean slate, the
+140-game mechanics checkpoint, or any 300/100/100 partition milestone. The r3
+cohort still starts at `2026-07-22T04:00:00+00:00`; evidence from before that
+instant remains historical.
+
+The deploy probe now binds its training and selection checks to the immutable
+run IDs returned by the exact invocations and reads those run records strongly
+consistently. A newer scheduled manifest may advance `LATEST` without changing
+the exact-run result. Pre-admission Lambda throttling is retried for at most 315
+seconds. An admitted invocation is retried for at most 1,200 seconds only when
+the function returns the exact execution-lease-unavailable contract; ambiguous
+transport failures and all other function errors are never replayed.
+
+Lock mutation has two deliberate guards. All scheduled and authenticated
+manual mutations share a 360-second global, owner-checked lease; scheduled runs
+also retain the existing 330-second per-slate capacity lease. Scheduled overlap
+returns a no-op success so the next one-minute tick is the retry. Authenticated
+manual overlap returns a retryable conflict and cannot be mistaken for a
+successful lock run. Neither guard adds reserved concurrency, SQS, or async
+retry fan-out.
 
 The release candidate supplies the Fix 4 settlement authority and the Fix 5
 snapshot contract. That is implementation readiness, not evidence that either

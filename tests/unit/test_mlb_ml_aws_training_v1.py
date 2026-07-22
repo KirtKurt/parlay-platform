@@ -62,7 +62,13 @@ def config(auto=False):
     )
 
 
-def healthy_status(execution_mode, *, created_at=NOW, status="HEALTHY"):
+def healthy_status(
+    execution_mode,
+    *,
+    created_at=NOW,
+    status="HEALTHY",
+    run_id=None,
+):
     value = {
         "ok": True,
         "status": status,
@@ -71,6 +77,7 @@ def healthy_status(execution_mode, *, created_at=NOW, status="HEALTHY"):
         "experimentId": experiment.PRODUCTION_EXPERIMENT_ID,
         "manifestDigest": None,
         "createdAtUtc": created_at.isoformat(),
+        "runId": run_id or f"{execution_mode}-run",
         "deploymentIdentity": {
             "gitSha": "a" * 40,
             "templateSha256": "b" * 64,
@@ -216,6 +223,7 @@ class FakeStore:
         self.selections = []
         self.statuses = []
         self.latest_statuses = {}
+        self.run_statuses = {}
         self.lease_owner = None
         self.lease_acquisitions = []
         self.lease_releases = []
@@ -291,6 +299,7 @@ class FakeStore:
     def save_status(self, experiment_id, status):
         saved = copy.deepcopy(status)
         self.statuses.append(saved)
+        self.run_statuses[saved["runId"]] = saved
         self.latest_statuses[None] = saved
         mode = str(saved.get("executionMode") or "").strip().lower()
         if mode:
@@ -298,6 +307,9 @@ class FakeStore:
 
     def load_latest_status(self, experiment_id, execution_mode=None):
         return copy.deepcopy(self.latest_statuses.get(execution_mode))
+
+    def load_status_run(self, experiment_id, run_id):
+        return copy.deepcopy(self.run_statuses.get(run_id))
 
     def acquire_execution_lease(
         self,
@@ -636,6 +648,145 @@ def test_status_is_read_only_and_attests_deployment_and_manual_first_policy():
     assert result["selectionCaptureHealth"]["ok"] is True
     assert store.manifest is None
     assert store.artifact_calls == 0
+
+
+def test_status_returns_exact_immutable_requested_runs_when_latest_advances():
+    store = FakeStore()
+    requested_training = healthy_status(
+        "training",
+        run_id="deploy-training-run",
+        status="DEPLOY_TRAINING",
+        created_at=NOW - aws_training.timedelta(minutes=2),
+    )
+    requested_capture = healthy_status(
+        "selection_capture",
+        run_id="deploy-selection-run",
+        status="DEPLOY_CAPTURE",
+        created_at=NOW - aws_training.timedelta(minutes=1),
+    )
+    store.run_statuses[requested_training["runId"]] = copy.deepcopy(
+        requested_training
+    )
+    store.run_statuses[requested_capture["runId"]] = copy.deepcopy(
+        requested_capture
+    )
+    store.latest_statuses["training"] = healthy_status(
+        "training", run_id="later-training-run", status="LATER_TRAINING"
+    )
+    store.latest_statuses["selection_capture"] = healthy_status(
+        "selection_capture",
+        run_id="later-selection-run",
+        status="LATER_CAPTURE",
+    )
+
+    result = service(store).status(
+        training_run_id=requested_training["runId"],
+        selection_capture_run_id=requested_capture["runId"],
+    )
+
+    assert result["ok"] is True
+    assert result["trainingHealth"]["latestRun"]["runId"] == (
+        "later-training-run"
+    )
+    assert result["requestedRunEvidence"]["training"]["run"] == (
+        requested_training
+    )
+    assert result["requestedRunEvidence"]["training"]["errors"] == []
+    assert result["requestedRunEvidence"]["selectionCapture"]["run"] == (
+        requested_capture
+    )
+
+
+def test_status_exact_requested_run_survives_dynamodb_numeric_round_trip():
+    store = FakeStore()
+    training = healthy_status("training", run_id="numeric-training-run")
+    training["milestones"] = {"aspirationalAccuracyPct": 90.0}
+    training["statusFingerprint"] = aws_training._status_fingerprint(training)
+    training_readback = aws_training._plain(aws_training._ddb_safe(training))
+    capture = healthy_status(
+        "selection_capture", run_id="numeric-selection-run"
+    )
+    store.latest_statuses["training"] = copy.deepcopy(training_readback)
+    store.latest_statuses["selection_capture"] = copy.deepcopy(capture)
+    store.run_statuses[training["runId"]] = copy.deepcopy(training_readback)
+    store.run_statuses[capture["runId"]] = copy.deepcopy(capture)
+
+    result = service(store).status(
+        training_run_id=training["runId"],
+        selection_capture_run_id=capture["runId"],
+    )
+
+    assert training_readback["milestones"]["aspirationalAccuracyPct"] == 90
+    assert result["ok"] is True
+    assert result["requestedRunEvidence"]["training"]["errors"] == []
+
+
+def test_status_fails_closed_when_requested_immutable_run_is_missing():
+    store = FakeStore()
+    store.latest_statuses["training"] = healthy_status("training")
+    store.latest_statuses["selection_capture"] = healthy_status(
+        "selection_capture"
+    )
+
+    result = service(store).status(
+        training_run_id="missing-training-run",
+        selection_capture_run_id="missing-selection-run",
+    )
+
+    assert result["ok"] is False
+    assert result["requestedRunEvidence"]["training"]["found"] is False
+    assert result["requestedRunEvidence"]["training"]["errors"] == [
+        "requested_run_missing"
+    ]
+    assert result["requestedRunEvidence"]["selectionCapture"]["found"] is False
+
+
+def test_status_request_requires_both_immutable_run_ids():
+    with pytest.raises(
+        aws_training.TrainingContractError,
+        match="both training and selection-capture run IDs",
+    ):
+        service(FakeStore()).status(training_run_id="training-only")
+
+
+def test_lambda_status_handler_forwards_exact_requested_run_ids(monkeypatch):
+    store = FakeStore()
+    training = healthy_status("training", run_id="handler-training-run")
+    capture = healthy_status(
+        "selection_capture", run_id="handler-selection-run"
+    )
+    store.latest_statuses["training"] = copy.deepcopy(training)
+    store.latest_statuses["selection_capture"] = copy.deepcopy(capture)
+    store.run_statuses[training["runId"]] = copy.deepcopy(training)
+    store.run_statuses[capture["runId"]] = copy.deepcopy(capture)
+    monkeypatch.setattr(
+        aws_training, "_service", lambda: service(store, lease_mode=None)
+    )
+
+    result = aws_training.lambda_handler(
+        {
+            "mode": "status",
+            "trainingRunId": training["runId"],
+            "selectionCaptureRunId": capture["runId"],
+        },
+        None,
+    )
+
+    assert result["ok"] is True
+    assert result["requestedRunEvidence"]["training"]["run"] == training
+    assert result["requestedRunEvidence"]["selectionCapture"]["run"] == capture
+    assert store.lease_acquisitions == []
+
+
+@pytest.mark.parametrize("run_id", ("../path", "contains space", "x" * 129))
+def test_status_rejects_invalid_requested_run_ids(run_id):
+    with pytest.raises(
+        aws_training.TrainingContractError, match="status runId is invalid"
+    ):
+        service(FakeStore()).status(
+            training_run_id="valid-training",
+            selection_capture_run_id=run_id,
+        )
 
 
 def test_status_never_lets_fresh_capture_mask_stale_training():
@@ -1097,6 +1248,55 @@ def test_scheduled_training_captures_before_a_colliding_capture_invocation(
     assert store.lease_owner is None
     assert len(store.lease_acquisitions) == 1
     assert len(store.lease_releases) == 1
+
+
+def test_scheduled_training_reuses_one_capture_and_refreshes_final_manifest_health(
+    monkeypatch,
+):
+    patch_sealed_training(monkeypatch)
+    capture_calls = []
+
+    def capture_once(self, manifest, challenger):
+        capture_calls.append(manifest["manifestDigest"])
+        return {
+            "ok": True,
+            "capturedCount": 1,
+            "existingCount": 0,
+            "selectedCount": 1,
+            "skippedCount": 0,
+            "errors": [],
+        }
+
+    monkeypatch.setattr(
+        aws_training.TrainingService, "_capture_selections", capture_once
+    )
+    store = FakeStore(new_manifest(sealed=True))
+    training = service(store)
+    before_digest = store.manifest["manifestDigest"]
+
+    result = training.run_scheduled()
+
+    assert result["ok"] is True
+    assert store.manifest["manifestDigest"] != before_digest
+    assert capture_calls == [before_digest]
+    latest_capture = store.latest_statuses["selection_capture"]
+    assert latest_capture["status"] == (
+        "SCHEDULED_SELECTION_CAPTURE_HEARTBEAT_FINALIZED"
+    )
+    assert latest_capture["manifestDigest"] == store.manifest["manifestDigest"]
+    assert latest_capture["selectionEvidenceRecapturedAfterTraining"] is False
+    assert latest_capture["heartbeatBoundAfterTraining"] is True
+    assert latest_capture["trainingRunId"] == result["runId"]
+    assert latest_capture["sourceSelectionStatusRunId"]
+    assert latest_capture["statusFingerprint"] == (
+        aws_training._status_fingerprint(latest_capture)
+    )
+
+    immediate = training.status()
+    assert immediate["ok"] is True
+    assert immediate["trainingHealth"]["ok"] is True
+    assert immediate["selectionCaptureHealth"]["ok"] is True
+    assert immediate["selectionCaptureHealth"]["errors"] == []
 
 
 @pytest.mark.parametrize("mode", ("scheduled", "selection_capture", "manual_review"))

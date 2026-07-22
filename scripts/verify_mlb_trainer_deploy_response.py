@@ -2,11 +2,13 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 
 TRAINER_VERSION = "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
@@ -39,12 +41,21 @@ EXECUTION_CONCURRENCY_CONTROL = {
     "reservedLambdaConcurrencyRequired": False,
 }
 MAX_DIAGNOSTIC_MESSAGE_CHARS = 1600
+_LABELED_SECRET_PATTERN = re.compile(
+    r"(?i)\b(authorization|x-api-key|api[_-]?key|"
+    r"aws[_-]?secret[_-]?access[_-]?key|aws[_-]?session[_-]?token|"
+    r"secret[_-]?access[_-]?key|session[_-]?token)\b"
+    r"\s*[:=]\s*(?:(?:bearer|basic)\s+)?([^\s,;]+)"
+)
+_AUTH_SCHEME_PATTERN = re.compile(
+    r"(?i)\b(bearer|basic)\s+([^\s,;]+)"
+)
 _SECRET_PATTERNS = (
     re.compile(r"\bbbs_(?:live|test)_[A-Za-z0-9._-]+", re.IGNORECASE),
     re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
     re.compile(
-        r"(?i)(authorization|x-api-key|api[_-]?key|bearer)"
-        r"(\s*[:=]\s*|\s+)([^\s,;]+)"
+        r"\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})\b",
+        re.IGNORECASE,
     ),
     re.compile(r"arn:aws(?:-[a-z]+)?:[A-Za-z0-9_./:=+@-]+"),
     re.compile(r"(?<!\d)\d{12}(?!\d)"),
@@ -113,6 +124,61 @@ def _execution_lease_errors(payload: Dict[str, Any], *, prefix: str) -> List[str
         for key, expected in EXECUTION_CONCURRENCY_CONTROL.items()
         if actual.get(key) != expected
     ]
+
+
+def _status_fingerprint_material(value: Any) -> Any:
+    if isinstance(value, bool) or value is None:
+        return value
+    if isinstance(value, (int, float, Decimal)):
+        try:
+            number = value if isinstance(value, Decimal) else Decimal(str(value))
+        except Exception as exc:
+            raise ValueError("status fingerprint number is invalid") from exc
+        if not number.is_finite():
+            raise ValueError("status fingerprint number must be finite")
+        return int(number) if number == number.to_integral_value() else float(number)
+    if isinstance(value, Mapping):
+        return {
+            str(key): _status_fingerprint_material(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_status_fingerprint_material(item) for item in value]
+    return value
+
+
+def _status_fingerprint(payload: Mapping[str, Any]) -> str:
+    material = _status_fingerprint_material(
+        {
+            key: value
+            for key, value in payload.items()
+            if key not in {"statusFingerprint", "statusFingerprintVersion"}
+        }
+    )
+    encoded = json.dumps(
+        material,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _status_fingerprint_errors(
+    payload: Dict[str, Any], *, prefix: str
+) -> List[str]:
+    errors: List[str] = []
+    if payload.get("statusFingerprintVersion") != STATUS_FINGERPRINT_VERSION:
+        errors.append(f"{prefix}_status_fingerprint_version_mismatch")
+    try:
+        matches = payload.get("statusFingerprint") == _status_fingerprint(
+            payload
+        )
+    except (TypeError, ValueError):
+        matches = False
+    if not matches:
+        errors.append(f"{prefix}_status_fingerprint_mismatch")
+    return errors
 
 
 def verify(
@@ -184,17 +250,16 @@ def verify(
         ("training", training),
         ("selection_capture", selection_capture),
     ):
+        if not str(payload.get("runId") or ""):
+            errors.append(f"{prefix}_run_id_missing")
+        errors.extend(_status_fingerprint_errors(payload, prefix=prefix))
         errors.extend(_execution_lease_errors(payload, prefix=prefix))
-        if payload.get("statusFingerprintVersion") != STATUS_FINGERPRINT_VERSION:
-            errors.append(f"{prefix}_status_fingerprint_version_mismatch")
         created = _parse_time(payload.get("createdAtUtc"))
         if created is None or started is None or created < started:
             errors.append(f"{prefix}_run_not_fresh_for_deploy")
         if not str(payload.get("status") or ""):
             errors.append(f"{prefix}_run_status_missing")
 
-    if status_after.get("ok") is not True:
-        errors.append("status_after_not_ok")
     if status_after.get("automaticPromotionEnabled") is not False:
         errors.append("automatic_promotion_not_disabled")
     if status_after.get("firstPromotionRequiresManualReview") is not True:
@@ -230,29 +295,89 @@ def verify(
     ):
         errors.append("training_manifest_digest_mismatch")
 
-    for health_key, expected_mode, run in (
-        ("trainingHealth", "training", training),
-        ("selectionCaptureHealth", "selection_capture", selection_capture),
+    requested_evidence = status_after.get("requestedRunEvidence")
+    if not isinstance(requested_evidence, dict):
+        errors.append("requested_run_evidence_missing")
+        requested_evidence = {}
+    for evidence_key, expected_mode, run in (
+        ("training", "training", training),
+        ("selectionCapture", "selection_capture", selection_capture),
+    ):
+        prefix = expected_mode
+        evidence = requested_evidence.get(evidence_key)
+        if not isinstance(evidence, dict):
+            errors.append(f"{prefix}_requested_run_evidence_missing")
+            continue
+        if evidence.get("ok") is not True:
+            errors.append(f"{prefix}_requested_run_evidence_not_ok")
+        if evidence.get("found") is not True:
+            errors.append(f"{prefix}_requested_run_missing")
+        if evidence.get("executionMode") != expected_mode:
+            errors.append(f"{prefix}_requested_run_mode_mismatch")
+        if evidence.get("deploymentIdentityMatches") is not True:
+            errors.append(f"{prefix}_requested_run_identity_mismatch")
+        if evidence.get("errors") != []:
+            errors.append(f"{prefix}_requested_run_errors_present")
+        run_id = str(run.get("runId") or "")
+        if evidence.get("requestedRunId") != run_id:
+            errors.append(f"{prefix}_requested_run_id_mismatch")
+        exact = evidence.get("run")
+        if not isinstance(exact, dict) or not exact:
+            errors.append(f"{prefix}_requested_run_record_missing")
+            continue
+        if exact.get("runId") != run_id:
+            errors.append(f"{prefix}_requested_run_record_id_mismatch")
+        if exact != run:
+            errors.append(f"{prefix}_requested_run_does_not_match_deploy_run")
+        errors.extend(
+            _contract_errors(
+                exact,
+                prefix=f"{prefix}_requested_run",
+                expected_git_sha=expected_git_sha,
+                expected_template_sha256=expected_template_sha256,
+            )
+        )
+        errors.extend(
+            _status_fingerprint_errors(
+                exact, prefix=f"{prefix}_requested_run"
+            )
+        )
+        errors.extend(
+            _execution_lease_errors(
+                exact, prefix=f"{prefix}_requested_run"
+            )
+        )
+
+    allowed_manifest_race_seen = False
+    for health_key, expected_mode in (
+        ("trainingHealth", "training"),
+        ("selectionCaptureHealth", "selection_capture"),
     ):
         prefix = expected_mode
         health = status_after.get(health_key)
         if not isinstance(health, dict):
             errors.append(f"{prefix}_health_missing")
             continue
-        if health.get("ok") is not True:
+        health_errors = health.get("errors")
+        manifest_race_only = health_errors == [
+            "latest_status_manifest_mismatch"
+        ]
+        if health.get("ok") is not True and not manifest_race_only:
             errors.append(f"{prefix}_health_not_ok")
         if health.get("executionMode") != expected_mode:
             errors.append(f"{prefix}_health_execution_mode_mismatch")
         if health.get("deploymentIdentityMatches") is not True:
             errors.append(f"{prefix}_health_identity_mismatch")
+        if health_errors != [] and not manifest_race_only:
+            errors.append(f"{prefix}_health_errors_present")
+        if manifest_race_only:
+            allowed_manifest_race_seen = True
+            if health.get("ok") is not False:
+                errors.append(f"{prefix}_health_manifest_race_state_invalid")
         latest = health.get("latestRun")
         if not isinstance(latest, dict) or not latest:
             errors.append(f"{prefix}_latest_run_missing")
             continue
-        if latest.get("statusFingerprintVersion") != STATUS_FINGERPRINT_VERSION:
-            errors.append(f"{prefix}_latest_run_status_fingerprint_version_mismatch")
-        if latest != run:
-            errors.append(f"{prefix}_latest_run_does_not_match_deploy_run")
         errors.extend(
             _contract_errors(
                 latest,
@@ -261,6 +386,22 @@ def verify(
                 expected_template_sha256=expected_template_sha256,
             )
         )
+        errors.extend(
+            _status_fingerprint_errors(
+                latest, prefix=f"{prefix}_latest_run"
+            )
+        )
+        errors.extend(
+            _execution_lease_errors(
+                latest, prefix=f"{prefix}_latest_run"
+            )
+        )
+        latest_created = _parse_time(latest.get("createdAtUtc"))
+        if latest_created is None or started is None or latest_created < started:
+            errors.append(f"{prefix}_latest_run_not_fresh_for_deploy")
+
+    if status_after.get("ok") is not True and not allowed_manifest_race_seen:
+        errors.append("status_after_not_ok")
 
     return sorted(set(errors))
 
@@ -274,11 +415,14 @@ def _read(path: str) -> Dict[str, Any]:
 
 def _safe_diagnostic_text(value: Any) -> str:
     text = str(value or "").replace("\r", " ").replace("\n", " ")
+    text = _LABELED_SECRET_PATTERN.sub(
+        lambda match: f"{match.group(1)}=[REDACTED]", text
+    )
+    text = _AUTH_SCHEME_PATTERN.sub(
+        lambda match: f"{match.group(1)} [REDACTED]", text
+    )
     for pattern in _SECRET_PATTERNS:
-        if pattern.pattern.startswith("(?i)(authorization"):
-            text = pattern.sub(lambda match: f"{match.group(1)}=[REDACTED]", text)
-        else:
-            text = pattern.sub("[REDACTED]", text)
+        text = pattern.sub("[REDACTED]", text)
     text = " ".join(text.split())
     if len(text) > MAX_DIAGNOSTIC_MESSAGE_CHARS:
         text = text[:MAX_DIAGNOSTIC_MESSAGE_CHARS] + "...[truncated]"
@@ -324,7 +468,45 @@ def main() -> int:
         _read(args.selection_capture_invocation),
         _read(args.status_after_invocation),
     )
-    print(json.dumps(status_after, indent=2, sort_keys=True, default=str))
+    print(
+        json.dumps(
+            {
+                "ok": status_after.get("ok"),
+                "experimentId": status_after.get("experimentId"),
+                "deploymentIdentity": status_after.get("deploymentIdentity"),
+                "trainingLatestRunId": (
+                    ((status_after.get("trainingHealth") or {}).get("latestRun") or {})
+                    .get("runId")
+                ),
+                "selectionCaptureLatestRunId": (
+                    (
+                        (status_after.get("selectionCaptureHealth") or {}).get(
+                            "latestRun"
+                        )
+                        or {}
+                    ).get("runId")
+                ),
+                "requestedTrainingRunId": (
+                    (
+                        (status_after.get("requestedRunEvidence") or {}).get(
+                            "training"
+                        )
+                        or {}
+                    ).get("requestedRunId")
+                ),
+                "requestedSelectionCaptureRunId": (
+                    (
+                        (status_after.get("requestedRunEvidence") or {}).get(
+                            "selectionCapture"
+                        )
+                        or {}
+                    ).get("requestedRunId")
+                ),
+            },
+            indent=2,
+            sort_keys=True,
+        )
+    )
     for label, response, invocation in (
         ("training", training, invocations[0]),
         ("selection_capture", selection_capture, invocations[1]),

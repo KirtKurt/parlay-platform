@@ -332,6 +332,22 @@ def _canonical_lock_item_errors(item: Dict[str, Any], slate_date: str) -> List[s
 
 def _canonical_lock_authority(item: Dict[str, Any], slate_date: str) -> Dict[str, Any]:
     data = item.get("data") or {}
+    gate = next(
+        (
+            value
+            for key in ("slatePredictionLock", "lastPossiblePredictionGate")
+            for value in [data.get(key)]
+            if isinstance(value, dict)
+            and (
+                value.get("lockAtUtc")
+                or value.get("latestScoringPullAt")
+                or value.get("locked") is not None
+            )
+        ),
+        {},
+    )
+    canonical_lock_at = parse_dt(gate.get("lockAtUtc"))
+    official_game_pk = _official_game_pk(data)
     try:
         import mlb_daily_lock_ml_vector_preservation_patch as vector_contract
 
@@ -389,6 +405,15 @@ def _canonical_lock_authority(item: Dict[str, Any], slate_date: str) -> Dict[str
         "stageAuthorityVersion": item.get("stage_authority_version"),
         "stageFingerprint": item.get("stage_fingerprint"),
         "persistedStageAuthorityValidated": True,
+        # These values are re-derived from the consistently read immutable
+        # payload.  Post-cutover acceptance binds the rendered audit timestamp
+        # and official identity back to this authority instead of trusting a
+        # mutable summary field on its own.
+        "canonicalLockAtUtc": (
+            canonical_lock_at.isoformat() if canonical_lock_at else None
+        ),
+        "officialGamePk": official_game_pk or None,
+        "canonicalLockedGameId": _canonical_game_id(data) or None,
         "officialAuditEligible": True,
         "learningEligible": learning_eligible,
         "selectionLockIndependentOfTrainingVector": True,

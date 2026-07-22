@@ -4,6 +4,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
@@ -47,6 +48,7 @@ EXECUTION_LEASE_PROTECTED_MODES = (
 STATUS_FINGERPRINT_VERSION = (
     "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical"
 )
+STATUS_RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$")
 TRAINING_STATUS_MAX_AGE = timedelta(hours=8)
 SELECTION_CAPTURE_STATUS_MAX_AGE = timedelta(minutes=45)
 SLATE_TZ = ZoneInfo(os.environ.get("INQSI_SLATE_TIMEZONE", "America/New_York"))
@@ -84,6 +86,9 @@ class TrainingStore(Protocol):
     def save_status(self, experiment_id: str, status: Dict[str, Any]) -> None: ...
     def load_latest_status(
         self, experiment_id: str, execution_mode: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]: ...
+    def load_status_run(
+        self, experiment_id: str, run_id: str
     ) -> Optional[Dict[str, Any]]: ...
     def acquire_execution_lease(
         self,
@@ -274,6 +279,13 @@ def _parse_status_datetime(value: Any) -> Optional[datetime]:
     if parsed.tzinfo is None:
         parsed = parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _validated_status_run_id(value: Any) -> str:
+    run_id = str(value or "").strip()
+    if not STATUS_RUN_ID_PATTERN.fullmatch(run_id):
+        raise TrainingContractError("status runId is invalid")
+    return run_id
 
 
 def _experiment_pk(experiment_id: str) -> str:
@@ -736,9 +748,7 @@ class AwsTrainingStore:
         )
 
     def save_status(self, experiment_id: str, status: Dict[str, Any]) -> None:
-        run_id = str(status.get("runId") or "")
-        if not run_id:
-            raise TrainingContractError("status runId is required")
+        run_id = _validated_status_run_id(status.get("runId"))
         if status.get("experimentId") != experiment_id:
             raise TrainingContractError("status experiment identity mismatch")
         if status.get("statusFingerprintVersion") != STATUS_FINGERPRINT_VERSION:
@@ -834,6 +844,17 @@ class AwsTrainingStore:
             "selection_capture": STATUS_LATEST_SELECTION_CAPTURE_SK,
         }.get(mode, STATUS_LATEST_SK)
         return self._get_data({"PK": _experiment_pk(experiment_id), "SK": sk})
+
+    def load_status_run(
+        self, experiment_id: str, run_id: str
+    ) -> Optional[Dict[str, Any]]:
+        normalized = _validated_status_run_id(run_id)
+        return self._get_data(
+            {
+                "PK": _experiment_pk(experiment_id),
+                "SK": f"{STATUS_RUN_SK_PREFIX}{normalized}",
+            }
+        )
 
     def commit_candidate(
         self,
@@ -1255,6 +1276,7 @@ class TrainingService:
         self._execution_lease_acquired_for_run = False
         self._execution_lease_context: Optional[Dict[str, Any]] = None
         self._selection_capture_before_training: Optional[Dict[str, Any]] = None
+        self._scheduled_selection_capture_status: Optional[Dict[str, Any]] = None
 
     def attest_execution_lease_acquired(
         self,
@@ -1555,7 +1577,65 @@ class TrainingService:
             "errors": errors,
         }
 
-    def status(self) -> Dict[str, Any]:
+    def _requested_status_run_evidence(
+        self,
+        requested_run_id: str,
+        *,
+        execution_mode: str,
+        maximum_age: timedelta,
+    ) -> Dict[str, Any]:
+        normalized = _validated_status_run_id(requested_run_id)
+        run = self.store.load_status_run(self.config.experiment_id, normalized)
+        if not run:
+            return {
+                "ok": False,
+                "found": False,
+                "requestedRunId": normalized,
+                "executionMode": execution_mode,
+                "run": None,
+                "deploymentIdentityMatches": False,
+                "errors": ["requested_run_missing"],
+            }
+        health = self._latest_status_health(
+            run,
+            execution_mode=execution_mode,
+            maximum_age=maximum_age,
+            # Immutable deploy-run evidence remains valid if a later run from
+            # this exact build advances the current manifest before the query.
+            manifest=None,
+        )
+        errors = [
+            error.replace("latest_status", "requested_run", 1)
+            for error in health["errors"]
+        ]
+        if run.get("runId") != normalized:
+            errors.append("requested_run_id_mismatch")
+        return {
+            "ok": not errors,
+            "found": True,
+            "requestedRunId": normalized,
+            "executionMode": execution_mode,
+            "run": copy.deepcopy(run),
+            "runCreatedAtUtc": health["latestRunCreatedAtUtc"],
+            "ageSeconds": health["ageSeconds"],
+            "maximumAgeSeconds": health["maximumAgeSeconds"],
+            "deploymentIdentityMatches": health[
+                "deploymentIdentityMatches"
+            ],
+            "errors": sorted(set(errors)),
+        }
+
+    def status(
+        self,
+        *,
+        training_run_id: Optional[str] = None,
+        selection_capture_run_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        requested = bool(training_run_id or selection_capture_run_id)
+        if requested and not (training_run_id and selection_capture_run_id):
+            raise TrainingContractError(
+                "both training and selection-capture run IDs are required"
+            )
         manifest = self.store.load_manifest(self.config.experiment_id)
         training_health = self._latest_status_health(
             self.store.load_latest_status(self.config.experiment_id, "training"),
@@ -1571,9 +1651,32 @@ class TrainingService:
             maximum_age=SELECTION_CAPTURE_STATUS_MAX_AGE,
             manifest=manifest,
         )
+        requested_run_evidence: Dict[str, Any] = {}
+        if requested:
+            requested_run_evidence = {
+                "training": self._requested_status_run_evidence(
+                    str(training_run_id),
+                    execution_mode="training",
+                    maximum_age=TRAINING_STATUS_MAX_AGE,
+                ),
+                "selectionCapture": self._requested_status_run_evidence(
+                    str(selection_capture_run_id),
+                    execution_mode="selection_capture",
+                    maximum_age=SELECTION_CAPTURE_STATUS_MAX_AGE,
+                ),
+            }
+        requested_runs_ok = bool(
+            not requested
+            or all(
+                evidence.get("ok") is True
+                for evidence in requested_run_evidence.values()
+            )
+        )
         return {
             "ok": bool(
-                training_health["ok"] and selection_capture_health["ok"]
+                training_health["ok"]
+                and selection_capture_health["ok"]
+                and requested_runs_ok
             ),
             "version": VERSION,
             "experimentId": self.config.experiment_id,
@@ -1594,6 +1697,7 @@ class TrainingService:
             "runtimeAuthorityActivationAvailable": False,
             "trainingHealth": training_health,
             "selectionCaptureHealth": selection_capture_health,
+            "requestedRunEvidence": requested_run_evidence,
             "latestStatus": training_health["latestRun"],
             "latestSelectionCaptureStatus": selection_capture_health["latestRun"],
         }
@@ -1816,6 +1920,7 @@ class TrainingService:
         """Capture prospective evidence before scheduled fitting under one lease."""
         self._require_execution_lease("training")
         capture_status = self.capture_selections()
+        self._scheduled_selection_capture_status = copy.deepcopy(capture_status)
         capture = capture_status.get("selectionCapture") or {}
         self._selection_capture_before_training = {
             "ok": capture_status.get("ok") is True,
@@ -1829,11 +1934,46 @@ class TrainingService:
             ),
             "selectionWritesIdempotent": True,
         }
-        if capture_status.get("ok") is not True:
-            raise TrainingContractError(
-                "selection capture before scheduled training was unhealthy"
+        try:
+            if capture_status.get("ok") is not True:
+                raise TrainingContractError(
+                    "selection capture before scheduled training was unhealthy"
+                )
+            training_status = self.run()
+            final_capture = training_status.get("selectionCapture")
+            if not isinstance(final_capture, dict):
+                final_capture = capture
+            final_capture = copy.deepcopy(final_capture)
+            final_capture_ok = final_capture.get("ok") is not False
+            final_manifest = (
+                self.store.load_manifest(self.config.experiment_id) or {}
             )
-        return self.run()
+            self._save_run_status(
+                {
+                    "ok": final_capture_ok,
+                    "status": (
+                        "SCHEDULED_SELECTION_CAPTURE_HEARTBEAT_FINALIZED"
+                        if final_capture_ok
+                        else "SCHEDULED_SELECTION_CAPTURE_HEARTBEAT_FAILED"
+                    ),
+                    "executionMode": "selection_capture",
+                    "selectionCapture": final_capture,
+                    "challengerArtifactDigest": (
+                        final_manifest.get("frozenChallenger") or {}
+                    ).get("artifactDigest"),
+                    "sourceSelectionStatusRunId": capture_status.get("runId"),
+                    "trainingRunId": training_status.get("runId"),
+                    "selectionEvidenceRecapturedAfterTraining": False,
+                    "heartbeatBoundAfterTraining": True,
+                    "historicalTrainingScanInvoked": False,
+                    "modelTrained": False,
+                    "liveInferenceAuthority": False,
+                }
+            )
+            return training_status
+        finally:
+            self._scheduled_selection_capture_status = None
+            self._selection_capture_before_training = None
 
     def run(self) -> Dict[str, Any]:
         self._require_execution_lease("training")
@@ -1967,7 +2107,28 @@ class TrainingService:
             "conflicts": [],
         }
         if challenger is not None and challenger.get("ok") is True:
-            selection_capture = self._capture_selections(manifest, challenger)
+            scheduled_capture = self._scheduled_selection_capture_status or {}
+            scheduled_capture_result = scheduled_capture.get("selectionCapture")
+            scheduled_challenger_digest = str(
+                scheduled_capture.get("challengerArtifactDigest") or ""
+            )
+            current_challenger_digest = str(
+                (manifest.get("frozenChallenger") or {}).get("artifactDigest")
+                or ""
+            )
+            if (
+                isinstance(scheduled_capture_result, dict)
+                and scheduled_capture.get("ok") is True
+                and scheduled_capture_result.get("ok") is not False
+                and scheduled_challenger_digest
+                and scheduled_challenger_digest == current_challenger_digest
+            ):
+                # The scheduled path already captured under this immutable
+                # challenger before fitting. Reuse that result; a second pass
+                # could move capture timestamps or attempt a changed decision.
+                selection_capture = copy.deepcopy(scheduled_capture_result)
+            else:
+                selection_capture = self._capture_selections(manifest, challenger)
             selection_entries = self.store.list_selections(self.config.experiment_id)
             selection_evaluation = dual_model.evaluate_selection_ledger(
                 accepted,
@@ -2268,7 +2429,10 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     mode = str(request.get("mode") or "scheduled").strip().lower()
     service = _service()
     if mode == "status":
-        return service.status()
+        return service.status(
+            training_run_id=request.get("trainingRunId"),
+            selection_capture_run_id=request.get("selectionCaptureRunId"),
+        )
     if mode not in {"scheduled", "selection_capture", "manual_review"}:
         raise TrainingContractError(f"unsupported training mode: {mode}")
     execution_mode = {

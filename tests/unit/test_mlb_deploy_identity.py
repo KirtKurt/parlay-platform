@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import io
 import json
+import re
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -53,6 +54,15 @@ EXPECTED_CODE_MANIFEST = {
 
 def _arn(role: str) -> str:
     return f"arn:aws:lambda:{REGION}:123456789012:function:{role}"
+
+
+def _resource_block(template: str, name: str) -> str:
+    marker = f"\n  {name}:\n"
+    tail = template.split(marker, 1)[1]
+    next_resource = re.search(r"(?m)^  [A-Za-z][A-Za-z0-9]*:\s*$", tail)
+    return marker + (
+        tail[: next_resource.start()] if next_resource is not None else tail
+    )
 
 
 class FakeCloudFormation:
@@ -114,6 +124,16 @@ class FakeLambda:
                         "ODDS_API_KEY": "must-not-appear-in-proof",
                     }
                 )
+            if role == "lock":
+                handler = deploy_identity.LOCK_HANDLER
+                environment.update(
+                    {
+                        "MLB_LOCK_EXECUTION_LEASE_SECONDS": (
+                            deploy_identity.LOCK_EXECUTION_LEASE_SECONDS
+                        ),
+                        "SNAPSHOTS_TABLE": "snapshots",
+                    }
+                )
             if role == "ingest":
                 environment.update(
                     {
@@ -129,6 +149,8 @@ class FakeLambda:
                 "Timeout": (
                     deploy_identity.TRAINER_TIMEOUT_SECONDS
                     if role == "trainer"
+                    else deploy_identity.LOCK_TIMEOUT_SECONDS
+                    if role == "lock"
                     else 30
                 ),
                 "Runtime": "python3.11",
@@ -375,6 +397,30 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
         "otherCanonicalFunctionsWithoutBbsAuthority": True,
     }
     assert result["functions"]["MLBMLTrainingFunction"]["configurationMatches"] is True
+    assert result["lockConfiguration"]["matches"] is True
+    assert result["lockConfiguration"]["handler"] == deploy_identity.LOCK_HANDLER
+    assert result["lockConfiguration"]["timeoutSeconds"] == 300
+    assert result["lockConfiguration"]["executionConcurrencyStrategy"] == (
+        "dynamodb_conditional_lease"
+    )
+    assert result["lockConfiguration"]["executionLeaseScope"] == (
+        "global_mlb_lock_execution"
+    )
+    assert result["lockConfiguration"]["executionLeaseSeconds"] == 360
+    assert result["lockConfiguration"]["executionLeaseDurationMatches"] is True
+    assert result["lockConfiguration"][
+        "executionLeaseCoversTimeoutSafetyBound"
+    ] is True
+    assert result["lockConfiguration"]["requiredEnvironmentKeys"] == [
+        "SNAPSHOTS_TABLE"
+    ]
+    assert result["lockConfiguration"]["snapshotTable"] == "snapshots"
+    assert result["lockConfiguration"]["requiredEnvironmentPresent"] is True
+    assert result["lockConfiguration"]["expiredLeaseReclaim"] is True
+    assert result["lockConfiguration"]["ownerConditionalRelease"] is True
+    assert result["lockConfiguration"]["reservedLambdaConcurrencyRequired"] is False
+    assert result["lockConfiguration"]["asyncRetryPolicyMatches"] is True
+    assert result["lockConfiguration"]["asyncDestinationConfigAbsent"] is True
     assert result["trainerConfiguration"]["matches"] is True
     assert result["trainerConfiguration"]["executionConcurrencyStrategy"] == (
         "dynamodb_conditional_lease"
@@ -1015,6 +1061,50 @@ def test_rejects_unexpected_trainer_dead_letter_destination(aws) -> None:
     ]
 
 
+def test_rejects_lock_execution_lease_below_timeout_safety_bound(aws) -> None:
+    environment = aws["lambda"].configurations["physical-lock"]["Environment"][
+        "Variables"
+    ]
+    environment["MLB_LOCK_EXECUTION_LEASE_SECONDS"] = "359"
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["lockConfiguration"]["matches"] is False
+    assert result["lockConfiguration"]["executionLeaseSeconds"] == 359
+    assert result["lockConfiguration"]["executionLeaseDurationMatches"] is False
+    assert result["lockConfiguration"][
+        "executionLeaseCoversTimeoutSafetyBound"
+    ] is False
+    assert any(
+        blocker.startswith("LOCK_EXECUTION_LEASE_DURATION_MISMATCH:")
+        for blocker in result["blockers"]
+    )
+    assert any(
+        blocker.startswith("LOCK_EXECUTION_LEASE_TIMEOUT_BOUND_FAILED:")
+        for blocker in result["blockers"]
+    )
+
+
+@pytest.mark.parametrize("value", (None, "", "   "))
+def test_rejects_lock_without_nonempty_snapshots_table(aws, value) -> None:
+    environment = aws["lambda"].configurations["physical-lock"]["Environment"][
+        "Variables"
+    ]
+    if value is None:
+        environment.pop("SNAPSHOTS_TABLE")
+    else:
+        environment["SNAPSHOTS_TABLE"] = value
+
+    result = _verify()
+
+    assert result["ok"] is False
+    assert result["lockConfiguration"]["matches"] is False
+    assert result["lockConfiguration"]["requiredEnvironmentPresent"] is False
+    assert result["lockConfiguration"]["snapshotTable"] == (value or "")
+    assert "LOCK_ENVIRONMENT_MISSING:SNAPSHOTS_TABLE" in result["blockers"]
+
+
 def test_template_preserves_retries_without_requiring_sqs_create() -> None:
     template = (
         Path(__file__).resolve().parents[2] / "template.yaml"
@@ -1025,6 +1115,11 @@ def test_template_preserves_retries_without_requiring_sqs_create() -> None:
     assert "sqs:SendMessage" not in template
     assert "ReservedConcurrentExecutions:" not in template
     assert "MLB_ML_EXECUTION_LEASE_SECONDS: '960'" in template
+    lock_resource = _resource_block(template, "MLBDailyPickLockFunction")
+    assert "MLB_LOCK_EXECUTION_LEASE_SECONDS: '360'" in lock_resource
+    assert lock_resource.count("MaximumEventAgeInSeconds: 60") == 2
+    assert lock_resource.count("MaximumRetryAttempts: 0") == 2
+    assert "Schedule: rate(1 minute)" in lock_resource
     assert template.count("MaximumEventAgeInSeconds: 3600") >= 2
     assert template.count("MaximumEventAgeInSeconds: 300") >= 2
     assert template.count("MaximumEventAgeInSeconds: 60") >= 2
@@ -1061,12 +1156,20 @@ def test_deploy_initializes_both_trainer_modes_before_status_acceptance() -> Non
         "'{\"sport\":\"mlb\",\"mode\":\"selection_capture\","
         "\"run\":\"aws_native_prospective_selection_capture\"}'"
     )
-    status_payload = "'{\"mode\":\"status\"}'"
+    status_training = "--status-training-result /tmp/mlb-ml-v2-training.json"
+    status_selection = (
+        "--status-selection-capture-result "
+        "/tmp/mlb-ml-v2-selection-capture.json"
+    )
 
     assert workflow.index(training_payload) < workflow.index(capture_payload)
-    assert workflow.index(capture_payload) < workflow.index(status_payload)
+    assert workflow.index(capture_payload) < workflow.index(status_training)
+    assert workflow.index(status_training) < workflow.index(status_selection)
     assert 'AWS_MAX_ATTEMPTS: "1"' in workflow
     assert workflow.count("python scripts/invoke_mlb_trainer_with_retry.py") == 3
+    assert workflow.count("--retry-execution-lease") == 2
+    assert workflow.count("--deadline-seconds 1200") == 2
+    assert workflow.count("--retry-delay-seconds 20") == 2
     assert "invoke_with_capacity_retry" not in workflow
     assert "Prove shared Lambda capacity recovered before trainer initialization" in workflow
     assert "--expected-deploy-run-id" in workflow
