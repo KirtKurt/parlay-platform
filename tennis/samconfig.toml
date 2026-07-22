@@ -1,0 +1,19 @@
+version = 0.1
+
+[default.global.parameters]
+stack_name = "parlay-platform-tennis-dev"
+region = "us-east-1"
+
+[default.build.parameters]
+cached = false
+parallel = true
+
+[default.deploy.parameters]
+capabilities = "CAPABILITY_IAM"
+confirm_changeset = true
+resolve_s3 = true
+stack_name = "parlay-platform-tennis-dev"
+s3_prefix = "parlay-platform-tennis-dev"
+region = "us-east-1"
+image_repositories = []
+parameter_overrides = "TennisScheduleState=DISABLED"

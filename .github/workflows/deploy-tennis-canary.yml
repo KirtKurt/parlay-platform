@@ -1,0 +1,536 @@
+name: Deploy schedule-disabled tennis canary
+
+on:
+  push:
+    branches:
+      - codex/tennis-ml-structure
+    paths:
+      - "tennis/**"
+      - ".github/workflows/deploy-tennis-canary.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never share or cancel the production/MLB deployment lock. A deployment that
+# has begun is allowed to finish so CloudFormation is not abandoned mid-update.
+concurrency:
+  group: parlay-platform-tennis-dev-canary
+  cancel-in-progress: false
+
+jobs:
+  deploy-tennis-canary:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    defaults:
+      run:
+        shell: bash
+        working-directory: tennis
+    env:
+      AWS_REGION: us-east-1
+      AWS_DEFAULT_REGION: us-east-1
+      TENNIS_STACK_NAME: parlay-platform-tennis-dev
+
+    steps:
+      - name: Checkout exact source commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Verify AWS and isolated tennis credentials
+        env:
+          TENNIS_ODDS_API_KEY_VALUE: ${{ secrets.TENNIS_ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          test -n "${BBS_API_KEY_VALUE:-}" || {
+            echo "::error::Missing BBS_API_KEY for the tennis results probe"
+            exit 1
+          }
+          if [ -n "${TENNIS_ODDS_API_KEY_VALUE:-}" ]; then
+            echo "Dedicated TENNIS_ODDS_API_KEY is configured."
+          else
+            echo "Dedicated TENNIS_ODDS_API_KEY is absent; this is allowed only because the canary schedule is disabled."
+          fi
+
+      - name: Install tennis validation dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet \
+            "pytest>=8,<9" \
+            "ruff>=0.9,<1" \
+            "cfn-lint>=1,<2" \
+            -r src/requirements.txt
+
+      - name: Test isolated tennis application
+        run: |
+          set -euo pipefail
+          python -m pytest -q tests
+          python -m ruff check src tests
+
+      - name: Validate and build tennis SAM application
+        run: |
+          set -euo pipefail
+          sam validate --lint --template-file template.yaml
+          sam build --no-cached --template-file template.yaml
+
+      - name: Calculate exact tennis deployment identity
+        id: identity
+        run: |
+          set -euo pipefail
+          template_sha256=$(sha256sum template.yaml | awk '{print $1}')
+          test -n "$template_sha256"
+          echo "template_sha256=$template_sha256" >> "$GITHUB_OUTPUT"
+          echo "git_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "Tennis deploy Git SHA: $GITHUB_SHA"
+          echo "Tennis template SHA-256: $template_sha256"
+
+      - name: Fingerprint production MLB stack before tennis deployment
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region us-east-1 \
+            --output json > /tmp/mlb-stack-before.json
+          aws cloudformation get-template \
+            --stack-name parlay-platform-dev \
+            --template-stage Processed \
+            --region us-east-1 \
+            --output json > /tmp/mlb-template-before.json
+          aws cloudformation list-stack-resources \
+            --stack-name parlay-platform-dev \
+            --region us-east-1 \
+            --output json > /tmp/mlb-resources-before.json
+          MLB_FINGERPRINT_PHASE=before python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          phase = os.environ["MLB_FINGERPRINT_PHASE"]
+          stack = json.loads(Path(f"/tmp/mlb-stack-{phase}.json").read_text())["Stacks"][0]
+          template = json.loads(Path(f"/tmp/mlb-template-{phase}.json").read_text())
+          resources = json.loads(Path(f"/tmp/mlb-resources-{phase}.json").read_text())
+
+          stack_fields = (
+              "StackId", "StackName", "CreationTime", "LastUpdatedTime",
+              "StackStatus", "EnableTerminationProtection", "RoleARN",
+              "Capabilities", "Parameters", "Outputs", "Tags",
+          )
+          stack_contract = {key: stack.get(key) for key in stack_fields}
+          for key in ("Capabilities", "Parameters", "Outputs", "Tags"):
+              if isinstance(stack_contract.get(key), list):
+                  stack_contract[key] = sorted(
+                      stack_contract[key],
+                      key=lambda row: json.dumps(row, sort_keys=True),
+                  )
+          protected = {
+              "stack": stack_contract,
+              "template": template.get("TemplateBody"),
+              "resources": sorted(
+                  resources.get("StackResourceSummaries", []),
+                  key=lambda row: str(row.get("LogicalResourceId", "")),
+              ),
+          }
+          canonical = json.dumps(protected, sort_keys=True, separators=(",", ":"))
+          digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+          Path(f"/tmp/mlb-stack-{phase}.sha256").write_text(digest + "\n")
+          print(f"Production MLB stack fingerprint ({phase}): {digest}")
+          PY
+
+      - name: Create but do not execute tennis change set
+        id: create_changeset
+        env:
+          TENNIS_ODDS_API_KEY_VALUE: ${{ secrets.TENNIS_ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+          DEPLOY_TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
+        run: |
+          set -euo pipefail
+          if aws cloudformation describe-stacks \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --output json > /tmp/tennis-stack-before.json 2>/dev/null; then
+            echo "stack_existed=true" >> "$GITHUB_OUTPUT"
+            aws cloudformation list-change-sets \
+              --stack-name "$TENNIS_STACK_NAME" \
+              --region us-east-1 \
+              --output json > /tmp/tennis-change-sets-before.json
+          else
+            echo "stack_existed=false" >> "$GITHUB_OUTPUT"
+            printf '{"Summaries":[]}\n' > /tmp/tennis-change-sets-before.json
+          fi
+
+          parameter_overrides=(
+            "TennisBbsApiKey=${BBS_API_KEY_VALUE}"
+            "TennisScheduleState=DISABLED"
+            "DeployGitSha=${GITHUB_SHA}"
+            "DeployTemplateSha256=${DEPLOY_TEMPLATE_SHA256}"
+          )
+          if [ -n "${TENNIS_ODDS_API_KEY_VALUE:-}" ]; then
+            parameter_overrides+=("TennisOddsApiKey=${TENNIS_ODDS_API_KEY_VALUE}")
+          fi
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-execute-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides "${parameter_overrides[@]}"
+
+      - name: Locate and inspect exact tennis change set
+        id: changeset
+        run: |
+          set -euo pipefail
+          aws cloudformation list-change-sets \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --output json > /tmp/tennis-change-sets-after.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          before = json.loads(Path("/tmp/tennis-change-sets-before.json").read_text())
+          after = json.loads(Path("/tmp/tennis-change-sets-after.json").read_text())
+          old_names = {row.get("ChangeSetName") for row in before.get("Summaries", [])}
+          new_rows = [
+              row for row in after.get("Summaries", [])
+              if row.get("ChangeSetName") not in old_names
+          ]
+          ready = [row for row in new_rows if row.get("Status") == "CREATE_COMPLETE"]
+          output = Path(os.environ["GITHUB_OUTPUT"])
+          if not ready:
+              no_op = all(
+                  row.get("Status") in {"DELETE_COMPLETE", "FAILED"}
+                  and "didn't contain changes" in str(row.get("StatusReason", ""))
+                  for row in new_rows
+              )
+              if not new_rows or no_op:
+                  output.write_text("arn=\n")
+                  Path("/tmp/tennis-change-set-arn").write_text("")
+                  print("The exact tennis stack is already current; no change set will execute.")
+                  raise SystemExit(0)
+              raise SystemExit(f"No executable tennis change set was created: {new_rows}")
+          selected = max(ready, key=lambda row: str(row.get("CreationTime", "")))
+          arn = str(selected.get("ChangeSetId") or "")
+          if not arn:
+              raise SystemExit("New tennis change set has no ARN")
+          output.write_text(f"arn={arn}\n")
+          Path("/tmp/tennis-change-set-arn").write_text(arn)
+          print(f"Selected tennis change set: {arn}")
+          PY
+
+          change_set_arn=$(< /tmp/tennis-change-set-arn)
+          if [ -z "$change_set_arn" ]; then
+            exit 0
+          fi
+          aws cloudformation describe-change-set \
+            --change-set-name "$change_set_arn" \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --output json > /tmp/tennis-change-set.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          change_set = json.loads(Path("/tmp/tennis-change-set.json").read_text())
+          if change_set.get("StackName") != "parlay-platform-tennis-dev":
+              raise SystemExit("Change set targets a stack outside the tennis canary boundary")
+          if change_set.get("Status") != "CREATE_COMPLETE":
+              raise SystemExit(f"Change set is not ready: {change_set.get('Status')}")
+          changes = change_set.get("Changes") or []
+          if not changes:
+              raise SystemExit("Executable tennis change set unexpectedly contains no changes")
+          for wrapped in changes:
+              change = wrapped.get("ResourceChange") or {}
+              logical_id = str(change.get("LogicalResourceId") or "")
+              action = str(change.get("Action") or "")
+              resource_type = str(change.get("ResourceType") or "")
+              replacement = str(change.get("Replacement") or "False")
+              if not logical_id.startswith("Tennis"):
+                  raise SystemExit(f"Non-tennis resource in canary change set: {logical_id}")
+              if action == "Remove":
+                  raise SystemExit(f"Canary change set may not remove resources: {logical_id}")
+              if resource_type in {"AWS::DynamoDB::Table", "AWS::S3::Bucket"} and replacement == "True":
+                  raise SystemExit(f"Canary change set may not replace retained data: {logical_id}")
+          print(json.dumps(changes, indent=2, default=str))
+          PY
+
+      - name: Execute inspected tennis change set
+        run: |
+          set -euo pipefail
+          change_set_arn="${{ steps.changeset.outputs.arn }}"
+          if [ -n "$change_set_arn" ]; then
+            aws cloudformation execute-change-set \
+              --change-set-name "$change_set_arn" \
+              --stack-name "$TENNIS_STACK_NAME" \
+              --region us-east-1
+          fi
+
+          for attempt in $(seq 1 90); do
+            status=$(aws cloudformation describe-stacks \
+              --stack-name "$TENNIS_STACK_NAME" \
+              --region us-east-1 \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || echo STACK_MISSING)
+            echo "Tennis CloudFormation status: $status"
+            case "$status" in
+              CREATE_COMPLETE|UPDATE_COMPLETE)
+                exit 0
+                ;;
+              *_IN_PROGRESS)
+                sleep 10
+                ;;
+              *)
+                aws cloudformation describe-stack-events \
+                  --stack-name "$TENNIS_STACK_NAME" \
+                  --region us-east-1 \
+                  --max-items 20 \
+                  --output table || true
+                echo "::error::Tennis stack is not healthy: $status"
+                exit 1
+                ;;
+            esac
+          done
+          echo "::error::Timed out waiting for the tennis canary stack"
+          exit 1
+
+      - name: Prove schedule-disabled deployment identity
+        env:
+          EXPECTED_TEMPLATE_SHA256: ${{ steps.identity.outputs.template_sha256 }}
+        run: |
+          set -euo pipefail
+          aws cloudformation describe-stacks \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --output json > /tmp/tennis-deployed-stack.json
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          stack = json.loads(Path("/tmp/tennis-deployed-stack.json").read_text())["Stacks"][0]
+          parameters = {
+              row["ParameterKey"]: row.get("ParameterValue", "")
+              for row in stack.get("Parameters", [])
+          }
+          expected = {
+              "TennisScheduleState": "DISABLED",
+              "DeployGitSha": os.environ["GITHUB_SHA"],
+              "DeployTemplateSha256": os.environ["EXPECTED_TEMPLATE_SHA256"],
+          }
+          mismatches = {
+              key: {"expected": value, "actual": parameters.get(key)}
+              for key, value in expected.items()
+              if parameters.get(key) != value
+          }
+          if mismatches:
+              raise SystemExit(f"Tennis deployed identity mismatch: {mismatches}")
+          PY
+
+          mapfile -t rule_names < <(
+            aws cloudformation list-stack-resources \
+              --stack-name "$TENNIS_STACK_NAME" \
+              --region us-east-1 \
+              --query "StackResourceSummaries[?ResourceType=='AWS::Events::Rule'].PhysicalResourceId" \
+              --output text | tr '\t' '\n' | sed '/^[[:space:]]*$/d'
+          )
+          if [ "${#rule_names[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one tennis EventBridge rule; found ${#rule_names[@]}"
+            exit 1
+          fi
+          rule_state=$(aws events describe-rule \
+            --name "${rule_names[0]}" \
+            --region us-east-1 \
+            --query State \
+            --output text)
+          test "$rule_state" = "DISABLED" || {
+            echo "::error::Tennis EventBridge rule is not DISABLED: $rule_state"
+            exit 1
+          }
+          echo "Tennis EventBridge rule is DISABLED: ${rule_names[0]}"
+
+      - name: Invoke zero-network tennis collector health canary
+        run: |
+          set -euo pipefail
+          pull_function_arn=$(aws cloudformation describe-stacks \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisPullFunctionArn'].OutputValue | [0]" \
+            --output text)
+          test -n "$pull_function_arn"
+          test "$pull_function_arn" != "None"
+          aws lambda invoke \
+            --function-name "$pull_function_arn" \
+            --region us-east-1 \
+            --cli-connect-timeout 10 \
+            --cli-read-timeout 60 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"sport":"tennis","mode":"canary_health"}' \
+            /tmp/tennis-collector-health.json > /tmp/tennis-collector-health-invoke.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          invocation = json.loads(Path("/tmp/tennis-collector-health-invoke.json").read_text())
+          if invocation.get("StatusCode") != 200 or invocation.get("FunctionError"):
+              raise SystemExit(f"Tennis collector health invocation failed: {invocation}")
+          report = json.loads(Path("/tmp/tennis-collector-health.json").read_text())
+          expected = {
+              "ok": True,
+              "sport": "tennis",
+              "mode": "canary_health",
+              "model_state": "RULE_BASED_SHADOW",
+              "schedule_invoked": False,
+              "network_calls": 0,
+          }
+          mismatches = {
+              key: {"expected": value, "actual": report.get(key)}
+              for key, value in expected.items()
+              if report.get(key) != value
+          }
+          if mismatches:
+              raise SystemExit(f"Tennis collector health contract failed: {mismatches}")
+          if not (report.get("credentials_present") or {}).get("dedicated_odds_secret"):
+              raise SystemExit("Tennis collector lacks its dedicated secret boundary")
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+
+      - name: Invoke authenticated BBS tennis results capability probe
+        run: |
+          set -euo pipefail
+          probe_function_arn=$(aws cloudformation describe-stacks \
+            --stack-name "$TENNIS_STACK_NAME" \
+            --region us-east-1 \
+            --query "Stacks[0].Outputs[?OutputKey=='TennisResultsProbeFunctionArn'].OutputValue | [0]" \
+            --output text)
+          test -n "$probe_function_arn"
+          test "$probe_function_arn" != "None"
+          aws lambda invoke \
+            --function-name "$probe_function_arn" \
+            --region us-east-1 \
+            --cli-connect-timeout 10 \
+            --cli-read-timeout 60 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"provider":"bbs","sport":"tennis","action":"probe"}' \
+            /tmp/tennis-results-probe.json > /tmp/tennis-results-probe-invoke.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          invocation = json.loads(Path("/tmp/tennis-results-probe-invoke.json").read_text())
+          if invocation.get("StatusCode") != 200 or invocation.get("FunctionError"):
+              raise SystemExit(f"Tennis results probe invocation failed: {invocation}")
+          report = json.loads(Path("/tmp/tennis-results-probe.json").read_text())
+          if not isinstance(report, dict):
+              raise SystemExit("Tennis results probe did not return an object")
+          required = {
+              "provider",
+              "sport",
+              "status",
+              "checkedAtUtc",
+              "reason",
+              "requestCount",
+              "resultRouteChecked",
+              "ready",
+          }
+          missing = sorted(required.difference(report))
+          if missing:
+              raise SystemExit(f"Tennis results probe contract is incomplete: {missing}")
+          if report.get("provider") != "bbs" or report.get("sport") != "tennis":
+              raise SystemExit(f"Tennis results probe identity mismatch: {report}")
+          allowed = {
+              "READY",
+              "UNSUPPORTED",
+              "RESULT_ROUTE_UNVERIFIED",
+              "CONTRACT_INCOMPLETE",
+          }
+          status = report.get("status")
+          if status not in allowed:
+              raise SystemExit(f"BBS tennis capability probe failed closed: status={status!r}, report={report}")
+          print(json.dumps(report, indent=2, default=str))
+          print(f"Accepted BBS tennis capability status: {status}")
+          PY
+
+      - name: Fingerprint production MLB stack after tennis deployment
+        if: ${{ always() }}
+        run: |
+          set -euo pipefail
+          test -f /tmp/mlb-stack-before.sha256 || {
+            echo "::error::The protected MLB before-fingerprint is unavailable"
+            exit 1
+          }
+          aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region us-east-1 \
+            --output json > /tmp/mlb-stack-after.json
+          aws cloudformation get-template \
+            --stack-name parlay-platform-dev \
+            --template-stage Processed \
+            --region us-east-1 \
+            --output json > /tmp/mlb-template-after.json
+          aws cloudformation list-stack-resources \
+            --stack-name parlay-platform-dev \
+            --region us-east-1 \
+            --output json > /tmp/mlb-resources-after.json
+          MLB_FINGERPRINT_PHASE=after python - <<'PY'
+          import hashlib
+          import json
+          import os
+          from pathlib import Path
+
+          phase = os.environ["MLB_FINGERPRINT_PHASE"]
+          stack = json.loads(Path(f"/tmp/mlb-stack-{phase}.json").read_text())["Stacks"][0]
+          template = json.loads(Path(f"/tmp/mlb-template-{phase}.json").read_text())
+          resources = json.loads(Path(f"/tmp/mlb-resources-{phase}.json").read_text())
+          stack_fields = (
+              "StackId", "StackName", "CreationTime", "LastUpdatedTime",
+              "StackStatus", "EnableTerminationProtection", "RoleARN",
+              "Capabilities", "Parameters", "Outputs", "Tags",
+          )
+          stack_contract = {key: stack.get(key) for key in stack_fields}
+          for key in ("Capabilities", "Parameters", "Outputs", "Tags"):
+              if isinstance(stack_contract.get(key), list):
+                  stack_contract[key] = sorted(
+                      stack_contract[key],
+                      key=lambda row: json.dumps(row, sort_keys=True),
+                  )
+          protected = {
+              "stack": stack_contract,
+              "template": template.get("TemplateBody"),
+              "resources": sorted(
+                  resources.get("StackResourceSummaries", []),
+                  key=lambda row: str(row.get("LogicalResourceId", "")),
+              ),
+          }
+          canonical = json.dumps(protected, sort_keys=True, separators=(",", ":"))
+          digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+          Path(f"/tmp/mlb-stack-{phase}.sha256").write_text(digest + "\n")
+          print(f"Production MLB stack fingerprint ({phase}): {digest}")
+          PY
+          if ! cmp --silent /tmp/mlb-stack-before.sha256 /tmp/mlb-stack-after.sha256; then
+            echo "::error::Production MLB CloudFormation fingerprint changed during the tennis deployment"
+            diff -u /tmp/mlb-stack-before.sha256 /tmp/mlb-stack-after.sha256 || true
+            exit 1
+          fi
+          echo "Production MLB stack remained byte-identical at the CloudFormation contract boundary."

@@ -1,0 +1,602 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: Isolated Inqis tennis pre-match collection and shadow feature stack
+
+Parameters:
+  TennisOddsApiKey:
+    Type: String
+    NoEcho: true
+    Default: NOT_CONFIGURED
+    Description: Dedicated tennis Odds API key; never reuse the MLB credential
+  TennisBbsApiKey:
+    Type: String
+    NoEcho: true
+    Description: BBS key used only by the manual tennis capability-probe Lambda
+  TennisScheduleState:
+    Type: String
+    Default: DISABLED
+    AllowedValues: [DISABLED, ENABLED]
+    Description: Explicit canary gate; deployment defaults to no scheduled collection
+  TennisAlarmTopicArn:
+    Type: String
+    Default: ""
+    Description: Optional SNS topic ARN for tennis-only alarm notifications
+  TennisQuotaProtectedReserve:
+    Type: Number
+    Default: 250
+    MinValue: 0
+  TennisQuotaDailyBudget:
+    Type: Number
+    Default: 20000
+    MinValue: 1
+  DeployGitSha:
+    Type: String
+    Default: unknown
+    Description: Exact source commit deployed to the isolated tennis stack
+  DeployTemplateSha256:
+    Type: String
+    Default: unknown
+    Description: SHA-256 of this tennis SAM template
+
+Conditions:
+  HasAlarmTopic: !Not [!Equals [!Ref TennisAlarmTopicArn, ""]]
+
+Resources:
+  TennisSnapshotsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: inqsi:sport
+          Value: tennis
+        - Key: inqsi:data-class
+          Value: pre-match-snapshots
+
+  TennisSignalsTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+      Tags:
+        - Key: inqsi:sport
+          Value: tennis
+        - Key: inqsi:data-class
+          Value: shadow-features
+
+  TennisArchiveBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: RetainNoncurrentTrainingVersions
+            Status: Enabled
+            NoncurrentVersionTransitions:
+              - StorageClass: GLACIER
+                TransitionInDays: 30
+      Tags:
+        - Key: inqsi:sport
+          Value: tennis
+        - Key: inqsi:data-class
+          Value: immutable-parquet-training-archive
+
+  TennisOddsApiSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: Dedicated tennis odds credential; not shared with MLB
+      SecretString: !Ref TennisOddsApiKey
+      Tags:
+        - Key: inqsi:sport
+          Value: tennis
+        - Key: inqsi:consumer
+          Value: tennis-pull-only
+
+  TennisBbsApiSecret:
+    Type: AWS::SecretsManager::Secret
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: BBS credential scoped to the manual tennis capability probe
+      SecretString: !Ref TennisBbsApiKey
+      Tags:
+        - Key: inqsi:sport
+          Value: tennis
+        - Key: inqsi:consumer
+          Value: tennis-results-probe-only
+
+  TennisPullDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+      SqsManagedSseEnabled: true
+      Tags:
+        - Key: inqsi:sport
+          Value: tennis
+        - Key: inqsi:purpose
+          Value: pull-failures
+
+  TennisPullFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: handler.lambda_handler
+      Runtime: python3.11
+      Architectures: [x86_64]
+      Timeout: 240
+      MemorySize: 1024
+      ReservedConcurrentExecutions: 1
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 900
+        MaximumRetryAttempts: 2
+        DestinationConfig:
+          OnFailure:
+            Type: SQS
+            Destination: !GetAtt TennisPullDeadLetterQueue.Arn
+      Environment:
+        Variables:
+          TENNIS_ODDS_API_SECRET_ARN: !Ref TennisOddsApiSecret
+          TENNIS_SNAPSHOTS_TABLE: !Ref TennisSnapshotsTable
+          TENNIS_SIGNALS_TABLE: !Ref TennisSignalsTable
+          TENNIS_ARCHIVE_BUCKET: !Ref TennisArchiveBucket
+          TENNIS_PULL_INTERVAL_MINUTES: "15"
+          TENNIS_PULL_LEAD_HOURS: "8"
+          TENNIS_SLATE_TIMEZONE: America/New_York
+          TENNIS_ODDS_REGIONS: us
+          TENNIS_ODDS_MARKETS: h2h
+          TENNIS_ODDS_FORMAT: american
+          TENNIS_INCLUDE_DOUBLES: "false"
+          TENNIS_DISCOVERY_HORIZON_HOURS: "48"
+          TENNIS_PROVIDER_TIMEOUT_SECONDS: "12"
+          TENNIS_MAX_PARALLEL_REQUESTS: "4"
+          TENNIS_MIN_SIGNAL_PULLS: "2"
+          TENNIS_MIN_COMMON_BOOKS: "2"
+          TENNIS_MIN_PUBLISH_PULLS: "12"
+          TENNIS_MIN_PUBLISH_BOOKS: "3"
+          TENNIS_MAX_BOOK_PRICE_AGE_SECONDS: "900"
+          TENNIS_MAX_BOOK_FUTURE_SKEW_SECONDS: "60"
+          TENNIS_QUOTA_PROTECTED_RESERVE: !Ref TennisQuotaProtectedReserve
+          TENNIS_QUOTA_DAILY_BUDGET: !Ref TennisQuotaDailyBudget
+          TENNIS_REQUIRE_QUOTA_HEADERS: "true"
+          TENNIS_METRICS_NAMESPACE: Inqsi/TennisCollector
+          TENNIS_MODEL_STATE: RULE_BASED_SHADOW
+          INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
+          INQSI_DEPLOY_TEMPLATE_SHA256: !Ref DeployTemplateSha256
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TennisSnapshotsTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TennisSignalsTable
+        - SQSSendMessagePolicy:
+            QueueName: !GetAtt TennisPullDeadLetterQueue.QueueName
+        - Statement:
+            - Sid: ReadOnlyDedicatedTennisOddsSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref TennisOddsApiSecret
+            - Sid: CreateImmutableTennisArchiveObjects
+              Effect: Allow
+              Action: s3:PutObject
+              Resource: !Sub "${TennisArchiveBucket.Arn}/*"
+      Tags:
+        inqsi:sport: tennis
+        inqsi:model-state: rule-based-shadow
+        inqsi:stack-boundary: tennis-only
+
+  TennisResultsProbeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: src/
+      Handler: results_probe_handler.lambda_handler
+      Runtime: python3.11
+      Timeout: 15
+      MemorySize: 256
+      ReservedConcurrentExecutions: 1
+      Environment:
+        Variables:
+          TENNIS_BBS_API_SECRET_ARN: !Ref TennisBbsApiSecret
+      Policies:
+        - Statement:
+            - Sid: ReadOnlyTennisBbsProbeSecret
+              Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref TennisBbsApiSecret
+      Tags:
+        inqsi:sport: tennis
+        inqsi:purpose: results-capability-probe
+        inqsi:authority: none
+
+  TennisPullScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Isolated tennis 15-minute pre-match collector
+      ScheduleExpression: cron(0/15 * * * ? *)
+      State: !Ref TennisScheduleState
+      Targets:
+        - Id: TennisPullFunctionTarget
+          Arn: !GetAtt TennisPullFunction.Arn
+          DeadLetterConfig:
+            Arn: !GetAtt TennisPullDeadLetterQueue.Arn
+          RetryPolicy:
+            MaximumEventAgeInSeconds: 900
+            MaximumRetryAttempts: 2
+
+  TennisPullSchedulePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref TennisPullFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt TennisPullScheduleRule.Arn
+
+  TennisPullDeadLetterQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref TennisPullDeadLetterQueue
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: TennisScheduleOnly
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt TennisPullDeadLetterQueue.Arn
+            Condition:
+              StringEquals:
+                aws:SourceAccount: !Ref AWS::AccountId
+              ArnEquals:
+                aws:SourceArn: !GetAtt TennisPullScheduleRule.Arn
+
+  TennisPullLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${TennisPullFunction}"
+      RetentionInDays: 30
+
+  TennisResultsProbeLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${TennisResultsProbeFunction}"
+      RetentionInDays: 30
+
+  TennisPullErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Tennis collector Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref TennisPullFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisPullThrottleAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Tennis collector Lambda throttled
+      Namespace: AWS/Lambda
+      MetricName: Throttles
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref TennisPullFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisPullDurationAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Tennis collector p95 duration exceeds three minutes
+      Namespace: AWS/Lambda
+      MetricName: Duration
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref TennisPullFunction
+      ExtendedStatistic: p95
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 180000
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisScheduleFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: EventBridge could not invoke the tennis collector
+      Namespace: AWS/Events
+      MetricName: FailedInvocations
+      Dimensions:
+        - Name: RuleName
+          Value: !Ref TennisPullScheduleRule
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisPullDeadLetterAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Tennis pull exhausted EventBridge or Lambda retries
+      Namespace: AWS/SQS
+      MetricName: ApproximateNumberOfMessagesVisible
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt TennisPullDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisPullDeadLetterAgeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Tennis DLQ message has remained unhandled for ten minutes
+      Namespace: AWS/SQS
+      MetricName: ApproximateAgeOfOldestMessage
+      Dimensions:
+        - Name: QueueName
+          Value: !GetAtt TennisPullDeadLetterQueue.QueueName
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 600
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisCoverageAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Active tennis slot accepted less than 99 percent coverage
+      Namespace: Inqsi/TennisCollector
+      MetricName: CoveragePercent
+      Dimensions:
+        - Name: Sport
+          Value: tennis
+        - Name: Mode
+          Value: RULE_BASED_SHADOW
+      Statistic: Minimum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 99
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisRetryRequiredAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: A tennis slot requires another provider attempt
+      Namespace: Inqsi/TennisCollector
+      MetricName: RetryRequired
+      Dimensions:
+        - Name: Sport
+          Value: tennis
+        - Name: Mode
+          Value: RULE_BASED_SHADOW
+      Statistic: Maximum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisArchiveFailureAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Immutable tennis Parquet archive write failed
+      Namespace: Inqsi/TennisCollector
+      MetricName: ArchiveFailures
+      Dimensions:
+        - Name: Sport
+          Value: tennis
+        - Name: Mode
+          Value: RULE_BASED_SHADOW
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisPostStartExclusionAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Tennis response crossed the persisted pre-match cutoff
+      Namespace: Inqsi/TennisCollector
+      MetricName: PostStartExclusions
+      Dimensions:
+        - Name: Sport
+          Value: tennis
+        - Name: Mode
+          Value: RULE_BASED_SHADOW
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisQuotaReserveAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Tennis odds quota reached its protected reserve or became unknown
+      Namespace: Inqsi/TennisCollector
+      MetricName: QuotaRemaining
+      Dimensions:
+        - Name: Sport
+          Value: tennis
+        - Name: Mode
+          Value: RULE_BASED_SHADOW
+      Statistic: Minimum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: !Ref TennisQuotaProtectedReserve
+      ComparisonOperator: LessThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisQuotaForecastAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Projected tennis odds usage exceeds the daily safety budget
+      Namespace: Inqsi/TennisCollector
+      MetricName: QuotaDailyBudgetExceeded
+      Dimensions:
+        - Name: Sport
+          Value: tennis
+        - Name: Mode
+          Value: RULE_BASED_SHADOW
+      Statistic: Maximum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisCollectorFreshnessAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: Tennis collector completed more than five minutes after its slot
+      Namespace: Inqsi/TennisCollector
+      MetricName: CollectorFreshnessSeconds
+      Dimensions:
+        - Name: Sport
+          Value: tennis
+        - Name: Mode
+          Value: RULE_BASED_SHADOW
+      Statistic: Maximum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 300
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+  TennisStaleBookAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: A provider response contained stale tennis book prices
+      Namespace: Inqsi/TennisCollector
+      MetricName: StaleBookRejections
+      Dimensions:
+        - Name: Sport
+          Value: tennis
+        - Name: Mode
+          Value: RULE_BASED_SHADOW
+      Statistic: Sum
+      Period: 900
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: !If [HasAlarmTopic, [!Ref TennisAlarmTopicArn], !Ref AWS::NoValue]
+
+Outputs:
+  TennisPullFunctionArn:
+    Description: Isolated tennis collection Lambda ARN
+    Value: !GetAtt TennisPullFunction.Arn
+  TennisResultsProbeFunctionArn:
+    Description: Manual-only fail-closed BBS tennis capability probe ARN
+    Value: !GetAtt TennisResultsProbeFunction.Arn
+  TennisScheduleRuleName:
+    Description: Explicit tennis-only EventBridge rule name
+    Value: !Ref TennisPullScheduleRule
+  TennisScheduleRuleArn:
+    Description: Explicit tennis-only EventBridge rule ARN
+    Value: !GetAtt TennisPullScheduleRule.Arn
+  TennisScheduleState:
+    Description: Deployed canary schedule state
+    Value: !Ref TennisScheduleState
+  TennisSnapshotsTableName:
+    Description: Dedicated tennis pre-match snapshot table
+    Value: !Ref TennisSnapshotsTable
+  TennisSignalsTableName:
+    Description: Dedicated tennis shadow feature table
+    Value: !Ref TennisSignalsTable
+  TennisArchiveBucketName:
+    Description: Retained immutable tennis Parquet training archive
+    Value: !Ref TennisArchiveBucket
+  TennisPullDeadLetterQueueUrl:
+    Description: Tennis-only failed-pull queue
+    Value: !Ref TennisPullDeadLetterQueue
+  DeployedGitSha:
+    Description: Exact tennis source revision
+    Value: !Ref DeployGitSha
+  DeployedTemplateSha256:
+    Description: Exact tennis template identity
+    Value: !Ref DeployTemplateSha256

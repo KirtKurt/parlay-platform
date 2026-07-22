@@ -2,9 +2,24 @@ name: Deploy SAM to AWS
 
 on:
   push:
-    branches: [main]
-    paths-ignore:
-      - "runtime_reports/**"
+    branches:
+      - main
+    # This allowlist is the production/MLB deployment boundary. In
+    # particular, a tennis-only commit (including either deployment workflow)
+    # can never enqueue the root stack deployment.
+    paths:
+      - "template.yaml"
+      - "samconfig.toml"
+      - "hello_world/**"
+      - "backend/src/**"
+      - "scripts/**"
+      - "tests/**"
+      - "events/**"
+      - ".deploy-trigger"
+      - ".deploy/**"
+      - "DEPLOY_TRIGGER_PULL_HISTORY.txt"
+      - "deploy/**"
+      - "ops/deploy-triggers/**"
   workflow_dispatch:
 
 permissions:
