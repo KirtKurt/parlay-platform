@@ -1,0 +1,23 @@
+name: Extract MLB bootstrap failure
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/extract-bootstrap-failure.yml"
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Print terminal bootstrap failure
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/jobs/88834244373/logs" > /tmp/bootstrap.log
+          tail -n 100 /tmp/bootstrap.log
