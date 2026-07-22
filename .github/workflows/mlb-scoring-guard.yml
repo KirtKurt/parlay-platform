@@ -7,12 +7,14 @@ on:
       - '.github/workflows/mlb-scoring-guard.yml'
       - 'scripts/mlb_scoring_guard_status.py'
       - 'scripts/diagnose_mlb_scoring_engine.py'
+      - 'scripts/diagnose_mlb_pull_lambda_runtime.py'
       - 'tests/unit/test_mlb_scoring_guard_status.py'
   push:
     paths:
       - '.github/workflows/mlb-scoring-guard.yml'
       - 'scripts/mlb_scoring_guard_status.py'
       - 'scripts/diagnose_mlb_scoring_engine.py'
+      - 'scripts/diagnose_mlb_pull_lambda_runtime.py'
       - 'tests/unit/test_mlb_scoring_guard_status.py'
   workflow_dispatch:
   schedule:
@@ -22,8 +24,8 @@ permissions:
   contents: write
 
 concurrency:
-  group: mlb-scoring-guard-read-only
-  cancel-in-progress: false
+  group: mlb-scoring-guard-read-only-${{ github.head_ref || github.ref_name }}
+  cancel-in-progress: true
 
 jobs:
   scoring-proof:
@@ -41,7 +43,9 @@ jobs:
       - name: Verify scoring guard semantics
         run: |
           python -m pytest -q tests/unit/test_mlb_scoring_guard_status.py
-          python -m py_compile scripts/diagnose_mlb_scoring_engine.py
+          python -m py_compile \
+            scripts/diagnose_mlb_scoring_engine.py \
+            scripts/diagnose_mlb_pull_lambda_runtime.py
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
@@ -49,6 +53,15 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Diagnose live MLB pull Lambda runtime read-only
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python scripts/diagnose_mlb_pull_lambda_runtime.py \
+            --hours 12 \
+            --output runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
 
       - name: Build and enforce live MLB scoring proof
         env:
@@ -63,7 +76,7 @@ jobs:
             --output runtime_reports/mlb_scoring_guard_status_latest.json \
             --enforce
 
-      - name: Diagnose production scoring engine read-only
+      - name: Diagnose protected scoring path without writes
         if: always()
         env:
           SNAPSHOTS_TABLE: parlay_platform_snapshots
@@ -87,6 +100,7 @@ jobs:
           path: |
             runtime_reports/mlb_scoring_guard_status_latest.json
             runtime_reports/mlb_scoring_engine_diagnostic_latest.json
+            runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
           if-no-files-found: error
 
       - name: Publish latest proof on the current branch
@@ -98,7 +112,8 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
             runtime_reports/mlb_scoring_guard_status_latest.json \
-            runtime_reports/mlb_scoring_engine_diagnostic_latest.json
+            runtime_reports/mlb_scoring_engine_diagnostic_latest.json \
+            runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json
           if git diff --cached --quiet; then
             echo 'No scoring proof change'
           else
