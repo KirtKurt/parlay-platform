@@ -14,6 +14,12 @@ jobs:
   apply:
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_REGION: us-east-1
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+      AWS_EC2_METADATA_DISABLED: "true"
     steps:
       - name: Checkout exact branch
         uses: actions/checkout@v4
@@ -52,7 +58,11 @@ jobs:
           rm .github/patches/apply_mlb_lock_status_snapshot_hotpath.py
           rm .github/patches/fix_snapshot_patcher_target.py
           rm .github/workflows/apply_mlb_lock_status_snapshot_hotpath.yml
-          rm -f snapshot_apply_workflow_runs.json snapshot_apply_failure_tail.txt
+          rm -f \
+            snapshot_apply_workflow_runs.json \
+            snapshot_apply_failure_tail.txt \
+            snapshot_apply_workflow_runs_v2.json \
+            snapshot_apply_failure_tail_v2.txt
           rmdir .github/patches 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
