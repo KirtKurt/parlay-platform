@@ -1,0 +1,69 @@
+name: Record MLB Deploy Failure
+
+on:
+  workflow_run:
+    workflows: ["Deploy SAM to AWS"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-deploy-failure-record
+  cancel-in-progress: true
+
+jobs:
+  record:
+    if: >-
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.conclusion != 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Write deployment failure proof
+        env:
+          DEPLOY_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          DEPLOY_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          DEPLOY_RUN_ID: ${{ github.event.workflow_run.id }}
+          DEPLOY_RUN_URL: ${{ github.event.workflow_run.html_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          report = {
+              'ok': False,
+              'proofType': 'MLB_SCORING_FIX_POST_DEPLOY_ACCEPTANCE',
+              'version': 'MLB-SCORING-FIX-POST-DEPLOY-v1',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+              'deployedCommit': os.environ.get('DEPLOY_HEAD_SHA'),
+              'deployWorkflowConclusion': os.environ.get('DEPLOY_CONCLUSION'),
+              'deployWorkflowRunId': os.environ.get('DEPLOY_RUN_ID'),
+              'deployWorkflowRunUrl': os.environ.get('DEPLOY_RUN_URL'),
+              'scoringGuardPassed': False,
+              'blockers': ['deploy_workflow_not_successful'],
+              'secretExposed': False,
+          }
+          Path('runtime_reports/mlb_scoring_fix_post_deploy_latest.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          PY
+
+      - name: Publish deployment failure proof
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime_reports/mlb_scoring_fix_post_deploy_latest.json
+          git commit -m 'Publish MLB scoring fix deployment failure proof'
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
