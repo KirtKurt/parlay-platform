@@ -40,7 +40,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python -m pip install --disable-pip-version-check --quiet -r hello_world/requirements.txt
+          python -m pip install --disable-pip-version-check --quiet \
+            -r hello_world/requirements.txt \
+            pytest
           python -m pytest -q tests/unit/test_mlb_lock_status_request_cache.py
 
       - name: Commit exact candidate and remove temporary applicator
@@ -50,6 +52,7 @@ jobs:
           rm .github/patches/apply_mlb_lock_status_snapshot_hotpath.py
           rm .github/patches/fix_snapshot_patcher_target.py
           rm .github/workflows/apply_mlb_lock_status_snapshot_hotpath.yml
+          rm -f snapshot_apply_workflow_runs.json snapshot_apply_failure_tail.txt
           rmdir .github/patches 2>/dev/null || true
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
