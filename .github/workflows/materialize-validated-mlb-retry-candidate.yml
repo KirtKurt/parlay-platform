@@ -1,0 +1,216 @@
+name: Materialize validated MLB retry candidate
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - ".github/workflows/materialize-validated-mlb-retry-candidate.yml"
+
+permissions:
+  actions: read
+  contents: write
+  pull-requests: read
+
+jobs:
+  materialize:
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout exact current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install focused verification runtime
+        run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9" "PyYAML>=6,<7"
+
+      - name: Download the exact validated candidate artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          metadata=$(gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8518719715")
+          test "$(printf '%s' "$metadata" | python -c 'import json,sys; print(json.load(sys.stdin).get("digest") or "")')" = "sha256:bf864e3d1bfdb8bbfad13b391f204c063fda4e93b8b822548567080247c48a37"
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/artifacts/8518719715/zip" > /tmp/mlb-retry-candidate.zip
+          rm -rf /tmp/mlb-retry-candidate
+          mkdir -p /tmp/mlb-retry-candidate
+          unzip -q /tmp/mlb-retry-candidate.zip -d /tmp/mlb-retry-candidate
+          test -f /tmp/mlb-retry-candidate/.github/workflows/deploy.yml
+          test -f /tmp/mlb-retry-candidate/tests/unit/test_mlb_deploy_heavy_read_retry_policy.py
+
+      - name: Revalidate candidate against current main
+        env:
+          PYTHONPATH: "hello_world:."
+        run: |
+          set -euo pipefail
+          test "$(git hash-object .github/workflows/deploy.yml)" = "2ccbc41ce81a41725b5122ee262afa3adf136f15"
+          test ! -e tests/unit/test_mlb_deploy_heavy_read_retry_policy.py
+          cp /tmp/mlb-retry-candidate/.github/workflows/deploy.yml .github/workflows/deploy.yml
+          cp /tmp/mlb-retry-candidate/tests/unit/test_mlb_deploy_heavy_read_retry_policy.py tests/unit/test_mlb_deploy_heavy_read_retry_policy.py
+          python -m py_compile tests/unit/test_mlb_deploy_heavy_read_retry_policy.py
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          yaml.safe_load(Path('.github/workflows/deploy.yml').read_text(encoding='utf-8'))
+          print('deploy workflow YAML is valid')
+          PY
+          python -m pytest -q \
+            tests/unit/test_mlb_deploy_heavy_read_retry_policy.py \
+            tests/unit/test_mlb_deploy_http_probe.py \
+            tests/unit/test_mlb_workflow_authority.py
+          python scripts/verify_mlb_workflow_authority.py
+          cp .github/workflows/deploy.yml /tmp/deploy.before
+          python scripts/stabilize_mlb_deploy_source.py
+          cmp /tmp/deploy.before .github/workflows/deploy.yml
+          git diff --check
+          python - <<'PY'
+          import subprocess
+          expected = {
+              '.github/workflows/deploy.yml',
+              'tests/unit/test_mlb_deploy_heavy_read_retry_policy.py',
+          }
+          lines = subprocess.check_output(
+              ['git', 'status', '--porcelain=v1'], text=True
+          ).splitlines()
+          observed = {line[3:] for line in lines if line.strip()}
+          if observed != expected:
+              raise SystemExit(
+                  f'unexpected candidate diff: expected={sorted(expected)} observed={sorted(observed)}'
+              )
+          PY
+
+      - name: Create validated Git commit object and immutable tag
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CANDIDATE_TAG: mlb-deploy-retry-candidate-29892461924-v2
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from __future__ import annotations
+
+          import json
+          import os
+          import subprocess
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          tag = os.environ['CANDIDATE_TAG']
+          api = 'https://api.github.com'
+
+          def request(method: str, path: str, payload=None):
+              data = None if payload is None else json.dumps(payload).encode('utf-8')
+              req = urllib.request.Request(
+                  api + path,
+                  data=data,
+                  method=method,
+                  headers={
+                      'Accept': 'application/vnd.github+json',
+                      'Authorization': f'Bearer {token}',
+                      'X-GitHub-Api-Version': '2022-11-28',
+                      'User-Agent': 'parlay-platform-candidate-materializer/1.0',
+                      **({'Content-Type': 'application/json'} if data is not None else {}),
+                  },
+              )
+              with urllib.request.urlopen(req, timeout=120) as response:
+                  raw = response.read()
+              return json.loads(raw.decode('utf-8')) if raw else {}
+
+          base_sha = subprocess.check_output(
+              ['git', 'rev-parse', 'HEAD'], text=True
+          ).strip()
+          base_commit = request('GET', f'/repos/{repo}/git/commits/{base_sha}')
+          base_tree = str((base_commit.get('tree') or {}).get('sha') or '')
+          if not base_tree:
+              raise SystemExit('current-main base tree is missing')
+
+          entries = []
+          for path in (
+              '.github/workflows/deploy.yml',
+              'tests/unit/test_mlb_deploy_heavy_read_retry_policy.py',
+          ):
+              content = Path(path).read_text(encoding='utf-8')
+              blob = request(
+                  'POST',
+                  f'/repos/{repo}/git/blobs',
+                  {'content': content, 'encoding': 'utf-8'},
+              )
+              blob_sha = str(blob.get('sha') or '')
+              if not blob_sha:
+                  raise SystemExit(f'blob creation failed for {path}')
+              entries.append({
+                  'path': path,
+                  'mode': '100644',
+                  'type': 'blob',
+                  'sha': blob_sha,
+              })
+
+          tree = request(
+              'POST',
+              f'/repos/{repo}/git/trees',
+              {'base_tree': base_tree, 'tree': entries},
+          )
+          tree_sha = str(tree.get('sha') or '')
+          if not tree_sha:
+              raise SystemExit('candidate tree creation failed')
+          commit = request(
+              'POST',
+              f'/repos/{repo}/git/commits',
+              {
+                  'message': 'Fix MLB deploy heavy-read retry policy',
+                  'tree': tree_sha,
+                  'parents': [base_sha],
+              },
+          )
+          commit_sha = str(commit.get('sha') or '')
+          if not commit_sha:
+              raise SystemExit('candidate commit creation failed')
+
+          tag_ref = f'/repos/{repo}/git/refs'
+          try:
+              request(
+                  'POST',
+                  tag_ref,
+                  {'ref': f'refs/tags/{tag}', 'sha': commit_sha},
+              )
+          except urllib.error.HTTPError as exc:
+              if exc.code != 422:
+                  raise
+              request(
+                  'PATCH',
+                  f'/repos/{repo}/git/refs/tags/{tag}',
+                  {'sha': commit_sha, 'force': True},
+              )
+
+          evidence = {
+              'ok': True,
+              'baseSha': base_sha,
+              'baseTree': base_tree,
+              'candidateTree': tree_sha,
+              'candidateCommit': commit_sha,
+              'candidateTag': tag,
+              'files': [entry['path'] for entry in entries],
+          }
+          Path('/tmp/mlb-retry-candidate-commit.json').write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print('MATERIALIZED_CANDIDATE ' + json.dumps(evidence, sort_keys=True))
+          PY
+
+      - name: Upload materialization evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-retry-materialized-commit-${{ github.run_id }}
+          path: /tmp/mlb-retry-candidate-commit.json
+          if-no-files-found: error
+          retention-days: 3
