@@ -20,6 +20,7 @@ jobs:
       AWS_DEFAULT_REGION: us-east-1
       TENNIS_STACK_NAME: inqsi-tennis-v1
       RELEASE_SHA256: dbc456f51a89d3b5fa2c16668577f6e90a7f125e5357cb93be92523a14391112
+      RELEASE_TREE_SHA256: bb1abd8de476e9f935408d18eeaf5678a1d5d9dfed17d3b1259e3e411ac0c449
       TENNIS_AWS_DEPLOY_ROLE_ARN: ${{ secrets.TENNIS_AWS_DEPLOY_ROLE_ARN }}
       TENNIS_ODDS_API_KEY: ${{ secrets.TENNIS_ODDS_API_KEY || secrets.ODDS_API_KEY }}
       TENNIS_CREDENTIAL_SOURCE: ${{ secrets.TENNIS_ODDS_API_KEY != '' && 'dedicated_tennis_secret' || 'existing_provider_secret' }}
@@ -57,8 +58,8 @@ jobs:
       - if: always()
         run: |
           mkdir -p tennis_release/evidence
-          for file in /tmp/tennis-failure.txt /tmp/aws-identity.json /tmp/tennis-stack.json /tmp/tennis-outputs.json /tmp/tennis-model.json /tmp/tennis-ml-status.json /tmp/tennis-discovery.json /tmp/mlb-before.sha256 /tmp/mlb-after.sha256; do
-            [[ -f "$file" ]] && cp "$file" tennis_release/evidence/
+          for file in /tmp/tennis-failure.txt /tmp/tennis-release-transport.sha256 /tmp/tennis-release-tree.sha256 /tmp/aws-identity.json /tmp/tennis-stack.json /tmp/tennis-outputs.json /tmp/tennis-model.json /tmp/tennis-ml-status.json /tmp/tennis-discovery.json /tmp/mlb-before.sha256 /tmp/mlb-after.sha256; do
+            if [[ -f "$file" ]]; then cp "$file" tennis_release/evidence/; fi
           done
       - if: always()
         uses: actions/upload-artifact@v4
