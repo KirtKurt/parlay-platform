@@ -141,6 +141,7 @@ jobs:
             tests/unit/test_mlb_ml_aws_training_v1.py
             tests/unit/test_mlb_deploy_identity.py
             tests/unit/test_mlb_deploy_http_probe.py
+            tests/unit/test_mlb_deploy_heavy_read_retry_policy.py
             tests/unit/test_mlb_lambda_artifact_identity.py
             tests/unit/test_mlb_trainer_invoke_retry.py
             tests/unit/test_mlb_release_activation_predeploy.py
@@ -557,6 +558,7 @@ jobs:
           from datetime import datetime, timezone
           import urllib.parse
           from scripts.mlb_deploy_http_probe import fetch_json_object
+          from scripts.mlb_deploy_http_probe import TransientHttpProbeExhausted
 
           def fetch(url, timeout=45, deadline=None, max_attempts=None):
               return fetch_json_object(
@@ -572,6 +574,21 @@ jobs:
                   },
               )
 
+          def transient_retry_delay(exc, remaining):
+              reason = str(exc)
+              lambda_may_still_be_running = any(
+                  marker in reason
+                  for marker in (
+                      'HTTP 504',
+                      'TimeoutError',
+                      'URLError',
+                      'ConnectionError',
+                      'IncompleteRead',
+                  )
+              )
+              delay = 330 if lambda_may_still_be_running else 30
+              return min(delay, remaining), lambda_may_still_be_running
+
           base_url = os.environ['API_URL'].rstrip('/')
           status_url = base_url + '/v1/mlb/locks/status'
           expected_schedule_version = 'MLB-OFFICIAL-SCHEDULE-AUTHORITY-v1-statsapi-exact-date'
@@ -581,15 +598,39 @@ jobs:
               remaining = deadline - time.monotonic()
               if remaining <= 0:
                   raise SystemExit('No official-schedule-backed durable roster appeared within 20 minutes')
-              payload = fetch(
-                  status_url,
-                  timeout=max(1, min(45, remaining)),
-                  deadline=deadline,
-                  # One client delivery per outer attempt prevents a timed-out
-                  # API Gateway request from spawning an overlapping retry
-                  # herd against the shared lock Lambda.
-                  max_attempts=1,
-              )
+              try:
+                  payload = fetch(
+                      status_url,
+                      timeout=max(1, min(45, remaining)),
+                      deadline=deadline,
+                      # One client delivery per outer attempt prevents a timed-out
+                      # API Gateway request from spawning an overlapping retry
+                      # herd against the shared lock Lambda.
+                      max_attempts=1,
+                  )
+              except TransientHttpProbeExhausted as exc:
+                  attempt += 1
+                  remaining = deadline - time.monotonic()
+                  if remaining <= 0:
+                      raise SystemExit(
+                          'No official-schedule-backed durable roster appeared within 20 minutes'
+                      ) from exc
+                  delay, lambda_may_still_be_running = transient_retry_delay(
+                      exc,
+                      remaining,
+                  )
+                  if lambda_may_still_be_running:
+                      print(
+                          'Lock-status delivery may still be running; draining the admitted '
+                          f'Lambda before attempt {attempt + 1}'
+                      )
+                  else:
+                      print(
+                          'Lock-status authority is transiently unavailable; waiting for the '
+                          f'next scheduled pull before attempt {attempt + 1}'
+                      )
+                  time.sleep(delay)
+                  continue
               if (
                   payload.get('officialScheduleBacked') is True
                   and payload.get('officialScheduleAuthorityVersion') == expected_schedule_version
@@ -746,12 +787,45 @@ jobs:
           prediction_query = urllib.parse.urlencode({'date': payload['slateDateEt']})
           prediction_url = base_url + '/v1/mlb/predictions?' + prediction_query
           prediction_deadline = time.monotonic() + 20 * 60
+          prediction_attempt = 0
           while True:
-              predictions = fetch(
-                  prediction_url,
-                  deadline=prediction_deadline,
-                  max_attempts=1,
-              )
+              remaining = prediction_deadline - time.monotonic()
+              if remaining <= 0:
+                  raise SystemExit(
+                      'No fresh persisted canonical probability-contract predictions '
+                      'appeared within 20 minutes'
+                  )
+              try:
+                  predictions = fetch(
+                      prediction_url,
+                      timeout=max(1, min(45, remaining)),
+                      deadline=prediction_deadline,
+                      max_attempts=1,
+                  )
+              except TransientHttpProbeExhausted as exc:
+                  prediction_attempt += 1
+                  remaining = prediction_deadline - time.monotonic()
+                  if remaining <= 0:
+                      raise SystemExit(
+                          'No fresh persisted canonical probability-contract predictions '
+                          'appeared within 20 minutes'
+                      ) from exc
+                  delay, lambda_may_still_be_running = transient_retry_delay(
+                      exc,
+                      remaining,
+                  )
+                  if lambda_may_still_be_running:
+                      print(
+                          'Predictions delivery may still be running; draining the admitted '
+                          f'Lambda before attempt {prediction_attempt + 1}'
+                      )
+                  else:
+                      print(
+                          'Predictions authority is transiently unavailable; waiting before '
+                          f'attempt {prediction_attempt + 1}'
+                      )
+                  time.sleep(delay)
+                  continue
               winner_rows = [
                   row
                   for row in predictions.get('predictions') or []
