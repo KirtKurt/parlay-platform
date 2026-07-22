@@ -1,7 +1,7 @@
 name: Deploy isolated Tennis predictive platform V1.1 ML
 on:
-  push:
-    branches: [agent/tennis-v1-ml-aws-deploy-run-20260722]
+  pull_request:
+    branches: [main]
     paths: ["tennis_release/**", ".github/workflows/deploy-tennis-ml-v1.yml"]
   workflow_dispatch:
 concurrency:
