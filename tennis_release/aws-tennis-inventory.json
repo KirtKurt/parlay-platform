@@ -1,0 +1,46 @@
+{
+  "functions": [],
+  "recordedAtUtc": "2026-07-22T11:17:01.518853+00:00",
+  "region": "us-east-1",
+  "rules": [],
+  "schemaVersion": "TENNIS-AWS-INVENTORY-v1",
+  "secrets": [
+    {
+      "arn": "arn:aws:secretsmanager:us-east-1:735707987003:secret:TennisOddsApiSecret-zVcKsllD952w-KVQP6s",
+      "deletedDate": null,
+      "description": "Dedicated tennis odds credential; not shared with MLB",
+      "lastChangedDate": "2026-07-22T00:14:27.167000+00:00",
+      "name": "TennisOddsApiSecret-zVcKsllD952w",
+      "tags": {
+        "aws:cloudformation:logical-id": "TennisOddsApiSecret",
+        "aws:cloudformation:stack-id": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-tennis-dev/42c1c380-8562-11f1-90d9-0ea9e97d0e13",
+        "aws:cloudformation:stack-name": "parlay-platform-tennis-dev",
+        "inqsi:consumer": "tennis-pull-only",
+        "inqsi:sport": "tennis"
+      }
+    },
+    {
+      "arn": "arn:aws:secretsmanager:us-east-1:735707987003:secret:TennisBbsApiSecret-hGDTL97AqguA-FTzYQs",
+      "deletedDate": null,
+      "description": "BBS credential scoped to the manual tennis capability probe",
+      "lastChangedDate": "2026-07-22T00:14:27.203000+00:00",
+      "name": "TennisBbsApiSecret-hGDTL97AqguA",
+      "tags": {
+        "aws:cloudformation:logical-id": "TennisBbsApiSecret",
+        "aws:cloudformation:stack-id": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-tennis-dev/42c1c380-8562-11f1-90d9-0ea9e97d0e13",
+        "aws:cloudformation:stack-name": "parlay-platform-tennis-dev",
+        "inqsi:consumer": "tennis-results-probe-only",
+        "inqsi:sport": "tennis"
+      }
+    }
+  ],
+  "stacks": [
+    {
+      "creationTime": "2026-07-22T00:14:10.088000+00:00",
+      "lastUpdatedTime": "2026-07-22T00:14:23.851000+00:00",
+      "name": "parlay-platform-tennis-dev",
+      "status": "ROLLBACK_COMPLETE"
+    }
+  ],
+  "tables": []
+}
