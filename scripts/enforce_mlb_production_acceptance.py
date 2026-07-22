@@ -790,6 +790,8 @@ def build_acceptance(
         infrastructure_blockers.append("AWS_V2_EXPERIMENT_MANIFEST_NOT_INITIALIZED")
     elif v2_training.get("manifestValid") is not True:
         infrastructure_blockers.append("AWS_V2_EXPERIMENT_MANIFEST_INVALID")
+    elif v2_training.get("releaseActivationValid") is not True:
+        infrastructure_blockers.append("AWS_V2_RELEASE_ACTIVATION_INVALID")
     if v2_training.get("automaticPromotionEnabled") is True:
         infrastructure_blockers.append("AWS_V2_AUTOMATIC_FIRST_PROMOTION_ENABLED")
     elif v2_training.get("automaticPromotionEnabled") is not False:
@@ -965,6 +967,12 @@ def build_acceptance(
                 "deploymentIdentityAgreement": deployment_identity_agreement,
                 "manifestPresent": v2_training.get("manifestPresent"),
                 "manifestValid": v2_training.get("manifestValid"),
+                "releaseActivationValid": v2_training.get(
+                    "releaseActivationValid"
+                ),
+                "releaseActivationErrors": v2_training.get(
+                    "releaseActivationErrors"
+                ),
                 "manifestPhase": v2_training.get("manifestPhase"),
                 "partitionCounts": {
                     "train": v2_train,

@@ -3,9 +3,10 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import os
 from contextlib import contextmanager
 from contextvars import ContextVar
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from uuid import uuid4
@@ -51,8 +52,15 @@ READINESS_CHECKPOINT_MINUTES = (60, 50)
 RELEASE_CHECKPOINT_MINUTES = (30, 15)
 CHECKPOINT_MAX_LATE_SECONDS = 120
 PLAYABILITY_EVIDENCE_MAX_AGE_MINUTES = 20
-SCHEDULED_SINGLE_FLIGHT_VERSION = "MLB-LOCK-SCHEDULED-SINGLE-FLIGHT-v1"
-SCHEDULED_SINGLE_FLIGHT_LEASE_SECONDS = 330
+LOCK_EXECUTION_LEASE_VERSION = "MLB-LOCK-EXECUTION-LEASE-v2-global-all-mutating"
+LOCK_EXECUTION_LEASE_RECORD_TYPE = "mlb_lock_execution_lease_v2"
+LOCK_EXECUTION_LEASE_SECONDS = 360
+LOCK_EXECUTION_LEASE_PK = "MLB_LOCK_EXECUTION#V2"
+LOCK_EXECUTION_LEASE_SK = "LEASE"
+LEGACY_SCHEDULED_SINGLE_FLIGHT_VERSION = "MLB-LOCK-SCHEDULED-SINGLE-FLIGHT-v1"
+LEGACY_SCHEDULED_SINGLE_FLIGHT_RECORD_TYPE = (
+    "mlb_lock_scheduled_single_flight_lease"
+)
 POST_WINDOW_RECONCILIATION_VERSION = "MLB-LOCK-POST-WINDOW-RECONCILIATION-v1"
 
 _DIAGNOSTIC_STATES = {
@@ -67,6 +75,14 @@ _SCOPED_PULLS: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
     "inqsi_mlb_scoped_per_game_lock_pulls",
     default=None,
 )
+
+
+class LockExecutionLeaseCorrupt(RuntimeError):
+    pass
+
+
+class LockExecutionLeaseContentionReadFailed(RuntimeError):
+    pass
 
 
 def _supported_payload_fingerprint_version(value: Any) -> bool:
@@ -163,11 +179,32 @@ def _lock_at(module: Any, game: Dict[str, Any]) -> Optional[datetime]:
     return start - timedelta(minutes=module.LOCK_MINUTES) if start else None
 
 
-def _scheduled_single_flight_key(slate: str) -> Dict[str, str]:
+def _lock_execution_lease_key() -> Dict[str, str]:
+    return {
+        "PK": LOCK_EXECUTION_LEASE_PK,
+        "SK": LOCK_EXECUTION_LEASE_SK,
+    }
+
+
+def _legacy_scheduled_single_flight_key(slate: str) -> Dict[str, str]:
     return {
         "PK": f"MLB_LOCK_RUNTIME#{slate}",
-        "SK": f"SCHEDULED_SINGLE_FLIGHT#{SCHEDULED_SINGLE_FLIGHT_VERSION}",
+        "SK": (
+            "SCHEDULED_SINGLE_FLIGHT#"
+            f"{LEGACY_SCHEDULED_SINGLE_FLIGHT_VERSION}"
+        ),
     }
+
+
+def _legacy_rollout_bridge_slates(slate: str) -> List[str]:
+    try:
+        anchor = date.fromisoformat(slate)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("MLB lock slate date is invalid") from exc
+    return [
+        (anchor + timedelta(days=offset)).isoformat()
+        for offset in (-1, 0, 1)
+    ]
 
 
 def _post_window_manifest_fingerprint(
@@ -199,76 +236,212 @@ def _post_window_reconciliation_key(
     }
 
 
-def _acquire_scheduled_single_flight(
+def _configured_lock_execution_lease_seconds() -> int:
+    raw = os.environ.get(
+        "MLB_LOCK_EXECUTION_LEASE_SECONDS",
+        str(LOCK_EXECUTION_LEASE_SECONDS),
+    )
+    try:
+        configured = int(raw)
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("MLB lock execution lease duration is invalid") from exc
+    if configured != LOCK_EXECUTION_LEASE_SECONDS:
+        raise RuntimeError(
+            "MLB lock execution lease duration does not match the production contract"
+        )
+    return configured
+
+
+def _acquire_lock_execution_lease(
     module: Any,
     slate: str,
     now: datetime,
 ) -> Dict[str, Any]:
     owner = uuid4().hex
     now_epoch = int(now.timestamp())
-    expires_epoch = now_epoch + SCHEDULED_SINGLE_FLIGHT_LEASE_SECONDS
-    key = _scheduled_single_flight_key(slate)
-    item = module.history.ddb_safe({
-        **key,
-        "record_type": "mlb_lock_scheduled_single_flight_lease",
-        "version": SCHEDULED_SINGLE_FLIGHT_VERSION,
-        "sport": "mlb",
-        "slate_date": slate,
-        "lease_owner": owner,
-        "lease_acquired_at_utc": now.isoformat(),
-        "lease_expires_at_utc": datetime.fromtimestamp(
-            expires_epoch,
-            tz=timezone.utc,
-        ).isoformat(),
-        "lease_expires_at_epoch": expires_epoch,
-        "ttl": expires_epoch,
-    })
-    try:
-        module.TABLE.put_item(
-            Item=item,
-            ConditionExpression=(
-                "attribute_not_exists(PK) OR lease_expires_at_epoch <= :now_epoch"
-            ),
-            ExpressionAttributeValues={":now_epoch": now_epoch},
+    expires_epoch = now_epoch + _configured_lock_execution_lease_seconds()
+    expires_at_utc = datetime.fromtimestamp(
+        expires_epoch,
+        tz=timezone.utc,
+    ).isoformat()
+    lease_specs = [
+        {
+            "scope": "global",
+            "key": _lock_execution_lease_key(),
+            "recordType": LOCK_EXECUTION_LEASE_RECORD_TYPE,
+            "version": LOCK_EXECUTION_LEASE_VERSION,
+            "bridgeSlate": None,
+        },
+        *[
+            {
+                "scope": "legacy_rollout_bridge",
+                "key": _legacy_scheduled_single_flight_key(bridge_slate),
+                "recordType": LEGACY_SCHEDULED_SINGLE_FLIGHT_RECORD_TYPE,
+                "version": LEGACY_SCHEDULED_SINGLE_FLIGHT_VERSION,
+                "bridgeSlate": bridge_slate,
+            }
+            for bridge_slate in _legacy_rollout_bridge_slates(slate)
+        ],
+    ]
+    acquired_keys: List[Dict[str, Any]] = []
+    for spec in lease_specs:
+        item = module.history.ddb_safe(
+            {
+                **spec["key"],
+                "record_type": spec["recordType"],
+                "version": spec["version"],
+                "sport": "mlb",
+                "lease_scope": spec["scope"],
+                "invocation_slate_date": slate,
+                "bridge_slate_date": spec["bridgeSlate"],
+                "lease_owner": owner,
+                "lease_acquired_at_utc": now.isoformat(),
+                "lease_expires_at_utc": expires_at_utc,
+                "lease_expires_at_epoch": expires_epoch,
+                "ttl": expires_epoch,
+            }
         )
-        return {
-            "acquired": True,
-            "owner": owner,
-            "expiresAtUtc": item["lease_expires_at_utc"],
-            "key": key,
+        owned = {
+            "key": spec["key"],
+            "recordType": spec["recordType"],
+            "version": spec["version"],
         }
-    except Exception as exc:
-        if not _conditional_collision(exc):
-            raise
-        existing = module.TABLE.get_item(
-            Key=key,
-            ConsistentRead=True,
-        ).get("Item") or {}
-        return {
-            "acquired": False,
-            "owner": owner,
-            "expiresAtUtc": existing.get("lease_expires_at_utc"),
-            "key": key,
-        }
+        try:
+            module.TABLE.put_item(
+                Item=item,
+                ConditionExpression=(
+                    "attribute_not_exists(PK) OR ("
+                    "record_type = :record_type AND version = :version AND ("
+                    "attribute_type(lease_expires_at_epoch, :number_type) "
+                    "AND lease_expires_at_epoch <= :now_epoch))"
+                ),
+                ExpressionAttributeValues={
+                    ":now_epoch": now_epoch,
+                    ":number_type": "N",
+                    ":record_type": spec["recordType"],
+                    ":version": spec["version"],
+                },
+            )
+            acquired_keys.append(owned)
+        except Exception as exc:
+            conditional = _conditional_collision(exc)
+            existing = {}
+            read_error: Optional[BaseException] = None
+            if conditional:
+                try:
+                    existing = module.TABLE.get_item(
+                        Key=spec["key"],
+                        ConsistentRead=True,
+                    ).get("Item") or {}
+                except BaseException as diagnostic_exc:
+                    read_error = diagnostic_exc
+            cleanup_errors: List[str] = []
+            # The current write may have committed before a transport error.
+            # Owner-conditional cleanup is safe whether it committed or not.
+            for acquired in reversed(acquired_keys):
+                try:
+                    if not _delete_owned_lock_execution_lease_key(
+                        module,
+                        owner=owner,
+                        owned=acquired,
+                    ):
+                        cleanup_errors.append("OWNERSHIP_CHANGED")
+                except Exception as cleanup_exc:
+                    cleanup_errors.append(type(cleanup_exc).__name__)
+            try:
+                # The current write may have committed before a transport
+                # error. A false owner check is expected for a true collision.
+                _delete_owned_lock_execution_lease_key(
+                    module,
+                    owner=owner,
+                    owned=owned,
+                )
+            except Exception as cleanup_exc:
+                cleanup_errors.append(type(cleanup_exc).__name__)
+            if cleanup_errors:
+                raise RuntimeError(
+                    "LOCK_EXECUTION_LEASE_ACQUIRE_CLEANUP_FAILED:"
+                    + ",".join(cleanup_errors)
+                ) from exc
+            if not conditional:
+                raise
+            if read_error is not None:
+                raise LockExecutionLeaseContentionReadFailed(
+                    "lock execution lease contention could not be verified"
+                ) from read_error
+            existing_expiry = existing.get("lease_expires_at_epoch")
+            if (
+                existing.get("record_type") != spec["recordType"]
+                or existing.get("version") != spec["version"]
+                or not str(existing.get("lease_owner") or "").strip()
+                or not isinstance(existing_expiry, (int, Decimal))
+                or int(existing_expiry) <= now_epoch
+            ):
+                raise LockExecutionLeaseCorrupt(
+                    "lock execution lease contention record is invalid"
+                ) from exc
+            return {
+                "acquired": False,
+                "expiresAtUtc": existing.get("lease_expires_at_utc"),
+                "contentionScope": spec["scope"],
+            }
+    return {
+        "acquired": True,
+        "owner": owner,
+        "expiresAtUtc": expires_at_utc,
+        "ownedKeys": acquired_keys,
+    }
 
 
-def _release_scheduled_single_flight(
+def _delete_owned_lock_execution_lease_key(
     module: Any,
-    lease: Dict[str, Any],
+    *,
+    owner: str,
+    owned: Dict[str, Any],
 ) -> bool:
-    if lease.get("acquired") is not True:
-        return False
     try:
         module.TABLE.delete_item(
-            Key=lease["key"],
-            ConditionExpression="lease_owner = :owner",
-            ExpressionAttributeValues={":owner": lease["owner"]},
+            Key=owned["key"],
+            ConditionExpression=(
+                "lease_owner = :owner "
+                "AND record_type = :record_type "
+                "AND version = :version"
+            ),
+            ExpressionAttributeValues={
+                ":owner": owner,
+                ":record_type": owned["recordType"],
+                ":version": owned["version"],
+            },
         )
         return True
     except Exception as exc:
         if _conditional_collision(exc):
             return False
         raise
+
+
+def _release_lock_execution_lease(
+    module: Any,
+    lease: Dict[str, Any],
+) -> bool:
+    if lease.get("acquired") is not True:
+        return False
+    released = True
+    errors: List[BaseException] = []
+    for owned in reversed(lease.get("ownedKeys") or []):
+        try:
+            released = bool(
+                _delete_owned_lock_execution_lease_key(
+                    module,
+                    owner=lease["owner"],
+                    owned=owned,
+                )
+            ) and released
+        except BaseException as exc:
+            errors.append(exc)
+    if errors:
+        raise errors[0]
+    return released
 
 
 def _get_post_window_reconciliation(
@@ -5616,31 +5789,46 @@ def apply(module: Any) -> Any:
         scheduled: bool = False,
     ) -> Dict[str, Any]:
         slate = slate_date or module._today_et()
-        if not scheduled or force or module.TABLE is None:
-            return _run_lock_once(
-                slate_date=slate,
-                force=force,
-                scheduled=scheduled,
-            )
-
-        lease_now = module._now_utc().astimezone(timezone.utc)
-        try:
-            lease = _acquire_scheduled_single_flight(
-                module,
-                slate,
-                lease_now,
-            )
-        except Exception as exc:
+        if module.TABLE is None:
             return {
                 "ok": False,
                 "sport": "mlb",
                 "modelVersion": VERSION,
                 "slateDateEt": slate,
                 "locked": False,
-                "reason": "SCHEDULED_SINGLE_FLIGHT_ACQUIRE_FAILED",
+                "reason": "LOCK_EXECUTION_LEASE_STORAGE_UNAVAILABLE",
                 "failClosed": True,
-                "scheduledInvocation": True,
-                "error": f"{type(exc).__name__}:{exc}",
+                "scheduledInvocation": scheduled,
+                "mutatingRunAttempted": False,
+            }
+
+        lease_now = module._now_utc().astimezone(timezone.utc)
+        try:
+            lease = _acquire_lock_execution_lease(
+                module,
+                slate,
+                lease_now,
+            )
+        except Exception as exc:
+            failure_reason = (
+                "LOCK_EXECUTION_LEASE_CORRUPT"
+                if isinstance(exc, LockExecutionLeaseCorrupt)
+                else "LOCK_EXECUTION_LEASE_CONTENTION_READ_FAILED"
+                if isinstance(exc, LockExecutionLeaseContentionReadFailed)
+                else "LOCK_EXECUTION_LEASE_ACQUIRE_FAILED"
+            )
+            return {
+                "ok": False,
+                "sport": "mlb",
+                "modelVersion": VERSION,
+                "slateDateEt": slate,
+                "locked": False,
+                "reason": failure_reason,
+                "failClosed": True,
+                "scheduledInvocation": scheduled,
+                "forcedInvocation": force,
+                "mutatingRunAttempted": False,
+                "errorType": type(exc).__name__,
             }
         if lease.get("acquired") is not True:
             return {
@@ -5650,9 +5838,11 @@ def apply(module: Any) -> Any:
                 "slateDateEt": slate,
                 "locked": False,
                 "skipped": True,
-                "reason": "SCHEDULED_SINGLE_FLIGHT_ALREADY_RUNNING",
-                "scheduledInvocation": True,
-                "eventualCutoffRepairPreserved": True,
+                "reason": "SKIPPED_OVERLAPPING_LOCK_EXECUTION",
+                "scheduledInvocation": scheduled,
+                "forcedInvocation": force,
+                "mutatingRunAttempted": False,
+                "nextFreshScheduleRetry": scheduled,
                 "retryAfterUtc": lease.get("expiresAtUtc"),
             }
 
@@ -5661,8 +5851,8 @@ def apply(module: Any) -> Any:
         try:
             result = _run_lock_once(
                 slate_date=slate,
-                force=False,
-                scheduled=True,
+                force=force,
+                scheduled=scheduled,
             )
         except BaseException as exc:
             run_error = exc
@@ -5670,18 +5860,25 @@ def apply(module: Any) -> Any:
         release_error: Optional[str] = None
         released = False
         try:
-            released = _release_scheduled_single_flight(module, lease)
+            released = _release_lock_execution_lease(module, lease)
+            if not released:
+                release_error = "LOCK_EXECUTION_LEASE_OWNERSHIP_CHANGED"
         except Exception as exc:
-            release_error = f"{type(exc).__name__}:{exc}"
+            release_error = f"LOCK_EXECUTION_LEASE_RELEASE_ERROR:{type(exc).__name__}"
 
         if run_error is not None:
             raise run_error
+        if release_error is not None or not released:
+            raise RuntimeError(
+                release_error or "LOCK_EXECUTION_LEASE_RELEASE_FAILED"
+            )
         assert result is not None
-        result["scheduledSingleFlight"] = {
-            "version": SCHEDULED_SINGLE_FLIGHT_VERSION,
+        result["lockExecutionLease"] = {
+            "version": LOCK_EXECUTION_LEASE_VERSION,
+            "scope": "global_all_mutating_lock_invocations",
+            "leaseSeconds": LOCK_EXECUTION_LEASE_SECONDS,
             "acquired": True,
             "released": released,
-            "releaseError": release_error,
             "leaseExpiresAtUtc": lease.get("expiresAtUtc"),
         }
         return result
@@ -5697,5 +5894,9 @@ def apply(module: Any) -> Any:
     module.MLB_LOCK_OUTCOME_VERSION = LOCK_OUTCOME_VERSION
     module.MLB_PLAYABILITY_ASSESSMENT_VERSION = RELEASE_ASSESSMENT_VERSION
     module.MLB_LOCK_SOURCE_WINDOW_STABILIZATION_SECONDS = CUTOFF_STABILIZATION_SECONDS
+    module.MLB_LOCK_EXECUTION_LEASE_VERSION = LOCK_EXECUTION_LEASE_VERSION
+    module.MLB_LOCK_EXECUTION_LEASE_SECONDS = LOCK_EXECUTION_LEASE_SECONDS
+    module.MLB_LOCK_EXECUTION_LEASE_SCOPE = "global_all_mutating_lock_invocations"
+    module.MLB_LOCK_EXECUTION_LEGACY_ROLLOUT_BRIDGE = True
     module._INQSI_MLB_DAILY_PER_GAME_LOCK_V1 = True
     return module

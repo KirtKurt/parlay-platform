@@ -36,15 +36,39 @@ EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID = (
 EXECUTION_LEASE_PK = (
     f"{EXPERIMENT_PK_PREFIX}{EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID}"
 )
-EXECUTION_LEASE_SK = "EXECUTION_LEASE"
+LEGACY_SHARED_EXECUTION_LEASE_SK = "EXECUTION_LEASE"
+STATE_MUTATION_EXECUTION_LEASE_SK = "EXECUTION_LEASE#STATE_MUTATION"
+SELECTION_CAPTURE_EXECUTION_LEASE_SK = "EXECUTION_LEASE#SELECTION_CAPTURE"
+# Backward-compatible public name now points at the v2 state-mutation domain.
+EXECUTION_LEASE_SK = STATE_MUTATION_EXECUTION_LEASE_SK
 EXECUTION_LEASE_RECORD_TYPE = "mlb_ml_execution_lease_v1"
-EXECUTION_LEASE_VERSION = "MLB-ML-EXECUTION-LEASE-v1-shared-ddb-conditional"
+EXECUTION_LEASE_VERSION = "MLB-ML-EXECUTION-LEASE-v2-mode-isolated-ddb-conditional"
 EXECUTION_LEASE_SECONDS = 960
+EXECUTION_LEASE_UNAVAILABLE_MESSAGE = (
+    "another MLB ML trainer invocation holds the execution lease"
+)
+LEGACY_EXECUTION_SENTINEL_RECORD_TYPE = (
+    "mlb_ml_execution_lease_migration_sentinel_v2"
+)
+LEGACY_EXECUTION_SENTINEL_VERSION = (
+    "MLB-ML-EXECUTION-SENTINEL-v2-renewable-expiring"
+)
+LEGACY_EXECUTION_SENTINEL_OWNER = "V2_RENEWABLE_MIGRATION_SENTINEL"
+LEGACY_EXECUTION_SENTINEL_MODE = "migration_sentinel"
 EXECUTION_LEASE_PROTECTED_MODES = (
     "manual_review",
     "selection_capture",
     "training",
 )
+EXECUTION_LEASE_DOMAIN_BY_MODE = {
+    "manual_review": "state_mutation",
+    "training": "state_mutation",
+    "selection_capture": "selection_capture",
+}
+EXECUTION_LEASE_KEY_BY_DOMAIN = {
+    "state_mutation": STATE_MUTATION_EXECUTION_LEASE_SK,
+    "selection_capture": SELECTION_CAPTURE_EXECUTION_LEASE_SK,
+}
 STATUS_FINGERPRINT_VERSION = (
     "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical"
 )
@@ -59,6 +83,10 @@ class TrainingContractError(RuntimeError):
 
 
 class ConditionalStateConflict(TrainingContractError):
+    pass
+
+
+class ManifestStateConflict(ConditionalStateConflict):
     pass
 
 
@@ -100,7 +128,11 @@ class TrainingStore(Protocol):
         lease_seconds: int,
     ) -> Dict[str, Any]: ...
     def release_execution_lease(
-        self, experiment_id: str, *, owner_token: str
+        self,
+        experiment_id: str,
+        *,
+        owner_token: str,
+        execution_mode: str,
     ) -> None: ...
     def commit_candidate(
         self,
@@ -250,23 +282,72 @@ def _status_fingerprint(status: Mapping[str, Any]) -> str:
     return _sha256(_ddb_safe(fingerprint_payload))
 
 
+def _sanitized_failure(exc: BaseException) -> Dict[str, str]:
+    """Return a stable public-safe failure without persisting provider/AWS text."""
+    if isinstance(exc, ExecutionLeaseUnavailable):
+        code = "EXECUTION_LEASE_UNAVAILABLE"
+        message = "MLB ML execution lease was unavailable"
+    elif isinstance(exc, ConditionalStateConflict):
+        code = "CONDITIONAL_STATE_CONFLICT"
+        message = "MLB ML conditional state changed"
+    elif isinstance(exc, TrainingContractError):
+        code = "TRAINING_CONTRACT_ERROR"
+        message = "MLB ML training contract validation failed"
+    elif isinstance(exc, TimeoutError):
+        code = "TIMEOUT"
+        message = "MLB ML invocation timed out"
+    elif isinstance(exc, PermissionError):
+        code = "PERMISSION_DENIED"
+        message = "MLB ML invocation lacked required permission"
+    else:
+        code = "INTERNAL_ERROR"
+        message = "MLB ML invocation failed"
+    return {
+        "type": type(exc).__name__,
+        "code": code,
+        "message": message,
+        "redacted": "true",
+    }
+
+
 def execution_concurrency_control(*, acquired_for_run: bool) -> Dict[str, Any]:
     return {
         "version": EXECUTION_LEASE_VERSION,
-        "strategy": "dynamodb_conditional_lease",
-        "scope": "one_global_lease_across_experiments_and_modes",
+        "strategy": "dynamodb_mode_isolated_conditional_leases",
+        "scope": "global_across_experiments_with_isolated_mutation_domains",
         "leasePartitionKey": EXECUTION_LEASE_PK,
         "migrationAnchorExperimentId": (
             EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
         ),
-        "leaseKey": EXECUTION_LEASE_SK,
+        "leaseKeys": dict(EXECUTION_LEASE_KEY_BY_DOMAIN),
+        "legacySharedLeaseSentinelKey": LEGACY_SHARED_EXECUTION_LEASE_SK,
+        "legacySharedLeaseSentinelVersion": LEGACY_EXECUTION_SENTINEL_VERSION,
+        "legacySharedLeaseSentinelRenewedOnAcquire": True,
+        "legacySharedLeaseSentinelExpiresWithLease": True,
+        "rollbackSelfRecoverySeconds": EXECUTION_LEASE_SECONDS,
+        "bidirectionalLegacyRuntimeFence": True,
         "leaseSeconds": EXECUTION_LEASE_SECONDS,
         "protectedExecutionModes": list(EXECUTION_LEASE_PROTECTED_MODES),
+        "modeLeaseDomains": dict(EXECUTION_LEASE_DOMAIN_BY_MODE),
+        "trainingCannotBlockSelectionCapture": True,
+        "selectionWriteManifestConditionCheck": True,
         "acquiredForRun": bool(acquired_for_run),
         "expiredLeaseReclaimEnabled": True,
         "ownerConditionalRelease": True,
         "reservedLambdaConcurrencyRequired": False,
     }
+
+
+def _execution_lease_domain(execution_mode: str) -> str:
+    mode = str(execution_mode or "").strip().lower()
+    domain = EXECUTION_LEASE_DOMAIN_BY_MODE.get(mode)
+    if not domain:
+        raise TrainingContractError("execution lease mode is invalid")
+    return domain
+
+
+def _execution_lease_key(execution_mode: str) -> str:
+    return EXECUTION_LEASE_KEY_BY_DOMAIN[_execution_lease_domain(execution_mode)]
 
 
 def _parse_status_datetime(value: Any) -> Optional[datetime]:
@@ -384,11 +465,15 @@ class AwsTrainingStore:
                 "execution lease duration does not match the production contract"
             )
         expires = acquired + timedelta(seconds=lease_seconds)
+        lease_domain = _execution_lease_domain(mode)
+        lease_key = _execution_lease_key(mode)
         item = _ddb_safe(
             {
                 "PK": EXECUTION_LEASE_PK,
-                "SK": EXECUTION_LEASE_SK,
+                "SK": lease_key,
                 "record_type": EXECUTION_LEASE_RECORD_TYPE,
+                "version": EXECUTION_LEASE_VERSION,
+                "lease_domain": lease_domain,
                 "experiment_id": experiment_id,
                 "lease_owner": owner,
                 "execution_mode": mode,
@@ -397,13 +482,89 @@ class AwsTrainingStore:
                 "lease_expires_at_epoch": int(expires.timestamp()),
             }
         )
+        sentinel = _ddb_safe(
+            {
+                "PK": EXECUTION_LEASE_PK,
+                "SK": LEGACY_SHARED_EXECUTION_LEASE_SK,
+                "record_type": LEGACY_EXECUTION_SENTINEL_RECORD_TYPE,
+                "version": LEGACY_EXECUTION_SENTINEL_VERSION,
+                "experiment_id": EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID,
+                "lease_owner": LEGACY_EXECUTION_SENTINEL_OWNER,
+                "execution_mode": LEGACY_EXECUTION_SENTINEL_MODE,
+                "acquired_at": acquired.isoformat(),
+                "lease_expires_at": expires.isoformat(),
+                "lease_expires_at_epoch": int(expires.timestamp()),
+            }
+        )
+        domain_condition = (
+            "attribute_not_exists(PK) OR ("
+            "record_type = :record_type AND version = :version "
+            "AND lease_domain = :lease_domain "
+            "AND attribute_type(lease_expires_at_epoch, :number_type) "
+            "AND lease_expires_at_epoch <= :now)"
+        )
+        sentinel_condition = (
+            "attribute_not_exists(PK) OR ("
+            "record_type = :legacy_record_type "
+            "AND attribute_not_exists(version) "
+            "AND attribute_type(lease_expires_at_epoch, :number_type) "
+            "AND lease_expires_at_epoch <= :now) OR ("
+            "record_type = :sentinel_record_type "
+            "AND version = :sentinel_version "
+            "AND lease_owner = :sentinel_owner "
+            "AND execution_mode = :sentinel_mode "
+            "AND experiment_id = :migration_anchor "
+            "AND attribute_type(lease_expires_at_epoch, :number_type))"
+        )
         try:
-            self.table.put_item(
-                Item=item,
-                ConditionExpression=(
-                    "attribute_not_exists(PK) OR lease_expires_at_epoch <= :now"
-                ),
-                ExpressionAttributeValues={":now": int(acquired.timestamp())},
+            self.table.meta.client.transact_write_items(
+                TransactItems=[
+                    {
+                        "Put": {
+                            "TableName": self.table_name,
+                            "Item": item,
+                            "ConditionExpression": domain_condition,
+                            "ExpressionAttributeValues": _ddb_safe(
+                                {
+                                    ":now": int(acquired.timestamp()),
+                                    ":number_type": "N",
+                                    ":record_type": EXECUTION_LEASE_RECORD_TYPE,
+                                    ":version": EXECUTION_LEASE_VERSION,
+                                    ":lease_domain": lease_domain,
+                                }
+                            ),
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self.table_name,
+                            "Item": sentinel,
+                            "ConditionExpression": sentinel_condition,
+                            "ExpressionAttributeValues": _ddb_safe(
+                                {
+                                    ":now": int(acquired.timestamp()),
+                                    ":number_type": "N",
+                                    ":legacy_record_type": EXECUTION_LEASE_RECORD_TYPE,
+                                    ":sentinel_record_type": (
+                                        LEGACY_EXECUTION_SENTINEL_RECORD_TYPE
+                                    ),
+                                    ":sentinel_version": (
+                                        LEGACY_EXECUTION_SENTINEL_VERSION
+                                    ),
+                                    ":sentinel_owner": (
+                                        LEGACY_EXECUTION_SENTINEL_OWNER
+                                    ),
+                                    ":sentinel_mode": (
+                                        LEGACY_EXECUTION_SENTINEL_MODE
+                                    ),
+                                    ":migration_anchor": (
+                                        EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
+                                    ),
+                                }
+                            ),
+                        }
+                    },
+                ]
             )
         except Exception as exc:
             code = str(
@@ -412,24 +573,120 @@ class AwsTrainingStore:
                 )
                 or ""
             )
-            if code == "ConditionalCheckFailedException":
+            if code == "TransactionCanceledException":
+                try:
+                    legacy = _plain(
+                        self.table.get_item(
+                            Key={
+                                "PK": EXECUTION_LEASE_PK,
+                                "SK": LEGACY_SHARED_EXECUTION_LEASE_SK,
+                            },
+                            ConsistentRead=True,
+                        ).get("Item")
+                        or {}
+                    )
+                    domain_item = _plain(
+                        self.table.get_item(
+                            Key={"PK": EXECUTION_LEASE_PK, "SK": lease_key},
+                            ConsistentRead=True,
+                        ).get("Item")
+                        or {}
+                    )
+                except Exception as read_exc:
+                    raise TrainingContractError(
+                        "execution lease contention state could not be read"
+                    ) from read_exc
+
+                now_epoch = int(acquired.timestamp())
+                legacy_is_old = bool(
+                    legacy.get("record_type") == EXECUTION_LEASE_RECORD_TYPE
+                    and "version" not in legacy
+                )
+                legacy_is_sentinel = bool(
+                    legacy.get("record_type")
+                    == LEGACY_EXECUTION_SENTINEL_RECORD_TYPE
+                    and legacy.get("version") == LEGACY_EXECUTION_SENTINEL_VERSION
+                    and legacy.get("lease_owner")
+                    == LEGACY_EXECUTION_SENTINEL_OWNER
+                    and legacy.get("execution_mode")
+                    == LEGACY_EXECUTION_SENTINEL_MODE
+                    and legacy.get("experiment_id")
+                    == EXECUTION_LEASE_MIGRATION_ANCHOR_EXPERIMENT_ID
+                )
+                if legacy and not (legacy_is_old or legacy_is_sentinel):
+                    raise TrainingContractError(
+                        "legacy execution lease migration sentinel is invalid"
+                    ) from exc
+                if legacy and not isinstance(
+                    legacy.get("lease_expires_at_epoch"), int
+                ):
+                    raise TrainingContractError(
+                        "legacy execution lease expiry is invalid"
+                    ) from exc
+
+                domain_is_current = bool(
+                    domain_item.get("record_type") == EXECUTION_LEASE_RECORD_TYPE
+                    and domain_item.get("version") == EXECUTION_LEASE_VERSION
+                    and domain_item.get("lease_domain") == lease_domain
+                )
+                if domain_item and not domain_is_current:
+                    raise TrainingContractError(
+                        "execution lease domain record is invalid"
+                    ) from exc
+                if domain_item and not isinstance(
+                    domain_item.get("lease_expires_at_epoch"), int
+                ):
+                    raise TrainingContractError(
+                        "execution lease domain expiry is invalid"
+                    ) from exc
+
+                legacy_active = bool(
+                    legacy_is_old
+                    and int(legacy.get("lease_expires_at_epoch") or 0) > now_epoch
+                )
+                domain_active = bool(
+                    domain_is_current
+                    and int(domain_item.get("lease_expires_at_epoch") or 0)
+                    > now_epoch
+                )
+                if legacy_active or domain_active:
+                    raise ExecutionLeaseUnavailable(
+                        EXECUTION_LEASE_UNAVAILABLE_MESSAGE
+                    ) from exc
+                # A concurrent v2 transaction can race only on the renewable
+                # sentinel while targeting a different domain. Treat that
+                # short transaction conflict as retryable lease contention.
                 raise ExecutionLeaseUnavailable(
-                    "another MLB ML trainer invocation holds the execution lease"
+                    EXECUTION_LEASE_UNAVAILABLE_MESSAGE
                 ) from exc
             raise
         return _plain(item)
 
     def release_execution_lease(
-        self, experiment_id: str, *, owner_token: str
+        self,
+        experiment_id: str,
+        *,
+        owner_token: str,
+        execution_mode: str,
     ) -> None:
         owner = str(owner_token or "").strip()
         if not owner:
             raise TrainingContractError("execution lease owner is required")
+        lease_domain = _execution_lease_domain(execution_mode)
+        lease_key = _execution_lease_key(execution_mode)
         try:
             self.table.delete_item(
-                Key={"PK": EXECUTION_LEASE_PK, "SK": EXECUTION_LEASE_SK},
-                ConditionExpression="lease_owner = :owner",
-                ExpressionAttributeValues={":owner": owner},
+                Key={"PK": EXECUTION_LEASE_PK, "SK": lease_key},
+                ConditionExpression=(
+                    "lease_owner = :owner AND record_type = :record_type "
+                    "AND version = :version AND lease_domain = :lease_domain"
+                ),
+                ExpressionAttributeValues={
+                    ":owner": owner,
+                    ":record_type": EXECUTION_LEASE_RECORD_TYPE,
+                    ":version": EXECUTION_LEASE_VERSION,
+                    ":lease_domain": lease_domain,
+                },
             )
         except Exception as exc:
             code = str(
@@ -594,6 +851,12 @@ class AwsTrainingStore:
         experiment_id = str(entry.get("experimentId") or "")
         if not identity or not slate_date or not experiment_id:
             raise TrainingContractError("selection identity, slate date, and experiment are required")
+        if entry.get("idempotencyFingerprintVersion") != (
+            experiment.SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION
+        ):
+            raise TrainingContractError(
+                "new prospective selections require current semantic idempotency"
+            )
         identity_hash = hashlib.sha256(identity.encode("utf-8")).hexdigest()
         item = _ddb_safe(
             {
@@ -613,10 +876,90 @@ class AwsTrainingStore:
                 "prospective selection entry is invalid: "
                 + ",".join(incoming_errors)
             )
+
+        def existing_result(
+            current_manifest: Mapping[str, Any],
+        ) -> Optional[Dict[str, Any]]:
+            existing_item = _plain(
+                self.table.get_item(
+                    Key={"PK": item["PK"], "SK": item["SK"]},
+                    ConsistentRead=True,
+                ).get("Item")
+                or {}
+            )
+            if not existing_item:
+                return None
+            existing_errors = _selection_envelope_errors(existing_item)
+            if existing_errors:
+                raise TrainingContractError(
+                    "immutable prospective selection readback is invalid: "
+                    + ",".join(existing_errors)
+                )
+            existing = _plain(existing_item.get("data") or {})
+            existing_contract_errors = experiment.selection_ledger_validation_errors(
+                existing,
+                current_manifest,
+                challenger_artifact_digest=str(
+                    (current_manifest.get("frozenChallenger") or {}).get(
+                        "artifactDigest"
+                    )
+                    or ""
+                ),
+            )
+            if existing_contract_errors:
+                raise TrainingContractError(
+                    "immutable prospective selection contract is invalid: "
+                    + ",".join(existing_contract_errors)
+                )
+            existing_idempotency_version = existing.get(
+                "idempotencyFingerprintVersion"
+            )
+            incoming_idempotency_version = entry.get(
+                "idempotencyFingerprintVersion"
+            )
+            same_semantics = False
+            if existing_idempotency_version == incoming_idempotency_version:
+                same_semantics = existing.get("idempotencyFingerprint") == entry.get(
+                    "idempotencyFingerprint"
+                )
+            elif existing_idempotency_version == (
+                experiment.SELECTION_IDEMPOTENCY_FINGERPRINT_VERSION_V1
+            ):
+                same_semantics = (
+                    experiment.selection_semantic_fingerprint(existing)
+                    == experiment.selection_semantic_fingerprint(entry)
+                )
+            if not same_semantics:
+                raise ConditionalStateConflict(
+                    "immutable prospective selection changed"
+                )
+            return {
+                "ok": True,
+                "created": False,
+                "PK": item["PK"],
+                "SK": item["SK"],
+                "capturedAtUtc": existing.get("capturedAtUtc"),
+                "decisionFingerprint": existing.get("decisionFingerprint"),
+                "idempotencyFingerprint": existing.get(
+                    "idempotencyFingerprint"
+                ),
+                "recordFingerprint": existing.get("recordFingerprint"),
+            }
+
         manifest = self.load_manifest(experiment_id)
         if not manifest:
             raise TrainingContractError(
                 "persisted experiment manifest is required before selection write"
+            )
+        expected_revision = manifest.get("revision")
+        expected_digest = str(manifest.get("manifestDigest") or "")
+        if not isinstance(expected_revision, int) or not expected_digest:
+            raise TrainingContractError(
+                "persisted experiment manifest revision and digest are required"
+            )
+        if entry.get("experimentManifestDigest") != expected_digest:
+            raise ManifestStateConflict(
+                "experiment manifest changed before prospective selection write"
             )
         contract_errors = experiment.selection_ledger_validation_errors(
             entry,
@@ -630,10 +973,42 @@ class AwsTrainingStore:
                 "prospective selection contract is invalid: "
                 + ",".join(contract_errors)
             )
+        existing = existing_result(manifest)
+        if existing is not None:
+            return existing
         try:
-            self.table.put_item(
-                Item=item,
-                ConditionExpression="attribute_not_exists(PK) AND attribute_not_exists(SK)",
+            self.table.meta.client.transact_write_items(
+                TransactItems=[
+                    {
+                        "ConditionCheck": {
+                            "TableName": self.table_name,
+                            "Key": _ddb_safe(
+                                {
+                                    "PK": _experiment_pk(experiment_id),
+                                    "SK": MANIFEST_SK,
+                                }
+                            ),
+                            "ConditionExpression": (
+                                "revision = :revision AND manifestDigest = :digest"
+                            ),
+                            "ExpressionAttributeValues": _ddb_safe(
+                                {
+                                    ":revision": expected_revision,
+                                    ":digest": expected_digest,
+                                }
+                            ),
+                        }
+                    },
+                    {
+                        "Put": {
+                            "TableName": self.table_name,
+                            "Item": _ddb_safe(item),
+                            "ConditionExpression": (
+                                "attribute_not_exists(PK) AND attribute_not_exists(SK)"
+                            ),
+                        }
+                    },
+                ]
             )
             return {
                 "ok": True,
@@ -650,48 +1025,22 @@ class AwsTrainingStore:
                 ((getattr(exc, "response", {}) or {}).get("Error") or {}).get("Code")
                 or ""
             )
-            if code != "ConditionalCheckFailedException":
+            if code not in {
+                "ConditionalCheckFailedException",
+                "TransactionCanceledException",
+            }:
                 raise
-            existing_item = _plain(
-                self.table.get_item(
-                    Key={"PK": item["PK"], "SK": item["SK"]},
-                    ConsistentRead=True,
-                ).get("Item")
-                or {}
-            )
-            existing_errors = _selection_envelope_errors(existing_item)
-            if existing_errors:
-                raise TrainingContractError(
-                    "immutable prospective selection readback is invalid: "
-                    + ",".join(existing_errors)
+            current_manifest = self.load_manifest(experiment_id)
+            if not current_manifest:
+                raise ManifestStateConflict(
+                    "experiment manifest disappeared during selection write"
                 ) from exc
-            existing = _plain(existing_item.get("data") or {})
-            existing_contract_errors = experiment.selection_ledger_validation_errors(
-                existing,
-                manifest,
-                challenger_artifact_digest=str(
-                    (manifest.get("frozenChallenger") or {}).get("artifactDigest") or ""
-                ),
-            )
-            if existing_contract_errors:
-                raise TrainingContractError(
-                    "immutable prospective selection contract is invalid: "
-                    + ",".join(existing_contract_errors)
-                ) from exc
-            if existing.get("idempotencyFingerprint") != entry.get(
-                "idempotencyFingerprint"
-            ):
-                raise ConditionalStateConflict("immutable prospective selection changed") from exc
-            return {
-                "ok": True,
-                "created": False,
-                "PK": item["PK"],
-                "SK": item["SK"],
-                "capturedAtUtc": existing.get("capturedAtUtc"),
-                "decisionFingerprint": existing.get("decisionFingerprint"),
-                "idempotencyFingerprint": existing.get("idempotencyFingerprint"),
-                "recordFingerprint": existing.get("recordFingerprint"),
-            }
+            existing = existing_result(current_manifest)
+            if existing is not None:
+                return existing
+            raise ManifestStateConflict(
+                "experiment manifest changed before prospective selection write"
+            ) from exc
 
     def list_selections(self, experiment_id: str) -> List[Dict[str, Any]]:
         from boto3.dynamodb.conditions import Key
@@ -1299,10 +1648,24 @@ class TrainingService:
             errors.append("lease_partition_key_mismatch")
         if str(lease.get("experiment_id") or "") != self.config.experiment_id:
             errors.append("experiment_id_mismatch")
-        if str(lease.get("SK") or "") != EXECUTION_LEASE_SK:
+        expected_domain = (
+            _execution_lease_domain(mode)
+            if mode in EXECUTION_LEASE_PROTECTED_MODES
+            else ""
+        )
+        expected_key = (
+            _execution_lease_key(mode)
+            if mode in EXECUTION_LEASE_PROTECTED_MODES
+            else ""
+        )
+        if str(lease.get("SK") or "") != expected_key:
             errors.append("lease_key_mismatch")
         if str(lease.get("record_type") or "") != EXECUTION_LEASE_RECORD_TYPE:
             errors.append("record_type_mismatch")
+        if str(lease.get("version") or "") != EXECUTION_LEASE_VERSION:
+            errors.append("version_mismatch")
+        if str(lease.get("lease_domain") or "") != expected_domain:
+            errors.append("lease_domain_mismatch")
         if str(lease.get("lease_owner") or "") != owner:
             errors.append("owner_mismatch")
         if str(lease.get("execution_mode") or "").strip().lower() != mode:
@@ -1320,10 +1683,11 @@ class TrainingService:
             )
         self._execution_lease_context = {
             "PK": expected_pk,
-            "SK": EXECUTION_LEASE_SK,
+            "SK": expected_key,
             "experimentId": self.config.experiment_id,
             "leaseOwner": owner,
             "executionMode": mode,
+            "leaseDomain": expected_domain,
             "leaseExpiresAtEpoch": expires_at_epoch,
         }
         self._execution_lease_acquired_for_run = True
@@ -1346,17 +1710,37 @@ class TrainingService:
         return context
 
     def _new_manifest(self) -> Dict[str, Any]:
-        return experiment.new_manifest(
-            experiment_id=self.config.experiment_id,
-            release_contract_id=self.config.release_contract_id,
-            release_cutoff_utc=self.config.release_cutoff_utc,
-            feature_vector_version=self.config.feature_vector_version,
-            model_feature_schemas={
-                "outcome": dual_model.OUTCOME_FEATURES,
-                "reliability": dual_model.RELIABILITY_FEATURES,
-            },
-            created_at_utc=self.now().isoformat(),
-        )
+        activated_at = self.now()
+        if activated_at.tzinfo is None:
+            activated_at = activated_at.replace(tzinfo=timezone.utc)
+        activated_at = activated_at.astimezone(timezone.utc)
+        try:
+            activation = experiment.release_activation(
+                experiment_id=self.config.experiment_id,
+                release_contract_id=self.config.release_contract_id,
+                release_cutoff_utc=self.config.release_cutoff_utc,
+                activated_at_utc=activated_at.isoformat(),
+                deployment_git_sha=self.config.deployment_git_sha,
+                deployment_template_sha256=(
+                    self.config.deployment_template_sha256
+                ),
+            )
+            return experiment.new_manifest(
+                experiment_id=self.config.experiment_id,
+                release_contract_id=self.config.release_contract_id,
+                release_cutoff_utc=self.config.release_cutoff_utc,
+                feature_vector_version=self.config.feature_vector_version,
+                model_feature_schemas={
+                    "outcome": dual_model.OUTCOME_FEATURES,
+                    "reliability": dual_model.RELIABILITY_FEATURES,
+                },
+                created_at_utc=activated_at.isoformat(),
+                release_activation=activation,
+            )
+        except experiment.ExperimentContractError as exc:
+            raise TrainingContractError(
+                "r3 experiment release activation failed: " + str(exc)
+            ) from exc
 
     def _normalized_release_cutoff(self) -> str:
         parsed = datetime.fromisoformat(
@@ -1366,7 +1750,12 @@ class TrainingService:
             parsed = parsed.replace(tzinfo=timezone.utc)
         return parsed.astimezone(timezone.utc).isoformat()
 
-    def _validate_manifest_contract(self, current: Dict[str, Any]) -> None:
+    def _validate_manifest_contract(
+        self,
+        current: Dict[str, Any],
+        *,
+        require_release_activation: bool = True,
+    ) -> None:
         if current.get("version") != experiment.VERSION:
             raise TrainingContractError(
                 "configured experiment conflicts with persisted manifest version; "
@@ -1406,6 +1795,66 @@ class TrainingService:
                 "configured experiment conflicts with persisted "
                 "featureSchemaFingerprint; create a new experiment ID"
             )
+        activation = current.get("releaseActivation")
+        if activation is not None or require_release_activation:
+            activation_errors = experiment.release_activation_errors(
+                activation,
+                expected_experiment_id=self.config.experiment_id,
+                expected_release_contract_id=self.config.release_contract_id,
+                expected_release_cutoff_utc=self._normalized_release_cutoff(),
+                expected_created_at_utc=str(current.get("createdAtUtc") or ""),
+            )
+            if activation_errors:
+                raise TrainingContractError(
+                    "persisted r3 release activation is invalid: "
+                    + ",".join(activation_errors)
+                )
+
+    def _activate_existing_manifest(
+        self, current: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """One-time CAS migration for a pre-cutoff markerless r3 manifest."""
+        attested_at = self.now()
+        if attested_at.tzinfo is None:
+            attested_at = attested_at.replace(tzinfo=timezone.utc)
+        attested_at = attested_at.astimezone(timezone.utc)
+        cutoff = datetime.fromisoformat(
+            self._normalized_release_cutoff().replace("Z", "+00:00")
+        ).astimezone(timezone.utc)
+        if attested_at >= cutoff:
+            raise TrainingContractError(
+                "persisted r3 release activation is absent at or after the cutoff; "
+                "create a new experiment ID"
+            )
+        try:
+            activation = experiment.release_activation(
+                experiment_id=self.config.experiment_id,
+                release_contract_id=self.config.release_contract_id,
+                release_cutoff_utc=self.config.release_cutoff_utc,
+                activated_at_utc=attested_at.isoformat(),
+                deployment_git_sha=self.config.deployment_git_sha,
+                deployment_template_sha256=(
+                    self.config.deployment_template_sha256
+                ),
+            )
+        except experiment.ExperimentContractError as exc:
+            raise TrainingContractError(
+                "persisted markerless r3 manifest cannot be activated: " + str(exc)
+            ) from exc
+        updated = copy.deepcopy(current)
+        previous_revision = int(current.get("revision") or 0)
+        previous_digest = str(current.get("manifestDigest") or "")
+        updated["releaseActivation"] = activation
+        updated["revision"] = previous_revision + 1
+        updated["updatedAtUtc"] = attested_at.isoformat()
+        updated["manifestDigest"] = experiment.manifest_digest(updated)
+        self._validate_manifest_contract(updated)
+        self.store.save_manifest(
+            updated,
+            expected_revision=previous_revision,
+            expected_digest=previous_digest,
+        )
+        return updated
 
     def _load_bound_challenger(
         self, manifest: Dict[str, Any]
@@ -1506,8 +1955,13 @@ class TrainingService:
     def _load_or_create_manifest(self) -> Dict[str, Any]:
         current = self.store.load_manifest(self.config.experiment_id)
         if current:
-            self._validate_manifest_contract(current)
-            return current
+            self._validate_manifest_contract(
+                current, require_release_activation=False
+            )
+            if current.get("releaseActivation") is not None:
+                self._validate_manifest_contract(current)
+                return current
+            return self._activate_existing_manifest(current)
         created = self._new_manifest()
         self.store.save_manifest(
             created, expected_revision=None, expected_digest=None
@@ -1637,6 +2091,8 @@ class TrainingService:
                 "both training and selection-capture run IDs are required"
             )
         manifest = self.store.load_manifest(self.config.experiment_id)
+        if manifest:
+            self._validate_manifest_contract(manifest)
         training_health = self._latest_status_health(
             self.store.load_latest_status(self.config.experiment_id, "training"),
             execution_mode="training",
@@ -1736,6 +2192,9 @@ class TrainingService:
         skip_reasons: Dict[str, int] = {}
         errors: List[Any] = []
         cutover = _parse_status_datetime(manifest.get("prospectiveCutoverAtUtc"))
+        initial_challenger_digest = str(
+            (manifest.get("frozenChallenger") or {}).get("artifactDigest") or ""
+        )
         for row in response.get("rows") or []:
             authority = row.get("canonicalLockAuthority") or {}
             if authority.get("learningEligible") is not True:
@@ -1749,30 +2208,73 @@ class TrainingService:
                 or (row.get("featureSnapshot") or {}).get("commenceTime")
                 or (row.get("frozenFeatureVector") or {}).get("commenceTime")
             )
-            if cutover is not None and commence is not None and (
-                commence <= cutover or capture_at >= commence
-            ):
+            if cutover is not None and commence is not None and commence <= cutover:
                 skipped += 1
-                reason = (
-                    "game_not_after_challenger_cutover"
-                    if commence <= cutover
-                    else "capture_not_before_commence"
-                )
+                reason = "game_not_after_challenger_cutover"
                 skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
                 continue
             try:
-                scored = dual_model.score_unlabeled_lock(row, challenger)
-                entry = experiment.selection_ledger_entry(
-                    manifest,
-                    row,
-                    reliability_probability=scored["reliabilityProbability"],
-                    deployment_identity={
-                        "gitSha": self.config.deployment_git_sha,
-                        "templateSha256": self.config.deployment_template_sha256,
-                    },
-                    captured_at_utc=capture_at.isoformat(),
-                )
-                result = self.store.record_selection(entry)
+                current_manifest = manifest
+                result: Optional[Dict[str, Any]] = None
+                entry: Optional[Dict[str, Any]] = None
+                timing_skip = False
+                for attempt in range(3):
+                    decision_at = self.now().astimezone(timezone.utc)
+                    if commence is None or decision_at >= commence:
+                        skipped += 1
+                        reason = "capture_not_before_commence"
+                        skip_reasons[reason] = skip_reasons.get(reason, 0) + 1
+                        timing_skip = True
+                        break
+                    scored = dual_model.score_unlabeled_lock(row, challenger)
+                    entry = experiment.selection_ledger_entry(
+                        current_manifest,
+                        row,
+                        reliability_probability=scored[
+                            "reliabilityProbability"
+                        ],
+                        deployment_identity={
+                            "gitSha": self.config.deployment_git_sha,
+                            "templateSha256": (
+                                self.config.deployment_template_sha256
+                            ),
+                        },
+                        captured_at_utc=decision_at.isoformat(),
+                    )
+                    try:
+                        result = self.store.record_selection(entry)
+                        break
+                    except ManifestStateConflict:
+                        if attempt == 2:
+                            raise
+                        refreshed_manifest = self.store.load_manifest(
+                            self.config.experiment_id
+                        )
+                        if not refreshed_manifest:
+                            raise TrainingContractError(
+                                "experiment manifest disappeared during selection retry"
+                            )
+                        self._validate_manifest_contract(refreshed_manifest)
+                        refreshed_digest = str(
+                            (
+                                refreshed_manifest.get("frozenChallenger")
+                                or {}
+                            ).get("artifactDigest")
+                            or ""
+                        )
+                        if refreshed_digest != initial_challenger_digest:
+                            raise TrainingContractError(
+                                "frozen challenger changed during selection capture"
+                            )
+                        current_manifest = refreshed_manifest
+                if timing_skip:
+                    # A row that crossed first pitch during a bounded manifest
+                    # retry is an honest skip, not an invocation failure.
+                    continue
+                if result is None or entry is None:
+                    raise TrainingContractError(
+                        "prospective selection write produced no result"
+                    )
                 if result.get("created") is True:
                     captured += 1
                 else:
@@ -1846,7 +2348,7 @@ class TrainingService:
         return result
 
     def capture_selections(self) -> Dict[str, Any]:
-        self._require_execution_lease("selection_capture", "training")
+        self._require_execution_lease("selection_capture")
         # This frequent path must never scan historical labels, advance the
         # experiment, fit a model, or create experiment state. Its sole write
         # authority is the pre-outcome selection ledger plus its own status.
@@ -1857,6 +2359,7 @@ class TrainingService:
                     "ok": True,
                     "status": "WAITING_FOR_EXPERIMENT_MANIFEST",
                     "executionMode": "selection_capture",
+                    "selectionCaptureReady": False,
                     "selectionCapture": {
                         "ok": True,
                         "capturedCount": 0,
@@ -1878,6 +2381,7 @@ class TrainingService:
                     "ok": True,
                     "status": "WAITING_FOR_PERSISTED_CHALLENGER",
                     "executionMode": "selection_capture",
+                    "selectionCaptureReady": False,
                     "selectionCapture": {
                         "ok": True,
                         "capturedCount": 0,
@@ -1906,6 +2410,7 @@ class TrainingService:
                 "ok": True,
                 "status": "PROSPECTIVE_SELECTION_CAPTURE_COMPLETE",
                 "executionMode": "selection_capture",
+                "selectionCaptureReady": True,
                 "selectionCapture": capture,
                 "challengerArtifactDigest": (
                     manifest.get("frozenChallenger") or {}
@@ -1917,63 +2422,23 @@ class TrainingService:
         )
 
     def run_scheduled(self) -> Dict[str, Any]:
-        """Capture prospective evidence before scheduled fitting under one lease."""
+        """Initialize/migrate the manifest, then train without blocking capture."""
         self._require_execution_lease("training")
-        capture_status = self.capture_selections()
-        self._scheduled_selection_capture_status = copy.deepcopy(capture_status)
-        capture = capture_status.get("selectionCapture") or {}
+        # This call owns release activation and markerless pre-cutoff migration.
+        # It must run before any strict manifest consumer. Selection capture has
+        # its own global lease domain and recurring cadence, so a 900-second fit
+        # cannot suppress pregame evidence capture.
+        self._load_or_create_manifest()
         self._selection_capture_before_training = {
-            "ok": capture_status.get("ok") is True,
-            "status": capture_status.get("status"),
-            "capturedCount": int(capture.get("capturedCount") or 0),
-            "existingCount": int(capture.get("existingCount") or 0),
-            "selectedCount": int(capture.get("selectedCount") or 0),
-            "skippedCount": int(capture.get("skippedCount") or 0),
-            "collisionPolicy": (
-                "capture_before_training_under_shared_execution_lease"
-            ),
+            "status": "OWNED_BY_INDEPENDENT_SELECTION_CAPTURE_CADENCE",
+            "invokedByTraining": False,
+            "healthEvaluatedByTraining": False,
+            "independentHeartbeatRequired": True,
+            "collisionPolicy": "separate_global_lease_domain",
             "selectionWritesIdempotent": True,
+            "manifestConditionCheckRequired": True,
         }
-        try:
-            if capture_status.get("ok") is not True:
-                raise TrainingContractError(
-                    "selection capture before scheduled training was unhealthy"
-                )
-            training_status = self.run()
-            final_capture = training_status.get("selectionCapture")
-            if not isinstance(final_capture, dict):
-                final_capture = capture
-            final_capture = copy.deepcopy(final_capture)
-            final_capture_ok = final_capture.get("ok") is not False
-            final_manifest = (
-                self.store.load_manifest(self.config.experiment_id) or {}
-            )
-            self._save_run_status(
-                {
-                    "ok": final_capture_ok,
-                    "status": (
-                        "SCHEDULED_SELECTION_CAPTURE_HEARTBEAT_FINALIZED"
-                        if final_capture_ok
-                        else "SCHEDULED_SELECTION_CAPTURE_HEARTBEAT_FAILED"
-                    ),
-                    "executionMode": "selection_capture",
-                    "selectionCapture": final_capture,
-                    "challengerArtifactDigest": (
-                        final_manifest.get("frozenChallenger") or {}
-                    ).get("artifactDigest"),
-                    "sourceSelectionStatusRunId": capture_status.get("runId"),
-                    "trainingRunId": training_status.get("runId"),
-                    "selectionEvidenceRecapturedAfterTraining": False,
-                    "heartbeatBoundAfterTraining": True,
-                    "historicalTrainingScanInvoked": False,
-                    "modelTrained": False,
-                    "liveInferenceAuthority": False,
-                }
-            )
-            return training_status
-        finally:
-            self._scheduled_selection_capture_status = None
-            self._selection_capture_before_training = None
+        return self.run()
 
     def run(self) -> Dict[str, Any]:
         self._require_execution_lease("training")
@@ -2094,10 +2559,11 @@ class TrainingService:
                     partition_rows = experiment.rows_by_partition(manifest, accepted)
 
         selection_capture = {
-            "ok": True,
-            "status": "WAITING_FOR_PERSISTED_CHALLENGER",
-            "capturedCount": 0,
-            "selectedCount": 0,
+            "status": "OWNED_BY_INDEPENDENT_SELECTION_CAPTURE_CADENCE",
+            "invokedByTraining": False,
+            "healthEvaluatedByTraining": False,
+            "independentHeartbeatRequired": True,
+            "manifestConditionCheckRequired": True,
         }
         selection_entries: List[Dict[str, Any]] = []
         selection_evaluation = {
@@ -2107,28 +2573,6 @@ class TrainingService:
             "conflicts": [],
         }
         if challenger is not None and challenger.get("ok") is True:
-            scheduled_capture = self._scheduled_selection_capture_status or {}
-            scheduled_capture_result = scheduled_capture.get("selectionCapture")
-            scheduled_challenger_digest = str(
-                scheduled_capture.get("challengerArtifactDigest") or ""
-            )
-            current_challenger_digest = str(
-                (manifest.get("frozenChallenger") or {}).get("artifactDigest")
-                or ""
-            )
-            if (
-                isinstance(scheduled_capture_result, dict)
-                and scheduled_capture.get("ok") is True
-                and scheduled_capture_result.get("ok") is not False
-                and scheduled_challenger_digest
-                and scheduled_challenger_digest == current_challenger_digest
-            ):
-                # The scheduled path already captured under this immutable
-                # challenger before fitting. Reuse that result; a second pass
-                # could move capture timestamps or attempt a changed decision.
-                selection_capture = copy.deepcopy(scheduled_capture_result)
-            else:
-                selection_capture = self._capture_selections(manifest, challenger)
             selection_entries = self.store.list_selections(self.config.experiment_id)
             selection_evaluation = dual_model.evaluate_selection_ledger(
                 accepted,
@@ -2155,10 +2599,7 @@ class TrainingService:
             for name in experiment.PARTITION_ORDER
         }
         common = {
-            "ok": bool(
-                selection_capture.get("ok") is not False
-                and selection_evaluation.get("ok") is True
-            ),
+            "ok": bool(selection_evaluation.get("ok") is True),
             "status": manifest.get("phase"),
             "executionMode": "training",
             "partitionCounts": counts,
@@ -2176,10 +2617,6 @@ class TrainingService:
         }
         if isinstance(slate_continuity, dict):
             common["canonicalSlateContinuity"] = slate_continuity
-        if selection_capture.get("ok") is False:
-            return self._save_run_status(
-                {**common, "ok": False, "status": "SELECTION_CAPTURE_FAILED"}
-            )
         if (
             manifest.get("prospectiveTestSealed") is True
             and selection_evaluation.get("ok") is not True
@@ -2503,9 +2940,9 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     except Exception as exc:
         primary_error = exc
         if not lease_acquired:
-            # Fail so the bounded async retry policy can try again. Any acquire
-            # error (contention, permission, network, or ambiguous success)
-            # must make zero unlocked status writes.
+            # Scheduled sources intentionally have no overlapping async retry.
+            # Deployment invokes use their own exact bounded retry helper. Any
+            # acquire error must make zero unlocked status writes.
             raise
         if execution_mode != "manual_review":
             try:
@@ -2513,10 +2950,7 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
                     "ok": False,
                     "status": f"{execution_mode.upper()}_INVOCATION_FAILED",
                     "executionMode": execution_mode,
-                    "failure": {
-                        "type": type(exc).__name__,
-                        "message": str(exc),
-                    },
+                    "failure": _sanitized_failure(exc),
                     "liveInferenceAuthority": False,
                 }
                 request_id = str(getattr(context, "aws_request_id", "") or "")
@@ -2524,10 +2958,9 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
                     failure_status["runId"] = request_id
                 service._save_run_status(failure_status)
             except Exception:
-                # Preserve the original invocation failure. Lambda async failure
-                # handling and EventBridge's bounded retry policy cover transient
-                # cases where status storage is unavailable too; CloudWatch retains
-                # the terminal invocation error without an SQS deployment dependency.
+                # Preserve the original invocation failure. The next scheduled
+                # cadence is the recovery path; CloudWatch retains the terminal
+                # error without persisting raw exception details publicly.
                 pass
         raise
     finally:
@@ -2536,6 +2969,7 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
                 service.store.release_execution_lease(
                     service.config.experiment_id,
                     owner_token=lease_owner,
+                    execution_mode=execution_mode,
                 )
             except Exception:
                 if primary_error is None:

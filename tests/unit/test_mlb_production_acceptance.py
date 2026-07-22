@@ -375,6 +375,8 @@ def audit(summary=None, optimization=None, *, quarantine_all=False, **updates):
             "deploymentIdentityAgreement": True,
             "manifestPresent": True,
             "manifestValid": True,
+            "releaseActivationValid": True,
+            "releaseActivationErrors": [],
             "manifestPhase": "COLLECTING_TRAIN",
             "automaticPromotionEnabled": False,
             "partitionCounts": {

@@ -29,6 +29,9 @@ FORBIDDEN_ABSENT_PATHS = (
 )
 READ_ONLY_STORAGE_POLICY = "READ_ONLY_CANONICAL_PREDICTION_AUTHORITY_ONLY"
 PRODUCTION_ACCEPTANCE_WORKFLOW = ".github/workflows/mlb-production-acceptance.yml"
+RELEASE_ACTIVATION_PREDEPLOY_SCRIPT = (
+    "scripts/verify_mlb_release_activation_predeploy.py"
+)
 
 
 def _verify_read_only_hot_sides(root: Path) -> List[str]:
@@ -208,6 +211,38 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             errors.append(
                 "production_source_contract_does_not_test_lambda_artifact_identity"
             )
+        if (
+            "tests/unit/test_mlb_release_activation_predeploy.py"
+            not in contract
+        ):
+            errors.append(
+                "production_source_contract_does_not_test_release_activation_predeploy"
+            )
+        if (
+            "python -m py_compile " + RELEASE_ACTIVATION_PREDEPLOY_SCRIPT
+            not in contract
+        ):
+            errors.append(
+                "production_source_contract_does_not_compile_release_activation_predeploy"
+            )
+        if "tests/unit/test_mlb_trainer_invoke_retry.py" not in contract:
+            errors.append(
+                "production_source_contract_does_not_test_trainer_invoke_retry"
+            )
+        if (
+            "python -m py_compile scripts/invoke_mlb_trainer_with_retry.py"
+            not in contract
+        ):
+            errors.append(
+                "production_source_contract_does_not_compile_trainer_invoke_retry"
+            )
+
+    if not (root / RELEASE_ACTIVATION_PREDEPLOY_SCRIPT).is_file():
+        errors.append("release_activation_predeploy_script_missing")
+
+    helper_path = root / "scripts/invoke_mlb_trainer_with_retry.py"
+    if not helper_path.is_file():
+        errors.append("canonical_trainer_invoke_retry_helper_missing")
 
     deploy_path = root / ".github/workflows/deploy.yml"
     deploy = deploy_path.read_text(encoding="utf-8") if deploy_path.is_file() else ""
@@ -326,6 +361,66 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             errors.append("canonical_deploy_split_run_status_order_is_invalid")
         if verifier < 0 or verifier < post_status:
             errors.append("canonical_deploy_does_not_verify_post_run_trainer_status")
+        gate_call = (
+            "python " + RELEASE_ACTIVATION_PREDEPLOY_SCRIPT
+        )
+        if deploy.count(gate_call) != 1:
+            errors.append(
+                "canonical_deploy_must_run_release_activation_predeploy_once"
+            )
+        step_matches = list(
+            re.finditer(
+                r"(?ms)^      - name: (?P<name>[^\n]+)\n"
+                r"(?P<body>.*?)(?=^      - name: |\Z)",
+                deploy,
+            )
+        )
+        step_names = [match.group("name") for match in step_matches]
+        gate_name = "Enforce durable MLB r3 release activation before SAM deploy"
+        gate_body = ""
+        try:
+            wait_index = step_names.index("Wait for CloudFormation updateability")
+            gate_index = step_names.index(gate_name)
+            sam_deploy_index = step_names.index("Deploy exact canonical source")
+        except ValueError:
+            errors.append("canonical_deploy_release_activation_step_missing")
+        else:
+            if not (
+                gate_index == wait_index + 1
+                and sam_deploy_index == gate_index + 1
+            ):
+                errors.append(
+                    "canonical_deploy_release_activation_step_order_invalid"
+                )
+            if step_names.count(gate_name) != 1:
+                errors.append(
+                    "canonical_deploy_release_activation_step_count_invalid"
+                )
+            gate_body = step_matches[gate_index].group("body")
+            if gate_call not in gate_body:
+                errors.append(
+                    "canonical_deploy_release_activation_call_outside_gate_step"
+                )
+        for token in (
+            "--stack-name parlay-platform-dev",
+            '--region "${{ secrets.AWS_REGION }}"',
+            "--output runtime_reports/mlb_release_activation_predeploy_latest.json",
+        ):
+            if token not in gate_body:
+                errors.append(
+                    "canonical_deploy_release_activation_argument_missing:" + token
+                )
+        if (
+            "python -m py_compile " + RELEASE_ACTIVATION_PREDEPLOY_SCRIPT
+            not in deploy
+        ):
+            errors.append(
+                "canonical_deploy_does_not_compile_release_activation_predeploy"
+            )
+        if "tests/unit/test_mlb_release_activation_predeploy.py" not in deploy:
+            errors.append(
+                "canonical_deploy_does_not_test_release_activation_predeploy"
+            )
         for required_capacity_token in (
             "Prove shared Lambda capacity recovered before trainer initialization",
             "capacity_deadline=$((SECONDS + 360))",
@@ -344,6 +439,8 @@ def verify_repository(root: Path = ROOT) -> List[str]:
             errors.append(
                 "canonical_deploy_must_use_bounded_invoke_retry_exactly_three_times"
             )
+        if "invoke_with_capacity_retry" in deploy or "aws lambda invoke" in deploy:
+            errors.append("canonical_deploy_retains_unsafe_inline_trainer_invoke")
         if "python scripts/verify_mlb_workflow_authority.py" not in deploy:
             errors.append("canonical_deploy_does_not_verify_retired_workflows")
         if "python scripts/verify_mlb_bbs_sam_wiring.py" not in deploy:

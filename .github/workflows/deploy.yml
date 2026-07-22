@@ -109,6 +109,7 @@ jobs:
           python -m py_compile scripts/create_mlb_lambda_build_manifest.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
           python -m py_compile scripts/invoke_mlb_trainer_with_retry.py
+          python -m py_compile scripts/verify_mlb_release_activation_predeploy.py
           python -m py_compile scripts/verify_mlb_trainer_deploy_response.py
 
       - name: Enforce MLB published prediction and immutable lock regressions
@@ -140,6 +141,7 @@ jobs:
             tests/unit/test_mlb_deploy_http_probe.py
             tests/unit/test_mlb_lambda_artifact_identity.py
             tests/unit/test_mlb_trainer_invoke_retry.py
+            tests/unit/test_mlb_release_activation_predeploy.py
             tests/unit/test_mlb_trainer_deploy_response.py
             tests/unit/test_mlb_workflow_authority.py
             tests/unit/test_run_mlb_ml_v3_audit_report.py
@@ -213,32 +215,6 @@ jobs:
             --expected-template-sha256 "$EXPECTED_TEMPLATE_SHA256" \
             --output runtime_reports/mlb_lambda_build_manifest_deploy.json
 
-      - name: Wait for CloudFormation updateability
-        run: |
-          set -euo pipefail
-          for attempt in $(seq 1 60); do
-            STATUS=$(aws cloudformation describe-stacks \
-              --stack-name parlay-platform-dev \
-              --region "${{ secrets.AWS_REGION }}" \
-              --query 'Stacks[0].StackStatus' \
-              --output text 2>/dev/null || echo STACK_MISSING)
-            echo "CloudFormation status: $STATUS"
-            case "$STATUS" in
-              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)
-                exit 0
-                ;;
-              *_IN_PROGRESS)
-                sleep 30
-                ;;
-              *)
-                echo "::error::Stack is not updateable: $STATUS"
-                exit 1
-                ;;
-            esac
-          done
-          echo "::error::Timed out waiting for CloudFormation"
-          exit 1
-
       - name: Preflight Lambda artifact attestation access
         run: |
           set -euo pipefail
@@ -305,6 +281,40 @@ jobs:
               time.sleep(2 ** (attempt - 1))
           PY
           done
+
+      - name: Wait for CloudFormation updateability
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            STATUS=$(aws cloudformation describe-stacks \
+              --stack-name parlay-platform-dev \
+              --region "${{ secrets.AWS_REGION }}" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || echo STACK_MISSING)
+            echo "CloudFormation status: $STATUS"
+            case "$STATUS" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING)
+                exit 0
+                ;;
+              *_IN_PROGRESS)
+                sleep 30
+                ;;
+              *)
+                echo "::error::Stack is not updateable: $STATUS"
+                exit 1
+                ;;
+            esac
+          done
+          echo "::error::Timed out waiting for CloudFormation"
+          exit 1
+
+      - name: Enforce durable MLB r3 release activation before SAM deploy
+        run: |
+          set -euo pipefail
+          python scripts/verify_mlb_release_activation_predeploy.py \
+            --stack-name parlay-platform-dev \
+            --region "${{ secrets.AWS_REGION }}" \
+            --output runtime_reports/mlb_release_activation_predeploy_latest.json
 
       - name: Deploy exact canonical source
         id: deploy

@@ -3,10 +3,12 @@ from __future__ import annotations
 import copy
 import json
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
+
+import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -67,14 +69,22 @@ class FakeTable:
             raise RuntimeError("injected diagnostic write failure")
         key = (Item["PK"], Item["SK"])
         if ConditionExpression and key in self.items:
-            if "lease_expires_at_epoch <= :now_epoch" in ConditionExpression:
-                current_expiry = int(
-                    self.items[key].get("lease_expires_at_epoch") or 0
+            if "lease_expires_at_epoch" in ConditionExpression:
+                existing = self.items[key]
+                values = ExpressionAttributeValues or {}
+                same_contract = bool(
+                    existing.get("record_type") == values.get(":record_type")
+                    and existing.get("version") == values.get(":version")
                 )
+                current_expiry = existing.get("lease_expires_at_epoch")
                 now_epoch = int(
-                    (ExpressionAttributeValues or {}).get(":now_epoch") or 0
+                    values.get(":now_epoch") or 0
                 )
-                if current_expiry > now_epoch:
+                expired = bool(
+                    isinstance(current_expiry, (int, Decimal))
+                    and int(current_expiry) <= now_epoch
+                )
+                if not same_contract or not expired:
                     raise ConditionalCollision()
             else:
                 raise ConditionalCollision()
@@ -94,9 +104,14 @@ class FakeTable:
     ):
         key = (Key["PK"], Key["SK"])
         existing = self.items.get(key)
-        if ConditionExpression == "lease_owner = :owner":
-            owner = (ExpressionAttributeValues or {}).get(":owner")
-            if not existing or existing.get("lease_owner") != owner:
+        if ConditionExpression and "lease_owner = :owner" in ConditionExpression:
+            values = ExpressionAttributeValues or {}
+            if (
+                not existing
+                or existing.get("lease_owner") != values.get(":owner")
+                or existing.get("record_type") != values.get(":record_type")
+                or existing.get("version") != values.get(":version")
+            ):
                 raise ConditionalCollision()
         self.items.pop(key, None)
         return {}
@@ -1001,43 +1016,50 @@ def test_scheduled_terminal_no_prediction_slate_does_not_repeat_full_path(monkey
     assert progress_calls == [False]
 
 
-def test_scheduled_single_flight_blocks_overlap_and_expired_owner_cannot_release_successor():
+def test_global_lock_execution_lease_blocks_same_and_cross_slate_overlap():
     module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
     started_at = dt("2026-07-13T17:15:00+00:00")
 
-    first = patch._acquire_scheduled_single_flight(module, SLATE, started_at)
-    overlap = patch._acquire_scheduled_single_flight(
+    first = patch._acquire_lock_execution_lease(module, SLATE, started_at)
+    same_slate_overlap = patch._acquire_lock_execution_lease(
         module,
         SLATE,
         started_at + timedelta(minutes=1),
     )
-    successor = patch._acquire_scheduled_single_flight(
+    cross_slate_overlap = patch._acquire_lock_execution_lease(
         module,
-        SLATE,
+        "2026-07-14",
+        started_at + timedelta(minutes=2),
+    )
+    successor = patch._acquire_lock_execution_lease(
+        module,
+        "2026-07-14",
         started_at
-        + timedelta(seconds=patch.SCHEDULED_SINGLE_FLIGHT_LEASE_SECONDS + 1),
+        + timedelta(seconds=patch.LOCK_EXECUTION_LEASE_SECONDS + 1),
     )
 
     assert first["acquired"] is True
-    assert overlap["acquired"] is False
+    assert same_slate_overlap["acquired"] is False
+    assert cross_slate_overlap["acquired"] is False
     assert successor["acquired"] is True
     assert successor["owner"] != first["owner"]
-    assert patch._release_scheduled_single_flight(module, first) is False
+    assert patch._release_lock_execution_lease(module, first) is False
     lease_item = module.TABLE.get_item(
-        Key=patch._scheduled_single_flight_key(SLATE),
+        Key=patch._lock_execution_lease_key(),
         ConsistentRead=True,
     )["Item"]
     assert lease_item["lease_owner"] == successor["owner"]
-    assert patch._release_scheduled_single_flight(module, successor) is True
+    assert lease_item["invocation_slate_date"] == "2026-07-14"
+    assert patch._release_lock_execution_lease(module, successor) is True
     assert module.TABLE.get_item(
-        Key=patch._scheduled_single_flight_key(SLATE),
+        Key=patch._lock_execution_lease_key(),
         ConsistentRead=True,
     ) == {}
 
 
-def test_expired_scheduled_single_flight_allows_eventual_tminus45_repair():
+def test_expired_global_lock_execution_lease_allows_eventual_tminus45_repair():
     module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
-    first = patch._acquire_scheduled_single_flight(
+    first = patch._acquire_lock_execution_lease(
         module,
         SLATE,
         module.now,
@@ -1045,15 +1067,16 @@ def test_expired_scheduled_single_flight_allows_eventual_tminus45_repair():
     assert first["acquired"] is True
 
     overlap = module.run_lock(SLATE, scheduled=True)
-    assert overlap["reason"] == "SCHEDULED_SINGLE_FLIGHT_ALREADY_RUNNING"
+    assert overlap["reason"] == "SKIPPED_OVERLAPPING_LOCK_EXECUTION"
+    assert overlap["mutatingRunAttempted"] is False
     assert staged_items(module) == []
 
     module.now = module.now + timedelta(
-        seconds=patch.SCHEDULED_SINGLE_FLIGHT_LEASE_SECONDS + 1
+        seconds=patch.LOCK_EXECUTION_LEASE_SECONDS + 1
     )
     repaired = module.run_lock(SLATE, scheduled=True)
 
-    assert repaired["scheduledSingleFlight"]["released"] is True
+    assert repaired["lockExecutionLease"]["released"] is True
     assert repaired["perGameLockProgress"]["canonicalCount"] == 1
     assert len(staged_items(module)) == 1
     assert staged_items(module)[0]["scheduled_lock_at_utc"] == (
@@ -1183,24 +1206,249 @@ def test_post_start_retry_preserves_valid_existing_canonical_readback():
     assert module.mlb_game_winner_engine.canonical_new_writes == 1
 
 
-def test_manual_and_forced_runs_bypass_scheduled_single_flight():
+@pytest.mark.parametrize(
+    ("force", "scheduled"),
+    ((False, False), (True, True)),
+)
+def test_manual_and_forced_runs_cannot_bypass_global_lock_lease(force, scheduled):
     manual = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
-    assert patch._acquire_scheduled_single_flight(
+    assert patch._acquire_lock_execution_lease(
         manual,
         SLATE,
         manual.now,
     )["acquired"] is True
-    manual_result = manual.run_lock(SLATE)
-    assert manual_result["perGameLockProgress"]["canonicalCount"] == 1
+    result = manual.run_lock(SLATE, force=force, scheduled=scheduled)
 
-    forced = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
-    assert patch._acquire_scheduled_single_flight(
-        forced,
-        SLATE,
-        forced.now,
-    )["acquired"] is True
-    forced_result = forced.run_lock(SLATE, force=True, scheduled=True)
-    assert forced_result["perGameLockProgress"]["canonicalCount"] == 1
+    assert result["ok"] is True
+    assert result["reason"] == "SKIPPED_OVERLAPPING_LOCK_EXECUTION"
+    assert result["mutatingRunAttempted"] is False
+    assert staged_items(manual) == []
+
+
+def test_malformed_global_lock_lease_fails_closed_as_operational_error():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    key = patch._lock_execution_lease_key()
+    module.TABLE.items[(key["PK"], key["SK"])] = {
+        **key,
+        "record_type": patch.LOCK_EXECUTION_LEASE_RECORD_TYPE,
+        "version": patch.LOCK_EXECUTION_LEASE_VERSION,
+        "lease_owner": "malformed-owner",
+        "lease_expires_at_epoch": "not-a-number",
+    }
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is False
+    assert result["reason"] == "LOCK_EXECUTION_LEASE_CORRUPT"
+    assert result["mutatingRunAttempted"] is False
+    assert module.TABLE.get_item(Key=key, ConsistentRead=True)["Item"][
+        "lease_expires_at_epoch"
+    ] == "not-a-number"
+    assert staged_items(module) == []
+
+
+def test_unknown_record_on_global_lock_key_fails_closed_without_overwrite():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    key = patch._lock_execution_lease_key()
+    corrupt = {
+        **key,
+        "record_type": "unknown_record",
+        "version": "unknown-version",
+        "payload": "must-survive",
+    }
+    module.TABLE.items[(key["PK"], key["SK"])] = copy.deepcopy(corrupt)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is False
+    assert result["reason"] == "LOCK_EXECUTION_LEASE_CORRUPT"
+    assert result["mutatingRunAttempted"] is False
+    assert module.TABLE.get_item(Key=key, ConsistentRead=True)["Item"] == corrupt
+    assert staged_items(module) == []
+
+
+@pytest.mark.parametrize("bridge_offset", (-1, 0, 1))
+def test_legacy_runtime_lease_blocks_first_global_runtime_during_rollout(
+    bridge_offset,
+):
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    bridge_slate = (
+        date.fromisoformat(SLATE) + timedelta(days=bridge_offset)
+    ).isoformat()
+    key = patch._legacy_scheduled_single_flight_key(bridge_slate)
+    expires_epoch = int(
+        (module.now + timedelta(minutes=4)).timestamp()
+    )
+    legacy = {
+        **key,
+        "record_type": patch.LEGACY_SCHEDULED_SINGLE_FLIGHT_RECORD_TYPE,
+        "version": patch.LEGACY_SCHEDULED_SINGLE_FLIGHT_VERSION,
+        "lease_owner": "old-runtime-owner",
+        "lease_expires_at_epoch": expires_epoch,
+        "lease_expires_at_utc": datetime.fromtimestamp(
+            expires_epoch,
+            tz=timezone.utc,
+        ).isoformat(),
+    }
+    module.TABLE.items[(key["PK"], key["SK"])] = copy.deepcopy(legacy)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is True
+    assert result["reason"] == "SKIPPED_OVERLAPPING_LOCK_EXECUTION"
+    assert result["mutatingRunAttempted"] is False
+    assert module.TABLE.get_item(Key=key, ConsistentRead=True)["Item"] == legacy
+    assert module.TABLE.get_item(
+        Key=patch._lock_execution_lease_key(),
+        ConsistentRead=True,
+    ) == {}
+    assert staged_items(module) == []
+
+
+def test_ambiguous_lock_lease_acquire_fails_closed_before_business_writes(monkeypatch):
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    original_put = module.TABLE.put_item
+
+    def ambiguous_put(*args, **kwargs):
+        item = kwargs.get("Item") or {}
+        if item.get("record_type") == patch.LOCK_EXECUTION_LEASE_RECORD_TYPE:
+            raise TimeoutError("ambiguous DynamoDB put")
+        return original_put(*args, **kwargs)
+
+    monkeypatch.setattr(module.TABLE, "put_item", ambiguous_put)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is False
+    assert result["reason"] == "LOCK_EXECUTION_LEASE_ACQUIRE_FAILED"
+    assert result["mutatingRunAttempted"] is False
+    assert result["errorType"] == "TimeoutError"
+    assert staged_items(module) == []
+    assert module.mlb_game_winner_engine.canonical_new_writes == 0
+
+
+def test_lock_lease_collision_read_failure_cleans_prior_keys_and_fails_closed(
+    monkeypatch,
+):
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    conflict_key = patch._legacy_scheduled_single_flight_key(SLATE)
+    expires_epoch = int((module.now + timedelta(minutes=4)).timestamp())
+    module.TABLE.items[(conflict_key["PK"], conflict_key["SK"])] = {
+        **conflict_key,
+        "record_type": patch.LEGACY_SCHEDULED_SINGLE_FLIGHT_RECORD_TYPE,
+        "version": patch.LEGACY_SCHEDULED_SINGLE_FLIGHT_VERSION,
+        "lease_owner": "active-old-runtime",
+        "lease_expires_at_epoch": expires_epoch,
+        "lease_expires_at_utc": datetime.fromtimestamp(
+            expires_epoch,
+            tz=timezone.utc,
+        ).isoformat(),
+    }
+    original_get = module.TABLE.get_item
+
+    def failed_conflict_read(*args, **kwargs):
+        if kwargs.get("Key") == conflict_key:
+            raise TimeoutError("consistent read failed")
+        return original_get(*args, **kwargs)
+
+    monkeypatch.setattr(module.TABLE, "get_item", failed_conflict_read)
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is False
+    assert result["reason"] == "LOCK_EXECUTION_LEASE_CONTENTION_READ_FAILED"
+    assert result["mutatingRunAttempted"] is False
+    assert module.TABLE.get_item(
+        Key=patch._lock_execution_lease_key(),
+        ConsistentRead=True,
+    ) == {}
+    prior_bridge = patch._legacy_scheduled_single_flight_key(
+        (date.fromisoformat(SLATE) - timedelta(days=1)).isoformat()
+    )
+    assert module.TABLE.get_item(
+        Key=prior_bridge,
+        ConsistentRead=True,
+    ) == {}
+    assert staged_items(module) == []
+
+
+def test_lock_lease_cleanup_ownership_change_is_not_reported_as_benign_skip(
+    monkeypatch,
+):
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    original_put = module.TABLE.put_item
+
+    def ownership_changed_during_bridge(*args, **kwargs):
+        item = kwargs.get("Item") or {}
+        if item.get("lease_scope") == "legacy_rollout_bridge":
+            global_key = patch._lock_execution_lease_key()
+            current = module.TABLE.items[(global_key["PK"], global_key["SK"])]
+            current["lease_owner"] = "successor-owner"
+            raise ConditionalCollision()
+        return original_put(*args, **kwargs)
+
+    monkeypatch.setattr(
+        module.TABLE,
+        "put_item",
+        ownership_changed_during_bridge,
+    )
+
+    result = module.run_lock(SLATE, scheduled=True)
+
+    assert result["ok"] is False
+    assert result["reason"] == "LOCK_EXECUTION_LEASE_ACQUIRE_FAILED"
+    assert result["mutatingRunAttempted"] is False
+    global_item = module.TABLE.get_item(
+        Key=patch._lock_execution_lease_key(),
+        ConsistentRead=True,
+    )["Item"]
+    assert global_item["lease_owner"] == "successor-owner"
+    assert staged_items(module) == []
+
+
+def test_lock_lease_release_ambiguity_fails_successful_invocation(monkeypatch):
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+    original_delete = module.TABLE.delete_item
+
+    def ambiguous_delete(*args, **kwargs):
+        if kwargs.get("Key") == patch._lock_execution_lease_key():
+            raise TimeoutError("ambiguous DynamoDB delete")
+        return original_delete(*args, **kwargs)
+
+    monkeypatch.setattr(module.TABLE, "delete_item", ambiguous_delete)
+
+    with pytest.raises(
+        RuntimeError,
+        match="LOCK_EXECUTION_LEASE_RELEASE_ERROR:TimeoutError",
+    ):
+        module.run_lock(SLATE, scheduled=True)
+
+    assert len(staged_items(module)) == 1
+    assert module.TABLE.get_item(
+        Key=patch._lock_execution_lease_key(),
+        ConsistentRead=True,
+    ).get("Item")
+
+
+def test_lock_status_read_does_not_acquire_execution_lease():
+    module = build_module(EARLY_PULLS, "2026-07-13T17:15:00+00:00")
+
+    status = module._status_payload(SLATE)
+
+    assert status["ok"] is True
+    assert not any(
+        request["key"]
+        == (
+            patch.LOCK_EXECUTION_LEASE_PK,
+            patch.LOCK_EXECUTION_LEASE_SK,
+        )
+        for request in module.TABLE.put_requests
+    )
+
+
+def test_lock_execution_lease_outlives_lambda_timeout():
+    assert patch.LOCK_EXECUTION_LEASE_SECONDS == 360
+    assert patch.LOCK_EXECUTION_LEASE_SECONDS > 300
 
 
 def test_scheduled_lifecycle_envelope_boundaries_include_delivery_jitter():

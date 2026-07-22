@@ -64,6 +64,7 @@ def _validate_deploy_workflow() -> None:
     required = [
         "Prove committed MLB source is canonical",
         "Calculate canonical deployment identity",
+        "Enforce durable MLB r3 release activation before SAM deploy",
         "Deploy exact canonical source",
         "BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}",
         "Missing BBS_API_KEY",
@@ -89,6 +90,7 @@ def _validate_deploy_workflow() -> None:
         "--expected-deploy-run-id",
         "steps.deploy.outputs.run_id",
         "--expected-code-manifest",
+        "verify_mlb_release_activation_predeploy.py",
         "Run AWS-native MLB trainer and verify fresh split health",
         "invoke_mlb_trainer_with_retry.py",
         "test_mlb_trainer_invoke_retry.py",
