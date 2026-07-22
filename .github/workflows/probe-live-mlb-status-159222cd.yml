@@ -1,0 +1,92 @@
+name: Probe live MLB status 159222cd
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/probe-live-mlb-status-159222cd.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Probe public reads with full Lambda drain before retry
+        run: |
+          python - <<'PY'
+          from __future__ import annotations
+          import json
+          import time
+          import urllib.error
+          import urllib.request
+          from pathlib import Path
+
+          base = 'https://7nz8g8unyd.execute-api.us-east-1.amazonaws.com/Prod'
+          output = {'targetGitSha': '159222cd145ae0ba727970775abda22f956fb97c', 'readOnly': True, 'probes': []}
+
+          def probe(path, label):
+              started = time.monotonic()
+              request = urllib.request.Request(
+                  base + path,
+                  headers={'accept': 'application/json', 'user-agent': 'inqsi-live-read-diagnostic/1.0'},
+              )
+              try:
+                  with urllib.request.urlopen(request, timeout=60) as response:
+                      raw = response.read()
+                      status = int(response.getcode())
+                  payload = json.loads(raw.decode('utf-8'))
+                  result = {
+                      'label': label,
+                      'path': path,
+                      'httpStatus': status,
+                      'elapsedSeconds': round(time.monotonic() - started, 3),
+                      'ok': payload.get('ok') if isinstance(payload, dict) else None,
+                      'sport': payload.get('sport') if isinstance(payload, dict) else None,
+                      'slateDateEt': payload.get('slateDateEt') if isinstance(payload, dict) else None,
+                      'gameCount': payload.get('gameCount') if isinstance(payload, dict) else None,
+                      'lockedPredictionCount': payload.get('lockedPredictionCount') if isinstance(payload, dict) else None,
+                      'lockedStatusCount': payload.get('lockedStatusCount') if isinstance(payload, dict) else None,
+                      'operationalDefect': payload.get('operationalDefect') if isinstance(payload, dict) else None,
+                  }
+              except urllib.error.HTTPError as exc:
+                  body = exc.read().decode('utf-8', 'replace')[:1000]
+                  result = {
+                      'label': label,
+                      'path': path,
+                      'httpStatus': int(exc.code),
+                      'elapsedSeconds': round(time.monotonic() - started, 3),
+                      'error': body,
+                  }
+              except Exception as exc:
+                  result = {
+                      'label': label,
+                      'path': path,
+                      'elapsedSeconds': round(time.monotonic() - started, 3),
+                      'errorType': type(exc).__name__,
+                      'error': str(exc),
+                  }
+              output['probes'].append(result)
+              print(json.dumps(result, sort_keys=True), flush=True)
+              return result
+
+          probe('/v1/health', 'health')
+          first = probe('/v1/mlb/locks/status', 'lockStatusFirst')
+          if first.get('httpStatus') == 504 or first.get('errorType') in {'TimeoutError', 'URLError'}:
+              print('DRAINING_TIMED_OUT_LAMBDA', flush=True)
+              time.sleep(330)
+              probe('/v1/mlb/locks/status', 'lockStatusAfterDrain')
+          probe('/v1/mlb/predictions', 'predictions')
+          Path('live_mlb_public_read_probe.json').write_text(
+              json.dumps(output, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          PY
+      - name: Upload public-read probe evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-mlb-public-read-probe-${{ github.run_id }}
+          path: live_mlb_public_read_probe.json
+          if-no-files-found: error
+          retention-days: 3
