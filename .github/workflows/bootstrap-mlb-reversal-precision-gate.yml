@@ -4,13 +4,19 @@ on:
   push:
     branches:
       - agent/mlb-reversal-precision-gate-20260723
+  pull_request:
+    branches:
+      - main
 
 permissions:
   contents: write
 
 jobs:
   materialize:
-    if: github.actor != 'github-actions[bot]'
+    if: >-
+      github.actor != 'github-actions[bot]' &&
+      (github.event_name != 'pull_request' ||
+       github.event.pull_request.head.ref == 'agent/mlb-reversal-precision-gate-20260723')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout patch branch
