@@ -1,14 +1,16 @@
-name: Bootstrap MLB Recovery Shadow Engines
+name: Bootstrap MLB Recovery Shadow Runtime
 
 on:
   pull_request:
     branches: [main]
     paths:
       - '.github/workflows/bootstrap-mlb-recovery-shadow-engines.yml'
+      - 'scripts/bootstrap_mlb_recovery_shadow_runtime.py'
   push:
     branches: [agent/mlb-accuracy-recovery-20260723]
     paths:
       - '.github/workflows/bootstrap-mlb-recovery-shadow-engines.yml'
+      - 'scripts/bootstrap_mlb_recovery_shadow_runtime.py'
   workflow_dispatch:
 
 permissions:
@@ -27,7 +29,10 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Materialize exact historical scoring formulas as non-authoritative modules
+      - name: Install validation runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+
+      - name: Materialize exact historical formulas and prospective shadow runtime
         run: |
           set -euo pipefail
           git show bc7c752cf755a21cc14f2d4db3eb271ea35ed143:hello_world/mlb_game_winner_engine.py \
@@ -58,17 +63,27 @@ def _store_prediction(*_args, **_kwargs):
 def predict_all(*_args, **_kwargs):
     raise RuntimeError("MLB_RECOVERY_V11_SHADOW_PREDICTION_AUTHORITY_FORBIDDEN")
 PY
+          python scripts/bootstrap_mlb_recovery_shadow_runtime.py
+
+      - name: Validate shadow authority and prospective capture contracts
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: |
+          set -euo pipefail
           python -m py_compile \
             hello_world/mlb_recovery_v10_engine.py \
-            hello_world/mlb_recovery_v11_engine.py
+            hello_world/mlb_recovery_v11_engine.py \
+            hello_world/mlb_recovery_shadow_v1.py \
+            tests/unit/test_mlb_recovery_shadow_v1.py
+          python -m pytest -q tests/unit/test_mlb_recovery_shadow_v1.py
           python - <<'PY'
-          import sys
-          sys.path.insert(0, 'hello_world')
           import mlb_recovery_v10_engine as v10
           import mlb_recovery_v11_engine as v11
-          assert v10.RECOVERY_SHADOW_ONLY is True
-          assert v11.RECOVERY_SHADOW_ONLY is True
           for module in (v10, v11):
+              assert module.RECOVERY_SHADOW_ONLY is True
               try:
                   module.predict_all()
               except RuntimeError:
@@ -77,18 +92,20 @@ PY
                   raise SystemExit('historical recovery module retained prediction authority')
           PY
 
-      - name: Commit shadow-only engine modules
+      - name: Commit reviewed recovery runtime files
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
             hello_world/mlb_recovery_v10_engine.py \
-            hello_world/mlb_recovery_v11_engine.py
+            hello_world/mlb_recovery_v11_engine.py \
+            hello_world/mlb_recovery_shadow_v1.py \
+            tests/unit/test_mlb_recovery_shadow_v1.py
           if git diff --cached --quiet; then
-            echo 'Recovery shadow engines already materialized.'
+            echo 'Recovery shadow runtime is already materialized.'
           else
-            git commit -m 'Materialize legacy MLB formulas as shadow-only features'
+            git commit -m 'Add prospective MLB recovery shadow runtime'
             git pull --rebase --autostash origin agent/mlb-accuracy-recovery-20260723
             git push origin HEAD:agent/mlb-accuracy-recovery-20260723
           fi
