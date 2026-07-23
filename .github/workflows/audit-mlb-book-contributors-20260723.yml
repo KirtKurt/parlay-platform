@@ -1,0 +1,251 @@
+name: Audit MLB Sportsbook Contributors 2026-07-23
+
+on:
+  push:
+    branches: [agent/audit-mlb-book-contributors-20260723]
+    paths:
+      - '.github/workflows/audit-mlb-book-contributors-20260723.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install read-only audit runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Export exact sportsbook contributors for stored predictions
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SLATE_DATE: '2026-07-23'
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-book-contributors
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from pathlib import Path
+
+          import boto3
+          from boto3.dynamodb.conditions import Key
+
+          table = boto3.resource('dynamodb', region_name=os.environ['AWS_REGION']).Table(
+              os.environ['SNAPSHOTS_TABLE']
+          )
+          slate = os.environ['SLATE_DATE']
+
+          def plain(value):
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value, dict):
+                  return {str(k): plain(v) for k, v in value.items()}
+              if isinstance(value, list):
+                  return [plain(v) for v in value]
+              return value
+
+          def query(pk, prefix=None):
+              expr = Key('PK').eq(pk)
+              if prefix:
+                  expr = expr & Key('SK').begins_with(prefix)
+              rows = []
+              start = None
+              while True:
+                  kwargs = {
+                      'KeyConditionExpression': expr,
+                      'ConsistentRead': True,
+                      'ScanIndexForward': True,
+                  }
+                  if start:
+                      kwargs['ExclusiveStartKey'] = start
+                  response = table.query(**kwargs)
+                  rows.extend(plain(response.get('Items') or []))
+                  start = response.get('LastEvaluatedKey')
+                  if not start:
+                      return rows
+
+          def parse_dt(value):
+              if not value:
+                  return None
+              try:
+                  parsed = datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+                  if parsed.tzinfo is None:
+                      parsed = parsed.replace(tzinfo=timezone.utc)
+                  return parsed.astimezone(timezone.utc)
+              except Exception:
+                  return None
+
+          def american_prob(value):
+              try:
+                  odds = float(value)
+              except Exception:
+                  return None
+              if odds == 0:
+                  return None
+              return abs(odds) / (abs(odds) + 100.0) if odds < 0 else 100.0 / (odds + 100.0)
+
+          def devig_pair(home, away):
+              hp = american_prob(home)
+              ap = american_prob(away)
+              if hp is None or ap is None or hp + ap <= 0:
+                  return None
+              return hp / (hp + ap), ap / (hp + ap)
+
+          pull_items = query(f'PULLS#mlb#{slate}')
+          prediction_items = query(f'GAME_WINNERS#mlb#{slate}', 'GAME#')
+          pulls = []
+          for item in pull_items:
+              if item.get('record_type') != 'pull_run' or not isinstance(item.get('data'), dict):
+                  continue
+              row = item['data']
+              row['_itemSk'] = item.get('SK')
+              pulls.append(row)
+          pulls.sort(key=lambda row: (parse_dt(row.get('pulled_at')) or datetime.min.replace(tzinfo=timezone.utc), str(row.get('pull_id') or '')))
+          pulls_by_id = {str(row.get('pull_id')): row for row in pulls if row.get('pull_id')}
+
+          def game_matches(game, data):
+              opk = str(game.get('official_game_pk') or game.get('officialGamePk') or '')
+              dopk = str(data.get('officialGamePk') or data.get('official_game_pk') or '')
+              if opk and dopk:
+                  return opk == dopk
+              gid = str(game.get('game_id') or game.get('gameId') or game.get('id') or '')
+              dgid = str(data.get('gameId') or data.get('game_id') or data.get('id') or '')
+              return bool(gid and dgid and gid == dgid)
+
+          games = []
+          all_books = set()
+          for item in prediction_items:
+              if item.get('record_type') != 'mlb_single_game_moneyline_prediction':
+                  continue
+              data = item.get('data') if isinstance(item.get('data'), dict) else item
+              source_id = str(data.get('predictionSourcePullId') or '')
+              source_at = parse_dt(data.get('predictionSourcePullAt'))
+              source_pull = pulls_by_id.get(source_id)
+              if source_pull is None and source_at:
+                  eligible = [row for row in pulls if (parse_dt(row.get('pulled_at')) or datetime.min.replace(tzinfo=timezone.utc)) <= source_at]
+                  source_pull = eligible[-1] if eligible else None
+              source_game = None
+              if source_pull:
+                  for game in source_pull.get('games') or []:
+                      if isinstance(game, dict) and game_matches(game, data):
+                          source_game = game
+                          break
+              books = (source_game or {}).get('books') or {}
+              complete_ml = []
+              partial_ml = []
+              spreads = []
+              totals = []
+              per_book = []
+              home_probs = []
+              away_probs = []
+              for book, payload in sorted(books.items()):
+                  payload = payload if isinstance(payload, dict) else {}
+                  ml = payload.get('ml') or payload.get('moneyline') or {}
+                  pair = devig_pair(ml.get('home'), ml.get('away')) if isinstance(ml, dict) else None
+                  if pair:
+                      complete_ml.append(book)
+                      all_books.add(book)
+                      home_probs.append(pair[0])
+                      away_probs.append(pair[1])
+                  elif isinstance(ml, dict) and (ml.get('home') is not None or ml.get('away') is not None):
+                      partial_ml.append(book)
+                  if isinstance(payload.get('spread'), dict):
+                      spreads.append(book)
+                  if isinstance(payload.get('total'), dict):
+                      totals.append(book)
+                  per_book.append({
+                      'book': book,
+                      'moneylineHome': ml.get('home') if isinstance(ml, dict) else None,
+                      'moneylineAway': ml.get('away') if isinstance(ml, dict) else None,
+                      'deVigHomeProbabilityPct': round(pair[0] * 100.0, 4) if pair else None,
+                      'deVigAwayProbabilityPct': round(pair[1] * 100.0, 4) if pair else None,
+                      'spreadAvailable': isinstance(payload.get('spread'), dict),
+                      'totalAvailable': isinstance(payload.get('total'), dict),
+                  })
+              selected = data.get('homeSignal') if data.get('predictedSide') == 'home' else data.get('awaySignal')
+              selected = selected if isinstance(selected, dict) else {}
+              consensus_home = sum(home_probs) / len(home_probs) if home_probs else None
+              consensus_away = sum(away_probs) / len(away_probs) if away_probs else None
+              games.append({
+                  'officialGamePk': data.get('officialGamePk'),
+                  'awayTeam': data.get('awayTeam'),
+                  'homeTeam': data.get('homeTeam'),
+                  'predictedWinner': data.get('predictedWinner'),
+                  'predictedSide': data.get('predictedSide'),
+                  'predictionSourcePullId': source_id or None,
+                  'predictionSourcePullAt': data.get('predictionSourcePullAt'),
+                  'sourcePullResolved': source_pull is not None,
+                  'sourceGameResolved': source_game is not None,
+                  'completeMoneylineBookCount': len(complete_ml),
+                  'completeMoneylineBooks': complete_ml,
+                  'partialMoneylineBooks': partial_ml,
+                  'spreadBooks': spreads,
+                  'totalBooks': totals,
+                  'referencePriceBook': selected.get('priceBook'),
+                  'referenceAmericanOdds': selected.get('americanOdds'),
+                  'storedBookCount': selected.get('bookCount'),
+                  'storedFairProbabilityPct': selected.get('fairProbabilityPct'),
+                  'recomputedConsensusHomeProbabilityPct': round(consensus_home * 100.0, 4) if consensus_home is not None else None,
+                  'recomputedConsensusAwayProbabilityPct': round(consensus_away * 100.0, 4) if consensus_away is not None else None,
+                  'allBookConsensusMatchesStoredCount': int(selected.get('bookCount') or 0) == len(complete_ml),
+                  'perBook': per_book,
+              })
+
+          games.sort(key=lambda row: str(row.get('officialGamePk') or ''))
+          report = {
+              'ok': len(games) == 5 and all(game['sourceGameResolved'] for game in games),
+              'readOnly': True,
+              'productionWritesPerformed': False,
+              'slateDateEt': slate,
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'gameCount': len(games),
+              'unionOfCompleteMoneylineBooks': sorted(all_books),
+              'unionBookCount': len(all_books),
+              'games': games,
+              'policy': 'Consensus probabilities and movement use every sportsbook with a complete paired moneyline in the exact prediction-source pull. The reference-price book is separate and is used for displayed odds and EV.',
+              'secretExposed': False,
+          }
+          out = Path('/tmp/mlb-book-contributors/mlb_book_contributors.json')
+          out.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'ok': report['ok'],
+              'unionBookCount': report['unionBookCount'],
+              'unionOfCompleteMoneylineBooks': report['unionOfCompleteMoneylineBooks'],
+              'games': [
+                  {
+                      'game': f"{g['awayTeam']} at {g['homeTeam']}",
+                      'pick': g['predictedWinner'],
+                      'books': g['completeMoneylineBooks'],
+                      'referencePriceBook': g['referencePriceBook'],
+                      'storedCountMatches': g['allBookConsensusMatchesStoredCount'],
+                  }
+                  for g in games
+              ],
+          }, indent=2))
+          if not report['ok']:
+              raise SystemExit('Sportsbook contributor audit did not resolve every stored prediction to its exact source pull/game')
+          PY
+
+      - name: Upload read-only sportsbook contributor proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-book-contributors-${{ github.run_id }}
+          path: /tmp/mlb-book-contributors/
+          if-no-files-found: error
