@@ -58,17 +58,19 @@ jobs:
             tests/unit/test_mlb_production_verifier_per_game.py \
             tests/unit/test_mlb_production_verifier_authority.py
 
-      - name: Commit canonical repair
+      - name: Commit canonical Python repair
         run: |
           set -euo pipefail
+          # The connector will update the source-contract workflow separately;
+          # GITHUB_TOKEN pushes must not modify workflow definitions.
+          git restore .github/workflows/mlb-production-source-contract.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
             hello_world/mlb_production_verifier.py \
-            tests/unit/test_mlb_production_verifier_prelock_quiet.py \
-            .github/workflows/mlb-production-source-contract.yml
+            tests/unit/test_mlb_production_verifier_prelock_quiet.py
           if git diff --cached --quiet; then
-            echo 'Canonical pre-lock verifier repair already applied.'
+            echo 'Canonical pre-lock verifier Python repair already applied.'
           else
             git commit -m 'Make MLB verifier cutoff-aware before first lock'
             git pull --rebase --autostash origin agent/fix-mlb-prelock-verifier-20260723
