@@ -1,0 +1,285 @@
+name: Audit MLB Signal Breakdown 2026-07-23
+
+on:
+  push:
+    branches: [agent/audit-mlb-signal-breakdown-20260723]
+    paths:
+      - '.github/workflows/audit-mlb-signal-breakdown-20260723.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/audit-mlb-signal-breakdown-20260723
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install read-only audit runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Export current persisted MLB signal breakdown
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SLATE_DATE: '2026-07-23'
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-signal-breakdown
+          python - <<'PY'
+          import json
+          import math
+          import os
+          import re
+          from datetime import datetime, timezone
+          from decimal import Decimal
+          from pathlib import Path
+
+          import boto3
+          from boto3.dynamodb.conditions import Key
+
+          table = boto3.resource('dynamodb', region_name=os.environ['AWS_REGION']).Table(
+              os.environ['SNAPSHOTS_TABLE']
+          )
+          slate = os.environ['SLATE_DATE']
+
+          def plain(value):
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value, dict):
+                  return {str(k): plain(v) for k, v in value.items()}
+              if isinstance(value, list):
+                  return [plain(v) for v in value]
+              return value
+
+          def query(pk, prefix=None):
+              expr = Key('PK').eq(pk)
+              if prefix:
+                  expr = expr & Key('SK').begins_with(prefix)
+              rows = []
+              start = None
+              while True:
+                  kwargs = {
+                      'KeyConditionExpression': expr,
+                      'ConsistentRead': True,
+                      'ScanIndexForward': True,
+                  }
+                  if start:
+                      kwargs['ExclusiveStartKey'] = start
+                  response = table.query(**kwargs)
+                  rows.extend(plain(response.get('Items') or []))
+                  start = response.get('LastEvaluatedKey')
+                  if not start:
+                      return rows
+
+          secret_re = re.compile(r'(api.?key|secret|password|authorization|credential|access.?key)', re.I)
+          def redact(value):
+              if isinstance(value, dict):
+                  out = {}
+                  for key, item in value.items():
+                      out[str(key)] = '<redacted>' if secret_re.search(str(key)) else redact(item)
+                  return out
+              if isinstance(value, list):
+                  return [redact(item) for item in value]
+              return value
+
+          prediction_items = query(f'GAME_WINNERS#mlb#{slate}', 'GAME#')
+          movement_items = query(f'ML_FEATURE#mlb#{slate}')
+
+          movement_by_official = {}
+          movement_by_game = {}
+          for item in movement_items:
+              official = str(item.get('official_game_pk') or item.get('officialGamePk') or '')
+              game_id = str(item.get('game_id') or item.get('gameId') or item.get('id') or '')
+              if official:
+                  movement_by_official[official] = item
+              if game_id:
+                  movement_by_game[game_id] = item
+
+          def f(value, default=0.0):
+              try:
+                  return float(value)
+              except Exception:
+                  return default
+
+          def formula_components(signal):
+              edge = f(signal.get('edgeVsBook'))
+              ev = f(signal.get('expectedValue'))
+              delta = f(signal.get('delta'))
+              divergence = f(signal.get('bookDivergence'))
+              reversals = int(round(f(signal.get('reversalCount'))))
+              odds = signal.get('americanOdds')
+              market_side = str(signal.get('marketSide') or '')
+              base = 50.0
+              components = [
+                  {'name': 'baseline', 'value': base},
+                  {'name': 'model_edge_vs_market', 'value': edge * 900.0},
+                  {'name': 'expected_value', 'value': ev * 220.0},
+                  {'name': 'net_line_movement', 'value': delta * 260.0},
+                  {'name': 'book_divergence', 'value': -divergence * 110.0},
+                  {'name': 'reversal_count', 'value': -reversals * 2.5},
+              ]
+              if market_side in {'underdog', 'pickem'} and edge > 0 and ev > 0:
+                  components.append({'name': 'positive_value_dog_or_pickem_bonus', 'value': 4.0})
+              try:
+                  heavy = market_side == 'favorite' and float(odds) <= -185
+              except Exception:
+                  heavy = False
+              if heavy:
+                  components.append({'name': 'heavy_favorite_penalty', 'value': -4.0})
+              raw = sum(item['value'] for item in components)
+              return {
+                  'components': [
+                      {'name': item['name'], 'value': round(item['value'], 4)}
+                      for item in components
+                  ],
+                  'unclampedScore': round(raw, 4),
+                  'clampedScore': round(max(0.0, min(100.0, raw)), 2),
+              }
+
+          games = []
+          for item in prediction_items:
+              if item.get('record_type') != 'mlb_single_game_moneyline_prediction':
+                  continue
+              data = item.get('data') if isinstance(item.get('data'), dict) else item
+              predicted_side = str(data.get('predictedSide') or '').lower()
+              selected = data.get('homeSignal') if predicted_side == 'home' else data.get('awaySignal')
+              opponent = data.get('awaySignal') if predicted_side == 'home' else data.get('homeSignal')
+              selected = selected if isinstance(selected, dict) else {}
+              opponent = opponent if isinstance(opponent, dict) else {}
+              official = str(data.get('officialGamePk') or item.get('official_game_pk') or '')
+              game_id = str(data.get('gameId') or item.get('game_id') or '')
+              movement = movement_by_official.get(official) or movement_by_game.get(game_id) or {}
+              policy = data.get('signalPolicyV13') if isinstance(data.get('signalPolicyV13'), dict) else {}
+              policy_components = policy.get('components') if isinstance(policy.get('components'), list) else []
+              base_formula = formula_components(selected)
+              games.append(redact({
+                  'officialGamePk': official or None,
+                  'gameId': game_id or None,
+                  'awayTeam': data.get('awayTeam'),
+                  'homeTeam': data.get('homeTeam'),
+                  'commenceTime': data.get('commenceTime'),
+                  'predictedWinner': data.get('predictedWinner'),
+                  'predictedSide': predicted_side,
+                  'opponent': data.get('opponent'),
+                  'confidenceTier': data.get('confidenceTier'),
+                  'promotionStatus': data.get('promotionStatus'),
+                  'promoted': data.get('promoted'),
+                  'playable': data.get('playable'),
+                  'playablePick': data.get('playablePick'),
+                  'actionablePick': data.get('actionablePick'),
+                  'recommendationStatus': data.get('recommendationStatus'),
+                  'blockedReasons': data.get('blockedReasons') or [],
+                  'tags': data.get('tags') or [],
+                  'baseOverallScore': data.get('score'),
+                  'scoreBeforeSignalPolicyV13': data.get('scoreBeforeSignalPolicyV13'),
+                  'signalPolicyV13Adjustment': data.get('signalPolicyV13Adjustment'),
+                  'scoreAfterSignalPolicyV13': data.get('scoreAfterSignalPolicyV13'),
+                  'baseFormulaReconstruction': base_formula,
+                  'signalPolicyV13': {
+                      'version': policy.get('version'),
+                      'components': policy_components,
+                      'riskGate': policy.get('signalRiskGate') or data.get('signalRiskGate'),
+                  },
+                  'selectedSideSignal': selected,
+                  'opponentSideSignal': opponent,
+                  'marketSignal': {
+                      'marketSide': selected.get('marketSide'),
+                      'americanOdds': selected.get('americanOdds'),
+                      'priceBook': selected.get('priceBook'),
+                      'fairProbabilityPct': selected.get('fairProbabilityPct'),
+                      'modelWinProbabilityPct': selected.get('winProbabilityPct'),
+                      'edgeVsBookPct': selected.get('edgeVsBookPct'),
+                      'expectedValuePct': selected.get('expectedValuePct'),
+                  },
+                  'movementSignal': {
+                      'probStart': selected.get('probStart'),
+                      'probLatest': selected.get('probLatest'),
+                      'deltaProbability': selected.get('delta'),
+                      'deltaPercentagePoints': round(f(selected.get('delta')) * 100.0, 4),
+                      'reversalCount': selected.get('reversalCount'),
+                      'temporalFeatures': selected.get('temporalFeatures'),
+                      'hotTeam': movement.get('hot_team'),
+                      'hotDelta': movement.get('hot_delta'),
+                      'hotDeltaPercentagePoints': round(f(movement.get('hot_delta')) * 100.0, 4),
+                      'movementStrength': movement.get('movement_strength'),
+                      'latestMovementAtUtc': movement.get('latest_asof'),
+                  },
+                  'bookSignal': {
+                      'bookCount': selected.get('bookCount'),
+                      'bookDivergence': selected.get('bookDivergence'),
+                      'bookDivergencePercentagePoints': round(f(selected.get('bookDivergence')) * 100.0, 4),
+                      'tags': selected.get('tags') or [],
+                  },
+                  'fundamentalsSignal': {
+                      'fundamentalsLayer': data.get('fundamentalsLayer'),
+                      'fundamentalsSnapshot': data.get('fundamentalsSnapshot'),
+                      'fundamentalsApplied': data.get('fundamentalsApplied'),
+                      'winnerOptimizer': data.get('winnerOptimizer'),
+                  },
+                  'mlSignal': {
+                      'mlOverlay': data.get('mlOverlay'),
+                      'mlOptimizationRuntime': data.get('mlOptimizationRuntime'),
+                      'winnerStackV2': data.get('winnerStackV2'),
+                      'directionalScoreV1': data.get('directionalScoreV1'),
+                  },
+                  'reason': data.get('reason'),
+                  'createdAt': data.get('createdAt'),
+                  'predictionSourcePullAt': data.get('predictionSourcePullAt'),
+                  'predictionSourcePullId': data.get('predictionSourcePullId'),
+                  'rawPredictionData': data,
+              }))
+
+          games.sort(key=lambda row: str(row.get('commenceTime') or ''))
+          report = {
+              'ok': len(games) == 5,
+              'readOnly': True,
+              'productionWritesPerformed': False,
+              'slateDateEt': slate,
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'predictionGameCount': len(games),
+              'games': games,
+              'secretExposed': False,
+          }
+          path = Path('/tmp/mlb-signal-breakdown/mlb_signal_breakdown.json')
+          path.write_text(json.dumps(report, indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'ok': report['ok'],
+              'predictionGameCount': report['predictionGameCount'],
+              'games': [
+                  {
+                      'game': f"{g.get('awayTeam')} at {g.get('homeTeam')}",
+                      'pick': g.get('predictedWinner'),
+                      'baseScore': g.get('baseOverallScore'),
+                      'afterPolicy': g.get('scoreAfterSignalPolicyV13'),
+                      'deltaPp': (g.get('movementSignal') or {}).get('deltaPercentagePoints'),
+                      'reversals': (g.get('movementSignal') or {}).get('reversalCount'),
+                  }
+                  for g in games
+              ],
+          }, indent=2, default=str))
+          if not report['ok']:
+              raise SystemExit(f"Expected 5 persisted predictions, found {len(games)}")
+          PY
+
+      - name: Upload read-only signal breakdown
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-signal-breakdown-${{ github.run_id }}
+          path: /tmp/mlb-signal-breakdown/
+          if-no-files-found: error
