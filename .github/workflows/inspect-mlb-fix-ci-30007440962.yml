@@ -15,7 +15,7 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Print final trainer failure lines
+      - name: Print exact trainer exception tail
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: '30008592185'
@@ -26,4 +26,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --job "$JOB_ID" \
             --log-failed > /tmp/mlb-deploy-failed.log
-          tail -45 /tmp/mlb-deploy-failed.log
+          tail -20 /tmp/mlb-deploy-failed.log
