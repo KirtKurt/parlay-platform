@@ -1,0 +1,60 @@
+name: Apply Tennis V2 direct-Lambda smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/apply-tennis-v2-direct-lambda-smoke.yml"
+      - ".github/tennis-release/patch_direct_lambda_smoke.py"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/tennis-mlb-exact-parity-v2
+          fetch-depth: 0
+
+      - name: Patch and validate canonical deployment workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile .github/tennis-release/patch_direct_lambda_smoke.py
+          python .github/tennis-release/patch_direct_lambda_smoke.py
+          grep -F 'aws lambda invoke' .github/workflows/deploy-tennis.yml
+          grep -F 'TennisIngestFunction' .github/workflows/deploy-tennis.yml
+          grep -F "payload.get('live_pull_ok') is True" .github/workflows/deploy-tennis.yml
+          grep -F "payload.get('fallback_used') is False" .github/workflows/deploy-tennis.yml
+          grep -F 'ScheduleState=DISABLED' .github/workflows/deploy-tennis.yml
+          grep -F 'ScheduleState=ENABLED' .github/workflows/deploy-tennis.yml
+          grep -F 'tennis/predictions?date=${PREDICTION_SLATE_DATE}' .github/workflows/deploy-tennis.yml
+          if grep -Fq -- '--aws-sigv4' .github/workflows/deploy-tennis.yml; then
+            echo '::error::Signed API smoke unexpectedly remains'
+            exit 1
+          fi
+
+      - name: Publish clean canonical deployment source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f .github/workflows/deploy-tennis-v2.yml
+          rm -f .github/workflows/patch-tennis-v2-direct-lambda-smoke.yml
+          rm -f .github/workflows/apply-tennis-v2-direct-lambda-smoke.yml
+          rm -f .github/tennis-release/patch_direct_lambda_smoke.py
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A -- \
+            .github/workflows/deploy-tennis.yml \
+            .github/workflows/deploy-tennis-v2.yml \
+            .github/workflows/patch-tennis-v2-direct-lambda-smoke.yml \
+            .github/workflows/apply-tennis-v2-direct-lambda-smoke.yml \
+            .github/tennis-release/patch_direct_lambda_smoke.py
+          git diff --cached --check
+          git commit -m 'Use direct Tennis Lambda live smoke'
+          git push origin HEAD:agent/tennis-mlb-exact-parity-v2
