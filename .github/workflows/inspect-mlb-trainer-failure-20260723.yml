@@ -1,0 +1,71 @@
+name: Inspect MLB Trainer Deploy Failure 2026-07-23
+
+on:
+  push:
+    branches: [agent/inspect-mlb-trainer-failure-20260723]
+    paths:
+      - '.github/workflows/inspect-mlb-trainer-failure-20260723.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract exact trainer failure context
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: '30008592185'
+          JOB_ID: '89210644434'
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-trainer-failure
+          gh run view "$RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --job "$JOB_ID" \
+            --log-failed > /tmp/mlb-trainer-failure/failed.log
+          python - <<'PY'
+          import json
+          import re
+          from pathlib import Path
+
+          path = Path('/tmp/mlb-trainer-failure/failed.log')
+          lines = path.read_text(encoding='utf-8-sig', errors='replace').splitlines()
+          pattern = re.compile(
+              r'(traceback|assertionerror|systemexit|runtimeerror|valueerror|keyerror|error:|failed|failure|stale|mismatch|missing|insufficient|lease|traininghealth|selectioncapturehealth|deploymentidentity|rowcount|split)',
+              re.IGNORECASE,
+          )
+          selected = set()
+          for index, line in enumerate(lines):
+              if pattern.search(line):
+                  selected.update(range(max(0, index - 8), min(len(lines), index + 24)))
+          context = [
+              {'lineNumber': index + 1, 'text': lines[index]}
+              for index in sorted(selected)
+          ]
+          report = {
+              'ok': True,
+              'readOnly': True,
+              'runId': 30008592185,
+              'jobId': 89210644434,
+              'lineCount': len(lines),
+              'matchedContext': context[-500:],
+              'tail': [
+                  {'lineNumber': len(lines) - len(lines[-250:]) + index + 1, 'text': line}
+                  for index, line in enumerate(lines[-250:])
+              ],
+          }
+          out = Path('/tmp/mlb-trainer-failure/inspection.json')
+          out.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
+          print(json.dumps(report, indent=2))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-trainer-failure-inspection-${{ github.run_id }}
+          path: /tmp/mlb-trainer-failure/
+          if-no-files-found: error
