@@ -179,7 +179,7 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
         assert status["ok"] is True
         assert status["version"] == (
             "MLB-ML-RUNTIME-INSTALL-v4.2-signal-policy-prelock-persistence-"
-            "aws-v2-shadow-manual-first"
+            "verified-stage-promotion-authority-aws-v2-shadow-manual-first"
         )
         assert status["steps"]["legacyV1AuthorityDisabled"] is True
         assert status["steps"]["v2ShadowManualFirst"] is True
