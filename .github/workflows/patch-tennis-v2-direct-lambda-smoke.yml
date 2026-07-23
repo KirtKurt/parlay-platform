@@ -1,0 +1,100 @@
+name: Patch Tennis V2 live smoke to direct Lambda
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/patch-tennis-v2-direct-lambda-smoke.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/tennis-mlb-exact-parity-v2
+          fetch-depth: 0
+      - name: Replace API-Gateway smoke with protected Lambda invocation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/deploy-tennis.yml')
+          text = path.read_text()
+          start_marker = '          sigv4=(\n'
+          end_marker = '            | tee /tmp/tennis-discovery-smoke.json\n'
+          start = text.find(start_marker)
+          if start < 0:
+              raise SystemExit('signed API smoke start marker not found')
+          end = text.find(end_marker, start)
+          if end < 0:
+              raise SystemExit('signed API smoke end marker not found')
+          end += len(end_marker)
+          replacement = '''          TENNIS_INGEST_FUNCTION=$(aws cloudformation describe-stack-resource \\
+            --stack-name "$TENNIS_STACK_NAME" \\
+            --logical-resource-id TennisIngestFunction \\
+            --query 'StackResourceDetail.PhysicalResourceId' \\
+            --output text)
+          test -n "$TENNIS_INGEST_FUNCTION"
+          test "$TENNIS_INGEST_FUNCTION" != None
+          cat > /tmp/tennis-ingest-invoke-event.json <<'JSON'
+          {"httpMethod":"POST","path":"/v1/pull/tennis","body":"{\\"run\\":\\"deploy_force_live_pull\\",\\"force\\":true}"}
+          JSON
+          aws lambda invoke \\
+            --function-name "$TENNIS_INGEST_FUNCTION" \\
+            --region "$AWS_REGION" \\
+            --cli-connect-timeout 10 \\
+            --cli-read-timeout 300 \\
+            --payload fileb:///tmp/tennis-ingest-invoke-event.json \\
+            /tmp/tennis-ingest-invoke-envelope.json \\
+            | tee /tmp/tennis-ingest-invoke-metadata.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          invocation = json.loads(
+              Path("/tmp/tennis-ingest-invoke-metadata.json").read_text()
+          )
+          if invocation.get("StatusCode") != 200 or invocation.get("FunctionError"):
+              raise SystemExit(f"Tennis ingest Lambda invocation failed: {invocation}")
+          envelope = json.loads(
+              Path("/tmp/tennis-ingest-invoke-envelope.json").read_text()
+          )
+          if int(envelope.get("statusCode") or 0) != 200:
+              raise SystemExit(f"Tennis ingest returned non-200: {envelope}")
+          payload = json.loads(str(envelope.get("body") or "{}"))
+          Path("/tmp/tennis-discovery-smoke.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True)
+          )
+          print(json.dumps(payload, indent=2, sort_keys=True))
+          PY
+'''
+          updated = text[:start] + replacement + text[end:]
+          if updated == text:
+              raise SystemExit('deployment workflow was not changed')
+          path.write_text(updated)
+          PY
+          grep -F 'aws lambda invoke' .github/workflows/deploy-tennis.yml
+          grep -F 'TennisIngestFunction' .github/workflows/deploy-tennis.yml
+          grep -F "payload.get('live_pull_ok') is True" .github/workflows/deploy-tennis.yml
+          grep -F 'ScheduleState=DISABLED' .github/workflows/deploy-tennis.yml
+          grep -F 'ScheduleState=ENABLED' .github/workflows/deploy-tennis.yml
+          if grep -Fq -- '--aws-sigv4' .github/workflows/deploy-tennis.yml; then
+            echo '::error::Signed API smoke unexpectedly remains'
+            exit 1
+          fi
+          rm .github/workflows/patch-tennis-v2-direct-lambda-smoke.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/deploy-tennis.yml \
+                  .github/workflows/patch-tennis-v2-direct-lambda-smoke.yml
+          git diff --cached --check
+          git commit -m 'Use direct Tennis Lambda live smoke'
+          git push origin HEAD:agent/tennis-mlb-exact-parity-v2
