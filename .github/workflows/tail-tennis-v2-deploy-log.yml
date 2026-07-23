@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       GH_TOKEN: ${{ github.token }}
-      TARGET_JOB_ID: "89124884015"
+      TARGET_JOB_ID: "89125622165"
     steps:
       - name: Download and print failing job tail
         shell: bash
@@ -31,8 +31,8 @@ jobs:
           else
             cp /tmp/job.log /tmp/job-decoded.log
           fi
-          echo '--- LAST 260 LINES ---'
-          tail -n 260 /tmp/job-decoded.log
+          echo '--- LAST 320 LINES ---'
+          tail -n 320 /tmp/job-decoded.log
       - uses: actions/upload-artifact@v4
         with:
           name: tennis-v2-failing-job-log-${{ github.run_id }}
