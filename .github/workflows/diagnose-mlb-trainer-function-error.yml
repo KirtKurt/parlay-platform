@@ -110,8 +110,9 @@ jobs:
               'events': selected[-250:],
               'secretExposed': False,
           }
-          path = Path('/tmp/mlb-trainer-diagnostic/mlb_trainer_function_error.json')
-          path.write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          Path('/tmp/mlb-trainer-diagnostic/mlb_trainer_function_error.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
           print(json.dumps(report['events'][-40:], indent=2))
           PY
 
@@ -124,9 +125,20 @@ jobs:
           python - <<'PY'
           import json
           import os
+          from decimal import Decimal
           from pathlib import Path
 
           import boto3
+          from boto3.dynamodb.conditions import Key
+
+          def plain(value):
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value, dict):
+                  return {str(k): plain(v) for k, v in value.items()}
+              if isinstance(value, list):
+                  return [plain(v) for v in value]
+              return value
 
           region = os.environ['AWS_REGION']
           cfn = boto3.client('cloudformation', region_name=region)
@@ -146,6 +158,45 @@ jobs:
           body = envelope
           if isinstance(envelope, dict) and isinstance(envelope.get('body'), str):
               body = json.loads(envelope['body'])
+
+          table = boto3.resource('dynamodb', region_name=region).Table('parlay_platform_snapshots')
+          experiment_id = str(body.get('experimentId') or 'mlb-v2-2026-07-22-future-prospective-r3')
+          pk = f'MLB_ML_EXPERIMENT#V2#{experiment_id}'
+          items = []
+          args = {
+              'KeyConditionExpression': Key('PK').eq(pk) & Key('SK').begins_with('STATUS#RUN#'),
+              'ConsistentRead': True,
+          }
+          while True:
+              page = table.query(**args)
+              items.extend(page.get('Items') or [])
+              last = page.get('LastEvaluatedKey')
+              if not last:
+                  break
+              args['ExclusiveStartKey'] = last
+          runs = []
+          for item in items:
+              data = plain(item.get('data') or {})
+              if not isinstance(data, dict):
+                  continue
+              runs.append({
+                  'SK': str(item.get('SK') or ''),
+                  'createdAtUtc': data.get('createdAtUtc'),
+                  'runId': data.get('runId'),
+                  'executionMode': data.get('executionMode'),
+                  'ok': data.get('ok'),
+                  'status': data.get('status'),
+                  'acceptedRowCount': data.get('acceptedRowCount'),
+                  'rejectedRowCount': data.get('rejectedRowCount'),
+                  'rejectionReasonCounts': data.get('rejectionReasonCounts'),
+                  'partitionCounts': data.get('partitionCounts'),
+                  'canonicalSlateContinuity': data.get('canonicalSlateContinuity'),
+                  'failure': data.get('failure'),
+                  'deploymentIdentity': data.get('deploymentIdentity'),
+              })
+          runs.sort(key=lambda row: str(row.get('createdAtUtc') or ''))
+          recent_runs = runs[-25:]
+
           report = {
               'ok': True,
               'readOnly': True,
@@ -154,22 +205,28 @@ jobs:
               'statusCode': response.get('StatusCode'),
               'executedVersion': response.get('ExecutedVersion'),
               'status': body,
+              'immutableRecentRunStatuses': recent_runs,
               'secretExposed': False,
           }
           Path('/tmp/mlb-trainer-diagnostic/mlb_trainer_status.json').write_text(
               json.dumps(report, indent=2, sort_keys=True, default=str) + '\n',
               encoding='utf-8',
           )
-          latest = (body.get('trainingHealth') or {}).get('latestRun') or body.get('latestStatus') or {}
+          blocked = [row for row in recent_runs if row.get('status') == 'CANONICAL_SLATE_CONTINUITY_BLOCKED']
           print(json.dumps({
               'topLevelOk': body.get('ok'),
               'trainingHealthOk': (body.get('trainingHealth') or {}).get('ok'),
-              'trainingStatus': latest.get('status'),
-              'canonicalSlateContinuity': latest.get('canonicalSlateContinuity'),
-              'acceptedRowCount': latest.get('acceptedRowCount'),
-              'rejectedRowCount': latest.get('rejectedRowCount'),
-              'rejectionReasonCounts': latest.get('rejectionReasonCounts'),
-              'partitionCounts': latest.get('partitionCounts'),
+              'blockedRunCount': len(blocked),
+              'latestBlockedRun': blocked[-1] if blocked else None,
+              'recentRunSummary': [
+                  {
+                      'createdAtUtc': row.get('createdAtUtc'),
+                      'runId': row.get('runId'),
+                      'status': row.get('status'),
+                      'ok': row.get('ok'),
+                  }
+                  for row in recent_runs
+              ],
           }, indent=2, default=str))
           PY
 
