@@ -1,6 +1,11 @@
 name: Audit MLB Reversal Sizes
 # Read-only analysis of every recorded canonical MLB moneyline series.
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/audit_mlb_reversal_sizes.py'
+      - '.github/workflows/audit-mlb-reversal-sizes.yml'
   push:
     branches: [agent/audit-mlb-reversal-size-20260723]
     paths:
