@@ -25,10 +25,10 @@ The deployment workflow verifies those exact blobs before it may touch AWS.
 
 ## Release identity
 
-Archive SHA-256:
+The exact minimized deployment source archive is reconstructed from the eight checked-in Base64 parts and must hash to:
 
 ```text
-1fa9306e2b675914e58b25bf766d412bada046bc81534c7f71655a979520a8bd
+e1d429273b32deabd2eea97dbf1532318f94d41868eabf50758b470edf02deb5
 ```
 
 The workflow first updates `parlay-platform-tennis-ml-prod` with all schedules disabled. It validates the read APIs, performs a signed live all-key discovery and forced complete pipeline pull, confirms persisted predictions, then enables ingestion, per-match locking, settlement, and training. It fingerprints the production MLB CloudFormation stack before and after and fails if MLB changes.
