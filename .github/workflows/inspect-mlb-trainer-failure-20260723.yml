@@ -67,6 +67,69 @@ jobs:
           print(json.dumps(report, indent=2))
           PY
 
+      - name: Configure AWS credentials for read-only CloudWatch inspection
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Read exact trainer Lambda exception from CloudWatch
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION" \
+            --logical-resource-id MLBMLTrainingFunction \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          START_MS=$(python - <<'PY'
+          from datetime import datetime, timezone
+          print(int(datetime(2026, 7, 23, 12, 53, 30, tzinfo=timezone.utc).timestamp() * 1000))
+          PY
+          )
+          END_MS=$(python - <<'PY'
+          from datetime import datetime, timezone
+          print(int(datetime(2026, 7, 23, 12, 55, 30, tzinfo=timezone.utc).timestamp() * 1000))
+          PY
+          )
+          aws logs filter-log-events \
+            --region "$AWS_REGION" \
+            --log-group-name "/aws/lambda/$FUNCTION_NAME" \
+            --start-time "$START_MS" \
+            --end-time "$END_MS" \
+            --interleaved \
+            --limit 10000 \
+            --output json > /tmp/mlb-trainer-failure/cloudwatch.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/mlb-trainer-failure/cloudwatch.json').read_text(encoding='utf-8'))
+          events = [
+              {
+                  'timestamp': event.get('timestamp'),
+                  'logStreamName': event.get('logStreamName'),
+                  'message': str(event.get('message') or '').rstrip(),
+              }
+              for event in payload.get('events') or []
+          ]
+          report = {
+              'ok': bool(events),
+              'readOnly': True,
+              'eventCount': len(events),
+              'events': events,
+          }
+          Path('/tmp/mlb-trainer-failure/cloudwatch_inspection.json').write_text(
+              json.dumps(report, indent=2) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(report, indent=2))
+          if not events:
+              raise SystemExit('No trainer log events found in the exact failure window')
+          PY
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
