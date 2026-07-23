@@ -7,6 +7,12 @@ on:
       - '.github/workflows/apply-mlb-prelock-verifier-fix.yml'
       - 'scripts/apply_mlb_prelock_verifier_fix.py'
       - 'tests/unit/test_mlb_production_verifier_prelock_quiet.py'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-mlb-prelock-verifier-fix.yml'
+      - 'scripts/apply_mlb_prelock_verifier_fix.py'
+      - 'tests/unit/test_mlb_production_verifier_prelock_quiet.py'
   workflow_dispatch:
 
 permissions:
