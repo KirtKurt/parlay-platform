@@ -1,6 +1,10 @@
 name: Bootstrap MLB Recovery Shadow Engines
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/bootstrap-mlb-recovery-shadow-engines.yml'
   push:
     branches: [agent/mlb-accuracy-recovery-20260723]
     paths:
