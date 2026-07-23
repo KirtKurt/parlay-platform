@@ -96,7 +96,7 @@ runtime = body.get("ml_runtime_install") or {}
 assert runtime.get("ok") is True, runtime
 assert runtime.get("version") == (
     "MLB-ML-RUNTIME-INSTALL-v4.2-signal-policy-prelock-persistence-"
-    "aws-v2-shadow-manual-first"
+    "verified-stage-promotion-authority-aws-v2-shadow-manual-first"
 ), runtime
 assert runtime.get("steps", {}).get("sourceHonestFundamentalsV2") is True, runtime
 assert runtime.get("steps", {}).get(
