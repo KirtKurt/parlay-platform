@@ -4,8 +4,8 @@ import os
 from typing import Any, Dict
 
 VERSION = (
-    "MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-"
-    "aws-v2-shadow-manual-first"
+    "MLB-ML-RUNTIME-INSTALL-v4.2-reversal-precision-admission-"
+    "verified-stage-promotion-authority-aws-v2-shadow-manual-first"
 )
 
 
@@ -46,6 +46,7 @@ def install() -> Dict[str, Any]:
         import mlb_last_possible_prediction_gate
         import mlb_probability_actionability_guard
         import mlb_prediction_probability_contract_v1
+        import mlb_reversal_precision_runtime_patch
         import mlb_slate_coverage_patch
         import mlb_slate_prediction_lock
 
@@ -61,13 +62,13 @@ def install() -> Dict[str, Any]:
             if not hasattr(engine, attr):
                 patch.apply(engine)
 
-        # Install the per-game read authority explicitly.  The slate wrapper is
+        # Install the per-game read authority explicitly. The slate wrapper is
         # annotation-only; it cannot generate a second pick at the cutoff.
         mlb_slate_coverage_patch.apply(mlb_slate_prediction_lock)
         mlb_slate_prediction_lock.apply(engine)
         # Lambda adds LAMBDA_TASK_ROOT to sys.path after Python has already
         # processed sitecustomize, so this legacy wrapper cannot be assumed to
-        # have been imported during interpreter startup.  Install it here and
+        # have been imported during interpreter startup. Install it here and
         # then disable its finality behavior with the canonical per-game flag.
         # The wrapper remains annotation-only and dynamically observes the
         # flag below on every call.
@@ -82,10 +83,13 @@ def install() -> Dict[str, Any]:
         # storage writer. V2 was installed before semantics/freezing above, so
         # its exact fingerprint is part of the frozen T-45 vector.
         mlb_prediction_probability_contract_v1.apply(engine)
-        # Calibration and actionability consume the already-normalized
-        # selected side.  They expose a separate calibrated estimate and must
-        # never rewrite the canonical complementary model probabilities.
+        # Calibration and actionability consume the already-normalized selected
+        # side and must never rewrite the complementary model probabilities.
         mlb_probability_actionability_guard.apply(engine)
+        # This outer playability layer preserves the visible winner while
+        # abstaining from recommendations whose exact signal signature has not
+        # passed the prospective 70% lower-bound admission contract.
+        mlb_reversal_precision_runtime_patch.apply(engine)
         engine._INQSI_MLB_PERSISTED_PRELOCK_PUBLIC_AUTHORITY_ENABLED = True
 
         exact_vector = getattr(mlb_ml_frozen_features, "_INQSI_MLB_EXACT_LOCK_VECTOR_PATCH_APPLIED", False)
@@ -111,7 +115,7 @@ def install() -> Dict[str, Any]:
         # Compatibility name used by the existing AWS deploy smoke test. It now
         # means the stronger exact clean-cohort vector path is installed.
         status["steps"]["immutableFeatureFreeze"] = bool(exact_vector and official_bridge)
-        # Do not rely on sitecustomize for canonical write safety.  The engine
+        # Do not rely on sitecustomize for canonical write safety. The engine
         # itself must attest that LOCKED#GAME writes consistent-read and bind
         # the exact immutable T-minus-45 stage before storage.
         mlb_immutable_locked_storage_patch.apply(engine)
@@ -161,6 +165,22 @@ def install() -> Dict[str, Any]:
         status["probabilityActionabilityGuardVersion"] = (
             mlb_probability_actionability_guard.PATCH_VERSION
         )
+        status["steps"]["reversalPrecisionAdmission"] = bool(
+            getattr(
+                engine,
+                "_INQSI_MLB_REVERSAL_PRECISION_RUNTIME_APPLIED",
+                False,
+            )
+            and getattr(
+                engine,
+                "MLB_REVERSAL_PRECISION_RUNTIME_VERSION",
+                None,
+            )
+            == mlb_reversal_precision_runtime_patch.VERSION
+        )
+        status["reversalPrecisionAdmissionVersion"] = (
+            mlb_reversal_precision_runtime_patch.VERSION
+        )
         # V2 is installed before semantics/freezing, so the exact signed
         # snapshot is bound into the T-45 vector. The public persisted-read
         # alias remains inside the final storage wrapper and never recomputes.
@@ -192,10 +212,12 @@ def install() -> Dict[str, Any]:
 
     status["ok"] = not status["errors"] and all(status["steps"].values())
     status["policy"] = (
-        "The persisted canonical rules/market prediction remains production direction and playability authority. "
-        "Legacy V1 champions are diagnostic-only. AWS V2 trains and evaluates in shadow using fixed whole-slate "
-        "300/100/100 partitions; the first promotion always requires manual review and automatic promotion is disabled. "
-        "Every new locked game stores the exact immutable clean-cohort vector before final labels exist. "
-        "The final public lock is the validated canonical promotion of the last prediction available at each game's own T-minus-45 cutoff; no lock-time rescore is authoritative."
+        "The persisted canonical rules/market prediction remains production direction authority. "
+        "Provider-neutral calibration runs before the reversal precision admission layer; visible winners remain, "
+        "but unvalidated signal signatures are abstained from playability. Legacy V1 champions are diagnostic-only. "
+        "AWS V2 trains and evaluates in shadow using fixed whole-slate 300/100/100 partitions; first promotion always "
+        "requires manual review and automatic promotion is disabled. Every new locked game stores the exact immutable "
+        "clean-cohort vector before final labels exist. The final public lock is the validated canonical promotion of "
+        "the last prediction available at each game's own T-minus-45 cutoff; no lock-time rescore is authoritative."
     )
     return status
