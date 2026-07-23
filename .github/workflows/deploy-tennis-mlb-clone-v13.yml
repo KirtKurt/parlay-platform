@@ -70,9 +70,10 @@ jobs:
           test -f tennis_predictive_platform_v1/src/tennis_espn_results.py
           test -f tennis_predictive_platform_v1/src/tennis_game_winner_engine.py
 
+          patch_file="$GITHUB_WORKSPACE/.github/tennis-release/tennis-v1.3-mlb-clone-live-fix.patch"
+          git apply --check --directory=tennis_predictive_platform_v1 "$patch_file"
+          git apply --directory=tennis_predictive_platform_v1 "$patch_file"
           cd tennis_predictive_platform_v1
-          git apply --check "$GITHUB_WORKSPACE/.github/tennis-release/tennis-v1.3-mlb-clone-live-fix.patch"
-          git apply "$GITHUB_WORKSPACE/.github/tennis-release/tennis-v1.3-mlb-clone-live-fix.patch"
           python - <<'PY'
           import json
           from pathlib import Path
