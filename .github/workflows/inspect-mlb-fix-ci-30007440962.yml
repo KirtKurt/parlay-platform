@@ -1,4 +1,4 @@
-name: Inspect MLB Fix CI 30007855104
+name: Inspect MLB Deploy 30008592185
 
 on:
   pull_request:
@@ -15,26 +15,29 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract exact failed regression context
+      - name: Extract exact trainer failure context
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: '30007855104'
-          JOB_ID: '89208167758'
+          RUN_ID: '30008592185'
+          JOB_ID: '89210644434'
         run: |
           set -euo pipefail
           gh run view "$RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
             --job "$JOB_ID" \
-            --log-failed > /tmp/mlb-fix-failed.log
+            --log-failed > /tmp/mlb-deploy-failed.log
           python - <<'PY'
           import re
           from pathlib import Path
-          lines = Path('/tmp/mlb-fix-failed.log').read_text(encoding='utf-8', errors='replace').splitlines()
-          pattern = re.compile(r'(FAILURES|FAILED |AssertionError|E\s+assert|short test summary|error:|Process completed)', re.I)
+          lines = Path('/tmp/mlb-deploy-failed.log').read_text(encoding='utf-8', errors='replace').splitlines()
+          pattern = re.compile(
+              r'(trainer|training|fresh split|Traceback|AssertionError|FAILED|error:|Process completed|SystemExit|invalid|mismatch|blocked)',
+              re.I,
+          )
           positions = sorted({i for i, line in enumerate(lines) if pattern.search(line)})
           selected = set()
           for i in positions:
-              selected.update(range(max(0, i - 5), min(len(lines), i + 16)))
-          for i in sorted(selected):
+              selected.update(range(max(0, i - 8), min(len(lines), i + 24)))
+          for i in sorted(selected)[-240:]:
               print(f'{i + 1}: {lines[i]}')
           PY
