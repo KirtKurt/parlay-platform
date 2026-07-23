@@ -1,77 +1,15 @@
 {
-  "allCurrentSlateCutoffsPassed": true,
-  "blockers": [],
-  "createdAtUtc": "2026-07-23T03:18:48.245144Z",
-  "deployedCommit": "ccad55f5faa283c3038cc936544c4f387d442131",
-  "historicalSlateAcceptedWithoutLateBackfill": true,
-  "lambdaConfiguration": {
-    "deployedGitSha": "ccad55f5faa283c3038cc936544c4f387d442131",
-    "functionLastModified": "2026-07-23T03:08:49.000+0000",
-    "functionName": "parlay-platform-dev-MLBAuditedPullFunction-xYdYJJKZMe4M",
-    "manualPullInvoked": false,
-    "memorySizeMb": 2048,
-    "observedScheduledPullAtUtc": "2026-07-23T03:15:26.578261+00:00",
-    "observedScheduledPullPk": "PULLS#mlb#2026-07-22",
-    "observedScheduledPullSk": "PULL#SLOT#2026-07-23T03:15:00+00:00",
-    "observedScheduledSlotUtc": "2026-07-23T03:15:00+00:00",
-    "ok": true,
-    "readOnly": true,
-    "scheduledReport": "REPORT RequestId: a19a78cc-ab62-443f-964b-9e5057c63a45\tDuration: 120327.68 ms\tBilled Duration: 121100 ms\tMemory Size: 2048 MB\tMax Memory Used: 206 MB\tInit Duration: 772.32 ms\t\n",
-    "scheduledRequestId": "a19a78cc-ab62-443f-964b-9e5057c63a45",
-    "secretExposed": false,
-    "statusCode": 200,
-    "targetDeploySha": "ccad55f5faa283c3038cc936544c4f387d442131",
-    "timeoutSeconds": 600,
-    "verificationStartedAtUtc": "2026-07-23T03:10:44.720948+00:00",
-    "version": "MLB-POSTDEPLOY-SCHEDULED-PULL-OBSERVER-v1-no-manual-pull",
-    "winnerResults": [
-      {
-        "allGamesPredicted": false,
-        "canonicalLockedCount": 0,
-        "displayStatusCoverageComplete": true,
-        "gameCount": 17,
-        "gameDateEt": "2026-07-22",
-        "historicalStatusProjectionUsed": true,
-        "lifecycleCoverageComplete": true,
-        "ok": true,
-        "operationalDefect": true,
-        "preLockStorageCandidateCount": 0,
-        "preLockStorageComplete": true,
-        "preLockStorageDispositionComplete": true,
-        "preLockStorageDispositionCount": 17,
-        "preLockStorageLifecycleAware": true,
-        "preLockStorageLifecycleSkippedCount": 17,
-        "preLockStoredCount": 0,
-        "predictionCount": 17
-      }
-    ]
-  },
-  "lifecycleSkippedCount": 17,
-  "lifecycleStorageDispositionComplete": true,
-  "ok": true,
-  "openPreLockCandidateCount": 0,
-  "postDeployScheduledFailureCount": 0,
-  "postDeployScheduledFailures": [],
-  "postDeployTimeoutCount": 0,
-  "postDeployTimeouts": [],
-  "proofType": "MLB_SCORING_FIX_POST_DEPLOY_ACCEPTANCE",
-  "scoringBlockers": [
-    "PERSISTED_WINNER_PREDICTION_COVERAGE_INCOMPLETE",
-    "MOVEMENT_FEATURE_COVERAGE_INCOMPLETE"
+  "blockers": [
+    "deploy_workflow_not_successful"
   ],
+  "createdAtUtc": "2026-07-23T05:36:02.469326Z",
+  "deployWorkflowConclusion": "failure",
+  "deployWorkflowRunId": "29982405970",
+  "deployWorkflowRunUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/29982405970",
+  "deployedCommit": "bc78acfaeedc73ae4925bf3ba3b2ee1a4fd545be",
+  "ok": false,
+  "proofType": "MLB_SCORING_FIX_POST_DEPLOY_ACCEPTANCE",
   "scoringGuardPassed": false,
-  "scoringSummary": {
-    "canonicalPullCount": 90,
-    "fundamentalsAppliedCount": 0,
-    "fundamentalsNotAppliedOrMissingCount": 17,
-    "latestCanonicalPullAtUtc": "2026-07-23T03:15:26.578261+00:00",
-    "missingMovementCount": 17,
-    "missingPredictionCount": 17,
-    "movementFeatureGameCount": 0,
-    "officialGameCount": 17,
-    "persistedPredictionGameCount": 0,
-    "scoreableGameCount": 17
-  },
   "secretExposed": false,
-  "version": "MLB-SCORING-FIX-POST-DEPLOY-v2-cutoff-aware"
+  "version": "MLB-SCORING-FIX-POST-DEPLOY-v1"
 }
