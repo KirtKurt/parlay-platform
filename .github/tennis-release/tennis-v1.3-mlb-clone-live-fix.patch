@@ -14,155 +14,155 @@ index f17c45e..b46020e 100644
 +- Floors the earliest-match-minus-10-hours boundary to the prior 15-minute heartbeat so collection never starts late.
 +- Removes the deployment-only requirement for a second provider account credential; deployment may inject the existing provider credential only into the isolated `TENNIS_ODDS_API_KEY` runtime variable.
 +- Keeps every Tennis table, bucket, Lambda, lock, outcome, model, schedule, log, and metric separate from MLB.
-+diff --git a/MLB_CLONE_PROVENANCE.json b/MLB_CLONE_PROVENANCE.json
-+new file mode 100644
-+index 0000000..f92ac22
-+--- /dev/null
-++++ b/MLB_CLONE_PROVENANCE.json
-+@@ -0,0 +1,16 @@
-++{
-++  "calculation_sequence_copied": true,
-++  "collection_start_policy": "floor(first_match_start_minus_10_hours, 15_minutes)",
-++  "release": "TENNIS_PREDICTIVE_PLATFORM_V1_3_MLB_CLONE_SELF_TRAINING_ML",
-++  "result_settlement_source": "espn_public_tennis_scoreboard_exact_crosswalk",
-++  "runtime_data_shared": false,
-++  "runtime_imports_shared": false,
-++  "source_blob_sha": "37667544e1a44c47be11468235d4f6f799de463e",
-++  "source_blob_verified_at_current_main": true,
-++  "source_commit": "57a9bf2da314bce8ab6f000fdab73693a67b2500",
-++  "source_engine": "MLB-SINGLE-GAME-ML-PROMOTION-v2.1",
-++  "source_file": "hello_world/mlb_game_winner_engine.py",
-++  "source_repository": "KirtKurt/parlay-platform",
-++  "tennis_engine": "TENNIS-MARKET-BOOTSTRAP-v2.1",
-++  "trained_artifacts_shared": false
-++}
-+diff --git a/src/tennis_config.py b/src/tennis_config.py
-+index ef32fc9..5596b81 100644
-+--- a/src/tennis_config.py
-++++ b/src/tennis_config.py
-+@@ -32,7 +32,7 @@ def _env_csv(name: str, default: Tuple[str, ...] = ()) -> Tuple[str, ...]:
-+ @dataclass(frozen=True)
-+ class Settings:
-+     sport: str = "tennis"
-+-    platform_version: str = "TENNIS_PREDICTIVE_PLATFORM_V1_1_SELF_TRAINING_ML"
-++    platform_version: str = "TENNIS_PREDICTIVE_PLATFORM_V1_3_CLONED_MARKET_SELF_TRAINING_ML"
-+     engine: str = "TENNIS-MARKET-BOOTSTRAP-v2.1"
-+     model_version: str = "INQSI-TENNIS-MARKET-BOOTSTRAP-v2.1"
-+     ml_engine: str = "TENNIS-SELF-TRAINING-ML-v1"
-+diff --git a/src/tennis_schedule.py b/src/tennis_schedule.py
-+index 8baa24f..d426cdd 100644
-+--- a/src/tennis_schedule.py
-++++ b/src/tennis_schedule.py
-+@@ -5,7 +5,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
-+ from zoneinfo import ZoneInfo
-+ 
-+ from tennis_config import Settings
-+-from tennis_time import iso_utc, local_date, local_iso, parse_dt
-++from tennis_time import floor_minutes, iso_utc, local_date, local_iso, parse_dt
-+ 
-+ 
-+ def _event_start(event: Dict[str, Any]) -> Optional[datetime]:
-+@@ -40,7 +40,10 @@ def build_collection_schedule(
-+             continue
-+         first = starts[0]
-+         last = starts[-1]
-+-        collection_start = first - timedelta(hours=settings.collection_lead_hours)
-++        exact_collection_start = first - timedelta(hours=settings.collection_lead_hours)
-++        collection_start = floor_minutes(exact_collection_start, settings.pull_interval_minutes)
-++        if collection_start is None:
-++            raise RuntimeError("Unable to calculate Tennis collection heartbeat")
-+         collection_end = last + timedelta(hours=settings.collection_grace_hours)
-+         if current < collection_start:
-+             status = "FUTURE"
-+@@ -58,8 +61,12 @@ def build_collection_schedule(
-+                 "first_match_start_local": local_iso(first, settings.slate_timezone),
-+                 "last_match_start_utc": iso_utc(last),
-+                 "last_match_start_local": local_iso(last, settings.slate_timezone),
-++                "collection_start_exact_utc": iso_utc(exact_collection_start),
-++                "collection_start_exact_local": local_iso(exact_collection_start, settings.slate_timezone),
-+                 "collection_start_utc": iso_utc(collection_start),
-+                 "collection_start_local": local_iso(collection_start, settings.slate_timezone),
-++                "collection_start_alignment": "floor_to_15_minute_heartbeat_at_or_before_exact_t_minus_10",
-++                "collection_starts_no_later_than_exact_gate": collection_start <= exact_collection_start,
-+                 "collection_end_utc": iso_utc(collection_end),
-+                 "collection_end_local": local_iso(collection_end, settings.slate_timezone),
-+                 "collection_lead_hours": settings.collection_lead_hours,
-+@@ -74,7 +81,7 @@ def build_collection_schedule(
-+         "timezone": settings.slate_timezone,
-+         "now_utc": iso_utc(current),
-+         "now_local": local_iso(current, settings.slate_timezone),
-+-        "collection_policy": "earliest_match_minus_configured_lead",
-++        "collection_policy": "earliest_match_minus_configured_lead_floored_to_prior_heartbeat",
-+         "collection_lead_hours": settings.collection_lead_hours,
-+         "invalid_event_count": invalid,
-+         "slate_count": len(slates),
-+diff --git a/tests/test_engine_parity.py b/tests/test_engine_parity.py
-+index 9ca7949..9d9f4f7 100644
-+--- a/tests/test_engine_parity.py
-++++ b/tests/test_engine_parity.py
-+@@ -97,3 +97,16 @@ def test_displayed_winner_follows_probability_even_when_other_side_has_better_ev
-+     assert prediction["awaySignal"]["expectedValue"] > prediction["homeSignal"]["expectedValue"]
-+     assert prediction["predictedWinner"] == "Player A"
-+     assert prediction["predictedSide"] == "home"
-++
-++def test_mlb_clone_contract_provenance_is_release_metadata_only():
-++    import json
-++    from pathlib import Path
-++
-++    row = json.loads((Path(__file__).resolve().parents[1] / "MLB_CLONE_PROVENANCE.json").read_text())
-++    assert row["source_blob_sha"] == "37667544e1a44c47be11468235d4f6f799de463e"
-++    assert row["calculation_sequence_copied"] is True
-++    assert row["runtime_imports_shared"] is False
-++    assert row["runtime_data_shared"] is False
-++    assert row["trained_artifacts_shared"] is False
-++    assert row["result_settlement_source"] == "espn_public_tennis_scoreboard_exact_crosswalk"
-++
-+diff --git a/tests/test_schedule.py b/tests/test_schedule.py
-+index ae3a6e1..0727c95 100644
-+--- a/tests/test_schedule.py
-++++ b/tests/test_schedule.py
-+@@ -78,3 +78,44 @@ def test_lock_scheduler_checks_tomorrow_for_midnight_matches():
-+         now=datetime(2026, 7, 22, 23, 45, tzinfo=timezone.utc),
-+     )
-+     assert dates == ["2026-07-22", "2026-07-23"]
-++
-++def test_unaligned_t_minus_ten_gate_uses_prior_heartbeat_not_late_start():
-++    settings = Settings()
-++    events = [
-++        {
-++            "id": "unaligned",
-++            "provider_sport_key": "tennis_atp_test",
-++            "commence_time": "2026-07-23T08:07:00Z",
-++        }
-++    ]
-++    row = build_collection_schedule(
-++        events,
-++        settings,
-++        now=datetime(2026, 7, 22, 22, 0, tzinfo=timezone.utc),
-++    )["slates"][0]
-++    assert row["collection_start_exact_utc"] == "2026-07-22T22:07:00+00:00"
-++    assert row["collection_start_utc"] == "2026-07-22T22:00:00+00:00"
-++    assert row["collection_starts_no_later_than_exact_gate"] is True
-++    assert row["status"] == "ACTIVE"
-++
-++
-++def test_collection_gate_is_never_rounded_after_exact_t_minus_ten():
-++    settings = Settings()
-++    for minute in range(60):
-++        events = [
-++            {
-++                "id": f"m-{minute}",
-++                "provider_sport_key": "tennis_wta_test",
-++                "commence_time": f"2026-07-23T09:{minute:02d}:00Z",
-++            }
-++        ]
-++        row = build_collection_schedule(
-++            events,
-++            settings,
-++            now=datetime(2026, 7, 22, 0, 0, tzinfo=timezone.utc),
-++        )["slates"][0]
-++        scheduled = datetime.fromisoformat(row["collection_start_utc"])
-++        exact = datetime.fromisoformat(row["collection_start_exact_utc"])
-++        assert scheduled <= exact
-++        assert (exact - scheduled).total_seconds() < 15 * 60
-++
+diff --git a/MLB_CLONE_PROVENANCE.json b/MLB_CLONE_PROVENANCE.json
+new file mode 100644
+index 0000000..f92ac22
+--- /dev/null
++++ b/MLB_CLONE_PROVENANCE.json
+@@ -0,0 +1,16 @@
++{
++  "calculation_sequence_copied": true,
++  "collection_start_policy": "floor(first_match_start_minus_10_hours, 15_minutes)",
++  "release": "TENNIS_PREDICTIVE_PLATFORM_V1_3_MLB_CLONE_SELF_TRAINING_ML",
++  "result_settlement_source": "espn_public_tennis_scoreboard_exact_crosswalk",
++  "runtime_data_shared": false,
++  "runtime_imports_shared": false,
++  "source_blob_sha": "37667544e1a44c47be11468235d4f6f799de463e",
++  "source_blob_verified_at_current_main": true,
++  "source_commit": "57a9bf2da314bce8ab6f000fdab73693a67b2500",
++  "source_engine": "MLB-SINGLE-GAME-ML-PROMOTION-v2.1",
++  "source_file": "hello_world/mlb_game_winner_engine.py",
++  "source_repository": "KirtKurt/parlay-platform",
++  "tennis_engine": "TENNIS-MARKET-BOOTSTRAP-v2.1",
++  "trained_artifacts_shared": false
++}
+diff --git a/src/tennis_config.py b/src/tennis_config.py
+index ef32fc9..5596b81 100644
+--- a/src/tennis_config.py
++++ b/src/tennis_config.py
+@@ -32,7 +32,7 @@ def _env_csv(name: str, default: Tuple[str, ...] = ()) -> Tuple[str, ...]:
+ @dataclass(frozen=True)
+ class Settings:
+     sport: str = "tennis"
+-    platform_version: str = "TENNIS_PREDICTIVE_PLATFORM_V1_1_SELF_TRAINING_ML"
++    platform_version: str = "TENNIS_PREDICTIVE_PLATFORM_V1_3_CLONED_MARKET_SELF_TRAINING_ML"
+     engine: str = "TENNIS-MARKET-BOOTSTRAP-v2.1"
+     model_version: str = "INQSI-TENNIS-MARKET-BOOTSTRAP-v2.1"
+     ml_engine: str = "TENNIS-SELF-TRAINING-ML-v1"
+diff --git a/src/tennis_schedule.py b/src/tennis_schedule.py
+index 8baa24f..d426cdd 100644
+--- a/src/tennis_schedule.py
++++ b/src/tennis_schedule.py
+@@ -5,7 +5,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
+ from zoneinfo import ZoneInfo
+ 
+ from tennis_config import Settings
+-from tennis_time import iso_utc, local_date, local_iso, parse_dt
++from tennis_time import floor_minutes, iso_utc, local_date, local_iso, parse_dt
+ 
+ 
+ def _event_start(event: Dict[str, Any]) -> Optional[datetime]:
+@@ -40,7 +40,10 @@ def build_collection_schedule(
+             continue
+         first = starts[0]
+         last = starts[-1]
+-        collection_start = first - timedelta(hours=settings.collection_lead_hours)
++        exact_collection_start = first - timedelta(hours=settings.collection_lead_hours)
++        collection_start = floor_minutes(exact_collection_start, settings.pull_interval_minutes)
++        if collection_start is None:
++            raise RuntimeError("Unable to calculate Tennis collection heartbeat")
+         collection_end = last + timedelta(hours=settings.collection_grace_hours)
+         if current < collection_start:
+             status = "FUTURE"
+@@ -58,8 +61,12 @@ def build_collection_schedule(
+                 "first_match_start_local": local_iso(first, settings.slate_timezone),
+                 "last_match_start_utc": iso_utc(last),
+                 "last_match_start_local": local_iso(last, settings.slate_timezone),
++                "collection_start_exact_utc": iso_utc(exact_collection_start),
++                "collection_start_exact_local": local_iso(exact_collection_start, settings.slate_timezone),
+                 "collection_start_utc": iso_utc(collection_start),
+                 "collection_start_local": local_iso(collection_start, settings.slate_timezone),
++                "collection_start_alignment": "floor_to_15_minute_heartbeat_at_or_before_exact_t_minus_10",
++                "collection_starts_no_later_than_exact_gate": collection_start <= exact_collection_start,
+                 "collection_end_utc": iso_utc(collection_end),
+                 "collection_end_local": local_iso(collection_end, settings.slate_timezone),
+                 "collection_lead_hours": settings.collection_lead_hours,
+@@ -74,7 +81,7 @@ def build_collection_schedule(
+         "timezone": settings.slate_timezone,
+         "now_utc": iso_utc(current),
+         "now_local": local_iso(current, settings.slate_timezone),
+-        "collection_policy": "earliest_match_minus_configured_lead",
++        "collection_policy": "earliest_match_minus_configured_lead_floored_to_prior_heartbeat",
+         "collection_lead_hours": settings.collection_lead_hours,
+         "invalid_event_count": invalid,
+         "slate_count": len(slates),
+diff --git a/tests/test_engine_parity.py b/tests/test_engine_parity.py
+index 9ca7949..9d9f4f7 100644
+--- a/tests/test_engine_parity.py
++++ b/tests/test_engine_parity.py
+@@ -97,3 +97,16 @@ def test_displayed_winner_follows_probability_even_when_other_side_has_better_ev
+     assert prediction["awaySignal"]["expectedValue"] > prediction["homeSignal"]["expectedValue"]
+     assert prediction["predictedWinner"] == "Player A"
+     assert prediction["predictedSide"] == "home"
++
++def test_mlb_clone_contract_provenance_is_release_metadata_only():
++    import json
++    from pathlib import Path
++
++    row = json.loads((Path(__file__).resolve().parents[1] / "MLB_CLONE_PROVENANCE.json").read_text())
++    assert row["source_blob_sha"] == "37667544e1a44c47be11468235d4f6f799de463e"
++    assert row["calculation_sequence_copied"] is True
++    assert row["runtime_imports_shared"] is False
++    assert row["runtime_data_shared"] is False
++    assert row["trained_artifacts_shared"] is False
++    assert row["result_settlement_source"] == "espn_public_tennis_scoreboard_exact_crosswalk"
++
+diff --git a/tests/test_schedule.py b/tests/test_schedule.py
+index ae3a6e1..0727c95 100644
+--- a/tests/test_schedule.py
++++ b/tests/test_schedule.py
+@@ -78,3 +78,44 @@ def test_lock_scheduler_checks_tomorrow_for_midnight_matches():
+         now=datetime(2026, 7, 22, 23, 45, tzinfo=timezone.utc),
+     )
+     assert dates == ["2026-07-22", "2026-07-23"]
++
++def test_unaligned_t_minus_ten_gate_uses_prior_heartbeat_not_late_start():
++    settings = Settings()
++    events = [
++        {
++            "id": "unaligned",
++            "provider_sport_key": "tennis_atp_test",
++            "commence_time": "2026-07-23T08:07:00Z",
++        }
++    ]
++    row = build_collection_schedule(
++        events,
++        settings,
++        now=datetime(2026, 7, 22, 22, 0, tzinfo=timezone.utc),
++    )["slates"][0]
++    assert row["collection_start_exact_utc"] == "2026-07-22T22:07:00+00:00"
++    assert row["collection_start_utc"] == "2026-07-22T22:00:00+00:00"
++    assert row["collection_starts_no_later_than_exact_gate"] is True
++    assert row["status"] == "ACTIVE"
++
++
++def test_collection_gate_is_never_rounded_after_exact_t_minus_ten():
++    settings = Settings()
++    for minute in range(60):
++        events = [
++            {
++                "id": f"m-{minute}",
++                "provider_sport_key": "tennis_wta_test",
++                "commence_time": f"2026-07-23T09:{minute:02d}:00Z",
++            }
++        ]
++        row = build_collection_schedule(
++            events,
++            settings,
++            now=datetime(2026, 7, 22, 0, 0, tzinfo=timezone.utc),
++        )["slates"][0]
++        scheduled = datetime.fromisoformat(row["collection_start_utc"])
++        exact = datetime.fromisoformat(row["collection_start_exact_utc"])
++        assert scheduled <= exact
++        assert (exact - scheduled).total_seconds() < 15 * 60
++
