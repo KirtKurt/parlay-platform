@@ -65,9 +65,72 @@ jobs:
           print(json.dumps(out, indent=2, sort_keys=True))
           PY
 
-      - name: Upload read-only deployment run evidence
+      - name: Snapshot public MLB lifecycle read-only
+        continue-on-error: true
+        run: |
+          python - <<'PY'
+          import json
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          base = 'https://7nz8g8unyd.execute-api.us-east-1.amazonaws.com/Prod'
+          query = urllib.parse.urlencode({'date': '2026-07-22'})
+          url = base + '/v1/mlb/predictions?' + query
+          out = {'ok': False, 'readOnly': True, 'urlPath': '/v1/mlb/predictions', 'date': '2026-07-22'}
+          try:
+              request = urllib.request.Request(url, headers={
+                  'accept': 'application/json',
+                  'user-agent': 'inqsi-read-only-lifecycle-snapshot/1.0',
+              })
+              with urllib.request.urlopen(request, timeout=35) as response:
+                  payload = json.loads(response.read().decode('utf-8'))
+              rows = [row for row in (payload.get('predictions') or []) if isinstance(row, dict)]
+              statuses = sorted({
+                  str(
+                      row.get('lockStatus')
+                      or row.get('officialPredictionStatus')
+                      or ((row.get('perGameCanonicalLock') or {}).get('status'))
+                      or ''
+                  ).strip().upper()
+                  for row in rows
+              })
+              identities = {
+                  str(row.get('gameId') or row.get('gameIdentity') or '')
+                  for row in rows
+              }
+              out.update({
+                  'ok': True,
+                  'httpStatus': response.status,
+                  'sport': payload.get('sport'),
+                  'gameCount': payload.get('gameCount'),
+                  'predictionRowCount': len(rows),
+                  'uniqueIdentityCount': len(identities - {''}),
+                  'predictedWinnerCount': sum(row.get('predictedWinner') not in (None, '') for row in rows),
+                  'displayStatusCoverageComplete': payload.get('displayStatusCoverageComplete'),
+                  'lifecycleCoverageComplete': payload.get('lifecycleCoverageComplete'),
+                  'lockStatusComplete': payload.get('lockStatusComplete'),
+                  'canonicalPredictionComplete': payload.get('canonicalPredictionComplete'),
+                  'operationalDefect': payload.get('operationalDefect'),
+                  'lockedPredictionCount': payload.get('lockedPredictionCount'),
+                  'lockedStatusCount': payload.get('lockedStatusCount'),
+                  'noPredictionDataCount': payload.get('noPredictionDataCount'),
+                  'statuses': statuses,
+              })
+          except Exception as exc:
+              out['error'] = f'{type(exc).__name__}: {exc}'
+          Path('/tmp/mlb-public-lifecycle-2026-07-22.json').write_text(
+              json.dumps(out, indent=2, sort_keys=True) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(out, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload read-only deployment evidence
         uses: actions/upload-artifact@v4
         with:
           name: mlb-deploy-runs-36801-${{ github.run_id }}
-          path: /tmp/mlb-deploy-runs-36801.json
+          path: |
+            /tmp/mlb-deploy-runs-36801.json
+            /tmp/mlb-public-lifecycle-2026-07-22.json
           if-no-files-found: error
