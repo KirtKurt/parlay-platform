@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: observe-tennis-v2-1-eefc8d7f
+  group: observe-tennis-v2-1-68b7e878
   cancel-in-progress: false
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
     env:
       DEPLOY_WORKFLOW_PATH: deploy-tennis-v2-1.yml
       DEPLOY_BRANCH: agent/tennis-mlb-process-flow-v2-1
-      DEPLOY_HEAD_SHA: eefc8d7fa7a143c73fd525d3dcbe426fa0db4bbd
+      DEPLOY_HEAD_SHA: 68b7e87815c9c7447e706f87c5a52f277f2cf980
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -99,6 +99,21 @@ jobs:
             "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs" \
             -f filter=latest -f per_page=100 \
             > tennis_observer_evidence/deployment-jobs.json || true
+          job_id=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("tennis_observer_evidence/deployment-jobs.json")
+          if not path.exists():
+              print("")
+          else:
+              jobs = json.loads(path.read_text()).get("jobs", [])
+              print(jobs[0].get("id", "") if jobs else "")
+          PY
+          )
+          if [ -n "$job_id" ]; then
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" \
+              > tennis_observer_evidence/deployment-job.log || true
+          fi
           gh api --method GET \
             "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
             -f per_page=100 \
