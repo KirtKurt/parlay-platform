@@ -1,0 +1,154 @@
+name: Audit MLB Live Status PR
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-mlb-live-status-pr.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Query live MLB production state without writes
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
+          PREDICTIONS_TABLE: parlay_platform_predictions
+          OUTCOMES_TABLE: parlay_platform_outcomes
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-live-status
+          SLATE_DATE=$(TZ=America/New_York date +%F)
+          echo "$SLATE_DATE" > /tmp/mlb-live-status/slate_date.txt
+
+          PK="PULLS#mlb#${SLATE_DATE}"
+          aws dynamodb query \
+            --region "$AWS_REGION" \
+            --table-name "$SNAPSHOTS_TABLE" \
+            --key-condition-expression "PK = :pk" \
+            --expression-attribute-values "{\":pk\":{\"S\":\"$PK\"}}" \
+            --consistent-read \
+            --output json > /tmp/mlb-live-status/pulls.json
+
+          python scripts/mlb_pull_guard_status.py \
+            --slate-date "$SLATE_DATE" \
+            --pulls-json /tmp/mlb-live-status/pulls.json \
+            --aws-ok true \
+            --output /tmp/mlb-live-status/pull_guard.json
+
+          python scripts/mlb_scoring_guard_status.py \
+            --slate-date "$SLATE_DATE" \
+            --output /tmp/mlb-live-status/scoring_guard.json || true
+
+          python scripts/diagnose_mlb_pull_lambda_runtime.py \
+            --hours 8 \
+            --output /tmp/mlb-live-status/runtime_diagnostic.json || true
+
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION" \
+            --logical-resource-id MLBProductionVerifierFunction \
+            --query 'StackResourceDetail.PhysicalResourceId' \
+            --output text)
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"sport":"mlb","mode":"continuous","run":"read_only_live_status_audit"}' \
+            /tmp/mlb-live-status/verifier_response.json \
+            > /tmp/mlb-live-status/verifier_meta.json
+
+          python - <<'PY'
+          import json, urllib.parse, urllib.request
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          root = Path('/tmp/mlb-live-status')
+          slate = (root / 'slate_date.txt').read_text().strip()
+          def load(name, default):
+              try:
+                  return json.loads((root / name).read_text())
+              except Exception:
+                  return default
+          pull = load('pull_guard.json', {})
+          scoring = load('scoring_guard.json', {})
+          runtime = load('runtime_diagnostic.json', {})
+          envelope = load('verifier_response.json', {})
+          body = envelope.get('body') if isinstance(envelope, dict) else None
+          try:
+              verifier = json.loads(body) if isinstance(body, str) else envelope
+          except Exception as exc:
+              verifier = {'ok': False, 'error': str(exc)}
+
+          query = urllib.parse.urlencode({'sportId':1, 'date':slate, 'hydrate':'team,probablePitcher,venue'})
+          req = urllib.request.Request('https://statsapi.mlb.com/api/v1/schedule?' + query, headers={'accept':'application/json','user-agent':'inqsi-live-status/1.0'})
+          with urllib.request.urlopen(req, timeout=45) as response:
+              schedule = json.loads(response.read().decode())
+          games = [g for d in schedule.get('dates') or [] for g in d.get('games') or []]
+          starts = []
+          for game in games:
+              try: starts.append(datetime.fromisoformat(str(game.get('gameDate')).replace('Z','+00:00')).astimezone(timezone.utc))
+              except Exception: pass
+          now = datetime.now(timezone.utc)
+          first_start = min(starts) if starts else None
+          first_lock = first_start - timedelta(minutes=45) if first_start else None
+          summary = scoring.get('summary') or {}
+          result = {
+              'proofType':'MLB_LIVE_STATUS_READ_ONLY_AUDIT',
+              'createdAtUtc':now.isoformat().replace('+00:00','Z'),
+              'createdAtEt':now.astimezone(ZoneInfo('America/New_York')).isoformat(),
+              'slateDateEt':slate,
+              'readOnly':True,
+              'productionWritesPerformed':False,
+              'officialGameCount':len(games),
+              'earliestStartUtc':first_start.isoformat() if first_start else None,
+              'earliestTMinus45Utc':first_lock.isoformat() if first_lock else None,
+              'beforeEarliestTMinus45':bool(first_lock and now < first_lock),
+              'pullGuard':pull,
+              'scoringGuard':scoring,
+              'runtimeDiagnostic':runtime,
+              'productionVerifier':verifier,
+              'summary':{
+                  'scheduledPullsHealthy':pull.get('guardPassed') is True,
+                  'scoringGuardPassed':scoring.get('guardPassed') is True,
+                  'persistedPredictionGameCount':summary.get('persistedPredictionGameCount'),
+                  'movementFeatureGameCount':summary.get('movementFeatureGameCount'),
+                  'missingPredictionCount':summary.get('missingPredictionCount'),
+                  'missingMovementCount':summary.get('missingMovementCount'),
+                  'timeoutCountLast8Hours':len(runtime.get('timeouts') or []),
+                  'classifiedErrorCountLast8Hours':len(runtime.get('classifiedErrors') or []),
+                  'verifierOk':verifier.get('ok') is True if isinstance(verifier,dict) else False,
+              },
+          }
+          (root / 'mlb_live_status.json').write_text(json.dumps(result, indent=2, sort_keys=True, default=str) + '\n')
+          print(json.dumps(result['summary'], indent=2, sort_keys=True))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-live-status-${{ github.run_id }}
+          path: /tmp/mlb-live-status/
+          if-no-files-found: error
