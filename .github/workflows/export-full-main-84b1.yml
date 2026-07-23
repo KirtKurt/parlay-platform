@@ -1,0 +1,39 @@
+name: Export Full Main 84b1
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/export-full-main-84b1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 84b1d821d76bf9106a0708e84a19888c728c0cf9
+          fetch-depth: 1
+
+      - name: Package exact full source without Git metadata
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/parlay-platform-main-84b1
+          tar \
+            --exclude='.git' \
+            --exclude='.aws-sam' \
+            --exclude='__pycache__' \
+            --exclude='.pytest_cache' \
+            -cf - . | tar -xf - -C /tmp/parlay-platform-main-84b1
+          printf '%s\n' '84b1d821d76bf9106a0708e84a19888c728c0cf9' > /tmp/parlay-platform-main-84b1/EXPORTED_MAIN_SHA
+
+      - name: Upload exact full source
+        uses: actions/upload-artifact@v4
+        with:
+          name: parlay-platform-main-84b1-${{ github.run_id }}
+          path: /tmp/parlay-platform-main-84b1
+          if-no-files-found: error
