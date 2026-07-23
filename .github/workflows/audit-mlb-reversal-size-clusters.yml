@@ -7,12 +7,14 @@ on:
       - '.github/workflows/audit-mlb-reversal-size-clusters.yml'
       - 'scripts/audit_mlb_reversal_sizes.py'
       - 'scripts/audit_mlb_reversal_sizes_v2.py'
+      - 'scripts/audit_mlb_reversal_sizes_v3.py'
   push:
     branches: [agent/audit-mlb-reversal-size-clusters-20260723]
     paths:
       - '.github/workflows/audit-mlb-reversal-size-clusters.yml'
       - 'scripts/audit_mlb_reversal_sizes.py'
       - 'scripts/audit_mlb_reversal_sizes_v2.py'
+      - 'scripts/audit_mlb_reversal_sizes_v3.py'
   workflow_dispatch:
 
 permissions:
@@ -48,8 +50,11 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/scripts
         run: |
           set -euo pipefail
-          python -m py_compile scripts/audit_mlb_reversal_sizes.py scripts/audit_mlb_reversal_sizes_v2.py
-          python scripts/audit_mlb_reversal_sizes_v2.py \
+          python -m py_compile \
+            scripts/audit_mlb_reversal_sizes.py \
+            scripts/audit_mlb_reversal_sizes_v2.py \
+            scripts/audit_mlb_reversal_sizes_v3.py
+          python scripts/audit_mlb_reversal_sizes_v3.py \
             --start-date 2026-06-28 \
             --end-date 2026-07-22 \
             --output /tmp/mlb-reversal-audit/mlb_reversal_size_audit.json
