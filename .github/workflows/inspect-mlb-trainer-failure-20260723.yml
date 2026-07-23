@@ -1,4 +1,4 @@
-name: Inspect MLB Source Contract Failure 2026-07-23
+name: Inspect MLB R4 Fixture Patch Workflow
 
 on:
   push:
@@ -19,57 +19,41 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract exact source-contract failure context
+      - name: Inspect fixture-patch workflow run
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: '30012212531'
-          JOB_ID: '89222966270'
         run: |
           set -euo pipefail
-          mkdir -p /tmp/mlb-source-contract-failure
-          gh run view "$RUN_ID" \
+          mkdir -p /tmp/mlb-r4-fixture-workflow
+          gh run list \
             --repo "$GITHUB_REPOSITORY" \
-            --job "$JOB_ID" \
-            --log-failed > /tmp/mlb-source-contract-failure/failed.log
+            --workflow 'Patch MLB R4 Acceptance Fixtures' \
+            --branch agent/reset-mlb-prospective-r4-20260723 \
+            --limit 10 \
+            --json databaseId,status,conclusion,event,headSha,createdAt,updatedAt,url \
+            > /tmp/mlb-r4-fixture-workflow/runs.json
           python - <<'PY'
           import json
-          import re
           from pathlib import Path
-
-          path = Path('/tmp/mlb-source-contract-failure/failed.log')
-          lines = path.read_text(encoding='utf-8-sig', errors='replace').splitlines()
-          pattern = re.compile(
-              r'(traceback|assertionerror|systemexit|runtimeerror|valueerror|keyerror|error:|failed|failure|stale|mismatch|missing|expected|actual|r3|r4|cutoff|experiment|release)',
-              re.IGNORECASE,
-          )
-          selected = set()
-          for index, line in enumerate(lines):
-              if pattern.search(line):
-                  selected.update(range(max(0, index - 10), min(len(lines), index + 28)))
-          report = {
-              'ok': True,
-              'readOnly': True,
-              'runId': int('30012212531'),
-              'jobId': int('89222966270'),
-              'lineCount': len(lines),
-              'matchedContext': [
-                  {'lineNumber': index + 1, 'text': lines[index]}
-                  for index in sorted(selected)
-              ][-600:],
-              'tail': [
-                  {'lineNumber': len(lines) - len(lines[-300:]) + index + 1, 'text': line}
-                  for index, line in enumerate(lines[-300:])
-              ],
-          }
-          Path('/tmp/mlb-source-contract-failure/inspection.json').write_text(
-              json.dumps(report, indent=2) + '\n', encoding='utf-8'
-          )
-          print(json.dumps(report, indent=2))
+          rows = json.loads(Path('/tmp/mlb-r4-fixture-workflow/runs.json').read_text())
+          print(json.dumps(rows, indent=2))
+          if rows:
+              Path('/tmp/mlb-r4-fixture-workflow/latest_run_id.txt').write_text(str(rows[0]['databaseId']))
           PY
+          if [ -s /tmp/mlb-r4-fixture-workflow/latest_run_id.txt ]; then
+            RUN_ID=$(cat /tmp/mlb-r4-fixture-workflow/latest_run_id.txt)
+            gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed \
+              > /tmp/mlb-r4-fixture-workflow/failed.log || true
+            gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
+              --json databaseId,status,conclusion,event,headSha,jobs,url \
+              > /tmp/mlb-r4-fixture-workflow/run.json
+            cat /tmp/mlb-r4-fixture-workflow/run.json
+            tail -240 /tmp/mlb-r4-fixture-workflow/failed.log || true
+          fi
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mlb-source-contract-failure-${{ github.run_id }}
-          path: /tmp/mlb-source-contract-failure/
+          name: mlb-r4-fixture-workflow-${{ github.run_id }}
+          path: /tmp/mlb-r4-fixture-workflow/
           if-no-files-found: error
