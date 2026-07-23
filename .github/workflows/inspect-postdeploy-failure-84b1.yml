@@ -1,0 +1,78 @@
+name: Inspect MLB Post-Deploy Failure 84b1
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-postdeploy-failure-84b1.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Extract exact verifier failure read-only
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_ID: '89101467599'
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import re
+          import urllib.request
+          from pathlib import Path
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          job_id = os.environ['JOB_ID']
+          url = f'https://api.github.com/repos/{repo}/actions/jobs/{job_id}/logs'
+          request = urllib.request.Request(url, headers={
+              'Authorization': f"Bearer {os.environ['GH_TOKEN']}",
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'inqsi-read-only-postdeploy-log-inspector/1.0',
+          })
+          with urllib.request.urlopen(request, timeout=90) as response:
+              raw = response.read()
+          text = raw.decode('utf-8-sig', errors='replace')
+          lines = text.splitlines()
+          patterns = re.compile(
+              r'(##\[error\]|Process completed with exit code|SystemExit|Traceback|Post-deploy|preLock|winner|FunctionError|failed:|incomplete:|mismatch:)',
+              re.IGNORECASE,
+          )
+          selected_indexes = [i for i, line in enumerate(lines) if patterns.search(line)]
+          selected = []
+          seen = set()
+          for i in selected_indexes:
+              for j in range(max(0, i - 4), min(len(lines), i + 9)):
+                  if j not in seen:
+                      seen.add(j)
+                      selected.append({'lineNumber': j + 1, 'text': lines[j]})
+          selected.sort(key=lambda row: row['lineNumber'])
+          out = {
+              'ok': True,
+              'readOnly': True,
+              'jobId': int(job_id),
+              'lineCount': len(lines),
+              'matchedContext': selected[-250:],
+              'tail': [
+                  {'lineNumber': len(lines) - len(lines[-180:]) + i + 1, 'text': line}
+                  for i, line in enumerate(lines[-180:])
+              ],
+          }
+          path = Path('/tmp/mlb-postdeploy-failure-84b1.json')
+          path.write_text(json.dumps(out, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps(out, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload read-only failure evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-postdeploy-failure-84b1-${{ github.run_id }}
+          path: /tmp/mlb-postdeploy-failure-84b1.json
+          if-no-files-found: error
