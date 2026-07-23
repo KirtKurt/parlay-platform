@@ -1,0 +1,185 @@
+{
+  "version": "MLB-REVERSAL-SIGNAL-RESEARCH-v1-20260723",
+  "readOnly": true,
+  "productionAuthority": false,
+  "source": {
+    "repository": "KirtKurt/parlay-platform",
+    "pullRequest": 88,
+    "headCommit": "d615e0f738e31360102d0fe8f0c865df7e2e3c26",
+    "workflowRunId": 29988070160,
+    "artifactSha256": "b7694bb0523b6717ed1eceafe1365c5a53bc0df40e39078fbc51353abaa3c988",
+    "artifactFile": "mlb_reversal_size_audit.json"
+  },
+  "scope": {
+    "startDateEt": "2026-06-28",
+    "endDateEt": "2026-07-22",
+    "canonicalGames": 298,
+    "gamesWithGradedMeaningfulReversal": 271,
+    "meaningfulReversalThresholdPp": 0.3,
+    "meaningfulGradedReversalEvents": 824,
+    "latestAllowedObservation": "T-minus-45",
+    "chronologicalFoldDateRanges": [
+      [
+        "2026-06-28",
+        "2026-07-05"
+      ],
+      [
+        "2026-07-06",
+        "2026-07-12"
+      ],
+      [
+        "2026-07-16",
+        "2026-07-22"
+      ]
+    ]
+  },
+  "eventLevel": {
+    "allMeaningful": {
+      "events": 824,
+      "towardWinner": 410,
+      "accuracyPct": 49.76,
+      "wilsonLower95Pct": 46.35
+    },
+    "synchronizedAtLeastThreeBooks": {
+      "events": 423,
+      "towardWinner": 198,
+      "accuracyPct": 46.81,
+      "wilsonLower95Pct": 42.1
+    },
+    "breadthAtLeast75Pct": {
+      "events": 32,
+      "towardWinner": 18,
+      "accuracyPct": 56.25,
+      "wilsonLower95Pct": 39.33
+    },
+    "tightSameSizeAtLeastFourBooks": {
+      "events": 23,
+      "towardWinner": 12,
+      "accuracyPct": 52.17,
+      "wilsonLower95Pct": 32.96
+    },
+    "marketFlip": {
+      "events": 39,
+      "towardWinner": 24,
+      "accuracyPct": 61.54,
+      "wilsonLower95Pct": 45.9
+    },
+    "monday": {
+      "events": 97,
+      "towardWinner": 44,
+      "accuracyPct": 45.36,
+      "wilsonLower95Pct": 35.82
+    }
+  },
+  "oneEventPerGame": {
+    "latestMeaningfulFollow": {
+      "games": 271,
+      "correct": 128,
+      "accuracyPct": 47.23,
+      "wilsonLower95Pct": 41.37,
+      "foldAccuracyPct": [
+        45.56,
+        48.96,
+        47.06
+      ]
+    },
+    "latestMeaningfulWithin180MinutesFollow": {
+      "games": 99,
+      "correct": 37,
+      "accuracyPct": 37.37,
+      "wilsonLower95Pct": 28.48,
+      "foldAccuracyPct": [
+        33.33,
+        46.15,
+        30.0
+      ]
+    },
+    "latestMeaningfulWithin180MinutesFadeResearchOnly": {
+      "games": 99,
+      "correct": 62,
+      "accuracyPct": 62.63,
+      "wilsonLower95Pct": 52.79,
+      "foldAccuracyPct": [
+        66.67,
+        53.85,
+        70.0
+      ]
+    },
+    "firstMeaningfulUnder0_5PpFollow": {
+      "games": 100,
+      "correct": 59,
+      "accuracyPct": 59.0,
+      "wilsonLower95Pct": 49.2,
+      "foldAccuracyPct": [
+        56.67,
+        65.0,
+        53.33
+      ]
+    },
+    "highestBreadthMarketFlipFollow": {
+      "games": 27,
+      "correct": 20,
+      "accuracyPct": 74.07,
+      "wilsonLower95Pct": 55.32,
+      "foldAccuracyPct": [
+        69.23,
+        60.0,
+        88.89
+      ]
+    },
+    "largestMarketFlipFollow": {
+      "games": 27,
+      "correct": 19,
+      "accuracyPct": 70.37,
+      "wilsonLower95Pct": 51.52,
+      "foldAccuracyPct": [
+        69.23,
+        60.0,
+        77.78
+      ]
+    },
+    "highestBreadthMarketFlip2To3PpFollowPostHoc": {
+      "games": 9,
+      "slateDates": 7,
+      "correct": 9,
+      "accuracyPct": 100.0,
+      "wilsonLower95Pct": 70.09,
+      "foldGameCounts": [
+        5,
+        1,
+        3
+      ],
+      "postHoc": true,
+      "productionEligible": false
+    }
+  },
+  "conclusions": [
+    "Reversal existence, raw size, synchronized breadth, and tight same-size movement do not supply a general predictive edge in this cohort.",
+    "Market-crossing reversals are the only positive family worth freezing for a prospective challenger, but the current 27-game sample has a 55.32% Wilson lower bound and cannot support a 70% qualification claim.",
+    "The 2-to-3 percentage-point market-flip result is post-hoc and only nine games across seven dates; it must remain shadow research despite its observed 9-for-9 result.",
+    "Following the latest meaningful reversal beginning within 180 minutes of first pitch performed poorly in all chronological folds. This is suitable as a risk blocker, not as an automatic opposite-side pick.",
+    "No signal family is approved for positive production authority from this audit."
+  ],
+  "admissionDecision": {
+    "approvedSignalCount": 0,
+    "minimumProspectiveGames": 100,
+    "minimumSlateDates": 20,
+    "minimumChronologicalFolds": 3,
+    "minimumGamesPerFold": 20,
+    "minimumFoldAccuracyPct": 65.0,
+    "minimumRecentGames": 30,
+    "minimumRecentAccuracyPct": 70.0,
+    "minimumWilsonLower95Pct": 70.0,
+    "futureAccuracyGuaranteed": false
+  },
+  "implementationStatus": {
+    "branch": "agent/mlb-reversal-signal-upgrade-v2",
+    "liveActionabilityGateAdded": true,
+    "visiblePredictionRetained": true,
+    "unvalidatedActionableRecommendationsAllowed": false,
+    "approvedSignalRegistryCount": 0,
+    "localFocusedTestsPassed": 14,
+    "merged": false,
+    "deployed": false
+  }
+}
