@@ -6,6 +6,7 @@ on:
     paths:
       - ".github/workflows/observe-tennis-v2-4.yml"
       - ".github/workflows/deploy-tennis-v2-4.yml"
+      - ".github/tennis-v2-4-part01/**"
       - "tennis_release_v2_4/**"
   workflow_dispatch:
 
@@ -18,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 80
     env:
-      TARGET_SHA: 626b1ffc35a7a48e23cd65a99c2ab31b03543e13
+      TARGET_SHA: ba38daa24a3d43e3bf168f309ff1c0155a4698a0
       TARGET_PATH: .github/workflows/deploy-tennis-v2-4.yml
       TARGET_BRANCH: agent/tennis-polymarket-mlb-parity-v2-4
       GH_TOKEN: ${{ github.token }}
