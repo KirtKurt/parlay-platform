@@ -44,7 +44,7 @@ REQUIRED_RUNTIME_STEPS = {
 def test_finalizer_skips_post_cutoff_lifecycle_rows_without_pregame_writes():
     source = {
         "ok": True,
-        "gameCount": 2,
+        "gameCount": 3,
         "allGamesPredicted": False,
         "displayStatusCoverageComplete": True,
         "lifecycleCoverageComplete": True,
@@ -58,6 +58,16 @@ def test_finalizer_skips_post_cutoff_lifecycle_rows_without_pregame_writes():
                 "recommendationStatus": "MISSED_LOCK",
                 "displayGroup": "lock_failure",
                 "perGameCanonicalLock": {"status": "MISSED_LOCK"},
+            },
+            {
+                "gameId": "missed-not-backfilled",
+                "predictedWinner": None,
+                "predictedSide": None,
+                "lockStatus": "MISSED_NOT_BACKFILLED",
+                "officialPredictionStatus": "MISSED_NOT_BACKFILLED",
+                "recommendationStatus": "MISSED_NOT_BACKFILLED",
+                "displayGroup": "lock_failure",
+                "perGameCanonicalLock": {"status": "MISSED_NOT_BACKFILLED"},
             },
             {
                 "gameId": "terminal-no-data",
@@ -87,12 +97,13 @@ def test_finalizer_skips_post_cutoff_lifecycle_rows_without_pregame_writes():
     assert result["preLockStorageCandidateCount"] == 0
     assert result["preLockStoredCount"] == 0
     assert result["preLockStorageComplete"] is True
-    assert result["preLockStorageLifecycleSkippedCount"] == 2
-    assert result["preLockStorageDispositionCount"] == 2
+    assert result["preLockStorageLifecycleSkippedCount"] == 3
+    assert result["preLockStorageDispositionCount"] == 3
     assert result["preLockStorageDispositionComplete"] is True
     assert result["preLockStorageLifecycleSkippedStatuses"] == [
         "LOCKED_NO_PREDICTION_DATA",
         "MISSED_LOCK",
+        "MISSED_NOT_BACKFILLED",
     ]
     for row in result["predictions"]:
         assert row["preLockStoreSkipped"] is True

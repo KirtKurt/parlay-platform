@@ -1120,3 +1120,98 @@ def test_public_doubleheader_game2_pending_then_final_event_changes_release_only
         final_row["lastPrelockSelectionFingerprint"],
     ) == immutable_selection
     assert final_result["operationalDefect"] is False
+
+
+def test_verified_effective_schedule_revision_preserves_roster_membership(monkeypatch):
+    """Compatible official start-time updates must not invalidate roster authority."""
+
+    engine = _engine([])
+    inqsi_pull_history.PULLS = engine.history.PULLS
+    membership_games = inqsi_pull_history.provider_manifest_games_for_lock(
+        PULLS[0],
+        SLATE,
+    )
+    effective_games = copy.deepcopy(membership_games)
+    effective_games[0]["commence_time"] = "2026-07-17T23:30:00Z"
+    effective_games[0]["canonical_start_time_source"] = "MLB_STATS_API_EXACT_DATE"
+
+    def resolved_manifest(pulls, slate):
+        assert pulls == PULLS
+        assert slate == SLATE
+        return {
+            "version": "MLB-VERIFIED-FULL-SLATE-ROSTER-v-test",
+            "fullAuthorityPull": PULLS[0],
+            "games": copy.deepcopy(effective_games),
+            "fullSlateGameCount": len(effective_games),
+            "latestFeedGameCount": len(effective_games),
+            "latestFeedContracted": False,
+            "scheduleRevisionApplied": True,
+            "immutableReadbackVerified": True,
+        }
+
+    monkeypatch.setattr(
+        engine.history,
+        "verified_full_slate_manifest",
+        staticmethod(resolved_manifest),
+        raising=False,
+    )
+    inqsi_pull_history.PULLS = engine.history.PULLS
+
+    games, authority = coverage._provider_manifest_for_public(
+        engine,
+        slate_lock,
+        PULLS,
+        SLATE,
+    )
+
+    assert [coverage.game_identity(game) for game in games] == [
+        coverage.game_identity(game) for game in membership_games
+    ]
+    assert games[0]["commence_time"] == "2026-07-17T23:30:00Z"
+    assert games[0]["canonical_start_time_source"] == "MLB_STATS_API_EXACT_DATE"
+    assert authority["providerManifestValidated"] is True
+    assert authority["verifiedFullSlateGameCount"] == 2
+    assert authority["durableRosterImmutableReadbackVerified"] is True
+
+
+def test_verified_effective_schedule_revision_rejects_membership_change(monkeypatch):
+    engine = _engine([])
+    inqsi_pull_history.PULLS = engine.history.PULLS
+    effective_games = inqsi_pull_history.provider_manifest_games_for_lock(
+        PULLS[0],
+        SLATE,
+    )
+    effective_games = copy.deepcopy(effective_games)
+    effective_games[1]["game_id"] = "unexpected-game"
+
+    monkeypatch.setattr(
+        engine.history,
+        "verified_full_slate_manifest",
+        staticmethod(
+            lambda pulls, slate: {
+                "version": "MLB-VERIFIED-FULL-SLATE-ROSTER-v-test",
+                "fullAuthorityPull": PULLS[0],
+                "games": copy.deepcopy(effective_games),
+                "fullSlateGameCount": len(effective_games),
+                "latestFeedGameCount": len(effective_games),
+                "immutableReadbackVerified": True,
+            }
+        ),
+        raising=False,
+    )
+    inqsi_pull_history.PULLS = engine.history.PULLS
+
+    try:
+        coverage._provider_manifest_for_public(
+            engine,
+            slate_lock,
+            PULLS,
+            SLATE,
+        )
+    except RuntimeError as exc:
+        message = str(exc)
+    else:
+        raise AssertionError("expected effective-schedule membership mismatch")
+
+    assert "resolved_games_membership_mismatch" in message
+

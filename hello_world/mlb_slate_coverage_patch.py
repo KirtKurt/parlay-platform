@@ -750,12 +750,24 @@ def _provider_manifest_for_public(
         reader = getattr(history_contract, "provider_manifest_games_for_lock", None)
     if not callable(reader):
         raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_VALIDATOR_UNAVAILABLE")
-    games = reader(full_pull, slate)
-    if not isinstance(games, list):
+    membership_games = reader(full_pull, slate)
+    if not isinstance(membership_games, list):
         raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:games_not_list")
     resolved_games = list(resolved.get("games") or [])
-    if games != resolved_games:
-        raise RuntimeError("MLB_VERIFIED_FULL_SLATE_MANIFEST_INVALID:resolved_games_mismatch")
+    membership_ids = [game_identity(game) for game in membership_games]
+    resolved_ids = [game_identity(game) for game in resolved_games]
+    # ``verified_full_slate_manifest`` deliberately separates immutable roster
+    # membership from later, compatible official-schedule revisions. The
+    # effective rows may therefore differ in start time or other schedule
+    # metadata while retaining the exact same game identities. Comparing the
+    # entire dictionaries falsely rejects that valid overlay after schedule
+    # revisions or completed-game status hydration. Membership remains strict.
+    if membership_ids != resolved_ids:
+        raise RuntimeError(
+            "MLB_VERIFIED_FULL_SLATE_MANIFEST_INVALID:"
+            "resolved_games_membership_mismatch"
+        )
+    games = resolved_games
 
     manifest = full_pull.get("provider_schedule_manifest")
     binding = full_pull.get("provider_manifest_binding")
@@ -768,7 +780,11 @@ def _provider_manifest_for_public(
         declared_count = int(manifest.get("gameCount"))
     except Exception:
         declared_count = -1
-    if declared_count != len(games) or len(declared_games) != len(games):
+    if (
+        declared_count != len(membership_games)
+        or len(declared_games) != len(membership_games)
+        or len(games) != len(membership_games)
+    ):
         raise RuntimeError("MLB_PROVIDER_SCHEDULE_MANIFEST_INVALID:game_count_mismatch")
 
     returned_ids = [game_identity(game) for game in games]
