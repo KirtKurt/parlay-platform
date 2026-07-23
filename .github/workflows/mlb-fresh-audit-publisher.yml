@@ -1,0 +1,137 @@
+name: MLB Fresh Audit Publisher
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-fresh-audit-publisher.yml'
+  schedule:
+    # 1:35 a.m. America/New_York in either daylight or standard time.
+    - cron: '35 5,6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-fresh-audit-publisher
+  cancel-in-progress: true
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate scheduled run to 1 a.m. Eastern
+        id: gate
+        run: |
+          SHOULD_RUN=true
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            ET_HOUR=$(TZ=America/New_York date +%H)
+            if [ "$ET_HOUR" != "01" ]; then
+              SHOULD_RUN=false
+            fi
+          fi
+          echo "run=$SHOULD_RUN" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.run == 'true'
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        if: steps.gate.outputs.run == 'true'
+        with:
+          python-version: '3.11'
+
+      - name: Install audit runtime
+        if: steps.gate.outputs.run == 'true'
+        run: python -m pip install --quiet --upgrade boto3 "pytest>=8,<9"
+
+      - name: Verify settlement and immutable-lock audit contracts
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          python scripts/verify_mlb_settlement_matching_v3.py
+          python scripts/verify_mlb_daily_lock_audit_fallback.py
+          python scripts/run_mlb_ml_v3_validation_report.py
+          python - <<'PY'
+          import json
+          validation = json.load(open('runtime_reports/mlb_ml_v3_validation_latest.json', encoding='utf-8'))
+          installation = json.load(open('runtime_reports/mlb_ml_installation_1_5_latest.json', encoding='utf-8'))
+          if validation.get('ok') is not True:
+              raise SystemExit('MLB ML v3 validation failed')
+          if installation.get('ok') is not True:
+              raise SystemExit('MLB ML installation validation failed')
+          PY
+
+      - name: Configure AWS credentials
+        if: steps.gate.outputs.run == 'true'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Generate fresh read-only AWS-backed audit
+        if: steps.gate.outputs.run == 'true'
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          INQSI_MLB_ML_AUTO_PROMOTE: 'false'
+          INQSI_MLB_ML_AUDIT_STORE: 'false'
+          INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
+          INQSI_MLB_GREEN_DEPLOYMENT_AT_UTC: '2026-07-13T00:20:03+00:00'
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: python scripts/run_mlb_ml_v3_audit_report.py
+
+      - name: Prove report freshness
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          execution_path = Path('runtime_reports/mlb_ml_v3_audit_execution_latest.json')
+          execution = json.loads(execution_path.read_text(encoding='utf-8'))
+          created = datetime.fromisoformat(str(execution.get('createdAtUtc')).replace('Z', '+00:00')).astimezone(timezone.utc)
+          age_minutes = (datetime.now(timezone.utc) - created).total_seconds() / 60.0
+          summary = execution.get('summary') or {}
+          freshness = {
+              'ok': execution.get('ok') is True and 0 <= age_minutes <= 15,
+              'checkedAtUtc': datetime.now(timezone.utc).isoformat(),
+              'auditCreatedAtUtc': created.isoformat(),
+              'auditAgeMinutes': round(age_minutes, 2),
+              'maximumAllowedAgeMinutes': 15,
+              'reportOk': execution.get('ok'),
+              'completedFinalGames': summary.get('completedFinalGames'),
+              'gradedPredictionCount': summary.get('gradedPredictionCount'),
+              'missingPredictionCount': summary.get('missingPredictionCount'),
+              'rolling24hOfficialAccuracyPct': summary.get('rolling24hOfficialAccuracyPct'),
+              'rolling24hTargetMet': summary.get('rolling24hTargetMet'),
+              'cleanRowCount': (execution.get('mlOptimizationV3') or {}).get('cleanRowCount'),
+          }
+          Path('runtime_reports/mlb_audit_freshness_latest.json').write_text(
+              json.dumps(freshness, indent=2) + '\n', encoding='utf-8'
+          )
+          if freshness['ok'] is not True:
+              raise SystemExit('Fresh MLB audit proof was not produced: ' + json.dumps(freshness))
+          PY
+
+      - name: Publish compact audit proof to main
+        if: steps.gate.outputs.run == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            runtime_reports/mlb_rolling_24h_audit_latest.json \
+            runtime_reports/mlb_ml_v3_audit_execution_latest.json \
+            runtime_reports/mlb_audit_freshness_latest.json \
+            runtime_reports/mlb_ml_v3_validation_latest.json \
+            runtime_reports/mlb_ml_installation_1_5_latest.json
+          if git diff --cached --quiet; then
+            echo "Fresh audit proof is unchanged."
+            exit 0
+          fi
+          git commit -m "Publish fresh MLB rolling audit proof"
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
