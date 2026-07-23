@@ -1,0 +1,75 @@
+name: Inspect MLB Lock Status 36801
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-mlb-lock-status-36801.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Snapshot public MLB lock status read-only
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import urllib.request
+          from pathlib import Path
+
+          url = 'https://7nz8g8unyd.execute-api.us-east-1.amazonaws.com/Prod/v1/mlb/locks/status'
+          request = urllib.request.Request(url, headers={
+              'accept': 'application/json',
+              'user-agent': 'inqsi-read-only-lock-status-snapshot/1.0',
+          })
+          with urllib.request.urlopen(request, timeout=35) as response:
+              payload = json.loads(response.read().decode('utf-8'))
+          rows = [row for row in (payload.get('perGameStatus') or []) if isinstance(row, dict)]
+          statuses = sorted({
+              str(
+                  row.get('lockStatus')
+                  or row.get('officialPredictionStatus')
+                  or ((row.get('perGameCanonicalLock') or {}).get('status'))
+                  or ''
+              ).strip().upper()
+              for row in rows
+          })
+          out = {
+              'ok': payload.get('ok'),
+              'readOnly': True,
+              'httpStatus': response.status,
+              'sport': payload.get('sport'),
+              'slateDateEt': payload.get('slateDateEt'),
+              'gameCount': payload.get('gameCount'),
+              'statusRowCount': len(rows),
+              'uniqueIdentityCount': len({str(row.get('gameId') or row.get('gameIdentity') or '') for row in rows} - {''}),
+              'predictedWinnerCount': sum(row.get('predictedWinner') not in (None, '') for row in rows),
+              'lockedPredictionCount': payload.get('lockedPredictionCount'),
+              'lockedStatusCount': payload.get('lockedStatusCount'),
+              'noPredictionDataCount': payload.get('noPredictionDataCount'),
+              'lockStatusComplete': payload.get('lockStatusComplete'),
+              'canonicalPredictionComplete': payload.get('canonicalPredictionComplete'),
+              'operationalDefect': payload.get('operationalDefect'),
+              'officialScheduleBacked': payload.get('officialScheduleBacked'),
+              'officialScheduleGameCount': payload.get('officialScheduleGameCount'),
+              'officialScheduleAuthorityVersion': payload.get('officialScheduleAuthorityVersion'),
+              'officialScheduleAuthoritativeStartTimes': payload.get('officialScheduleAuthoritativeStartTimes'),
+              'statuses': statuses,
+          }
+          Path('/tmp/mlb-lock-status-36801.json').write_text(
+              json.dumps(out, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(out, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload read-only lock-status evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-lock-status-36801-${{ github.run_id }}
+          path: /tmp/mlb-lock-status-36801.json
+          if-no-files-found: error
