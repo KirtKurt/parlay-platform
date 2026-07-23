@@ -1,6 +1,11 @@
 name: Audit MLB Reversal Size Clusters
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-mlb-reversal-size-clusters.yml'
+      - 'scripts/audit_mlb_reversal_sizes.py'
   push:
     branches: [agent/audit-mlb-reversal-size-clusters-20260723]
     paths:
