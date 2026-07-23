@@ -1,0 +1,62 @@
+name: Read current Tennis picks for 2026-07-23
+
+on:
+  push:
+    branches: [agent/read-tennis-picks-20260723]
+    paths:
+      - ".github/workflows/read-tennis-picks-20260723.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-picks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      API_BASE: https://70n1e5cuda.execute-api.us-east-1.amazonaws.com/prod
+      SLATE_DATE: "2026-07-23"
+    steps:
+      - name: Fetch read-only Tennis prediction records
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            "${API_BASE}/v1/tennis/predictions?date=${SLATE_DATE}" \
+            | tee evidence/predictions.json
+          echo
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            "${API_BASE}/v1/tennis/locks/status?date=${SLATE_DATE}" \
+            | tee evidence/locks.json
+          echo
+          curl --fail --silent --show-error --retry 3 --retry-all-errors \
+            "${API_BASE}/v1/tennis/model/version" \
+            | tee evidence/model-version.json
+          echo
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          predictions = json.loads(Path('evidence/predictions.json').read_text())
+          locks = json.loads(Path('evidence/locks.json').read_text())
+          summary = {
+              'slateDate': '2026-07-23',
+              'predictionCount': int(predictions.get('count') or 0),
+              'promotedCount': int(predictions.get('promotedCount') or 0),
+              'lockedCount': int(locks.get('lockedCount') or 0),
+              'picks': locks.get('picks') or [],
+              'predictions': predictions.get('predictions') or [],
+          }
+          Path('evidence/summary.json').write_text(json.dumps(summary, indent=2, sort_keys=True))
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload read-only evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-picks-2026-07-23-${{ github.run_id }}
+          retention-days: 7
+          if-no-files-found: error
+          path: evidence/
