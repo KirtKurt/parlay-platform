@@ -1,0 +1,33 @@
+name: Export MLB Post-Deploy Workflow 84b1
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/export-postdeploy-workflow-84b1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 84b1d821d76bf9106a0708e84a19888c728c0cf9
+          fetch-depth: 1
+
+      - name: Copy current workflow outside hidden path
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-postdeploy-workflow
+          cp .github/workflows/mlb-post-deploy-fix-verification.yml /tmp/mlb-postdeploy-workflow/
+
+      - name: Upload current workflow
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-postdeploy-workflow-84b1-${{ github.run_id }}
+          path: /tmp/mlb-postdeploy-workflow
+          if-no-files-found: error
