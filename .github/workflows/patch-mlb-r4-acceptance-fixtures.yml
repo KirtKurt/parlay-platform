@@ -9,6 +9,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: patch-mlb-r4-acceptance-fixtures
+  cancel-in-progress: false
+
 jobs:
   patch:
     runs-on: ubuntu-latest
@@ -17,6 +21,7 @@ jobs:
         with:
           ref: agent/reset-mlb-prospective-r4-20260723
           fetch-depth: 0
+          token: ${{ github.token }}
 
       - uses: actions/setup-python@v5
         with:
@@ -44,7 +49,7 @@ jobs:
           path.write_text(text, encoding='utf-8')
           PY
 
-      - name: Run complete production acceptance regression file
+      - name: Run production acceptance and r4 cutover regressions
         env:
           AWS_DEFAULT_REGION: us-east-1
           AWS_REGION: us-east-1
@@ -53,15 +58,16 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
-          python -m pytest -q tests/unit/test_mlb_production_acceptance.py
+          python -m pytest -q \
+            tests/unit/test_mlb_production_acceptance.py \
+            tests/unit/test_mlb_ml_r4_clean_cutover.py
 
       - name: Commit clean durable fixture update
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git config user.email '4189824+github-actions[bot]@users.noreply.github.com'
           git rm .github/workflows/patch-mlb-r4-acceptance-fixtures.yml
           git add tests/unit/test_mlb_production_acceptance.py
           git commit -m 'Update MLB production acceptance fixtures for r4'
-          git pull --rebase --autostash origin agent/reset-mlb-prospective-r4-20260723
           git push origin HEAD:agent/reset-mlb-prospective-r4-20260723
