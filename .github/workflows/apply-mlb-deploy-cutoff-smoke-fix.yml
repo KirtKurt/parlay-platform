@@ -1,8 +1,14 @@
 name: Apply MLB Cutoff-Aware Deploy Smoke
 
-# Retrigger the verified migration against the current main branch.
 on:
   push:
+    paths:
+      - '.github/workflows/apply-mlb-deploy-cutoff-smoke-fix.yml'
+      - 'scripts/apply_mlb_deploy_cutoff_smoke_fix.py'
+      - 'scripts/mlb_deploy_cutoff_smoke_policy.py'
+      - 'tests/unit/test_mlb_deploy_cutoff_smoke_policy.py'
+  pull_request:
+    branches: [main]
     paths:
       - '.github/workflows/apply-mlb-deploy-cutoff-smoke-fix.yml'
       - 'scripts/apply_mlb_deploy_cutoff_smoke_fix.py'
@@ -14,17 +20,19 @@ permissions:
   contents: write
 
 concurrency:
-  group: apply-mlb-cutoff-aware-deploy-smoke-${{ github.ref_name }}
+  group: apply-mlb-cutoff-aware-deploy-smoke-${{ github.head_ref || github.ref_name }}
   cancel-in-progress: true
 
 jobs:
   apply:
-    if: github.ref_name == 'agent/fix-mlb-deploy-historical-smoke'
+    if: >-
+      (github.event_name == 'push' && github.ref_name == 'agent/fix-mlb-deploy-historical-smoke') ||
+      (github.event_name == 'pull_request' && github.head_ref == 'agent/fix-mlb-deploy-historical-smoke')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.head_ref || github.ref_name }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -45,6 +53,7 @@ jobs:
       - name: Commit deploy workflow migration
         run: |
           set -euo pipefail
+          TARGET_BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add .github/workflows/deploy.yml
@@ -52,6 +61,6 @@ jobs:
             echo 'Cutoff-aware MLB deploy smoke is already applied.'
           else
             git commit -m 'Make MLB deploy lifecycle smoke cutoff-aware'
-            git pull --rebase --autostash origin "${GITHUB_REF_NAME}"
-            git push origin "HEAD:${GITHUB_REF_NAME}"
+            git pull --rebase --autostash origin "$TARGET_BRANCH"
+            git push origin "HEAD:$TARGET_BRANCH"
           fi
