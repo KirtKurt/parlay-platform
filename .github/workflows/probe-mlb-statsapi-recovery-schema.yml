@@ -34,7 +34,7 @@ jobs:
               url = BASE + path + '?' + urllib.parse.urlencode(params)
               request = urllib.request.Request(url, headers={
                   'accept': 'application/json',
-                  'user-agent': 'inqsi-mlb-recovery-schema-probe/1.0',
+                  'user-agent': 'inqsi-mlb-recovery-schema-probe/2.0',
               })
               with urllib.request.urlopen(request, timeout=60) as response:
                   return url, json.loads(response.read().decode('utf-8'))
@@ -72,8 +72,9 @@ jobs:
           pitcher = (home.get('probablePitcher') or away.get('probablePitcher') or {})
           pitcher_id = int(pitcher.get('id'))
           game_date = str(selected.get('officialDate') or today.isoformat())
+          season = int(game_date[:4])
           end_date = (date.fromisoformat(game_date) - timedelta(days=1)).isoformat()
-          season_start = date(date.fromisoformat(game_date).year, 3, 1).isoformat()
+          season_start = date(season, 3, 1).isoformat()
           recent_start = (date.fromisoformat(game_date) - timedelta(days=21)).isoformat()
 
           probes = {}
@@ -98,6 +99,18 @@ jobs:
                   f'/v1/people/{pitcher_id}/stats',
                   {'stats': 'byDateRange', 'group': 'pitching', 'startDate': recent_start, 'endDate': end_date},
               ),
+              'team_hitting_game_log': (
+                  f'/v1/teams/{team_id}/stats',
+                  {'stats': 'gameLog', 'group': 'hitting', 'season': season},
+              ),
+              'team_pitching_game_log': (
+                  f'/v1/teams/{team_id}/stats',
+                  {'stats': 'gameLog', 'group': 'pitching', 'season': season},
+              ),
+              'starter_pitching_game_log': (
+                  f'/v1/people/{pitcher_id}/stats',
+                  {'stats': 'gameLog', 'group': 'pitching', 'season': season},
+              ),
               'team_roster': (
                   f'/v1/teams/{team_id}/roster',
                   {'rosterType': 'active', 'date': game_date},
@@ -113,19 +126,23 @@ jobs:
                   url, payload = get(path, params)
                   stats = payload.get('stats') if isinstance(payload, dict) else None
                   first_split = None
+                  split_count = 0
                   if isinstance(stats, list):
                       for block in stats:
                           splits = block.get('splits') if isinstance(block, dict) else None
-                          if splits:
+                          split_count += len(splits or [])
+                          if first_split is None and splits:
                               first_split = splits[0]
-                              break
                   probes[name] = {
                       'ok': True,
                       'url': url,
                       'topLevelKeys': sorted(payload) if isinstance(payload, dict) else [],
                       'statBlockCount': len(stats or []) if isinstance(stats, list) else None,
+                      'splitCount': split_count,
                       'firstSplitKeys': sorted(first_split) if isinstance(first_split, dict) else [],
                       'firstStatKeys': sorted((first_split.get('stat') or {})) if isinstance(first_split, dict) else [],
+                      'firstSplitDate': first_split.get('date') if isinstance(first_split, dict) else None,
+                      'firstSplitGamePk': first_split.get('gamePk') if isinstance(first_split, dict) else None,
                       'rosterCount': len(payload.get('roster') or []) if isinstance(payload, dict) else None,
                       'sampleStat': first_split.get('stat') if isinstance(first_split, dict) else None,
                   }
@@ -142,6 +159,7 @@ jobs:
               'selectedTeamId': team_id,
               'selectedOpponentId': opponent_id,
               'selectedPitcherId': pitcher_id,
+              'season': season,
               'seasonStart': season_start,
               'statsEndDate': end_date,
               'recentStart': recent_start,
@@ -153,6 +171,11 @@ jobs:
               'ok': out['ok'],
               'selectedGamePk': out['selectedGamePk'],
               'probeStatus': {name: row.get('ok') for name, row in probes.items()},
+              'gameLogSplitCounts': {
+                  name: row.get('splitCount')
+                  for name, row in probes.items()
+                  if 'game_log' in name
+              },
           }, indent=2))
           if not out['ok']:
               raise SystemExit('One or more official statistics probes failed')
