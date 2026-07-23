@@ -1,0 +1,156 @@
+name: Page current Polymarket Tennis match markets
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/probe-polymarket-tennis-match-pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Page all open Tennis events and extract match moneylines
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet requests
+          mkdir -p evidence
+          python - <<'PY'
+          from __future__ import annotations
+
+          import ast
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any
+
+          import requests
+
+          s=requests.Session(); s.headers['user-agent']='tennis-match-pagination-probe/1.0'
+          base='https://gamma-api.polymarket.com/events'
+          pages=[]; all_events=[]
+          for page in range(30):
+              offset=page*100
+              r=s.get(base,params={
+                  'tag_id':'864','related_tags':'true','active':'true','closed':'false',
+                  'limit':'100','offset':str(offset)
+              },timeout=45)
+              try:data=r.json()
+              except Exception:data=None
+              events=data if isinstance(data,list) else ((data or {}).get('events') if isinstance(data,dict) else [])
+              events=events if isinstance(events,list) else []
+              pages.append({'offset':offset,'status':r.status_code,'count':len(events),'url':r.url})
+              if r.status_code != 200:
+                  break
+              all_events.extend(x for x in events if isinstance(x,dict))
+              if len(events)<100:
+                  break
+
+          def parsed_list(value:Any):
+              if isinstance(value,list):return value
+              if isinstance(value,str):
+                  for parser in (json.loads,ast.literal_eval):
+                      try:
+                          v=parser(value)
+                          if isinstance(v,list):return v
+                      except Exception:pass
+              return []
+
+          def parse_dt(value):
+              if not value:return None
+              try:return datetime.fromisoformat(str(value).replace('Z','+00:00'))
+              except Exception:return None
+
+          start=datetime(2026,7,22,tzinfo=timezone.utc)
+          end=datetime(2026,7,28,tzinfo=timezone.utc)
+          match_markets=[]
+          for event in all_events:
+              for market in event.get('markets') or []:
+                  outcomes=[str(x) for x in parsed_list(market.get('outcomes'))]
+                  prices=parsed_list(market.get('outcomePrices'))
+                  game_start=parse_dt(market.get('gameStartTime') or event.get('eventDate') or market.get('endDate'))
+                  market_type=str(market.get('sportsMarketType') or '').lower()
+                  question=str(market.get('question') or event.get('title') or '')
+                  looks_like_match=(
+                      len(outcomes)==2
+                      and {x.lower() for x in outcomes}!={'yes','no'}
+                      and (' vs ' in question.lower() or ' v ' in question.lower())
+                  )
+                  in_window=bool(game_start and start<=game_start<end)
+                  if not (looks_like_match and (in_window or market_type=='moneyline')):
+                      continue
+                  match_markets.append({
+                      'eventId':str(event.get('id') or ''),
+                      'eventTitle':event.get('title'),
+                      'eventDate':event.get('eventDate'),
+                      'marketId':str(market.get('id') or ''),
+                      'question':market.get('question'),
+                      'slug':market.get('slug'),
+                      'marketType':market.get('sportsMarketType'),
+                      'gameStartTime':market.get('gameStartTime'),
+                      'startDate':market.get('startDate'),
+                      'endDate':market.get('endDate'),
+                      'active':market.get('active'),
+                      'closed':market.get('closed'),
+                      'acceptingOrders':market.get('acceptingOrders'),
+                      'outcomes':outcomes,
+                      'outcomePrices':prices,
+                      'clobTokenIds':[str(x) for x in parsed_list(market.get('clobTokenIds'))],
+                      'bestBid':market.get('bestBid'),
+                      'bestAsk':market.get('bestAsk'),
+                      'lastTradePrice':market.get('lastTradePrice'),
+                      'liquidity':market.get('liquidityNum') or market.get('liquidity'),
+                      'volume':market.get('volumeNum') or market.get('volume'),
+                      'inTargetWindow':in_window,
+                  })
+
+          # Retrieve public order books only for target-window match markets.
+          for row in match_markets:
+              row['books']=[]
+              if not row['inTargetWindow']:
+                  continue
+              for token in row['clobTokenIds'][:2]:
+                  r=s.get('https://clob.polymarket.com/book',params={'token_id':token},timeout=30)
+                  try:data=r.json()
+                  except Exception:data=None
+                  bids=data.get('bids',[]) if isinstance(data,dict) else []
+                  asks=data.get('asks',[]) if isinstance(data,dict) else []
+                  row['books'].append({
+                      'tokenId':token,'status':r.status_code,
+                      'bestBid':bids[0] if bids else None,
+                      'bestAsk':asks[0] if asks else None,
+                      'bidCount':len(bids),'askCount':len(asks),
+                  })
+
+          target=[x for x in match_markets if x['inTargetWindow']]
+          report={
+              'checkedAtUtc':datetime.now(timezone.utc).isoformat(),
+              'pages':pages,
+              'eventCount':len(all_events),
+              'matchMarketCount':len(match_markets),
+              'targetWindowMatchMarketCount':len(target),
+              'targetWindowOpenOrderCount':sum(x.get('acceptingOrders') is True for x in target),
+              'matchMarkets':match_markets,
+          }
+          Path('evidence/polymarket-tennis-match-pages.json').write_text(json.dumps(report,indent=2,sort_keys=True))
+          print(json.dumps({
+              'checkedAtUtc':report['checkedAtUtc'],'pages':pages,
+              'eventCount':report['eventCount'],'matchMarketCount':report['matchMarketCount'],
+              'targetWindowMatchMarketCount':report['targetWindowMatchMarketCount'],
+              'targetWindowOpenOrderCount':report['targetWindowOpenOrderCount'],
+              'targetWindowSample':target[:30],
+          },indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: polymarket-tennis-match-pages-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/
