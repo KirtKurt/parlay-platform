@@ -1,0 +1,75 @@
+name: Observe exact Tennis V2.4 AWS deployment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/observe-tennis-v2-4.yml"
+      - ".github/workflows/deploy-tennis-v2-4.yml"
+      - "tennis_release_v2_4/**"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      TARGET_SHA: 08e3dd031a89193e73d2cb222f58fced91bc2e7d
+      TARGET_PATH: .github/workflows/deploy-tennis-v2-4.yml
+      TARGET_BRANCH: agent/tennis-polymarket-mlb-parity-v2-4
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Observe exact deployment and collect evidence
+        id: observe
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p observation/deployment-artifacts
+          deadline=$((SECONDS + 4500)); run_id=""; conclusion=""
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            gh api --method GET "/repos/${GITHUB_REPOSITORY}/actions/runs" \
+              -f branch="$TARGET_BRANCH" -f event=push -f per_page=100 > observation/runs.json
+            run_id=$(python - <<'PY'
+          import json,os
+          rows=json.load(open('observation/runs.json')).get('workflow_runs',[])
+          hits=[r for r in rows if r.get('head_sha')==os.environ['TARGET_SHA'] and r.get('path')==os.environ['TARGET_PATH']]
+          print(hits[0]['id'] if hits else '')
+          PY
+            )
+            test -z "$run_id" || break
+            sleep 10
+          done
+          test -n "$run_id" || { echo "conclusion=not_found" >> "$GITHUB_OUTPUT"; exit 0; }
+          echo "$run_id" > observation/deployment-run-id.txt
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" > observation/deployment-run.json
+            read -r status conclusion < <(python - <<'PY'
+          import json
+          row=json.load(open('observation/deployment-run.json'))
+          print(row.get('status',''),row.get('conclusion') or '')
+          PY
+            )
+            echo "deployment run ${run_id}: ${status} ${conclusion:-pending}"
+            test "$status" != completed || break
+            sleep 15
+          done
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs" > observation/deployment-jobs.json || true
+          gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" > observation/deployment-artifacts.json || true
+          gh run download "$run_id" --dir observation/deployment-artifacts || true
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "conclusion=${conclusion:-incomplete}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: observed-tennis-v2-4-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          path: observation/
+
+      - name: Require exact deployment success
+        if: always()
+        run: test "${{ steps.observe.outputs.conclusion }}" = success
