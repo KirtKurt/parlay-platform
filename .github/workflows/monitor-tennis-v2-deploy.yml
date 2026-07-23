@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 65
     env:
       TARGET_SHA: df188ebe3d93c91fc7db10ada70ddefb6a0d55d1
-      TARGET_WORKFLOW: deploy-tennis-v2.yml
+      TARGET_PATH: .github/workflows/deploy-tennis-v2.yml
       TARGET_BRANCH: agent/tennis-mlb-exact-parity-v2
       GH_TOKEN: ${{ github.token }}
     steps:
@@ -29,12 +29,12 @@ jobs:
           set -euo pipefail
           deadline=$((SECONDS + 3600))
           while [ "$SECONDS" -lt "$deadline" ]; do
-            gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/runs" \
-              -f branch="$TARGET_BRANCH" -f event=push -f per_page=20 > /tmp/runs.json
+            gh api --method GET "/repos/${GITHUB_REPOSITORY}/actions/runs" \
+              -f branch="$TARGET_BRANCH" -f event=push -f per_page=100 > /tmp/runs.json
             python - <<'PY' > /tmp/selected.json
           import json,os
           rows=json.load(open('/tmp/runs.json')).get('workflow_runs',[])
-          hit=next((r for r in rows if r.get('head_sha')==os.environ['TARGET_SHA']),None)
+          hit=next((r for r in rows if r.get('head_sha')==os.environ['TARGET_SHA'] and r.get('path')==os.environ['TARGET_PATH']),None)
           print(json.dumps(hit or {},sort_keys=True))
           PY
             status=$(python -c "import json; print(json.load(open('/tmp/selected.json')).get('status','missing'))")
