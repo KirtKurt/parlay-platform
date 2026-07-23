@@ -1,0 +1,61 @@
+name: Observe MLB Deploy b8ee1012
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/observe-mlb-deploy-b8ee1012.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: List exact-head deployment runs
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: 'b8ee1012a0290f95e1ef3df4d38b864d93c21e1a'
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-deploy-observer
+          gh api \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$TARGET_SHA&per_page=100" \
+            > /tmp/mlb-deploy-observer/runs.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('/tmp/mlb-deploy-observer/runs.json').read_text())
+          rows = [
+              {
+                  'id': row.get('id'),
+                  'name': row.get('name'),
+                  'event': row.get('event'),
+                  'status': row.get('status'),
+                  'conclusion': row.get('conclusion'),
+                  'head_sha': row.get('head_sha'),
+                  'head_branch': row.get('head_branch'),
+                  'run_number': row.get('run_number'),
+                  'html_url': row.get('html_url'),
+                  'created_at': row.get('created_at'),
+                  'updated_at': row.get('updated_at'),
+              }
+              for row in data.get('workflow_runs') or []
+          ]
+          Path('/tmp/mlb-deploy-observer/summary.json').write_text(
+              json.dumps({'targetSha': rows[0]['head_sha'] if rows else None, 'runs': rows}, indent=2) + '\n'
+          )
+          print(json.dumps(rows, indent=2))
+          PY
+
+      - name: Upload exact-head run list
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-deploy-observer-${{ github.run_id }}
+          path: /tmp/mlb-deploy-observer/
+          if-no-files-found: error

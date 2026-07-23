@@ -1,0 +1,239 @@
+name: Diagnose MLB Trainer Function Error
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-trainer-function-error.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install diagnostic runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Read recent trainer errors from CloudWatch
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-trainer-diagnostic
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          import boto3
+
+          region = os.environ['AWS_REGION']
+          cfn = boto3.client('cloudformation', region_name=region)
+          logs = boto3.client('logs', region_name=region)
+          lamb = boto3.client('lambda', region_name=region)
+          resource = cfn.describe_stack_resource(
+              StackName='parlay-platform-dev',
+              LogicalResourceId='MLBMLTrainingFunction',
+          )['StackResourceDetail']
+          function_name = resource['PhysicalResourceId']
+          config = lamb.get_function_configuration(FunctionName=function_name)
+          group = f'/aws/lambda/{function_name}'
+          now = datetime.now(timezone.utc)
+          start = now - timedelta(hours=2)
+
+          events = []
+          token = None
+          while True:
+              args = {
+                  'logGroupName': group,
+                  'startTime': int(start.timestamp() * 1000),
+                  'endTime': int(now.timestamp() * 1000),
+                  'interleaved': True,
+                  'limit': 10000,
+              }
+              if token:
+                  args['nextToken'] = token
+              response = logs.filter_log_events(**args)
+              events.extend(response.get('events') or [])
+              nxt = response.get('nextToken')
+              if not nxt or nxt == token:
+                  break
+              token = nxt
+
+          pattern = re.compile(
+              r'(Traceback|\[ERROR\]|Task timed out|TrainingContractError|ExecutionLease|ConditionalState|Runtime\.|Exception|error|failed|missing|required|mismatch|START RequestId|END RequestId|REPORT RequestId)',
+              re.I,
+          )
+          selected = []
+          for event in events:
+              message = str(event.get('message') or '').strip()
+              if not pattern.search(message):
+                  continue
+              message = re.sub(r'AKIA[0-9A-Z]{16}', '<redacted-access-key>', message)
+              message = re.sub(r'(?i)(secret|token|password|authorization|api.?key)\s*[:=]\s*[^,}\s]+', r'\1=<redacted>', message)
+              selected.append({
+                  'timestampUtc': datetime.fromtimestamp(int(event.get('timestamp') or 0) / 1000, tz=timezone.utc).isoformat(),
+                  'message': message[:12000],
+              })
+
+          report = {
+              'ok': True,
+              'readOnly': True,
+              'productionWritesPerformed': False,
+              'functionName': function_name,
+              'handler': config.get('Handler'),
+              'runtime': config.get('Runtime'),
+              'timeoutSeconds': config.get('Timeout'),
+              'memorySizeMb': config.get('MemorySize'),
+              'lastModified': config.get('LastModified'),
+              'logGroup': group,
+              'windowStartUtc': start.isoformat(),
+              'windowEndUtc': now.isoformat(),
+              'matchedEventCount': len(selected),
+              'events': selected[-250:],
+              'secretExposed': False,
+          }
+          Path('/tmp/mlb-trainer-diagnostic/mlb_trainer_function_error.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(report['events'][-40:], indent=2))
+          PY
+
+      - name: Read persisted trainer status and canonical continuity evidence
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from decimal import Decimal
+          from pathlib import Path
+
+          import boto3
+          from boto3.dynamodb.conditions import Key
+
+          def plain(value):
+              if isinstance(value, Decimal):
+                  return int(value) if value == value.to_integral_value() else float(value)
+              if isinstance(value, dict):
+                  return {str(k): plain(v) for k, v in value.items()}
+              if isinstance(value, list):
+                  return [plain(v) for v in value]
+              return value
+
+          region = os.environ['AWS_REGION']
+          cfn = boto3.client('cloudformation', region_name=region)
+          lamb = boto3.client('lambda', region_name=region)
+          resource = cfn.describe_stack_resource(
+              StackName='parlay-platform-dev',
+              LogicalResourceId='MLBMLTrainingFunction',
+          )['StackResourceDetail']
+          function_name = resource['PhysicalResourceId']
+          response = lamb.invoke(
+              FunctionName=function_name,
+              InvocationType='RequestResponse',
+              Payload=json.dumps({'sport': 'mlb', 'mode': 'status', 'run': 'read_only_continuity_diagnostic'}).encode('utf-8'),
+          )
+          raw = response['Payload'].read()
+          envelope = json.loads(raw.decode('utf-8')) if raw else {}
+          body = envelope
+          if isinstance(envelope, dict) and isinstance(envelope.get('body'), str):
+              body = json.loads(envelope['body'])
+
+          table = boto3.resource('dynamodb', region_name=region).Table('parlay_platform_snapshots')
+          experiment_id = str(body.get('experimentId') or 'mlb-v2-2026-07-22-future-prospective-r3')
+          pk = f'MLB_ML_EXPERIMENT#V2#{experiment_id}'
+          items = []
+          args = {
+              'KeyConditionExpression': Key('PK').eq(pk) & Key('SK').begins_with('STATUS#RUN#'),
+              'ConsistentRead': True,
+          }
+          while True:
+              page = table.query(**args)
+              items.extend(page.get('Items') or [])
+              last = page.get('LastEvaluatedKey')
+              if not last:
+                  break
+              args['ExclusiveStartKey'] = last
+          runs = []
+          for item in items:
+              data = plain(item.get('data') or {})
+              if not isinstance(data, dict):
+                  continue
+              runs.append({
+                  'SK': str(item.get('SK') or ''),
+                  'createdAtUtc': data.get('createdAtUtc'),
+                  'runId': data.get('runId'),
+                  'executionMode': data.get('executionMode'),
+                  'ok': data.get('ok'),
+                  'status': data.get('status'),
+                  'acceptedRowCount': data.get('acceptedRowCount'),
+                  'rejectedRowCount': data.get('rejectedRowCount'),
+                  'rejectionReasonCounts': data.get('rejectionReasonCounts'),
+                  'partitionCounts': data.get('partitionCounts'),
+                  'canonicalSlateContinuity': data.get('canonicalSlateContinuity'),
+                  'failure': data.get('failure'),
+                  'deploymentIdentity': data.get('deploymentIdentity'),
+              })
+          runs.sort(key=lambda row: str(row.get('createdAtUtc') or ''))
+          recent_runs = runs[-25:]
+
+          report = {
+              'ok': True,
+              'readOnly': True,
+              'productionWritesPerformed': False,
+              'functionError': response.get('FunctionError'),
+              'statusCode': response.get('StatusCode'),
+              'executedVersion': response.get('ExecutedVersion'),
+              'status': body,
+              'immutableRecentRunStatuses': recent_runs,
+              'secretExposed': False,
+          }
+          Path('/tmp/mlb-trainer-diagnostic/mlb_trainer_status.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          blocked = [row for row in recent_runs if row.get('status') == 'CANONICAL_SLATE_CONTINUITY_BLOCKED']
+          print(json.dumps({
+              'topLevelOk': body.get('ok'),
+              'trainingHealthOk': (body.get('trainingHealth') or {}).get('ok'),
+              'blockedRunCount': len(blocked),
+              'latestBlockedRun': blocked[-1] if blocked else None,
+              'recentRunSummary': [
+                  {
+                      'createdAtUtc': row.get('createdAtUtc'),
+                      'runId': row.get('runId'),
+                      'status': row.get('status'),
+                      'ok': row.get('ok'),
+                  }
+                  for row in recent_runs
+              ],
+          }, indent=2, default=str))
+          PY
+
+      - name: Upload trainer diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-trainer-function-error-${{ github.run_id }}
+          path: /tmp/mlb-trainer-diagnostic/
+          if-no-files-found: error

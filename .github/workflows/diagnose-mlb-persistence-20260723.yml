@@ -1,0 +1,278 @@
+name: Diagnose MLB Persistence 2026-07-23
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/diagnose-mlb-persistence-20260723.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install read-only diagnostic runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Extract exact scheduled persistence rejection
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-persistence-diagnostic
+          python - <<'PY'
+          import json
+          import os
+          import re
+          from datetime import datetime, timedelta, timezone
+          from pathlib import Path
+
+          import boto3
+
+          region = os.environ['AWS_REGION']
+          cfn = boto3.client('cloudformation', region_name=region)
+          logs = boto3.client('logs', region_name=region)
+          resource = cfn.describe_stack_resource(
+              StackName='parlay-platform-dev',
+              LogicalResourceId='MLBAuditedPullFunction',
+          )['StackResourceDetail']
+          function_name = resource['PhysicalResourceId']
+          log_group = f'/aws/lambda/{function_name}'
+          now = datetime.now(timezone.utc)
+          start = now - timedelta(hours=3)
+
+          events = []
+          token = None
+          while True:
+              kwargs = {
+                  'logGroupName': log_group,
+                  'startTime': int(start.timestamp() * 1000),
+                  'endTime': int(now.timestamp() * 1000),
+                  'interleaved': True,
+                  'limit': 10000,
+              }
+              if token:
+                  kwargs['nextToken'] = token
+              response = logs.filter_log_events(**kwargs)
+              events.extend(response.get('events') or [])
+              nxt = response.get('nextToken')
+              if not nxt or nxt == token:
+                  break
+              token = nxt
+
+          secret_key = re.compile(r'(secret|token|password|authorization|api.?key|credential)', re.I)
+          def redact(value):
+              if isinstance(value, dict):
+                  return {
+                      str(k): ('<redacted>' if secret_key.search(str(k)) else redact(v))
+                      for k, v in value.items()
+                  }
+              if isinstance(value, list):
+                  return [redact(v) for v in value]
+              return value
+
+          decoder = json.JSONDecoder()
+          def extract_values(raw, key, limit=20):
+              needle = json.dumps(key) + ':'
+              out = []
+              cursor = 0
+              while len(out) < limit:
+                  index = raw.find(needle, cursor)
+                  if index < 0:
+                      break
+                  value_start = index + len(needle)
+                  while value_start < len(raw) and raw[value_start].isspace():
+                      value_start += 1
+                  try:
+                      value, end = decoder.raw_decode(raw, value_start)
+                      out.append(redact(value))
+                      cursor = end
+                  except Exception:
+                      cursor = value_start + 1
+              return out
+
+          marker = 'MLB_SCHEDULED_PULL_FAILED:'
+          failures = []
+          tracebacks = []
+          for event in events:
+              message = str(event.get('message') or '')
+              stamp = datetime.fromtimestamp(int(event.get('timestamp') or 0) / 1000, tz=timezone.utc).isoformat()
+              if marker in message:
+                  raw = message.split(marker, 1)[1].strip()
+                  extracted = {
+                      key: extract_values(raw, key)
+                      for key in (
+                          'candidatePersistenceFailures',
+                          'providerScheduleManifestComplete',
+                          'preLockStorageCandidateCount',
+                          'preLockStoredCount',
+                          'preLockStorageComplete',
+                          'preLockStorageErrors',
+                          'preLockStorageDispositionCount',
+                          'preLockStorageDispositionComplete',
+                          'displayStatusCoverageComplete',
+                          'lifecycleCoverageComplete',
+                          'authorityErrors',
+                          'preLockStoreError',
+                          'officialPredictionStatus',
+                          'signalPolicyV13',
+                      )
+                  }
+                  try:
+                      payload, _ = decoder.raw_decode(raw)
+                  except Exception as exc:
+                      failures.append({
+                          'timestampUtc': stamp,
+                          'parseError': str(exc),
+                          'rawLength': len(raw),
+                          'extracted': extracted,
+                          'messageHead': raw[:12000],
+                          'messageTail': raw[-12000:],
+                      })
+                      continue
+                  failures.append(redact({
+                      'timestampUtc': stamp,
+                      'candidatePersistenceFailures': payload.get('candidatePersistenceFailures'),
+                      'providerScheduleManifestComplete': payload.get('providerScheduleManifestComplete'),
+                      'providerScheduleManifests': payload.get('provider_schedule_manifests'),
+                      'winnerResults': payload.get('game_winner_predictions'),
+                      'mlRuntimeInstallation': payload.get('mlRuntimeInstallation'),
+                      'extracted': extracted,
+                  }))
+              if 'Traceback (most recent call last)' in message or message.startswith('[ERROR]'):
+                  tracebacks.append({'timestampUtc': stamp, 'messageTail': message[-24000:]})
+
+          failures.sort(key=lambda row: row.get('timestampUtc') or '')
+          tracebacks.sort(key=lambda row: row.get('timestampUtc') or '')
+          report = {
+              'ok': bool(failures),
+              'readOnly': True,
+              'productionWritesPerformed': False,
+              'functionName': function_name,
+              'logGroup': log_group,
+              'windowStartUtc': start.isoformat(),
+              'windowEndUtc': now.isoformat(),
+              'failureCount': len(failures),
+              'tracebackCount': len(tracebacks),
+              'latestFailures': failures[-4:],
+              'latestTracebacks': tracebacks[-4:],
+              'secretExposed': False,
+          }
+          Path('/tmp/mlb-persistence-diagnostic/mlb_persistence_diagnostic.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          latest = report['latestFailures'][-1] if report['latestFailures'] else {}
+          print(json.dumps({
+              'failureCount': report['failureCount'],
+              'tracebackCount': report['tracebackCount'],
+              'extracted': latest.get('extracted'),
+          }, indent=2, default=str))
+          if not failures:
+              raise SystemExit('No scheduled failure payload found in the last three hours')
+          PY
+
+      - name: Reproduce final prelock validation without writes
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          SIGNAL_LEDGER_TABLE: parlay_platform_signal_ledger
+          PREDICTIONS_TABLE: parlay_platform_predictions
+          OUTCOMES_TABLE: parlay_platform_outcomes
+          INQSI_MLB_ML_AUTO_PROMOTE: 'false'
+          INQSI_MLB_ALLOW_LOCAL_FILE_CHAMPION: 'false'
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from datetime import datetime
+          from pathlib import Path
+          from zoneinfo import ZoneInfo
+
+          import mlb_ml_runtime_install_v3
+          status = mlb_ml_runtime_install_v3.install()
+          if status.get('ok') is not True:
+              raise SystemExit('Runtime installation failed: ' + json.dumps(status, default=str))
+
+          import mlb_game_winner_engine as engine
+          import mlb_prediction_probability_contract_v1 as probability_contract
+
+          slate = datetime.now(ZoneInfo('America/New_York')).date().isoformat()
+          result = engine.predict_all(slate, store=False, limit=500)
+          rows = []
+          for row in result.get('predictions') or []:
+              marker_error = None
+              markers = None
+              try:
+                  markers = engine._public_prelock_markers(row)
+              except Exception as exc:
+                  marker_error = f'{type(exc).__name__}:{exc}'
+              rows.append({
+                  'gameId': row.get('gameId'),
+                  'gameIdentity': row.get('gameIdentity'),
+                  'commenceTime': row.get('commenceTime'),
+                  'predictedWinner': row.get('predictedWinner'),
+                  'officialPredictionStatus': row.get('officialPredictionStatus'),
+                  'lockedPrediction': row.get('lockedPrediction'),
+                  'officialPrediction': row.get('officialPrediction'),
+                  'displayPrediction': row.get('displayPrediction'),
+                  'displayGroup': row.get('displayGroup'),
+                  'tags': row.get('tags'),
+                  'perGameCanonicalLock': row.get('perGameCanonicalLock'),
+                  'signalPolicyV13': row.get('signalPolicyV13'),
+                  'probabilityContractVersion': row.get('probabilityContractVersion'),
+                  'probabilityContractErrors': probability_contract.validation_errors(row),
+                  'publicPrelockMarkers': markers,
+                  'publicPrelockMarkerError': marker_error,
+              })
+          report = {
+              'ok': result.get('ok') is True,
+              'readOnly': True,
+              'storeRequested': False,
+              'slateDateEt': slate,
+              'runtimeStatus': status,
+              'gameCount': result.get('gameCount'),
+              'predictionCount': result.get('count'),
+              'allGamesPredicted': result.get('allGamesPredicted'),
+              'displayStatusCoverageComplete': result.get('displayStatusCoverageComplete'),
+              'lifecycleCoverageComplete': result.get('lifecycleCoverageComplete'),
+              'rows': rows,
+          }
+          Path('/tmp/mlb-persistence-diagnostic/prelock_validation.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          print(json.dumps({
+              'gameCount': report['gameCount'],
+              'predictionCount': report['predictionCount'],
+              'markerErrors': [row['publicPrelockMarkerError'] for row in rows],
+              'contractErrors': [row['probabilityContractErrors'] for row in rows],
+          }, indent=2, default=str))
+          PY
+
+      - name: Upload persistence diagnostic
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-persistence-diagnostic-${{ github.run_id }}
+          path: /tmp/mlb-persistence-diagnostic/
+          if-no-files-found: error

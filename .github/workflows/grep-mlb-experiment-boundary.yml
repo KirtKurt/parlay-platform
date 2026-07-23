@@ -1,0 +1,52 @@
+name: Inspect MLB R4 Trainer Test Dates
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/grep-mlb-experiment-boundary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  grep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/reset-mlb-prospective-r4-20260723
+          fetch-depth: 1
+
+      - name: Print remaining cutoff-dependent trainer test context
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-experiment-boundary
+          python - <<'PY' | tee /tmp/mlb-experiment-boundary/references.txt
+          from pathlib import Path
+          path = Path('tests/unit/test_mlb_ml_aws_training_v1.py')
+          lines = path.read_text(encoding='utf-8').splitlines()
+          needles = (
+              'test_r3_manifest_cannot_be_initialized_at_or_after_cutoff',
+              'requested == ["2026-07-22"]',
+              'after_midnight_et',
+              '2026-07-22T04:00:00+00:00',
+          )
+          positions = sorted({
+              index
+              for index, line in enumerate(lines)
+              if any(needle in line for needle in needles)
+          })
+          selected = set()
+          for index in positions:
+              selected.update(range(max(0, index - 20), min(len(lines), index + 35)))
+          for index in sorted(selected):
+              print(f'{index + 1}: {lines[index]}')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-r4-trainer-test-dates-${{ github.run_id }}
+          path: /tmp/mlb-experiment-boundary/
+          if-no-files-found: error
