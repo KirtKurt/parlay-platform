@@ -63,7 +63,7 @@ def replace_fixture_required(text: str, old: str, new: str, *, name: str) -> str
     if new in text and old not in text:
         return text
     if old not in text:
-        raise SystemExit(f"expected r4 audit fixture missing ({name}): {old}")
+        raise SystemExit(f"expected r4 fixture missing ({name}): {old}")
     return text.replace(old, new)
 
 
@@ -133,6 +133,76 @@ def advance_audit_report_fixtures() -> bool:
     return False
 
 
+def advance_trainer_test_fixtures() -> bool:
+    """Move only boundary-sensitive trainer fixtures from r3 to r4.
+
+    Generic model, partition and selection tests keep their original dates.
+    The activation guard moves to the new exact cutoff, and the continuity test
+    now models an incomplete July 24 slate observed after midnight ET July 25.
+    """
+
+    path = Path("tests/unit/test_mlb_ml_aws_training_v1.py")
+    original = path.read_text(encoding="utf-8")
+    text = original
+    replacements = (
+        (
+            "def test_r2_cutoff_rejects_july20_and_every_pre_boundary_lock():",
+            "def test_r4_cutoff_rejects_july20_and_every_pre_boundary_lock():",
+            "cutoff test name",
+        ),
+        (
+            "def test_new_r3_manifest_records_one_digest_bound_release_activation() -> None:",
+            "def test_new_r4_manifest_records_one_digest_bound_release_activation() -> None:",
+            "manifest activation test name",
+        ),
+        (
+            "datetime(2026, 7, 22, 4, 0, tzinfo=timezone.utc)",
+            "datetime(2026, 7, 24, 4, 0, tzinfo=timezone.utc)",
+            "activation at cutoff",
+        ),
+        (
+            "datetime(2026, 7, 22, 4, 0, 0, 1, tzinfo=timezone.utc)",
+            "datetime(2026, 7, 24, 4, 0, 0, 1, tzinfo=timezone.utc)",
+            "activation after cutoff",
+        ),
+        (
+            "def test_r3_manifest_cannot_be_initialized_at_or_after_cutoff(",
+            "def test_r4_manifest_cannot_be_initialized_at_or_after_cutoff(",
+            "cutoff rejection test name",
+        ),
+        (
+            "def test_markerless_pre_cutoff_r3_manifest_is_activated_once_with_cas() -> None:",
+            "def test_markerless_pre_cutoff_r4_manifest_is_activated_once_with_cas() -> None:",
+            "markerless activation test name",
+        ),
+    )
+    for old, new, name in replacements:
+        text = replace_fixture_required(text, old, new, name=name)
+
+    start_marker = (
+        "def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest(monkeypatch):"
+    )
+    start = text.find(start_marker)
+    if start < 0:
+        raise SystemExit("partial prior-slate trainer test missing")
+    next_test = text.find("\ndef ", start + len(start_marker))
+    if next_test < 0:
+        next_test = len(text)
+    block = text[start:next_test]
+    updated_block = block.replace(
+        "after_midnight_et = datetime(2026, 7, 23, 4, 30, tzinfo=timezone.utc)",
+        "after_midnight_et = datetime(2026, 7, 25, 4, 30, tzinfo=timezone.utc)",
+    ).replace("2026-07-22", "2026-07-24")
+    if updated_block == block:
+        raise SystemExit("partial prior-slate trainer fixture did not move to r4")
+    text = text[:start] + updated_block + text[next_test:]
+
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+        return True
+    return False
+
+
 def main() -> int:
     changed: set[str] = set()
     for raw in ID_PATHS:
@@ -175,6 +245,8 @@ def main() -> int:
 
     if advance_audit_report_fixtures():
         changed.add("tests/unit/test_run_mlb_ml_v3_audit_report.py")
+    if advance_trainer_test_fixtures():
+        changed.add("tests/unit/test_mlb_ml_aws_training_v1.py")
 
     docs = Path("docs/MLB_ML_PRODUCTION_MILESTONES.md")
     text = docs.read_text(encoding="utf-8")
