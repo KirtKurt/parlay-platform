@@ -20,6 +20,7 @@ concurrency:
 env:
   AWS_REGION: us-east-1
   AWS_DEFAULT_REGION: us-east-1
+  SAM_CLI_TELEMETRY: "0"
   TENNIS_STACK_NAME: parlay-platform-tennis-ml-prod
   MLB_STACK_NAME: parlay-platform-dev
   BASELINE_ARTIFACT_ID: "8575790142"
@@ -27,7 +28,7 @@ env:
   OVERLAY_SHA256: 325b77b554b5b3835176d8c93d930d8780c4093fb6ba3304f78f4c4770f1b17c
   OVERLAY_BASE64_SHA256: 2f334bc8cbe58257818fe40035c3c54852eef1eef9eddddcd5eb44972be063cf
   OVERLAY_BASE64_BYTES: "69192"
-  SOURCE_TREE_SHA256: 885f7028b4d45755abfd72190b39e4c398900d808d21c0371db6308abdabe7cd
+  SOURCE_TREE_SHA256: dba15786c8d459c440c717c9a81b20e7622f7e71e7376db50e236f0c8dc143cb
 
 jobs:
   deploy:
@@ -94,6 +95,16 @@ jobs:
           find tennis_predictive_platform_v2_4 -type d -name __pycache__ -prune -exec rm -rf {} +
           find tennis_predictive_platform_v2_4 -type d -name .pytest_cache -prune -exec rm -rf {} +
           find tennis_predictive_platform_v2_4 -type f -name '*.pyc' -delete
+
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('tennis_predictive_platform_v2_4/template.yaml')
+          text = path.read_text()
+          dead = 'Conditions:\n  HasApiTennisKey: !Not [!Equals [!Ref TennisApiTennisKey, ""]]\n\n'
+          if text.count(dead) != 1:
+              raise SystemExit('expected exactly one unused HasApiTennisKey condition')
+          path.write_text(text.replace(dead, ''))
+          PY
 
           actual=$(python - <<'PY'
           from pathlib import Path
