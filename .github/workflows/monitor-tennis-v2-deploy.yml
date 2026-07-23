@@ -1,0 +1,63 @@
+name: Monitor Tennis V2 deployment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/monitor-tennis-v2-deploy.yml"
+      - ".github/workflows/deploy-tennis-v2.yml"
+      - "tennis_release_v2/**"
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    env:
+      TARGET_SHA: df188ebe3d93c91fc7db10ada70ddefb6a0d55d1
+      TARGET_WORKFLOW: deploy-tennis-v2.yml
+      TARGET_BRANCH: agent/tennis-mlb-exact-parity-v2
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Wait for exact Tennis deployment run
+        shell: bash
+        run: |
+          set -euo pipefail
+          deadline=$((SECONDS + 3600))
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/workflows/${TARGET_WORKFLOW}/runs" \
+              -f branch="$TARGET_BRANCH" -f event=push -f per_page=20 > /tmp/runs.json
+            python - <<'PY' > /tmp/selected.json
+          import json,os
+          rows=json.load(open('/tmp/runs.json')).get('workflow_runs',[])
+          hit=next((r for r in rows if r.get('head_sha')==os.environ['TARGET_SHA']),None)
+          print(json.dumps(hit or {},sort_keys=True))
+          PY
+            status=$(python -c "import json; print(json.load(open('/tmp/selected.json')).get('status','missing'))")
+            conclusion=$(python -c "import json; print(json.load(open('/tmp/selected.json')).get('conclusion') or '')")
+            run_id=$(python -c "import json; print(json.load(open('/tmp/selected.json')).get('id') or '')")
+            echo "target_run_id=${run_id:-missing} status=$status conclusion=${conclusion:-pending}"
+            if [ "$status" = completed ]; then
+              cp /tmp/selected.json /tmp/tennis-v2-target-run.json
+              test "$conclusion" = success
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "::error::Timed out waiting for exact Tennis V2 deployment run"
+          exit 1
+
+      - name: Upload target run identity
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v2-target-run-${{ github.run_id }}
+          if-no-files-found: warn
+          retention-days: 30
+          path: |
+            /tmp/tennis-v2-target-run.json
+            /tmp/selected.json
