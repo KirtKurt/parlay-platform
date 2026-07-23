@@ -1,4 +1,4 @@
-name: Inspect MLB Deploy 84b1
+name: Inspect MLB Deploy ccad55f5
 
 on:
   pull_request:
@@ -18,7 +18,7 @@ jobs:
       - name: Query exact-main workflow runs read-only
         env:
           GH_TOKEN: ${{ github.token }}
-          TARGET_SHA: 84b1d821d76bf9106a0708e84a19888c728c0cf9
+          TARGET_SHA: ccad55f5faa283c3038cc936544c4f387d442131
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -36,7 +36,7 @@ jobs:
               'Authorization': f"Bearer {os.environ['GH_TOKEN']}",
               'Accept': 'application/vnd.github+json',
               'X-GitHub-Api-Version': '2022-11-28',
-              'User-Agent': 'inqsi-read-only-deploy-inspector/2.0',
+              'User-Agent': 'inqsi-read-only-deploy-inspector/3.0',
           })
           with urllib.request.urlopen(request, timeout=45) as response:
               payload = json.loads(response.read().decode('utf-8'))
@@ -59,7 +59,7 @@ jobs:
               'count': len(runs),
               'workflowRuns': runs,
           }
-          path = Path('/tmp/mlb-deploy-runs-84b1.json')
+          path = Path('/tmp/mlb-deploy-runs-ccad55f5.json')
           path.write_text(json.dumps(out, indent=2, sort_keys=True) + '\n', encoding='utf-8')
           print(json.dumps(out, indent=2, sort_keys=True))
           PY
@@ -67,6 +67,6 @@ jobs:
       - name: Upload read-only deployment evidence
         uses: actions/upload-artifact@v4
         with:
-          name: mlb-deploy-runs-84b1-${{ github.run_id }}
-          path: /tmp/mlb-deploy-runs-84b1.json
+          name: mlb-deploy-runs-ccad55f5-${{ github.run_id }}
+          path: /tmp/mlb-deploy-runs-ccad55f5.json
           if-no-files-found: error
