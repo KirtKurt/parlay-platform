@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 VERSION = (
     "MLB-ML-RUNTIME-INSTALL-v4.2-signal-policy-prelock-persistence-"
-    "aws-v2-shadow-manual-first"
+    "verified-stage-promotion-authority-aws-v2-shadow-manual-first"
 )
 
 
