@@ -1,0 +1,279 @@
+name: Bootstrap MLB Prospective R4
+
+on:
+  push:
+    branches: [agent/reset-mlb-prospective-r4-20260723]
+    paths:
+      - '.github/workflows/bootstrap-mlb-prospective-r4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/reset-mlb-prospective-r4-20260723
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Install validation runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+
+      - name: Move production experiment to clean July 24 prospective boundary
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          old_id = 'mlb-v2-2026-07-22-future-prospective-r3'
+          new_id = 'mlb-v2-2026-07-24-future-prospective-r4'
+          old_cutoff = '2026-07-22T04:00:00+00:00'
+          new_cutoff = '2026-07-24T04:00:00+00:00'
+
+          id_paths = [
+              'hello_world/mlb_ml_experiment_v2.py',
+              'scripts/run_mlb_ml_v3_audit_report.py',
+              'scripts/stabilize_mlb_deploy_source.py',
+              'scripts/verify_mlb_deploy_identity.py',
+              'scripts/verify_mlb_ml_installation_1_5.py',
+              'scripts/verify_mlb_ml_optimization_v3.py',
+              'scripts/verify_mlb_ml_training_readiness.py',
+              'scripts/verify_mlb_release_activation_predeploy.py',
+              'scripts/verify_mlb_schedule_invariants.py',
+              'scripts/verify_mlb_trainer_deploy_response.py',
+              'template.yaml',
+              'tests/unit/test_mlb_deploy_identity.py',
+              'tests/unit/test_run_mlb_ml_v3_audit_report.py',
+          ]
+          cutoff_paths = [
+              'docs/MLB_ML_PRODUCTION_MILESTONES.md',
+              'hello_world/mlb_ml_experiment_v2.py',
+              'scripts/stabilize_mlb_deploy_source.py',
+              'scripts/verify_mlb_deploy_identity.py',
+              'scripts/verify_mlb_ml_installation_1_5.py',
+              'scripts/verify_mlb_ml_optimization_v3.py',
+              'scripts/verify_mlb_ml_training_readiness.py',
+              'scripts/verify_mlb_release_activation_predeploy.py',
+              'scripts/verify_mlb_schedule_invariants.py',
+              'scripts/verify_mlb_trainer_deploy_response.py',
+              'template.yaml',
+              'tests/unit/test_mlb_deploy_identity.py',
+              'tests/unit/test_mlb_ml_aws_training_v1.py',
+              'tests/unit/test_run_mlb_ml_v3_audit_report.py',
+          ]
+
+          changed = set()
+          for raw in id_paths:
+              path = Path(raw)
+              text = path.read_text(encoding='utf-8')
+              if old_id not in text:
+                  raise SystemExit(f'expected old experiment ID missing from {raw}')
+              updated = text.replace(old_id, new_id)
+              if updated != text:
+                  path.write_text(updated, encoding='utf-8')
+                  changed.add(raw)
+
+          for raw in cutoff_paths:
+              path = Path(raw)
+              text = path.read_text(encoding='utf-8')
+              if old_cutoff not in text:
+                  raise SystemExit(f'expected old cutoff missing from {raw}')
+              updated = text.replace(old_cutoff, new_cutoff)
+              if updated != text:
+                  path.write_text(updated, encoding='utf-8')
+                  changed.add(raw)
+
+          path = Path('hello_world/mlb_ml_aws_training_v1.py')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              'future-prospective r3 experiment ID': 'future-prospective r4 experiment ID',
+              'future-prospective r3 release contract': 'future-prospective r4 release contract',
+              'MLB ML r3 release cutoff must begin at the July 22 ET slate boundary':
+                  'MLB ML r4 release cutoff must begin at the July 24 ET slate boundary',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'expected trainer message missing: {old}')
+              text = text.replace(old, new)
+          path.write_text(text, encoding='utf-8')
+          changed.add(str(path))
+
+          for raw in (
+              'scripts/verify_mlb_ml_installation_1_5.py',
+              'scripts/verify_mlb_ml_optimization_v3.py',
+              'scripts/verify_mlb_ml_training_readiness.py',
+          ):
+              path = Path(raw)
+              text = path.read_text(encoding='utf-8')
+              text = text.replace('R3_EXPERIMENT_ID', 'R4_EXPERIMENT_ID')
+              text = text.replace('R3_RELEASE_CUTOFF_UTC', 'R4_RELEASE_CUTOFF_UTC')
+              path.write_text(text, encoding='utf-8')
+              changed.add(raw)
+
+          docs = Path('docs/MLB_ML_PRODUCTION_MILESTONES.md')
+          text = docs.read_text(encoding='utf-8')
+          note = (
+              '\n> **R4 clean-boundary reset (July 23, 2026):** The r3 cohort remains '
+              'immutable diagnostic evidence. Its July 22 opening slate lacked the exact '
+              'pregame locks and write-once labels after the production persistence outage, '
+              'so it can never satisfy canonical continuity. Production training now begins '
+              'with the July 24 ET slate; no July 22 row is backfilled or relabeled.\n'
+          )
+          if 'R4 clean-boundary reset' not in text:
+              marker = '# MLB ML Production Milestones\n'
+              text = text.replace(marker, marker + note, 1) if marker in text else note + text
+          docs.write_text(text, encoding='utf-8')
+          changed.add(str(docs))
+
+          test_path = Path('tests/unit/test_mlb_ml_r4_clean_cutover.py')
+          test_path.write_text('''from __future__ import annotations
+
+from datetime import datetime, timezone
+
+import pytest
+
+import mlb_ml_aws_training_v1 as training
+import mlb_ml_experiment_v2 as experiment
+
+
+def _config(**overrides):
+    values = {
+        "artifacts_bucket": "versioned-artifacts",
+        "experiment_id": experiment.PRODUCTION_EXPERIMENT_ID,
+        "release_contract_id": experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        "release_cutoff_utc": experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
+        "feature_vector_version": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness",
+        "deployment_git_sha": "a" * 40,
+        "deployment_template_sha256": "b" * 64,
+        "automatic_promotion_enabled": False,
+    }
+    values.update(overrides)
+    return training.TrainingConfig(**values)
+
+
+def test_r4_cutoff_is_clean_future_boundary_after_unrecoverable_r3_slate():
+    assert experiment.PRODUCTION_EXPERIMENT_ID == "mlb-v2-2026-07-24-future-prospective-r4"
+    assert experiment.PRODUCTION_RELEASE_CONTRACT_ID == experiment.PRODUCTION_EXPERIMENT_ID
+    assert experiment.PRODUCTION_RELEASE_CUTOFF_UTC == "2026-07-24T04:00:00+00:00"
+
+    activation = experiment.release_activation(
+        experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
+        release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
+        release_cutoff_utc=experiment.PRODUCTION_RELEASE_CUTOFF_UTC,
+        activated_at_utc="2026-07-23T13:00:00+00:00",
+        deployment_git_sha="a" * 40,
+        deployment_template_sha256="b" * 64,
+    )
+    assert activation["immutable"] is True
+    assert activation["activatedAtUtc"] < activation["releaseCutoffUtc"]
+
+
+def test_r4_loader_does_not_request_or_backfill_july_22(monkeypatch):
+    monkeypatch.setenv("OUTCOMES_TABLE", "outcomes")
+    monkeypatch.setenv("SNAPSHOTS_TABLE", "snapshots")
+    calls = []
+
+    def forbidden_schedule(date):
+        calls.append(("schedule", date))
+        raise AssertionError("no pre-r4 slate may be requested")
+
+    def forbidden_finalization(date, official):
+        calls.append(("finalization", date))
+        raise AssertionError("no pre-r4 slate may be finalized")
+
+    rows = training.load_canonical_training_rows(
+        _config(),
+        now=datetime(2026, 7, 23, 13, 30, tzinfo=timezone.utc),
+        official_schedule_loader=forbidden_schedule,
+        slate_finalization_loader=forbidden_finalization,
+    )
+
+    assert list(rows) == []
+    assert calls == []
+    assert rows.continuity["ok"] is True
+    assert rows.continuity["processedSlateDates"] == []
+    assert rows.continuity["blockedSlateDate"] is None
+    assert rows.continuity["finalizedGameSlateDates"] == []
+
+
+def test_r3_identity_is_rejected_by_r4_production_config():
+    with pytest.raises(training.TrainingContractError, match="r4 experiment ID"):
+        _config(experiment_id="mlb-v2-2026-07-22-future-prospective-r3")
+''', encoding='utf-8')
+          changed.add(str(test_path))
+
+          contract = Path('.github/workflows/mlb-production-source-contract.yml')
+          text = contract.read_text(encoding='utf-8')
+          line = '            tests/unit/test_mlb_ml_r4_clean_cutover.py \\\n'
+          if line not in text:
+              anchor = '            tests/unit/test_mlb_ml_aws_training_v1.py \\\n'
+              if anchor not in text:
+                  raise SystemExit('source contract test insertion anchor missing')
+              text = text.replace(anchor, anchor + line, 1)
+              contract.write_text(text, encoding='utf-8')
+              changed.add(str(contract))
+
+          print('\n'.join(sorted(changed)))
+          PY
+
+      - name: Validate clean-boundary source and focused contracts
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          sam validate --template-file template.yaml
+          python -m py_compile \
+            hello_world/mlb_ml_experiment_v2.py \
+            hello_world/mlb_ml_aws_training_v1.py \
+            scripts/verify_mlb_deploy_identity.py \
+            scripts/verify_mlb_release_activation_predeploy.py \
+            scripts/verify_mlb_trainer_deploy_response.py
+          PYTHONPATH="$GITHUB_WORKSPACE/hello_world" python -m pytest -q \
+            tests/unit/test_mlb_ml_r4_clean_cutover.py \
+            tests/unit/test_mlb_ml_aws_training_v1.py \
+            tests/unit/test_mlb_deploy_identity.py \
+            tests/unit/test_run_mlb_ml_v3_audit_report.py
+          python scripts/verify_mlb_schedule_invariants.py
+
+      - name: Commit canonical r4 reset
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            .github/workflows/mlb-production-source-contract.yml \
+            docs/MLB_ML_PRODUCTION_MILESTONES.md \
+            hello_world/mlb_ml_experiment_v2.py \
+            hello_world/mlb_ml_aws_training_v1.py \
+            scripts/run_mlb_ml_v3_audit_report.py \
+            scripts/stabilize_mlb_deploy_source.py \
+            scripts/verify_mlb_deploy_identity.py \
+            scripts/verify_mlb_ml_installation_1_5.py \
+            scripts/verify_mlb_ml_optimization_v3.py \
+            scripts/verify_mlb_ml_training_readiness.py \
+            scripts/verify_mlb_release_activation_predeploy.py \
+            scripts/verify_mlb_schedule_invariants.py \
+            scripts/verify_mlb_trainer_deploy_response.py \
+            template.yaml \
+            tests/unit/test_mlb_deploy_identity.py \
+            tests/unit/test_mlb_ml_aws_training_v1.py \
+            tests/unit/test_mlb_ml_r4_clean_cutover.py \
+            tests/unit/test_run_mlb_ml_v3_audit_report.py
+          if git diff --cached --quiet; then
+            echo 'R4 prospective boundary already applied.'
+          else
+            git commit -m 'Reset MLB prospective training at clean July 24 boundary'
+            git pull --rebase --autostash origin agent/reset-mlb-prospective-r4-20260723
+            git push origin HEAD:agent/reset-mlb-prospective-r4-20260723
+          fi
