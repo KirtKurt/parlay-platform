@@ -13,7 +13,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: observe-tennis-v2-1-68b7e878
+  group: observe-tennis-v2-1-08aa1935
   cancel-in-progress: false
 
 jobs:
@@ -23,7 +23,7 @@ jobs:
     env:
       DEPLOY_WORKFLOW_PATH: deploy-tennis-v2-1.yml
       DEPLOY_BRANCH: agent/tennis-mlb-process-flow-v2-1
-      DEPLOY_HEAD_SHA: 68b7e87815c9c7447e706f87c5a52f277f2cf980
+      DEPLOY_HEAD_SHA: 08aa1935699036efbce33b219dd5a60e56b9a77a
       GH_TOKEN: ${{ github.token }}
 
     steps:
