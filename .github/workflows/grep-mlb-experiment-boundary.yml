@@ -1,0 +1,39 @@
+name: Enumerate MLB Experiment Boundary References
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/grep-mlb-experiment-boundary.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  grep:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Locate experiment ID and cutoff references
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-experiment-boundary
+          {
+            echo '=== experiment id ==='
+            git grep -n -F 'mlb-v2-2026-07-22-future-prospective-r3' || true
+            echo '=== cutoff ==='
+            git grep -n -F '2026-07-22T04:00:00+00:00' || true
+            echo '=== r3 messages ==='
+            git grep -n -E 'future-prospective r3|future-prospective-r3|r3 release cutoff|July 22 ET slate boundary' || true
+          } | tee /tmp/mlb-experiment-boundary/references.txt
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-experiment-boundary-${{ github.run_id }}
+          path: /tmp/mlb-experiment-boundary/
+          if-no-files-found: error
