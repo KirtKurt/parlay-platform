@@ -3,12 +3,13 @@ from __future__ import annotations
 from contextvars import ContextVar
 from typing import Any, Dict, List, Tuple
 
-VERSION = "MLB-LOCKED-PREDICTION-STORAGE-FINALIZER-v5-lifecycle-aware"
+VERSION = "MLB-LOCKED-PREDICTION-STORAGE-FINALIZER-v6-effective-schedule-lifecycle"
 UNAUTHORIZED_LOCKED_WRITE = "immutable_per_game_stage_authority_missing"
 LIFECYCLE_ONLY_STATUSES = frozenset({
     "LOCKED_NO_PREDICTION_DATA",
     "LOCK_DUE_CANONICAL_MISSING",
     "MISSED_LOCK",
+    "MISSED_NOT_BACKFILLED",
     "POSTPONED",
     "CANCELLED",
     "CANCELED",
