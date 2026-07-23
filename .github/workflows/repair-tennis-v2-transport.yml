@@ -1,0 +1,62 @@
+name: Repair Tennis V2 transport bytes
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/repair-tennis-v2-transport.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    if: github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/tennis-mlb-exact-parity-v2
+          fetch-depth: 0
+      - name: Repair, verify, and publish exact bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import base64,hashlib
+          root=Path('tennis_release_v2')
+          good8='b4239adb9cc2a5af82f08d59ebc0272fead2afdf884f08cebefdc10e34a2a729'
+          bad8='1b6a2e1c3daf716514a62026d165d2621f714bbc6c47217e12694faa90950e07'
+          good16='ff22e008aea97b59d922eb881eda0e57dcf19d57da5a1f015152e80f24a55cdf'
+          bad16='f4c671a0e5f7d46ebd999c30995d7a493953ec12fbecae64029946c7f5f928f9'
+          archive_expected='b0141a6dd21b9d6f328e82eb4a9bf4772dbac1a52b94962fb189e160d2d8dac0'
+          def digest(data): return hashlib.sha256(data).hexdigest()
+          p8=root/'tennis_predictive_platform_v2.tar.xz.b64.part08'; d8=p8.read_bytes()
+          if digest(d8)==bad8:
+              assert len(d8)==6001 and digest(d8[:6000])==good8
+              p8.write_bytes(d8[:6000])
+          assert digest(p8.read_bytes())==good8
+          p16=root/'tennis_predictive_platform_v2.tar.xz.b64.part16'; d16=p16.read_bytes()
+          if digest(d16)==bad16:
+              assert len(d16)==1147
+              fixed=d16[:750]+b'm'+d16[750:]
+              assert digest(fixed)==good16
+              p16.write_bytes(fixed)
+          assert digest(p16.read_bytes())==good16
+          encoded=b''.join((root/f'tennis_predictive_platform_v2.tar.xz.b64.part{i:02d}').read_bytes() for i in range(17))
+          archive=base64.b64decode(encoded,validate=True)
+          assert digest(archive)==archive_expected
+          Path('/tmp/tennis-v2-archive.sha256').write_text(digest(archive)+'\n')
+          print('Verified archive',digest(archive))
+          PY
+          rm .github/workflows/repair-tennis-v2-transport.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add tennis_release_v2/tennis_predictive_platform_v2.tar.xz.b64.part08 \
+                  tennis_release_v2/tennis_predictive_platform_v2.tar.xz.b64.part16 \
+                  .github/workflows/repair-tennis-v2-transport.yml
+          git diff --cached --check
+          git commit -m 'Repair Tennis V2 transport bytes'
+          git push origin HEAD:agent/tennis-mlb-exact-parity-v2
