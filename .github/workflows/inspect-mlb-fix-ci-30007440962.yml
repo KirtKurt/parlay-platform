@@ -15,7 +15,7 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Print exact failed-step log tail
+      - name: Print final failed-step lines
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: '30007440962'
@@ -26,4 +26,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --job "$JOB_ID" \
             --log-failed > /tmp/mlb-fix-failed.log
-          tail -60 /tmp/mlb-fix-failed.log
+          tail -20 /tmp/mlb-fix-failed.log
