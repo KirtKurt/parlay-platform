@@ -86,8 +86,6 @@ jobs:
               message = str(event.get('message') or '').strip()
               if not pattern.search(message):
                   continue
-              # Preserve only log/error text. Remove access-key-like tokens and
-              # cap each line so no arbitrary payload or credential is published.
               message = re.sub(r'AKIA[0-9A-Z]{16}', '<redacted-access-key>', message)
               message = re.sub(r'(?i)(secret|token|password|authorization|api.?key)\s*[:=]\s*[^,}\s]+', r'\1=<redacted>', message)
               selected.append({
@@ -115,6 +113,64 @@ jobs:
           path = Path('/tmp/mlb-trainer-diagnostic/mlb_trainer_function_error.json')
           path.write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8')
           print(json.dumps(report['events'][-40:], indent=2))
+          PY
+
+      - name: Read persisted trainer status and canonical continuity evidence
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          import boto3
+
+          region = os.environ['AWS_REGION']
+          cfn = boto3.client('cloudformation', region_name=region)
+          lamb = boto3.client('lambda', region_name=region)
+          resource = cfn.describe_stack_resource(
+              StackName='parlay-platform-dev',
+              LogicalResourceId='MLBMLTrainingFunction',
+          )['StackResourceDetail']
+          function_name = resource['PhysicalResourceId']
+          response = lamb.invoke(
+              FunctionName=function_name,
+              InvocationType='RequestResponse',
+              Payload=json.dumps({'sport': 'mlb', 'mode': 'status', 'run': 'read_only_continuity_diagnostic'}).encode('utf-8'),
+          )
+          raw = response['Payload'].read()
+          envelope = json.loads(raw.decode('utf-8')) if raw else {}
+          body = envelope
+          if isinstance(envelope, dict) and isinstance(envelope.get('body'), str):
+              body = json.loads(envelope['body'])
+          report = {
+              'ok': True,
+              'readOnly': True,
+              'productionWritesPerformed': False,
+              'functionError': response.get('FunctionError'),
+              'statusCode': response.get('StatusCode'),
+              'executedVersion': response.get('ExecutedVersion'),
+              'status': body,
+              'secretExposed': False,
+          }
+          Path('/tmp/mlb-trainer-diagnostic/mlb_trainer_status.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True, default=str) + '\n',
+              encoding='utf-8',
+          )
+          latest = (body.get('trainingHealth') or {}).get('latestRun') or body.get('latestStatus') or {}
+          print(json.dumps({
+              'topLevelOk': body.get('ok'),
+              'trainingHealthOk': (body.get('trainingHealth') or {}).get('ok'),
+              'trainingStatus': latest.get('status'),
+              'canonicalSlateContinuity': latest.get('canonicalSlateContinuity'),
+              'acceptedRowCount': latest.get('acceptedRowCount'),
+              'rejectedRowCount': latest.get('rejectedRowCount'),
+              'rejectionReasonCounts': latest.get('rejectionReasonCounts'),
+              'partitionCounts': latest.get('partitionCounts'),
+          }, indent=2, default=str))
           PY
 
       - name: Upload trainer diagnostic
