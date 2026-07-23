@@ -41,7 +41,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Verify deployed Lambda capacity and force one fresh audited pull
+      - name: Verify deployed Lambda capacity and observe one fresh scheduled pull
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
           TARGET_DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
@@ -52,119 +52,12 @@ jobs:
           PYTHONPATH: ${{ github.workspace }}/hello_world
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          from datetime import datetime, timezone
-          from pathlib import Path
-
-          import boto3
-          from botocore.config import Config
-
-          region = os.environ.get('AWS_REGION') or 'us-east-1'
-          target_sha = os.environ['TARGET_DEPLOY_SHA']
-          cfn = boto3.client('cloudformation', region_name=region)
-          resource = cfn.describe_stack_resource(
-              StackName='parlay-platform-dev',
-              LogicalResourceId='MLBAuditedPullFunction',
-          )['StackResourceDetail']
-          function_name = resource['PhysicalResourceId']
-          lamb = boto3.client(
-              'lambda',
-              region_name=region,
-              config=Config(read_timeout=900, connect_timeout=30, retries={'max_attempts': 1}),
-          )
-          config = lamb.get_function_configuration(FunctionName=function_name)
-          timeout = int(config.get('Timeout') or 0)
-          memory = int(config.get('MemorySize') or 0)
-          deployed_sha = str(((config.get('Environment') or {}).get('Variables') or {}).get('INQSI_DEPLOY_GIT_SHA') or '')
-          if timeout < 600:
-              raise SystemExit(f'Live MLB pull Lambda timeout is {timeout}; expected at least 600')
-          if memory < 2048:
-              raise SystemExit(f'Live MLB pull Lambda memory is {memory}; expected at least 2048')
-          if deployed_sha != target_sha:
-              raise SystemExit(f'Deploy identity mismatch: live={deployed_sha} expected={target_sha}')
-
-          invoked_at = datetime.now(timezone.utc).isoformat()
-          response = lamb.invoke(
-              FunctionName=function_name,
-              InvocationType='RequestResponse',
-              Payload=json.dumps({
-                  'sport': 'mlb',
-                  't': 'HOT',
-                  'run': 'post_deploy_scoring_fix_verification',
-                  'days_ahead': 0,
-                  'force': True,
-              }).encode('utf-8'),
-          )
-          raw = response['Payload'].read()
-          outer = json.loads(raw.decode('utf-8') or '{}')
-          if response.get('FunctionError'):
-              raise SystemExit('Post-deploy MLB pull returned FunctionError')
-          status_code = int(outer.get('statusCode') or 200)
-          body = outer.get('body')
-          payload = json.loads(body) if isinstance(body, str) else dict(body or outer)
-          if status_code >= 400 or payload.get('ok') is not True:
-              raise SystemExit('Post-deploy MLB pull failed: ' + json.dumps({
-                  'statusCode': status_code,
-                  'error': payload.get('error'),
-                  'upstream_error': payload.get('upstream_error'),
-              }, sort_keys=True, default=str))
-
-          winner_results = [row for row in (payload.get('game_winner_predictions') or []) if isinstance(row, dict)]
-          winner_summary = []
-          for row in winner_results:
-              winner_summary.append({
-                  'gameDateEt': row.get('game_date_et'),
-                  'ok': row.get('ok'),
-                  'gameCount': row.get('gameCount'),
-                  'predictionCount': row.get('count'),
-                  'allGamesPredicted': row.get('allGamesPredicted'),
-                  'displayStatusCoverageComplete': row.get('displayStatusCoverageComplete'),
-                  'lifecycleCoverageComplete': row.get('lifecycleCoverageComplete'),
-                  'preLockStorageLifecycleAware': row.get('preLockStorageLifecycleAware'),
-                  'preLockStorageCandidateCount': row.get('preLockStorageCandidateCount'),
-                  'preLockStoredCount': row.get('preLockStoredCount'),
-                  'preLockStorageComplete': row.get('preLockStorageComplete'),
-                  'preLockStorageLifecycleSkippedCount': row.get('preLockStorageLifecycleSkippedCount'),
-                  'preLockStorageDispositionCount': row.get('preLockStorageDispositionCount'),
-                  'preLockStorageDispositionComplete': row.get('preLockStorageDispositionComplete'),
-                  'operationalDefect': row.get('operationalDefect'),
-              })
-          if not winner_summary:
-              raise SystemExit('Post-deploy pull returned no game-winner result')
-          for row in winner_summary:
-              game_count = int(row.get('gameCount') or 0)
-              candidate_count = int(row.get('preLockStorageCandidateCount') or 0)
-              stored_count = int(row.get('preLockStoredCount') or 0)
-              disposition_count = int(row.get('preLockStorageDispositionCount') or 0)
-              lifecycle_complete = (
-                  row.get('displayStatusCoverageComplete') is True
-                  and row.get('lifecycleCoverageComplete') is True
-              )
-              if row.get('ok') is not True:
-                  raise SystemExit('Post-deploy winner engine result failed: ' + json.dumps(row, sort_keys=True, default=str))
-              if row.get('preLockStorageLifecycleAware') is not True:
-                  raise SystemExit('Post-deploy lifecycle-aware storage contract is missing: ' + json.dumps(row, sort_keys=True, default=str))
-              if row.get('preLockStorageComplete') is not True or candidate_count != stored_count:
-                  raise SystemExit('Post-deploy open-candidate persistence incomplete: ' + json.dumps(row, sort_keys=True, default=str))
-              if row.get('preLockStorageDispositionComplete') is not True or disposition_count != game_count:
-                  raise SystemExit('Post-deploy storage disposition does not cover the slate: ' + json.dumps(row, sort_keys=True, default=str))
-              if row.get('allGamesPredicted') is not True and not lifecycle_complete:
-                  raise SystemExit('Post-deploy winner/lifecycle coverage incomplete: ' + json.dumps(row, sort_keys=True, default=str))
-
-          Path('/tmp/mlb-post-deploy-invocation.json').write_text(json.dumps({
-              'functionName': function_name,
-              'timeoutSeconds': timeout,
-              'memorySizeMb': memory,
-              'deployedGitSha': deployed_sha,
-              'targetDeploySha': target_sha,
-              'functionLastModified': config.get('LastModified'),
-              'invokedAtUtc': invoked_at,
-              'statusCode': status_code,
-              'winnerResults': winner_summary,
-          }, indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
-          PY
+          python scripts/verify_mlb_postdeploy_scheduled_pull.py \
+            --target-deploy-sha "$TARGET_DEPLOY_SHA" \
+            --region "$AWS_REGION" \
+            --stack-name parlay-platform-dev \
+            --snapshots-table "$SNAPSHOTS_TABLE" \
+            --output /tmp/mlb-post-deploy-invocation.json
 
       - name: Build current full-slate scoring coverage proof
         env:
