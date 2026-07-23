@@ -9,9 +9,9 @@ from typing import Any, Callable, Dict, Iterable, List, Mapping, Optional, Seque
 
 
 VERSION = "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
-PRODUCTION_EXPERIMENT_ID = "mlb-v2-2026-07-22-future-prospective-r3"
+PRODUCTION_EXPERIMENT_ID = "mlb-v2-2026-07-24-future-prospective-r4"
 PRODUCTION_RELEASE_CONTRACT_ID = PRODUCTION_EXPERIMENT_ID
-PRODUCTION_RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
+PRODUCTION_RELEASE_CUTOFF_UTC = "2026-07-24T04:00:00+00:00"
 RELEASE_ACTIVATION_VERSION = "MLB-ML-RELEASE-ACTIVATION-v1"
 PARTITION_ORDER = ("train", "validation", "prospectiveTest")
 PARTITION_MINIMUMS = {"train": 300, "validation": 100, "prospectiveTest": 100}

@@ -213,9 +213,9 @@ FUNCTION_ASYNC_RETRY_POLICIES = {
     },
 }
 TRAINER_EXPECTED_ENVIRONMENT = {
-    "MLB_ML_EXPERIMENT_ID": "mlb-v2-2026-07-22-future-prospective-r3",
-    "MLB_ML_RELEASE_CONTRACT_ID": "mlb-v2-2026-07-22-future-prospective-r3",
-    "MLB_ML_RELEASE_CUTOFF_UTC": "2026-07-22T04:00:00+00:00",
+    "MLB_ML_EXPERIMENT_ID": "mlb-v2-2026-07-24-future-prospective-r4",
+    "MLB_ML_RELEASE_CONTRACT_ID": "mlb-v2-2026-07-24-future-prospective-r4",
+    "MLB_ML_RELEASE_CUTOFF_UTC": "2026-07-24T04:00:00+00:00",
     "MLB_ML_FEATURE_VECTOR_VERSION": (
         "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness"
     ),
