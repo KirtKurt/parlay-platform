@@ -56,7 +56,7 @@ def config(auto=False):
         artifacts_bucket="versioned-artifacts",
         experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
         release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
-        release_cutoff_utc="2026-07-22T04:00:00+00:00",
+        release_cutoff_utc="2026-07-24T04:00:00+00:00",
         feature_vector_version="vector-v2",
         deployment_git_sha="a" * 40,
         deployment_template_sha256="b" * 64,
@@ -123,7 +123,7 @@ def new_manifest(sealed=False):
     value = experiment.new_manifest(
         experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
         release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
-        release_cutoff_utc="2026-07-22T04:00:00+00:00",
+        release_cutoff_utc="2026-07-24T04:00:00+00:00",
         feature_vector_version="vector-v2",
         model_feature_schemas={
             "outcome": list(aws_training.dual_model.OUTCOME_FEATURES),
@@ -630,9 +630,9 @@ def test_mutating_service_entrypoints_reject_the_wrong_lease_mode(
     assert store.champion is None
 
 
-def test_r2_cutoff_rejects_july20_and_every_pre_boundary_lock():
+def test_r4_cutoff_rejects_july20_and_every_pre_boundary_lock():
     manifest_value = service(FakeStore(), now=ACTIVATION_NOW)._new_manifest()
-    assert manifest_value["releaseCutoffUtc"] == "2026-07-22T04:00:00+00:00"
+    assert manifest_value["releaseCutoffUtc"] == "2026-07-24T04:00:00+00:00"
     row = {
         "gameId": "mlb_statsapi:cutoff-proof",
         "slateDateEt": "2026-07-20",
@@ -651,13 +651,13 @@ def test_r2_cutoff_rejects_july20_and_every_pre_boundary_lock():
     at_boundary = copy.deepcopy(row)
     at_boundary["slateDateEt"] = "2026-07-21"
     at_boundary["featureSnapshot"]["lockAtUtc"] = (
-        "2026-07-22T04:00:00+00:00"
+        "2026-07-24T04:00:00+00:00"
     )
     _, boundary_reasons = experiment.validate_record(at_boundary, manifest_value)
     assert "pre_release_or_missing_lock_timestamp" not in boundary_reasons
 
 
-def test_new_r3_manifest_records_one_digest_bound_release_activation() -> None:
+def test_new_r4_manifest_records_one_digest_bound_release_activation() -> None:
     calls = []
 
     def clock():
@@ -694,11 +694,11 @@ def test_new_r3_manifest_records_one_digest_bound_release_activation() -> None:
 @pytest.mark.parametrize(
     "activation_time",
     (
-        datetime(2026, 7, 22, 4, 0, tzinfo=timezone.utc),
-        datetime(2026, 7, 22, 4, 0, 0, 1, tzinfo=timezone.utc),
+        datetime(2026, 7, 24, 4, 0, tzinfo=timezone.utc),
+        datetime(2026, 7, 24, 4, 0, 0, 1, tzinfo=timezone.utc),
     ),
 )
-def test_r3_manifest_cannot_be_initialized_at_or_after_cutoff(
+def test_r4_manifest_cannot_be_initialized_at_or_after_cutoff(
     activation_time,
 ) -> None:
     store = FakeStore()
@@ -777,7 +777,7 @@ def test_persisted_marker_missing_after_cutoff_fails_closed() -> None:
         service(store, now=NOW)._load_or_create_manifest()
 
 
-def test_markerless_pre_cutoff_r3_manifest_is_activated_once_with_cas() -> None:
+def test_markerless_pre_cutoff_r4_manifest_is_activated_once_with_cas() -> None:
     created_at = "2026-07-21T20:00:00+00:00"
     markerless = experiment.new_manifest(
         experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
@@ -869,7 +869,7 @@ def test_persisted_feature_schema_change_requires_a_new_experiment_id():
     old_schema_manifest = experiment.new_manifest(
         experiment_id=experiment.PRODUCTION_EXPERIMENT_ID,
         release_contract_id=experiment.PRODUCTION_RELEASE_CONTRACT_ID,
-        release_cutoff_utc="2026-07-22T04:00:00+00:00",
+        release_cutoff_utc="2026-07-24T04:00:00+00:00",
         feature_vector_version="vector-v2",
         model_feature_schemas={
             "outcome": [f"old_o{i}" for i in range(8)],
@@ -905,7 +905,7 @@ def test_status_is_read_only_and_attests_deployment_and_manual_first_policy():
     assert result["manualReviewCreatesShadowApprovalOnly"] is True
     assert result["v2InferenceConsumerInstalled"] is False
     assert result["runtimeAuthorityActivationAvailable"] is False
-    assert result["releaseCutoffUtc"] == "2026-07-22T04:00:00+00:00"
+    assert result["releaseCutoffUtc"] == "2026-07-24T04:00:00+00:00"
     assert result["trainingHealth"]["ok"] is True
     assert result["selectionCaptureHealth"]["ok"] is True
     assert store.manifest is None
@@ -2023,25 +2023,25 @@ def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest(monkeypatch):
         deployment_git_sha="a" * 40,
         deployment_template_sha256="b" * 64,
     )
-    after_midnight_et = datetime(2026, 7, 23, 4, 30, tzinfo=timezone.utc)
+    after_midnight_et = datetime(2026, 7, 25, 4, 30, tzinfo=timezone.utc)
     row = {
         "gameId": "mlb_statsapi:partial-prior-date",
-        "slateDateEt": "2026-07-22",
+        "slateDateEt": "2026-07-24",
         "slateFinalized": False,
-        "commenceTime": "2026-07-22T23:00:00+00:00",
+        "commenceTime": "2026-07-24T23:00:00+00:00",
         "featureSnapshot": {"fingerprint": "partial-fingerprint"},
     }
     state = {
         "report": {
             "ok": False,
-            "requestedSlateDates": ["2026-07-22"],
+            "requestedSlateDates": ["2026-07-24"],
             "finalizedSlateDates": [],
             # Defensive poison row: even if an upstream regression emitted it,
             # the AWS adapter must not admit a non-finalized slate.
             "rows": [copy.deepcopy(row)],
             "slates": [
                 {
-                    "slateDateEt": "2026-07-22",
+                    "slateDateEt": "2026-07-24",
                     "slateFinalized": False,
                     "officialGameCount": 15,
                     "officialFinalCount": 14,
@@ -2101,7 +2101,7 @@ def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest(monkeypatch):
     attest_test_execution_lease(training, "training")
     partial = training.run()
 
-    assert requested == ["2026-07-22"]
+    assert requested == ["2026-07-24"]
     assert partial["status"] == "CANONICAL_SLATE_CONTINUITY_BLOCKED"
     assert partial["acceptedRowCount"] == 0
     assert store.manifest["assignedSlateDates"] == {}
@@ -2110,12 +2110,12 @@ def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest(monkeypatch):
     row["slateFinalized"] = True
     state["report"] = {
         "ok": True,
-        "requestedSlateDates": ["2026-07-22"],
-        "finalizedSlateDates": ["2026-07-22"],
+        "requestedSlateDates": ["2026-07-24"],
+        "finalizedSlateDates": ["2026-07-24"],
         "rows": [copy.deepcopy(row)],
         "slates": [
             {
-                "slateDateEt": "2026-07-22",
+                "slateDateEt": "2026-07-24",
                 "slateFinalized": True,
                 "officialGameCount": 15,
                 "officialFinalCount": 15,
@@ -2125,7 +2125,7 @@ def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest(monkeypatch):
     completed = training.run()
 
     assert completed["acceptedRowCount"] == 1
-    assert store.manifest["assignedSlateDates"]["2026-07-22"]["partition"] == "train"
+    assert store.manifest["assignedSlateDates"]["2026-07-24"]["partition"] == "train"
     assert store.manifest["partitions"]["train"]["rowCount"] == 1
     assert store.manifest["partitions"]["train"]["frozen"] is False
     assert completed["milestones"]["firstFullCleanSlateProof"]["achieved"] is False
@@ -2137,7 +2137,7 @@ def test_partial_prior_et_slate_cannot_freeze_or_deadlock_manifest(monkeypatch):
     assert "official_game_set_missing_clean_rows" in slate_proof["errors"]
     authority = completed["canonicalSlateContinuity"][
         "finalizedSlateAuthorities"
-    ]["2026-07-22"]
+    ]["2026-07-24"]
     assert authority["officialGameCount"] == 15
     assert experiment.official_finalized_slate_authority_errors(authority) == []
 

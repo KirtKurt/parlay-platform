@@ -17,8 +17,8 @@ import mlb_ml_experiment_v2 as experiment_v2
 import mlb_ml_promotion_policy_v2 as promotion_v2
 
 
-R3_EXPERIMENT_ID = "mlb-v2-2026-07-22-future-prospective-r3"
-R3_RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
+R4_EXPERIMENT_ID = "mlb-v2-2026-07-24-future-prospective-r4"
+R4_RELEASE_CUTOFF_UTC = "2026-07-24T04:00:00+00:00"
 
 
 class _Key:
@@ -99,19 +99,19 @@ def verify_r3_future_manual_first_contract() -> None:
         "prospectiveTest": 100,
     }
     manifest = experiment_v2.new_manifest(
-        experiment_id=R3_EXPERIMENT_ID,
-        release_contract_id=R3_EXPERIMENT_ID,
-        release_cutoff_utc=R3_RELEASE_CUTOFF_UTC,
+        experiment_id=R4_EXPERIMENT_ID,
+        release_contract_id=R4_EXPERIMENT_ID,
+        release_cutoff_utc=R4_RELEASE_CUTOFF_UTC,
         feature_vector_version=experiment_v2.REQUIRED_FUNDAMENTALS_VERSION,
         model_feature_schemas={
             "outcome": dual_v2.OUTCOME_FEATURES,
             "reliability": dual_v2.RELIABILITY_FEATURES,
         },
-        created_at_utc=R3_RELEASE_CUTOFF_UTC,
+        created_at_utc=R4_RELEASE_CUTOFF_UTC,
     )
-    assert manifest["experimentId"] == R3_EXPERIMENT_ID
-    assert manifest["releaseContractId"] == R3_EXPERIMENT_ID
-    assert manifest["releaseCutoffUtc"] == R3_RELEASE_CUTOFF_UTC
+    assert manifest["experimentId"] == R4_EXPERIMENT_ID
+    assert manifest["releaseContractId"] == R4_EXPERIMENT_ID
+    assert manifest["releaseCutoffUtc"] == R4_RELEASE_CUTOFF_UTC
     assert manifest["partitions"]["train"]["minimumRows"] == 300
     assert manifest["partitions"]["validation"]["minimumRows"] == 100
     assert manifest["partitions"]["prospectiveTest"]["minimumRows"] == 100

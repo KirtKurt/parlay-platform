@@ -1,3 +1,5 @@
+
+> **R4 clean-boundary reset (July 23, 2026):** The r3 cohort remains immutable diagnostic evidence. Its July 22 opening slate lacked the exact pregame locks and write-once labels after the production persistence outage, so it can never satisfy canonical continuity. Production training now begins with the July 24 ET slate; no July 22 row is backfilled or relabeled.
 # MLB ML production milestones
 
 Last updated: 2026-07-22 UTC
@@ -113,7 +115,7 @@ changed Python files compiled, and `git diff --check` was clean.
 
 This is code evidence only. It does not earn the first clean slate, the
 140-game mechanics checkpoint, or any 300/100/100 partition milestone. The r3
-cohort still starts at `2026-07-22T04:00:00+00:00`; evidence from before that
+cohort still starts at `2026-07-24T04:00:00+00:00`; evidence from before that
 instant remains historical.
 
 The deploy probe now binds its training and selection checks to the immutable
@@ -161,7 +163,7 @@ cannot make stale or out-of-band code pass.
   pre-lock source supplies the required values and provenance. Missing groups
   remain null and exclude the game from the V2 training cohort.
 - The r3 cohort begins at the explicit next-slate prospective boundary
-  `2026-07-22T04:00:00+00:00`. Any July 20 or July 21 game, or any lock timestamp before that
+  `2026-07-24T04:00:00+00:00`. Any July 20 or July 21 game, or any lock timestamp before that
   instant is historical, even if its record happens to resemble the V2 schema,
   and cannot enter an r3 partition.
 - The immutable r3 activation marker must be created and digest-bound to the

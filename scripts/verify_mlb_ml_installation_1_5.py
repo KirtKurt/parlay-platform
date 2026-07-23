@@ -28,8 +28,8 @@ import mlb_official_prediction_semantics as semantics
 from mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 
-R3_EXPERIMENT_ID = "mlb-v2-2026-07-22-future-prospective-r3"
-R3_RELEASE_CUTOFF_UTC = "2026-07-22T04:00:00+00:00"
+R4_EXPERIMENT_ID = "mlb-v2-2026-07-24-future-prospective-r4"
+R4_RELEASE_CUTOFF_UTC = "2026-07-24T04:00:00+00:00"
 
 
 def _fingerprint(vector):
@@ -191,15 +191,15 @@ def main() -> int:
     }
 
     manifest = experiment_v2.new_manifest(
-        experiment_id=R3_EXPERIMENT_ID,
-        release_contract_id=R3_EXPERIMENT_ID,
-        release_cutoff_utc=R3_RELEASE_CUTOFF_UTC,
+        experiment_id=R4_EXPERIMENT_ID,
+        release_contract_id=R4_EXPERIMENT_ID,
+        release_cutoff_utc=R4_RELEASE_CUTOFF_UTC,
         feature_vector_version=experiment_v2.REQUIRED_FUNDAMENTALS_VERSION,
         model_feature_schemas={
             "outcome": dual.OUTCOME_FEATURES,
             "reliability": dual.RELIABILITY_FEATURES,
         },
-        created_at_utc=R3_RELEASE_CUTOFF_UTC,
+        created_at_utc=R4_RELEASE_CUTOFF_UTC,
     )
     checks["3_chronologicalValidation"] = {
         "installed": True,
@@ -250,8 +250,8 @@ def main() -> int:
         "legacyV1AuthorityEnabled": False,
         "automaticPromotionBeforeGates": False,
         "firstPromotionRequiresManualReview": True,
-        "experimentId": R3_EXPERIMENT_ID,
-        "releaseCutoffUtc": R3_RELEASE_CUTOFF_UTC,
+        "experimentId": R4_EXPERIMENT_ID,
+        "releaseCutoffUtc": R4_RELEASE_CUTOFF_UTC,
         "minimumCleanOfficial": promotion_v2.MIN_TOTAL_CLEAN_ROWS,
         "minimumProspectiveTest": promotion_v2.MIN_PROSPECTIVE_TEST_ROWS,
         "minimumSelectedProspectiveRecommendations": promotion_v2.MIN_PROSPECTIVE_SELECTED_RECOMMENDATIONS,

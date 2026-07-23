@@ -358,14 +358,14 @@ def test_verifies_trainer_identity_configuration_schedule_and_bucket(aws) -> Non
         "cron(4/15 * * * ? *)",
     ]
     assert deploy_identity.TRAINER_EXPECTED_ENVIRONMENT["MLB_ML_EXPERIMENT_ID"] == (
-        "mlb-v2-2026-07-22-future-prospective-r3"
+        "mlb-v2-2026-07-24-future-prospective-r4"
     )
     assert deploy_identity.TRAINER_EXPECTED_ENVIRONMENT[
         "MLB_ML_RELEASE_CONTRACT_ID"
-    ] == "mlb-v2-2026-07-22-future-prospective-r3"
+    ] == "mlb-v2-2026-07-24-future-prospective-r4"
     assert deploy_identity.TRAINER_EXPECTED_ENVIRONMENT[
         "MLB_ML_RELEASE_CUTOFF_UTC"
-    ] == "2026-07-22T04:00:00+00:00"
+    ] == "2026-07-24T04:00:00+00:00"
 
     result = _verify()
 
