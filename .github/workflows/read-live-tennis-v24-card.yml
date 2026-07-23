@@ -1,0 +1,69 @@
+name: Read live Tennis V2.4 card
+
+on:
+  push:
+    branches: [agent/tennis-polymarket-mlb-parity-v2-4]
+    paths: [".github/workflows/read-live-tennis-v24-card.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-card:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      API_BASE: https://70n1e5cuda.execute-api.us-east-1.amazonaws.com/prod
+      SLATE_DATE: "2026-07-23"
+    steps:
+      - name: Fetch read-only live Tennis card
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          for endpoint in predictions locks/status matches; do
+            name=${endpoint//\//-}
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              "${API_BASE}/v1/tennis/${endpoint}?date=${SLATE_DATE}" \
+              | tee "evidence/${name}.json"
+            echo
+          done
+          curl --fail --silent --show-error --retry 4 --retry-all-errors \
+            "${API_BASE}/v1/tennis/model/version" \
+            | tee evidence/model-version.json
+          echo
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          predictions=json.loads(Path('evidence/predictions.json').read_text())
+          locks=json.loads(Path('evidence/locks-status.json').read_text())
+          matches=json.loads(Path('evidence/matches.json').read_text())
+          model=json.loads(Path('evidence/model-version.json').read_text())
+          rows=predictions.get('predictions') or []
+          summary={
+              'slateDate':'2026-07-23',
+              'queriedAtUtc':locks.get('nowUtc'),
+              'platformVersion':model.get('platformVersion'),
+              'predictionMode':model.get('predictionMode'),
+              'scheduleState':((model.get('deployment') or {}).get('scheduleState')),
+              'matchCount':int(matches.get('count') or matches.get('matchCount') or 0),
+              'predictionCount':int(predictions.get('count') or 0),
+              'promotedCount':int(predictions.get('promotedCount') or 0),
+              'lockedCount':int(locks.get('lockedCount') or 0),
+              'missedCount':int(locks.get('missedCount') or 0),
+              'terminalCount':int(locks.get('terminalCount') or 0),
+              'officialLockedPicks':locks.get('picks') or [],
+              'predictions':rows,
+              'matchStatuses':locks.get('matchStatuses') or [],
+          }
+          Path('evidence/summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True))
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v24-live-card-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/
