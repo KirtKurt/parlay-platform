@@ -5,6 +5,7 @@ on:
     branches: [agent/tennis-polymarket-mlb-parity-v2-4]
     paths:
       - "tennis_release_v2_4/**"
+      - ".github/tennis-v2-4-part01/**"
       - ".github/workflows/deploy-tennis-v2-4.yml"
   workflow_dispatch:
 
@@ -24,6 +25,8 @@ env:
   BASELINE_ARTIFACT_ID: "8575790142"
   BASELINE_SHA256: f8fe7f023794160a7ba7b4566fc4234bd91b852b13a6f49f14b35f5f06bbc74b
   OVERLAY_SHA256: 325b77b554b5b3835176d8c93d930d8780c4093fb6ba3304f78f4c4770f1b17c
+  OVERLAY_BASE64_SHA256: 2f334bc8cbe58257818fe40035c3c54852eef1eef9eddddcd5eb44972be063cf
+  OVERLAY_BASE64_BYTES: "69192"
   SOURCE_TREE_SHA256: 885f7028b4d45755abfd72190b39e4c398900d808d21c0371db6308abdabe7cd
 
 jobs:
@@ -57,9 +60,32 @@ jobs:
           cp -a /tmp/tennis-v24-baseline/unpacked/tennis_predictive_platform_v2 \
             tennis_predictive_platform_v2_4
 
-          cat tennis_release_v2_4/overlay.tar.xz.b64.part* \
-            | base64 --decode > /tmp/tennis-v24-overlay.tar.xz
+          for fragment in .github/tennis-v2-4-part01/frag{00..07}; do
+            test "$(wc -c < "$fragment")" -eq 1000
+          done
+          cat \
+            tennis_release_v2_4/overlay.tar.xz.b64.part00 \
+            .github/tennis-v2-4-part01/frag00 \
+            .github/tennis-v2-4-part01/frag01 \
+            .github/tennis-v2-4-part01/frag02 \
+            .github/tennis-v2-4-part01/frag03 \
+            .github/tennis-v2-4-part01/frag04 \
+            .github/tennis-v2-4-part01/frag05 \
+            .github/tennis-v2-4-part01/frag06 \
+            .github/tennis-v2-4-part01/frag07 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part02 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part03 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part04 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part05 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part06 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part07 \
+            tennis_release_v2_4/overlay.tar.xz.b64.part08 \
+            > /tmp/tennis-v24-overlay.b64
+          test "$(wc -c < /tmp/tennis-v24-overlay.b64)" -eq "$OVERLAY_BASE64_BYTES"
+          echo "${OVERLAY_BASE64_SHA256}  /tmp/tennis-v24-overlay.b64" | sha256sum -c -
+          base64 --decode /tmp/tennis-v24-overlay.b64 > /tmp/tennis-v24-overlay.tar.xz
           echo "${OVERLAY_SHA256}  /tmp/tennis-v24-overlay.tar.xz" | sha256sum -c -
+          tar -tJf /tmp/tennis-v24-overlay.tar.xz >/dev/null
           tar -xJf /tmp/tennis-v24-overlay.tar.xz -C tennis_predictive_platform_v2_4
           while IFS= read -r path; do
             test -z "$path" || rm -rf "tennis_predictive_platform_v2_4/$path"
@@ -86,6 +112,7 @@ jobs:
           printf '%s\n' "$actual" > /tmp/tennis-source-tree.sha256
           printf '%s\n' "$BASELINE_SHA256" > /tmp/tennis-baseline-artifact.sha256
           printf '%s\n' "$OVERLAY_SHA256" > /tmp/tennis-overlay.sha256
+          printf '%s\n' "$OVERLAY_BASE64_SHA256" > /tmp/tennis-overlay-base64.sha256
 
       - uses: aws-actions/configure-aws-credentials@v4
         with:
