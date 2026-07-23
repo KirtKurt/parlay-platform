@@ -1,9 +1,14 @@
 # Tennis V2.4 — Polymarket full-slate market adapter with MLB process-flow parity
 
-Release archive SHA-256: `80e80feae7f675683d305418b95bc7a7815f764079d5fec577a357e2b0140a29`
+This release repairs the live zero-card failure by replacing the inactive legacy Tennis catalog with public Polymarket match-moneyline discovery and paired CLOB order books.
 
-Source-tree SHA-256: `8b8d9d07d8440bde956b1441d55b5daf7db632aded18c310ca7f5c81360ef037`
+## Content-addressed release
 
-This content-addressed release repairs the live zero-card failure by replacing the inactive legacy Tennis tournament catalog with public Polymarket Tennis moneyline discovery and paired CLOB order books. The Tennis runtime preserves the source-pinned MLB calculation sequence, dynamic earliest-match-minus-ten-hours collection, canonical 15-minute history, immutable no-rescore T-minus-45 locks, exact-event settlement, and Tennis-only autonomous ML.
+- Baseline Actions artifact ID: `8575790142`
+- Baseline artifact SHA-256: `f8fe7f023794160a7ba7b4566fc4234bd91b852b13a6f49f14b35f5f06bbc74b`
+- Overlay SHA-256: `325b77b554b5b3835176d8c93d930d8780c4093fb6ba3304f78f4c4770f1b17c`
+- Reconstructed clean source-tree SHA-256: `885f7028b4d45755abfd72190b39e4c398900d808d21c0371db6308abdabe7cd`
 
-No MLB runtime source, table, schedule, lock, outcome, model artifact, or data is used by Tennis. The deployment fingerprints the production MLB stack before and after the isolated Tennis update.
+The Tennis runtime preserves the source-pinned MLB calculation sequence, earliest-match-minus-ten-hours collection, canonical 15-minute history, immutable no-rescore T-minus-45 locks, exact-event settlement, and Tennis-only autonomous ML.
+
+No MLB runtime source, table, schedule, lock, outcome, model artifact, or data is used by Tennis. Deployment fingerprints the production MLB stack before and after the isolated Tennis update.
