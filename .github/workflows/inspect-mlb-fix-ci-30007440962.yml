@@ -18,8 +18,8 @@ jobs:
       - name: Print exact r4 validation failure
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: '30010707351'
-          JOB_ID: '89217757609'
+          RUN_ID: '30011039815'
+          JOB_ID: '89218907352'
         run: |
           set -euo pipefail
           gh run view "$RUN_ID" \
@@ -35,6 +35,6 @@ jobs:
           selected = set()
           for i in positions:
               selected.update(range(max(0, i - 7), min(len(lines), i + 20)))
-          for i in sorted(selected)[-260:]:
+          for i in sorted(selected)[-300:]:
               print(f'{i + 1}: {lines[i]}')
           PY
