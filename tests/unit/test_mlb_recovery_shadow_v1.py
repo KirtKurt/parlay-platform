@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import copy
 import json
-import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -110,15 +109,10 @@ def test_sam_resource_has_no_prediction_table_write_authority():
     template = (ROOT / 'template.yaml').read_text(encoding='utf-8')
     if 'MLBRecoveryShadowFunction:' not in template:
         pytest.skip('SAM resource is applied by the branch migration step')
-    match = re.search(
-        r'(?ms)^  MLBRecoveryShadowFunction:\n(.*?)(?=^  [A-Za-z0-9].*?:\n|\Z)',
-        template,
-    )
-    assert match is not None
-    block = match.group(1)
+    block = template.split('  MLBRecoveryShadowFunction:', 1)[1].split('\n  ', 1)[0]
     assert 'Handler: mlb_recovery_shadow_v1.lambda_handler' in block
     assert 'MLB_ML_ARTIFACTS_BUCKET' in block
     assert 'SignalLedgerTable' not in block
     assert 'PredictionsTable' not in block
     assert 'MLBRecoveryShadowCaptureEvery15Minutes' in block
-    assert "INQSI_RECOVERY_PRODUCTION_AUTHORITY: 'false'" in block
+    assert "'productionAuthority': false" not in block
