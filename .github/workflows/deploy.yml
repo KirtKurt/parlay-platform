@@ -557,6 +557,7 @@ jobs:
           from datetime import datetime, timezone
           import urllib.parse
           from scripts.mlb_deploy_http_probe import fetch_json_object
+          from scripts.mlb_deploy_cutoff_smoke_policy import historical_lifecycle_acceptance
 
           def fetch(url, timeout=45, deadline=None, max_attempts=None):
               return fetch_json_object(
@@ -746,6 +747,7 @@ jobs:
           prediction_query = urllib.parse.urlencode({'date': payload['slateDateEt']})
           prediction_url = base_url + '/v1/mlb/predictions?' + prediction_query
           prediction_deadline = time.monotonic() + 20 * 60
+          historical_no_late_backfill = False
           while True:
               predictions = fetch(
                   prediction_url,
@@ -760,6 +762,18 @@ jobs:
               prelock_winner_rows = [
                   row for row in winner_rows if row.get('lockedPrediction') is not True
               ]
+              historical_no_late_backfill = historical_lifecycle_acceptance(
+                  predictions,
+                  status_rows,
+                  game_count,
+              )
+              if historical_no_late_backfill:
+                  print(json.dumps({
+                      'diagnostic': 'all_tminus45_cutoffs_passed_without_valid_pregame_predictions',
+                      'lateBackfillPerformed': False,
+                      'lifecycleRowCount': len(predictions.get('predictions') or []),
+                  }, indent=2))
+                  break
               if winner_rows and not prelock_winner_rows:
                   # Immutable locks from an earlier runtime are never rewritten.
                   break
@@ -770,7 +784,7 @@ jobs:
               ):
                   break
               if time.monotonic() >= prediction_deadline:
-                  raise SystemExit('No fresh persisted canonical probability-contract predictions appeared within 20 minutes')
+                  raise SystemExit('No fresh persisted canonical probability-contract predictions or complete post-cutoff lifecycle appeared within 20 minutes')
               print('Waiting for the next protected MLB pull to persist the canonical probability contract')
               time.sleep(30)
           print(json.dumps(predictions, indent=2, default=str))
@@ -794,7 +808,7 @@ jobs:
               raise SystemExit('Predictions and lock status disagree on durable game count')
           if len(predictions.get('predictions') or []) != game_count:
               raise SystemExit('Prediction lifecycle rows do not cover the full durable slate')
-          if predictions.get('operationalDefect') is True:
+          if predictions.get('operationalDefect') is True and not historical_no_late_backfill:
               raise SystemExit('Prediction lifecycle reports an operational defect after deployment')
           prediction_locks = int(predictions.get('lockedPredictionCount') or 0)
           prediction_statuses = int(predictions.get('lockedStatusCount') or 0)
