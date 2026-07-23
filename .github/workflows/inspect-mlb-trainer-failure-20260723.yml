@@ -19,41 +19,24 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Inspect fixture-patch workflow run
+      - name: Download complete fixture-patch run log
         env:
           GH_TOKEN: ${{ github.token }}
+          RUN_ID: '30012869727'
         run: |
           set -euo pipefail
           mkdir -p /tmp/mlb-r4-fixture-workflow
-          gh run list \
-            --repo "$GITHUB_REPOSITORY" \
-            --workflow 'Patch MLB R4 Acceptance Fixtures' \
-            --branch agent/reset-mlb-prospective-r4-20260723 \
-            --limit 10 \
-            --json databaseId,status,conclusion,event,headSha,createdAt,updatedAt,url \
-            > /tmp/mlb-r4-fixture-workflow/runs.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          rows = json.loads(Path('/tmp/mlb-r4-fixture-workflow/runs.json').read_text())
-          print(json.dumps(rows, indent=2))
-          if rows:
-              Path('/tmp/mlb-r4-fixture-workflow/latest_run_id.txt').write_text(str(rows[0]['databaseId']))
-          PY
-          if [ -s /tmp/mlb-r4-fixture-workflow/latest_run_id.txt ]; then
-            RUN_ID=$(cat /tmp/mlb-r4-fixture-workflow/latest_run_id.txt)
-            gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed \
-              > /tmp/mlb-r4-fixture-workflow/failed.log || true
-            gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
-              --json databaseId,status,conclusion,event,headSha,jobs,url \
-              > /tmp/mlb-r4-fixture-workflow/run.json
-            cat /tmp/mlb-r4-fixture-workflow/run.json
-            tail -240 /tmp/mlb-r4-fixture-workflow/failed.log || true
-          fi
+          gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log \
+            > /tmp/mlb-r4-fixture-workflow/run.log
+          gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
+            --json databaseId,status,conclusion,event,headSha,jobs,url \
+            > /tmp/mlb-r4-fixture-workflow/run.json
+          cat /tmp/mlb-r4-fixture-workflow/run.json
+          tail -300 /tmp/mlb-r4-fixture-workflow/run.log
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mlb-r4-fixture-workflow-${{ github.run_id }}
+          name: mlb-r4-fixture-workflow-log-${{ github.run_id }}
           path: /tmp/mlb-r4-fixture-workflow/
           if-no-files-found: error
