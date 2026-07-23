@@ -28,7 +28,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Read exact forced-pull CloudWatch failure
+      - name: Read forced and normal scheduled pull results from CloudWatch
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
@@ -54,15 +54,15 @@ jobs:
           function_name = detail['PhysicalResourceId']
           log_group = f'/aws/lambda/{function_name}'
           logs = boto3.client('logs', region_name=region)
-          start_ms = epoch_ms('2026-07-23T02:13:30Z')
-          end_ms = epoch_ms('2026-07-23T02:17:30Z')
+          window_start = '2026-07-23T02:13:30Z'
+          window_end = '2026-07-23T02:25:30Z'
           events = []
           token = None
           while True:
               kwargs = {
                   'logGroupName': log_group,
-                  'startTime': start_ms,
-                  'endTime': end_ms,
+                  'startTime': epoch_ms(window_start),
+                  'endTime': epoch_ms(window_end),
                   'interleaved': True,
                   'limit': 10000,
               }
@@ -82,17 +82,24 @@ jobs:
           )
           selected = []
           request_ids = set()
+          reports = []
+          errors = []
           for event in events:
               message = str(event.get('message') or '')
+              stamp = datetime.fromtimestamp(
+                  int(event.get('timestamp') or 0) / 1000,
+                  tz=timezone.utc,
+              ).isoformat().replace('+00:00', 'Z')
               match = request_re.search(message)
               if match:
                   request_ids.add(match.group(1))
+              if message.startswith('REPORT RequestId:'):
+                  reports.append({'timestampUtc': stamp, 'message': message[:5000]})
+              if error_re.search(message):
+                  errors.append({'timestampUtc': stamp, 'message': message[:50000]})
               if match or error_re.search(message):
                   selected.append({
-                      'timestampUtc': datetime.fromtimestamp(
-                          int(event.get('timestamp') or 0) / 1000,
-                          tz=timezone.utc,
-                      ).isoformat().replace('+00:00', 'Z'),
+                      'timestampUtc': stamp,
                       'logStreamName': event.get('logStreamName'),
                       'message': message[:50000],
                   })
@@ -102,11 +109,15 @@ jobs:
               'readOnly': True,
               'functionName': function_name,
               'logGroup': log_group,
-              'windowStartUtc': '2026-07-23T02:13:30Z',
-              'windowEndUtc': '2026-07-23T02:17:30Z',
+              'windowStartUtc': window_start,
+              'windowEndUtc': window_end,
               'eventCount': len(events),
               'selectedCount': len(selected),
               'requestIds': sorted(request_ids),
+              'reportCount': len(reports),
+              'errorCount': len(errors),
+              'reports': reports,
+              'errors': errors,
               'selectedEvents': selected,
               'secretExposed': False,
           }
@@ -116,7 +127,8 @@ jobs:
               'ok': True,
               'functionName': function_name,
               'eventCount': len(events),
-              'selectedCount': len(selected),
+              'reportCount': len(reports),
+              'errorCount': len(errors),
               'requestIds': sorted(request_ids),
               'output': str(path),
           }, indent=2))
