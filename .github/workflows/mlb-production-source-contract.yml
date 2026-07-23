@@ -18,6 +18,7 @@ on:
       - 'tests/unit/test_mlb_*.py'
       - 'tests/unit/test_bigballsdata_client.py'
       - 'tests/unit/test_verify_bbs_api_live_contract.py'
+      - 'tests/unit/test_verify_mlb_postdeploy_scheduled_pull.py'
       - 'tests/unit/test_run_mlb_ml_v3_audit_report.py'
       - 'tests/unit/test_mlb_sportsdataio_sam_wiring.py'
       - '.github/workflows/deploy.yml'
@@ -25,6 +26,7 @@ on:
       - '.github/workflows/mlb-ml-promote-champion.yml'
       - '.github/workflows/mlb-production-source-contract.yml'
       - '.github/workflows/mlb-production-acceptance.yml'
+      - '.github/workflows/mlb-post-deploy-fix-verification.yml'
       - '.github/workflows/mlb-rolling-24h-audit.yml'
       - '.github/workflows/install-dedicated-mlb-v3-read.yml'
       - '.github/workflows/install-pull-history-contract.yml'
@@ -55,6 +57,7 @@ on:
       - 'tests/unit/test_mlb_*.py'
       - 'tests/unit/test_bigballsdata_client.py'
       - 'tests/unit/test_verify_bbs_api_live_contract.py'
+      - 'tests/unit/test_verify_mlb_postdeploy_scheduled_pull.py'
       - 'tests/unit/test_run_mlb_ml_v3_audit_report.py'
       - 'tests/unit/test_mlb_sportsdataio_sam_wiring.py'
       - '.github/workflows/deploy.yml'
@@ -62,6 +65,7 @@ on:
       - '.github/workflows/mlb-ml-promote-champion.yml'
       - '.github/workflows/mlb-production-source-contract.yml'
       - '.github/workflows/mlb-production-acceptance.yml'
+      - '.github/workflows/mlb-post-deploy-fix-verification.yml'
       - '.github/workflows/mlb-rolling-24h-audit.yml'
       - '.github/workflows/install-dedicated-mlb-v3-read.yml'
       - '.github/workflows/install-pull-history-contract.yml'
@@ -185,6 +189,7 @@ jobs:
             tests/unit/test_mlb_daily_per_game_lock.py \
             tests/unit/test_mlb_lock_status_request_cache.py \
             tests/unit/test_mlb_public_per_game_authority.py \
+            tests/unit/test_verify_mlb_postdeploy_scheduled_pull.py \
             tests/unit/test_mlb_deploy_identity.py \
             tests/unit/test_mlb_deploy_http_probe.py \
             tests/unit/test_mlb_lambda_artifact_identity.py \
@@ -199,6 +204,7 @@ jobs:
           python -m py_compile scripts/stabilize_mlb_deploy_source.py
           python -m py_compile scripts/verify_mlb_deploy_identity.py
           python -m py_compile scripts/verify_mlb_release_activation_predeploy.py
+          python -m py_compile scripts/verify_mlb_postdeploy_scheduled_pull.py
           python -m py_compile scripts/mlb_deploy_http_probe.py
           python -m py_compile scripts/mlb_lambda_artifact_identity.py
           python -m py_compile scripts/create_mlb_lambda_build_manifest.py
