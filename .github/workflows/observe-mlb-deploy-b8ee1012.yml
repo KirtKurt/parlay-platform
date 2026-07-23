@@ -1,8 +1,8 @@
 name: Observe MLB Deploy b8ee1012
 
 on:
-  push:
-    branches: [agent/diagnose-mlb-persistence-20260723]
+  pull_request:
+    branches: [main]
     paths:
       - '.github/workflows/observe-mlb-deploy-b8ee1012.yml'
   workflow_dispatch:
