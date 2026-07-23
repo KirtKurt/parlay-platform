@@ -1,4 +1,4 @@
-name: Inspect MLB R4 Fixture Patch Workflow
+name: Repair MLB R4 Acceptance Fixtures
 
 on:
   push:
@@ -12,31 +12,67 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: read
-  contents: read
+  contents: write
+
+concurrency:
+  group: repair-mlb-r4-acceptance-fixtures
+  cancel-in-progress: false
 
 jobs:
-  inspect:
+  repair:
     runs-on: ubuntu-latest
     steps:
-      - name: Download complete fixture-patch run log
-        env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: '30012869727'
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/reset-mlb-prospective-r4-20260723
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Patch stale pre-r4 acceptance fixtures
         run: |
           set -euo pipefail
-          mkdir -p /tmp/mlb-r4-fixture-workflow
-          gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log \
-            > /tmp/mlb-r4-fixture-workflow/run.log
-          gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" \
-            --json databaseId,status,conclusion,event,headSha,jobs,url \
-            > /tmp/mlb-r4-fixture-workflow/run.json
-          cat /tmp/mlb-r4-fixture-workflow/run.json
-          tail -300 /tmp/mlb-r4-fixture-workflow/run.log
+          python - <<'PY'
+          from pathlib import Path
 
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: mlb-r4-fixture-workflow-log-${{ github.run_id }}
-          path: /tmp/mlb-r4-fixture-workflow/
-          if-no-files-found: error
+          path = Path('tests/unit/test_mlb_production_acceptance.py')
+          text = path.read_text(encoding='utf-8')
+          replacements = {
+              'NOW = datetime(2026, 7, 23, 3, 0, tzinfo=timezone.utc)':
+                  'NOW = datetime(2026, 7, 25, 3, 0, tzinfo=timezone.utc)',
+              '2026-07-22': '2026-07-24',
+              'test_pre_r3_missing_locks_are_quarantined_from_post_cutoff_acceptance':
+                  'test_pre_r4_missing_locks_are_quarantined_from_post_cutoff_acceptance',
+          }
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'expected fixture text missing: {old}')
+              text = text.replace(old, new)
+          path.write_text(text, encoding='utf-8')
+          PY
+
+      - name: Run acceptance and r4 cutover regressions
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+          PYTHONPATH: ${{ github.workspace }}/hello_world:${{ github.workspace }}/scripts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m pytest -q \
+            tests/unit/test_mlb_production_acceptance.py \
+            tests/unit/test_mlb_ml_r4_clean_cutover.py
+
+      - name: Publish clean PR 98 branch
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git rm -f .github/workflows/patch-mlb-r4-acceptance-fixtures.yml
+          git add tests/unit/test_mlb_production_acceptance.py
+          git commit -m 'Update MLB production acceptance fixtures for r4'
+          git push origin HEAD:agent/reset-mlb-prospective-r4-20260723
