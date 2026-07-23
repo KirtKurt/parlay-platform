@@ -4,8 +4,8 @@ import os
 from typing import Any, Dict
 
 VERSION = (
-    "MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-"
-    "aws-v2-shadow-manual-first"
+    "MLB-ML-RUNTIME-INSTALL-v4.2-signal-policy-prelock-persistence-"
+    "verified-stage-promotion-authority-aws-v2-shadow-manual-first"
 )
 
 
@@ -46,6 +46,7 @@ def install() -> Dict[str, Any]:
         import mlb_last_possible_prediction_gate
         import mlb_probability_actionability_guard
         import mlb_prediction_probability_contract_v1
+        import mlb_signal_policy_v12
         import mlb_slate_coverage_patch
         import mlb_slate_prediction_lock
 
@@ -61,13 +62,13 @@ def install() -> Dict[str, Any]:
             if not hasattr(engine, attr):
                 patch.apply(engine)
 
-        # Install the per-game read authority explicitly.  The slate wrapper is
+        # Install the per-game read authority explicitly. The slate wrapper is
         # annotation-only; it cannot generate a second pick at the cutoff.
         mlb_slate_coverage_patch.apply(mlb_slate_prediction_lock)
         mlb_slate_prediction_lock.apply(engine)
         # Lambda adds LAMBDA_TASK_ROOT to sys.path after Python has already
         # processed sitecustomize, so this legacy wrapper cannot be assumed to
-        # have been imported during interpreter startup.  Install it here and
+        # have been imported during interpreter startup. Install it here and
         # then disable its finality behavior with the canonical per-game flag.
         # The wrapper remains annotation-only and dynamically observes the
         # flag below on every call.
@@ -78,14 +79,21 @@ def install() -> Dict[str, Any]:
             and getattr(engine, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED", False)
         )
 
-        # Finalize direction/probability before the public authority and sole
-        # storage writer. V2 was installed before semantics/freezing above, so
-        # its exact fingerprint is part of the frozen T-45 vector.
+        # Finalize direction/probability before calibration, the signal-risk
+        # policy, the public pre-lock authority and the sole storage writer.
+        # The signal policy must run before the public authority so its
+        # versioned signalPolicyV13 evidence survives into the exact public
+        # PRE_LOCK_PLATFORM_PREDICTION that _store_prediction validates.
         mlb_prediction_probability_contract_v1.apply(engine)
-        # Calibration and actionability consume the already-normalized
-        # selected side.  They expose a separate calibrated estimate and must
-        # never rewrite the canonical complementary model probabilities.
         mlb_probability_actionability_guard.apply(engine)
+        mlb_signal_policy_v12.apply(engine)
+        status["steps"]["signalPolicyV13Installed"] = bool(
+            getattr(engine, "_INQSI_MLB_SIGNAL_POLICY_V12_APPLIED", False)
+            and str(getattr(mlb_signal_policy_v12, "VERSION", "")).startswith(
+                "MLB-SIGNAL-POLICY-v1."
+            )
+        )
+        status["signalPolicyV13Version"] = mlb_signal_policy_v12.VERSION
         engine._INQSI_MLB_PERSISTED_PRELOCK_PUBLIC_AUTHORITY_ENABLED = True
 
         exact_vector = getattr(mlb_ml_frozen_features, "_INQSI_MLB_EXACT_LOCK_VECTOR_PATCH_APPLIED", False)
@@ -111,7 +119,7 @@ def install() -> Dict[str, Any]:
         # Compatibility name used by the existing AWS deploy smoke test. It now
         # means the stronger exact clean-cohort vector path is installed.
         status["steps"]["immutableFeatureFreeze"] = bool(exact_vector and official_bridge)
-        # Do not rely on sitecustomize for canonical write safety.  The engine
+        # Do not rely on sitecustomize for canonical write safety. The engine
         # itself must attest that LOCKED#GAME writes consistent-read and bind
         # the exact immutable T-minus-45 stage before storage.
         mlb_immutable_locked_storage_patch.apply(engine)

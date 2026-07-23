@@ -116,6 +116,15 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
 
     actionability.apply = apply_actionability
 
+    signal_policy = _module("mlb_signal_policy_v12")
+    signal_policy.VERSION = "MLB-SIGNAL-POLICY-v1.7-test"
+
+    def apply_signal_policy(module: ModuleType) -> None:
+        events.append("signal_policy_v13_apply")
+        module._INQSI_MLB_SIGNAL_POLICY_V12_APPLIED = True
+
+    signal_policy.apply = apply_signal_policy
+
     slate_lock = _module("mlb_slate_prediction_lock")
     slate_lock.apply = lambda module: events.append("slate_lock_apply")
 
@@ -151,6 +160,7 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
             legacy_gate,
             probability,
             actionability,
+            signal_policy,
             coverage,
             slate_lock,
         )
@@ -168,8 +178,8 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
 
         assert status["ok"] is True
         assert status["version"] == (
-            "MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-"
-            "aws-v2-shadow-manual-first"
+            "MLB-ML-RUNTIME-INSTALL-v4.2-signal-policy-prelock-persistence-"
+            "verified-stage-promotion-authority-aws-v2-shadow-manual-first"
         )
         assert status["steps"]["legacyV1AuthorityDisabled"] is True
         assert status["steps"]["v2ShadowManualFirst"] is True
@@ -178,7 +188,10 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
         assert status["steps"][
             "providerNeutralCalibrationAndActionability"
         ] is True
+        assert status["steps"]["signalPolicyV13Installed"] is True
+        assert status["signalPolicyV13Version"] == signal_policy.VERSION
         assert events.count("legacy_gate_apply") == 1
+        assert events.count("signal_policy_v13_apply") == 1
         assert events.index("fundamentals_v2_apply") < events.index(
             "storage_finalizer_apply"
         )
@@ -192,6 +205,9 @@ def test_installer_disables_legacy_gate_without_sitecustomize() -> None:
             "probability_actionability_apply"
         )
         assert events.index("probability_actionability_apply") < events.index(
+            "signal_policy_v13_apply"
+        )
+        assert events.index("signal_policy_v13_apply") < events.index(
             "public_authority_apply"
         )
         assert engine.read_persisted_predictions is not engine.predict_all
