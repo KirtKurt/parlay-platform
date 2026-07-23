@@ -1,4 +1,4 @@
-name: Inspect MLB Trainer Deploy Failure 2026-07-23
+name: Inspect MLB Source Contract Failure 2026-07-23
 
 on:
   push:
@@ -19,120 +19,57 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract exact trainer failure context
+      - name: Extract exact source-contract failure context
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: '30008592185'
-          JOB_ID: '89210644434'
+          RUN_ID: '30012212531'
+          JOB_ID: '89222966270'
         run: |
           set -euo pipefail
-          mkdir -p /tmp/mlb-trainer-failure
+          mkdir -p /tmp/mlb-source-contract-failure
           gh run view "$RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
             --job "$JOB_ID" \
-            --log-failed > /tmp/mlb-trainer-failure/failed.log
+            --log-failed > /tmp/mlb-source-contract-failure/failed.log
           python - <<'PY'
           import json
           import re
           from pathlib import Path
 
-          path = Path('/tmp/mlb-trainer-failure/failed.log')
+          path = Path('/tmp/mlb-source-contract-failure/failed.log')
           lines = path.read_text(encoding='utf-8-sig', errors='replace').splitlines()
           pattern = re.compile(
-              r'(traceback|assertionerror|systemexit|runtimeerror|valueerror|keyerror|error:|failed|failure|stale|mismatch|missing|insufficient|lease|traininghealth|selectioncapturehealth|deploymentidentity|rowcount|split)',
+              r'(traceback|assertionerror|systemexit|runtimeerror|valueerror|keyerror|error:|failed|failure|stale|mismatch|missing|expected|actual|r3|r4|cutoff|experiment|release)',
               re.IGNORECASE,
           )
           selected = set()
           for index, line in enumerate(lines):
               if pattern.search(line):
-                  selected.update(range(max(0, index - 8), min(len(lines), index + 24)))
-          context = [
-              {'lineNumber': index + 1, 'text': lines[index]}
-              for index in sorted(selected)
-          ]
+                  selected.update(range(max(0, index - 10), min(len(lines), index + 28)))
           report = {
               'ok': True,
               'readOnly': True,
-              'runId': 30008592185,
-              'jobId': 89210644434,
+              'runId': int('30012212531'),
+              'jobId': int('89222966270'),
               'lineCount': len(lines),
-              'matchedContext': context[-500:],
+              'matchedContext': [
+                  {'lineNumber': index + 1, 'text': lines[index]}
+                  for index in sorted(selected)
+              ][-600:],
               'tail': [
-                  {'lineNumber': len(lines) - len(lines[-250:]) + index + 1, 'text': line}
-                  for index, line in enumerate(lines[-250:])
+                  {'lineNumber': len(lines) - len(lines[-300:]) + index + 1, 'text': line}
+                  for index, line in enumerate(lines[-300:])
               ],
           }
-          out = Path('/tmp/mlb-trainer-failure/inspection.json')
-          out.write_text(json.dumps(report, indent=2) + '\n', encoding='utf-8')
-          print(json.dumps(report, indent=2))
-          PY
-
-      - name: Configure AWS credentials for read-only CloudWatch inspection
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: ${{ secrets.AWS_REGION }}
-
-      - name: Read exact trainer Lambda exception from CloudWatch
-        env:
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-        run: |
-          set -euo pipefail
-          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
-            --stack-name parlay-platform-dev \
-            --region "$AWS_REGION" \
-            --logical-resource-id MLBMLTrainingFunction \
-            --query 'StackResourceDetail.PhysicalResourceId' \
-            --output text)
-          START_MS=$(python - <<'PY'
-          from datetime import datetime, timezone
-          print(int(datetime(2026, 7, 23, 12, 53, 30, tzinfo=timezone.utc).timestamp() * 1000))
-          PY
-          )
-          END_MS=$(python - <<'PY'
-          from datetime import datetime, timezone
-          print(int(datetime(2026, 7, 23, 12, 55, 30, tzinfo=timezone.utc).timestamp() * 1000))
-          PY
-          )
-          aws logs filter-log-events \
-            --region "$AWS_REGION" \
-            --log-group-name "/aws/lambda/$FUNCTION_NAME" \
-            --start-time "$START_MS" \
-            --end-time "$END_MS" \
-            --interleaved \
-            --limit 10000 \
-            --output json > /tmp/mlb-trainer-failure/cloudwatch.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          payload = json.loads(Path('/tmp/mlb-trainer-failure/cloudwatch.json').read_text(encoding='utf-8'))
-          events = [
-              {
-                  'timestamp': event.get('timestamp'),
-                  'logStreamName': event.get('logStreamName'),
-                  'message': str(event.get('message') or '').rstrip(),
-              }
-              for event in payload.get('events') or []
-          ]
-          report = {
-              'ok': bool(events),
-              'readOnly': True,
-              'eventCount': len(events),
-              'events': events,
-          }
-          Path('/tmp/mlb-trainer-failure/cloudwatch_inspection.json').write_text(
+          Path('/tmp/mlb-source-contract-failure/inspection.json').write_text(
               json.dumps(report, indent=2) + '\n', encoding='utf-8'
           )
           print(json.dumps(report, indent=2))
-          if not events:
-              raise SystemExit('No trainer log events found in the exact failure window')
           PY
 
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mlb-trainer-failure-inspection-${{ github.run_id }}
-          path: /tmp/mlb-trainer-failure/
+          name: mlb-source-contract-failure-${{ github.run_id }}
+          path: /tmp/mlb-source-contract-failure/
           if-no-files-found: error
