@@ -1,0 +1,43 @@
+name: Export MLB Postgame Runtime Source 84b1
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/export-mlb-postgame-runtime-source-84b1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 1
+
+      - name: Package exact deployed runtime source
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-postgame-source/hello_world /tmp/mlb-postgame-source/tests/unit /tmp/mlb-postgame-source/scripts
+          cp hello_world/mlb_slate_coverage_patch.py /tmp/mlb-postgame-source/hello_world/
+          cp hello_world/mlb_locked_prediction_storage_finalizer_v1.py /tmp/mlb-postgame-source/hello_world/
+          cp hello_world/mlb_manual_pull_protected.py /tmp/mlb-postgame-source/hello_world/
+          cp hello_world/mlb_last_possible_prediction_gate.py /tmp/mlb-postgame-source/hello_world/ 2>/dev/null || true
+          cp hello_world/mlb_game_winner_engine.py /tmp/mlb-postgame-source/hello_world/
+          cp tests/unit/test_mlb_postcutoff_storage_contract.py /tmp/mlb-postgame-source/tests/unit/
+          cp tests/unit/test_mlb_storage_authority.py /tmp/mlb-postgame-source/tests/unit/
+          cp tests/unit/test_mlb_manual_pull_protected_runtime.py /tmp/mlb-postgame-source/tests/unit/
+          cp tests/unit/test_mlb_public_per_game_authority.py /tmp/mlb-postgame-source/tests/unit/ 2>/dev/null || true
+          cp scripts/verify_mlb_schedule_invariants.py /tmp/mlb-postgame-source/scripts/
+          git rev-parse HEAD > /tmp/mlb-postgame-source/MAIN_SHA
+
+      - name: Upload exact runtime source
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-postgame-runtime-source-84b1-${{ github.run_id }}
+          path: /tmp/mlb-postgame-source
+          if-no-files-found: error
