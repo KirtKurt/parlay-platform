@@ -1,4 +1,4 @@
-name: Inspect MLB R4 Bootstrap Failure
+name: Inspect MLB R4 Materialization Push Failure
 
 on:
   pull_request:
@@ -15,26 +15,15 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Print exact r4 validation failure
+      - name: Print r4 materialization push failure
         env:
           GH_TOKEN: ${{ github.token }}
-          RUN_ID: '30011039815'
-          JOB_ID: '89218907352'
+          RUN_ID: '30011582957'
+          JOB_ID: '89220775993'
         run: |
           set -euo pipefail
           gh run view "$RUN_ID" \
             --repo "$GITHUB_REPOSITORY" \
             --job "$JOB_ID" \
             --log-failed > /tmp/mlb-r4-failed.log
-          python - <<'PY'
-          import re
-          from pathlib import Path
-          lines = Path('/tmp/mlb-r4-failed.log').read_text(encoding='utf-8', errors='replace').splitlines()
-          pattern = re.compile(r'(FAILURES|FAILED |AssertionError|E\s+assert|short test summary|error:|Process completed|SystemExit|Traceback)', re.I)
-          positions = sorted({i for i, line in enumerate(lines) if pattern.search(line)})
-          selected = set()
-          for i in positions:
-              selected.update(range(max(0, i - 7), min(len(lines), i + 20)))
-          for i in sorted(selected)[-300:]:
-              print(f'{i + 1}: {lines[i]}')
-          PY
+          tail -120 /tmp/mlb-r4-failed.log
