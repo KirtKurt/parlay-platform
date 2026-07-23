@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, Optional
 
-VERSION = "MLB-OFFICIAL-LOCK-QUALITY-v1-60pct-confirmed-direction"
+import mlb_precision_admission_gate_v1 as precision_admission
+import mlb_reversal_similarity_v2 as reversal_similarity
+
+
+VERSION = "MLB-OFFICIAL-LOCK-QUALITY-v2-60pct-direction-70pct-evidence-admission"
 MIN_OFFICIAL_PROBABILITY_PCT = 60.0
 MAX_UNCONFIRMED_REVERSALS = 1
 MAX_UNCONFIRMED_BOOK_DIVERGENCE = 0.035
+PRECISION_ENFORCEMENT_ENV = "INQSI_MLB_ENFORCE_70_PRECISION_ADMISSION"
 
 
 def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -15,6 +21,10 @@ def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
         return float(value)
     except Exception:
         return default
+
+
+def _truthy(value: Any) -> bool:
+    return str(value or "").strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _tags(row: Dict[str, Any], selected: Dict[str, Any]) -> set[str]:
@@ -62,7 +72,7 @@ def _reversal_count(selected: Dict[str, Any]) -> int:
     ]
     temporal = selected.get("temporalFeatures") or {}
     horizons = temporal.get("horizons") if isinstance(temporal, dict) else {}
-    for horizon in ("60m", "180m", "full"):
+    for horizon in ("60m", "120m", "180m", "240m", "480m", "full"):
         payload = (horizons or {}).get(horizon) or {}
         values.append(_f(payload.get("reversalCount"), 0.0))
     return int(max(value or 0.0 for value in values))
@@ -114,6 +124,9 @@ def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]
     divergence = _f(selected.get("bookDivergence"), 0.0) or 0.0
     delta = _f(selected.get("delta"))
     confirmation = _clean_confirmation(row, selected, tags)
+    similarity = reversal_similarity.analyze(selected)
+    precision = precision_admission.evaluate(row, selected)
+    precision_enforced = _truthy(os.environ.get(PRECISION_ENFORCEMENT_ENV, "false"))
     reasons = []
 
     if probability_pct is None:
@@ -151,30 +164,51 @@ def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]
 
     signal_policy = row.get("signalPolicyV13") or {}
     risk_gate = signal_policy.get("signalRiskGate") if isinstance(signal_policy, dict) else {}
-    risk_reasons = {
-        str(value)
-        for value in ((risk_gate or {}).get("reasons") or [])
-    }
+    risk_reasons = {str(value) for value in ((risk_gate or {}).get("reasons") or [])}
     if "late_direction_conflict_without_confirmation" in risk_reasons:
         reasons.append("late_direction_conflict_without_independent_confirmation")
+
+    similarity_risks = set(similarity.get("riskFlags") or [])
+    if (
+        "LATE_REVERSAL_DIRECTION_RISK" in similarity_risks
+        and not confirmation["independentConfirmation"]
+        and not precision.get("recommendationEligible")
+    ):
+        reasons.append("late_reversal_direction_risk_without_validated_exception")
+    if (
+        "MULTI_REVERSAL_PATH_NOISE" in similarity_risks
+        and not confirmation["independentConfirmation"]
+        and not precision.get("recommendationEligible")
+    ):
+        reasons.append("multi_reversal_path_noise_without_validated_exception")
+
+    if precision_enforced and precision.get("recommendationEligible") is not True:
+        reasons.append("precision_admission_not_met")
 
     reasons = sorted(set(reasons))
     return {
         "applied": True,
         "version": VERSION,
         "officialEligible": not reasons,
+        "recommendationEligible": not reasons,
+        "visibleLockedPickRetained": True,
+        "recommendationAbstained": bool(reasons),
         "minimumOfficialProbabilityPct": MIN_OFFICIAL_PROBABILITY_PCT,
         "selectedTeamProbabilityPct": probability_pct,
         "reversalCount": reversals,
         "selectedMovement": delta,
         "bookDivergence": round(divergence, 6),
         "lateDirectionConflict": late_conflict,
+        "precisionAdmissionEnforced": precision_enforced,
+        "precisionAdmission": precision,
+        "reversalSimilarity": similarity,
         **confirmation,
         "reasons": reasons,
         "policy": (
-            "A canonical locked winner remains visible and auditable, but it is official-target eligible only at "
-            "60% or higher with direction integrity. Multiple reversals, late conflict, resistance, compressed "
-            "markets, or high divergence require independent book agreement plus steam or run-line confirmation."
+            "Every canonical locked winner stays visible. Recommendation eligibility requires the existing 60% and "
+            "direction-integrity checks; when the runtime policy enables 70% precision admission, the exact signal "
+            "signature must also have a trusted prospective record whose 95% Wilson lower bound is at least 70%. "
+            "Signal Quality Index and post-hoc reversal similarities never create positive authority."
         ),
     }
 
@@ -195,5 +229,6 @@ def apply(accuracy_module: Any) -> Any:
     accuracy_module._is_official = quality_gated_is_official
     accuracy_module.OFFICIAL_LOCK_QUALITY_GATE_VERSION = VERSION
     accuracy_module.INDIVIDUAL_GAME_OFFICIAL_PICK_PROBABILITY_FLOOR_PCT = MIN_OFFICIAL_PROBABILITY_PCT
+    accuracy_module.MLB_PRECISION_ADMISSION_GATE_VERSION = precision_admission.VERSION
     accuracy_module._INQSI_MLB_OFFICIAL_LOCK_QUALITY_GATE_APPLIED = True
     return accuracy_module

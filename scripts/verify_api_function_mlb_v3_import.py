@@ -95,8 +95,8 @@ assert str(body.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZ
 runtime = body.get("ml_runtime_install") or {}
 assert runtime.get("ok") is True, runtime
 assert runtime.get("version") == (
-    "MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-"
-    "aws-v2-shadow-manual-first"
+    "MLB-ML-RUNTIME-INSTALL-v4.2-reversal-precision-admission-"
+    "verified-stage-promotion-authority-aws-v2-shadow-manual-first"
 ), runtime
 assert runtime.get("steps", {}).get("sourceHonestFundamentalsV2") is True, runtime
 assert runtime.get("steps", {}).get(
@@ -105,6 +105,10 @@ assert runtime.get("steps", {}).get(
 assert runtime.get("steps", {}).get(
     "providerNeutralCalibrationAndActionability"
 ) is True, runtime
+assert runtime.get("steps", {}).get("reversalPrecisionAdmission") is True, runtime
+assert str(runtime.get("reversalPrecisionAdmissionVersion") or "").startswith(
+    "MLB-REVERSAL-PRECISION-RUNTIME-v1"
+), runtime
 policy = runtime.get("accuracyTargetPolicy") or {}
 assert policy.get("rolling24hAllGamesAuditTargetPct") == 90.0, policy
 assert policy.get("minimumRolling24hSlateAccuracyPct") == 90.0, policy
@@ -112,6 +116,11 @@ assert policy.get("minimumOutcomeUntouchedAccuracyPct") == 90.0, policy
 assert policy.get("recommendationReliabilityThresholdPct") == 90.0, policy
 assert policy.get("selectedUntouchedTestPlayabilityAccuracyTargetPct") == 90.0, policy
 assert policy.get("minimumExactOddsCoveragePct") == 90.0, policy
+assert policy.get("minimumRecommendationEvidencePrecisionPct") == 70.0, policy
+assert policy.get("precisionAdmissionEnforced") is True, policy
+assert policy.get("precisionValidationRegistry", {}).get("approvedSignalCount") == 0, policy
+assert policy.get("unvalidatedSignalsCauseRecommendationAbstention") is True, policy
+assert policy.get("futureAccuracyGuaranteed") is False, policy
 assert policy.get("rolling24hSlateAccuracyProgressMilestonesPct") == [50.0, 60.0, 70.0, 80.0], policy
 assert policy.get("rolling24hSlateAccuracyProgressMilestonesReportingOnly") is True, policy
 assert policy.get("rolling24hAccuracyAffectsPromotion") is False, policy
@@ -138,6 +147,7 @@ required = {
     "canonicalLockedStorageFinalizer",
     "lastPrelockPromotionAuthority",
     "legacyFinalGateDisabled",
+    "reversalPrecisionAdmission",
 }
 missing = sorted(name for name in required if (runtime.get("steps") or {}).get(name) is not True)
 assert not missing, {"missingRuntimeSteps": missing, "runtime": runtime}
@@ -203,7 +213,7 @@ print(json.dumps({
         sys.stderr.write(result.stderr)
         return result.returncode
     print(result.stdout.strip())
-    print("MLB Lambda cold import, read-only, fail-closed, pull-history, and 60% official-lock contracts verified")
+    print("MLB Lambda cold import, read-only, fail-closed, pull-history, and 70% evidence-admission contracts verified")
     return 0
 
 
