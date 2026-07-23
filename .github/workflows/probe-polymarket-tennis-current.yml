@@ -1,0 +1,167 @@
+name: Probe current Polymarket Tennis markets correctly
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/probe-polymarket-tennis-current.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - name: Fetch open Tennis markets by documented tag filter
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet requests
+          mkdir -p evidence/raw
+          python - <<'PY'
+          from __future__ import annotations
+
+          import ast
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          from typing import Any
+
+          import requests
+
+          session = requests.Session()
+          session.headers.update({
+              "accept": "application/json",
+              "user-agent": "parlay-platform-polymarket-tennis-probe/2.0",
+          })
+          base = "https://gamma-api.polymarket.com"
+          params = {
+              "tag_id": "864",
+              "related_tags": "true",
+              "active": "true",
+              "closed": "false",
+              "limit": "500",
+              "order": "start_date",
+              "ascending": "true",
+          }
+          response = session.get(base + "/events", params=params, timeout=45)
+          response.raise_for_status()
+          payload = response.json()
+          events = payload if isinstance(payload, list) else payload.get("events", [])
+          Path("evidence/raw/gamma-open-tennis-events.json").write_text(
+              json.dumps(payload, indent=2, sort_keys=True)
+          )
+
+          def parsed_list(value: Any) -> list[Any]:
+              if isinstance(value, list):
+                  return value
+              if isinstance(value, str):
+                  for parser in (json.loads, ast.literal_eval):
+                      try:
+                          parsed = parser(value)
+                          if isinstance(parsed, list):
+                              return parsed
+                      except Exception:
+                          pass
+              return []
+
+          normalized = []
+          current_market_count = 0
+          open_orderbook_count = 0
+          for event in events:
+              event_row = {
+                  "id": str(event.get("id") or ""),
+                  "title": event.get("title"),
+                  "slug": event.get("slug"),
+                  "startDate": event.get("startDate"),
+                  "endDate": event.get("endDate"),
+                  "eventDate": event.get("eventDate"),
+                  "closed": event.get("closed"),
+                  "active": event.get("active"),
+                  "gameId": event.get("gameId"),
+                  "markets": [],
+              }
+              for market in event.get("markets") or []:
+                  outcomes = [str(x) for x in parsed_list(market.get("outcomes"))]
+                  prices = parsed_list(market.get("outcomePrices"))
+                  token_ids = [str(x) for x in parsed_list(market.get("clobTokenIds"))]
+                  market_row = {
+                      "id": str(market.get("id") or ""),
+                      "question": market.get("question"),
+                      "slug": market.get("slug"),
+                      "sportsMarketType": market.get("sportsMarketType"),
+                      "gameStartTime": market.get("gameStartTime"),
+                      "startDate": market.get("startDate"),
+                      "endDate": market.get("endDate"),
+                      "closed": market.get("closed"),
+                      "active": market.get("active"),
+                      "acceptingOrders": market.get("acceptingOrders"),
+                      "outcomes": outcomes,
+                      "outcomePrices": prices,
+                      "clobTokenIds": token_ids,
+                      "bestBid": market.get("bestBid"),
+                      "bestAsk": market.get("bestAsk"),
+                      "lastTradePrice": market.get("lastTradePrice"),
+                      "liquidity": market.get("liquidityNum") or market.get("liquidity"),
+                      "volume": market.get("volumeNum") or market.get("volume"),
+                      "books": [],
+                  }
+                  if market_row["active"] is True and market_row["closed"] is not True:
+                      current_market_count += 1
+                  if market_row["acceptingOrders"] is True:
+                      open_orderbook_count += 1
+                  for token in token_ids[:2]:
+                      try:
+                          book_response = session.get(
+                              "https://clob.polymarket.com/book",
+                              params={"token_id": token},
+                              timeout=30,
+                          )
+                          try:
+                              book_payload = book_response.json()
+                          except Exception:
+                              book_payload = None
+                          bids = book_payload.get("bids", []) if isinstance(book_payload, dict) else []
+                          asks = book_payload.get("asks", []) if isinstance(book_payload, dict) else []
+                          market_row["books"].append({
+                              "tokenId": token,
+                              "status": book_response.status_code,
+                              "bestBid": bids[0] if bids else None,
+                              "bestAsk": asks[0] if asks else None,
+                              "bidCount": len(bids),
+                              "askCount": len(asks),
+                          })
+                      except Exception as exc:
+                          market_row["books"].append({
+                              "tokenId": token,
+                              "errorType": type(exc).__name__,
+                              "error": str(exc)[:250],
+                          })
+                  event_row["markets"].append(market_row)
+              normalized.append(event_row)
+
+          report = {
+              "checkedAtUtc": datetime.now(timezone.utc).isoformat(),
+              "requestStatus": response.status_code,
+              "requestUrl": response.url,
+              "eventCount": len(normalized),
+              "marketCount": sum(len(event["markets"]) for event in normalized),
+              "currentMarketCount": current_market_count,
+              "openOrderbookCount": open_orderbook_count,
+              "events": normalized,
+          }
+          Path("evidence/polymarket-current-tennis.json").write_text(
+              json.dumps(report, indent=2, sort_keys=True)
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: polymarket-current-tennis-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/
