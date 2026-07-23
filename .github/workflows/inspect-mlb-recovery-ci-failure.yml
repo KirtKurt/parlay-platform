@@ -15,7 +15,7 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract exact failed-step context
+      - name: Print exact failed-step tail
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: '29984740351'
@@ -26,8 +26,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --job "$JOB_ID" \
             --log-failed > /tmp/mlb-recovery-failed.log
-          echo '--- MATCHED FAILURE CONTEXT ---'
-          grep -nEi -B5 -A20 'error|failed|traceback|assert|invalid|missing|mismatch|exit code' \
-            /tmp/mlb-recovery-failed.log | tail -260 || true
-          echo '--- FAILURE LOG TAIL ---'
-          tail -160 /tmp/mlb-recovery-failed.log
+          tail -90 /tmp/mlb-recovery-failed.log
