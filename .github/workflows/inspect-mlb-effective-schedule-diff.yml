@@ -1,0 +1,127 @@
+name: Inspect MLB Effective Schedule Diff
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/inspect-mlb-effective-schedule-diff.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 84b1d821d76bf9106a0708e84a19888c728c0cf9
+          fetch-depth: 1
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install read-only diagnostic runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Compare immutable membership and effective schedule read-only
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          SNAPSHOTS_TABLE: parlay_platform_snapshots
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import copy
+          import json
+          from pathlib import Path
+
+          import inqsi_pull_history as history
+          import mlb_slate_coverage_patch as coverage
+
+          slate = '2026-07-22'
+          pulls = history.query_pulls('mlb', slate, 500)
+          resolved = history.verified_full_slate_manifest(pulls, slate)
+          full_pull = resolved['fullAuthorityPull']
+          membership = history.provider_manifest_games_for_lock(full_pull, slate)
+          effective = list(resolved.get('games') or [])
+
+          def identity(game):
+              return coverage.game_identity(game)
+
+          def plain(game):
+              return {
+                  key: game.get(key)
+                  for key in (
+                      'game_id', 'gameId', 'id', 'game_key', 'gameKey',
+                      'official_game_pk', 'officialGamePk',
+                      'provider_event_id', 'providerEventId',
+                      'commence_time', 'commenceTime',
+                      'canonical_start_time_source', 'canonicalStartTimeSource',
+                      'away_team', 'awayTeam', 'home_team', 'homeTeam',
+                  )
+                  if game.get(key) not in (None, '')
+              }
+
+          rows = []
+          for index in range(max(len(membership), len(effective))):
+              left = membership[index] if index < len(membership) else {}
+              right = effective[index] if index < len(effective) else {}
+              left_plain = plain(left)
+              right_plain = plain(right)
+              changed = {
+                  key: {'membership': left_plain.get(key), 'effective': right_plain.get(key)}
+                  for key in sorted(set(left_plain) | set(right_plain))
+                  if left_plain.get(key) != right_plain.get(key)
+              }
+              rows.append({
+                  'index': index,
+                  'membershipIdentity': identity(left) if left else None,
+                  'effectiveIdentity': identity(right) if right else None,
+                  'changedFields': changed,
+              })
+
+          out = {
+              'ok': True,
+              'readOnly': True,
+              'slateDateEt': slate,
+              'pullCount': len(pulls),
+              'membershipCount': len(membership),
+              'effectiveCount': len(effective),
+              'membershipIdentities': [identity(game) for game in membership],
+              'effectiveIdentities': [identity(game) for game in effective],
+              'identityListsEqual': [identity(game) for game in membership] == [identity(game) for game in effective],
+              'fullRowsEqual': membership == effective,
+              'scheduleRevisionApplied': resolved.get('scheduleRevisionApplied'),
+              'rows': rows,
+              'secretExposed': False,
+          }
+          path = Path('/tmp/mlb-effective-schedule-diff.json')
+          path.write_text(json.dumps(out, indent=2, sort_keys=True, default=str) + '\n', encoding='utf-8')
+          print(json.dumps({
+              'ok': out['ok'],
+              'pullCount': out['pullCount'],
+              'membershipCount': out['membershipCount'],
+              'effectiveCount': out['effectiveCount'],
+              'identityListsEqual': out['identityListsEqual'],
+              'fullRowsEqual': out['fullRowsEqual'],
+              'scheduleRevisionApplied': out['scheduleRevisionApplied'],
+              'changedRowCount': sum(bool(row['changedFields']) for row in rows),
+          }, indent=2))
+          PY
+
+      - name: Upload read-only schedule diff
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-effective-schedule-diff-${{ github.run_id }}
+          path: /tmp/mlb-effective-schedule-diff.json
+          if-no-files-found: error
