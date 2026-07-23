@@ -1,0 +1,291 @@
+name: Finalize MLB R4 Production Repair
+
+on:
+  push:
+    branches: [agent/inspect-mlb-trainer-failure-20260723]
+    paths:
+      - '.github/workflows/finalize-mlb-r4-production-repair.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/finalize-mlb-r4-production-repair.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: finalize-mlb-r4-production-repair
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Bind verification to merged PR 98
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/mlb-r4-final
+          gh pr view 98 --repo "$GITHUB_REPOSITORY" \
+            --json state,isDraft,mergedAt,mergeCommit,headRefOid,url \
+            > /tmp/mlb-r4-final/pr98.json
+          cat /tmp/mlb-r4-final/pr98.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          row = json.loads(Path('/tmp/mlb-r4-final/pr98.json').read_text())
+          if row.get('state') != 'MERGED' or not (row.get('mergeCommit') or {}).get('oid'):
+              raise SystemExit('PR 98 is not merged; production verification cannot continue')
+          Path('/tmp/mlb-r4-final/merge_sha.txt').write_text(row['mergeCommit']['oid'])
+          PY
+
+      - name: Wait for exact-main AWS deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          MERGE_SHA=$(cat /tmp/mlb-r4-final/merge_sha.txt)
+          export MERGE_SHA
+          for attempt in $(seq 1 140); do
+            gh run list --repo "$GITHUB_REPOSITORY" --workflow deploy.yml --branch main --limit 60 \
+              --json databaseId,headSha,status,conclusion,url,createdAt \
+              > /tmp/mlb-r4-final/deploy-runs.json
+            python - <<'PY' > /tmp/mlb-r4-final/deploy-selection.txt
+          import json, os
+          from pathlib import Path
+          rows = json.loads(Path('/tmp/mlb-r4-final/deploy-runs.json').read_text())
+          matches = [row for row in rows if row.get('headSha') == os.environ['MERGE_SHA']]
+          matches.sort(key=lambda row: row.get('createdAt') or '')
+          if matches:
+              row = matches[-1]
+              print(row.get('databaseId'))
+              print(row.get('status'))
+              print(row.get('conclusion') or '')
+              print(row.get('url') or '')
+          PY
+            if [ -s /tmp/mlb-r4-final/deploy-selection.txt ]; then
+              RUN_ID=$(sed -n '1p' /tmp/mlb-r4-final/deploy-selection.txt)
+              STATUS=$(sed -n '2p' /tmp/mlb-r4-final/deploy-selection.txt)
+              CONCLUSION=$(sed -n '3p' /tmp/mlb-r4-final/deploy-selection.txt)
+              URL=$(sed -n '4p' /tmp/mlb-r4-final/deploy-selection.txt)
+              echo "Exact deploy run: $RUN_ID status=$STATUS conclusion=$CONCLUSION $URL"
+              if [ "$STATUS" = completed ]; then
+                if [ "$CONCLUSION" != success ]; then
+                  gh run view "$RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed \
+                    > /tmp/mlb-r4-final/deploy-failed.log || true
+                  tail -300 /tmp/mlb-r4-final/deploy-failed.log || true
+                  exit 1
+                fi
+                echo "$RUN_ID" > /tmp/mlb-r4-final/deploy_run_id.txt
+                break
+              fi
+            fi
+            if [ "$attempt" -eq 140 ]; then
+              echo 'Exact-main deploy did not complete within the verification window' >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
+      - name: Dispatch independent live acceptance workflows
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          date -u +%Y-%m-%dT%H:%M:%SZ > /tmp/mlb-r4-final/acceptance_dispatched_at.txt
+          gh workflow run mlb-production-acceptance.yml --repo "$GITHUB_REPOSITORY" --ref main
+          gh workflow run mlb-post-deploy-fix-verification.yml --repo "$GITHUB_REPOSITORY" --ref main
+
+      - name: Wait for independent live acceptance
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          Path('/tmp/mlb-r4-final/workflows.json').write_text('{}\n')
+          PY
+          wait_for_workflow() {
+            workflow="$1"
+            label="$2"
+            dispatched_at=$(cat /tmp/mlb-r4-final/acceptance_dispatched_at.txt)
+            for attempt in $(seq 1 160); do
+              gh run list --repo "$GITHUB_REPOSITORY" --workflow "$workflow" --branch main \
+                --event workflow_dispatch --limit 30 \
+                --json databaseId,headSha,status,conclusion,url,createdAt \
+                > "/tmp/mlb-r4-final/${label}-runs.json"
+              WORKFLOW="$workflow" LABEL="$label" DISPATCHED_AT="$dispatched_at" python - <<'PY' \
+                > "/tmp/mlb-r4-final/${label}-selection.txt"
+          import json, os
+          from pathlib import Path
+          rows = json.loads(Path(f"/tmp/mlb-r4-final/{os.environ['LABEL']}-runs.json").read_text())
+          matches = [row for row in rows if str(row.get('createdAt') or '') >= os.environ['DISPATCHED_AT']]
+          matches.sort(key=lambda row: row.get('createdAt') or '')
+          if matches:
+              row = matches[-1]
+              print(row.get('databaseId'))
+              print(row.get('status'))
+              print(row.get('conclusion') or '')
+              print(row.get('url') or '')
+          PY
+              if [ -s "/tmp/mlb-r4-final/${label}-selection.txt" ]; then
+                run_id=$(sed -n '1p' "/tmp/mlb-r4-final/${label}-selection.txt")
+                status=$(sed -n '2p' "/tmp/mlb-r4-final/${label}-selection.txt")
+                conclusion=$(sed -n '3p' "/tmp/mlb-r4-final/${label}-selection.txt")
+                url=$(sed -n '4p' "/tmp/mlb-r4-final/${label}-selection.txt")
+                echo "$label run: $run_id status=$status conclusion=$conclusion $url"
+                if [ "$status" = completed ]; then
+                  if [ "$conclusion" != success ]; then
+                    gh run view "$run_id" --repo "$GITHUB_REPOSITORY" --log-failed \
+                      > "/tmp/mlb-r4-final/${label}-failed.log" || true
+                    tail -300 "/tmp/mlb-r4-final/${label}-failed.log" || true
+                    return 1
+                  fi
+                  echo "$run_id" > "/tmp/mlb-r4-final/${label}_run_id.txt"
+                  return 0
+                fi
+              fi
+              if [ "$attempt" -eq 160 ]; then
+                echo "$label did not complete within the verification window" >&2
+                return 1
+              fi
+              sleep 15
+            done
+          }
+          wait_for_workflow mlb-production-acceptance.yml production_acceptance
+          wait_for_workflow mlb-post-deploy-fix-verification.yml post_deploy
+
+      - name: Validate current published production proofs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          fetch_file() {
+            path="$1"
+            output="$2"
+            gh api "repos/$GITHUB_REPOSITORY/contents/$path?ref=main" --jq .content \
+              | tr -d '\n' | base64 --decode > "$output"
+          }
+          fetch_file runtime_reports/mlb_scoring_fix_post_deploy_latest.json /tmp/mlb-r4-final/post_deploy_proof.json
+          fetch_file runtime_reports/mlb_scoring_guard_status_latest.json /tmp/mlb-r4-final/scoring_guard.json
+          fetch_file runtime_reports/mlb_pull_lambda_runtime_diagnostic_latest.json /tmp/mlb-r4-final/runtime.json
+          fetch_file runtime_reports/mlb_pull_guard_status_latest.json /tmp/mlb-r4-final/pull_guard.json
+          fetch_file template.yaml /tmp/mlb-r4-final/template.yaml
+
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root = Path('/tmp/mlb-r4-final')
+          load = lambda name: json.loads((root / name).read_text(encoding='utf-8'))
+          post = load('post_deploy_proof.json')
+          scoring = load('scoring_guard.json')
+          runtime = load('runtime.json')
+          pull = load('pull_guard.json')
+          template = (root / 'template.yaml').read_text(encoding='utf-8')
+          summary = scoring.get('summary') or {}
+          function = runtime.get('functionConfiguration') or {}
+          runtime_summary = runtime.get('summary') or {}
+
+          errors = []
+          if post.get('ok') is not True or post.get('blockers'):
+              errors.append('post_deploy_acceptance_not_green')
+          if int(post.get('postDeployTimeoutCount') or 0) != 0:
+              errors.append('post_deploy_timeout_present')
+          if int(post.get('postDeployScheduledFailureCount') or 0) != 0:
+              errors.append('post_deploy_scheduled_failure_present')
+          if post.get('lifecycleStorageDispositionComplete') is not True:
+              errors.append('lifecycle_storage_disposition_incomplete')
+          if scoring.get('guardPassed') is not True or scoring.get('blockers'):
+              errors.append('scoring_guard_not_green')
+          official = int(summary.get('officialGameCount') or 0)
+          if official <= 0:
+              errors.append('official_game_count_missing')
+          if int(summary.get('persistedPredictionGameCount') or -1) != official:
+              errors.append('persisted_prediction_coverage_incomplete')
+          if int(summary.get('movementFeatureGameCount') or -1) != official:
+              errors.append('movement_feature_coverage_incomplete')
+          if int(summary.get('missingPredictionCount') or -1) != 0:
+              errors.append('missing_predictions_present')
+          if int(summary.get('missingMovementCount') or -1) != 0:
+              errors.append('missing_movement_present')
+          if pull.get('guardPassed') is not True:
+              errors.append('pull_guard_not_green')
+          if runtime.get('timeouts'):
+              errors.append('runtime_timeout_rows_present')
+          if int(runtime_summary.get('timeoutCount') or 0) != 0:
+              errors.append('runtime_timeout_count_nonzero')
+          if int(function.get('timeoutSeconds') or 0) < 600:
+              errors.append('lambda_timeout_below_600')
+          if int(function.get('memorySizeMb') or 0) < 2048:
+              errors.append('lambda_memory_below_2048')
+          if "MLB_ML_EXPERIMENT_ID: 'mlb-v2-2026-07-24-future-prospective-r4'" not in template:
+              errors.append('r4_experiment_not_deployed_in_main_template')
+          if "MLB_ML_RELEASE_CUTOFF_UTC: '2026-07-24T04:00:00+00:00'" not in template:
+              errors.append('r4_cutoff_not_deployed_in_main_template')
+
+          report = {
+              'ok': not errors,
+              'proofType': 'MLB_R4_FINAL_PRODUCTION_REPAIR',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+              'errors': errors,
+              'mergeCommit': (root / 'merge_sha.txt').read_text().strip(),
+              'deployRunId': (root / 'deploy_run_id.txt').read_text().strip(),
+              'productionAcceptanceRunId': (root / 'production_acceptance_run_id.txt').read_text().strip(),
+              'postDeployVerificationRunId': (root / 'post_deploy_run_id.txt').read_text().strip(),
+              'officialGameCount': official,
+              'persistedPredictionGameCount': summary.get('persistedPredictionGameCount'),
+              'movementFeatureGameCount': summary.get('movementFeatureGameCount'),
+              'missingPredictionCount': summary.get('missingPredictionCount'),
+              'missingMovementCount': summary.get('missingMovementCount'),
+              'pullGuardPassed': pull.get('guardPassed'),
+              'scoringGuardPassed': scoring.get('guardPassed'),
+              'postDeployAcceptancePassed': post.get('ok'),
+              'lifecycleStorageDispositionComplete': post.get('lifecycleStorageDispositionComplete'),
+              'postDeployTimeoutCount': post.get('postDeployTimeoutCount'),
+              'postDeployScheduledFailureCount': post.get('postDeployScheduledFailureCount'),
+              'lambdaTimeoutSeconds': function.get('timeoutSeconds'),
+              'lambdaMemorySizeMb': function.get('memorySizeMb'),
+              'r4ExperimentId': 'mlb-v2-2026-07-24-future-prospective-r4',
+              'r4CutoffUtc': '2026-07-24T04:00:00+00:00',
+              'july22Backfilled': False,
+              'futureAccuracyGuaranteed': False,
+          }
+          (root / 'final_status.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          (root / 'final_status.md').write_text(
+              '# MLB R4 Production Repair\n\n'
+              f"- Status: **{'PASS' if report['ok'] else 'FAIL'}**\n"
+              f"- Merge commit: `{report['mergeCommit']}`\n"
+              f"- Official games: {official}\n"
+              f"- Persisted predictions: {report['persistedPredictionGameCount']}\n"
+              f"- Movement features: {report['movementFeatureGameCount']}\n"
+              f"- Missing predictions: {report['missingPredictionCount']}\n"
+              f"- Missing movement: {report['missingMovementCount']}\n"
+              f"- Pull guard: {report['pullGuardPassed']}\n"
+              f"- Scoring guard: {report['scoringGuardPassed']}\n"
+              f"- Lifecycle storage complete: {report['lifecycleStorageDispositionComplete']}\n"
+              f"- Post-deploy timeouts: {report['postDeployTimeoutCount']}\n"
+              f"- Post-deploy scheduled failures: {report['postDeployScheduledFailureCount']}\n"
+              f"- Lambda capacity: {report['lambdaTimeoutSeconds']} seconds / {report['lambdaMemorySizeMb']} MB\n"
+              f"- R4 cutoff: `{report['r4CutoffUtc']}`\n"
+              '- July 22 outage slate was not backfilled or fabricated.\n'
+              '- Operational correctness is verified; future betting accuracy is not guaranteed.\n',
+              encoding='utf-8',
+          )
+          print(json.dumps(report, indent=2, sort_keys=True))
+          if errors:
+              raise SystemExit('final production verification failed: ' + ','.join(errors))
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-r4-final-production-repair-${{ github.run_id }}
+          path: /tmp/mlb-r4-final/
+          if-no-files-found: error
