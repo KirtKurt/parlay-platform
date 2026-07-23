@@ -15,7 +15,7 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract exact trainer failure context
+      - name: Print final trainer failure lines
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: '30008592185'
@@ -26,18 +26,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --job "$JOB_ID" \
             --log-failed > /tmp/mlb-deploy-failed.log
-          python - <<'PY'
-          import re
-          from pathlib import Path
-          lines = Path('/tmp/mlb-deploy-failed.log').read_text(encoding='utf-8', errors='replace').splitlines()
-          pattern = re.compile(
-              r'(trainer|training|fresh split|Traceback|AssertionError|FAILED|error:|Process completed|SystemExit|invalid|mismatch|blocked)',
-              re.I,
-          )
-          positions = sorted({i for i, line in enumerate(lines) if pattern.search(line)})
-          selected = set()
-          for i in positions:
-              selected.update(range(max(0, i - 8), min(len(lines), i + 24)))
-          for i in sorted(selected)[-240:]:
-              print(f'{i + 1}: {lines[i]}')
-          PY
+          tail -45 /tmp/mlb-deploy-failed.log
