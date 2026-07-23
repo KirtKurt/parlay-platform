@@ -1,0 +1,70 @@
+name: Refresh live Tennis V2.4 card
+
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/read-live-tennis-v24-card-refresh.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  read-card:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      API_BASE: https://70n1e5cuda.execute-api.us-east-1.amazonaws.com/prod
+      SLATE_DATE: "2026-07-23"
+    steps:
+      - name: Fetch current Tennis card
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence
+          for endpoint in predictions locks/status matches model/version; do
+            name=${endpoint//\//-}
+            curl --fail --silent --show-error --retry 4 --retry-all-errors \
+              "${API_BASE}/v1/tennis/${endpoint}?date=${SLATE_DATE}" \
+              > "evidence/${name}.json"
+          done
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          p=json.loads(Path('evidence/predictions.json').read_text())
+          l=json.loads(Path('evidence/locks-status.json').read_text())
+          m=json.loads(Path('evidence/matches.json').read_text())
+          v=json.loads(Path('evidence/model-version.json').read_text())
+          out={
+            'slateDate':'2026-07-23',
+            'queriedAtUtc':l.get('nowUtc'),
+            'matchCount':int(m.get('count') or m.get('matchCount') or 0),
+            'predictionCount':int(p.get('count') or 0),
+            'promotedCount':int(p.get('promotedCount') or 0),
+            'lockedCount':int(l.get('lockedCount') or 0),
+            'missedCount':int(l.get('missedCount') or 0),
+            'terminalCount':int(l.get('terminalCount') or 0),
+            'predictionMode':v.get('predictionMode'),
+            'deployment':v.get('deployment'),
+            'officialLockedPicks':l.get('picks') or [],
+            'predictions':p.get('predictions') or [],
+            'matchStatuses':l.get('matchStatuses') or [],
+          }
+          Path('evidence/summary.json').write_text(json.dumps(out,indent=2,sort_keys=True))
+          print(json.dumps({k:v for k,v in out.items() if k not in ('predictions','matchStatuses','officialLockedPicks')},indent=2,sort_keys=True))
+          print('officialLockedPicks=',json.dumps(out['officialLockedPicks'],sort_keys=True))
+          for row in out['predictions']:
+            print(json.dumps({
+              'rank':row.get('rank'),'match':f"{row.get('homePlayer')} vs {row.get('awayPlayer')}",
+              'pick':row.get('predictedWinner'),'probabilityPct':row.get('winProbabilityPct'),
+              'odds':row.get('americanOdds'),'evPct':row.get('expectedValuePct'),
+              'score':row.get('score'),'promotionStatus':row.get('promotionStatus'),
+              'blockedReasons':row.get('blockedReasons'),'pullCount':row.get('pullCountForMatch'),
+              'start':row.get('commenceTime')},sort_keys=True))
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tennis-v24-live-card-refresh-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: evidence/
