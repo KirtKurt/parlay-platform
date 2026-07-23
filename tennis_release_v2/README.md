@@ -14,3 +14,5 @@ It repurposes the production MLB V2.1 market calculation sequence for Tennis whi
 - MLB CloudFormation fingerprint protection before and after deployment.
 
 The workflow deploys disabled first, performs a forced live all-Tennis pull and prediction smoke, then enables the four Tennis schedules only after every check passes.
+
+Deployment trigger identity: corrected content-addressed transport verified on July 23, 2026.
