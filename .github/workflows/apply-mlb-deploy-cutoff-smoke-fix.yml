@@ -1,6 +1,5 @@
 name: Apply MLB Cutoff-Aware Deploy Smoke
 
-# Single branch-only run to materialize the validated deploy workflow.
 on:
   push:
     paths:
@@ -58,18 +57,61 @@ jobs:
           path: .github/workflows/deploy.yml
           if-no-files-found: error
 
-      - name: Commit deploy workflow migration
-        continue-on-error: true
+      - name: Persist generated deploy workflow through Contents API
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_BRANCH: ${{ github.head_ref || github.ref_name }}
         run: |
           set -euo pipefail
-          TARGET_BRANCH="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/deploy.yml
-          if git diff --cached --quiet; then
-            echo 'Cutoff-aware MLB deploy smoke is already applied.'
-          else
-            git commit -m 'Make MLB deploy lifecycle smoke cutoff-aware'
-            git pull --rebase --autostash origin "$TARGET_BRANCH"
-            git push origin "HEAD:$TARGET_BRANCH"
-          fi
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+          from pathlib import Path
+
+          repo = os.environ['GITHUB_REPOSITORY']
+          branch = os.environ['TARGET_BRANCH']
+          token = os.environ['GH_TOKEN']
+          path = '.github/workflows/deploy.yml'
+          generated = Path(path).read_bytes()
+          encoded_path = urllib.parse.quote(path, safe='/')
+          endpoint = f'https://api.github.com/repos/{repo}/contents/{encoded_path}'
+          headers = {
+              'Authorization': f'Bearer {token}',
+              'Accept': 'application/vnd.github+json',
+              'X-GitHub-Api-Version': '2022-11-28',
+              'User-Agent': 'inqsi-cutoff-aware-deploy-workflow-writer/1.0',
+          }
+
+          get_request = urllib.request.Request(
+              endpoint + '?' + urllib.parse.urlencode({'ref': branch}),
+              headers=headers,
+          )
+          with urllib.request.urlopen(get_request, timeout=45) as response:
+              current = json.loads(response.read().decode('utf-8'))
+          current_bytes = base64.b64decode(current.get('content') or '')
+          if current_bytes == generated:
+              print('Cutoff-aware MLB deploy smoke is already committed.')
+              raise SystemExit(0)
+
+          payload = json.dumps({
+              'message': 'Make MLB deploy lifecycle smoke cutoff-aware',
+              'content': base64.b64encode(generated).decode('ascii'),
+              'sha': current['sha'],
+              'branch': branch,
+          }).encode('utf-8')
+          put_request = urllib.request.Request(
+              endpoint,
+              data=payload,
+              headers={**headers, 'Content-Type': 'application/json'},
+              method='PUT',
+          )
+          with urllib.request.urlopen(put_request, timeout=60) as response:
+              result = json.loads(response.read().decode('utf-8'))
+          commit_sha = ((result.get('commit') or {}).get('sha'))
+          if not commit_sha:
+              raise SystemExit('GitHub Contents API did not return a commit SHA')
+          print(json.dumps({'ok': True, 'branch': branch, 'commitSha': commit_sha}, indent=2))
+          PY
