@@ -43,6 +43,8 @@ def test_empty_registry_abstains_without_changing_direction() -> None:
     assert result["homeSignal"] == row["homeSignal"]
     assert result["precisionQualifiedRecommendation"] is False
     assert result["precisionAdmission"]["recommendationEligible"] is False
+    assert result["prospectiveSignalValidationEligible"] is True
+    assert result["prospectiveSignalValidation"]["outcomeFieldsUsed"] is False
     assert result["actionablePick"] is False
     assert result["playable"] is False
     assert result["playabilityStatus"] == "BLOCKED"
@@ -66,6 +68,7 @@ def test_apply_is_idempotent_and_reports_abstention() -> None:
     assert result["noPickCount"] == 1
     assert result["precisionQualifiedRecommendationCount"] == 0
     assert result["precisionAbstainedRecommendationCount"] == 1
+    assert result["prospectiveSignalValidationCaptureCount"] == 1
     assert result["accuracyTarget"]["precisionAdmissionEnforced"] is True
     assert result["modelVersion"].endswith("+reversal-precision-admission-v1")
 
