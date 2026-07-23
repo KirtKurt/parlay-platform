@@ -95,7 +95,7 @@ assert str(body.get("ml_optimization_version") or "").startswith("MLB-ML-OPTIMIZ
 runtime = body.get("ml_runtime_install") or {}
 assert runtime.get("ok") is True, runtime
 assert runtime.get("version") == (
-    "MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-"
+    "MLB-ML-RUNTIME-INSTALL-v4.2-signal-policy-prelock-persistence-"
     "aws-v2-shadow-manual-first"
 ), runtime
 assert runtime.get("steps", {}).get("sourceHonestFundamentalsV2") is True, runtime
@@ -105,6 +105,8 @@ assert runtime.get("steps", {}).get(
 assert runtime.get("steps", {}).get(
     "providerNeutralCalibrationAndActionability"
 ) is True, runtime
+assert runtime.get("steps", {}).get("signalPolicyV13Installed") is True, runtime
+assert runtime.get("signalPolicyV13Version") == "MLB-SIGNAL-POLICY-v1.7-reversal-instability-gate", runtime
 policy = runtime.get("accuracyTargetPolicy") or {}
 assert policy.get("rolling24hAllGamesAuditTargetPct") == 90.0, policy
 assert policy.get("minimumRolling24hSlateAccuracyPct") == 90.0, policy
@@ -137,6 +139,9 @@ required = {
     "officialFreezeBridge",
     "canonicalLockedStorageFinalizer",
     "lastPrelockPromotionAuthority",
+    "canonicalProbabilityAndPersistedPrelockAuthority",
+    "providerNeutralCalibrationAndActionability",
+    "signalPolicyV13Installed",
     "legacyFinalGateDisabled",
 }
 missing = sorted(name for name in required if (runtime.get("steps") or {}).get(name) is not True)
@@ -203,7 +208,7 @@ print(json.dumps({
         sys.stderr.write(result.stderr)
         return result.returncode
     print(result.stdout.strip())
-    print("MLB Lambda cold import, read-only, fail-closed, pull-history, and 60% official-lock contracts verified")
+    print("MLB Lambda cold import, read-only, fail-closed, pull-history, and versioned prelock signal-policy contracts verified")
     return 0
 
 
