@@ -48,6 +48,15 @@ def enforce_row(row: Dict[str, Any]) -> Dict[str, Any]:
     out["precisionAdmission"] = decision
     out["precisionQualifiedRecommendation"] = qualified
     out["futureAccuracyGuaranteed"] = False
+    out["prospectiveSignalValidationEligible"] = bool(decision.get("signalSignature"))
+    out["prospectiveSignalValidation"] = {
+        "eligibleForCollection": bool(decision.get("signalSignature")),
+        "signalSignature": decision.get("signalSignature"),
+        "similarityVersion": reversal_similarity.VERSION,
+        "admissionVersion": precision_admission.VERSION,
+        "outcomeFieldsUsed": False,
+        "playabilityIndependent": True,
+    }
 
     tags = {str(value) for value in (out.get("tags") or []) if value}
     if qualified:
@@ -135,12 +144,14 @@ def apply(module: Any) -> Any:
         for rank, row in enumerate(predictions, 1):
             row["rank"] = rank
         qualified = sum(row.get("precisionQualifiedRecommendation") is True for row in predictions)
+        prospective = sum(row.get("prospectiveSignalValidationEligible") is True for row in predictions)
         result["predictions"] = predictions
         result["count"] = len(predictions)
         result["actionablePickCount"] = sum(row.get("actionablePick") is True for row in predictions)
         result["noPickCount"] = len(predictions) - result["actionablePickCount"]
         result["precisionQualifiedRecommendationCount"] = qualified
         result["precisionAbstainedRecommendationCount"] = len(predictions) - qualified
+        result["prospectiveSignalValidationCaptureCount"] = prospective
 
         summary = dict(
             result.get("rolling24hAccuracyTarget")
@@ -155,6 +166,7 @@ def apply(module: Any) -> Any:
                 ),
                 "precisionQualifiedRecommendationCount": qualified,
                 "precisionAbstainedRecommendationCount": len(predictions) - qualified,
+                "prospectiveSignalValidationCaptureCount": prospective,
                 "signalValidationRegistry": validation_registry.status(),
                 "futureAccuracyGuaranteed": False,
             }
@@ -167,6 +179,7 @@ def apply(module: Any) -> Any:
             "targetPrecisionPct": precision_admission.TARGET_PRECISION * 100.0,
             "visiblePredictionRetained": True,
             "unvalidatedRecommendationAbstained": True,
+            "prospectiveEvidenceCollectionEnabled": True,
             "futureAccuracyGuaranteed": False,
         }
         suffix = "+reversal-precision-admission-v1"
