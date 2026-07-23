@@ -15,7 +15,7 @@ jobs:
   inspect:
     runs-on: ubuntu-latest
     steps:
-      - name: Print exact failed-step tail
+      - name: Extract exact failed regression context
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: '30007855104'
@@ -26,4 +26,15 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --job "$JOB_ID" \
             --log-failed > /tmp/mlb-fix-failed.log
-          tail -160 /tmp/mlb-fix-failed.log
+          python - <<'PY'
+          import re
+          from pathlib import Path
+          lines = Path('/tmp/mlb-fix-failed.log').read_text(encoding='utf-8', errors='replace').splitlines()
+          pattern = re.compile(r'(FAILURES|FAILED |AssertionError|E\s+assert|short test summary|error:|Process completed)', re.I)
+          positions = sorted({i for i, line in enumerate(lines) if pattern.search(line)})
+          selected = set()
+          for i in positions:
+              selected.update(range(max(0, i - 5), min(len(lines), i + 16)))
+          for i in sorted(selected):
+              print(f'{i + 1}: {lines[i]}')
+          PY
