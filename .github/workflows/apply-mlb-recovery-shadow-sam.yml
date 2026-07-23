@@ -41,7 +41,9 @@ jobs:
       - name: Materialize recovery runtime and apply SAM migration
         run: |
           set -euo pipefail
-          python scripts/bootstrap_mlb_recovery_shadow_runtime.py
+          if [ ! -f hello_world/mlb_recovery_shadow_v1.py ] || [ ! -f tests/unit/test_mlb_recovery_shadow_v1.py ]; then
+            python scripts/bootstrap_mlb_recovery_shadow_runtime.py
+          fi
           python scripts/apply_mlb_recovery_shadow_sam.py
 
       - name: Validate SAM and strict shadow isolation
