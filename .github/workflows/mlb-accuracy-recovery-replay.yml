@@ -1,5 +1,5 @@
 name: MLB Accuracy Recovery Replay
-# Read-only trigger: replay only, no production prediction or model authority changes.
+# Recovery research only: S3 shadow artifacts are written, but no production pick or model authority changes.
 
 on:
   pull_request:
@@ -8,6 +8,8 @@ on:
       - '.github/workflows/mlb-accuracy-recovery-replay.yml'
       - 'scripts/audit_mlb_aws_scoring_replay.py'
       - 'scripts/train_mlb_recovery_shadow.py'
+      - 'scripts/backfill_mlb_recovery_standard_fundamentals.py'
+      - 'scripts/train_mlb_recovery_fundamentals_shadow.py'
   workflow_dispatch:
 
 permissions:
@@ -35,10 +37,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Compile replay and recovery trainer
+      - name: Compile replay and recovery trainers
         run: |
           python -m py_compile scripts/audit_mlb_aws_scoring_replay.py
           python -m py_compile scripts/train_mlb_recovery_shadow.py
+          python -m py_compile scripts/backfill_mlb_recovery_standard_fundamentals.py
+          python -m py_compile scripts/train_mlb_recovery_fundamentals_shadow.py
 
       - name: Replay old and current scoring at T-minus-45
         env:
@@ -53,7 +57,7 @@ jobs:
             --end-date 2026-07-22 \
             --output /tmp/mlb-accuracy-recovery/mlb_scoring_replay.json
 
-      - name: Train and register shadow-only recovery seed
+      - name: Resolve private MLB ML artifact bucket
         env:
           AWS_REGION: ${{ secrets.AWS_REGION }}
           AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
@@ -65,9 +69,36 @@ jobs:
             --output text)
           test -n "$ARTIFACT_BUCKET"
           test "$ARTIFACT_BUCKET" != "None"
+          echo "ARTIFACT_BUCKET=$ARTIFACT_BUCKET" >> "$GITHUB_ENV"
+
+      - name: Train and register signal-only shadow recovery seed
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
           python scripts/train_mlb_recovery_shadow.py \
             --replay /tmp/mlb-accuracy-recovery/mlb_scoring_replay.json \
             --output /tmp/mlb-accuracy-recovery/mlb_recovery_shadow_seed.json \
+            --bucket "$ARTIFACT_BUCKET" \
+            --upload
+
+      - name: Backfill official standard baseball fundamentals strictly before each game date
+        run: |
+          set -euo pipefail
+          python scripts/backfill_mlb_recovery_standard_fundamentals.py \
+            --replay /tmp/mlb-accuracy-recovery/mlb_scoring_replay.json \
+            --output /tmp/mlb-accuracy-recovery/mlb_scoring_replay_with_standard_fundamentals.json
+
+      - name: Train and register fundamentals-aware shadow recovery seed
+        env:
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          python scripts/train_mlb_recovery_fundamentals_shadow.py \
+            --replay /tmp/mlb-accuracy-recovery/mlb_scoring_replay_with_standard_fundamentals.json \
+            --output /tmp/mlb-accuracy-recovery/mlb_recovery_fundamentals_shadow_seed.json \
             --bucket "$ARTIFACT_BUCKET" \
             --upload
 
@@ -79,4 +110,6 @@ jobs:
           path: |
             /tmp/mlb-accuracy-recovery/mlb_scoring_replay.json
             /tmp/mlb-accuracy-recovery/mlb_recovery_shadow_seed.json
+            /tmp/mlb-accuracy-recovery/mlb_scoring_replay_with_standard_fundamentals.json
+            /tmp/mlb-accuracy-recovery/mlb_recovery_fundamentals_shadow_seed.json
           if-no-files-found: error
