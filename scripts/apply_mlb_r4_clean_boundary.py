@@ -59,6 +59,80 @@ def replace_required(path: Path, old: str, new: str) -> bool:
     return True
 
 
+def replace_fixture_required(text: str, old: str, new: str, *, name: str) -> str:
+    if new in text and old not in text:
+        return text
+    if old not in text:
+        raise SystemExit(f"expected r4 audit fixture missing ({name}): {old}")
+    return text.replace(old, new)
+
+
+def advance_audit_report_fixtures() -> bool:
+    """Keep synthetic post-cutoff rows post-cutoff after the r4 migration.
+
+    The production acceptance tests intentionally exercise one quarantined row
+    before the cohort boundary and several exact finalized rows after it. Only
+    fixture timestamps and partition keys move; outcome/lock semantics do not.
+    """
+
+    path = Path("tests/unit/test_run_mlb_ml_v3_audit_report.py")
+    original = path.read_text(encoding="utf-8")
+    text = original
+    replacements = (
+        (
+            "SETTLEMENT_NOW = datetime(2026, 7, 23, 3, 0, tzinfo=timezone.utc)",
+            "SETTLEMENT_NOW = datetime(2026, 7, 25, 3, 0, tzinfo=timezone.utc)",
+            "settlement now",
+        ),
+        (
+            'commence_time: str = "2026-07-22T06:00:00+00:00"',
+            'commence_time: str = "2026-07-24T06:00:00+00:00"',
+            "default commence time",
+        ),
+        (
+            'lock_at_utc: str = "2026-07-22T05:15:00+00:00"',
+            'lock_at_utc: str = "2026-07-24T05:15:00+00:00"',
+            "default lock time",
+        ),
+        (
+            '"slateDateEt": "2026-07-22"',
+            '"slateDateEt": "2026-07-24"',
+            "row slate date",
+        ),
+        (
+            '"sourcePk": "GAME_WINNERS#mlb#2026-07-22"',
+            '"sourcePk": "GAME_WINNERS#mlb#2026-07-24"',
+            "lock partition",
+        ),
+        (
+            'if slate_date == "2026-07-22":',
+            'if slate_date == "2026-07-24":',
+            "official loader date",
+        ),
+        (
+            "datetime(2026, 7, 22, 6, 0, tzinfo=timezone.utc)",
+            "datetime(2026, 7, 24, 6, 0, tzinfo=timezone.utc)",
+            "fallback official start",
+        ),
+        (
+            "def test_post_cutoff_scope_quarantines_pre_r3_carryover_without_masking_it():",
+            "def test_post_cutoff_scope_quarantines_pre_r4_carryover_without_masking_it():",
+            "pre-cutoff test name",
+        ),
+        (
+            '"commenceTime": "2026-07-22T04:30:00+00:00"',
+            '"commenceTime": "2026-07-24T03:30:00+00:00"',
+            "explicit pre-r4 quarantine row",
+        ),
+    )
+    for old, new, name in replacements:
+        text = replace_fixture_required(text, old, new, name=name)
+    if text != original:
+        path.write_text(text, encoding="utf-8")
+        return True
+    return False
+
+
 def main() -> int:
     changed: set[str] = set()
     for raw in ID_PATHS:
@@ -98,6 +172,9 @@ def main() -> int:
         text = text.replace("R3_RELEASE_CUTOFF_UTC", "R4_RELEASE_CUTOFF_UTC")
         path.write_text(text, encoding="utf-8")
         changed.add(raw)
+
+    if advance_audit_report_fixtures():
+        changed.add("tests/unit/test_run_mlb_ml_v3_audit_report.py")
 
     docs = Path("docs/MLB_ML_PRODUCTION_MILESTONES.md")
     text = docs.read_text(encoding="utf-8")
