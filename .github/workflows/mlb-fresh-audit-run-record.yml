@@ -1,0 +1,63 @@
+name: Record MLB Fresh Audit Status
+
+on:
+  workflow_run:
+    workflows: ["MLB Fresh Audit Publisher"]
+    types: [completed]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: record-mlb-fresh-audit-status
+  cancel-in-progress: true
+
+jobs:
+  record:
+    if: github.event.workflow_run.head_branch == 'main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Write audit workflow status
+        env:
+          AUDIT_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          AUDIT_RUN_ID: ${{ github.event.workflow_run.id }}
+          AUDIT_RUN_URL: ${{ github.event.workflow_run.html_url }}
+          AUDIT_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json
+          import os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          conclusion = os.environ.get('AUDIT_CONCLUSION')
+          report = {
+              'ok': conclusion == 'success',
+              'proofType': 'MLB_FRESH_AUDIT_WORKFLOW_STATUS',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z'),
+              'conclusion': conclusion,
+              'workflowRunId': os.environ.get('AUDIT_RUN_ID'),
+              'workflowRunUrl': os.environ.get('AUDIT_RUN_URL'),
+              'headSha': os.environ.get('AUDIT_HEAD_SHA'),
+              'readOnlyAudit': True,
+              'modelPromotionEnabled': False,
+          }
+          Path('runtime_reports/mlb_fresh_audit_publisher_status_latest.json').write_text(
+              json.dumps(report, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          PY
+
+      - name: Publish status proof
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime_reports/mlb_fresh_audit_publisher_status_latest.json
+          git commit -m 'Publish fresh MLB audit workflow status' || exit 0
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
