@@ -1,0 +1,76 @@
+name: Export deployed Tennis source for reconciliation
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/export-tennis-deployed-source.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: export-tennis-deployed-source-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct exact deployed Tennis release
+        shell: bash
+        run: |
+          set -euo pipefail
+          source_branch=agent/tennis-ml-production-deploy
+          source_ref="refs/remotes/origin/${source_branch}"
+          git fetch --no-tags origin \
+            "+refs/heads/${source_branch}:${source_ref}"
+
+          export_root=/tmp/tennis-export
+          archive="$export_root/tennis_release/tennis_predictive_platform_v1.tar.xz"
+          mkdir -p "$(dirname "$archive")" "$export_root/source"
+
+          mapfile -t chunks < <(
+            git ls-tree -r --name-only "$source_ref" tennis_release/chunks \
+              | grep 'tennis_predictive_platform_v1.tar.xz.b64.part-' \
+              | LC_ALL=C sort
+          )
+          test "${#chunks[@]}" -gt 0
+          for chunk in "${chunks[@]}"; do
+            git show "$source_ref:$chunk"
+          done | base64 --decode > "$archive"
+
+          git show "$source_ref:tennis_release/tennis_predictive_platform_v1.tar.xz.sha256" \
+            > "$export_root/release.sha256"
+          (
+            cd "$export_root"
+            sha256sum -c release.sha256
+          )
+          tar -tJf "$archive" >/tmp/tennis-export-members.txt
+          tar -xJf "$archive" -C "$export_root/source"
+          test -f "$export_root/source/tennis_predictive_platform_v1/template.yaml"
+          test -f "$export_root/source/tennis_predictive_platform_v1/src/tennis_espn_results.py"
+
+          git rev-parse "$source_ref" > "$export_root/source-branch-head.txt"
+          sha256sum "$archive" > "$export_root/archive.sha256"
+          cp /tmp/tennis-export-members.txt "$export_root/"
+
+      - name: Upload exact deployed source
+        uses: actions/upload-artifact@v4
+        with:
+          name: exact-deployed-tennis-source-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            /tmp/tennis-export/source/
+            /tmp/tennis-export/source-branch-head.txt
+            /tmp/tennis-export/archive.sha256
+            /tmp/tennis-export/release.sha256
+            /tmp/tennis-export/tennis-export-members.txt
+          if-no-files-found: error
+          retention-days: 3
