@@ -1,0 +1,96 @@
+name: Apply MLB Recovery Shadow SAM
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/apply-mlb-recovery-shadow-sam.yml'
+      - 'scripts/apply_mlb_recovery_shadow_sam.py'
+  push:
+    branches: [agent/mlb-accuracy-recovery-20260723]
+    paths:
+      - '.github/workflows/apply-mlb-recovery-shadow-sam.yml'
+      - 'scripts/apply_mlb_recovery_shadow_sam.py'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-mlb-recovery-shadow-sam
+  cancel-in-progress: true
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mlb-accuracy-recovery-20260723
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - name: Install validation runtime
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'PyYAML>=6,<7'
+
+      - name: Materialize recovery runtime and apply SAM migration
+        run: |
+          set -euo pipefail
+          python scripts/bootstrap_mlb_recovery_shadow_runtime.py
+          python scripts/apply_mlb_recovery_shadow_sam.py
+
+      - name: Validate SAM and strict shadow isolation
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+          PYTHONPATH: ${{ github.workspace }}/hello_world
+        run: |
+          set -euo pipefail
+          sam validate --template-file template.yaml
+          python -m py_compile \
+            hello_world/mlb_recovery_v10_engine.py \
+            hello_world/mlb_recovery_v11_engine.py \
+            hello_world/mlb_recovery_shadow_v1.py \
+            scripts/apply_mlb_recovery_shadow_sam.py \
+            tests/unit/test_mlb_recovery_shadow_v1.py
+          python -m pytest -q tests/unit/test_mlb_recovery_shadow_v1.py
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          template_text = Path('template.yaml').read_text(encoding='utf-8')
+          resource = template_text.split('  MLBRecoveryShadowFunction:\n', 1)[1].split('\n  SoccerSchedulerFunction:\n', 1)[0]
+          for token in ('PredictionsTable', 'SignalLedgerTable', 'PREDICTIONS_TABLE', 'SIGNAL_LEDGER_TABLE'):
+              assert token not in resource, token
+          parsed = yaml.safe_load(template_text)
+          props = parsed['Resources']['MLBRecoveryShadowFunction']['Properties']
+          assert props['Handler'] == 'mlb_recovery_shadow_v1.lambda_handler'
+          assert props['Environment']['Variables']['INQSI_RECOVERY_SHADOW_ONLY'] == 'true'
+          assert props['Environment']['Variables']['INQSI_RECOVERY_PRODUCTION_AUTHORITY'] == 'false'
+          events = props['Events']
+          assert events['MLBRecoveryShadowCaptureEvery15Minutes']['Properties']['Enabled'] is True
+          assert events['MLBRecoveryShadowGradeEvery6Hours']['Properties']['Enabled'] is True
+          PY
+
+      - name: Commit canonical recovery resource and contract changes
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            template.yaml \
+            .github/workflows/mlb-production-source-contract.yml \
+            hello_world/mlb_recovery_shadow_v1.py \
+            tests/unit/test_mlb_recovery_shadow_v1.py
+          if git diff --cached --quiet; then
+            echo 'MLB recovery shadow SAM resource is already applied.'
+          else
+            git commit -m 'Deploy isolated MLB recovery shadow scorer'
+            git pull --rebase --autostash origin agent/mlb-accuracy-recovery-20260723
+            git push origin HEAD:agent/mlb-accuracy-recovery-20260723
+          fi
