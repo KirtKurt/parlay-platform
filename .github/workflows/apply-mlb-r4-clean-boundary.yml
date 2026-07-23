@@ -60,6 +60,10 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          # The migration verifies the source-contract change in this workspace,
+          # but GitHub's Actions token cannot update workflow files. Restore that
+          # one file before committing; the GitHub connector applies it separately.
+          git restore .github/workflows/mlb-production-source-contract.yml
           git add -A
           if git diff --cached --quiet; then
             echo 'R4 prospective boundary already materialized.'
