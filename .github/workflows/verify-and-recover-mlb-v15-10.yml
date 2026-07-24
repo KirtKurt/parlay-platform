@@ -83,13 +83,16 @@ jobs:
         run: |
           set -euo pipefail
           grep -Fq "mlb_historical_policy_v1.apply_runtime_authority" hello_world/mlb_ranked_primary_v15_10.py
-          grep -Fq "MLB_HISTORICAL_PRODUCTION_CUTOVER#V1" hello_world/mlb_historical_policy_v1_impl.py.gz.b64.part000 || true
-          if grep -Fq "sam deploy" .github/workflows/verify-and-recover-mlb-v15-10.yml; then
-            echo "::error::This verification workflow must never deploy or restore V15.10."
-            exit 1
-          fi
-          if grep -Fq "configure-aws-credentials" .github/workflows/verify-and-recover-mlb-v15-10.yml; then
-            echo "::error::PR authority validation must not receive AWS credentials."
-            exit 1
-          fi
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow = Path('.github/workflows/verify-and-recover-mlb-v15-10.yml').read_text()
+          forbidden = (
+              'sam ' + 'deploy',
+              'configure-' + 'aws-credentials',
+          )
+          found = [token for token in forbidden if token in workflow]
+          if found:
+              raise SystemExit(f'forbidden production mutation tokens in verification workflow: {found}')
+          PY
           echo "V15.10 recovery is no longer automatic; controlled deployment and cutover live only in mlb-historical-optimizer.yml."
