@@ -1,4 +1,4 @@
-name: Inspect latest MLB optimizer stack failure
+name: Print terminal MLB optimizer failure block
 
 "on":
   pull_request:
@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89424142807'
     steps:
-      - name: Print exact terminal optimizer deployment failure
+      - name: Print terminal provider block only
         shell: bash
         run: |
           set -euo pipefail
@@ -37,20 +37,22 @@ jobs:
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
           lines = [ansi.sub('', line) for line in raw.splitlines()]
           terms = re.compile(
-              r'CREATE_FAILED|UPDATE_FAILED|ROLLBACK|Resource handler returned message|'
+              r'CREATE_FAILED|UPDATE_FAILED|ROLLBACK_IN_PROGRESS|Resource handler returned message|'
               r'Failed to create changeset|Failed to deploy|ValidationError|AccessDenied|'
               r'InvalidRequest|LimitExceeded|ConflictException|Process completed with exit code|'
-              r'NoSuchBucket|AlreadyExists|error',
+              r'NoSuchBucket|AlreadyExists',
               re.IGNORECASE,
           )
-          hits = [i for i, line in enumerate(lines) if i > 500 and terms.search(line)]
-          print('MATCH_COUNT=' + str(len(hits)))
+          hits = [i for i, line in enumerate(lines) if i > 600 and terms.search(line)]
+          print('TERMINAL_MATCHES=' + str(len(hits)))
           if not hits:
-              for index, line in enumerate(lines[-80:], start=max(1, len(lines) - 79)):
-                  print(f'{index:05d}: {line}')
-              raise SystemExit('No terminal failure token found')
-          start = max(0, min(hits) - 8)
-          end = min(len(lines), max(hits) + 25)
+              start = max(0, len(lines) - 60)
+              end = len(lines)
+          else:
+              focus = hits[-1]
+              start = max(0, focus - 35)
+              end = min(len(lines), focus + 30)
+          print(f'RANGE={start + 1}-{end}')
           for index in range(start, end):
               print(f'{index + 1:05d}: {lines[index]}')
           PY
