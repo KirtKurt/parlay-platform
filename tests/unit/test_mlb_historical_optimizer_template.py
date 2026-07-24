@@ -34,3 +34,21 @@ def test_historical_optimizer_does_not_consume_reserved_concurrency_pool():
 
     assert "ReservedConcurrentExecutions" not in text
     assert "DynamoDB lease" in text
+
+
+def test_historical_optimizer_can_distinguish_missing_immutable_s3_keys():
+    """HeadObject must return 404—not concealed 403—for a new artifact key."""
+
+    text = TEMPLATE.read_text(encoding="utf-8")
+    metadata_policy = text.split("- Sid: ReadHistoricalEvidenceBucketMetadata", 1)[1].split(
+        "- Sid: AppendAndReadVersionedHistoricalEvidence", 1
+    )[0]
+    object_policy = text.split("- Sid: AppendAndReadVersionedHistoricalEvidence", 1)[1].split(
+        "Events:", 1
+    )[0]
+
+    assert "s3:ListBucket" in metadata_policy
+    assert "HistoricalArtifactsBucket.Arn" in metadata_policy
+    assert "s3:GetObject" in object_policy
+    assert "s3:PutObject" in object_policy
+    assert "${HistoricalArtifactsBucket.Arn}/*" in object_policy
