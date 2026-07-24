@@ -203,7 +203,8 @@ def test_installer_disables_legacy_authority_and_installs_ranked_winner_without_
         assert status["ok"] is True
         assert status["version"] == (
             "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
-            "prelock-persistence-verified-active-model-authority"
+            "prelock-persistence-verified-stage-promotion-authority-"
+            "verified-active-model-authority"
         )
         assert status["steps"]["legacyV1AuthorityDisabled"] is True
         assert status["steps"]["v2ShadowManualFirst"] is True

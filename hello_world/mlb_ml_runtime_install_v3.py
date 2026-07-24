@@ -5,7 +5,8 @@ from typing import Any, Dict
 
 VERSION = (
     "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
-    "prelock-persistence-verified-active-model-authority"
+    "prelock-persistence-verified-stage-promotion-authority-"
+    "verified-active-model-authority"
 )
 
 
