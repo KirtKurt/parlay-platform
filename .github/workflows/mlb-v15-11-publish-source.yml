@@ -42,12 +42,17 @@ jobs:
           ! grep -Eq '(^|/)\.\.(/|$)|^/' /tmp/mlb-v15-11-manifest.txt
           tar -xJf /tmp/mlb-v15-11.tar.xz -C .
 
-      - name: Verify and apply V15.11.1 safety patch
+      - name: Decode and verify V15.11.1 safety patch
         shell: bash
         run: |
           set -euo pipefail
           base64 --decode bootstrap/mlb-v15-11.1-wager-safety.patch.gz.b64 | gzip -d > /tmp/v15-11-1.patch
           echo '019ceb2fe000c319119259c9b50ce21a93f9e28de40bbfe1cbd869b8bf5f12d9  /tmp/v15-11-1.patch' | sha256sum -c -
+
+      - name: Apply V15.11.1 safety patch
+        shell: bash
+        run: |
+          set -euo pipefail
           patch -p2 --batch --forward < /tmp/v15-11-1.patch
 
       - name: Verify exact V15.11.1 source hashes
