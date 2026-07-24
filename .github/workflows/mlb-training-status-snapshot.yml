@@ -1,4 +1,4 @@
-name: MLB Historical Retry Status
+name: MLB Historical Planning Failure Context
 
 "on":
   push:
@@ -21,15 +21,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Print latest recovery optimizer and accelerator runs
+      - name: Print planning failure context
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TARGET_JOB_ID: "89426541736"
         run: |
           set -euo pipefail
-          sleep 20
-          curl --fail --silent --show-error \
+          curl --fail --silent --show-error --location \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?per_page=100" \
-            | jq -c '[.workflow_runs[] | select(.name == "MLB Historical Recovery and Paid Dispatch" or .name == "MLB Historical Daily Optimizer" or .name == "MLB Historical Accelerated Training Driver") | {name,id,status,conclusion,event,head_sha,created_at,updated_at,html_url}] | group_by(.name) | map(max_by(.created_at)) | sort_by(.name)'
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${TARGET_JOB_ID}/logs" \
+            --output /tmp/historical-plan.log
+          echo MLB_HISTORICAL_PLAN_FAILURE_BEGIN
+          grep -Eai 'Lambda returned|FunctionError|Traceback|Exception|AccessDenied|ValidationException|ResourceNotFound|timed out|timeout|statusCode|planning|plan|error' /tmp/historical-plan.log | tail -n 120 || true
+          echo MLB_HISTORICAL_PLAN_FAILURE_END
