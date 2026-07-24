@@ -25,3 +25,12 @@ def test_historical_optimizer_keeps_maximum_execution_window():
     timeout_values = re.findall(r"^\s+Timeout:\s*(\d+)\s*$", text, re.MULTILINE)
 
     assert timeout_values == ["900"]
+
+
+def test_historical_optimizer_does_not_consume_reserved_concurrency_pool():
+    """The account must retain AWS's minimum unreserved Lambda concurrency."""
+
+    text = TEMPLATE.read_text(encoding="utf-8")
+
+    assert "ReservedConcurrentExecutions" not in text
+    assert "DynamoDB lease" in text
