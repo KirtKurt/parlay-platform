@@ -113,7 +113,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../hello_world/
-      Handler: mlb_historical_optimizer_handler.lambda_handler
+      Handler: mlb_historical_optimizer_entrypoint.lambda_handler
       # Do not reserve Lambda concurrency in this constrained account. The
       # DynamoDB lease in the handler already serializes paid backfill/search
       # work, while AWS requires at least 10 unreserved executions to remain.
@@ -150,6 +150,16 @@ Resources:
                 - s3:GetBucketVersioning
               Resource:
                 - !GetAtt HistoricalArtifactsBucket.Arn
+            - Sid: ListHistoricalEvidencePrefixForExistenceChecks
+              Effect: Allow
+              Action:
+                - s3:ListBucket
+              Resource:
+                - !GetAtt HistoricalArtifactsBucket.Arn
+              Condition:
+                StringLike:
+                  s3:prefix:
+                    - mlb/historical-daily-v1/*
             - Sid: AppendAndReadVersionedHistoricalEvidence
               Effect: Allow
               Action:
