@@ -1,0 +1,310 @@
+name: MLB Historical Accelerated Training Driver
+
+"on":
+  workflow_run:
+    workflows: ['MLB Historical Daily Optimizer']
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      paid_authorization:
+        description: Type AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS
+        required: true
+        type: string
+      cutover_confirmation:
+        description: Type DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: mlb-historical-accelerated-training
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: ${{ secrets.AWS_REGION }}
+  AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+  OPTIMIZER_STACK: parlay-platform-mlb-historical-optimizer
+  PRODUCTION_STACK: parlay-platform-dev
+  HISTORICAL_START_DATE: '2025-04-01'
+  HISTORICAL_END_DATE: '2025-08-31'
+  HISTORICAL_TARGET_GAMES: '1600'
+  HISTORICAL_MAX_CREDITS: '120000'
+  HISTORICAL_MAX_CANDIDATES: '25000'
+  HISTORICAL_REQUESTS_PER_RUN: '100'
+
+jobs:
+  accelerate:
+    if: (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'workflow_dispatch' && github.event.workflow_run.head_repository.full_name == github.repository) || (github.event_name == 'workflow_dispatch' && inputs.paid_authorization == 'AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS' && inputs.cutover_confirmation == 'DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE')
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify AWS and paid historical state
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$OPTIMIZER_STACK" \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+            --output text)
+          test -n "$FUNCTION_NAME"
+          test "$FUNCTION_NAME" != None
+          echo "FUNCTION_NAME=$FUNCTION_NAME" >> "$GITHUB_ENV"
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --cli-read-timeout 900 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"status","run":"accelerator_preflight"}' \
+            /tmp/mlb-accelerator-preflight.json >/tmp/mlb-preflight-meta.json
+          python - <<'PY'
+          import json
+          value = json.load(open('/tmp/mlb-accelerator-preflight.json'))
+          state = value.get('state') or {}
+          assert state.get('paidBackfillAuthorized') is True, state
+          assert state.get('phase') in {
+              'BACKFILLING', 'OPTIMIZING', 'PROMOTED', 'PAUSED_QUOTA',
+              'CANDIDATE_REJECTED', 'DATA_RANGE_EXHAUSTED'
+          }, state.get('phase')
+          plan = state.get('plan') or {}
+          assert plan.get('completeDateRangeLedger') is True
+          assert plan.get('withinConfiguredCreditCap') is True
+          assert plan.get('providerQuotaAppearsSufficient') is True
+          assert int(plan.get('estimatedCredits') or 0) <= 120000
+          assert str(state.get('authorizedPlanFingerprint') or '') == str(plan.get('fingerprint') or '')
+          print(json.dumps({
+              'phase': state.get('phase'),
+              'eligibleGames': state.get('eligibleGameCount'),
+              'networkRequests': state.get('networkRequestCount'),
+              'creditsConsumed': state.get('creditsConsumed'),
+              'estimatedCredits': plan.get('estimatedCredits'),
+              'providerRemainingCredits': plan.get('providerReportedRemainingCredits'),
+          }, indent=2, sort_keys=True))
+          PY
+
+      - name: Raise resumable batch throughput to the reviewed maximum
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam-historical-accelerated
+          sam build \
+            --no-cached \
+            --build-dir .aws-sam-historical-accelerated \
+            --template-file mlb_historical_optimizer/template.yaml
+          sam deploy \
+            --template-file .aws-sam-historical-accelerated/template.yaml \
+            --stack-name "$OPTIMIZER_STACK" \
+            --region "$AWS_REGION" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              'TargetSnapshotsTable=parlay_platform_snapshots' \
+              "HistoricalStartDate=${HISTORICAL_START_DATE}" \
+              "HistoricalEndDate=${HISTORICAL_END_DATE}" \
+              "HistoricalTargetGames=${HISTORICAL_TARGET_GAMES}" \
+              "HistoricalMaxCredits=${HISTORICAL_MAX_CREDITS}" \
+              "HistoricalRequestsPerRun=${HISTORICAL_REQUESTS_PER_RUN}" \
+              "HistoricalMaxCandidates=${HISTORICAL_MAX_CANDIDATES}" \
+              'HistoricalMaxOptimizationRounds=6' \
+              'HistoricalFreshAuditIncrementGames=250' \
+              "DeployGitSha=${GITHUB_SHA}"
+          CONFIGURED=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --query 'Environment.Variables.MLB_HISTORICAL_REQUESTS_PER_RUN' \
+            --output text)
+          test "$CONFIGURED" = 100
+
+      - name: Drive backfill, aggressive search, fresh audit, and gated cutover
+        run: |
+          set -euo pipefail
+          rm -f /tmp/mlb-historical-progress.ndjson
+          consecutive_errors=0
+          terminal_phase=''
+          for attempt in $(seq 1 300); do
+            aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --region "$AWS_REGION" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload '{"mode":"orchestrate","run":"github_accelerated_historical_training"}' \
+              /tmp/mlb-historical-batch.json >/tmp/mlb-batch-meta.json
+            SUMMARY=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          value = json.load(open('/tmp/mlb-historical-batch.json'))
+          state = value.get('state') or {}
+          row = {
+              'ok': value.get('ok'),
+              'status': value.get('status'),
+              'phase': state.get('phase'),
+              'currentDate': state.get('currentDate'),
+              'currentSlotIndex': state.get('currentSlotIndex'),
+              'networkRequestCount': state.get('networkRequestCount'),
+              'creditsConsumed': state.get('creditsConsumed'),
+              'eligibleGameCount': state.get('eligibleGameCount'),
+              'completeSlateCount': state.get('completeSlateCount'),
+              'optimizationRound': state.get('optimizationRound'),
+              'lastError': state.get('lastError'),
+          }
+          with Path('/tmp/mlb-historical-progress.ndjson').open('a') as handle:
+              handle.write(json.dumps(row, sort_keys=True) + '\n')
+          print(json.dumps(row, separators=(',', ':')))
+          PY
+          )
+            echo "attempt=${attempt} ${SUMMARY}"
+            OK=$(python -c "import json; print('true' if json.load(open('/tmp/mlb-historical-batch.json')).get('ok') is True else 'false')")
+            TOP_STATUS=$(python -c "import json; print(json.load(open('/tmp/mlb-historical-batch.json')).get('status') or '')")
+            PHASE=$(python -c "import json; v=json.load(open('/tmp/mlb-historical-batch.json')); print((v.get('state') or {}).get('phase') or v.get('status') or '')")
+            if [ "$TOP_STATUS" = LEASE_HELD ]; then
+              sleep 10
+              continue
+            fi
+            if [ "$OK" != true ]; then
+              consecutive_errors=$((consecutive_errors + 1))
+              if [ "$consecutive_errors" -ge 4 ]; then
+                echo '::error::Four consecutive optimizer invocation failures.'
+                exit 1
+              fi
+              sleep 15
+              continue
+            fi
+            consecutive_errors=0
+            case "$PHASE" in
+              BACKFILLING|OPTIMIZING)
+                sleep 2
+                ;;
+              PROMOTED)
+                terminal_phase="$PHASE"
+                break
+                ;;
+              PAUSED_QUOTA|DATA_RANGE_EXHAUSTED|CANDIDATE_REJECTED|OPTIMIZATION_BLOCKED|PLAN_BLOCKED_*)
+                terminal_phase="$PHASE"
+                break
+                ;;
+              READY_FOR_AUTHORIZATION)
+                echo '::error::Paid authorization was lost.'
+                exit 1
+                ;;
+              *)
+                sleep 5
+                ;;
+            esac
+          done
+          echo "terminal_phase=${terminal_phase}" | tee /tmp/mlb-terminal-phase.txt
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "$AWS_REGION" \
+            --cli-read-timeout 900 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"status","run":"accelerator_final_status"}' \
+            /tmp/mlb-historical-final-status.json >/tmp/mlb-final-status-meta.json
+          python - <<'PY'
+          import json
+          value = json.load(open('/tmp/mlb-historical-final-status.json'))
+          state = value.get('state') or {}
+          summary = {
+              'phase': state.get('phase'),
+              'eligibleGameCount': state.get('eligibleGameCount'),
+              'completeSlateCount': state.get('completeSlateCount'),
+              'networkRequestCount': state.get('networkRequestCount'),
+              'creditsConsumed': state.get('creditsConsumed'),
+              'optimizationRound': state.get('optimizationRound'),
+              'latestExperiment': state.get('latestExperiment'),
+              'championValidation': value.get('championValidation'),
+              'cutoverValidation': value.get('cutoverValidation'),
+              'productionAuthority': value.get('productionAuthority'),
+              'lastError': state.get('lastError'),
+          }
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          assert state.get('phase') == 'PROMOTED', 'The real historical model did not pass the mandatory daily-80 promotion gate.'
+          assert int(state.get('eligibleGameCount') or 0) >= 1400
+          assert (value.get('championValidation') or {}).get('ok') is True
+          assert (value.get('cutoverValidation') or {}).get('ok') is True
+          assert (value.get('historicalOnlyCutover') or {}).get('historicalOnly') is True
+          assert (value.get('historicalOnlyCutover') or {}).get('legacyFallbackAllowed') is False
+          authority = value.get('productionAuthority') or {}
+          assert authority.get('historicalChampionOnly') is True
+          assert authority.get('incumbentProductionAuthorityDestroyed') is True
+          PY
+
+      - name: Verify sole live production authority and tomorrow read path
+        run: |
+          set -euo pipefail
+          API_URL=$(aws cloudformation describe-stacks \
+            --stack-name "$PRODUCTION_STACK" \
+            --region "$AWS_REGION" \
+            --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" \
+            --output text)
+          test -n "$API_URL"
+          test "$API_URL" != None
+          API_URL=${API_URL%/}
+          curl --fail --silent --show-error --max-time 60 \
+            "$API_URL/v1/mlb/model/version" \
+            -o /tmp/mlb-runtime-after-training.json
+          TOMORROW_ET=$(TZ=America/New_York date -d tomorrow +%F)
+          curl --fail --silent --show-error --max-time 90 \
+            "$API_URL/v1/mlb/predictions?date=${TOMORROW_ET}" \
+            -o /tmp/mlb-tomorrow-predictions.json
+          python - <<'PY'
+          import json
+          model = json.load(open('/tmp/mlb-runtime-after-training.json'))
+          assert model.get('ok') is True
+          assert model.get('historicalAuthorityStateCoherent') is True
+          assert model.get('historicalProductionCutoverActive') is True
+          assert model.get('historicalDailyChampionActive') is True
+          assert model.get('incumbentProductionAuthorityDestroyed') is True
+          assert model.get('productionAuthoritySource') == 'mlb_historical_daily_champion_only'
+          assert model.get('legacyFallbackAllowed') is False
+          assert model.get('automaticWagerAllowed') is False
+          tomorrow = json.load(open('/tmp/mlb-tomorrow-predictions.json'))
+          assert tomorrow.get('ok') is not False, tomorrow
+          print(json.dumps({
+              'primaryAlgorithm': model.get('primaryAlgorithm'),
+              'productionAuthoritySource': model.get('productionAuthoritySource'),
+              'tomorrowDate': tomorrow.get('date'),
+              'tomorrowPredictionCount': tomorrow.get('count'),
+              'tomorrowReadOnly': tomorrow.get('readOnly'),
+          }, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload immutable real-data training and production evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v15-11-accelerated-training-${{ github.run_id }}
+          path: |
+            /tmp/mlb-accelerator-preflight.json
+            /tmp/mlb-historical-progress.ndjson
+            /tmp/mlb-historical-batch.json
+            /tmp/mlb-historical-final-status.json
+            /tmp/mlb-runtime-after-training.json
+            /tmp/mlb-tomorrow-predictions.json
+            /tmp/mlb-terminal-phase.txt
+          if-no-files-found: warn
+          retention-days: 90
