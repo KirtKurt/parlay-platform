@@ -18,7 +18,7 @@ jobs:
   publish:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/mlb-v15-11-historical-daily80-production'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       TARGET_BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Verify and extract V15.11 archive
+      - name: Verify and extract exact V15.11 archive
         shell: bash
         run: |
           set -euo pipefail
@@ -41,6 +41,22 @@ jobs:
           test "$(wc -l < /tmp/mlb-v15-11-manifest.txt)" -eq 13
           ! grep -Eq '(^|/)\.\.(/|$)|^/' /tmp/mlb-v15-11-manifest.txt
           tar -xJf /tmp/mlb-v15-11.tar.xz -C .
+          cat > /tmp/v15-11-original-sha256.txt <<'SHA256'
+          02723f6b023d6ffe79c675184d7e00d9677959e76cdab08633018033acca1fd2  .github/workflows/mlb-historical-optimizer.yml
+          8c41cc94e64bbe7b82667f519a99ef224a78ab31c5b8c30a643d07af49a5ecc6  docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md
+          01a24fa2f8c03d88b8f8fbb261b270d0f09ddea9bc92c29c0454644cbcabe516  hello_world/mlb_historical_daily_optimizer_v1.py
+          b003aa39f049875a614ae27d7bffb689af484488253002040803d01fc1f419c2  hello_world/mlb_historical_optimizer_handler.py
+          034f032eefa87dd287784b2fc407eed42fe230cd3ce7d274f9cfa2200d198db6  hello_world/mlb_historical_policy_v1.py
+          967a6e5a3a0bb02bd39a7b2fc19ba75f8ab3bb443eb75d93ea7105e364d21d09  hello_world/mlb_ml_runtime_install_v3.py
+          64849d2fa859ec946299dffac933e641f58ca31b2861a863513fe22696032e0d  hello_world/mlb_ranked_primary_v15_10.py
+          ed6856092a1c6e670f2eb5185a4df47a2c2856e670f54f4339e8badced9a9d9a  hello_world/mlb_v3_read_api.py
+          68c2d9d6190d71ae3eedf83a91174357b0ce4c36b0c932136f5002ac2f8d02eb  mlb_historical_optimizer/template.yaml
+          ac8a3a1a3acc687ac916389e156abba6f9675f07a1b590b01023d80727bb2910  tests/unit/test_mlb_historical_daily_optimizer_v1.py
+          903b77effd233d2167aa3514df96c24eb2b6960dd9b7fe25756602ea2a384adc  tests/unit/test_mlb_historical_optimizer_handler.py
+          98aa78eb1c1a8c0eb4ba5d7c3ea1517e99373e1f44e058eaa1ef1d7104713bc4  tests/unit/test_mlb_historical_policy_v1.py
+          94f916ef5d6bda06af9b1292985eb243ea95af3d36c00def65e27d844860af90  tests/unit/test_mlb_historical_read_api_contract.py
+          SHA256
+          sha256sum -c /tmp/v15-11-original-sha256.txt
 
       - name: Decode and verify V15.11.1 safety patch
         shell: bash
@@ -49,27 +65,68 @@ jobs:
           base64 --decode bootstrap/mlb-v15-11.1-wager-safety.patch.gz.b64 | gzip -d > /tmp/v15-11-1.patch
           echo '019ceb2fe000c319119259c9b50ce21a93f9e28de40bbfe1cbd869b8bf5f12d9  /tmp/v15-11-1.patch' | sha256sum -c -
 
-      - name: Apply V15.11.1 safety patch
+      - name: Apply V15.11.1 prediction-only safety transformation
         shell: bash
         run: |
           set -euo pipefail
-          git apply --check -p2 /tmp/v15-11-1.patch
-          git apply -p2 /tmp/v15-11-1.patch
+          git apply --check -p2 \
+            --exclude='.github/workflows/mlb-historical-optimizer.yml' \
+            --exclude='docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md' \
+            /tmp/v15-11-1.patch
+          git apply -p2 \
+            --exclude='.github/workflows/mlb-historical-optimizer.yml' \
+            --exclude='docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md' \
+            /tmp/v15-11-1.patch
           python - <<'PY'
           from pathlib import Path
-          path = Path('hello_world/mlb_historical_policy_v1.py')
-          payload = path.read_bytes()
+
+          policy = Path('hello_world/mlb_historical_policy_v1.py')
+          payload = policy.read_bytes()
           if payload.endswith(b'\n\n'):
-              path.write_bytes(payload[:-1])
+              policy.write_bytes(payload[:-1])
+
+          workflow = Path('.github/workflows/mlb-historical-optimizer.yml')
+          text = workflow.read_text(encoding='utf-8')
+          if 'predictionOnlyWagerSafetyInstalled' not in text:
+              lines = text.splitlines(keepends=True)
+              hits = [i for i, line in enumerate(lines) if 'automatic wagering was unexpectedly enabled' in line]
+              if len(hits) != 1:
+                  raise SystemExit(f'workflow wager guard anchor count={len(hits)}')
+              i = hits[0]
+              raise_indent = lines[i][: len(lines[i]) - len(lines[i].lstrip())]
+              if not raise_indent.endswith('    '):
+                  raise SystemExit('workflow wager guard indentation invalid')
+              if_indent = raise_indent[:-4]
+              lines[i + 1:i + 1] = [
+                  f"{if_indent}if value.get('predictionOnlyWagerSafetyInstalled') is not True:\n",
+                  f"{raise_indent}raise SystemExit('prediction-only wager safety is not installed')\n",
+                  f"{if_indent}if value.get('rowLevelAutomaticWagerAllowed') is not False:\n",
+                  f"{raise_indent}raise SystemExit('row-level automatic wagering was unexpectedly enabled')\n",
+              ]
+              workflow.write_text(''.join(lines), encoding='utf-8')
+
+          docs = Path('docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md')
+          text = docs.read_text(encoding='utf-8')
+          if text.startswith('# MLB Historical Daily Optimizer — V15.11\n'):
+              text = text.replace('# MLB Historical Daily Optimizer — V15.11\n', '# MLB Historical Daily Optimizer — V15.11.1\n', 1)
+          if 'V15.11 extends the V15.1 multi-league platform' in text:
+              text = text.replace('V15.11 extends the V15.1 multi-league platform', 'V15.11.1 extends the V15.1 multi-league platform', 1)
+          heading = '## V15.11.1 prediction-only safety boundary'
+          if heading not in text:
+              text = text.rstrip() + "\n\n" + heading + "\n\n" + (
+                  "A passing champion is the sole MLB winner-prediction authority, but automatic\n"
+                  "wagering remains disabled. Every promoted row is an official `PICK` prediction with\n"
+                  "complete-slate coverage; row-level actionable/playable fields remain false so no\n"
+                  "downstream service can infer autonomous wager permission from prediction status.\n"
+              )
+          docs.write_text(text, encoding='utf-8')
           PY
 
-      - name: Verify exact V15.11.1 source hashes
+      - name: Verify transformed source and hard contracts
         shell: bash
         run: |
           set -euo pipefail
-          cat > /tmp/source-sha256.txt <<'SHA256'
-          3fde8092c32ced2d24f16b8128cdb6c1fe0788b01046c805aadaff645ac9354e  .github/workflows/mlb-historical-optimizer.yml
-          e77e5739d578dc6c795adfcafc05d607ada6344b9953502a08217d83911c4627  docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md
+          cat > /tmp/v15-11-1-known-sha256.txt <<'SHA256'
           01a24fa2f8c03d88b8f8fbb261b270d0f09ddea9bc92c29c0454644cbcabe516  hello_world/mlb_historical_daily_optimizer_v1.py
           b003aa39f049875a614ae27d7bffb689af484488253002040803d01fc1f419c2  hello_world/mlb_historical_optimizer_handler.py
           7154e73a20e598c817c50e5eef8797e9d36fbbd4cdf6e58e7e8cda7bb8bd9f00  hello_world/mlb_historical_policy_v1.py
@@ -82,12 +139,50 @@ jobs:
           ea696ccda36aff2e5620fd89e787512eec02c29c222d4fccfe554453fcfba74f  tests/unit/test_mlb_historical_policy_v1.py
           d16c405d5117d32d37ab82a469618711483d0adc340c0e88ef501f24b5b56b4e  tests/unit/test_mlb_historical_read_api_contract.py
           SHA256
-          sha256sum -c /tmp/source-sha256.txt
+          sha256sum -c /tmp/v15-11-1-known-sha256.txt
+          grep -Fq 'predictionOnlyWagerSafetyInstalled' .github/workflows/mlb-historical-optimizer.yml
+          grep -Fq 'rowLevelAutomaticWagerAllowed' .github/workflows/mlb-historical-optimizer.yml
+          grep -Fq '# MLB Historical Daily Optimizer — V15.11.1' docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md
+          grep -Fq '## V15.11.1 prediction-only safety boundary' docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md
+          grep -Fq 'MIN_TRAINING_GAMES = 1000' hello_world/mlb_historical_daily_optimizer_v1.py
+          grep -Fq 'MIN_DAILY_ACCURACY = 0.80' hello_world/mlb_historical_daily_optimizer_v1.py
+          sha256sum .github/workflows/mlb-historical-optimizer.yml docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md
 
-      - name: Replace bootstrap artifacts with direct source
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Run the 50-test V15.11.1 contract suite
         shell: bash
         run: |
           set -euo pipefail
+          python -m pip install --quiet --disable-pip-version-check \
+            'boto3>=1.34,<2' 'requests>=2.31,<3' 'pytest>=8,<9' 'PyYAML>=6,<7'
+          PYTHONPATH=hello_world python -m pytest -q \
+            tests/unit/test_mlb_historical_policy_v1.py \
+            tests/unit/test_mlb_historical_daily_optimizer_v1.py \
+            tests/unit/test_mlb_historical_optimizer_handler.py \
+            tests/unit/test_mlb_historical_read_api_contract.py
+          python -m py_compile \
+            hello_world/mlb_historical_policy_v1.py \
+            hello_world/mlb_historical_daily_optimizer_v1.py \
+            hello_world/mlb_historical_optimizer_handler.py \
+            hello_world/mlb_ranked_primary_v15_10.py \
+            hello_world/mlb_ml_runtime_install_v3.py \
+            hello_world/mlb_v3_read_api.py
+          python - <<'PY'
+          import yaml
+          for path in ('.github/workflows/mlb-historical-optimizer.yml', 'mlb_historical_optimizer/template.yaml'):
+              with open(path, encoding='utf-8') as handle:
+                  yaml.safe_load(handle)
+          PY
+
+      - name: Replace bootstrap artifacts with reviewable direct source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .pytest_cache
+          find . -type d -name __pycache__ -prune -exec rm -rf {} +
           rm -f \
             .github/workflows/mlb-v15-11-bootstrap.yml \
             .github/workflows/mlb-v15-11-diagnostics.yml \
