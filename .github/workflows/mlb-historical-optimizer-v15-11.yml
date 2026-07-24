@@ -1,0 +1,271 @@
+name: MLB V15.11.1 historical daily-slate optimizer
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: Operation to execute
+        required: true
+        type: choice
+        options:
+          - test
+          - plan
+          - backfill
+          - build-dataset
+          - train
+          - audit
+          - promote
+      schedule_s3_uri:
+        description: S3 URI for official schedule JSON
+        required: false
+        type: string
+      outcomes_s3_uri:
+        description: S3 URI for official settled outcomes JSON
+        required: false
+        type: string
+      plan_s3_uri:
+        description: S3 URI for immutable paid-request plan JSON
+        required: false
+        type: string
+      snapshots_s3_uri:
+        description: S3 prefix for historical snapshot archive
+        required: false
+        type: string
+      dataset_s3_uri:
+        description: S3 URI for normalized historical JSONL dataset
+        required: false
+        type: string
+      artifact_s3_uri:
+        description: S3 URI for frozen selected-candidate artifact
+        required: false
+        type: string
+      report_s3_uri:
+        description: S3 URI for untouched-audit gate report
+        required: false
+        type: string
+      output_s3_uri:
+        description: S3 URI or prefix for this operation's output
+        required: false
+        type: string
+      max_credits:
+        description: Explicit hard ceiling for paid historical credits
+        required: false
+        default: "0"
+        type: string
+      credits_per_request:
+        description: Current provider credit estimate per historical request
+        required: false
+        default: "10"
+        type: string
+      max_candidates:
+        description: Aggressive search combinations
+        required: false
+        default: "25000"
+        type: string
+      paid_confirmation:
+        description: Exact paid-usage authorization phrase; required only for backfill
+        required: false
+        type: string
+      experiment_id:
+        description: Immutable experiment identifier
+        required: false
+        type: string
+      promotion_confirmation:
+        description: Exact production cutover phrase; required only for promote
+        required: false
+        type: string
+      execute_cutover:
+        description: Write the atomic production cutover after every gate passes
+        required: false
+        default: false
+        type: boolean
+      production_table:
+        description: DynamoDB table containing champion and write-once cutover records
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-v15-11-1-historical-${{ github.event.inputs.mode }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_DEFAULT_REGION: us-east-1
+  PYTHONPATH: hello_world:.
+  CLI: scripts/mlb_historical_daily_optimizer_v15_11.py
+
+jobs:
+  validate-and-run:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install verification runtime
+        run: python -m pip install --quiet "pytest>=8,<9" "boto3>=1.34,<2"
+
+      - name: Verify optimizer contracts before any external call
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/unit/test_mlb_historical_policy_v1.py \
+            tests/unit/test_mlb_historical_daily_optimizer_v1.py \
+            tests/unit/test_mlb_historical_training_handler.py
+          python -m py_compile \
+            hello_world/mlb_historical_policy_v1.py \
+            hello_world/mlb_historical_daily_optimizer_v1.py \
+            scripts/mlb_historical_daily_optimizer_v15_11.py
+
+      - name: Stop after contract tests
+        if: ${{ inputs.mode == 'test' }}
+        run: echo "MLB V15.11.1 historical optimizer contracts passed."
+
+      - name: Configure AWS credentials
+        if: ${{ inputs.mode != 'test' }}
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Verify AWS identity
+        if: ${{ inputs.mode != 'test' }}
+        run: aws sts get-caller-identity
+
+      - name: Build zero-call historical request plan
+        if: ${{ inputs.mode == 'plan' }}
+        run: |
+          set -euo pipefail
+          test -n "${{ inputs.schedule_s3_uri }}"
+          test -n "${{ inputs.output_s3_uri }}"
+          aws s3 cp "${{ inputs.schedule_s3_uri }}" /tmp/schedule.json
+          python "$CLI" plan \
+            --schedule /tmp/schedule.json \
+            --credits-per-request "${{ inputs.credits_per_request }}" \
+            --output /tmp/request-plan.json
+          aws s3 cp /tmp/request-plan.json "${{ inputs.output_s3_uri }}"
+
+      - name: Execute explicitly authorized paid historical backfill
+        if: ${{ inputs.mode == 'backfill' }}
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          PAID_CONFIRMATION: ${{ inputs.paid_confirmation }}
+        run: |
+          set -euo pipefail
+          test -n "$ODDS_API_KEY"
+          test -n "${{ inputs.plan_s3_uri }}"
+          test -n "${{ inputs.snapshots_s3_uri }}"
+          test "${{ inputs.max_credits }}" -gt 0
+          test "$PAID_CONFIRMATION" = "I AUTHORIZE PAID THE ODDS API HISTORICAL USAGE"
+          aws s3 cp "${{ inputs.plan_s3_uri }}" /tmp/request-plan.json
+          mkdir -p /tmp/mlb-snapshots
+          aws s3 sync "${{ inputs.snapshots_s3_uri }}" /tmp/mlb-snapshots || true
+          python "$CLI" backfill \
+            --plan /tmp/request-plan.json \
+            --output-dir /tmp/mlb-snapshots \
+            --max-credits "${{ inputs.max_credits }}" \
+            --confirmation "$PAID_CONFIRMATION"
+          aws s3 sync /tmp/mlb-snapshots "${{ inputs.snapshots_s3_uri }}" \
+            --sse AES256
+
+      - name: Build T-minus-45 normalized training dataset
+        if: ${{ inputs.mode == 'build-dataset' }}
+        run: |
+          set -euo pipefail
+          test -n "${{ inputs.schedule_s3_uri }}"
+          test -n "${{ inputs.outcomes_s3_uri }}"
+          test -n "${{ inputs.snapshots_s3_uri }}"
+          test -n "${{ inputs.output_s3_uri }}"
+          aws s3 cp "${{ inputs.schedule_s3_uri }}" /tmp/schedule.json
+          aws s3 cp "${{ inputs.outcomes_s3_uri }}" /tmp/outcomes.json
+          mkdir -p /tmp/mlb-snapshots
+          aws s3 sync "${{ inputs.snapshots_s3_uri }}" /tmp/mlb-snapshots
+          python "$CLI" build-dataset \
+            --schedule /tmp/schedule.json \
+            --outcomes /tmp/outcomes.json \
+            --snapshot-dir /tmp/mlb-snapshots \
+            --output /tmp/mlb-dataset.jsonl
+          aws s3 cp /tmp/mlb-dataset.jsonl "${{ inputs.output_s3_uri }}" \
+            --sse AES256
+
+      - name: Search signal combinations on chronological validation dates
+        if: ${{ inputs.mode == 'train' }}
+        run: |
+          set -euo pipefail
+          test -n "${{ inputs.dataset_s3_uri }}"
+          test -n "${{ inputs.output_s3_uri }}"
+          aws s3 cp "${{ inputs.dataset_s3_uri }}" /tmp/mlb-dataset.jsonl
+          python "$CLI" train \
+            --dataset /tmp/mlb-dataset.jsonl \
+            --max-candidates "${{ inputs.max_candidates }}" \
+            --seed 15111 \
+            --output /tmp/candidate-artifact.json
+          aws s3 cp /tmp/candidate-artifact.json "${{ inputs.output_s3_uri }}" \
+            --sse AES256
+
+      - name: Open the strictly later untouched audit once
+        if: ${{ inputs.mode == 'audit' }}
+        run: |
+          set -euo pipefail
+          test -n "${{ inputs.dataset_s3_uri }}"
+          test -n "${{ inputs.artifact_s3_uri }}"
+          test -n "${{ inputs.output_s3_uri }}"
+          aws s3 cp "${{ inputs.dataset_s3_uri }}" /tmp/mlb-dataset.jsonl
+          aws s3 cp "${{ inputs.artifact_s3_uri }}" /tmp/candidate-artifact.json
+          python "$CLI" audit \
+            --dataset /tmp/mlb-dataset.jsonl \
+            --artifact /tmp/candidate-artifact.json \
+            --output /tmp/gate-report.json
+          aws s3 cp /tmp/gate-report.json "${{ inputs.output_s3_uri }}" \
+            --sse AES256
+
+      - name: Evaluate or execute write-once production cutover
+        if: ${{ inputs.mode == 'promote' }}
+        env:
+          PROMOTION_CONFIRMATION: ${{ inputs.promotion_confirmation }}
+        run: |
+          set -euo pipefail
+          test -n "${{ inputs.report_s3_uri }}"
+          test -n "${{ inputs.output_s3_uri }}"
+          test -n "${{ inputs.experiment_id }}"
+          test "$PROMOTION_CONFIRMATION" = "PROMOTE MLB V15.11.1 HISTORICAL DAILY OPTIMIZER ONLY"
+          aws s3 cp "${{ inputs.report_s3_uri }}" /tmp/gate-report.json
+          args=(
+            promote
+            --report /tmp/gate-report.json
+            --experiment-id "${{ inputs.experiment_id }}"
+            --confirmation "$PROMOTION_CONFIRMATION"
+            --region "$AWS_REGION"
+            --output /tmp/promotion-result.json
+          )
+          if [ "${{ inputs.execute_cutover }}" = "true" ]; then
+            test -n "${{ inputs.production_table }}"
+            args+=(--execute --table-name "${{ inputs.production_table }}")
+          fi
+          python "$CLI" "${args[@]}"
+          aws s3 cp /tmp/promotion-result.json "${{ inputs.output_s3_uri }}" \
+            --sse AES256
+
+      - name: Summarize safety state
+        if: ${{ always() }}
+        run: |
+          {
+            echo "## MLB V15.11.1 historical optimizer"
+            echo "- Mode: ${{ inputs.mode }}"
+            echo "- Hard minimum: 80% on every complete validation and audit slate"
+            echo "- Stretch target: 90%; never guaranteed or fabricated"
+            echo "- Minimum evidence: 1000 train + 200 validation + 200 untouched audit games"
+            echo "- Production wagering: disabled"
+            echo "- Existing authority remains until a real report passes every gate and an explicit write-once cutover is executed"
+          } >> "$GITHUB_STEP_SUMMARY"
