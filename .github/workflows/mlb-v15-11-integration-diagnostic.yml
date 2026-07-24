@@ -1,6 +1,16 @@
 name: MLB V15.11 integration diagnostic
 
 on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "hello_world/mlb_historical_*"
+      - "hello_world/mlb_ranked_primary_v15_10.py"
+      - "hello_world/mlb_ml_runtime_install_v3*"
+      - "hello_world/mlb_v3_read_api*"
+      - "tests/unit/test_mlb_historical_*"
+      - "mlb_historical_optimizer/**"
+      - ".github/workflows/mlb-v15-11-integration-diagnostic.yml"
   push:
     branches:
       - agent/mlb-v15-11-historical-only-cutover
