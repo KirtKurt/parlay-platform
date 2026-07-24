@@ -1,0 +1,100 @@
+name: Stage exact MLB V15.11.1 production workflow
+
+"on":
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/mlb-v15-11-stage-production-workflow.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v15-11-stage-exact-production-workflow
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/mlb-v15-11-historical-daily80-production'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TARGET_BRANCH: ${{ github.event.pull_request.head.ref }}
+      SOURCE_COMMIT: 3cb9383f2c0de3fae713d6d2b584d142fa279692
+      ARCHIVE_SHA256: b73576b5d75def32612017bfb14b1c1768eef0ce91a608cc0c9c0cc4d66774a2
+      ORIGINAL_WORKFLOW_SHA256: 02723f6b023d6ffe79c675184d7e00d9677959e76cdab08633018033acca1fd2
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Reconstruct checksum-bound source archive from release history
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$TARGET_BRANCH" = 'agent/mlb-v15-11-historical-daily80-production'
+          git cat-file -e "${SOURCE_COMMIT}^{commit}"
+          : > /tmp/mlb-v15-11.tar.xz.b64
+          for part in 00 01 02 03 04; do
+            git show "${SOURCE_COMMIT}:bootstrap/mlb-v15-11.tar.xz.b64.part${part}" >> /tmp/mlb-v15-11.tar.xz.b64
+          done
+          base64 --decode /tmp/mlb-v15-11.tar.xz.b64 > /tmp/mlb-v15-11.tar.xz
+          echo "${ARCHIVE_SHA256}  /tmp/mlb-v15-11.tar.xz" | sha256sum -c -
+          rm -rf /tmp/mlb-v15-11-source
+          mkdir -p /tmp/mlb-v15-11-source
+          tar -xJf /tmp/mlb-v15-11.tar.xz -C /tmp/mlb-v15-11-source
+          echo "${ORIGINAL_WORKFLOW_SHA256}  /tmp/mlb-v15-11-source/.github/workflows/mlb-historical-optimizer.yml" | sha256sum -c -
+
+      - name: Apply deterministic V15.11.1 prediction-only workflow safety
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          workflow = Path('/tmp/mlb-v15-11-source/.github/workflows/mlb-historical-optimizer.yml')
+          text = workflow.read_text(encoding='utf-8')
+          if 'predictionOnlyWagerSafetyInstalled' not in text:
+              lines = text.splitlines(keepends=True)
+              hits = [i for i, line in enumerate(lines) if 'automatic wagering was unexpectedly enabled' in line]
+              if len(hits) != 1:
+                  raise SystemExit(f'workflow wager guard anchor count={len(hits)}')
+              i = hits[0]
+              raise_indent = lines[i][: len(lines[i]) - len(lines[i].lstrip())]
+              if not raise_indent.endswith('    '):
+                  raise SystemExit('workflow wager guard indentation invalid')
+              if_indent = raise_indent[:-4]
+              lines[i + 1:i + 1] = [
+                  f"{if_indent}if value.get('predictionOnlyWagerSafetyInstalled') is not True:\n",
+                  f"{raise_indent}raise SystemExit('prediction-only wager safety is not installed')\n",
+                  f"{if_indent}if value.get('rowLevelAutomaticWagerAllowed') is not False:\n",
+                  f"{raise_indent}raise SystemExit('row-level automatic wagering was unexpectedly enabled')\n",
+              ]
+              workflow.write_text(''.join(lines), encoding='utf-8')
+          PY
+          grep -Fq 'predictionOnlyWagerSafetyInstalled' /tmp/mlb-v15-11-source/.github/workflows/mlb-historical-optimizer.yml
+          grep -Fq 'rowLevelAutomaticWagerAllowed' /tmp/mlb-v15-11-source/.github/workflows/mlb-historical-optimizer.yml
+          python - <<'PY'
+          import yaml
+          from pathlib import Path
+          path = Path('/tmp/mlb-v15-11-source/.github/workflows/mlb-historical-optimizer.yml')
+          yaml.safe_load(path.read_text(encoding='utf-8'))
+          print(path.stat().st_size)
+          PY
+          sha256sum /tmp/mlb-v15-11-source/.github/workflows/mlb-historical-optimizer.yml
+
+      - name: Commit exact workflow bytes outside the protected workflow directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          cp /tmp/mlb-v15-11-source/.github/workflows/mlb-historical-optimizer.yml \
+            runtime_reports/mlb_v15_11_1_historical_optimizer.staged.yml
+          git diff --check -- runtime_reports/mlb_v15_11_1_historical_optimizer.staged.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime_reports/mlb_v15_11_1_historical_optimizer.staged.yml
+          git commit -m 'Stage exact validated MLB V15.11.1 workflow'
+          git push origin "HEAD:${TARGET_BRANCH}"
