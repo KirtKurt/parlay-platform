@@ -74,21 +74,27 @@ def _base_prediction():
     }
 
 
-def test_signal_policy_is_installed_before_public_prelock_authority():
+def test_signal_policy_is_installed_between_ranked_direction_and_public_prelock_authority():
     source = (ROOT / "hello_world" / "mlb_ml_runtime_install_v3.py").read_text(
         encoding="utf-8"
     )
+    ranked_direction = source.index("mlb_ranked_primary_v15_10.apply_direction(engine)")
+    probability_install = source.index("mlb_prediction_probability_contract_v1.apply(engine)")
     signal_install = source.index("mlb_signal_policy_v12.apply(engine)")
     public_install = source.index(
         "mlb_slate_coverage_patch.install_public_authority(engine, mlb_slate_prediction_lock)"
+    )
+    ranked_selection = source.index(
+        "mlb_ranked_primary_v15_10.apply_selection_authority(engine)"
     )
     finalizer_install = source.index(
         "mlb_locked_prediction_storage_finalizer_v1.apply(engine)"
     )
 
-    assert signal_install < public_install < finalizer_install
+    assert ranked_direction < probability_install < signal_install < public_install
+    assert public_install < ranked_selection < finalizer_install
     assert '"signalPolicyV13Installed"' in source
-    assert "MLB-ML-RUNTIME-INSTALL-v4.2-signal-policy-prelock-persistence" in source
+    assert "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10" in source
 
 
 def test_versioned_signal_policy_survives_public_prelock_and_is_durably_stored():
