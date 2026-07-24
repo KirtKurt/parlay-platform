@@ -1,4 +1,4 @@
-name: Probe second MLB V15.11.1 stack failure
+name: Probe exact second MLB V15.11.1 provider error
 
 "on":
   pull_request:
@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89418153271'
     steps:
-      - name: Print exact AWS failure messages
+      - name: Print only the terminal CloudFormation failure block
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --location \
@@ -37,25 +37,17 @@ jobs:
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
           lines = [ansi.sub('', line) for line in raw.splitlines()]
           terms = re.compile(
-              r'CREATE_FAILED|UPDATE_FAILED|ROLLBACK|ValidationError|AccessDenied|'
-              r'AlreadyExists|already exists|Resource handler returned message|'
-              r'Failed to create changeset|Failed to deploy|Error:|NoSuchBucket|'
-              r'InsufficientCapabilities|InvalidRequest|LimitExceeded|ConflictException|'
-              r'Process completed with exit code',
+              r'CREATE_FAILED|UPDATE_FAILED|ROLLBACK|Resource handler returned message|'
+              r'Failed to create changeset|Failed to deploy|InvalidRequest|AccessDenied|'
+              r'LimitExceeded|ConflictException|Process completed with exit code',
               re.IGNORECASE,
           )
-          hits = [i for i, line in enumerate(lines) if terms.search(line)]
-          print('EXACT_MATCH_COUNT=' + str(len(hits)))
-          selected = set()
-          for index in hits[-25:]:
-              selected.update(range(max(0, index - 4), min(len(lines), index + 10)))
-          selected.update(range(max(0, len(lines) - 35), len(lines)))
-          last = None
-          for index in sorted(selected):
-              if last is not None and index > last + 1:
-                  print('...')
-              print(f'{index + 1:05d}: {lines[index]}')
-              last = index
+          hits = [i for i, line in enumerate(lines) if i > 640 and terms.search(line)]
           if not hits:
-              raise SystemExit('No recognized AWS failure token found')
+              raise SystemExit('No terminal provider failure found')
+          start = max(0, min(hits) - 6)
+          end = min(len(lines), max(hits) + 22)
+          print(f'RANGE={start + 1}-{end}')
+          for index in range(start, end):
+              print(f'{index + 1:05d}: {lines[index]}')
           PY
