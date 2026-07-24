@@ -24,7 +24,7 @@ from pathlib import Path
 # mlb_locked_prediction_storage_finalizer_v1.apply(engine)
 # "signalPolicyV13Installed"
 # MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10
-# mlb_probability_actionability_guard
+# mlb_probability_actionability_guard.apply(engine)
 
 _RESOURCE = Path(__file__).with_name("mlb_ml_runtime_install_v3_impl.py.gz.b64")
 _EXPECTED_RESOURCE_SHA256 = "ac5ba77c42f17eee11b4b91484a08e7c94aa01196853382616a34957900c40f5"
