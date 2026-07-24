@@ -15,7 +15,8 @@ LAMBDA_TASK_ROOT = Path(
 EXPECTED_MODEL = "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"
 EXPECTED_RUNTIME = (
     "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
-    "prelock-persistence-verified-active-model-authority"
+    "prelock-persistence-verified-stage-promotion-authority-"
+    "verified-active-model-authority"
 )
 EXPECTED_API = "MLB-V3-READ-API-v6-ranked-winner-v15.10"
 EXPECTED_SELECTOR = "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble"

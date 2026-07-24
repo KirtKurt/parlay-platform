@@ -655,8 +655,8 @@ def test_rejects_live_authority_claim_in_deploy_smoke(tmp_path: Path) -> None:
     text = deploy.read_text(encoding="utf-8")
     deploy.write_text(
         text.replace(
-            "payload.get('awsNativeTrainingAuthority') is not False",
-            "payload.get('awsNativeTrainingAuthority') is not True",
+            "'awsNativeTrainingAuthority': False",
+            "'awsNativeTrainingAuthority': True",
             1,
         ),
         encoding="utf-8",

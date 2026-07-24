@@ -619,30 +619,48 @@ def verify_repository(root: Path = ROOT) -> List[str]:
         ):
             if token in deploy:
                 errors.append(f"canonical_deploy_retired_provider_token_present:{token}")
-        shadow_runtime_tokens = {
-            "disabled_manual_review_creates_shadow_pointer_only": (
-                "canonical_deploy_does_not_require_shadow_only_manual_review"
+        ranked_runtime_tokens = {
+            "'automaticPromotionPolicy': 'winner model fixed for release; precision/trade promotion remains disabled'": (
+                "canonical_deploy_does_not_require_fixed_ranked_release_policy"
             ),
-            "payload.get('awsNativeTrainingInstalled') is not True": (
+            "'awsNativeTrainingInstalled': True": (
                 "canonical_deploy_does_not_require_aws_training_installation"
             ),
-            "payload.get('awsNativeTrainingAuthority') is not False": (
+            "'awsNativeTrainingAuthority': False": (
                 "canonical_deploy_allows_training_to_claim_live_authority"
             ),
-            "separate_mode_specific_status_contract": (
+            "'awsNativeTrainingHealthSource': 'separate_mode_specific_status_contract'": (
                 "canonical_deploy_does_not_require_split_training_health"
             ),
-            "payload.get('manualReviewCreatesShadowApprovalOnly') is not True": (
-                "canonical_deploy_does_not_require_shadow_only_approval"
+            "'manualReviewCreatesShadowApprovalOnly': True": (
+                "canonical_deploy_does_not_require_shadow_only_training_approval"
             ),
-            "payload.get('v2InferenceConsumerInstalled') is not False": (
+            "'v2InferenceConsumerInstalled': False": (
                 "canonical_deploy_allows_unreviewed_v2_inference"
             ),
-            "payload.get('runtimeAuthorityActivationAvailable') is not False": (
-                "canonical_deploy_allows_unreviewed_runtime_activation"
+            "'runtimeAuthorityActivationAvailable': True": (
+                "canonical_deploy_does_not_require_ranked_runtime_activation"
+            ),
+            "'primaryAlgorithm': 'INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble'": (
+                "canonical_deploy_does_not_require_ranked_winner_primary"
+            ),
+            "'allowedProductionOutput': ['PICK']": (
+                "canonical_deploy_does_not_require_ranked_pick_output"
+            ),
+            "'legacyRecommendationAuthority': False": (
+                "canonical_deploy_allows_legacy_recommendation_authority"
+            ),
+            "'legacyFallbackAllowed': False": (
+                "canonical_deploy_allows_legacy_fallback"
+            ),
+            "'automaticWagerAllowed': False": (
+                "canonical_deploy_allows_automatic_wagering"
+            ),
+            "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority": (
+                "canonical_deploy_does_not_require_ranked_runtime_identity"
             ),
         }
-        for token, error in shadow_runtime_tokens.items():
+        for token, error in ranked_runtime_tokens.items():
             if token not in deploy:
                 errors.append(error)
 
