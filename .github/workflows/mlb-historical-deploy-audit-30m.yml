@@ -1,0 +1,174 @@
+name: MLB Historical Deploy Audit 30m
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-deploy-audit-30m.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: mlb-historical-deploy-audit-30m
+  cancel-in-progress: false
+
+jobs:
+  deploy-audit-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify repaired source and focused contracts
+        run: |
+          set -euo pipefail
+          grep -Fq 'provider_snapshot_too_stale' hello_world/mlb_historical_optimizer_handler.py
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'cfn-lint>=1,<2'
+          python -m py_compile hello_world/mlb_historical_optimizer_handler.py hello_world/mlb_historical_daily_optimizer_v1.py
+          python -m pytest -q tests/unit/test_mlb_historical_daily_optimizer_v1.py tests/unit/test_mlb_historical_optimizer_handler.py
+          sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+
+      - name: Prove production MLB and historical optimizer are isolated
+        id: isolation
+        run: |
+          set -euo pipefail
+          REGION='${{ secrets.AWS_REGION }}'
+          HIST_FN=$(aws cloudformation describe-stacks --stack-name parlay-platform-mlb-historical-optimizer --region "$REGION" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          PROD_FN=$(aws cloudformation describe-stack-resource --stack-name parlay-platform-dev --logical-resource-id MLBV3ReadFunction --region "$REGION" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          test -n "$HIST_FN" && test "$HIST_FN" != None
+          test -n "$PROD_FN" && test "$PROD_FN" != None
+          test "$HIST_FN" != "$PROD_FN"
+          PROD_STATUS=$(aws cloudformation describe-stacks --stack-name parlay-platform-dev --region "$REGION" --query 'Stacks[0].StackStatus' --output text)
+          case "$PROD_STATUS" in
+            CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE) ;;
+            *) echo "::error::Production MLB stack not stable: $PROD_STATUS"; exit 1;;
+          esac
+          echo "HIST_FN=$HIST_FN" >> "$GITHUB_ENV"
+          echo "PROD_FN=$PROD_FN" >> "$GITHUB_ENV"
+          echo "PROD_STATUS=$PROD_STATUS" >> "$GITHUB_ENV"
+
+      - name: Build and deploy isolated historical optimizer stack
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam-historical-audit
+          sam build --no-cached --build-dir .aws-sam-historical-audit --template-file mlb_historical_optimizer/template.yaml
+          sam deploy \
+            --template-file .aws-sam-historical-audit/template.yaml \
+            --stack-name parlay-platform-mlb-historical-optimizer \
+            --region "$REGION" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              'TargetSnapshotsTable=parlay_platform_snapshots' \
+              'HistoricalStartDate=2025-04-01' \
+              'HistoricalEndDate=2025-08-31' \
+              'HistoricalTargetGames=1600' \
+              'HistoricalMaxCredits=120000' \
+              'HistoricalRequestsPerRun=100' \
+              'HistoricalMaxCandidates=25000' \
+              'HistoricalMaxOptimizationRounds=6' \
+              'HistoricalFreshAuditIncrementGames=250' \
+              "DeployGitSha=$(git rev-parse HEAD)"
+
+      - name: Prove deployed Lambda package contains repaired handler
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          CODE_URL=$(aws lambda get-function --function-name "$HIST_FN" --region "$REGION" --query 'Code.Location' --output text)
+          curl --fail --location --silent --show-error "$CODE_URL" -o /tmp/historical.zip
+          unzip -p /tmp/historical.zip mlb_historical_optimizer_handler.py > /tmp/deployed-handler.py
+          grep -Fq 'provider_snapshot_too_stale' /tmp/deployed-handler.py
+          sha256sum /tmp/deployed-handler.py > /tmp/deployed-handler.sha256
+
+      - name: Capture pre-run status and invoke repaired optimizer
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          aws lambda invoke --function-name "$HIST_FN" --region "$REGION" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"deploy_audit_pre"}' /tmp/pre.json >/tmp/pre-meta.json
+          aws lambda invoke --function-name "$HIST_FN" --region "$REGION" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"orchestrate","run":"deploy_audit_resume"}' /tmp/resume.json >/tmp/resume-meta.json
+          python - <<'PY'
+          import json
+          pre=json.load(open('/tmp/pre.json')).get('state') or {}
+          post=json.load(open('/tmp/resume.json')).get('state') or {}
+          before=(str(pre.get('currentDate')),int(pre.get('currentSlotIndex') or 0),int(pre.get('networkRequestCount') or 0),int(pre.get('eligibleGameCount') or 0))
+          after=(str(post.get('currentDate')),int(post.get('currentSlotIndex') or 0),int(post.get('networkRequestCount') or 0),int(post.get('eligibleGameCount') or 0))
+          assert 'too stale for a 15-minute grid' not in str(post.get('lastError') or ''), post
+          assert after != before or after[:2] != ('2025-04-14',72), {'before':before,'after':after,'post':post}
+          json.dump({'before':pre,'afterImmediate':post},open('/tmp/immediate.json','w'),indent=2,default=str)
+          PY
+
+      - name: Wait thirty minutes after verified AWS invocation
+        run: sleep 1800
+
+      - name: Run one-time historical training progress report
+        env:
+          REGION: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          aws lambda invoke --function-name "$HIST_FN" --region "$REGION" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"deploy_audit_30m_report"}' /tmp/final.json >/tmp/final-meta.json
+          python - <<'PY'
+          import json,datetime
+          immediate=json.load(open('/tmp/immediate.json'))
+          value=json.load(open('/tmp/final.json'))
+          state=value.get('state') or {}
+          report={
+            'checkedAtUtc':datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'deploymentVerified':True,
+            'historicalFunction':None,
+            'productionMlbFunction':None,
+            'productionStackStatus':None,
+            'sourceRepairMarker':'provider_snapshot_too_stale',
+            'before':immediate.get('before'),
+            'afterImmediate':immediate.get('afterImmediate'),
+            'afterThirtyMinutes':{
+              'phase':state.get('phase'),'currentDate':state.get('currentDate'),'currentSlotIndex':state.get('currentSlotIndex'),
+              'networkRequestCount':state.get('networkRequestCount'),'creditsConsumed':state.get('creditsConsumed'),
+              'eligibleGameCount':state.get('eligibleGameCount'),'completeSlateCount':state.get('completeSlateCount'),
+              'optimizationRound':state.get('optimizationRound'),'lastError':state.get('lastError')
+            },
+            'eightyPercentReached':bool(value.get('championValidation',{}).get('ok')),
+            'championValidation':value.get('championValidation'),
+            'cutoverValidation':value.get('cutoverValidation')
+          }
+          import os
+          report['historicalFunction']=os.environ.get('HIST_FN')
+          report['productionMlbFunction']=os.environ.get('PROD_FN')
+          report['productionStackStatus']=os.environ.get('PROD_STATUS')
+          json.dump(report,open('/tmp/report.json','w'),indent=2,default=str)
+          print(json.dumps(report,indent=2,default=str))
+          PY
+
+      - name: Publish deployment and 30-minute proof
+        run: |
+          set -euo pipefail
+          mkdir -p docs/runtime
+          cp /tmp/report.json docs/runtime/mlb-historical-deploy-audit-30m.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/runtime/mlb-historical-deploy-audit-30m.json
+          git commit -m 'chore: publish MLB historical deploy and 30-minute audit'
+          git push origin HEAD:main
