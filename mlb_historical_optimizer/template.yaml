@@ -114,7 +114,9 @@ Resources:
     Properties:
       CodeUri: ../hello_world/
       Handler: mlb_historical_optimizer_handler.lambda_handler
-      ReservedConcurrentExecutions: 1
+      # Do not reserve account concurrency here. This account must retain at
+      # least 10 unreserved executions. GitHub workflow concurrency plus the
+      # optimizer's DynamoDB lease provide the required single-writer control.
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 300
         MaximumRetryAttempts: 1
