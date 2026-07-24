@@ -25,8 +25,8 @@ try:
 except Exception:
     OPTIMIZATION_VERSION = None
 
-MODEL_VERSION = "INQSI-MLB-v4.0-canonical-probability-aws-v2-shadow-manual-first"
-VERSION = "MLB-V3-READ-API-v4-persisted-canonical-v2-shadow"
+MODEL_VERSION = "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"
+VERSION = "MLB-V3-READ-API-v6-ranked-winner-v15.10"
 
 
 def _json_default(value: Any) -> Any:
@@ -63,24 +63,51 @@ def _today_et() -> str:
 
 def _model_body() -> Dict[str, Any]:
     runtime = getattr(ENGINE, "MLB_ML_RUNTIME_INSTALL_V3", RUNTIME_INSTALL) if ENGINE is not None else RUNTIME_INSTALL
+    ranked_version = (
+        getattr(ENGINE, "MLB_RANKED_WINNER_VERSION", None)
+        if ENGINE is not None
+        else runtime.get("rankedWinnerVersion")
+    )
+    ranked_policy = (
+        getattr(ENGINE, "MLB_RANKED_WINNER_POLICY_VERSION", None)
+        if ENGINE is not None
+        else runtime.get("rankedWinnerPolicyVersion")
+    )
+    ranked_ready = bool(
+        ENGINE_IMPORT_OK
+        and runtime.get("ok") is True
+        and (runtime.get("steps") or {}).get("rankedWinnerV15_10SelectionInstalled") is True
+        and ranked_version
+    )
     return {
-        "ok": bool(ENGINE_IMPORT_OK and runtime.get("ok") is True),
+        "ok": ranked_ready,
         "sport": "mlb",
         "model_version": MODEL_VERSION,
+        "primaryAlgorithm": ranked_version or MODEL_VERSION,
+        "primaryAlgorithmActive": ranked_ready,
+        "rankedWinnerPolicyVersion": ranked_policy,
+        "rankedWinnerFirstSlateDateEt": runtime.get("rankedWinnerFirstSlateDate") or "2026-07-24",
+        "precisionHitRateEvidencePassed": False,
+        "allowedProductionOutput": ["PICK"],
+        "productionSelectionAllowed": True,
+        "automaticWagerAllowed": False,
+        "legacyRecommendationAuthority": False,
+        "legacyFallbackAllowed": False,
         "game_winner_model": getattr(ENGINE, "MODEL_VERSION", None) if ENGINE is not None else None,
         "game_winner_engine": getattr(ENGINE, "ENGINE", None) if ENGINE is not None else None,
+        "gameWinnerDiagnosticRole": "active_ranked_model_direction_and_immutable_audit",
         "ml_optimization_version": OPTIMIZATION_VERSION,
         "ml_runtime_install": runtime,
         "engine_import_ok": ENGINE_IMPORT_OK,
         "engine_import_error": ENGINE_IMPORT_ERROR,
         "apiRuntimeVersion": VERSION,
-        "pick_type": "individual_game_moneyline",
-        "requiredWinnerPickPolicy": "one_official_locked_winner_prediction_for_every_mlb_game",
-        "playablePolicy": "playability_is_separate_and_may_be_false_for_an_official_prediction",
-        "mlDirectionPolicy": "persisted_rules_market_direction_v2_shadow_only_no_v2_runtime_consumer",
-        "mlReliabilityPolicy": "reliability_probability_is_never_team_win_probability",
-        "productionAuthoritySource": "persisted_canonical_rules_market_prediction_v2_shadow_only",
-        "automaticPromotionPolicy": "disabled_manual_review_creates_shadow_pointer_only",
+        "pick_type": "individual_game_moneyline_ranked_pick",
+        "requiredWinnerPickPolicy": "one active-model ranked winner PICK for every valid MLB game",
+        "playablePolicy": "winner prediction is always returned; precision and trade qualification are separate",
+        "mlDirectionPolicy": "active exported ensemble is sole direction authority; legacy selectors are diagnostic only",
+        "mlReliabilityPolicy": "model probability is reported honestly; no 80-90% label is assigned without evidence",
+        "productionAuthoritySource": "mlb_ranked_winner_v15_10_active_ensemble",
+        "automaticPromotionPolicy": "winner model fixed for release; precision/trade promotion remains disabled",
         "legacyV1AuthorityEnabled": False,
         "awsNativeTrainingInstalled": True,
         "awsNativeTrainingAuthority": False,
@@ -88,10 +115,10 @@ def _model_body() -> Dict[str, Any]:
         "firstPromotionRequiresManualReview": True,
         "manualReviewCreatesShadowApprovalOnly": True,
         "v2InferenceConsumerInstalled": False,
-        "runtimeAuthorityActivationAvailable": False,
+        "runtimeAuthorityActivationAvailable": True,
         "parlaysEnabled": False,
         "readOnly": True,
-        "sourcePolicy": "Canonical 15-minute market slots plus immutable pre-lock Fundamentals V2 snapshots and official FINAL labels.",
+        "sourcePolicy": "Canonical 15-minute market slots, exported active ensemble, immutable pre-lock snapshots, official FINAL labels, and separate precision/trade qualification.",
     }
 
 
@@ -115,8 +142,8 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             raise RuntimeError("persisted_prelock_prediction_reader_unavailable")
         result = reader(
             date,
-            # This public Lambda has no write authority. Persisted
-            # candidates are owned by protected scheduled ingestion.
+            # This public Lambda has no write authority. Persisted candidates
+            # are owned by protected scheduled ingestion.
             store=False,
             limit=min(max(int(params.get("limit") or 500), 1), 500),
         )
@@ -127,6 +154,11 @@ def lambda_handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         "sport": "mlb",
         "date": date,
         "model_version": MODEL_VERSION,
+        "primaryAlgorithm": model.get("primaryAlgorithm"),
+        "primaryAlgorithmActive": model.get("primaryAlgorithmActive"),
+        "rankedWinnerPolicyVersion": model.get("rankedWinnerPolicyVersion"),
+        "legacyRecommendationAuthority": False,
+        "automaticWagerAllowed": False,
         "ml_runtime_install": model.get("ml_runtime_install"),
         "apiRuntimeVersion": VERSION,
         "winner_predictions": result.get("predictions") or [],

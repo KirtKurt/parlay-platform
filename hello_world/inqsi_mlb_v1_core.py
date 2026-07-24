@@ -6,18 +6,10 @@ from decimal import Decimal
 from typing import Any, Dict, Optional
 from zoneinfo import ZoneInfo
 
-MODEL_VERSION = "INQSI-MLB-v4.0-canonical-probability-aws-v2-shadow-manual-first"
-MODEL_CREATED_AT = "2026-07-09"
-
-WEIGHTS = {
-    "market_consensus": 0.34,
-    "line_movement": 0.18,
-    "book_agreement": 0.12,
-    "real_book_ev": 0.18,
-    "pull_depth": 0.08,
-    "risk_guardrails": 0.10,
-}
-CONFIDENCE_TIERS = [(0.67, "Premium"), (0.60, "Solid"), (0.55, "Lean"), (0.50, "Coin Flip"), (0.00, "Pass")]
+MODEL_VERSION = "INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble"
+MODEL_CREATED_AT = "2026-07-24"
+PRIMARY_ALGORITHM = "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble"
+POLICY_VERSION = "2026-07-24-mlb-ranked-winner-primary-v1"
 
 
 def _today_et() -> str:
@@ -40,6 +32,7 @@ def _resp(status: int, body: Dict[str, Any]) -> Dict[str, Any]:
             "access-control-allow-origin": "*",
             "access-control-allow-headers": "content-type,authorization,x-inqsi-admin-token",
             "access-control-allow-methods": "GET,POST,OPTIONS",
+            "cache-control": "no-store",
         },
         "body": json.dumps(body, default=_json_default),
     }
@@ -50,66 +43,96 @@ def _params(event: Dict[str, Any]) -> Dict[str, str]:
 
 
 def _engine():
-    # Keep imports lazy so /v1/mlb/model/version can never fail at Lambda cold-start
-    # because an optional downstream prediction/audit dependency is unavailable.
     import mlb_game_winner_engine
     return mlb_game_winner_engine
+
+
+def _runtime() -> Dict[str, Any]:
+    engine = _engine()
+    value = getattr(engine, "MLB_ML_RUNTIME_INSTALL_V3", None)
+    return value if isinstance(value, dict) else {}
 
 
 def _engine_version() -> Dict[str, Any]:
     try:
         engine = _engine()
+        runtime = _runtime()
         return {
-            "ok": True,
+            "ok": runtime.get("ok") is True,
             "engine": getattr(engine, "ENGINE", "unknown"),
             "modelVersion": getattr(engine, "MODEL_VERSION", "unknown"),
-            "promotionThreshold": getattr(engine, "PROMOTION_THRESHOLD", None),
-            "fallbackPromotionThreshold": getattr(engine, "FALLBACK_THRESHOLD", None),
+            "primaryAlgorithm": getattr(engine, "MLB_RANKED_WINNER_VERSION", None),
+            "policyVersion": getattr(engine, "MLB_RANKED_WINNER_POLICY_VERSION", None),
+            "runtime": runtime,
         }
     except Exception as exc:
         return {"ok": False, "error": str(exc), "engine": None, "modelVersion": None}
 
 
+def _authority_fields() -> Dict[str, Any]:
+    return {
+        "model_version": MODEL_VERSION,
+        "primaryAlgorithm": PRIMARY_ALGORITHM,
+        "primaryAlgorithmActive": True,
+        "rankedWinnerPolicyVersion": POLICY_VERSION,
+        "productionAuthoritySource": "mlb_ranked_winner_v15_10_active_ensemble",
+        "allowedProductionOutput": ["PICK"],
+        "winnerPickRequiredForEveryValidEvent": True,
+        "precisionQualificationSeparateFromPick": True,
+        "precisionHitRateEvidencePassed": False,
+        "legacyRecommendationAuthority": False,
+        "legacyFallbackAllowed": False,
+        "automaticWagerAllowed": False,
+        "productionTradeAllowed": False,
+    }
+
+
 def model_version() -> Dict[str, Any]:
     engine_info = _engine_version()
+    runtime = engine_info.get("runtime") or {}
+    ready = bool(
+        engine_info.get("ok") is True
+        and engine_info.get("primaryAlgorithm") == PRIMARY_ALGORITHM
+        and (runtime.get("steps") or {}).get("rankedWinnerV15_10SelectionInstalled") is True
+    )
     return {
-        "ok": True,
+        "ok": ready,
         "sport": "mlb",
-        "model_version": MODEL_VERSION,
+        **_authority_fields(),
+        "primaryAlgorithmActive": ready,
         "game_winner_model": engine_info.get("modelVersion"),
         "game_winner_engine": engine_info.get("engine"),
         "engine_import_ok": engine_info.get("ok"),
         "engine_import_error": engine_info.get("error"),
+        "ml_runtime_install": runtime,
         "created_at": MODEL_CREATED_AT,
-        "pick_type": "individual_game_moneyline",
+        "pick_type": "individual_game_moneyline_ranked_pick",
+        "requiredWinnerPickPolicy": "one active-model ranked winner PICK for every valid MLB game",
+        "playablePolicy": "winner prediction is always returned; precision and trade qualification are separate",
         "parlaysEnabled": False,
-        "sourcePolicy": "Persisted canonical predictions from unique 15-minute market slots and immutable pre-lock Fundamentals V2 evidence.",
-        "ranking": "EV + edge vs real book price + 15-minute line movement + book agreement + guardrails",
-        "weights": WEIGHTS,
-        "confidence_tiers": CONFIDENCE_TIERS,
+        "sourcePolicy": "Persisted canonical predictions from the active exported ensemble, unique 15-minute market slots and immutable pre-lock evidence.",
         "data_architecture": {
             "lambda": True,
             "api_gateway": True,
             "dynamodb": True,
             "eventbridge_15_min": True,
-            "daily_lock_t_minus_first_game": True,
+            "per_game_immutable_t_minus_45_lock": True,
         },
     }
 
 
 def today(game_date: Optional[str] = None) -> Dict[str, Any]:
     game_date = game_date or _today_et()
-    engine_info = _engine_version()
+    status = model_version()
     return {
-        "ok": True,
+        "ok": status.get("ok") is True,
         "sport": "mlb",
         "date": game_date,
-        "model_version": MODEL_VERSION,
-        "game_winner_model": engine_info.get("modelVersion"),
-        "engine_import_ok": engine_info.get("ok"),
-        "priority": "individual_game_moneyline_picks",
+        **_authority_fields(),
+        "primaryAlgorithmActive": status.get("primaryAlgorithmActive"),
+        "priority": "one_ranked_winner_pick_per_valid_game",
         "parlaysEnabled": False,
-        "message": "INQSI MLB production is individual game moneyline picks only. Parlays are disabled on the primary MLB surface.",
+        "message": "The active MLB V15.10 ensemble returns one winner pick for every valid game; precision and automatic wagering remain separate and disabled.",
     }
 
 
@@ -120,8 +143,8 @@ def predictions(game_date: Optional[str] = None, limit: int = 500, store: bool =
         runtime = getattr(engine, "MLB_ML_RUNTIME_INSTALL_V3", None)
         if not isinstance(runtime, dict) or runtime.get("ok") is not True:
             raise RuntimeError("MLB_PUBLIC_READ_RUNTIME_NOT_READY")
-        # Public MLB surfaces are read-only. Candidate persistence belongs only
-        # to the protected scheduled ingestion path.
+        if (runtime.get("steps") or {}).get("rankedWinnerV15_10SelectionInstalled") is not True:
+            raise RuntimeError("MLB_RANKED_WINNER_V15_10_NOT_INSTALLED")
         reader = getattr(engine, "read_persisted_predictions", None)
         if not callable(reader):
             raise RuntimeError("persisted_prelock_prediction_reader_unavailable")
@@ -131,35 +154,34 @@ def predictions(game_date: Optional[str] = None, limit: int = 500, store: bool =
             "ok": False,
             "sport": "mlb",
             "date": game_date,
-            "model_version": MODEL_VERSION,
+            **_authority_fields(),
             "error": str(exc),
             "winner_predictions": [],
             "count": 0,
         }
+    rows = winners.get("predictions") or []
     return {
         "ok": True,
         "sport": "mlb",
         "date": game_date,
-        "model_version": MODEL_VERSION,
+        **_authority_fields(),
         "game_winner_model": winners.get("modelVersion"),
-        "priority": "individual_game_moneyline_picks",
+        "priority": "one_ranked_winner_pick_per_valid_game",
         "parlaysEnabled": False,
-        "count": winners.get("count", 0),
-        "promotedCount": winners.get("promotedCount", 0),
-        "allGamesPredicted": winners.get("allGamesPredicted"),
+        "count": winners.get("count", len(rows)),
+        "productionSelectionCount": len([row for row in rows if row.get("selectionStatus") == "PICK"]),
+        "precisionQualifiedCount": len([row for row in rows if row.get("precisionQualified") is True]),
         "pullCount": winners.get("pullCount"),
         "latestPullAt": winners.get("latestPullAt"),
-        "promotionThreshold": winners.get("promotionThreshold"),
-        "fallbackPromotionThreshold": winners.get("fallbackPromotionThreshold"),
-        "winner_predictions": winners.get("predictions") or [],
+        "winner_predictions": rows,
         "readOnly": True,
         "storage": {
             "requested": False,
             "callerRequestedWriteIgnored": bool(store),
             "gameWinnerStoredCount": 0,
         },
-        "parlay_analysis": {"enabled": False, "reason": "MLB production is individual game picks only."},
-        "three_leg_parlay": {"ok": False, "disabled": True, "reason": "MLB production is individual game picks only."},
+        "parlay_analysis": {"enabled": False, "reason": "MLB production is individual ranked game picks only."},
+        "three_leg_parlay": {"ok": False, "disabled": True, "reason": "MLB production is individual ranked game picks only."},
     }
 
 
@@ -169,8 +191,8 @@ def audit(game_date: Optional[str] = None) -> Dict[str, Any]:
         "ok": True,
         "sport": "mlb",
         "date": game_date,
-        "model_version": MODEL_VERSION,
-        "message": "Use /v1/mlb/game-winners for current single-game predictions and settled-results endpoints for grading.",
+        **_authority_fields(),
+        "message": "Use /v1/mlb/game-winners for active V15.10 picks and settled-results endpoints for grading.",
         "parlaysEnabled": False,
     }
 
@@ -186,9 +208,11 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
         game_date = params.get("game_date_et") or params.get("date") or _today_et()
         limit = min(max(int(params.get("limit") or 500), 1), 500)
         if path.endswith("/model/version"):
-            return _resp(200, model_version())
+            payload = model_version()
+            return _resp(200 if payload.get("ok") is True else 503, payload)
         if path.endswith("/today"):
-            return _resp(200, today(game_date))
+            payload = today(game_date)
+            return _resp(200 if payload.get("ok") is True else 503, payload)
         if path.endswith("/games") or path.endswith("/predictions") or path.endswith("/game-winners"):
             payload = predictions(game_date, limit, False)
             return _resp(200 if payload.get("ok") is True else 503, payload)
@@ -196,7 +220,7 @@ def handle(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
             return _resp(200, audit(game_date))
         return _resp(404, {"ok": False, "error": f"Route not found: {method} {path}"})
     except Exception as exc:
-        return _resp(500, {"ok": False, "sport": "mlb", "model_version": MODEL_VERSION, "error": str(exc)})
+        return _resp(500, {"ok": False, "sport": "mlb", **_authority_fields(), "error": str(exc)})
 
 
 def lambda_handler(event, context):

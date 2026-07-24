@@ -4,8 +4,9 @@ import os
 from typing import Any, Dict
 
 VERSION = (
-    "MLB-ML-RUNTIME-INSTALL-v4.2-signal-policy-prelock-persistence-"
-    "verified-stage-promotion-authority-aws-v2-shadow-manual-first"
+    "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
+    "prelock-persistence-verified-stage-promotion-authority-"
+    "verified-active-model-authority"
 )
 
 
@@ -45,6 +46,7 @@ def install() -> Dict[str, Any]:
         import mlb_locked_prediction_storage_finalizer_v1
         import mlb_last_possible_prediction_gate
         import mlb_probability_actionability_guard
+        import mlb_ranked_primary_v15_10
         import mlb_prediction_probability_contract_v1
         import mlb_signal_policy_v12
         import mlb_slate_coverage_patch
@@ -79,11 +81,25 @@ def install() -> Dict[str, Any]:
             and getattr(engine, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED", False)
         )
 
-        # Finalize direction/probability before calibration, the signal-risk
-        # policy, the public pre-lock authority and the sole storage writer.
-        # The signal policy must run before the public authority so its
-        # versioned signalPolicyV13 evidence survives into the exact public
-        # PRE_LOCK_PLATFORM_PREDICTION that _store_prediction validates.
+        # Install the exported 2025+2026-YTD ensemble as the sole production
+        # direction authority. It overwrites the explicit complementary home/
+        # away model pair before the canonical probability contract runs, so
+        # prior rules/champion direction can survive only as diagnostic fields.
+        mlb_ranked_primary_v15_10.apply_direction(engine)
+        status["steps"]["rankedWinnerV15_10DirectionInstalled"] = bool(
+            getattr(
+                engine,
+                "_INQSI_MLB_RANKED_WINNER_DIRECTION_V15_10_APPLIED",
+                False,
+            )
+            and getattr(engine, "MLB_RANKED_WINNER_VERSION", None)
+            == mlb_ranked_primary_v15_10.VERSION
+        )
+
+        # Finalize active-model direction/probability before calibration, the
+        # signal-risk policy, the public pre-lock authority and storage writer.
+        # Signal policy remains diagnostic/risk metadata; it cannot change the
+        # winner selected by the ranked ensemble.
         mlb_prediction_probability_contract_v1.apply(engine)
         mlb_probability_actionability_guard.apply(engine)
         mlb_signal_policy_v12.apply(engine)
@@ -129,9 +145,9 @@ def install() -> Dict[str, Any]:
             == mlb_immutable_locked_storage_patch.VERSION
         )
         # Produce the final public pre-lock representation before persistence.
-        # The storage finalizer installed immediately afterward is outermost:
-        # it forces every inner wrapper to store=False, then persists the exact
-        # user-visible PRE_LOCK_PLATFORM_PREDICTION returned here.
+        # The storage finalizer installed afterward is outermost: it forces
+        # every inner wrapper to store=False, then persists the exact user-
+        # visible row returned by the public authority and precision gate.
         mlb_slate_coverage_patch.install_public_authority(engine, mlb_slate_prediction_lock)
         status["steps"]["canonicalProbabilityAndPersistedPrelockAuthority"] = bool(
             getattr(
@@ -189,6 +205,34 @@ def install() -> Dict[str, Any]:
             == mlb_slate_coverage_patch.AUTHORITY_VERSION
         )
         status["lastPrelockPromotionAuthorityVersion"] = mlb_slate_coverage_patch.AUTHORITY_VERSION
+
+        # The ranked-winner selection authority is installed after the public
+        # authority has created its persisted-reader alias and before the sole
+        # storage writer captures predict_all. Every valid July 24+ game is a
+        # PICK; precision/trade qualification remains a separate false label.
+        mlb_ranked_primary_v15_10.apply_selection_authority(engine)
+        status["steps"]["rankedWinnerV15_10SelectionInstalled"] = bool(
+            getattr(
+                engine,
+                "_INQSI_MLB_RANKED_WINNER_SELECTION_V15_10_APPLIED",
+                False,
+            )
+            and getattr(engine, "MLB_RANKED_WINNER_VERSION", None)
+            == mlb_ranked_primary_v15_10.VERSION
+            and callable(getattr(engine, "read_persisted_predictions", None))
+        )
+        status["rankedWinnerVersion"] = mlb_ranked_primary_v15_10.VERSION
+        status["rankedWinnerPolicyVersion"] = mlb_ranked_primary_v15_10.POLICY_VERSION
+        status["rankedWinnerFirstSlateDate"] = mlb_ranked_primary_v15_10.FIRST_SLATE_DATE
+        status["rankedWinnerAllowedOutput"] = ["PICK"]
+        status["rankedWinnerModelRunId"] = mlb_ranked_primary_v15_10.MODEL_RUN_ID
+        status["rankedWinnerArtifactSha256"] = mlb_ranked_primary_v15_10.MODEL_ARTIFACT_SHA256
+        status["winnerPickRequiredForEveryValidEvent"] = True
+        status["precisionQualificationSeparateFromPick"] = True
+        status["precisionHitRateEvidencePassed"] = False
+        status["legacyRecommendationAuthority"] = False
+        status["automaticWagerAllowed"] = False
+
         mlb_locked_prediction_storage_finalizer_v1.apply(engine)
         status["steps"]["canonicalLockedStorageFinalizer"] = hasattr(
             engine, "_INQSI_MLB_LOCKED_STORAGE_FINALIZER_V1_APPLIED"
@@ -200,10 +244,12 @@ def install() -> Dict[str, Any]:
 
     status["ok"] = not status["errors"] and all(status["steps"].values())
     status["policy"] = (
-        "The persisted canonical rules/market prediction remains production direction and playability authority. "
-        "Legacy V1 champions are diagnostic-only. AWS V2 trains and evaluates in shadow using fixed whole-slate "
-        "300/100/100 partitions; the first promotion always requires manual review and automatic promotion is disabled. "
-        "Every new locked game stores the exact immutable clean-cohort vector before final labels exist. "
-        "The final public lock is the validated canonical promotion of the last prediction available at each game's own T-minus-45 cutoff; no lock-time rescore is authoritative."
+        "The exported MLB V15.4 market/Platt/CatBoost ensemble is the sole "
+        "production winner-direction authority for the 2026-07-24 ET slate "
+        "and later. Every valid game receives one ranked PICK. The prior rules, "
+        "market and legacy champion paths are diagnostic/rollback-only and may "
+        "not change the selected team. The 80-90% precision label and trade "
+        "permission remain separate and false for MLB; automatic wagering is disabled."
     )
+
     return status

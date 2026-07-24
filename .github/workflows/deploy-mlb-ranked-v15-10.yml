@@ -1,0 +1,304 @@
+name: Deploy MLB V15.10 ranked winner production
+
+on:
+  push:
+    branches: [agent/mlb-ranked-winner-v15-10-production]
+    paths:
+      - "hello_world/mlb_ranked_primary_v15_10.py"
+      - "hello_world/mlb_ranked_primary_v15_10_impl.py.gz.b64"
+      - "hello_world/mlb_v15_4_catboost_model.py"
+      - "hello_world/mlb_v15_4_catboost_model_impl.py.gz.b64"
+      - "hello_world/mlb_ml_runtime_install_v3.py"
+      - "hello_world/mlb_v3_read_api.py"
+      - "hello_world/inqsi_mlb_v1_core.py"
+      - "scripts/verify_api_function_mlb_v3_import.py"
+      - "tests/unit/test_mlb_ranked_primary_v15_10.py"
+      - "tests/unit/test_mlb_ml_runtime_install_explicit.py"
+      - "tests/unit/test_mlb_signal_policy_prelock_persistence.py"
+      - ".github/workflows/deploy-mlb-ranked-v15-10.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parlay-platform-deploy
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: us-east-1
+  AWS_DEFAULT_REGION: us-east-1
+  SAM_CLI_TELEMETRY: "0"
+  MLB_STACK_NAME: parlay-platform-dev
+  TENNIS_STACK_NAME: parlay-platform-tennis-ml-prod
+  EXPECTED_MODEL_VERSION: INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble
+  EXPECTED_SELECTOR_VERSION: INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble
+  EXPECTED_POLICY_VERSION: 2026-07-24-mlb-ranked-winner-primary-v1
+  EXPECTED_RUNTIME_VERSION: MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority
+  EXPECTED_ARTIFACT_SHA256: 30dd70fd6291774911b19e1eac3a1d60bb4e59079adba3261358d93e7ce6bd08
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - name: Checkout exact cutover source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Require reviewed branch identity
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = "agent/mlb-ranked-winner-v15-10-production"
+          git diff --check
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Setup AWS SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+
+      - name: Verify AWS and required deployment secrets
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo "::error::Missing ODDS_API_KEY"; exit 1; }
+          test -n "${BBS_API_KEY_VALUE:-}" || { echo "::error::Missing BBS_API_KEY"; exit 1; }
+          test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}" || { echo "::error::Missing INQSI_ADMIN_API_TOKEN"; exit 1; }
+
+      - name: Install verification runtime
+        run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9" "PyYAML>=6,<7"
+
+      - name: Verify content-addressed active ensemble
+        run: |
+          set -euo pipefail
+          PYTHONPATH=hello_world python - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          import mlb_ranked_primary_v15_10 as ranked
+
+          expected = {
+              "version": "INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble",
+              "policy": "2026-07-24-mlb-ranked-winner-primary-v1",
+              "first_slate": "2026-07-24",
+              "artifact": "30dd70fd6291774911b19e1eac3a1d60bb4e59079adba3261358d93e7ce6bd08",
+          }
+          actual = {
+              "version": ranked.VERSION,
+              "policy": ranked.POLICY_VERSION,
+              "first_slate": ranked.FIRST_SLATE_DATE,
+              "artifact": ranked.MODEL_ARTIFACT_SHA256,
+          }
+          if actual != expected:
+              raise SystemExit({"expected": expected, "actual": actual})
+          resources = {
+              "ranked": ("hello_world/mlb_ranked_primary_v15_10_impl.py.gz.b64", "49c42a09e4f003b9e99ddd95b7a5e3e00fbc38839d17f64a99ca405b141c9871"),
+              "catboost": ("hello_world/mlb_v15_4_catboost_model_impl.py.gz.b64", "661d3e0dabb7c9a89e190b1d8c932714e602ed1050b249f12f94cb79de515414"),
+          }
+          for name, (path, digest) in resources.items():
+              observed = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+              if observed != digest:
+                  raise SystemExit(f"{name} resource checksum mismatch: {observed}")
+          print(json.dumps(actual, indent=2, sort_keys=True))
+          PY
+
+      - name: Run ranked-winner and immutable-lock regressions
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/unit/test_mlb_ranked_primary_v15_10.py \
+            tests/unit/test_mlb_ml_runtime_install_explicit.py \
+            tests/unit/test_mlb_signal_policy_prelock_persistence.py \
+            tests/unit/test_mlb_prediction_probability_contract_v1.py \
+            tests/unit/test_mlb_probability_actionability_guard.py
+          python -m compileall -q hello_world scripts
+
+      - name: Apply canonical SAM patches
+        run: |
+          set -euo pipefail
+          python scripts/patch_template_mlb_v1.py
+          python scripts/patch_template_mlb_security.py
+          python scripts/patch_template_mlb_results_routes.py
+          sam validate --template-file template.yaml
+
+      - name: Calculate deployment identity
+        id: identity
+        run: |
+          set -euo pipefail
+          template_sha=$(sha256sum template.yaml | awk '{print $1}')
+          echo "template_sha=$template_sha" >> "$GITHUB_OUTPUT"
+          echo "git_sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+
+      - name: Build clean and verify Lambda cold start
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam
+          sam build --no-cached --template-file template.yaml
+          INQSI_MLB_LAMBDA_TASK_ROOT=.aws-sam/build/MLBV3ReadFunction \
+            PYTHONDONTWRITEBYTECODE=1 \
+            python scripts/verify_api_function_mlb_v3_import.py
+
+      - name: Fingerprint isolated Tennis stack before MLB deployment
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+          stack = "parlay-platform-tennis-ml-prod"
+          region = "us-east-1"
+          def run(*args):
+              return json.loads(subprocess.check_output(["aws", *args, "--region", region, "--output", "json"], text=True))
+          payload = {
+              "stack": run("cloudformation", "describe-stacks", "--stack-name", stack),
+              "resources": run("cloudformation", "list-stack-resources", "--stack-name", stack),
+              "template": run("cloudformation", "get-template", "--stack-name", stack),
+          }
+          digest = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+          Path("/tmp/tennis-stack-before.sha256").write_text(digest + "\n")
+          print(digest)
+          PY
+
+      - name: Wait for MLB stack updateability
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 60); do
+            status=$(aws cloudformation describe-stacks --stack-name "$MLB_STACK_NAME" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+            echo "MLB stack status: $status"
+            case "$status" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING) break ;;
+              *_IN_PROGRESS) sleep 30 ;;
+              *) echo "::error::MLB stack is not updateable: $status"; exit 1 ;;
+            esac
+          done
+
+      - name: Deploy exact ranked-winner source to production MLB stack
+        id: deploy
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+          TEMPLATE_SHA: ${{ steps.identity.outputs.template_sha }}
+        run: |
+          set -euo pipefail
+          deploy_run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          echo "run_id=$deploy_run_id" >> "$GITHUB_OUTPUT"
+          sam deploy \
+            --template-file .aws-sam/build/template.yaml \
+            --stack-name "$MLB_STACK_NAME" \
+            --region "$AWS_REGION" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "BbsApiKey=${BBS_API_KEY_VALUE}" \
+              "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}" \
+              "DeployGitSha=${GITHUB_SHA}" \
+              "DeployTemplateSha256=${TEMPLATE_SHA}" \
+              "DeployRunId=${deploy_run_id}"
+
+      - name: Verify Tennis stack remained byte-for-byte unchanged
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import hashlib, json, subprocess
+          from pathlib import Path
+          stack = "parlay-platform-tennis-ml-prod"
+          region = "us-east-1"
+          def run(*args):
+              return json.loads(subprocess.check_output(["aws", *args, "--region", region, "--output", "json"], text=True))
+          payload = {
+              "stack": run("cloudformation", "describe-stacks", "--stack-name", stack),
+              "resources": run("cloudformation", "list-stack-resources", "--stack-name", stack),
+              "template": run("cloudformation", "get-template", "--stack-name", stack),
+          }
+          after = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str).encode()).hexdigest()
+          before = Path("/tmp/tennis-stack-before.sha256").read_text().strip()
+          print(json.dumps({"before": before, "after": after, "unchanged": before == after}, indent=2))
+          if before != after:
+              raise SystemExit("Tennis stack changed during isolated MLB deployment")
+          Path("/tmp/tennis-stack-after.sha256").write_text(after + "\n")
+          PY
+
+      - name: Read production API URL
+        id: stack
+        run: |
+          set -euo pipefail
+          api_url=$(aws cloudformation describe-stacks --stack-name "$MLB_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          test -n "$api_url"
+          test "$api_url" != "None"
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
+
+      - name: Prove live MLB authority returns PICK, not PASS-only policy
+        env:
+          API_URL: ${{ steps.stack.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          base_url="${API_URL%/}"
+          for attempt in $(seq 1 45); do
+            if curl --fail --silent --show-error --connect-timeout 3 --max-time 20 "${base_url}/v1/mlb/model/version" > /tmp/mlb-v1510-live-model.json; then
+              break
+            fi
+            sleep 4
+          done
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          body = json.loads(Path('/tmp/mlb-v1510-live-model.json').read_text())
+          expected = {
+              'ok': True,
+              'model_version': 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble',
+              'primaryAlgorithm': 'INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble',
+              'primaryAlgorithmActive': True,
+              'rankedWinnerPolicyVersion': '2026-07-24-mlb-ranked-winner-primary-v1',
+              'productionAuthoritySource': 'mlb_ranked_winner_v15_10_active_ensemble',
+              'allowedProductionOutput': ['PICK'],
+              'productionSelectionAllowed': True,
+              'automaticWagerAllowed': False,
+              'legacyRecommendationAuthority': False,
+              'legacyFallbackAllowed': False,
+              'precisionHitRateEvidencePassed': False,
+              'runtimeAuthorityActivationAvailable': True,
+          }
+          mismatches = {key: {'expected': value, 'actual': body.get(key)} for key, value in expected.items() if body.get(key) != value}
+          runtime = body.get('ml_runtime_install') or {}
+          if runtime.get('version') != 'MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority':
+              mismatches['runtime.version'] = {'expected': 'v4.4 ranked-winner runtime', 'actual': runtime.get('version')}
+          for name in ('rankedWinnerV15_10DirectionInstalled', 'rankedWinnerV15_10SelectionInstalled'):
+              if (runtime.get('steps') or {}).get(name) is not True:
+                  mismatches[f'runtime.steps.{name}'] = {'expected': True, 'actual': (runtime.get('steps') or {}).get(name)}
+          print(json.dumps(body, indent=2, default=str))
+          if mismatches:
+              raise SystemExit(json.dumps(mismatches, indent=2, sort_keys=True))
+          Path('/tmp/mlb-v1510-live-verdict.json').write_text(json.dumps({'ok': True, 'allowedOutput': ['PICK'], 'passOnly': False, 'automaticWagerAllowed': False}, indent=2) + '\n')
+          PY
+
+      - name: Upload production cutover evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v15-10-ranked-production-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 90
+          if-no-files-found: warn
+          path: |
+            /tmp/mlb-v1510-live-model.json
+            /tmp/mlb-v1510-live-verdict.json
+            /tmp/tennis-stack-before.sha256
+            /tmp/tennis-stack-after.sha256
