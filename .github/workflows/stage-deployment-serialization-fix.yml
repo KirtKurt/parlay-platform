@@ -1,0 +1,71 @@
+name: Stage deployment serialization fix
+
+"on":
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/stage-deployment-serialization-fix.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  stage:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/serialize-parlay-platform-deployments'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          fetch-depth: 1
+          persist-credentials: true
+
+      - name: Serialize shared production deployments
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          path = Path('.github/workflows/deploy.yml')
+          text = path.read_text(encoding='utf-8')
+          block = re.compile(
+              r'(concurrency:\n\s+group:\s*parlay-platform-deploy\n\s+cancel-in-progress:)\s*true',
+              re.MULTILINE,
+          )
+          patched, count = block.subn(r'\1 false', text)
+          if count != 1:
+              raise SystemExit(f'expected one shared deployment concurrency block, changed {count}')
+          if 'group: parlay-platform-deploy\n  cancel-in-progress: false' not in patched:
+              raise SystemExit('serialized deployment contract missing')
+          if 'group: parlay-platform-deploy\n  cancel-in-progress: true' in patched:
+              raise SystemExit('cancelling shared deployment contract remains')
+          path.write_text(patched, encoding='utf-8')
+          PY
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          path = Path('.github/workflows/deploy.yml')
+          with path.open(encoding='utf-8') as handle:
+              value = yaml.safe_load(handle)
+          concurrency = value.get('concurrency') or {}
+          assert concurrency.get('group') == 'parlay-platform-deploy', concurrency
+          assert concurrency.get('cancel-in-progress') is False, concurrency
+          print('SHARED_DEPLOYMENTS_SERIALIZED')
+          PY
+          git diff --check -- .github/workflows/deploy.yml
+          git diff -- .github/workflows/deploy.yml
+
+      - name: Commit exact concurrency repair
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add .github/workflows/deploy.yml
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'Serialize shared production deployment workflows'
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
