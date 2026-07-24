@@ -1,4 +1,4 @@
-name: Print rejected MLB historical schedule dates
+name: Inspect raw MLB schedule-date exceptions
 
 "on":
   pull_request:
@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89429118420'
     steps:
-      - name: Print one-line planning summary
+      - name: Recover rejected dates and inspect exact MLB schedule rows
         shell: bash
         run: |
           set -euo pipefail
@@ -31,15 +31,22 @@ jobs:
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
             > /tmp/job.log
           python - <<'PY'
+          from __future__ import annotations
+
+          from datetime import datetime
           from pathlib import Path
+          from urllib.parse import urlencode
+          from urllib.request import Request, urlopen
+          from zoneinfo import ZoneInfo
           import json
           import re
 
-          raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
+          ET = ZoneInfo('America/New_York')
+          raw_log = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
-          latest = None
-          for line in raw.splitlines():
-              line = ansi.sub('', line)
+          plan_payload = None
+          for raw_line in raw_log.splitlines():
+              line = ansi.sub('', raw_line)
               marker = re.match(r'^.*?Z\s+(\{.*\})\s*$', line)
               if not marker:
                   continue
@@ -49,32 +56,94 @@ jobs:
                   continue
               state = value.get('state') if isinstance(value, dict) else None
               if isinstance(state, dict) and isinstance(state.get('plan'), dict):
-                  latest = value
-          if latest is None:
-              raise SystemExit('plan response not found')
-          state = latest.get('state') or {}
-          plan = state.get('plan') or {}
+                  plan_payload = value
+          if plan_payload is None:
+              raise SystemExit('historical plan response not found')
+
+          plan = (plan_payload.get('state') or {}).get('plan') or {}
           rejected = plan.get('rejectedDates') or []
-          summary = {
-              'status': latest.get('status'),
-              'phase': state.get('phase'),
-              'plannedGames': plan.get('maximumAuthorizedOfficialGames'),
-              'plannedDays': plan.get('plannedCompleteSlateDays'),
-              'historicalRequests': plan.get('historicalRequestCount'),
-              'estimatedCredits': plan.get('estimatedCredits'),
-              'planningErrorCount': plan.get('planningErrorCount'),
-              'rejectedDateCount': len(rejected),
-              'rejectedDates': [
-                  {
-                      'date': row.get('slateDateEt'),
-                      'reason': row.get('reason'),
-                      'details': row.get('details'),
-                  }
-                  for row in rejected[:20]
-              ],
-              'fingerprint': plan.get('fingerprint'),
-              'paidAuthorized': state.get('paidBackfillAuthorized'),
-              'networkRequests': state.get('networkRequestCount'),
-          }
-          print('PLAN_SUMMARY=' + json.dumps(summary, sort_keys=True, separators=(',', ':')))
+          dates = [str(row.get('slateDateEt') or '') for row in rejected if row.get('slateDateEt')]
+          print('REJECTED_DATE_COUNT=' + str(len(dates)))
+          print('REJECTED_DATES=' + ','.join(dates))
+
+          def parse_et_date(value):
+              text = str(value or '')
+              if not text:
+                  return None
+              try:
+                  parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
+              except Exception:
+                  return None
+              if parsed.tzinfo is None:
+                  return parsed.date().isoformat()
+              return parsed.astimezone(ET).date().isoformat()
+
+          rows = []
+          for slate_date in dates:
+              query = urlencode({
+                  'sportId': '1',
+                  'startDate': slate_date,
+                  'endDate': slate_date,
+                  'hydrate': 'linescore,gameInfo,decisions,weather',
+              })
+              url = 'https://statsapi.mlb.com/api/v1/schedule?' + query
+              request = Request(url, headers={
+                  'accept': 'application/json',
+                  'user-agent': 'inqsi-mlb-schedule-date-inspector/1.0',
+              })
+              with urlopen(request, timeout=30) as response:
+                  payload = json.loads(response.read().decode('utf-8'))
+              for date_row in payload.get('dates') or []:
+                  date_row_date = str(date_row.get('date') or '')
+                  for game in date_row.get('games') or []:
+                      raw_official = str(game.get('officialDate') or '')
+                      if raw_official == slate_date:
+                          continue
+                      teams = game.get('teams') or {}
+                      home = teams.get('home') or {}
+                      away = teams.get('away') or {}
+                      status = game.get('status') or {}
+                      game_info = game.get('gameInfo') or {}
+                      row = {
+                          'requestedSlateDateEt': slate_date,
+                          'dateRowDate': date_row_date,
+                          'gamePk': game.get('gamePk'),
+                          'officialDate': raw_official,
+                          'gameDateUtc': game.get('gameDate'),
+                          'gameDateEt': parse_et_date(game.get('gameDate')),
+                          'rescheduleDate': game.get('rescheduleDate'),
+                          'rescheduledFromDate': game.get('rescheduledFromDate'),
+                          'resumeDate': game.get('resumeDate'),
+                          'resumedFromDate': game.get('resumedFromDate'),
+                          'gameType': game.get('gameType'),
+                          'doubleHeader': game.get('doubleHeader'),
+                          'gameNumber': game.get('gameNumber'),
+                          'seriesGameNumber': game.get('seriesGameNumber'),
+                          'scheduledInnings': game.get('scheduledInnings'),
+                          'statusAbstract': status.get('abstractGameState'),
+                          'statusDetailed': status.get('detailedState'),
+                          'statusCode': status.get('statusCode'),
+                          'homeTeam': ((home.get('team') or {}).get('name')),
+                          'awayTeam': ((away.get('team') or {}).get('name')),
+                          'homeScore': home.get('score'),
+                          'awayScore': away.get('score'),
+                          'venue': ((game.get('venue') or {}).get('name')),
+                          'firstPitch': game_info.get('firstPitch'),
+                          'gameInfo': game_info,
+                          'topLevelKeys': sorted(game.keys()),
+                      }
+                      rows.append(row)
+                      print('MISMATCH=' + json.dumps(row, sort_keys=True, separators=(',', ':'), default=str))
+
+          print('MISMATCH_GAME_COUNT=' + str(len(rows)))
+          counts = {}
+          for row in rows:
+              key = (
+                  row.get('statusAbstract'),
+                  bool(row.get('resumeDate') or row.get('resumedFromDate')),
+                  bool(row.get('rescheduleDate') or row.get('rescheduledFromDate')),
+                  row.get('gameDateEt') == row.get('requestedSlateDateEt'),
+              )
+              counts[str(key)] = counts.get(str(key), 0) + 1
+          print('MISMATCH_CLASS_COUNTS=' + json.dumps(counts, sort_keys=True, separators=(',', ':')))
           PY
