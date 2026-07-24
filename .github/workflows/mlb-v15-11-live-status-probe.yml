@@ -1,4 +1,4 @@
-name: Probe MLB V15.11.1 Lambda memory rejection
+name: Observe corrected MLB V15.11.1 deployment
 
 "on":
   pull_request:
@@ -12,32 +12,122 @@ permissions:
   actions: read
 
 jobs:
-  probe:
+  observe:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/observe-mlb-v15-11-live-status'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 90
     env:
       GH_TOKEN: ${{ github.token }}
-      FAILED_JOB_ID: '89415006701'
+      TARGET_SHA: 0fb502e1b5fcc9ecb6b4f1a543d7a59d6ca577cf
     steps:
-      - name: Print exact rejected Lambda event
+      - name: Wait for exact historical deployment workflow
+        id: deployment
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location \
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100"
+          for attempt in $(seq 1 510); do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$API" > /tmp/runs.json
+            ROW=$(jq -c '[.workflow_runs[] | select(.name == "MLB Historical Daily Optimizer")] | sort_by(.created_at) | last // empty' /tmp/runs.json)
+            if [ -n "$ROW" ]; then
+              RUN_ID=$(jq -r '.id' <<<"$ROW")
+              STATUS=$(jq -r '.status' <<<"$ROW")
+              CONCLUSION=$(jq -r '.conclusion // "pending"' <<<"$ROW")
+              echo "attempt=${attempt} run_id=${RUN_ID} status=${STATUS} conclusion=${CONCLUSION}"
+              if [ "$STATUS" = completed ]; then
+                printf '%s' "$ROW" > /tmp/run.json
+                echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+                echo "conclusion=$CONCLUSION" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            else
+              echo "attempt=${attempt} historical workflow not visible yet"
+            fi
+            sleep 10
+          done
+          echo '::error::Timed out waiting for corrected MLB V15.11.1 deployment'
+          exit 1
+
+      - name: Fetch and print exact job results
+        id: jobs
+        env:
+          RUN_ID: ${{ steps.deployment.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
-            > /tmp/job.log
-          python - <<'PY'
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            > /tmp/jobs.json
+          jq '{
+            runId: $runId,
+            jobs: [
+              .jobs[] | {
+                id,
+                name,
+                status,
+                conclusion,
+                startedAt: .started_at,
+                completedAt: .completed_at,
+                url: .html_url,
+                steps: [(.steps // [])[] | {number, name, status, conclusion}]
+              }
+            ]
+          }' --argjson runId "$RUN_ID" /tmp/jobs.json | tee /tmp/result.json
+
+      - name: Extract failure when corrected deployment does not pass
+        if: steps.deployment.outputs.conclusion != 'success'
+        run: |
+          set -euo pipefail
+          FAILED_IDS=$(jq -r '.jobs[] | select(.conclusion == "failure") | .id' /tmp/jobs.json)
+          for JOB_ID in $FAILED_IDS; do
+            echo "=== FAILED JOB ${JOB_ID} ==="
+            curl --fail --silent --show-error --location \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${JOB_ID}/logs" \
+              > "/tmp/job-${JOB_ID}.log"
+            python - "$JOB_ID" <<'PY'
           from pathlib import Path
           import re
+          import sys
 
-          raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
+          job_id = sys.argv[1]
+          raw = Path(f'/tmp/job-{job_id}.log').read_text(encoding='utf-8-sig', errors='replace')
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
           lines = [ansi.sub('', line) for line in raw.splitlines()]
-          for number in range(749, 780):
-              index = number - 1
-              if index < len(lines):
-                  print(f'{number:05d}: {lines[index]}')
+          terms = re.compile(
+              r'CREATE_FAILED|UPDATE_FAILED|ROLLBACK|ValidationError|AccessDenied|'
+              r'Resource handler returned message|Failed to deploy|Error:|NoSuchBucket|'
+              r'InvalidRequest|Process completed with exit code',
+              re.IGNORECASE,
+          )
+          hits = [i for i, line in enumerate(lines) if terms.search(line)]
+          chosen = set(range(max(0, len(lines) - 80), len(lines)))
+          for index in hits[-20:]:
+              chosen.update(range(max(0, index - 3), min(len(lines), index + 8)))
+          last = None
+          for index in sorted(chosen):
+              if last is not None and index > last + 1:
+                  print('...')
+              print(f'{index + 1:05d}: {lines[index]}')
+              last = index
           PY
+          done
+          exit 1
+
+      - name: Require complete corrected deployment
+        if: steps.deployment.outputs.conclusion == 'success'
+        run: |
+          set -euo pipefail
+          jq -e '
+            ([.jobs[] | select(.name == "validate")][0].conclusion == "success") and
+            ([.jobs[] | select(.name == "deploy-gated-runtime-loader")][0].conclusion == "success") and
+            ([.jobs[] | select(.name == "deploy-and-plan")][0].conclusion == "success")
+          ' /tmp/jobs.json
+          echo 'Corrected MLB V15.11.1 deployment and zero-paid-call plan completed successfully.'
