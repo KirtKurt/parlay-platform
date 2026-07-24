@@ -1,4 +1,4 @@
-name: Print terminal MLB optimizer failure block
+name: Snapshot paid MLB training retry
 
 "on":
   pull_request:
@@ -12,47 +12,50 @@ permissions:
   actions: read
 
 jobs:
-  inspect:
+  snapshot:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/observe-mlb-v15-11-live-status'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
-      FAILED_JOB_ID: '89424142807'
+      RETRY_SHA: cc6056182dfe093a8624e454726c8f17b2602a1e
     steps:
-      - name: Print terminal provider block only
+      - name: Print current paid training chain
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location \
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          curl --fail --silent --show-error \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
-            > /tmp/job.log
-          python - <<'PY'
-          from pathlib import Path
-          import re
-          raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
-          ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
-          lines = [ansi.sub('', line) for line in raw.splitlines()]
-          terms = re.compile(
-              r'CREATE_FAILED|UPDATE_FAILED|ROLLBACK_IN_PROGRESS|Resource handler returned message|'
-              r'Failed to create changeset|Failed to deploy|ValidationError|AccessDenied|'
-              r'InvalidRequest|LimitExceeded|ConflictException|Process completed with exit code|'
-              r'NoSuchBucket|AlreadyExists',
-              re.IGNORECASE,
-          )
-          hits = [i for i, line in enumerate(lines) if i > 600 and terms.search(line)]
-          print('TERMINAL_MATCHES=' + str(len(hits)))
-          if not hits:
-              start = max(0, len(lines) - 60)
-              end = len(lines)
-          else:
-              focus = hits[-1]
-              start = max(0, focus - 35)
-              end = min(len(lines), focus + 30)
-          print(f'RANGE={start + 1}-{end}')
-          for index in range(start, end):
-              print(f'{index + 1:05d}: {lines[index]}')
-          PY
+            "${api}/actions/runs?per_page=100" > /tmp/runs.json
+          jq --arg sha "$RETRY_SHA" '{
+            workflows: [
+              .workflow_runs[]
+              | select(.head_sha == $sha
+                    or .name == "MLB Historical Recovery and Paid Dispatch"
+                    or .name == "MLB Historical Daily Optimizer"
+                    or .name == "MLB Historical Accelerated Training Driver"
+                    or .name == "MLB V15.11.1 Accelerated Historical Training"
+                    or .name == "Dispatch Authorized MLB Historical Training")
+              | {id,name,event,status,conclusion,head_sha,created_at,updated_at,html_url}
+            ] | sort_by(.created_at) | reverse | .[0:12]
+          }' /tmp/runs.json > /tmp/summary.json
+          jq -r '.workflows[] | [.id,.name,.event,.status,(.conclusion // "pending"),.head_sha,.created_at] | @tsv' /tmp/summary.json
+          ids=$(jq -r '.workflows[].id' /tmp/summary.json)
+          for id in $ids; do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${api}/actions/runs/${id}/jobs?per_page=100" > "/tmp/jobs-${id}.json"
+            jq -r --arg id "$id" '
+              .jobs[]
+              | [$id,.id,.name,.status,(.conclusion // "pending"),
+                 (([.steps[]? | select(.status == "in_progress") | .name][0])
+                  // ([.steps[]? | select(.conclusion == "failure") | .name][0])
+                  // "waiting")]
+              | @tsv
+            ' "/tmp/jobs-${id}.json"
+          done
