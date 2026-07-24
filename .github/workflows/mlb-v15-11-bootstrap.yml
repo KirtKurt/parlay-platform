@@ -7,6 +7,16 @@ on:
     paths:
       - 'bootstrap/mlb-v15-11.tar.xz.b64.part*'
       - '.github/workflows/mlb-v15-11-bootstrap.yml'
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - 'bootstrap/mlb-v15-11.tar.xz.b64.part*'
+      - '.github/workflows/mlb-v15-11-bootstrap.yml'
 
 permissions:
   contents: write
@@ -23,7 +33,7 @@ jobs:
       - name: Check out release branch
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           fetch-depth: 0
 
       - name: Verify and expand source package
@@ -101,6 +111,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          branch='${{ github.event.pull_request.head.ref || github.ref_name }}'
           rm -rf bootstrap
           rm -f .github/workflows/mlb-v15-11-bootstrap.yml
           git config user.name 'github-actions[bot]'
@@ -108,4 +119,4 @@ jobs:
           git add -A
           git diff --cached --check
           git commit -m 'Add MLB V15.11 historical daily optimizer'
-          git push origin HEAD:${{ github.ref_name }}
+          git push origin "HEAD:${branch}"
