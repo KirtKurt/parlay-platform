@@ -150,6 +150,16 @@ Resources:
                 - s3:GetBucketVersioning
               Resource:
                 - !GetAtt HistoricalArtifactsBucket.Arn
+            - Sid: ListHistoricalEvidencePrefixForExistenceChecks
+              Effect: Allow
+              Action:
+                - s3:ListBucket
+              Resource:
+                - !GetAtt HistoricalArtifactsBucket.Arn
+              Condition:
+                StringLike:
+                  s3:prefix:
+                    - mlb/historical-daily-v1/*
             - Sid: AppendAndReadVersionedHistoricalEvidence
               Effect: Allow
               Action:
