@@ -1,0 +1,53 @@
+name: MLB Historical Status Snapshot
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-status-snapshot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  status:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Read compact optimizer status
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks --stack-name parlay-platform-mlb-historical-optimizer --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "${{ secrets.AWS_REGION }}" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"manual_live_status_snapshot"}' /tmp/status.json >/tmp/meta.json
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/status.json'))
+          state=value.get('state') or {}
+          summary={
+            'ok':value.get('ok'),
+            'phase':state.get('phase'),
+            'currentDate':state.get('currentDate'),
+            'currentSlotIndex':state.get('currentSlotIndex'),
+            'networkRequestCount':state.get('networkRequestCount'),
+            'creditsConsumed':state.get('creditsConsumed'),
+            'eligibleGameCount':state.get('eligibleGameCount'),
+            'completeSlateCount':state.get('completeSlateCount'),
+            'optimizationRound':state.get('optimizationRound'),
+            'lastError':state.get('lastError'),
+            'championValidation':value.get('championValidation'),
+            'cutoverValidation':value.get('cutoverValidation'),
+            'productionAuthority':value.get('productionAuthority'),
+          }
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          json.dump(summary,open('/tmp/status-summary.json','w'),indent=2,sort_keys=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-historical-live-status-${{ github.sha }}
+          path: /tmp/status-summary.json
+          retention-days: 7
