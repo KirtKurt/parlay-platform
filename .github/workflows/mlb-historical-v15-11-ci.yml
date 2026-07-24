@@ -1,0 +1,62 @@
+name: MLB V15.11.1 optimizer contracts
+
+on:
+  push:
+    branches:
+      - agent/mlb-v15-11-1-historical-daily-optimizer
+    paths:
+      - "hello_world/mlb_historical_*.py"
+      - "scripts/mlb_historical_daily_optimizer_v15_11.py"
+      - "tests/unit/test_mlb_historical_*.py"
+      - ".github/workflows/mlb-historical-v15-11-ci.yml"
+      - ".github/workflows/mlb-historical-optimizer-v15-11.yml"
+  pull_request:
+    paths:
+      - "hello_world/mlb_historical_*.py"
+      - "scripts/mlb_historical_daily_optimizer_v15_11.py"
+      - "tests/unit/test_mlb_historical_*.py"
+      - ".github/workflows/mlb-historical-v15-11-ci.yml"
+      - ".github/workflows/mlb-historical-optimizer-v15-11.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-v15-11-1-contracts-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install test runtime
+        run: python -m pip install --quiet "pytest>=8,<9"
+
+      - name: Compile historical optimizer
+        env:
+          PYTHONPATH: hello_world:.
+        run: |
+          set -euo pipefail
+          python -m py_compile \
+            hello_world/mlb_historical_policy_v1.py \
+            hello_world/mlb_historical_daily_optimizer_v1.py \
+            scripts/mlb_historical_daily_optimizer_v15_11.py
+
+      - name: Run historical optimizer contracts
+        env:
+          PYTHONPATH: hello_world:.
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/unit/test_mlb_historical_policy_v1.py \
+            tests/unit/test_mlb_historical_daily_optimizer_v1.py \
+            tests/unit/test_mlb_historical_training_handler.py
