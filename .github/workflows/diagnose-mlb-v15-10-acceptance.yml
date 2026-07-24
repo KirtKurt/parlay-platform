@@ -21,6 +21,9 @@ jobs:
   diagnose:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
     steps:
       - uses: actions/checkout@v4
 
