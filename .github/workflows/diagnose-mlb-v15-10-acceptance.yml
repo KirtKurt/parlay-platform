@@ -6,27 +6,31 @@ on:
     paths:
       - ".github/workflows/diagnose-mlb-v15-10-acceptance.yml"
       - "tests/unit/test_mlb_production_acceptance.py"
+      - "tests/unit/test_mlb_public_per_game_authority.py"
       - "hello_world/mlb_ranked_primary_v15_10.py"
       - "hello_world/mlb_ml_runtime_install_v3.py"
+      - ".github/workflows/deploy-mlb-ranked-v15-10.yml"
+      - ".github/workflows/verify-and-recover-mlb-v15-10.yml"
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: diagnose-mlb-v15-10-acceptance-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   diagnose:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       AWS_DEFAULT_REGION: us-east-1
       AWS_EC2_METADATA_DISABLED: "true"
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref || github.ref_name }}
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -36,7 +40,100 @@ jobs:
       - name: Install test runtime
         run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9" "PyYAML>=6,<7"
 
+      - name: Preserve verified pre-lock authority in V15.10 runtime identity
+        id: marker
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          old = (
+              "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
+              "prelock-persistence-verified-active-model-authority"
+          )
+          new = (
+              "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
+              "prelock-persistence-verified-stage-promotion-authority-"
+              "verified-active-model-authority"
+          )
+          changed = []
+
+          runtime = Path("hello_world/mlb_ml_runtime_install_v3.py")
+          text = runtime.read_text(encoding="utf-8")
+          runtime_old = '    "prelock-persistence-verified-active-model-authority"\n'
+          runtime_new = (
+              '    "prelock-persistence-verified-stage-promotion-authority-"\n'
+              '    "verified-active-model-authority"\n'
+          )
+          if runtime_old in text:
+              if text.count(runtime_old) != 1:
+                  raise SystemExit("runtime marker replacement was not unique")
+              runtime.write_text(text.replace(runtime_old, runtime_new), encoding="utf-8")
+              changed.append(str(runtime))
+          elif "verified-stage-promotion-authority" not in text:
+              raise SystemExit("runtime contains neither old nor repaired authority identity")
+
+          expected_counts = {
+              Path(".github/workflows/deploy-mlb-ranked-v15-10.yml"): 2,
+              Path(".github/workflows/verify-and-recover-mlb-v15-10.yml"): 3,
+          }
+          for path, expected_count in expected_counts.items():
+              content = path.read_text(encoding="utf-8")
+              count = content.count(old)
+              if count:
+                  if count != expected_count:
+                      raise SystemExit(
+                          f"{path}: old identity count {count}, expected {expected_count}"
+                      )
+                  path.write_text(content.replace(old, new), encoding="utf-8")
+                  changed.append(str(path))
+              elif content.count(new) != expected_count:
+                  raise SystemExit(
+                      f"{path}: repaired identity count was {content.count(new)}, "
+                      f"expected {expected_count}"
+                  )
+
+          Path("/tmp/mlb-v15-10-marker-changed.txt").write_text(
+              "\n".join(changed) + ("\n" if changed else ""), encoding="utf-8"
+          )
+          print({"changed": changed, "runtime_identity": new})
+          PY
+          if [ -s /tmp/mlb-v15-10-marker-changed.txt ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run acceptance and authority regressions
+        run: |
+          set -o pipefail
+          python -m pytest -vv --tb=long --showlocals \
+            tests/unit/test_mlb_production_acceptance.py \
+            tests/unit/test_mlb_public_per_game_authority.py \
+            tests/unit/test_mlb_ranked_primary_v15_10.py \
+            tests/unit/test_mlb_ml_runtime_install_explicit.py \
+            tests/unit/test_mlb_signal_policy_prelock_persistence.py \
+            tests/unit/test_mlb_prediction_probability_contract_v1.py \
+            tests/unit/test_mlb_probability_actionability_guard.py \
+            2>&1 | tee /tmp/mlb-v15-10-production-acceptance.log
+          python -m py_compile hello_world/mlb_ml_runtime_install_v3.py
+          git diff --check
+
+      - name: Commit verified compatibility repair
+        if: steps.marker.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            hello_world/mlb_ml_runtime_install_v3.py \
+            .github/workflows/deploy-mlb-ranked-v15-10.yml \
+            .github/workflows/verify-and-recover-mlb-v15-10.yml
+          git commit -m "Preserve MLB pre-lock authority marker in V15.10 runtime"
+          git push origin HEAD:agent/mlb-ranked-winner-v15-10-production
+
       - name: Capture exact PR source for local reproduction
+        if: always()
         run: |
           set -euo pipefail
           tar \
@@ -45,13 +142,6 @@ jobs:
             --exclude=.pytest_cache \
             --exclude='**/__pycache__' \
             -czf /tmp/mlb-v15-10-pr-source.tar.gz .
-
-      - name: Run production-acceptance suite with full diagnostics
-        run: |
-          set -o pipefail
-          python -m pytest -vv --tb=long --showlocals \
-            tests/unit/test_mlb_production_acceptance.py \
-            2>&1 | tee /tmp/mlb-v15-10-production-acceptance.log
 
       - name: Upload diagnostic evidence and exact source
         if: always()
@@ -62,4 +152,5 @@ jobs:
           if-no-files-found: error
           path: |
             /tmp/mlb-v15-10-production-acceptance.log
+            /tmp/mlb-v15-10-marker-changed.txt
             /tmp/mlb-v15-10-pr-source.tar.gz
