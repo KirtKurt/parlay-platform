@@ -1,0 +1,121 @@
+name: Probe MLB V15.11.1 live deployment status
+
+"on":
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/mlb-v15-11-live-status-probe.yml'
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  probe:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/observe-mlb-v15-11-live-status'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: 4a95c501ef771be1aa2271483b42abe95b97867c
+    steps:
+      - name: Query exact release-marker push runs
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100" \
+            > /tmp/runs.json
+          jq '{
+            targetSha: $sha,
+            totalCount: .total_count,
+            workflows: [
+              .workflow_runs[]
+              | select(
+                  .name == "MLB Historical Daily Optimizer"
+                  or .name == "Deploy SAM to AWS"
+                  or .name == "Observe MLB V15.11.1 deployment"
+                )
+              | {
+                  id,
+                  name,
+                  status,
+                  conclusion,
+                  event,
+                  runNumber: .run_number,
+                  runAttempt: .run_attempt,
+                  createdAt: .created_at,
+                  updatedAt: .updated_at,
+                  url: .html_url,
+                  jobsUrl: .jobs_url
+                }
+            ]
+          }' --arg sha "$TARGET_SHA" /tmp/runs.json > /tmp/status.json
+          cat /tmp/status.json
+          jq -e '.workflows | map(select(.name == "MLB Historical Daily Optimizer")) | length >= 1' /tmp/status.json
+
+      - name: Fetch job states for the historical deployment run
+        run: |
+          set -euo pipefail
+          RUN_ID=$(jq -r '[.workflows[] | select(.name == "MLB Historical Daily Optimizer")] | sort_by(.createdAt) | last | .id' /tmp/status.json)
+          test -n "$RUN_ID"
+          test "$RUN_ID" != null
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            > /tmp/jobs.json
+          jq '{
+            runId: $runId,
+            jobs: [
+              .jobs[] | {
+                id,
+                name,
+                status,
+                conclusion,
+                startedAt: .started_at,
+                completedAt: .completed_at,
+                url: .html_url,
+                steps: [(.steps // [])[] | {number, name, status, conclusion}]
+              }
+            ]
+          }' --argjson runId "$RUN_ID" /tmp/jobs.json > /tmp/job-status.json
+          cat /tmp/job-status.json
+
+      - name: Post live status to PR 111
+        run: |
+          set -euo pipefail
+          SUMMARY=$(jq -r '
+            .workflows
+            | sort_by(.name)
+            | map("- \(.name): run `\(.id)` — **\(.status)** / **\(.conclusion // "pending")** — \(.url)")
+            | join("\n")
+          ' /tmp/status.json)
+          JOBS=$(jq -r '
+            .jobs
+            | map("- \(.name): **\(.status)** / **\(.conclusion // "pending")**")
+            | join("\n")
+          ' /tmp/job-status.json)
+          BODY=$(cat <<EOF
+          <!-- mlb-v15-11-live-status-probe -->
+          MLB V15.11.1 live deployment status for release marker `${TARGET_SHA}`:
+
+          ${SUMMARY}
+
+          Historical deployment jobs:
+          ${JOBS}
+          EOF
+          )
+          jq -n --arg body "$BODY" '{body: $body}' > /tmp/comment.json
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/111/comments" \
+            --data-binary @/tmp/comment.json
