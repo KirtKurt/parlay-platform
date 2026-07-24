@@ -1,0 +1,146 @@
+name: Observe exact Tennis V2.1 AWS deployment
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/observe-tennis-v2-1.yml"
+      - ".github/workflows/deploy-tennis-v2-1.yml"
+      - "tennis_release/**"
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: observe-tennis-v2-1-08aa1935
+  cancel-in-progress: false
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    env:
+      DEPLOY_WORKFLOW_PATH: deploy-tennis-v2-1.yml
+      DEPLOY_BRANCH: agent/tennis-mlb-process-flow-v2-1
+      DEPLOY_HEAD_SHA: 08aa1935699036efbce33b219dd5a60e56b9a77a
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout observer source
+        uses: actions/checkout@v4
+
+      - name: Observe exact push deployment and collect evidence
+        id: observe
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p tennis_observer_evidence/deployment-artifacts
+          deadline=$((SECONDS + 4500))
+          run_id=""
+          conclusion=""
+
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            gh api --method GET \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "/repos/${GITHUB_REPOSITORY}/actions/workflows/${DEPLOY_WORKFLOW_PATH}/runs" \
+              -f branch="$DEPLOY_BRANCH" \
+              -f event=push \
+              -f per_page=20 \
+              > tennis_observer_evidence/workflow-runs.json
+
+            run_id=$(python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          payload = json.loads(Path("tennis_observer_evidence/workflow-runs.json").read_text())
+          matches = [
+              row for row in payload.get("workflow_runs", [])
+              if row.get("head_sha") == os.environ["DEPLOY_HEAD_SHA"]
+              and row.get("event") == "push"
+          ]
+          print(matches[0]["id"] if matches else "")
+          PY
+            )
+            if [ -n "$run_id" ]; then
+              break
+            fi
+            sleep 10
+          done
+
+          if [ -z "$run_id" ]; then
+            printf 'Exact Tennis deployment run was not found for %s\n' "$DEPLOY_HEAD_SHA" \
+              > tennis_observer_evidence/observer-failure.txt
+            echo "run_id=" >> "$GITHUB_OUTPUT"
+            echo "conclusion=not_found" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "$run_id" > tennis_observer_evidence/deployment-run-id.txt
+          while [ "$SECONDS" -lt "$deadline" ]; do
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}" \
+              > tennis_observer_evidence/deployment-run.json
+            read -r status conclusion < <(python - <<'PY'
+          import json
+          from pathlib import Path
+          row = json.loads(Path("tennis_observer_evidence/deployment-run.json").read_text())
+          print(row.get("status", ""), row.get("conclusion") or "")
+          PY
+            )
+            echo "Tennis deployment run ${run_id}: status=${status} conclusion=${conclusion:-pending}"
+            if [ "$status" = completed ]; then
+              break
+            fi
+            sleep 15
+          done
+
+          gh api --method GET \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs" \
+            -f filter=latest -f per_page=100 \
+            > tennis_observer_evidence/deployment-jobs.json || true
+          job_id=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("tennis_observer_evidence/deployment-jobs.json")
+          if not path.exists():
+              print("")
+          else:
+              jobs = json.loads(path.read_text()).get("jobs", [])
+              print(jobs[0].get("id", "") if jobs else "")
+          PY
+          )
+          if [ -n "$job_id" ]; then
+            gh api "/repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" \
+              > tennis_observer_evidence/deployment-job.log || true
+          fi
+          gh api --method GET \
+            "/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts" \
+            -f per_page=100 \
+            > tennis_observer_evidence/deployment-artifacts.json || true
+          gh run download "$run_id" --dir tennis_observer_evidence/deployment-artifacts || true
+
+          conclusion=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          row = json.loads(Path("tennis_observer_evidence/deployment-run.json").read_text())
+          print(row.get("conclusion") or "incomplete")
+          PY
+          )
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+          echo "conclusion=$conclusion" >> "$GITHUB_OUTPUT"
+
+      - name: Upload exact deployment observation
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: observed-tennis-v2-1-deployment-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 90
+          path: tennis_observer_evidence/
+
+      - name: Require exact deployment success
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          test "${{ steps.observe.outputs.conclusion }}" = success
