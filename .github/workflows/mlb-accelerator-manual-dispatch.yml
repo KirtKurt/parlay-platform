@@ -1,0 +1,28 @@
+name: Dispatch Authorized MLB Historical Accelerator
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-accelerator-manual-dispatch.yml'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch exact authorized accelerator
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-historical-accelerator.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f paid_authorization=AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS \
+            -f cutover_confirmation=DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE
+          echo 'Authorized MLB historical accelerator dispatched.'
