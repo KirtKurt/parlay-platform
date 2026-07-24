@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89429118420'
     steps:
-      - name: Parse compact planner rejection summary
+      - name: Parse final rebuilt planner ledger
         run: |
           set -euo pipefail
           curl -fsSL \
@@ -34,7 +34,7 @@ jobs:
           from pathlib import Path
 
           decoder = json.JSONDecoder()
-          found = None
+          matches = []
           for line in Path('/tmp/job.log').read_text(errors='replace').splitlines():
               if 'PLAN_BLOCKED_INCOMPLETE_LEDGER' not in line:
                   continue
@@ -45,22 +45,26 @@ jobs:
                   value, _ = decoder.raw_decode(line[start:])
               except json.JSONDecodeError:
                   continue
-              if (value.get('state') or {}).get('phase') == 'PLAN_BLOCKED_INCOMPLETE_LEDGER':
-                  found = value
-                  break
-          if found is None:
+              state = value.get('state') or {}
+              if state.get('phase') == 'PLAN_BLOCKED_INCOMPLETE_LEDGER' and state.get('plan'):
+                  matches.append(value)
+          if not matches:
               raise SystemExit('planner JSON not found')
+          found = matches[-1]
           state = found.get('state') or {}
           plan = state.get('plan') or found.get('plan') or {}
           rejected = plan.get('rejectedDates') or []
           print(json.dumps({
+              'matchingPlannerPayloads': len(matches),
               'phase': state.get('phase'),
               'lastError': state.get('lastError'),
               'plannedOfficialGames': plan.get('plannedOfficialGames'),
               'plannedCompleteSlateDays': plan.get('plannedCompleteSlateDays'),
               'historicalRequestCount': plan.get('historicalRequestCount'),
               'estimatedCredits': plan.get('estimatedCredits'),
+              'maximumCredits': plan.get('maximumCredits'),
               'providerReportedRemainingCredits': plan.get('providerReportedRemainingCredits'),
+              'enoughDateRange': plan.get('enoughDateRange'),
               'withinConfiguredCreditCap': plan.get('withinConfiguredCreditCap'),
               'providerQuotaAppearsSufficient': plan.get('providerQuotaAppearsSufficient'),
               'planningErrorCount': plan.get('planningErrorCount'),
