@@ -1,0 +1,112 @@
+name: Patch MLB V15.10 runtime authority marker
+
+on:
+  push:
+    branches: [agent/mlb-ranked-winner-v15-10-production]
+    paths:
+      - ".github/workflows/patch-mlb-v15-10-runtime-marker.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: patch-mlb-v15-10-runtime-marker
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      AWS_DEFAULT_REGION: us-east-1
+      AWS_EC2_METADATA_DISABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mlb-ranked-winner-v15-10-production
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply exact compatibility identity update
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          old = (
+              "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
+              "prelock-persistence-verified-active-model-authority"
+          )
+          new = (
+              "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
+              "prelock-persistence-verified-stage-promotion-authority-"
+              "verified-active-model-authority"
+          )
+
+          runtime = Path("hello_world/mlb_ml_runtime_install_v3.py")
+          text = runtime.read_text(encoding="utf-8")
+          runtime_old = (
+              '    "prelock-persistence-verified-active-model-authority"\n'
+          )
+          runtime_new = (
+              '    "prelock-persistence-verified-stage-promotion-authority-"\n'
+              '    "verified-active-model-authority"\n'
+          )
+          if text.count(runtime_old) != 1:
+              raise SystemExit(
+                  f"runtime marker replacement count was {text.count(runtime_old)}, expected 1"
+              )
+          runtime.write_text(text.replace(runtime_old, runtime_new), encoding="utf-8")
+
+          expected_workflow_replacements = {
+              Path(".github/workflows/deploy-mlb-ranked-v15-10.yml"): 2,
+              Path(".github/workflows/verify-and-recover-mlb-v15-10.yml"): 3,
+          }
+          for path, expected_count in expected_workflow_replacements.items():
+              content = path.read_text(encoding="utf-8")
+              count = content.count(old)
+              if count != expected_count:
+                  raise SystemExit(
+                      f"{path}: replacement count was {count}, expected {expected_count}"
+                  )
+              path.write_text(content.replace(old, new), encoding="utf-8")
+          PY
+
+          grep -RIn \
+            "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority" \
+            hello_world/mlb_ml_runtime_install_v3.py \
+            .github/workflows/deploy-mlb-ranked-v15-10.yml \
+            .github/workflows/verify-and-recover-mlb-v15-10.yml
+
+      - name: Validate authority and ranked-winner contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9"
+          python -m pytest -q \
+            tests/unit/test_mlb_public_per_game_authority.py \
+            tests/unit/test_mlb_ranked_primary_v15_10.py \
+            tests/unit/test_mlb_ml_runtime_install_explicit.py \
+            tests/unit/test_mlb_signal_policy_prelock_persistence.py \
+            tests/unit/test_mlb_prediction_probability_contract_v1.py \
+            tests/unit/test_mlb_probability_actionability_guard.py
+          python -m py_compile hello_world/mlb_ml_runtime_install_v3.py
+          git diff --check
+
+      - name: Commit verified identity repair
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            hello_world/mlb_ml_runtime_install_v3.py \
+            .github/workflows/deploy-mlb-ranked-v15-10.yml \
+            .github/workflows/verify-and-recover-mlb-v15-10.yml
+          git diff --cached --exit-code && {
+            echo "::error::Expected runtime identity changes were not staged"
+            exit 1
+          } || true
+          git commit -m "Preserve MLB pre-lock authority marker in V15.10 runtime"
+          git push origin HEAD:agent/mlb-ranked-winner-v15-10-production
