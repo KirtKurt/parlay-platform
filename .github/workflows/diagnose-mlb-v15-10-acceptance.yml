@@ -7,6 +7,7 @@ on:
       - ".github/workflows/diagnose-mlb-v15-10-acceptance.yml"
       - "tests/unit/test_mlb_production_acceptance.py"
       - "tests/unit/test_mlb_public_per_game_authority.py"
+      - "tests/unit/test_mlb_ml_runtime_install_explicit.py"
       - "hello_world/mlb_ranked_primary_v15_10.py"
       - "hello_world/mlb_ml_runtime_install_v3.py"
       - ".github/workflows/deploy-mlb-ranked-v15-10.yml"
@@ -73,11 +74,11 @@ jobs:
           elif "verified-stage-promotion-authority" not in text:
               raise SystemExit("runtime contains neither old nor repaired authority identity")
 
-          expected_counts = {
+          expected_workflow_counts = {
               Path(".github/workflows/deploy-mlb-ranked-v15-10.yml"): 2,
               Path(".github/workflows/verify-and-recover-mlb-v15-10.yml"): 3,
           }
-          for path, expected_count in expected_counts.items():
+          for path, expected_count in expected_workflow_counts.items():
               content = path.read_text(encoding="utf-8")
               count = content.count(old)
               if count:
@@ -92,6 +93,25 @@ jobs:
                       f"{path}: repaired identity count was {content.count(new)}, "
                       f"expected {expected_count}"
                   )
+
+          test_path = Path("tests/unit/test_mlb_ml_runtime_install_explicit.py")
+          test_text = test_path.read_text(encoding="utf-8")
+          test_old = (
+              '            "prelock-persistence-verified-active-model-authority"\n'
+          )
+          test_new = (
+              '            "prelock-persistence-verified-stage-promotion-authority-"\n'
+              '            "verified-active-model-authority"\n'
+          )
+          if test_old in test_text:
+              if test_text.count(test_old) != 1:
+                  raise SystemExit("runtime installer test replacement was not unique")
+              test_path.write_text(
+                  test_text.replace(test_old, test_new), encoding="utf-8"
+              )
+              changed.append(str(test_path))
+          elif "verified-stage-promotion-authority" not in test_text:
+              raise SystemExit("runtime installer test has neither old nor repaired identity")
 
           Path("/tmp/mlb-v15-10-marker-changed.txt").write_text(
               "\n".join(changed) + ("\n" if changed else ""), encoding="utf-8"
@@ -128,7 +148,8 @@ jobs:
           git add \
             hello_world/mlb_ml_runtime_install_v3.py \
             .github/workflows/deploy-mlb-ranked-v15-10.yml \
-            .github/workflows/verify-and-recover-mlb-v15-10.yml
+            .github/workflows/verify-and-recover-mlb-v15-10.yml \
+            tests/unit/test_mlb_ml_runtime_install_explicit.py
           git commit -m "Preserve MLB pre-lock authority marker in V15.10 runtime"
           git push origin HEAD:agent/mlb-ranked-winner-v15-10-production
 
