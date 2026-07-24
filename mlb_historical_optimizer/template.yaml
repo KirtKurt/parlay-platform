@@ -114,7 +114,9 @@ Resources:
     Properties:
       CodeUri: ../hello_world/
       Handler: mlb_historical_optimizer_handler.lambda_handler
-      ReservedConcurrentExecutions: 1
+      # Do not reserve concurrency in this low-quota account. The DynamoDB lease
+      # already serializes orchestration, while a reservation of one would reduce
+      # account unreserved concurrency below AWS's mandatory minimum of ten.
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 300
         MaximumRetryAttempts: 1
