@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89426541736'
     steps:
-      - name: Print planner invocation result and terminal error
+      - name: Print planner JSON and exact failed assertion
         run: |
           set -euo pipefail
           curl -fsSL \
@@ -29,5 +29,4 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
           | sed -r 's/\x1B\[[0-9;?]*[ -\/]*[@-~]//g' > /tmp/job.log
-          echo "LINE_COUNT=$(wc -l < /tmp/job.log)"
-          sed -n '1020,1180p' /tmp/job.log
+          sed -n '1090,1165p' /tmp/job.log
