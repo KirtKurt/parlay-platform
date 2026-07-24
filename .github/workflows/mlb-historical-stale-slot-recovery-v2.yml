@@ -1,0 +1,182 @@
+name: MLB Historical Stale Slot Recovery V2
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-stale-slot-recovery-v2.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: parlay-platform-deploy
+  cancel-in-progress: false
+
+jobs:
+  patch-deploy-prove-restart:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Patch the actual complete-slate loader
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('hello_world/mlb_historical_optimizer_handler.py')
+          text = path.read_text()
+          old = '''    historical = []
+              for requested in grid.timestamps_utc:
+                  raw, _ = _get_s3_json(_raw_key(day, requested))
+                  historical.append(
+                      {
+                          "requestedAtUtc": requested,
+                          "payload": raw.get("payload") if isinstance(raw, Mapping) and "payload" in raw else raw,
+                      }
+                  )
+          '''
+          # Normalize indentation exactly as it appears in the source.
+          old = old.replace('              for requested', '    for requested').replace('                  raw', '        raw').replace('                  historical', '        historical').replace('                      {', '            {').replace('                          "requestedAtUtc"', '                "requestedAtUtc"').replace('                          "payload"', '                "payload"').replace('                      }', '            }').replace('                  )', '        )')
+          new = '''    historical = []
+              for requested in grid.timestamps_utc:
+                  raw, _ = _get_s3_json(_raw_key(day, requested))
+                  payload = raw.get("payload") if isinstance(raw, Mapping) and "payload" in raw else raw
+                  try:
+                      optimizer.normalize_historical_snapshot(payload, requested)
+                  except optimizer.HistoricalOptimizerError as exc:
+                      if str(exc) != "historical response is too stale for a 15-minute grid":
+                          raise
+                      skipped = state.setdefault("skippedHistoricalSlots", [])
+                      if not any(
+                          isinstance(row, Mapping)
+                          and row.get("slateDateEt") == day
+                          and row.get("requestedAtUtc") == requested
+                          for row in skipped
+                      ):
+                          skipped.append(
+                              {
+                                  "slateDateEt": day,
+                                  "requestedAtUtc": requested,
+                                  "reason": "provider_snapshot_too_stale",
+                                  "recordedAtUtc": _now_iso(),
+                              }
+                          )
+                      continue
+                  historical.append(
+                      {
+                          "requestedAtUtc": requested,
+                          "payload": payload,
+                      }
+                  )
+          '''
+          new = new.replace('              for requested', '    for requested').replace('                  raw', '        raw').replace('                  payload', '        payload').replace('                  try:', '        try:').replace('                      optimizer', '            optimizer').replace('                  except', '        except').replace('                      if str', '            if str').replace('                          raise', '                raise').replace('                      skipped', '            skipped').replace('                      if not any', '            if not any').replace('                          isinstance', '                isinstance').replace('                          and row', '                and row').replace('                          for row', '                for row').replace('                      ):', '            ):').replace('                          skipped.append', '                skipped.append').replace('                              {', '                    {').replace('                                  "slateDateEt"', '                        "slateDateEt"').replace('                                  "requestedAtUtc"', '                        "requestedAtUtc"').replace('                                  "reason"', '                        "reason"').replace('                                  "recordedAtUtc"', '                        "recordedAtUtc"').replace('                              }', '                    }').replace('                          )', '                )').replace('                      continue', '            continue').replace('                  historical.append', '        historical.append').replace('                      {', '            {').replace('                          "requestedAtUtc"', '                "requestedAtUtc"').replace('                          "payload"', '                "payload"').replace('                      }', '            }').replace('                  )', '        )')
+
+          if old not in text:
+              raise SystemExit('exact _complete_slate source block not found')
+          patched = text.replace(old, new, 1)
+          if patched.count('provider_snapshot_too_stale') != 1:
+              raise SystemExit('stale-slot patch count is not exactly one')
+          path.write_text(patched)
+          PY
+
+      - name: Validate patch and contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'cfn-lint>=1,<2'
+          python -m py_compile hello_world/mlb_historical_daily_optimizer_v1.py hello_world/mlb_historical_optimizer_handler.py
+          grep -Fq 'provider_snapshot_too_stale' hello_world/mlb_historical_optimizer_handler.py
+          python -m pytest -q \
+            tests/unit/test_mlb_historical_policy_v1.py \
+            tests/unit/test_mlb_historical_daily_optimizer_v1.py \
+            tests/unit/test_mlb_historical_optimizer_handler.py \
+            tests/unit/test_mlb_historical_read_api_contract.py
+          sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+
+      - name: Commit actual handler fix
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hello_world/mlb_historical_optimizer_handler.py
+          git commit -m "fix: quarantine stale MLB historical snapshot slots [deploy-mlb-v15.11]"
+          git push origin HEAD:main
+
+      - name: Deploy repaired optimizer
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam-historical-recovery-v2
+          sam build --no-cached --build-dir .aws-sam-historical-recovery-v2 --template-file mlb_historical_optimizer/template.yaml
+          sam deploy \
+            --template-file .aws-sam-historical-recovery-v2/template.yaml \
+            --stack-name parlay-platform-mlb-historical-optimizer \
+            --region "$AWS_REGION_VALUE" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              'TargetSnapshotsTable=parlay_platform_snapshots' \
+              'HistoricalStartDate=2025-04-01' \
+              'HistoricalEndDate=2025-08-31' \
+              'HistoricalTargetGames=1600' \
+              'HistoricalMaxCredits=120000' \
+              'HistoricalRequestsPerRun=100' \
+              'HistoricalMaxCandidates=25000' \
+              'HistoricalMaxOptimizationRounds=6' \
+              'HistoricalFreshAuditIncrementGames=250' \
+              "DeployGitSha=$(git rev-parse HEAD)"
+
+      - name: Invoke and prove movement beyond failed checkpoint
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks --stack-name parlay-platform-mlb-historical-optimizer --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"orchestrate","run":"stale_slot_recovery_v2"}' /tmp/recovery-v2.json >/tmp/recovery-v2-meta.json
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/recovery-v2.json'))
+          state=value.get('state') or {}
+          summary={k:state.get(k) for k in ('phase','currentDate','currentSlotIndex','networkRequestCount','eligibleGameCount','completeSlateCount','lastError','skippedHistoricalSlots')}
+          print(json.dumps(summary,indent=2,default=str))
+          assert (state.get('currentDate'), int(state.get('currentSlotIndex') or 0)) != ('2025-04-14',72), summary
+          assert 'too stale for a 15-minute grid' not in str(state.get('lastError') or ''), summary
+          json.dump(summary,open('/tmp/mlb-stale-slot-recovery-v2-proof.json','w'),indent=2,default=str)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-stale-slot-recovery-v2-proof
+          path: /tmp/mlb-stale-slot-recovery-v2-proof.json
+          retention-days: 14
+
+      - name: Restart accelerator
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-historical-accelerator.yml \
+            -f paid_authorization=AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS \
+            -f cutover_confirmation=DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE
