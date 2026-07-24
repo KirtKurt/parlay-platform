@@ -1,6 +1,10 @@
 name: Observe MLB V15.11.1 deployment
 
 "on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v15-11-deployment-observer.yml'
   workflow_run:
     workflows: ["MLB Historical Daily Optimizer"]
     types: [completed]
@@ -11,8 +15,61 @@ permissions:
   issues: write
 
 jobs:
+  probe:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: 8519da84cb3e1982fab89cd85d7b09be62ad604d
+    steps:
+      - name: Locate and report the exact merged deployment run
+        run: |
+          set -euo pipefail
+          API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100"
+          for attempt in $(seq 1 120); do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$API" > /tmp/runs.json
+            ROW=$(jq -c '[.workflow_runs[] | select(.name == "MLB Historical Daily Optimizer")] | sort_by(.created_at) | last // empty' /tmp/runs.json)
+            if [ -n "$ROW" ]; then
+              STATUS=$(jq -r '.status' <<<"$ROW")
+              if [ "$STATUS" = completed ]; then
+                RUN_ID=$(jq -r '.id' <<<"$ROW")
+                RUN_URL=$(jq -r '.html_url' <<<"$ROW")
+                CONCLUSION=$(jq -r '.conclusion' <<<"$ROW")
+                BODY=$(cat <<EOF
+          <!-- mlb-v15-11-deployment-probe -->
+          MLB V15.11.1 merged deployment workflow completed.
+
+          - Workflow: MLB Historical Daily Optimizer
+          - Run ID: ${RUN_ID}
+          - Status: ${STATUS}
+          - Conclusion: ${CONCLUSION}
+          - Head SHA: ${TARGET_SHA}
+          - Run: ${RUN_URL}
+          EOF
+                )
+                jq -n --arg body "$BODY" '{body: $body}' > /tmp/comment.json
+                curl --fail --silent --show-error \
+                  -X POST \
+                  -H "Authorization: Bearer ${GH_TOKEN}" \
+                  -H "Accept: application/vnd.github+json" \
+                  -H "X-GitHub-Api-Version: 2022-11-28" \
+                  "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/111/comments" \
+                  --data-binary @/tmp/comment.json
+                exit 0
+              fi
+            fi
+            sleep 10
+          done
+          echo '::error::Timed out locating a completed merged MLB V15.11.1 deployment run'
+          exit 1
+
   report:
-    if: github.event.workflow_run.event == 'push' && github.event.workflow_run.head_sha == '8519da84cb3e1982fab89cd85d7b09be62ad604d'
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_sha == '8519da84cb3e1982fab89cd85d7b09be62ad604d'
     runs-on: ubuntu-latest
     steps:
       - name: Post exact deployment result to PR 111
@@ -44,5 +101,5 @@ jobs:
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/111/comments \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/111/comments" \
             --data-binary @/tmp/comment.json
