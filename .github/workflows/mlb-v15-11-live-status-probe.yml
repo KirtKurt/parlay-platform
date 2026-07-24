@@ -1,4 +1,4 @@
-name: Summarize postponed and resumed MLB exceptions
+name: Inspect resumed MLB exception games only
 
 "on":
   pull_request:
@@ -19,20 +19,18 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89429118420'
     steps:
-      - name: Print class summaries and representative rows
+      - name: Print resumed rows
         shell: bash
         run: |
-          set -euo pipefail
           curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" > /tmp/job.log
           python - <<'PY'
           from datetime import datetime
           from pathlib import Path
           from urllib.parse import urlencode
-          from urllib.request import Request, urlopen
+          from urllib.request import urlopen
           from zoneinfo import ZoneInfo
-          import collections, json, re
-
-          et=ZoneInfo('America/New_York'); ansi=re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]'); plan=None
+          import json,re
+          et=ZoneInfo('America/New_York'); plan=None; ansi=re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
           for raw in Path('/tmp/job.log').read_text(encoding='utf-8-sig',errors='replace').splitlines():
               m=re.match(r'^.*?Z\s+(\{.*\})\s*$',ansi.sub('',raw))
               if not m: continue
@@ -40,38 +38,21 @@ jobs:
               except Exception: continue
               state=value.get('state') if isinstance(value,dict) else None
               if isinstance(state,dict) and isinstance(state.get('plan'),dict): plan=state['plan']
-          if plan is None: raise SystemExit('plan missing')
           rows=[]
-          for day in [str(x['slateDateEt']) for x in plan.get('rejectedDates') or []]:
+          for day in [str(x['slateDateEt']) for x in (plan or {}).get('rejectedDates') or []]:
               url='https://statsapi.mlb.com/api/v1/schedule?'+urlencode({'sportId':1,'startDate':day,'endDate':day,'hydrate':'linescore,gameInfo'})
-              with urlopen(Request(url,headers={'user-agent':'inqsi-date-inspector/2.0'}),timeout=30) as r: payload=json.loads(r.read())
-              for date_row in payload.get('dates') or []:
-                  for game in date_row.get('games') or []:
-                      official=str(game.get('officialDate') or '')
-                      if official==day: continue
-                      utc=str(game.get('gameDate') or '')
+              payload=json.loads(urlopen(url,timeout=30).read())
+              for d in payload.get('dates') or []:
+                  for g in d.get('games') or []:
+                      if not (g.get('resumeDate') or g.get('resumedFromDate')): continue
+                      teams=g.get('teams') or {}; status=g.get('status') or {}; utc=str(g.get('gameDate') or '')
                       try: game_et=datetime.fromisoformat(utc.replace('Z','+00:00')).astimezone(et).date().isoformat()
                       except Exception: game_et=None
-                      status=game.get('status') or {}; teams=game.get('teams') or {}
-                      row={'day':day,'pk':game.get('gamePk'),'official':official,'gameEt':game_et,'gameUtc':utc,
-                           'resume':game.get('resumeDate'),'resumedFrom':game.get('resumedFromDate'),
-                           'reschedule':game.get('rescheduleDate'),'rescheduledFrom':game.get('rescheduledFromDate'),
-                           'abstract':status.get('abstractGameState'),'detail':status.get('detailedState'),'code':status.get('statusCode'),
-                           'away':(((teams.get('away') or {}).get('team') or {}).get('name')),
-                           'home':(((teams.get('home') or {}).get('team') or {}).get('name')),
-                           'awayScore':(teams.get('away') or {}).get('score'),'homeScore':(teams.get('home') or {}).get('score')}
-                      row['kind']='resume' if row['resume'] or row['resumedFrom'] else 'reschedule' if row['reschedule'] or row['rescheduledFrom'] else 'other'
-                      row['scoresPresent']=row['awayScore'] is not None and row['homeScore'] is not None
-                      row['officialRelation']='before' if official<day else 'after' if official>day else 'same'
-                      rows.append(row)
-          summary={}
-          for kind, group_iter in __import__('itertools').groupby(sorted(rows,key=lambda x:x['kind']),key=lambda x:x['kind']):
-              group=list(group_iter)
-              summary[kind]={'count':len(group),'details':dict(collections.Counter(str(x['detail']) for x in group)),
-                             'codes':dict(collections.Counter(str(x['code']) for x in group)),
-                             'scoresPresent':dict(collections.Counter(str(x['scoresPresent']) for x in group)),
-                             'officialRelation':dict(collections.Counter(x['officialRelation'] for x in group)),
-                             'gameEtMatchesRequested':dict(collections.Counter(str(x['gameEt']==x['day']) for x in group)),
-                             'examples':group[:4]}
-          print('CLASS_SUMMARY='+json.dumps({'count':len(rows),'classes':summary},sort_keys=True,separators=(',',':')))
+                      rows.append({'day':day,'pk':g.get('gamePk'),'official':g.get('officialDate'),'gameUtc':utc,'gameEt':game_et,
+                                   'resumeDate':g.get('resumeDate'),'resumedFromDate':g.get('resumedFromDate'),
+                                   'status':status,'away':(((teams.get('away') or {}).get('team') or {}).get('name')),
+                                   'home':(((teams.get('home') or {}).get('team') or {}).get('name')),
+                                   'awayScore':(teams.get('away') or {}).get('score'),'homeScore':(teams.get('home') or {}).get('score'),
+                                   'linescore':g.get('linescore')})
+          print('RESUMED_ROWS='+json.dumps(rows,sort_keys=True,separators=(',',':')))
           PY
