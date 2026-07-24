@@ -34,3 +34,13 @@ def test_historical_optimizer_does_not_consume_reserved_concurrency_pool():
 
     assert "ReservedConcurrentExecutions" not in text
     assert "DynamoDB lease" in text
+
+
+def test_historical_optimizer_can_distinguish_missing_s3_evidence_objects():
+    """HeadObject needs prefix-scoped ListBucket to return 404 instead of 403."""
+
+    text = TEMPLATE.read_text(encoding="utf-8")
+
+    assert "ListHistoricalEvidencePrefixForExistenceChecks" in text
+    assert "s3:ListBucket" in text
+    assert "mlb/historical-daily-v1/*" in text
