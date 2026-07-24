@@ -1,0 +1,223 @@
+name: Dispatch Authorized MLB Historical Training
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mlb-v15-11-authorized-dispatch.yml"
+
+permissions:
+  contents: read
+  actions: write
+  issues: write
+
+concurrency:
+  group: mlb-v15-11-authorized-dispatch
+  cancel-in-progress: true
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_WORKFLOW_FILE: mlb-historical-optimizer.yml
+      TARGET_WORKFLOW_NAME: MLB Historical Daily Optimizer
+      ACCELERATOR_WORKFLOW_NAME: MLB Historical Accelerated Training Driver
+      REPORT_ISSUE: "111"
+    steps:
+      - name: Dispatch exact paid historical authorization and monitor both stages
+        run: |
+          set -euo pipefail
+          api_root="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
+          cutoff=$(date -u -d '45 minutes ago' +%s)
+
+          find_recent_run() {
+            local workflow_name="$1"
+            local event_name="$2"
+            local output="$3"
+            curl --fail --silent --show-error "${auth[@]}" \
+              "${api_root}/actions/runs?branch=main&event=${event_name}&per_page=100" \
+              > /tmp/all-runs.json
+            jq -c --arg name "$workflow_name" --argjson cutoff "$cutoff" '
+              [
+                .workflow_runs[]
+                | select(.name == $name)
+                | select((.created_at | fromdateiso8601) >= $cutoff)
+              ]
+              | sort_by(.created_at)
+              | reverse
+              | .[0] // empty
+            ' /tmp/all-runs.json > "$output"
+          }
+
+          find_recent_run "$TARGET_WORKFLOW_NAME" workflow_dispatch /tmp/base-row.json
+          base_row=$(cat /tmp/base-row.json)
+          if [ -z "$base_row" ]; then
+            cat >/tmp/dispatch.json <<'JSON'
+          {
+            "ref": "main",
+            "inputs": {
+              "deploy_runtime_guard": false,
+              "runtime_guard_confirmation": "INSTALL_FAIL_CLOSED_HISTORICAL_RUNTIME_GUARD",
+              "deploy_optimizer_stack": true,
+              "execute_paid_backfill": true,
+              "paid_authorization": "AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS",
+              "production_cutover_confirmation": "DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE",
+              "maximum_credits": "120000",
+              "maximum_candidates": "25000"
+            }
+          }
+          JSON
+            curl --fail --silent --show-error -X POST "${auth[@]}" \
+              "${api_root}/actions/workflows/${TARGET_WORKFLOW_FILE}/dispatches" \
+              --data-binary @/tmp/dispatch.json
+            for attempt in $(seq 1 120); do
+              find_recent_run "$TARGET_WORKFLOW_NAME" workflow_dispatch /tmp/base-row.json
+              base_row=$(cat /tmp/base-row.json)
+              [ -n "$base_row" ] && break
+              sleep 5
+            done
+          fi
+          [ -n "$base_row" ] || {
+            echo "::error::Unable to locate the dispatched MLB historical optimizer run"
+            exit 1
+          }
+
+          base_id=$(jq -r '.id' /tmp/base-row.json)
+          base_url=$(jq -r '.html_url' /tmp/base-row.json)
+          base_created=$(jq -r '.created_at' /tmp/base-row.json)
+
+          body=$(cat <<EOF
+          <!-- mlb-v15-11-authorized-dispatch-live -->
+          ## Authorized MLB V15.11.1 historical training
+
+          - Base optimizer workflow: ${base_url}
+          - Base status: **queued**
+          - Accelerator status: **waiting for successful base workflow**
+          - Historical authorization: exact fingerprinted ledger, maximum 120,000 credits
+          - Evidence requirement: 1,000 train + 200 walk-forward + 200 untouched audit
+          - Daily gate: at least 80% on every required complete-slate date
+          - Production: fail-closed; no cutover unless all gates pass
+          - Automatic wagering: disabled
+          EOF
+          )
+          jq -n --arg body "$body" '{body:$body}' >/tmp/comment.json
+          curl --fail --silent --show-error -X POST "${auth[@]}" \
+            "${api_root}/issues/${REPORT_ISSUE}/comments" \
+            --data-binary @/tmp/comment.json > /tmp/comment-response.json
+          comment_id=$(jq -r '.id' /tmp/comment-response.json)
+          test -n "$comment_id"
+          test "$comment_id" != null
+
+          for attempt in $(seq 1 720); do
+            curl --fail --silent --show-error "${auth[@]}" \
+              "${api_root}/actions/runs/${base_id}" > /tmp/base-status.json
+            base_status=$(jq -r '.status' /tmp/base-status.json)
+            base_conclusion=$(jq -r '.conclusion // "pending"' /tmp/base-status.json)
+            curl --fail --silent --show-error "${auth[@]}" \
+              "${api_root}/actions/runs/${base_id}/jobs?per_page=100" > /tmp/base-jobs.json
+            base_step=$(jq -r '
+              [.jobs[] | .steps[]? | select(.status == "in_progress") | .name][0]
+              // [.jobs[] | .steps[]? | select(.conclusion == "failure") | .name][0]
+              // "waiting"
+            ' /tmp/base-jobs.json)
+            observed=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            body=$(cat <<EOF
+          <!-- mlb-v15-11-authorized-dispatch-live -->
+          ## Authorized MLB V15.11.1 historical training
+
+          - Base optimizer workflow: ${base_url}
+          - Base status: **${base_status} / ${base_conclusion}**
+          - Base active step: \`${base_step}\`
+          - Accelerator status: **waiting for successful base workflow**
+          - Last observed: ${observed}
+          - Historical authorization: exact fingerprinted ledger, maximum 120,000 credits
+          - Evidence requirement: 1,000 train + 200 walk-forward + 200 untouched audit
+          - Daily gate: at least 80% on every required complete-slate date
+          - Production: fail-closed; no cutover unless all gates pass
+          - Automatic wagering: disabled
+          EOF
+          )
+            jq -n --arg body "$body" '{body:$body}' >/tmp/comment.json
+            curl --fail --silent --show-error -X PATCH "${auth[@]}" \
+              "${api_root}/issues/comments/${comment_id}" \
+              --data-binary @/tmp/comment.json >/tmp/comment-update.json
+            [ "$base_status" = completed ] && break
+            sleep 30
+          done
+
+          base_conclusion=$(jq -r '.conclusion // "pending"' /tmp/base-status.json)
+          if [ "$base_conclusion" != success ]; then
+            echo "::error::Base historical workflow did not succeed: ${base_conclusion}"
+            exit 1
+          fi
+
+          accelerator_row=""
+          for attempt in $(seq 1 180); do
+            curl --fail --silent --show-error "${auth[@]}" \
+              "${api_root}/actions/runs?branch=main&event=workflow_run&per_page=100" \
+              > /tmp/accelerator-runs.json
+            accelerator_row=$(jq -c --arg name "$ACCELERATOR_WORKFLOW_NAME" --arg created "$base_created" '
+              [
+                .workflow_runs[]
+                | select(.name == $name)
+                | select(.created_at >= $created)
+              ]
+              | sort_by(.created_at)
+              | reverse
+              | .[0] // empty
+            ' /tmp/accelerator-runs.json)
+            [ -n "$accelerator_row" ] && break
+            sleep 10
+          done
+          [ -n "$accelerator_row" ] || {
+            echo "::error::Accelerated historical driver did not start"
+            exit 1
+          }
+
+          accelerator_id=$(jq -r '.id' <<<"$accelerator_row")
+          accelerator_url=$(jq -r '.html_url' <<<"$accelerator_row")
+          for attempt in $(seq 1 720); do
+            curl --fail --silent --show-error "${auth[@]}" \
+              "${api_root}/actions/runs/${accelerator_id}" > /tmp/accelerator-status.json
+            accelerator_status=$(jq -r '.status' /tmp/accelerator-status.json)
+            accelerator_conclusion=$(jq -r '.conclusion // "pending"' /tmp/accelerator-status.json)
+            curl --fail --silent --show-error "${auth[@]}" \
+              "${api_root}/actions/runs/${accelerator_id}/jobs?per_page=100" > /tmp/accelerator-jobs.json
+            accelerator_step=$(jq -r '
+              [.jobs[] | .steps[]? | select(.status == "in_progress") | .name][0]
+              // [.jobs[] | .steps[]? | select(.conclusion == "failure") | .name][0]
+              // "waiting"
+            ' /tmp/accelerator-jobs.json)
+            observed=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+            body=$(cat <<EOF
+          <!-- mlb-v15-11-authorized-dispatch-live -->
+          ## Authorized MLB V15.11.1 historical training
+
+          - Base optimizer workflow: ${base_url}
+          - Base status: **completed / success**
+          - Accelerated training workflow: ${accelerator_url}
+          - Accelerator status: **${accelerator_status} / ${accelerator_conclusion}**
+          - Accelerator active step: \`${accelerator_step}\`
+          - Last observed: ${observed}
+          - Evidence requirement: 1,000 train + 200 walk-forward + 200 untouched audit
+          - Daily gate: at least 80% on every required complete-slate date
+          - Production: fail-closed; no cutover unless all gates pass
+          - Automatic wagering: disabled
+          EOF
+          )
+            jq -n --arg body "$body" '{body:$body}' >/tmp/comment.json
+            curl --fail --silent --show-error -X PATCH "${auth[@]}" \
+              "${api_root}/issues/comments/${comment_id}" \
+              --data-binary @/tmp/comment.json >/tmp/comment-update.json
+            [ "$accelerator_status" = completed ] && break
+            sleep 30
+          done
+
+          accelerator_conclusion=$(jq -r '.conclusion // "pending"' /tmp/accelerator-status.json)
+          test "$accelerator_conclusion" = success || {
+            echo "::error::Accelerated historical training did not pass: ${accelerator_conclusion}"
+            exit 1
+          }
