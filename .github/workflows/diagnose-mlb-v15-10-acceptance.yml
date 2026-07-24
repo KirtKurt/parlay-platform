@@ -1,30 +1,27 @@
-name: Diagnose MLB V15.10 production acceptance
+name: Diagnose and build MLB V15.10 canonical contract objects
 
 on:
   pull_request:
     branches: [main]
     paths:
       - ".github/workflows/diagnose-mlb-v15-10-acceptance.yml"
-      - "tests/unit/test_mlb_production_acceptance.py"
-      - "tests/unit/test_mlb_public_per_game_authority.py"
-      - "tests/unit/test_mlb_ml_runtime_install_explicit.py"
-      - "hello_world/mlb_ranked_primary_v15_10.py"
-      - "hello_world/mlb_ml_runtime_install_v3.py"
-      - ".github/workflows/deploy-mlb-ranked-v15-10.yml"
-      - ".github/workflows/verify-and-recover-mlb-v15-10.yml"
+      - ".github/workflows/deploy.yml"
+      - "scripts/verify_api_function_mlb_v3_import.py"
+      - "scripts/verify_mlb_workflow_authority.py"
+      - "tests/unit/test_mlb_workflow_authority.py"
   workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: diagnose-mlb-v15-10-acceptance-${{ github.ref }}
-  cancel-in-progress: false
+  group: diagnose-build-mlb-v15-10-canonical-contract-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  diagnose:
+  build-objects:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 35
     env:
       AWS_DEFAULT_REGION: us-east-1
       AWS_EC2_METADATA_DISABLED: "true"
@@ -38,140 +35,304 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Install test runtime
-        run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9" "PyYAML>=6,<7"
-
-      - name: Preserve verified pre-lock authority in V15.10 runtime identity
-        id: marker
+      - name: Apply exact V15.10 canonical-contract migration
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
 
-          old = (
-              "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
-              "prelock-persistence-verified-active-model-authority"
-          )
-          new = (
-              "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
-              "prelock-persistence-verified-stage-promotion-authority-"
-              "verified-active-model-authority"
-          )
-          changed = []
-
-          runtime = Path("hello_world/mlb_ml_runtime_install_v3.py")
-          text = runtime.read_text(encoding="utf-8")
-          runtime_old = '    "prelock-persistence-verified-active-model-authority"\n'
-          runtime_new = (
-              '    "prelock-persistence-verified-stage-promotion-authority-"\n'
-              '    "verified-active-model-authority"\n'
-          )
-          if runtime_old in text:
-              if text.count(runtime_old) != 1:
-                  raise SystemExit("runtime marker replacement was not unique")
-              runtime.write_text(text.replace(runtime_old, runtime_new), encoding="utf-8")
-              changed.append(str(runtime))
-          elif "verified-stage-promotion-authority" not in text:
-              raise SystemExit("runtime contains neither old nor repaired authority identity")
-
-          expected_workflow_counts = {
-              Path(".github/workflows/deploy-mlb-ranked-v15-10.yml"): 2,
-              Path(".github/workflows/verify-and-recover-mlb-v15-10.yml"): 3,
+          deploy = Path('.github/workflows/deploy.yml')
+          text = deploy.read_text(encoding='utf-8')
+          old = """          if payload.get('model_version') != 'INQSI-MLB-v4.0-canonical-probability-aws-v2-shadow-manual-first':
+              raise SystemExit('Live MLB model version is stale')
+          if payload.get('productionAuthoritySource') != 'persisted_canonical_rules_market_prediction_v2_shadow_only':
+              raise SystemExit('Live MLB authority source is stale')
+          if payload.get('automaticPromotionPolicy') != 'disabled_manual_review_creates_shadow_pointer_only':
+              raise SystemExit('Live MLB promotion policy is stale')
+          if payload.get('legacyV1AuthorityEnabled') is not False:
+              raise SystemExit('Legacy V1 authority is not disabled')
+          if payload.get('awsNativeTrainingInstalled') is not True:
+              raise SystemExit('AWS-native V2 training is not installed')
+          if payload.get('awsNativeTrainingAuthority') is not False:
+              raise SystemExit('AWS-native V2 training incorrectly claims live authority')
+          if payload.get('awsNativeTrainingHealthSource') != 'separate_mode_specific_status_contract':
+              raise SystemExit('Live MLB training health source is stale')
+          if payload.get('firstPromotionRequiresManualReview') is not True:
+              raise SystemExit('Manual-first V2 promotion is not enforced')
+          if payload.get('manualReviewCreatesShadowApprovalOnly') is not True:
+              raise SystemExit('Manual V2 review is not shadow-only')
+          if payload.get('v2InferenceConsumerInstalled') is not False:
+              raise SystemExit('Unreviewed V2 inference consumer is installed')
+          if payload.get('runtimeAuthorityActivationAvailable') is not False:
+              raise SystemExit('Unreviewed V2 runtime authority activation is available')
+          runtime = payload.get('ml_runtime_install') or {}
+          if runtime.get('ok') is not True:
+              raise SystemExit('Live MLB runtime installation is not healthy')
+          if runtime.get('version') != 'MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-aws-v2-shadow-manual-first':
+              raise SystemExit('Live MLB runtime contract is stale')
+          steps = runtime.get('steps') or {}
+          for name in (
+              'legacyV1ChampionRuntimeInstalledForShadowDiagnostics',
+              'legacyV1AuthorityDisabled',
+              'v2ShadowManualFirst',
+              'canonicalProbabilityAndPersistedPrelockAuthority',
+              'providerNeutralCalibrationAndActionability',
+              'sourceHonestFundamentalsV2',
+          ):
+"""
+          new = """          expected = {
+              'model_version': 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble',
+              'primaryAlgorithm': 'INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble',
+              'primaryAlgorithmActive': True,
+              'rankedWinnerPolicyVersion': '2026-07-24-mlb-ranked-winner-primary-v1',
+              'productionAuthoritySource': 'mlb_ranked_winner_v15_10_active_ensemble',
+              'automaticPromotionPolicy': 'winner model fixed for release; precision/trade promotion remains disabled',
+              'legacyV1AuthorityEnabled': False,
+              'awsNativeTrainingInstalled': True,
+              'awsNativeTrainingAuthority': False,
+              'awsNativeTrainingHealthSource': 'separate_mode_specific_status_contract',
+              'firstPromotionRequiresManualReview': True,
+              'manualReviewCreatesShadowApprovalOnly': True,
+              'v2InferenceConsumerInstalled': False,
+              'runtimeAuthorityActivationAvailable': True,
+              'allowedProductionOutput': ['PICK'],
+              'productionSelectionAllowed': True,
+              'automaticWagerAllowed': False,
+              'legacyRecommendationAuthority': False,
+              'legacyFallbackAllowed': False,
+              'precisionHitRateEvidencePassed': False,
           }
-          for path, expected_count in expected_workflow_counts.items():
-              content = path.read_text(encoding="utf-8")
-              count = content.count(old)
-              if count:
-                  if count != expected_count:
-                      raise SystemExit(
-                          f"{path}: old identity count {count}, expected {expected_count}"
-                      )
-                  path.write_text(content.replace(old, new), encoding="utf-8")
-                  changed.append(str(path))
-              elif content.count(new) != expected_count:
-                  raise SystemExit(
-                      f"{path}: repaired identity count was {content.count(new)}, "
-                      f"expected {expected_count}"
-                  )
-
-          test_path = Path("tests/unit/test_mlb_ml_runtime_install_explicit.py")
-          test_text = test_path.read_text(encoding="utf-8")
-          test_old = (
-              '            "prelock-persistence-verified-active-model-authority"\n'
-          )
-          test_new = (
-              '            "prelock-persistence-verified-stage-promotion-authority-"\n'
-              '            "verified-active-model-authority"\n'
-          )
-          if test_old in test_text:
-              if test_text.count(test_old) != 1:
-                  raise SystemExit("runtime installer test replacement was not unique")
-              test_path.write_text(
-                  test_text.replace(test_old, test_new), encoding="utf-8"
+          mismatches = {
+              key: {'expected': value, 'actual': payload.get(key)}
+              for key, value in expected.items()
+              if payload.get(key) != value
+          }
+          if mismatches:
+              raise SystemExit(
+                  'Live MLB V15.10 authority contract is stale: '
+                  + json.dumps(mismatches, sort_keys=True)
               )
-              changed.append(str(test_path))
-          elif "verified-stage-promotion-authority" not in test_text:
-              raise SystemExit("runtime installer test has neither old nor repaired identity")
+          runtime = payload.get('ml_runtime_install') or {}
+          if runtime.get('ok') is not True:
+              raise SystemExit('Live MLB runtime installation is not healthy')
+          if runtime.get('version') != 'MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority':
+              raise SystemExit('Live MLB V15.10 runtime contract is stale')
+          steps = runtime.get('steps') or {}
+          for name in (
+              'legacyV1ChampionRuntimeInstalledForShadowDiagnostics',
+              'legacyV1AuthorityDisabled',
+              'v2ShadowManualFirst',
+              'canonicalProbabilityAndPersistedPrelockAuthority',
+              'providerNeutralCalibrationAndActionability',
+              'sourceHonestFundamentalsV2',
+              'lastPrelockPromotionAuthority',
+              'rankedWinnerV15_10DirectionInstalled',
+              'rankedWinnerV15_10SelectionInstalled',
+              'canonicalLockedStorageFinalizer',
+          ):
+"""
+          if old in text:
+              if text.count(old) != 1:
+                  raise SystemExit('deploy smoke replacement was not unique')
+              text = text.replace(old, new)
+          elif "'primaryAlgorithm': 'INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble'" not in text:
+              raise SystemExit('deploy workflow has neither old nor new authority contract')
+          ranked_test = '            tests/unit/test_mlb_ranked_primary_v15_10.py\n'
+          insertion = '            tests/unit/test_mlb_ml_runtime_install_explicit.py\n'
+          if ranked_test not in text:
+              if text.count(insertion) != 1:
+                  raise SystemExit('ranked regression insertion point was not unique')
+              text = text.replace(insertion, ranked_test + insertion)
+          deploy.write_text(text, encoding='utf-8')
 
-          Path("/tmp/mlb-v15-10-marker-changed.txt").write_text(
-              "\n".join(changed) + ("\n" if changed else ""), encoding="utf-8"
-          )
-          print({"changed": changed, "runtime_identity": new})
+          cold = Path('scripts/verify_api_function_mlb_v3_import.py')
+          text = cold.read_text(encoding='utf-8')
+          old = """EXPECTED_RUNTIME = (
+    "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
+    "prelock-persistence-verified-active-model-authority"
+)"""
+          new = """EXPECTED_RUNTIME = (
+    "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
+    "prelock-persistence-verified-stage-promotion-authority-"
+    "verified-active-model-authority"
+)"""
+          if old in text:
+              cold.write_text(text.replace(old, new), encoding='utf-8')
+          elif new not in text:
+              raise SystemExit('cold-import verifier has neither old nor new runtime identity')
+
+          authority = Path('scripts/verify_mlb_workflow_authority.py')
+          text = authority.read_text(encoding='utf-8')
+          old = """        shadow_runtime_tokens = {
+            "disabled_manual_review_creates_shadow_pointer_only": (
+                "canonical_deploy_does_not_require_shadow_only_manual_review"
+            ),
+            "payload.get('awsNativeTrainingInstalled') is not True": (
+                "canonical_deploy_does_not_require_aws_training_installation"
+            ),
+            "payload.get('awsNativeTrainingAuthority') is not False": (
+                "canonical_deploy_allows_training_to_claim_live_authority"
+            ),
+            "separate_mode_specific_status_contract": (
+                "canonical_deploy_does_not_require_split_training_health"
+            ),
+            "payload.get('manualReviewCreatesShadowApprovalOnly') is not True": (
+                "canonical_deploy_does_not_require_shadow_only_approval"
+            ),
+            "payload.get('v2InferenceConsumerInstalled') is not False": (
+                "canonical_deploy_allows_unreviewed_v2_inference"
+            ),
+            "payload.get('runtimeAuthorityActivationAvailable') is not False": (
+                "canonical_deploy_allows_unreviewed_runtime_activation"
+            ),
+        }
+        for token, error in shadow_runtime_tokens.items():
+            if token not in deploy:
+                errors.append(error)
+"""
+          new = """        ranked_runtime_tokens = {
+            "'automaticPromotionPolicy': 'winner model fixed for release; precision/trade promotion remains disabled'": (
+                "canonical_deploy_does_not_require_fixed_ranked_release_policy"
+            ),
+            "'awsNativeTrainingInstalled': True": (
+                "canonical_deploy_does_not_require_aws_training_installation"
+            ),
+            "'awsNativeTrainingAuthority': False": (
+                "canonical_deploy_allows_training_to_claim_live_authority"
+            ),
+            "'awsNativeTrainingHealthSource': 'separate_mode_specific_status_contract'": (
+                "canonical_deploy_does_not_require_split_training_health"
+            ),
+            "'manualReviewCreatesShadowApprovalOnly': True": (
+                "canonical_deploy_does_not_require_shadow_only_training_approval"
+            ),
+            "'v2InferenceConsumerInstalled': False": (
+                "canonical_deploy_allows_unreviewed_v2_inference"
+            ),
+            "'runtimeAuthorityActivationAvailable': True": (
+                "canonical_deploy_does_not_require_ranked_runtime_activation"
+            ),
+            "'primaryAlgorithm': 'INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble'": (
+                "canonical_deploy_does_not_require_ranked_winner_primary"
+            ),
+            "'allowedProductionOutput': ['PICK']": (
+                "canonical_deploy_does_not_require_ranked_pick_output"
+            ),
+            "'legacyRecommendationAuthority': False": (
+                "canonical_deploy_allows_legacy_recommendation_authority"
+            ),
+            "'legacyFallbackAllowed': False": (
+                "canonical_deploy_allows_legacy_fallback"
+            ),
+            "'automaticWagerAllowed': False": (
+                "canonical_deploy_allows_automatic_wagering"
+            ),
+            "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority": (
+                "canonical_deploy_does_not_require_ranked_runtime_identity"
+            ),
+        }
+        for token, error in ranked_runtime_tokens.items():
+            if token not in deploy:
+                errors.append(error)
+"""
+          if old in text:
+              authority.write_text(text.replace(old, new), encoding='utf-8')
+          elif 'ranked_runtime_tokens' not in text:
+              raise SystemExit('workflow-authority verifier has neither old nor new contract')
+
+          test = Path('tests/unit/test_mlb_workflow_authority.py')
+          text = test.read_text(encoding='utf-8')
+          old = """        text.replace(
+            "payload.get('awsNativeTrainingAuthority') is not False",
+            "payload.get('awsNativeTrainingAuthority') is not True",
+            1,
+        ),"""
+          new = """        text.replace(
+            "'awsNativeTrainingAuthority': False",
+            "'awsNativeTrainingAuthority': True",
+            1,
+        ),"""
+          if old in text:
+              test.write_text(text.replace(old, new), encoding='utf-8')
+          elif new not in text:
+              raise SystemExit('workflow-authority test has neither old nor new mutation')
           PY
-          if [ -s /tmp/mlb-v15-10-marker-changed.txt ]; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-          fi
 
-      - name: Run acceptance and authority regressions
+      - name: Validate complete migration
         run: |
-          set -o pipefail
-          python -m pytest -vv --tb=long --showlocals \
+          set -euo pipefail
+          python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9" "PyYAML>=6,<7"
+          python scripts/verify_mlb_schedule_invariants.py
+          python scripts/verify_mlb_workflow_authority.py
+          python -m pytest -q \
             tests/unit/test_mlb_production_acceptance.py \
+            tests/unit/test_mlb_workflow_authority.py \
             tests/unit/test_mlb_public_per_game_authority.py \
             tests/unit/test_mlb_ranked_primary_v15_10.py \
             tests/unit/test_mlb_ml_runtime_install_explicit.py \
             tests/unit/test_mlb_signal_policy_prelock_persistence.py \
             tests/unit/test_mlb_prediction_probability_contract_v1.py \
-            tests/unit/test_mlb_probability_actionability_guard.py \
-            2>&1 | tee /tmp/mlb-v15-10-production-acceptance.log
-          python -m py_compile hello_world/mlb_ml_runtime_install_v3.py
+            tests/unit/test_mlb_probability_actionability_guard.py
+          python -m py_compile \
+            scripts/verify_api_function_mlb_v3_import.py \
+            scripts/verify_mlb_workflow_authority.py
           git diff --check
 
-      - name: Commit verified compatibility repair
-        if: steps.marker.outputs.changed == 'true'
+      - name: Publish validated Git blobs without moving the branch
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add \
-            hello_world/mlb_ml_runtime_install_v3.py \
-            .github/workflows/deploy-mlb-ranked-v15-10.yml \
-            .github/workflows/verify-and-recover-mlb-v15-10.yml \
-            tests/unit/test_mlb_ml_runtime_install_explicit.py
-          git commit -m "Preserve MLB pre-lock authority marker in V15.10 runtime"
-          git push origin HEAD:agent/mlb-ranked-winner-v15-10-production
+          python - <<'PY'
+          import base64
+          import json
+          import os
+          import urllib.request
+          from pathlib import Path
 
-      - name: Capture exact PR source for local reproduction
-        if: always()
-        run: |
-          set -euo pipefail
-          tar \
-            --exclude=.git \
-            --exclude=.aws-sam \
-            --exclude=.pytest_cache \
-            --exclude='**/__pycache__' \
-            -czf /tmp/mlb-v15-10-pr-source.tar.gz .
+          repository = os.environ['GITHUB_REPOSITORY']
+          token = os.environ['GH_TOKEN']
+          paths = [
+              '.github/workflows/deploy.yml',
+              'scripts/verify_api_function_mlb_v3_import.py',
+              'scripts/verify_mlb_workflow_authority.py',
+              'tests/unit/test_mlb_workflow_authority.py',
+          ]
+          result = {'base_head_sha': os.environ['GITHUB_SHA'], 'files': {}}
+          for path in paths:
+              payload = json.dumps({
+                  'content': base64.b64encode(Path(path).read_bytes()).decode('ascii'),
+                  'encoding': 'base64',
+              }).encode('utf-8')
+              request = urllib.request.Request(
+                  f'https://api.github.com/repos/{repository}/git/blobs',
+                  data=payload,
+                  method='POST',
+                  headers={
+                      'accept': 'application/vnd.github+json',
+                      'authorization': f'Bearer {token}',
+                      'content-type': 'application/json',
+                      'user-agent': 'mlb-v15-10-canonical-object-builder/1.0',
+                      'x-github-api-version': '2022-11-28',
+                  },
+              )
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  body = json.loads(response.read().decode('utf-8'))
+              result['files'][path] = {
+                  'blob_sha': body['sha'],
+                  'size': Path(path).stat().st_size,
+              }
+          Path('/tmp/mlb-v15-10-canonical-git-objects.json').write_text(
+              json.dumps(result, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          print(json.dumps(result, indent=2, sort_keys=True))
+          PY
 
-      - name: Upload diagnostic evidence and exact source
+      - name: Upload validated object manifest and test log
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: mlb-v15-10-production-acceptance-${{ github.run_id }}-${{ github.run_attempt }}
+          name: mlb-v15-10-canonical-git-objects-${{ github.run_id }}-${{ github.run_attempt }}
           retention-days: 14
           if-no-files-found: error
-          path: |
-            /tmp/mlb-v15-10-production-acceptance.log
-            /tmp/mlb-v15-10-marker-changed.txt
-            /tmp/mlb-v15-10-pr-source.tar.gz
+          path: /tmp/mlb-v15-10-canonical-git-objects.json
