@@ -114,7 +114,9 @@ Resources:
     Properties:
       CodeUri: ../hello_world/
       Handler: mlb_historical_optimizer_handler.lambda_handler
-      ReservedConcurrentExecutions: 1
+      # Do not reserve Lambda concurrency in this constrained account. The
+      # DynamoDB lease in the handler already serializes paid backfill/search
+      # work, while AWS requires at least 10 unreserved executions to remain.
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 300
         MaximumRetryAttempts: 1
