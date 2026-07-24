@@ -3,15 +3,28 @@ from __future__ import annotations
 import os
 from typing import Any, Dict
 
+# Preserve the deployed runtime identity until the historical champion is
+# activated. Existing deployment probes use this as a compatibility envelope;
+# the extension identity below is the authoritative version for the new path.
 VERSION = (
     "MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-"
     "prelock-persistence-verified-stage-promotion-authority-"
     "verified-active-model-authority"
 )
+HISTORICAL_RUNTIME_EXTENSION_VERSION = (
+    "MLB-HISTORICAL-RUNTIME-EXTENSION-v1.4-"
+    "1000-train-200-validation-200-audit-atomic-historical-only-cutover"
+)
 
 
 def install() -> Dict[str, Any]:
-    status: Dict[str, Any] = {"applied": True, "version": VERSION, "steps": {}, "errors": []}
+    status: Dict[str, Any] = {
+        "applied": True,
+        "version": VERSION,
+        "historicalRuntimeExtensionVersion": HISTORICAL_RUNTIME_EXTENSION_VERSION,
+        "steps": {},
+        "errors": [],
+    }
 
     try:
         import mlb_accuracy_target_policy_v1
@@ -37,6 +50,7 @@ def install() -> Dict[str, Any]:
         import mlb_game_winner_engine as engine
         import mlb_fundamentals_snapshot_v1
         import mlb_fundamentals_snapshot_v2
+        import mlb_historical_policy_v1
         import mlb_ml_champion_runtime_v1
         import mlb_official_prediction_semantics
         import mlb_official_freeze_bridge
@@ -81,10 +95,29 @@ def install() -> Dict[str, Any]:
             and getattr(engine, "_INQSI_MLB_LAST_POSSIBLE_GATE_APPLIED", False)
         )
 
-        # Install the exported 2025+2026-YTD ensemble as the sole production
-        # direction authority. It overwrites the explicit complementary home/
-        # away model pair before the canonical probability contract runs, so
-        # prior rules/champion direction can survive only as diagnostic fields.
+        # The historical policy first augments the canonical home/away market
+        # signals. It is completely inert until a digest-valid champion proves
+        # 1,000 training + 200 validation + 200 untouched-audit games and the
+        # every-day 80% full-slate gate.
+        if hasattr(engine, "_side_score"):
+            mlb_historical_policy_v1.apply(engine)
+        status["historicalDailySignalPolicyInstalled"] = bool(
+            getattr(engine, "_INQSI_MLB_HISTORICAL_POLICY_V1_APPLIED", False)
+            and getattr(engine, "MLB_HISTORICAL_POLICY_VERSION", None)
+            == mlb_historical_policy_v1.VERSION
+        )
+        # Some isolated runtime unit tests stub only the public prediction
+        # methods and intentionally omit the private side-score constructor.
+        # The production engine must expose it; the cold-start/deployment probe
+        # verifies this extension flag is true in the built Lambda.
+        status["historicalDailySignalPolicyDeferredForMinimalStub"] = not hasattr(
+            engine, "_side_score"
+        )
+
+        # V15.10 remains the rollback incumbent only until the historical gate
+        # creates a champion. The historical outer wrapper installed below is
+        # final and prevents this incumbent from retaining selection authority
+        # once the champion exists.
         mlb_ranked_primary_v15_10.apply_direction(engine)
         status["steps"]["rankedWinnerV15_10DirectionInstalled"] = bool(
             getattr(
@@ -99,7 +132,7 @@ def install() -> Dict[str, Any]:
         # Finalize active-model direction/probability before calibration, the
         # signal-risk policy, the public pre-lock authority and storage writer.
         # Signal policy remains diagnostic/risk metadata; it cannot change the
-        # winner selected by the ranked ensemble.
+        # winner selected by the active direction authority.
         mlb_prediction_probability_contract_v1.apply(engine)
         mlb_probability_actionability_guard.apply(engine)
         mlb_signal_policy_v12.apply(engine)
@@ -206,10 +239,9 @@ def install() -> Dict[str, Any]:
         )
         status["lastPrelockPromotionAuthorityVersion"] = mlb_slate_coverage_patch.AUTHORITY_VERSION
 
-        # The ranked-winner selection authority is installed after the public
-        # authority has created its persisted-reader alias and before the sole
-        # storage writer captures predict_all. Every valid July 24+ game is a
-        # PICK; precision/trade qualification remains a separate false label.
+        # The incumbent ranked selection wrapper is installed first. The
+        # historical wrapper is installed *after* it and is therefore the sole
+        # final authority whenever a validated champion is present.
         mlb_ranked_primary_v15_10.apply_selection_authority(engine)
         status["steps"]["rankedWinnerV15_10SelectionInstalled"] = bool(
             getattr(
@@ -227,11 +259,89 @@ def install() -> Dict[str, Any]:
         status["rankedWinnerAllowedOutput"] = ["PICK"]
         status["rankedWinnerModelRunId"] = mlb_ranked_primary_v15_10.MODEL_RUN_ID
         status["rankedWinnerArtifactSha256"] = mlb_ranked_primary_v15_10.MODEL_ARTIFACT_SHA256
+
+        mlb_historical_policy_v1.apply_runtime_authority(engine)
+        status["historicalDailyChampionOutermostAuthorityInstalled"] = bool(
+            getattr(
+                engine,
+                "_INQSI_MLB_HISTORICAL_RUNTIME_AUTHORITY_V1_APPLIED",
+                False,
+            )
+            and getattr(engine, "MLB_HISTORICAL_POLICY_VERSION", None)
+            == mlb_historical_policy_v1.VERSION
+        )
+        active_historical_champion = mlb_historical_policy_v1.active_champion()
+        active_historical_cutover = (
+            mlb_historical_policy_v1.active_production_cutover()
+        )
+        historical_load = mlb_historical_policy_v1.champion_load_status()
+        cutover_load = mlb_historical_policy_v1.production_cutover_status()
+        historical_active = bool(
+            active_historical_champion and active_historical_cutover
+        )
+        positively_pre_cutover = bool(
+            not active_historical_champion
+            and not active_historical_cutover
+            and historical_load.get("status") == "ABSENT"
+            and cutover_load.get("status") == "ABSENT"
+        )
+        authority_state_coherent = bool(historical_active or positively_pre_cutover)
+        status["steps"]["historicalAuthorityStateCoherent"] = authority_state_coherent
+        if not authority_state_coherent:
+            status["errors"].append(
+                "historical_authority_state_incoherent:"
+                + str(historical_load.get("status") or "UNKNOWN")
+                + ":"
+                + str(cutover_load.get("status") or "UNKNOWN")
+            )
+        status["historicalDailyChampionActive"] = historical_active
+        status["historicalDailyChampionPointerPresent"] = bool(active_historical_champion)
+        status["historicalDailyChampionLoadStatus"] = historical_load
+        status["historicalProductionCutoverActive"] = bool(active_historical_cutover)
+        status["historicalProductionCutoverStatus"] = cutover_load
+        status["historicalDailyPolicyVersion"] = mlb_historical_policy_v1.VERSION
+        status["historicalDailyPromotionGateVersion"] = (
+            mlb_historical_policy_v1.PROMOTION_GATE_VERSION
+        )
+        status["historicalProductionCutoverVersion"] = (
+            mlb_historical_policy_v1.CUTOVER_VERSION
+        )
+        status["productionAuthoritySource"] = (
+            "mlb_historical_daily_champion_only"
+            if historical_active
+            else (
+                # Preserve the current production identity token before cutover
+                # so the existing cold-start and deployment identity contracts
+                # remain valid while the historical optimizer is still inert.
+                "mlb_ranked_winner_v15_10_active_ensemble"
+                if positively_pre_cutover
+                else "historical_authority_fail_closed"
+            )
+        )
+        status["productionAuthorityLifecycleState"] = (
+            "HISTORICAL_DAILY_ONLY"
+            if historical_active
+            else (
+                "INCUMBENT_UNTIL_HISTORICAL_GATE"
+                if positively_pre_cutover
+                else "FAIL_CLOSED_INCOHERENT"
+            )
+        )
         status["winnerPickRequiredForEveryValidEvent"] = True
         status["precisionQualificationSeparateFromPick"] = True
-        status["precisionHitRateEvidencePassed"] = False
+        status["precisionHitRateEvidencePassed"] = historical_active
+        status["dailySlateAccuracyEvidenceScope"] = (
+            "complete_day_slate_not_individual_game"
+        )
         status["legacyRecommendationAuthority"] = False
+        status["legacyAlgorithmAuthorityDisabled"] = bool(active_historical_cutover)
+        status["incumbentProductionAuthorityDestroyed"] = bool(
+            active_historical_cutover
+        )
+        status["legacyFallbackAllowed"] = False
         status["automaticWagerAllowed"] = False
+        status["predictionOnlyWagerSafetyInstalled"] = True
+        status["rowLevelAutomaticWagerAllowed"] = False
 
         mlb_locked_prediction_storage_finalizer_v1.apply(engine)
         status["steps"]["canonicalLockedStorageFinalizer"] = hasattr(
@@ -244,12 +354,16 @@ def install() -> Dict[str, Any]:
 
     status["ok"] = not status["errors"] and all(status["steps"].values())
     status["policy"] = (
-        "The exported MLB V15.4 market/Platt/CatBoost ensemble is the sole "
-        "production winner-direction authority for the 2026-07-24 ET slate "
-        "and later. Every valid game receives one ranked PICK. The prior rules, "
-        "market and legacy champion paths are diagnostic/rollback-only and may "
-        "not change the selected team. The 80-90% precision label and trade "
-        "permission remain separate and false for MLB; automatic wagering is disabled."
+        "The historical whole-slate optimizer is installed as the outermost "
+        "production authority but remains inert until a digest-valid champion "
+        "proves at least 1,000 training games, 200 walk-forward games, 200 "
+        "untouched-audit games, exact slate coverage, and at least 80% on every "
+        "held-out day. Before that gate, V15.10 remains the incumbent. After the "
+        "gate, an atomic write-once cutover destroys V15.10 production authority. "
+        "Its code may remain quarantined only as feature and explicit rollback "
+        "material; it cannot be selected automatically or change the chosen team. "
+        "The 80% evidence is a complete-day slate metric, not an individual "
+        "game probability claim; automatic wagering remains disabled."
     )
 
     return status
