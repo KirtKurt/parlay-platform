@@ -1,0 +1,82 @@
+name: Publish MLB V15.11.1 Direct Source
+
+"on":
+  push:
+    branches: [agent/mlb-v15-11-historical-daily80-production]
+    paths:
+      - '.github/workflows/mlb-v15-11-publish-source.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v15-11-direct-source-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Materialize checksum-verified V15.11.1 source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_NAME" = 'agent/mlb-v15-11-historical-daily80-production'
+          test "$(find bootstrap -maxdepth 1 -type f -name 'mlb-v15-11.tar.xz.b64.part*' | wc -l)" -eq 5
+          cat bootstrap/mlb-v15-11.tar.xz.b64.part* > /tmp/mlb-v15-11.tar.xz.b64
+          base64 --decode /tmp/mlb-v15-11.tar.xz.b64 > /tmp/mlb-v15-11.tar.xz
+          echo 'b73576b5d75def32612017bfb14b1c1768eef0ce91a608cc0c9c0cc4d66774a2  /tmp/mlb-v15-11.tar.xz' | sha256sum -c -
+          tar -tJf /tmp/mlb-v15-11.tar.xz > /tmp/mlb-v15-11-manifest.txt
+          test "$(wc -l < /tmp/mlb-v15-11-manifest.txt)" -eq 13
+          ! grep -Eq '(^|/)\.\.(/|$)|^/' /tmp/mlb-v15-11-manifest.txt
+          tar -xJf /tmp/mlb-v15-11.tar.xz -C .
+          base64 --decode bootstrap/mlb-v15-11.1-wager-safety.patch.gz.b64 | gzip -d > /tmp/v15-11-1.patch
+          echo '019ceb2fe000c319119259c9b50ce21a93f9e28de40bbfe1cbd869b8bf5f12d9  /tmp/v15-11-1.patch' | sha256sum -c -
+          patch -p2 --batch --forward < /tmp/v15-11-1.patch
+          cat > /tmp/source-sha256.txt <<'SHA256'
+          3fde8092c32ced2d24f16b8128cdb6c1fe0788b01046c805aadaff645ac9354e  .github/workflows/mlb-historical-optimizer.yml
+          e77e5739d578dc6c795adfcafc05d607ada6344b9953502a08217d83911c4627  docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md
+          01a24fa2f8c03d88b8f8fbb261b270d0f09ddea9bc92c29c0454644cbcabe516  hello_world/mlb_historical_daily_optimizer_v1.py
+          b003aa39f049875a614ae27d7bffb689af484488253002040803d01fc1f419c2  hello_world/mlb_historical_optimizer_handler.py
+          7154e73a20e598c817c50e5eef8797e9d36fbbd4cdf6e58e7e8cda7bb8bd9f00  hello_world/mlb_historical_policy_v1.py
+          1141efed3149e40d72930a6a81d9cc95cdf2de9aea9fb913b11dbc9fa6cdb82c  hello_world/mlb_ml_runtime_install_v3.py
+          64849d2fa859ec946299dffac933e641f58ca31b2861a863513fe22696032e0d  hello_world/mlb_ranked_primary_v15_10.py
+          a18d7301dd5a0325a80ec1c460c116b13266432ce672a0e18a2115f686903b3e  hello_world/mlb_v3_read_api.py
+          68c2d9d6190d71ae3eedf83a91174357b0ce4c36b0c932136f5002ac2f8d02eb  mlb_historical_optimizer/template.yaml
+          ac8a3a1a3acc687ac916389e156abba6f9675f07a1b590b01023d80727bb2910  tests/unit/test_mlb_historical_daily_optimizer_v1.py
+          903b77effd233d2167aa3514df96c24eb2b6960dd9b7fe25756602ea2a384adc  tests/unit/test_mlb_historical_optimizer_handler.py
+          ea696ccda36aff2e5620fd89e787512eec02c29c222d4fccfe554453fcfba74f  tests/unit/test_mlb_historical_policy_v1.py
+          d16c405d5117d32d37ab82a469618711483d0adc340c0e88ef501f24b5b56b4e  tests/unit/test_mlb_historical_read_api_contract.py
+          SHA256
+          sha256sum -c /tmp/source-sha256.txt
+
+      - name: Replace bootstrap artifacts with direct source
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f \
+            .github/workflows/mlb-v15-11-bootstrap.yml \
+            .github/workflows/mlb-v15-11-diagnostics.yml \
+            .github/workflows/mlb-v15-11-publish-source.yml \
+            bootstrap/mlb-v15-11.tar.xz.b64.part00 \
+            bootstrap/mlb-v15-11.tar.xz.b64.part01 \
+            bootstrap/mlb-v15-11.tar.xz.b64.part02 \
+            bootstrap/mlb-v15-11.tar.xz.b64.part03 \
+            bootstrap/mlb-v15-11.tar.xz.b64.part04 \
+            bootstrap/mlb-v15-11.1-wager-safety.patch.gz.b64
+          test "$(find bootstrap -maxdepth 1 -type f -name 'mlb-v15-11*' | wc -l)" -eq 0
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          test -n "$(git diff --cached --name-only)"
+          git commit -m 'Publish reviewable MLB V15.11.1 source'
+          git push origin "HEAD:${GITHUB_REF_NAME}"
