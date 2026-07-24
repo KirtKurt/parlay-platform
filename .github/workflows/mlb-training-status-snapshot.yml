@@ -1,4 +1,4 @@
-# trigger-generation: 3
+# trigger-generation: 4
 name: MLB Training Status Snapshot
 
 "on":
@@ -81,7 +81,7 @@ jobs:
           ## MLB V15.11.1 AWS training state
 
           $(line 'Guarded trigger' "$trigger")$(line 'Rollback recovery / paid dispatch' "$recovery")$(line 'Reviewed optimizer deploy, plan and authorization' "$optimizer")$(line '100-request accelerator, optimization, audit and cutover' "$accelerator")$(line 'Secondary authorized dispatcher' "$custom")$(line 'Primary chain observer' "$observer")
-          - Last checked: `${now}`
+          - Last checked: ${now}
           - Promotion remains blocked unless the 1,000/200/200 chronological evidence, exact full-slate coverage, and every-day 80% gates all pass.
           - Automatic wagering remains disabled.
           EOF
