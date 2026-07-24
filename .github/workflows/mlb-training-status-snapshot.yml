@@ -1,4 +1,3 @@
-# trigger-generation: 5
 name: MLB Training Status Snapshot
 
 "on":
@@ -7,11 +6,13 @@ name: MLB Training Status Snapshot
       - agent/mlb-training-status-20260724
     paths:
       - .github/workflows/mlb-training-status-snapshot.yml
+      - scripts/mlb_training_state_snapshot.py
   pull_request:
     branches:
       - main
     paths:
       - .github/workflows/mlb-training-status-snapshot.yml
+      - scripts/mlb_training_state_snapshot.py
 
 permissions:
   actions: read
@@ -21,89 +22,9 @@ jobs:
   snapshot:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    env:
-      GH_TOKEN: ${{ github.token }}
     steps:
+      - uses: actions/checkout@v4
       - name: Print exact MLB historical training chain state
-        run: |
-          set -euo pipefail
-          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          headers=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
-          curl --fail --silent --show-error "${headers[@]}" "${api}/actions/runs?per_page=100" >/tmp/runs.json
-
-          python - <<'PY'
-          import json
-          from pathlib import Path
-
-          payload = json.loads(Path('/tmp/runs.json').read_text())
-          wanted = [
-              'MLB V15.11.1 Accelerated Historical Training',
-              'MLB Historical Recovery and Paid Dispatch',
-              'MLB Historical Daily Optimizer',
-              'MLB Historical Accelerated Training Driver',
-              'Dispatch Authorized MLB Historical Training',
-              'Observe MLB V15.11.1 Historical Training Chain',
-          ]
-          rows = payload.get('workflow_runs') or []
-          print('MLB_TRAINING_CHAIN_SNAPSHOT_BEGIN')
-          selected = []
-          for name in wanted:
-              matches = [row for row in rows if row.get('name') == name]
-              matches.sort(key=lambda row: str(row.get('created_at') or ''))
-              row = matches[-1] if matches else None
-              value = {
-                  'name': name,
-                  'located': row is not None,
-                  'id': row.get('id') if row else None,
-                  'status': row.get('status') if row else None,
-                  'conclusion': row.get('conclusion') if row else None,
-                  'event': row.get('event') if row else None,
-                  'head_sha': row.get('head_sha') if row else None,
-                  'created_at': row.get('created_at') if row else None,
-                  'updated_at': row.get('updated_at') if row else None,
-                  'url': row.get('html_url') if row else None,
-              }
-              selected.append(value)
-              print(json.dumps(value, sort_keys=True))
-          Path('/tmp/selected.json').write_text(json.dumps(selected, indent=2, sort_keys=True))
-          print('MLB_TRAINING_CHAIN_SNAPSHOT_END')
-          PY
-
-          python - <<'PY' >/tmp/run-ids.txt
-          import json
-          from pathlib import Path
-          rows = json.loads(Path('/tmp/selected.json').read_text())
-          for row in rows:
-              if row.get('id'):
-                  print(row['id'])
-          PY
-
-          while read -r run_id; do
-            [ -n "$run_id" ] || continue
-            curl --fail --silent --show-error "${headers[@]}" "${api}/actions/runs/${run_id}/jobs?per_page=100" >"/tmp/jobs-${run_id}.json"
-            RUN_ID="$run_id" python - <<'PY'
-          import json
-          import os
-          from pathlib import Path
-          run_id = os.environ['RUN_ID']
-          payload = json.loads(Path(f'/tmp/jobs-{run_id}.json').read_text())
-          summary = {
-              'run_id': int(run_id),
-              'jobs': [
-                  {
-                      'id': job.get('id'),
-                      'name': job.get('name'),
-                      'status': job.get('status'),
-                      'conclusion': job.get('conclusion'),
-                      'active_or_failed_step': next((
-                          step.get('name')
-                          for step in job.get('steps') or []
-                          if step.get('status') == 'in_progress' or step.get('conclusion') == 'failure'
-                      ), None),
-                  }
-                  for job in payload.get('jobs') or []
-              ],
-          }
-          print('MLB_TRAINING_RUN_JOBS=' + json.dumps(summary, sort_keys=True))
-          PY
-          done </tmp/run-ids.txt
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: python scripts/mlb_training_state_snapshot.py
