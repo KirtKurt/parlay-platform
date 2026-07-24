@@ -1,4 +1,4 @@
-name: Inspect isolated MLB V15.11.1 deployment failure
+name: Dispatch serialized zero-paid MLB V15.11.1 deployment
 
 "on":
   pull_request:
@@ -9,28 +9,91 @@ name: Inspect isolated MLB V15.11.1 deployment failure
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 jobs:
-  inspect:
+  dispatch-and-verify:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/observe-mlb-v15-11-live-status'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 60
     env:
       GH_TOKEN: ${{ github.token }}
       WORKFLOW_FILE: mlb-historical-optimizer.yml
     steps:
-      - name: Fetch latest isolated run and exact failure
+      - name: Snapshot existing workflow-dispatch run IDs
         run: |
           set -euo pipefail
           curl --fail --silent --show-error \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs?event=workflow_dispatch&per_page=20" \
-            > /tmp/runs.json
-          jq '{latest: (.workflow_runs | sort_by(.created_at) | last | {id,status,conclusion,created_at,updated_at,html_url,head_sha})}' /tmp/runs.json
-          run_id=$(jq -r '.workflow_runs | sort_by(.created_at) | last | .id' /tmp/runs.json)
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs?event=workflow_dispatch&per_page=100" \
+            > /tmp/before.json
+          jq '[.workflow_runs[].id]' /tmp/before.json > /tmp/before-ids.json
+
+      - name: Dispatch serialized deployment and zero-paid planning
+        run: |
+          set -euo pipefail
+          jq -n '{
+            ref: "main",
+            inputs: {
+              deploy_runtime_guard: "true",
+              runtime_guard_confirmation: "INSTALL_FAIL_CLOSED_HISTORICAL_RUNTIME_GUARD",
+              deploy_optimizer_stack: "true",
+              execute_paid_backfill: "false",
+              paid_authorization: "",
+              production_cutover_confirmation: "",
+              maximum_credits: "120000",
+              maximum_candidates: "25000"
+            }
+          }' > /tmp/dispatch.json
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/dispatches" \
+            --data-binary @/tmp/dispatch.json
+
+      - name: Wait for serialized workflow to complete
+        id: wait
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs?event=workflow_dispatch&per_page=100"
+          for attempt in $(seq 1 330); do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$api" > /tmp/runs.json
+            row=$(jq -c --slurpfile before /tmp/before-ids.json '
+              [.workflow_runs[] | select((.id as $id | ($before[0] | index($id))) == null)]
+              | sort_by(.created_at) | last // empty
+            ' /tmp/runs.json)
+            if [ -n "$row" ]; then
+              run_id=$(jq -r '.id' <<<"$row")
+              status=$(jq -r '.status' <<<"$row")
+              conclusion=$(jq -r '.conclusion // "pending"' <<<"$row")
+              echo "attempt=${attempt} run_id=${run_id} status=${status} conclusion=${conclusion}"
+              if [ "$status" = completed ]; then
+                printf '%s' "$row" > /tmp/run.json
+                echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                echo "conclusion=$conclusion" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            else
+              echo "attempt=${attempt} dispatched run not visible yet"
+            fi
+            sleep 10
+          done
+          echo '::error::Timed out waiting for serialized deployment workflow'
+          exit 1
+
+      - name: Fetch serialized deployment job states
+        id: jobs
+        run: |
+          set -euo pipefail
+          run_id='${{ steps.wait.outputs.run_id }}'
           curl --fail --silent --show-error \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
@@ -38,19 +101,25 @@ jobs:
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" \
             > /tmp/jobs.json
           jq '{jobs: [.jobs[] | {id,name,status,conclusion,steps:[(.steps // [])[] | {number,name,status,conclusion}]}]}' /tmp/jobs.json
-          job_id=$(jq -r '[.jobs[] | select(.name == "deploy-and-plan")] | last | .id // empty' /tmp/jobs.json)
-          test -n "$job_id"
+          deploy_job=$(jq -r '[.jobs[] | select(.name == "deploy-and-plan")] | last | .id // empty' /tmp/jobs.json)
+          test -n "$deploy_job"
+          echo "deploy_job_id=$deploy_job" >> "$GITHUB_OUTPUT"
+
+      - name: Print exact failure context
+        if: steps.wait.outputs.conclusion != 'success'
+        run: |
+          set -euo pipefail
+          job_id='${{ steps.jobs.outputs.deploy_job_id }}'
           curl --fail --silent --show-error --location \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" \
-            > /tmp/job.log
+            > /tmp/deploy-and-plan.log
           python - <<'PY'
           from pathlib import Path
           import re
-
-          raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
+          raw = Path('/tmp/deploy-and-plan.log').read_text(encoding='utf-8-sig', errors='replace')
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
           lines = [ansi.sub('', line) for line in raw.splitlines()]
           terms = re.compile(
@@ -61,14 +130,75 @@ jobs:
               re.IGNORECASE,
           )
           hits = [i for i, line in enumerate(lines) if terms.search(line)]
-          print('MATCH_COUNT=' + str(len(hits)))
-          selected = set(range(max(0, len(lines) - 60), len(lines)))
-          for index in hits[-25:]:
-              selected.update(range(max(0, index - 3), min(len(lines), index + 10)))
+          selected = set(range(max(0, len(lines) - 100), len(lines)))
+          for index in hits[-40:]:
+              selected.update(range(max(0, index - 5), min(len(lines), index + 15)))
           last = None
           for index in sorted(selected):
               if last is not None and index > last + 1:
                   print('...')
               print(f'{index + 1:05d}: {lines[index]}')
               last = index
+          PY
+          exit 1
+
+      - name: Verify jobs and zero-paid planning artifact
+        if: steps.wait.outputs.conclusion == 'success'
+        run: |
+          set -euo pipefail
+          jq -e '[.jobs[] | select(.name == "validate" and .conclusion == "success")] | length == 1' /tmp/jobs.json
+          jq -e '[.jobs[] | select(.name == "deploy-gated-runtime-loader" and .conclusion == "success")] | length == 1' /tmp/jobs.json
+          jq -e '[.jobs[] | select(.name == "deploy-and-plan" and .conclusion == "success")] | length == 1' /tmp/jobs.json
+          run_id='${{ steps.wait.outputs.run_id }}'
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+            > /tmp/artifacts.json
+          artifact_id=$(jq -r '[.artifacts[] | select(.name | startswith("mlb-historical-optimizer-deployment-"))] | last | .id // empty' /tmp/artifacts.json)
+          test -n "$artifact_id"
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+            -o /tmp/evidence.zip
+          mkdir -p /tmp/evidence
+          unzip -q /tmp/evidence.zip -d /tmp/evidence
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def load(name):
+              path = next(Path('/tmp/evidence').rglob(name))
+              return json.loads(path.read_text(encoding='utf-8'))
+
+          plan_payload = load('mlb-historical-plan.json')
+          status_payload = load('mlb-historical-status.json')
+          assert plan_payload.get('ok') is True, plan_payload
+          state = plan_payload.get('state') or {}
+          plan = plan_payload.get('plan') or state.get('plan') or {}
+          assert state.get('paidBackfillAuthorized') is not True, state
+          assert int(state.get('networkRequestCount') or 0) == 0, state
+          assert int(plan.get('paidHistoricalCallsMadeByPlan') or 0) == 0, plan
+          assert plan.get('completeDateRangeLedger') is True, plan
+          assert int(plan.get('planningErrorCount') or 0) == 0, plan
+          assert not plan.get('rejectedDates'), plan
+          assert int(plan.get('maximumAuthorizedOfficialGames') or 0) >= 1600, plan
+          assert plan.get('perGameFeatureCutoff') == 'each_game_t_minus_45', plan
+          assert bool(plan.get('fingerprint')), plan
+          assert state.get('snapshotStartAtEt') == '01:00', state
+          assert int(state.get('snapshotIntervalMinutes') or 0) == 15, state
+          assert int(state.get('minimumTrainingGames') or 0) >= 1000, state
+          assert int(state.get('minimumWalkForwardGames') or 0) >= 200, state
+          assert int(state.get('minimumUntouchedAuditGames') or 0) >= 200, state
+          assert float(state.get('dailyAccuracyRequirement') or 0) >= 0.80, state
+          phase = str((status_payload.get('state') or {}).get('phase') or state.get('phase') or '')
+          assert phase == 'READY_FOR_AUTHORIZATION', phase
+          print('SERIALIZED_DEPLOYMENT_AND_ZERO_PAID_PLAN_VERIFIED')
+          print('PHASE=' + phase)
+          print('PLAN_FINGERPRINT=' + str(plan.get('fingerprint')))
+          print('ESTIMATED_CREDITS=' + str(plan.get('estimatedCredits')))
+          print('MAXIMUM_AUTHORIZED_OFFICIAL_GAMES=' + str(plan.get('maximumAuthorizedOfficialGames')))
           PY
