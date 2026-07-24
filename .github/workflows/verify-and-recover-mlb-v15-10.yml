@@ -1,63 +1,55 @@
-name: Verify and recover MLB V15.10 production cutover
+name: Verify MLB production authority contracts
 
-on:
+"on":
   pull_request:
     branches: [main]
     paths:
       - "hello_world/mlb_ranked_primary_v15_10.py"
       - "hello_world/mlb_ranked_primary_v15_10_impl.py.gz.b64"
+      - "hello_world/mlb_historical_*"
       - "hello_world/mlb_v15_4_catboost_model.py"
       - "hello_world/mlb_v15_4_catboost_model_impl.py.gz.b64"
-      - "hello_world/mlb_ml_runtime_install_v3.py"
-      - "hello_world/mlb_v3_read_api.py"
+      - "hello_world/mlb_ml_runtime_install_v3*"
+      - "hello_world/mlb_v3_read_api*"
       - "hello_world/inqsi_mlb_v1_core.py"
       - "scripts/verify_api_function_mlb_v3_import.py"
       - "tests/unit/test_mlb_ranked_primary_v15_10.py"
       - "tests/unit/test_mlb_ml_runtime_install_explicit.py"
       - "tests/unit/test_mlb_signal_policy_prelock_persistence.py"
+      - "tests/unit/test_mlb_historical_*"
       - ".github/workflows/verify-and-recover-mlb-v15-10.yml"
+  push:
+    branches: [main]
+    paths:
+      - "hello_world/mlb_ranked_primary_v15_10.py"
+      - "hello_world/mlb_historical_*"
+      - "hello_world/mlb_ml_runtime_install_v3*"
+      - "hello_world/mlb_v3_read_api*"
+      - "tests/unit/test_mlb_historical_*"
+      - ".github/workflows/verify-and-recover-mlb-v15-10.yml"
+  workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: parlay-platform-deploy
-  cancel-in-progress: false
-
 env:
-  AWS_REGION: us-east-1
-  AWS_DEFAULT_REGION: us-east-1
   SAM_CLI_TELEMETRY: "0"
-  MLB_STACK_NAME: parlay-platform-dev
-  EXPECTED_MODEL_VERSION: INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble
-  EXPECTED_SELECTOR_VERSION: INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble
-  EXPECTED_RUNTIME_VERSION: MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority
 
 jobs:
-  verify-or-recover:
+  verify-source-authority-contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 75
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-
       - uses: aws-actions/setup-sam@v2
-
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-1
-
       - name: Install verification runtime
-        run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9" "PyYAML>=6,<7"
-
-      - name: Validate exact source and one-pick contract
+        run: python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<10" "PyYAML>=6,<7"
+      - name: Verify incumbent behavior before historical promotion
         run: |
           set -euo pipefail
           python -m pytest -q \
@@ -66,150 +58,41 @@ jobs:
             tests/unit/test_mlb_signal_policy_prelock_persistence.py \
             tests/unit/test_mlb_prediction_probability_contract_v1.py \
             tests/unit/test_mlb_probability_actionability_guard.py
+      - name: Verify historical-only cutover and fail-closed behavior
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/unit/test_mlb_historical_policy_v1.py \
+            tests/unit/test_mlb_historical_daily_optimizer_v1.py \
+            tests/unit/test_mlb_historical_optimizer_handler.py \
+            tests/unit/test_mlb_historical_read_api_contract.py
+      - name: Verify production template remains reproducible
+        run: |
+          set -euo pipefail
           python scripts/patch_template_mlb_v1.py
           python scripts/patch_template_mlb_security.py
           python scripts/patch_template_mlb_results_routes.py
+          git diff --exit-code -- template.yaml hello_world tests scripts
           sam validate --template-file template.yaml
           rm -rf .aws-sam
           sam build --no-cached --template-file template.yaml
           INQSI_MLB_LAMBDA_TASK_ROOT=.aws-sam/build/MLBV3ReadFunction \
             PYTHONDONTWRITEBYTECODE=1 \
             python scripts/verify_api_function_mlb_v3_import.py
-
-      - name: Resolve current production status
-        id: live
+      - name: Prove automatic legacy recovery is retired
         run: |
           set -euo pipefail
-          api_url=$(aws cloudformation describe-stacks --stack-name "$MLB_STACK_NAME" --region "$AWS_REGION" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
-          test -n "$api_url"
-          test "$api_url" != "None"
-          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
-          base_url="${api_url%/}"
-          already_live=false
-          if curl --fail --silent --show-error --connect-timeout 3 --max-time 20 "${base_url}/v1/mlb/model/version" > /tmp/mlb-v1510-before.json; then
-            if python - <<'PY'
-          import json
+          grep -Fq "mlb_historical_policy_v1.apply_runtime_authority" hello_world/mlb_ranked_primary_v15_10.py
+          python - <<'PY'
           from pathlib import Path
-          body=json.loads(Path('/tmp/mlb-v1510-before.json').read_text())
-          runtime=body.get('ml_runtime_install') or {}
-          ok=(
-              body.get('ok') is True
-              and body.get('model_version') == 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble'
-              and body.get('primaryAlgorithm') == 'INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble'
-              and body.get('allowedProductionOutput') == ['PICK']
-              and body.get('legacyRecommendationAuthority') is False
-              and body.get('automaticWagerAllowed') is False
-              and runtime.get('version') == 'MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority'
+
+          workflow = Path('.github/workflows/verify-and-recover-mlb-v15-10.yml').read_text()
+          forbidden = (
+              'sam ' + 'deploy',
+              'configure-' + 'aws-credentials',
           )
-          raise SystemExit(0 if ok else 1)
+          found = [token for token in forbidden if token in workflow]
+          if found:
+              raise SystemExit(f'forbidden production mutation tokens in verification workflow: {found}')
           PY
-            then
-              already_live=true
-            fi
-          fi
-          echo "already_live=$already_live" >> "$GITHUB_OUTPUT"
-          echo "MLB V15.10 already live: $already_live"
-
-      - name: Verify required recovery secrets
-        if: steps.live.outputs.already_live != 'true'
-        env:
-          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
-          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          test -n "${ODDS_API_KEY_VALUE:-}"
-          test -n "${BBS_API_KEY_VALUE:-}"
-          test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}"
-
-      - name: Recover production cutover only when not already live
-        if: steps.live.outputs.already_live != 'true'
-        env:
-          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
-          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
-        run: |
-          set -euo pipefail
-          template_sha=$(sha256sum template.yaml | awk '{print $1}')
-          deploy_run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-pr-recovery"
-          for attempt in $(seq 1 60); do
-            status=$(aws cloudformation describe-stacks --stack-name "$MLB_STACK_NAME" --region "$AWS_REGION" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
-            case "$status" in
-              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE|STACK_MISSING) break ;;
-              *_IN_PROGRESS) sleep 30 ;;
-              *) echo "::error::MLB stack is not updateable: $status"; exit 1 ;;
-            esac
-          done
-          sam deploy \
-            --template-file .aws-sam/build/template.yaml \
-            --stack-name "$MLB_STACK_NAME" \
-            --region "$AWS_REGION" \
-            --capabilities CAPABILITY_IAM \
-            --resolve-s3 \
-            --force-upload \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --parameter-overrides \
-              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
-              "BbsApiKey=${BBS_API_KEY_VALUE}" \
-              "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}" \
-              "DeployGitSha=${GITHUB_SHA}" \
-              "DeployTemplateSha256=${template_sha}" \
-              "DeployRunId=${deploy_run_id}"
-
-      - name: Prove final production authority
-        env:
-          API_URL: ${{ steps.live.outputs.api_url }}
-        run: |
-          set -euo pipefail
-          base_url="${API_URL%/}"
-          for attempt in $(seq 1 60); do
-            if curl --fail --silent --show-error --connect-timeout 3 --max-time 20 "${base_url}/v1/mlb/model/version" > /tmp/mlb-v1510-final.json; then
-              if python - <<'PY'
-          import json
-          from pathlib import Path
-          body=json.loads(Path('/tmp/mlb-v1510-final.json').read_text())
-          runtime=body.get('ml_runtime_install') or {}
-          expected={
-              'ok': True,
-              'model_version': 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble',
-              'primaryAlgorithm': 'INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble',
-              'primaryAlgorithmActive': True,
-              'allowedProductionOutput': ['PICK'],
-              'productionSelectionAllowed': True,
-              'legacyRecommendationAuthority': False,
-              'legacyFallbackAllowed': False,
-              'automaticWagerAllowed': False,
-              'precisionHitRateEvidencePassed': False,
-          }
-          mismatches={k:{'expected':v,'actual':body.get(k)} for k,v in expected.items() if body.get(k)!=v}
-          if runtime.get('version')!='MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority':
-              mismatches['runtime.version']={'expected':'v4.4 ranked winner','actual':runtime.get('version')}
-          for name in ('rankedWinnerV15_10DirectionInstalled','rankedWinnerV15_10SelectionInstalled'):
-              if (runtime.get('steps') or {}).get(name) is not True:
-                  mismatches['runtime.steps.'+name]={'expected':True,'actual':(runtime.get('steps') or {}).get(name)}
-          print(json.dumps(body, indent=2, default=str))
-          if mismatches:
-              raise SystemExit(json.dumps(mismatches, indent=2, sort_keys=True))
-          Path('/tmp/mlb-v1510-pr-verdict.json').write_text(json.dumps({'ok':True,'passOnly':False,'allowedOutput':['PICK'],'automaticWagerAllowed':False},indent=2)+'\n')
-          PY
-              then
-                exit 0
-              fi
-            fi
-            sleep 5
-          done
-          echo "::error::MLB V15.10 authority did not become healthy"
-          exit 1
-
-      - name: Upload verification evidence
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: mlb-v15-10-pr-verification-${{ github.run_id }}-${{ github.run_attempt }}
-          retention-days: 90
-          if-no-files-found: warn
-          path: |
-            /tmp/mlb-v1510-before.json
-            /tmp/mlb-v1510-final.json
-            /tmp/mlb-v1510-pr-verdict.json
+          echo "V15.10 recovery is no longer automatic; controlled deployment and cutover live only in mlb-historical-optimizer.yml."
