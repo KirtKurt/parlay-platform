@@ -59,9 +59,6 @@ Globals:
     Architectures:
       - x86_64
     Timeout: 900
-    # This AWS account/region enforces the legacy 3,008 MB Lambda ceiling.
-    # Keep the optimizer at that maximum so the 25,000-candidate search retains
-    # the largest available CPU allocation without making the stack undeployable.
     MemorySize: 3008
     Tracing: Active
     Environment:
@@ -113,10 +110,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../hello_world/
-      Handler: mlb_historical_optimizer_handler.lambda_handler
-      # Do not reserve account concurrency here. This account must retain at
-      # least 10 unreserved executions. GitHub workflow concurrency plus the
-      # optimizer's DynamoDB lease provide the required single-writer control.
+      Handler: mlb_historical_optimizer_entrypoint.lambda_handler
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 300
         MaximumRetryAttempts: 1
