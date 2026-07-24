@@ -1,4 +1,4 @@
-# trigger-generation: 4
+# trigger-generation: 5
 name: MLB Training Status Snapshot
 
 "on":
@@ -15,99 +15,95 @@ name: MLB Training Status Snapshot
 
 permissions:
   actions: read
-  issues: write
   contents: read
 
 jobs:
   snapshot:
     runs-on: ubuntu-latest
-    timeout-minutes: 360
+    timeout-minutes: 5
     env:
       GH_TOKEN: ${{ github.token }}
-      REPORT_ISSUE: "111"
     steps:
-      - name: Publish exact workflow state and monitor terminal result
+      - name: Print exact MLB historical training chain state
         run: |
           set -euo pipefail
           api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
           headers=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
+          curl --fail --silent --show-error "${headers[@]}" "${api}/actions/runs?per_page=100" >/tmp/runs.json
 
-          post() {
-            local body="$1"
-            jq -n --arg body "$body" '{body:$body}' >/tmp/body.json
-            if [ -z "${COMMENT_ID:-}" ]; then
-              curl --fail --silent --show-error -X POST "${headers[@]}" \
-                "${api}/issues/${REPORT_ISSUE}/comments" --data-binary @/tmp/body.json >/tmp/comment.json
-              COMMENT_ID=$(jq -r '.id' /tmp/comment.json)
-            else
-              curl --fail --silent --show-error -X PATCH "${headers[@]}" \
-                "${api}/issues/comments/${COMMENT_ID}" --data-binary @/tmp/body.json >/tmp/comment.json
-            fi
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          payload = json.loads(Path('/tmp/runs.json').read_text())
+          wanted = [
+              'MLB V15.11.1 Accelerated Historical Training',
+              'MLB Historical Recovery and Paid Dispatch',
+              'MLB Historical Daily Optimizer',
+              'MLB Historical Accelerated Training Driver',
+              'Dispatch Authorized MLB Historical Training',
+              'Observe MLB V15.11.1 Historical Training Chain',
+          ]
+          rows = payload.get('workflow_runs') or []
+          print('MLB_TRAINING_CHAIN_SNAPSHOT_BEGIN')
+          selected = []
+          for name in wanted:
+              matches = [row for row in rows if row.get('name') == name]
+              matches.sort(key=lambda row: str(row.get('created_at') or ''))
+              row = matches[-1] if matches else None
+              value = {
+                  'name': name,
+                  'located': row is not None,
+                  'id': row.get('id') if row else None,
+                  'status': row.get('status') if row else None,
+                  'conclusion': row.get('conclusion') if row else None,
+                  'event': row.get('event') if row else None,
+                  'head_sha': row.get('head_sha') if row else None,
+                  'created_at': row.get('created_at') if row else None,
+                  'updated_at': row.get('updated_at') if row else None,
+                  'url': row.get('html_url') if row else None,
+              }
+              selected.append(value)
+              print(json.dumps(value, sort_keys=True))
+          Path('/tmp/selected.json').write_text(json.dumps(selected, indent=2, sort_keys=True))
+          print('MLB_TRAINING_CHAIN_SNAPSHOT_END')
+          PY
+
+          python - <<'PY' >/tmp/run-ids.txt
+          import json
+          from pathlib import Path
+          rows = json.loads(Path('/tmp/selected.json').read_text())
+          for row in rows:
+              if row.get('id'):
+                  print(row['id'])
+          PY
+
+          while read -r run_id; do
+            [ -n "$run_id" ] || continue
+            curl --fail --silent --show-error "${headers[@]}" "${api}/actions/runs/${run_id}/jobs?per_page=100" >"/tmp/jobs-${run_id}.json"
+            RUN_ID="$run_id" python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          run_id = os.environ['RUN_ID']
+          payload = json.loads(Path(f'/tmp/jobs-{run_id}.json').read_text())
+          summary = {
+              'run_id': int(run_id),
+              'jobs': [
+                  {
+                      'id': job.get('id'),
+                      'name': job.get('name'),
+                      'status': job.get('status'),
+                      'conclusion': job.get('conclusion'),
+                      'active_or_failed_step': next((
+                          step.get('name')
+                          for step in job.get('steps') or []
+                          if step.get('status') == 'in_progress' or step.get('conclusion') == 'failure'
+                      ), None),
+                  }
+                  for job in payload.get('jobs') or []
+              ],
           }
-
-          row() {
-            local name="$1"
-            jq -c --arg name "$name" '[.workflow_runs[] | select(.name == $name)] | sort_by(.created_at) | last // empty' /tmp/runs.json
-          }
-
-          line() {
-            local label="$1" value="$2"
-            if [ -z "$value" ]; then
-              printf -- '- %s: **not located**\n' "$label"
-            else
-              printf -- '- %s: [run %s](%s) — **%s/%s**, event `%s`, SHA `%s`\n' \
-                "$label" \
-                "$(jq -r '.id' <<<"$value")" \
-                "$(jq -r '.html_url' <<<"$value")" \
-                "$(jq -r '.status' <<<"$value")" \
-                "$(jq -r '.conclusion // "pending"' <<<"$value")" \
-                "$(jq -r '.event' <<<"$value")" \
-                "$(jq -r '.head_sha' <<<"$value")"
-            fi
-          }
-
-          COMMENT_ID=""
-          for attempt in $(seq 1 720); do
-            curl --fail --silent --show-error "${headers[@]}" "${api}/actions/runs?per_page=100" >/tmp/runs.json
-            trigger=$(row 'MLB V15.11.1 Accelerated Historical Training')
-            recovery=$(row 'MLB Historical Recovery and Paid Dispatch')
-            optimizer=$(row 'MLB Historical Daily Optimizer')
-            accelerator=$(row 'MLB Historical Accelerated Training Driver')
-            custom=$(row 'Dispatch Authorized MLB Historical Training')
-            observer=$(row 'Observe MLB V15.11.1 Historical Training Chain')
-            now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-            body=$(cat <<EOF
-          <!-- mlb-training-status-snapshot -->
-          ## MLB V15.11.1 AWS training state
-
-          $(line 'Guarded trigger' "$trigger")$(line 'Rollback recovery / paid dispatch' "$recovery")$(line 'Reviewed optimizer deploy, plan and authorization' "$optimizer")$(line '100-request accelerator, optimization, audit and cutover' "$accelerator")$(line 'Secondary authorized dispatcher' "$custom")$(line 'Primary chain observer' "$observer")
-          - Last checked: ${now}
-          - Promotion remains blocked unless the 1,000/200/200 chronological evidence, exact full-slate coverage, and every-day 80% gates all pass.
-          - Automatic wagering remains disabled.
-          EOF
-          )
-            post "$body"
-
-            terminal=""
-            if [ -n "$accelerator" ] && [ "$(jq -r '.status' <<<"$accelerator")" = completed ]; then
-              terminal=accelerator
-            elif [ -n "$optimizer" ] && [ "$(jq -r '.status' <<<"$optimizer")" = completed ] && [ "$(jq -r '.conclusion // "failure"' <<<"$optimizer")" != success ]; then
-              terminal=optimizer
-            elif [ -n "$recovery" ] && [ "$(jq -r '.status' <<<"$recovery")" = completed ] && [ "$(jq -r '.conclusion // "failure"' <<<"$recovery")" != success ]; then
-              terminal=recovery
-            elif [ -n "$trigger" ] && [ "$(jq -r '.status' <<<"$trigger")" = completed ] && [ "$(jq -r '.conclusion // "failure"' <<<"$trigger")" != success ]; then
-              terminal=trigger
-            fi
-
-            if [ -n "$terminal" ]; then
-              selected="${!terminal}"
-              run_id=$(jq -r '.id' <<<"$selected")
-              curl --fail --silent --show-error "${headers[@]}" "${api}/actions/runs/${run_id}/jobs?per_page=100" >/tmp/jobs.json
-              failure=$(jq -r '[.jobs[] | select(.conclusion != null and .conclusion != "success" and .conclusion != "skipped" and .conclusion != "neutral") | "- Job `" + .name + "`: **" + (.conclusion // .status) + "**; failed step `" + (([.steps[]? | select(.conclusion == "failure") | .name][0]) // "unavailable") + "`"] | join("\n")' /tmp/jobs.json)
-              post "${body}\n\n### Terminal stage: ${terminal}\n${failure}"
-              exit 0
-            fi
-            sleep 30
-          done
-          post "${body}\n\n### Monitor timeout\nThe isolated monitor reached its bounded timeout before a terminal training stage was visible."
-          exit 1
+          print('MLB_TRAINING_RUN_JOBS=' + json.dumps(summary, sort_keys=True))
+          PY
+          done </tmp/run-ids.txt
