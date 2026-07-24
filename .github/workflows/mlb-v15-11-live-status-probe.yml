@@ -1,4 +1,4 @@
-name: Probe MLB V15.11.1 exact SAM failure
+name: Probe MLB V15.11.1 Lambda memory rejection
 
 "on":
   pull_request:
@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89415006701'
     steps:
-      - name: Print only the exact deployment failure messages
+      - name: Print exact rejected Lambda event
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --location \
@@ -36,24 +36,8 @@ jobs:
           raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
           lines = [ansi.sub('', line) for line in raw.splitlines()]
-          terms = re.compile(
-              r'CREATE_FAILED|UPDATE_FAILED|ROLLBACK|ValidationError|AccessDenied|'
-              r'AlreadyExists|already exists|Resource handler returned message|'
-              r'Failed to create changeset|Failed to deploy|Error:|NoSuchBucket|'
-              r'InsufficientCapabilities|No updates are to be performed',
-              re.IGNORECASE,
-          )
-          hits = [i for i, line in enumerate(lines) if terms.search(line)]
-          print('EXACT_MATCH_COUNT=' + str(len(hits)))
-          for i in hits[-30:]:
-              start = max(0, i - 2)
-              end = min(len(lines), i + 4)
-              print('---')
-              for j in range(start, end):
-                  print(f'{j + 1:05d}: {lines[j]}')
-          print('=== FINAL 45 JOB LINES ===')
-          for j, line in enumerate(lines[-45:], start=max(1, len(lines) - 44)):
-              print(f'{j:05d}: {line}')
-          if not hits:
-              raise SystemExit('No recognized failure line found')
+          for number in range(749, 780):
+              index = number - 1
+              if index < len(lines):
+                  print(f'{number:05d}: {lines[index]}')
           PY
