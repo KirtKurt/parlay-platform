@@ -1,0 +1,383 @@
+name: MLB Historical Ingestion Hardening V4
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-ingestion-hardening-v4.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: mlb-historical-optimizer-hardening
+  cancel-in-progress: false
+
+jobs:
+  harden-test-deploy-prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Apply ingestion hardening
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('hello_world/mlb_historical_optimizer_handler.py')
+          text = path.read_text()
+
+          text = text.replace(
+              'VERSION = "MLB-HISTORICAL-OPTIMIZER-AWS-v1.6-complete-ledger-fresh-audit-append-only-authority"',
+              'VERSION = "MLB-HISTORICAL-OPTIMIZER-AWS-v1.7-resilient-ingestion-state-machine"'
+          )
+
+          migration_anchor = '    value.setdefault("evaluatedAuditWindows", [])\n'
+          migration_add = '''    value.setdefault("evaluatedAuditWindows", [])
+              value.setdefault("slotStatusCounts", {"VALID": 0, "STALE": 0, "MALFORMED": 0, "MISSING": 0, "FUTURE_TIMESTAMP": 0, "OTHER_INVALID": 0})
+              value.setdefault("rejectedSlateCount", 0)
+              value.setdefault("lastProgressAtUtc", None)
+              value.setdefault("lastProgressCursor", None)
+              value.setdefault("stalledInvocationCount", 0)
+              value.setdefault("assemblyState", "IDLE")
+              value.setdefault("deployedGitSha", os.environ.get("DEPLOY_GIT_SHA", "unknown"))
+          '''.replace('              ', '    ')
+          if 'slotStatusCounts' not in text:
+              if migration_anchor not in text:
+                  raise SystemExit('migration anchor missing')
+              text = text.replace(migration_anchor, migration_add, 1)
+
+          old_complete_start = text.index('def _complete_slate(')
+          old_complete_end = text.index('\n\ndef _backfill(', old_complete_start)
+          new_complete = '''def _classify_snapshot_error(exc: Exception) -> str:
+              message = str(exc).lower()
+              if "too stale" in message:
+                  return "STALE"
+              if "future" in message or "later than the requested" in message:
+                  return "FUTURE_TIMESTAMP"
+              if "missing" in message or "no such key" in message or "not found" in message:
+                  return "MISSING"
+              if "malformed" in message or "invalid" in message or "payload" in message or "timestamp" in message:
+                  return "MALFORMED"
+              return "OTHER_INVALID"
+
+
+          def _record_slot_status(state: Dict[str, Any], day: str, requested: str, status: str, detail: str = "") -> None:
+              counts = state.setdefault("slotStatusCounts", {})
+              counts[status] = int(counts.get(status) or 0) + 1
+              if status == "VALID":
+                  return
+              marker = {
+                  "slateDateEt": day,
+                  "requestedAtUtc": requested,
+                  "status": status,
+                  "reason": detail[:500],
+                  "recordedAtUtc": _now_iso(),
+              }
+              skipped = state.setdefault("skippedHistoricalSlots", [])
+              if not any(
+                  isinstance(row, Mapping)
+                  and row.get("slateDateEt") == day
+                  and row.get("requestedAtUtc") == requested
+                  for row in skipped
+              ):
+                  skipped.append(marker)
+
+
+          def _complete_slate(
+              state: Dict[str, Any], day: str, finals: Mapping[str, Any], grid: optimizer.SnapshotGrid
+          ) -> None:
+              state["assemblyState"] = "ASSEMBLING"
+              historical = []
+              for requested in grid.timestamps_utc:
+                  try:
+                      raw, _ = _get_s3_json(_raw_key(day, requested))
+                      payload = raw.get("payload") if isinstance(raw, Mapping) and "payload" in raw else raw
+                      optimizer.normalize_historical_snapshot(payload, requested)
+                  except Exception as exc:
+                      status = _classify_snapshot_error(exc)
+                      _record_slot_status(state, day, requested, status, f"{type(exc).__name__}:{exc}")
+                      continue
+                  _record_slot_status(state, day, requested, "VALID")
+                  historical.append({"requestedAtUtc": requested, "payload": payload})
+
+              if not historical:
+                  state["assemblyState"] = "REJECTED"
+                  state["rejectedSlateCount"] = int(state.get("rejectedSlateCount") or 0) + 1
+                  _advance_after_rejection(state, day, "no_valid_historical_snapshots")
+                  return
+
+              try:
+                  dataset = optimizer.build_slate_dataset(
+                      day,
+                      finals.get("games") or [],
+                      historical,
+                      grid,
+                  )
+              except Exception as exc:
+                  state["assemblyState"] = "REJECTED"
+                  state["rejectedSlateCount"] = int(state.get("rejectedSlateCount") or 0) + 1
+                  _advance_after_rejection(
+                      state,
+                      day,
+                      "slate_dataset_build_failed",
+                      {"error": f"{type(exc).__name__}:{exc}", "validSnapshotCount": len(historical)},
+                  )
+                  return
+
+              pointer = _put_immutable_json(_slate_key(day), dataset, record_type="mlb_historical_complete_slate")
+              if dataset.get("completeSlate") is not True or float(dataset.get("exactSlateCoverage") or 0.0) < 1.0:
+                  state["assemblyState"] = "REJECTED"
+                  state["rejectedSlateCount"] = int(state.get("rejectedSlateCount") or 0) + 1
+                  _advance_after_rejection(
+                      state,
+                      day,
+                      "incomplete_full_slate_dataset",
+                      {
+                          "officialGameCount": dataset.get("officialGameCount"),
+                          "eligibleGameCount": dataset.get("eligibleGameCount"),
+                          "exactSlateCoverage": dataset.get("exactSlateCoverage"),
+                          "validSnapshotCount": len(historical),
+                          "artifact": pointer,
+                      },
+                  )
+                  return
+
+              state.setdefault("completedSlates", []).append(
+                  {
+                      "slateDateEt": day,
+                      "officialGameCount": dataset["officialGameCount"],
+                      "eligibleGameCount": dataset["eligibleGameCount"],
+                      "fingerprint": dataset["fingerprint"],
+                      "artifact": pointer,
+                  }
+              )
+              state["eligibleGameCount"] = int(state.get("eligibleGameCount") or 0) + int(dataset["eligibleGameCount"])
+              state["completeSlateCount"] = int(state.get("completeSlateCount") or 0) + 1
+              state["currentDate"] = _increment_day(day)
+              state["currentSlotIndex"] = 0
+              state["assemblyState"] = "COMPLETED"
+              state["lastProgressAtUtc"] = _now_iso()
+              state["lastProgressCursor"] = f"{state['currentDate']}#0"
+              state["stalledInvocationCount"] = 0
+              state["lastError"] = None
+              if int(state["eligibleGameCount"]) >= int(state.get("targetSettledGames") or TARGET_GAMES):
+                  state["phase"] = "OPTIMIZING"
+                  state["dataCollectionCompletedAtUtc"] = _now_iso()
+          '''
+          new_complete = '\n'.join(line[10:] if line.startswith('          ') else line for line in new_complete.splitlines())
+          text = text[:old_complete_start] + new_complete + text[old_complete_end:]
+
+          old_call = '''        if slot_index >= len(grid.timestamps_utc):
+              _complete_slate(state, day, finals, grid)
+              state["lastCompletedFinalsArtifact"] = finals_pointer
+          '''.replace('              ', '    ')
+          new_call = '''        if slot_index >= len(grid.timestamps_utc):
+              prior_cursor = f"{state.get('currentDate')}#{state.get('currentSlotIndex')}"
+              state["assemblyState"] = "ASSEMBLING"
+              try:
+                  _complete_slate(state, day, finals, grid)
+              except Exception as exc:
+                  state["assemblyState"] = "REJECTED"
+                  state["rejectedSlateCount"] = int(state.get("rejectedSlateCount") or 0) + 1
+                  _advance_after_rejection(
+                      state,
+                      day,
+                      "unexpected_complete_slate_failure",
+                      {"error": f"{type(exc).__name__}:{exc}"},
+                  )
+              state["lastCompletedFinalsArtifact"] = finals_pointer
+              new_cursor = f"{state.get('currentDate')}#{state.get('currentSlotIndex')}"
+              if new_cursor == prior_cursor:
+                  state["stalledInvocationCount"] = int(state.get("stalledInvocationCount") or 0) + 1
+              else:
+                  state["lastProgressAtUtc"] = _now_iso()
+                  state["lastProgressCursor"] = new_cursor
+                  state["stalledInvocationCount"] = 0
+          '''.replace('              ', '    ')
+          if old_call not in text:
+              raise SystemExit('backfill completion call anchor missing')
+          text = text.replace(old_call, new_call, 1)
+
+          status_anchor = '''    return {
+              "ok": True,
+              "version": VERSION,
+              "state": state,
+          '''.replace('              ', '    ')
+          status_new = '''    lease = _get_item(LEASE_SK)
+              return {
+              "ok": True,
+              "version": VERSION,
+              "deployedGitSha": os.environ.get("DEPLOY_GIT_SHA", "unknown"),
+              "lease": lease,
+              "ingestionHealth": {
+                  "assemblyState": (state or {}).get("assemblyState"),
+                  "slotStatusCounts": (state or {}).get("slotStatusCounts"),
+                  "rejectedSlateCount": (state or {}).get("rejectedSlateCount"),
+                  "lastProgressAtUtc": (state or {}).get("lastProgressAtUtc"),
+                  "lastProgressCursor": (state or {}).get("lastProgressCursor"),
+                  "stalledInvocationCount": (state or {}).get("stalledInvocationCount"),
+              },
+              "state": state,
+          '''.replace('              ', '    ')
+          if '"ingestionHealth"' not in text:
+              if status_anchor not in text:
+                  raise SystemExit('status anchor missing')
+              text = text.replace(status_anchor, status_new, 1)
+
+          path.write_text(text)
+          PY
+
+          python -m py_compile hello_world/mlb_historical_optimizer_handler.py
+          grep -Fq 'resilient-ingestion-state-machine' hello_world/mlb_historical_optimizer_handler.py
+          grep -Fq 'unexpected_complete_slate_failure' hello_world/mlb_historical_optimizer_handler.py
+          grep -Fq 'stalledInvocationCount' hello_world/mlb_historical_optimizer_handler.py
+          grep -Fq 'ingestionHealth' hello_world/mlb_historical_optimizer_handler.py
+
+      - name: Add hardening regression tests
+        run: |
+          set -euo pipefail
+          cat > tests/unit/test_mlb_historical_ingestion_hardening_v4.py <<'PY'
+          import mlb_historical_optimizer_handler as handler
+
+          def test_classify_snapshot_errors():
+              assert handler._classify_snapshot_error(Exception('historical response is too stale for a 15-minute grid')) == 'STALE'
+              assert handler._classify_snapshot_error(Exception('timestamp later than the requested timestamp')) == 'FUTURE_TIMESTAMP'
+              assert handler._classify_snapshot_error(Exception('malformed payload')) == 'MALFORMED'
+              assert handler._classify_snapshot_error(Exception('NoSuchKey')) == 'MISSING'
+
+          def test_migrate_state_adds_ingestion_health_fields():
+              state = handler._migrate_state({})
+              assert state['assemblyState'] == 'IDLE'
+              assert state['stalledInvocationCount'] == 0
+              assert 'VALID' in state['slotStatusCounts']
+          PY
+
+      - name: Validate focused contracts
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'cfn-lint>=1,<2'
+          PYTHONPATH=hello_world python -m pytest -q \
+            tests/unit/test_mlb_historical_ingestion_hardening_v4.py \
+            tests/unit/test_mlb_historical_daily_optimizer_v1.py \
+            tests/unit/test_mlb_historical_optimizer_handler.py \
+            tests/unit/test_mlb_historical_policy_v1.py
+          sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+
+      - name: Commit hardened source and tests
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add hello_world/mlb_historical_optimizer_handler.py tests/unit/test_mlb_historical_ingestion_hardening_v4.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix: make MLB historical ingestion self-recovering [deploy-mlb-historical-v1.7]'
+            git push origin HEAD:main
+          fi
+          echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Verify isolation from live MLB algorithm
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          HIST_FN=$(aws cloudformation describe-stacks --stack-name parlay-platform-mlb-historical-optimizer --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          PROD_FN=$(aws cloudformation describe-stacks --stack-name parlay-platform-dev --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?contains(OutputKey, 'Function')].OutputValue" --output text | head -n1 || true)
+          test -n "$HIST_FN"
+          if [ -n "$PROD_FN" ]; then test "$HIST_FN" != "$PROD_FN"; fi
+          aws cloudformation describe-stacks --stack-name parlay-platform-dev --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text | grep -Eq 'CREATE_COMPLETE|UPDATE_COMPLETE'
+
+      - name: Build and deploy isolated historical optimizer
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam-historical-v4
+          sam build --no-cached --build-dir .aws-sam-historical-v4 --template-file mlb_historical_optimizer/template.yaml
+          sam deploy \
+            --template-file .aws-sam-historical-v4/template.yaml \
+            --stack-name parlay-platform-mlb-historical-optimizer \
+            --region "$AWS_REGION_VALUE" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 --force-upload --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              'TargetSnapshotsTable=parlay_platform_snapshots' \
+              'HistoricalStartDate=2025-04-01' \
+              'HistoricalEndDate=2025-08-31' \
+              'HistoricalTargetGames=1600' \
+              'HistoricalMaxCredits=120000' \
+              'HistoricalRequestsPerRun=100' \
+              'HistoricalMaxCandidates=25000' \
+              'HistoricalMaxOptimizationRounds=6' \
+              'HistoricalFreshAuditIncrementGames=250' \
+              "DeployGitSha=${DEPLOY_SHA}"
+
+      - name: Prove deployed package and invoke recovery
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          FN=$(aws cloudformation describe-stacks --stack-name parlay-platform-mlb-historical-optimizer --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          URL=$(aws lambda get-function --function-name "$FN" --region "$AWS_REGION_VALUE" --query 'Code.Location' --output text)
+          curl -fsSL "$URL" -o /tmp/historical.zip
+          unzip -p /tmp/historical.zip mlb_historical_optimizer_handler.py | grep -Fq 'resilient-ingestion-state-machine'
+          unzip -p /tmp/historical.zip mlb_historical_optimizer_handler.py | grep -Fq 'unexpected_complete_slate_failure'
+          aws lambda invoke --function-name "$FN" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"orchestrate","run":"ingestion_hardening_v4"}' /tmp/invoke.json >/tmp/meta.json
+          aws lambda invoke --function-name "$FN" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"ingestion_hardening_v4_status"}' /tmp/status.json >/tmp/status-meta.json
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/status.json'))
+          state=value.get('state') or {}
+          proof={
+            'version': value.get('version'),
+            'deployedGitSha': value.get('deployedGitSha'),
+            'phase': state.get('phase'),
+            'currentDate': state.get('currentDate'),
+            'currentSlotIndex': state.get('currentSlotIndex'),
+            'networkRequestCount': state.get('networkRequestCount'),
+            'eligibleGameCount': state.get('eligibleGameCount'),
+            'completeSlateCount': state.get('completeSlateCount'),
+            'lastError': state.get('lastError'),
+            'ingestionHealth': value.get('ingestionHealth'),
+            'lease': value.get('lease'),
+          }
+          print(json.dumps(proof,indent=2,default=str))
+          assert proof['version'] == 'MLB-HISTORICAL-OPTIMIZER-AWS-v1.7-resilient-ingestion-state-machine', proof
+          assert 'too stale for a 15-minute grid' not in str(proof['lastError'] or ''), proof
+          json.dump(proof,open('/tmp/mlb-historical-ingestion-hardening-v4-proof.json','w'),indent=2,default=str)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-historical-ingestion-hardening-v4-proof
+          path: /tmp/mlb-historical-ingestion-hardening-v4-proof.json
+          retention-days: 14
+
+      - name: Publish proof
+        run: |
+          set -euo pipefail
+          mkdir -p docs/runtime
+          cp /tmp/mlb-historical-ingestion-hardening-v4-proof.json docs/runtime/mlb-historical-ingestion-hardening-v4-proof.json
+          git add docs/runtime/mlb-historical-ingestion-hardening-v4-proof.json
+          if ! git diff --cached --quiet; then
+            git commit -m 'chore: publish MLB historical ingestion hardening proof'
+            git push origin HEAD:main
+          fi
