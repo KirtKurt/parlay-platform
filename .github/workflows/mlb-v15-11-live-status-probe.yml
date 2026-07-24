@@ -1,4 +1,4 @@
-name: Extract MLB historical planning failure
+name: Print exact MLB planning response lines
 
 "on":
   pull_request:
@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89426541736'
     steps:
-      - name: Print only planning and Lambda response failure context
+      - name: Extract JSON responses and terminal assertion
         shell: bash
         run: |
           set -euo pipefail
@@ -37,25 +37,23 @@ jobs:
           raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
           lines = [ansi.sub('', line) for line in raw.splitlines()]
-          terms = re.compile(
-              r'Initialize or resume|no-paid-history|historical-plan|historical-initialize|'
-              r'planning/resume failed|PLAN_|READY_FOR_AUTHORIZATION|Traceback|Exception|'
-              r'FunctionError|Unhandled|errorMessage|errorType|StatusCode|ExecutedVersion|'
-              r'Process completed with exit code|maximumAuthorizedOfficialGames|'
-              r'planningErrorCount|rejectedDates|completeDateRangeLedger|paidHistoricalCallsMadeByPlan',
+          keep = re.compile(
+              r'^.*Z\s+\{.*(?:"ok"|"statusCode"|"FunctionError"|"errorMessage"|"phase"|"state"|"plan").*\}\s*$|'
+              r'planning/resume failed|Process completed with exit code|PLAN_STATUS=|PLAN_FINGERPRINT=|'
+              r'ESTIMATED_CREDITS=|MAXIMUM_AUTHORIZED_GAMES=|Unexpected optimizer phase|historical optimizer planning',
               re.IGNORECASE,
           )
-          hits = [i for i, line in enumerate(lines) if terms.search(line)]
-          selected = set()
-          for index in hits:
-              selected.update(range(max(0, index - 3), min(len(lines), index + 8)))
-          selected.update(range(max(0, len(lines) - 80), len(lines)))
-          print('LOG_LINE_COUNT=' + str(len(lines)))
-          print('MATCH_COUNT=' + str(len(hits)))
-          last = None
-          for index in sorted(selected):
-              if last is not None and index > last + 1:
-                  print('...')
-              print(f'{index + 1:05d}: {lines[index]}')
-              last = index
+          matches = [(index + 1, line) for index, line in enumerate(lines) if keep.search(line)]
+          print('MATCH_COUNT=' + str(len(matches)))
+          for number, line in matches[-50:]:
+              print(f'{number:05d}: {line}')
+          print('--- FIXED RANGE 940-1045 ---')
+          for number in range(940, min(1046, len(lines) + 1)):
+              line = lines[number - 1]
+              if any(token in line for token in (
+                  '/tmp/mlb-historical-', 'StatusCode', 'FunctionError', 'errorMessage',
+                  'planning/resume failed', 'Process completed', '{"', "raise SystemExit",
+                  'PLAN_', 'completeDateRangeLedger', 'planningErrorCount', 'rejectedDates'
+              )):
+                  print(f'{number:05d}: {line}')
           PY
