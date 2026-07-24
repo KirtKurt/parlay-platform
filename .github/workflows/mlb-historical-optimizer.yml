@@ -86,7 +86,7 @@ jobs:
       - uses: aws-actions/setup-sam@v2
       - name: Install validation dependencies
         run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<10' 'cfn-lint>=1,<2' 'pyyaml>=6,<7'
-      - name: Verify historical optimizer contracts
+      - name: Run historical optimizer unit tests
         run: |
           set -euo pipefail
           python -m pytest -q \
@@ -94,6 +94,9 @@ jobs:
             tests/unit/test_mlb_historical_daily_optimizer_v1.py \
             tests/unit/test_mlb_historical_optimizer_handler.py \
             tests/unit/test_mlb_historical_read_api_contract.py
+      - name: Compile historical runtime sources
+        run: |
+          set -euo pipefail
           python -m py_compile \
             hello_world/mlb_historical_policy_v1.py \
             hello_world/mlb_historical_daily_optimizer_v1.py \
@@ -101,6 +104,9 @@ jobs:
             hello_world/mlb_ranked_primary_v15_10.py \
             hello_world/mlb_ml_runtime_install_v3.py \
             hello_world/mlb_v3_read_api.py
+      - name: Verify immutable optimizer and cutover constants
+        run: |
+          set -euo pipefail
           PYTHONPATH=hello_world python - <<'PY'
           import mlb_historical_daily_optimizer_v1 as optimizer
           import mlb_historical_policy_v1 as policy
@@ -117,7 +123,17 @@ jobs:
           PY
           grep -Fq 'mlb_historical_policy_v1.apply_runtime_authority' hello_world/mlb_ranked_primary_v15_10.py
           grep -Fq 'DeleteLeaseOnlyFromOptimizerStatePartition' mlb_historical_optimizer/template.yaml
+      - name: Validate historical optimizer SAM template
+        run: |
+          set -euo pipefail
+          sam validate --template-file mlb_historical_optimizer/template.yaml
+      - name: Lint historical optimizer SAM template
+        run: |
+          set -euo pipefail
           sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+      - name: Validate root production SAM template
+        run: |
+          set -euo pipefail
           sam validate --template-file template.yaml
       - name: Build historical optimizer cleanly
         run: sam build --no-cached --build-dir .aws-sam-historical --template-file mlb_historical_optimizer/template.yaml
