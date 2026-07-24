@@ -5,29 +5,32 @@ name: Observe MLB V15.11.1 deployment
     branches: [main]
     paths:
       - '.github/workflows/mlb-v15-11-deployment-observer.yml'
-  workflow_run:
-    workflows: ["MLB Historical Daily Optimizer"]
-    types: [completed]
 
 permissions:
-  contents: read
+  contents: write
   actions: read
   issues: write
 
 jobs:
   probe:
-    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     env:
       GH_TOKEN: ${{ github.token }}
       TARGET_SHA: 8519da84cb3e1982fab89cd85d7b09be62ad604d
     steps:
-      - name: Locate and report the exact merged deployment run
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+          persist-credentials: true
+
+      - name: Locate exact merged deployment run and jobs
+        id: deployment
         run: |
           set -euo pipefail
           API="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100"
-          for attempt in $(seq 1 120); do
+          for attempt in $(seq 1 150); do
             curl --fail --silent --show-error \
               -H "Authorization: Bearer ${GH_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
@@ -40,26 +43,16 @@ jobs:
                 RUN_ID=$(jq -r '.id' <<<"$ROW")
                 RUN_URL=$(jq -r '.html_url' <<<"$ROW")
                 CONCLUSION=$(jq -r '.conclusion' <<<"$ROW")
-                BODY=$(cat <<EOF
-          <!-- mlb-v15-11-deployment-probe -->
-          MLB V15.11.1 merged deployment workflow completed.
-
-          - Workflow: MLB Historical Daily Optimizer
-          - Run ID: ${RUN_ID}
-          - Status: ${STATUS}
-          - Conclusion: ${CONCLUSION}
-          - Head SHA: ${TARGET_SHA}
-          - Run: ${RUN_URL}
-          EOF
-                )
-                jq -n --arg body "$BODY" '{body: $body}' > /tmp/comment.json
+                JOBS_URL=$(jq -r '.jobs_url' <<<"$ROW")
                 curl --fail --silent --show-error \
-                  -X POST \
                   -H "Authorization: Bearer ${GH_TOKEN}" \
                   -H "Accept: application/vnd.github+json" \
                   -H "X-GitHub-Api-Version: 2022-11-28" \
-                  "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/111/comments" \
-                  --data-binary @/tmp/comment.json
+                  "${JOBS_URL}?per_page=100" > /tmp/jobs.json
+                printf '%s' "$ROW" > /tmp/run.json
+                echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+                echo "run_url=$RUN_URL" >> "$GITHUB_OUTPUT"
+                echo "conclusion=$CONCLUSION" >> "$GITHUB_OUTPUT"
                 exit 0
               fi
             fi
@@ -68,31 +61,62 @@ jobs:
           echo '::error::Timed out locating a completed merged MLB V15.11.1 deployment run'
           exit 1
 
-  report:
-    if: github.event_name == 'workflow_run' && github.event.workflow_run.event == 'push' && github.event.workflow_run.head_sha == '8519da84cb3e1982fab89cd85d7b09be62ad604d'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Post exact deployment result to PR 111
+      - name: Persist exact deployment evidence
         env:
-          GH_TOKEN: ${{ github.token }}
-          RUN_ID: ${{ github.event.workflow_run.id }}
-          RUN_URL: ${{ github.event.workflow_run.html_url }}
-          RUN_NAME: ${{ github.event.workflow_run.name }}
-          RUN_STATUS: ${{ github.event.workflow_run.status }}
-          RUN_CONCLUSION: ${{ github.event.workflow_run.conclusion }}
-          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_ID: ${{ steps.deployment.outputs.run_id }}
+          RUN_URL: ${{ steps.deployment.outputs.run_url }}
+          RUN_CONCLUSION: ${{ steps.deployment.outputs.conclusion }}
         run: |
           set -euo pipefail
-          BODY=$(cat <<EOF
-          <!-- mlb-v15-11-deployment-observer -->
-          MLB V15.11.1 deployment workflow completed.
+          git pull --rebase origin main
+          mkdir -p runtime_reports
+          jq -n \
+            --arg proofType 'MLB_V15_11_1_MERGED_DEPLOYMENT_RESULT' \
+            --arg targetSha "$TARGET_SHA" \
+            --arg observedAtUtc "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --slurpfile run /tmp/run.json \
+            --slurpfile jobs /tmp/jobs.json \
+            '{
+              proofType: $proofType,
+              targetSha: $targetSha,
+              observedAtUtc: $observedAtUtc,
+              workflow: {
+                id: $run[0].id,
+                name: $run[0].name,
+                event: $run[0].event,
+                status: $run[0].status,
+                conclusion: $run[0].conclusion,
+                runNumber: $run[0].run_number,
+                runAttempt: $run[0].run_attempt,
+                url: $run[0].html_url,
+                createdAt: $run[0].created_at,
+                updatedAt: $run[0].updated_at
+              },
+              jobs: [
+                $jobs[0].jobs[] | {
+                  id,
+                  name,
+                  status,
+                  conclusion,
+                  startedAt: .started_at,
+                  completedAt: .completed_at,
+                  url: .html_url,
+                  steps: [(.steps // [])[] | {number, name, status, conclusion}]
+                }
+              ]
+            }' > runtime_reports/mlb_v15_11_1_merged_deployment_latest.json
+          cat runtime_reports/mlb_v15_11_1_merged_deployment_latest.json
 
-          - Workflow: ${RUN_NAME}
+          BODY=$(cat <<EOF
+          <!-- mlb-v15-11-deployment-probe -->
+          MLB V15.11.1 merged deployment workflow completed.
+
+          - Workflow: MLB Historical Daily Optimizer
           - Run ID: ${RUN_ID}
-          - Status: ${RUN_STATUS}
           - Conclusion: ${RUN_CONCLUSION}
-          - Head SHA: ${HEAD_SHA}
+          - Head SHA: ${TARGET_SHA}
           - Run: ${RUN_URL}
+          - Durable evidence: runtime_reports/mlb_v15_11_1_merged_deployment_latest.json
           EOF
           )
           jq -n --arg body "$BODY" '{body: $body}' > /tmp/comment.json
@@ -103,3 +127,9 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/issues/111/comments" \
             --data-binary @/tmp/comment.json
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add runtime_reports/mlb_v15_11_1_merged_deployment_latest.json
+          git commit -m 'Record MLB V15.11.1 merged deployment result'
+          git push origin main
