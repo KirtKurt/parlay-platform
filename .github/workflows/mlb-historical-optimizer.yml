@@ -68,10 +68,6 @@ name: MLB Historical Daily Optimizer
 permissions:
   contents: read
 
-concurrency:
-  group: parlay-platform-deploy
-  cancel-in-progress: false
-
 env:
   HISTORICAL_TARGET_GAMES: '1600'
   HISTORICAL_START_DATE: ${{ inputs.start_date || '2025-04-01' }}
@@ -127,6 +123,9 @@ jobs:
         run: sam build --no-cached --build-dir .aws-sam-historical --template-file mlb_historical_optimizer/template.yaml
 
   deploy-runtime-guard:
+    concurrency:
+      group: parlay-platform-deploy
+      cancel-in-progress: false
     if: >-
       github.event_name == 'workflow_dispatch' &&
       inputs.deploy_runtime_guard == true &&
@@ -187,6 +186,9 @@ jobs:
           unzip -l /tmp/mlb-runtime.zip | grep -q 'mlb_historical_policy_v1.py'
 
   deploy-plan-and-optionally-authorize:
+    concurrency:
+      group: parlay-platform-deploy
+      cancel-in-progress: false
     if: >-
       github.event_name == 'workflow_dispatch' &&
       inputs.deploy_optimizer_stack == true &&
