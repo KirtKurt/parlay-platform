@@ -34,7 +34,7 @@ env:
   EXPECTED_MODEL_VERSION: INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble
   EXPECTED_SELECTOR_VERSION: INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble
   EXPECTED_POLICY_VERSION: 2026-07-24-mlb-ranked-winner-primary-v1
-  EXPECTED_RUNTIME_VERSION: MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-active-model-authority
+  EXPECTED_RUNTIME_VERSION: MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority
   EXPECTED_ARTIFACT_SHA256: 30dd70fd6291774911b19e1eac3a1d60bb4e59079adba3261358d93e7ce6bd08
 
 jobs:
@@ -279,7 +279,7 @@ jobs:
           }
           mismatches = {key: {'expected': value, 'actual': body.get(key)} for key, value in expected.items() if body.get(key) != value}
           runtime = body.get('ml_runtime_install') or {}
-          if runtime.get('version') != 'MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-active-model-authority':
+          if runtime.get('version') != 'MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority':
               mismatches['runtime.version'] = {'expected': 'v4.4 ranked-winner runtime', 'actual': runtime.get('version')}
           for name in ('rankedWinnerV15_10DirectionInstalled', 'rankedWinnerV15_10SelectionInstalled'):
               if (runtime.get('steps') or {}).get(name) is not True:
