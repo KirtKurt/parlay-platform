@@ -1,4 +1,4 @@
-name: MLB Historical Planning Terminal Lines
+name: MLB Historical Second Retry Status
 
 "on":
   push:
@@ -21,18 +21,15 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Print final planning job lines
+      - name: Print latest recovery optimizer and accelerator runs
         env:
           GITHUB_TOKEN: ${{ github.token }}
-          TARGET_JOB_ID: "89426541736"
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location \
+          sleep 15
+          curl --fail --silent --show-error \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${TARGET_JOB_ID}/logs" \
-            --output /tmp/historical-plan.log
-          echo MLB_HISTORICAL_PLAN_TERMINAL_BEGIN
-          tail -n 32 /tmp/historical-plan.log
-          echo MLB_HISTORICAL_PLAN_TERMINAL_END
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?per_page=100" \
+            | jq -c '[.workflow_runs[] | select(.name == "MLB Historical Recovery and Paid Dispatch" or .name == "MLB Historical Daily Optimizer" or .name == "MLB Historical Accelerated Training Driver") | {name,id,status,conclusion,event,head_sha,created_at,updated_at,html_url}] | group_by(.name) | map(max_by(.created_at)) | sort_by(.name)'
