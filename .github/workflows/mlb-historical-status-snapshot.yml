@@ -1,4 +1,4 @@
-# refresh: 2026-07-24T09:36Z
+# refresh: 2026-07-24T13:02Z
 name: MLB Historical Status Snapshot
 
 "on":
@@ -9,12 +9,13 @@ name: MLB Historical Status Snapshot
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   status:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -27,9 +28,11 @@ jobs:
           aws lambda invoke --function-name "$FUNCTION_NAME" --region "${{ secrets.AWS_REGION }}" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"manual_live_status_snapshot"}' /tmp/status.json >/tmp/meta.json
           python - <<'PY'
           import json
+          from datetime import datetime, timezone
           value=json.load(open('/tmp/status.json'))
           state=value.get('state') or {}
           summary={
+            'checkedAt': datetime.now(timezone.utc).isoformat(),
             'ok':value.get('ok'),
             'phase':state.get('phase'),
             'currentDate':state.get('currentDate'),
@@ -52,3 +55,17 @@ jobs:
           name: mlb-historical-live-status-${{ github.sha }}
           path: /tmp/status-summary.json
           retention-days: 7
+      - name: Publish canonical live status
+        run: |
+          set -euo pipefail
+          mkdir -p docs/runtime
+          cp /tmp/status-summary.json docs/runtime/mlb-historical-live-status.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/runtime/mlb-historical-live-status.json
+          if git diff --cached --quiet; then
+            echo "No status change to publish"
+            exit 0
+          fi
+          git commit -m "chore: publish MLB historical live status"
+          git push
