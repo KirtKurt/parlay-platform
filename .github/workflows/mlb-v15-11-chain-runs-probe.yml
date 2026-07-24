@@ -1,0 +1,85 @@
+name: Probe Live MLB Historical Training Chain
+
+"on":
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/mlb-v15-11-chain-runs-probe.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  probe:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/probe-mlb-training-chain-runs'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Print exact recent chain runs and job steps
+        run: |
+          set -euo pipefail
+          api_root="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
+          curl --fail --silent --show-error "${auth[@]}" \
+            "${api_root}/actions/runs?per_page=100" > /tmp/runs.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          names = {
+              'MLB V15.11.1 Accelerated Historical Training',
+              'Dispatch Authorized MLB Historical Training',
+              'MLB Historical Recovery and Paid Dispatch',
+              'MLB Historical Daily Optimizer',
+              'MLB Historical Accelerated Training Driver',
+              'Observe MLB V15.11.1 Paid Training',
+              'Observe MLB V15.11.1 Historical Training Chain',
+          }
+          data = json.loads(Path('/tmp/runs.json').read_text())
+          rows = [
+              row for row in data.get('workflow_runs', [])
+              if row.get('name') in names and str(row.get('created_at') or '') >= '2026-07-24T06:45:00Z'
+          ]
+          rows.sort(key=lambda row: (row.get('created_at') or '', int(row.get('id') or 0)))
+          Path('/tmp/relevant-runs.json').write_text(json.dumps(rows, indent=2, sort_keys=True))
+          print('RELEVANT_RUN_COUNT=' + str(len(rows)))
+          for row in rows:
+              print(json.dumps({
+                  'id': row.get('id'),
+                  'name': row.get('name'),
+                  'event': row.get('event'),
+                  'status': row.get('status'),
+                  'conclusion': row.get('conclusion'),
+                  'head_sha': row.get('head_sha'),
+                  'created_at': row.get('created_at'),
+                  'updated_at': row.get('updated_at'),
+                  'html_url': row.get('html_url'),
+              }, sort_keys=True))
+          if not rows:
+              raise SystemExit('No relevant MLB historical training Actions runs found')
+          PY
+          jq -r '.[].id' /tmp/relevant-runs.json | while read -r run_id; do
+            curl --fail --silent --show-error "${auth[@]}" \
+              "${api_root}/actions/runs/${run_id}/jobs?per_page=100" > "/tmp/jobs-${run_id}.json"
+            RUN_ID="$run_id" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          run_id = os.environ['RUN_ID']
+          value = json.loads(Path(f'/tmp/jobs-{run_id}.json').read_text())
+          print('JOBS_FOR_RUN=' + run_id)
+          for job in value.get('jobs', []):
+              active = [step.get('name') for step in job.get('steps', []) if step.get('status') == 'in_progress']
+              failed = [step.get('name') for step in job.get('steps', []) if step.get('conclusion') == 'failure']
+              print(json.dumps({
+                  'job_id': job.get('id'),
+                  'job': job.get('name'),
+                  'status': job.get('status'),
+                  'conclusion': job.get('conclusion'),
+                  'active_steps': active,
+                  'failed_steps': failed,
+              }, sort_keys=True))
+          PY
+          done
