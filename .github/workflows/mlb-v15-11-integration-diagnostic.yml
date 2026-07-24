@@ -154,4 +154,16 @@ jobs:
       - uses: actions/checkout@v4
       - uses: aws-actions/setup-sam@v2
       - name: Build historical optimizer
-        run: sam build --no-cached --build-dir .aws-sam-historical --template-file mlb_historical_optimizer/template.yaml
+        run: |
+          set +e
+          sam build --no-cached --build-dir .aws-sam-historical --template-file mlb_historical_optimizer/template.yaml > historical-sam-build.log 2>&1
+          code=$?
+          cat historical-sam-build.log
+          exit "$code"
+      - name: Upload historical SAM build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v15-11-historical-sam-build-${{ github.run_id }}-${{ github.run_attempt }}
+          path: historical-sam-build.log
+          if-no-files-found: error
