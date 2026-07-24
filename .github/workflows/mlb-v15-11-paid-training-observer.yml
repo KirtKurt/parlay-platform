@@ -1,0 +1,121 @@
+name: Observe MLB V15.11.1 Paid Training
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/mlb-v15-11-paid-training-observer.yml"
+
+permissions:
+  contents: read
+  actions: read
+  issues: write
+
+jobs:
+  observe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TARGET_SHA: afc3bcbeb0f315c4c4c022d914ce4842914b65c0
+      TARGET_WORKFLOW: MLB V15.11.1 Accelerated Historical Training
+      REPORT_ISSUE: "111"
+    steps:
+      - name: Locate, monitor, and report the exact paid-training run
+        run: |
+          set -euo pipefail
+          api_root="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
+
+          comment_id=""
+          run_id=""
+          run_url=""
+          for locate_attempt in $(seq 1 120); do
+            curl --fail --silent --show-error "${auth[@]}" \
+              "${api_root}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100" \
+              > /tmp/runs.json
+            row=$(jq -c --arg name "$TARGET_WORKFLOW" \
+              '.workflow_runs[] | select(.name == $name) | . ' \
+              /tmp/runs.json | head -1 || true)
+            if [ -n "$row" ]; then
+              run_id=$(jq -r '.id' <<<"$row")
+              run_url=$(jq -r '.html_url' <<<"$row")
+              break
+            fi
+            sleep 5
+          done
+          test -n "$run_id" || {
+            echo "::error::Unable to locate accelerated paid-training workflow run"
+            exit 1
+          }
+
+          body=$(cat <<EOF
+          <!-- mlb-v15-11-paid-training-live-observer -->
+          ## MLB V15.11.1 paid historical training
+
+          - Exact source SHA: \`${TARGET_SHA}\`
+          - Workflow run: ${run_url}
+          - Status: locating jobs
+          - Production cutover: **not assumed**
+          - Automatic wagering: **disabled**
+          EOF
+          )
+          jq -n --arg body "$body" '{body:$body}' >/tmp/comment.json
+          curl --fail --silent --show-error -X POST "${auth[@]}" \
+            "${api_root}/issues/${REPORT_ISSUE}/comments" \
+            --data-binary @/tmp/comment.json > /tmp/comment-response.json
+          comment_id=$(jq -r '.id' /tmp/comment-response.json)
+          test -n "$comment_id"
+          test "$comment_id" != "null"
+
+          for attempt in $(seq 1 720); do
+            curl --fail --silent --show-error "${auth[@]}" \
+              "${api_root}/actions/runs/${run_id}" > /tmp/run.json
+            curl --fail --silent --show-error "${auth[@]}" \
+              "${api_root}/actions/runs/${run_id}/jobs?per_page=100" > /tmp/jobs.json
+
+            status=$(jq -r '.status' /tmp/run.json)
+            conclusion=$(jq -r '.conclusion // "pending"' /tmp/run.json)
+            active_job=$(jq -r '
+              [.jobs[] | select(.status != "completed") | .name][0]
+              // [.jobs[] | select(.conclusion == "failure") | .name][0]
+              // [.jobs[] | .name][-1]
+              // "job unavailable"
+            ' /tmp/jobs.json)
+            active_step=$(jq -r '
+              [.jobs[] | .steps[]? | select(.status == "in_progress") | .name][0]
+              // [.jobs[] | .steps[]? | select(.conclusion == "failure") | .name][0]
+              // "step unavailable"
+            ' /tmp/jobs.json)
+            completed_jobs=$(jq '[.jobs[] | select(.status == "completed")] | length' /tmp/jobs.json)
+            total_jobs=$(jq '.jobs | length' /tmp/jobs.json)
+            observed=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+            body=$(cat <<EOF
+          <!-- mlb-v15-11-paid-training-live-observer -->
+          ## MLB V15.11.1 paid historical training
+
+          - Exact source SHA: \`${TARGET_SHA}\`
+          - Workflow run: ${run_url}
+          - Status: **${status}**
+          - Conclusion: **${conclusion}**
+          - Active job: \`${active_job}\`
+          - Active step: \`${active_step}\`
+          - Jobs completed: ${completed_jobs}/${total_jobs}
+          - Last observed: ${observed}
+          - Production cutover: **only if the immutable 1,000/200/200, exact-slate, every-day 80% gates pass**
+          - Automatic wagering: **disabled**
+          EOF
+          )
+            jq -n --arg body "$body" '{body:$body}' >/tmp/comment.json
+            curl --fail --silent --show-error -X PATCH "${auth[@]}" \
+              "${api_root}/issues/comments/${comment_id}" \
+              --data-binary @/tmp/comment.json >/tmp/comment-update.json
+
+            if [ "$status" = "completed" ]; then
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "::error::Observer timed out before paid-training workflow completed"
+          exit 1
