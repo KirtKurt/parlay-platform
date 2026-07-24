@@ -1,0 +1,49 @@
+name: Validate Fresh MLB Authorized Dispatcher
+
+"on":
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.github/workflows/mlb-v15-11-authorized-dispatch.yml'
+      - '.github/workflows/mlb-authorized-dispatch-validate-temp.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet 'PyYAML>=6,<7'
+      - name: Parse workflow and shell-check embedded dispatcher
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import subprocess
+          import yaml
+          path = Path('.github/workflows/mlb-v15-11-authorized-dispatch.yml')
+          data = yaml.safe_load(path.read_text(encoding='utf-8'))
+          assert data['permissions']['actions'] == 'write'
+          assert data['concurrency']['cancel-in-progress'] is False
+          script = data['jobs']['dispatch']['steps'][0]['run']
+          required = [
+              'AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS',
+              'DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE',
+              'maximum_credits',
+              '25000',
+              'status != "completed"',
+              'base_head',
+              'head_sha == $head',
+          ]
+          for value in required:
+              assert value in script, value
+          shell = Path('/tmp/mlb-authorized-dispatch.sh')
+          shell.write_text(script, encoding='utf-8')
+          subprocess.run(['bash', '-n', str(shell)], check=True)
+          print('Fresh MLB authorized dispatcher YAML and shell syntax passed.')
+          PY
