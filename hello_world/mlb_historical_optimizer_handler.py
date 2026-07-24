@@ -731,12 +731,28 @@ def _complete_slate(
     historical = []
     for requested in grid.timestamps_utc:
         raw, _ = _get_s3_json(_raw_key(day, requested))
-        historical.append(
-            {
+        payload = raw.get("payload") if isinstance(raw, Mapping) and "payload" in raw else raw
+        try:
+            optimizer.normalize_historical_snapshot(payload, requested)
+        except optimizer.HistoricalOptimizerError as exc:
+            if str(exc) != "historical response is too stale for a 15-minute grid":
+                raise
+            skipped = state.setdefault("skippedHistoricalSlots", [])
+            marker = {
+                "slateDateEt": day,
                 "requestedAtUtc": requested,
-                "payload": raw.get("payload") if isinstance(raw, Mapping) and "payload" in raw else raw,
+                "reason": "provider_snapshot_too_stale",
+                "recordedAtUtc": _now_iso(),
             }
-        )
+            if not any(
+                isinstance(row, Mapping)
+                and row.get("slateDateEt") == day
+                and row.get("requestedAtUtc") == requested
+                for row in skipped
+            ):
+                skipped.append(marker)
+            continue
+        historical.append({"requestedAtUtc": requested, "payload": payload})
     dataset = optimizer.build_slate_dataset(
         day,
         finals.get("games") or [],
