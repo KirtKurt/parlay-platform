@@ -25,7 +25,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 0
+          fetch-depth: 1
           persist-credentials: true
 
       - name: Verify and extract exact V15.11 archive
@@ -122,7 +122,7 @@ jobs:
           docs.write_text(text, encoding='utf-8')
           PY
 
-      - name: Verify transformed source and hard contracts
+      - name: Verify transformed known-file hashes
         shell: bash
         run: |
           set -euo pipefail
@@ -140,13 +140,23 @@ jobs:
           d16c405d5117d32d37ab82a469618711483d0adc340c0e88ef501f24b5b56b4e  tests/unit/test_mlb_historical_read_api_contract.py
           SHA256
           sha256sum -c /tmp/v15-11-1-known-sha256.txt
+
+      - name: Verify workflow and documentation safety contracts
+        shell: bash
+        run: |
+          set -euo pipefail
           grep -Fq 'predictionOnlyWagerSafetyInstalled' .github/workflows/mlb-historical-optimizer.yml
           grep -Fq 'rowLevelAutomaticWagerAllowed' .github/workflows/mlb-historical-optimizer.yml
           grep -Fq '# MLB Historical Daily Optimizer — V15.11.1' docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md
           grep -Fq '## V15.11.1 prediction-only safety boundary' docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md
+          sha256sum .github/workflows/mlb-historical-optimizer.yml docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md
+
+      - name: Verify optimizer objective constants
+        shell: bash
+        run: |
+          set -euo pipefail
           grep -Fq 'MIN_TRAINING_GAMES = 1000' hello_world/mlb_historical_daily_optimizer_v1.py
           grep -Fq 'MIN_DAILY_ACCURACY = 0.80' hello_world/mlb_historical_daily_optimizer_v1.py
-          sha256sum .github/workflows/mlb-historical-optimizer.yml docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md
 
       - uses: actions/setup-python@v5
         with:
