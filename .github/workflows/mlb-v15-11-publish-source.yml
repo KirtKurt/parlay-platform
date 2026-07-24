@@ -1,8 +1,9 @@
 name: Publish MLB V15.11.1 Direct Source
 
 "on":
-  push:
-    branches: [agent/mlb-v15-11-historical-daily80-production]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
     paths:
       - '.github/workflows/mlb-v15-11-publish-source.yml'
 
@@ -15,13 +16,15 @@ concurrency:
 
 jobs:
   publish:
-    if: github.actor != 'github-actions[bot]'
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/mlb-v15-11-historical-daily80-production'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    env:
+      TARGET_BRANCH: ${{ github.event.pull_request.head.ref }}
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.ref_name }}
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
           persist-credentials: true
 
@@ -29,7 +32,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          test "$GITHUB_REF_NAME" = 'agent/mlb-v15-11-historical-daily80-production'
+          test "$TARGET_BRANCH" = 'agent/mlb-v15-11-historical-daily80-production'
           test "$(find bootstrap -maxdepth 1 -type f -name 'mlb-v15-11.tar.xz.b64.part*' | wc -l)" -eq 5
           cat bootstrap/mlb-v15-11.tar.xz.b64.part* > /tmp/mlb-v15-11.tar.xz.b64
           base64 --decode /tmp/mlb-v15-11.tar.xz.b64 > /tmp/mlb-v15-11.tar.xz
@@ -79,4 +82,4 @@ jobs:
           git add -A
           test -n "$(git diff --cached --name-only)"
           git commit -m 'Publish reviewable MLB V15.11.1 source'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          git push origin "HEAD:${TARGET_BRANCH}"
