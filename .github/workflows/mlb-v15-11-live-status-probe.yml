@@ -1,4 +1,4 @@
-name: Inspect resumed MLB exception games only
+name: Print compact resumed MLB rows
 
 "on":
   pull_request:
@@ -19,7 +19,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89429118420'
     steps:
-      - name: Print resumed rows
+      - name: Print all resumed rows without play-by-play
         shell: bash
         run: |
           curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" > /tmp/job.log
@@ -40,19 +40,20 @@ jobs:
               if isinstance(state,dict) and isinstance(state.get('plan'),dict): plan=state['plan']
           rows=[]
           for day in [str(x['slateDateEt']) for x in (plan or {}).get('rejectedDates') or []]:
-              url='https://statsapi.mlb.com/api/v1/schedule?'+urlencode({'sportId':1,'startDate':day,'endDate':day,'hydrate':'linescore,gameInfo'})
+              url='https://statsapi.mlb.com/api/v1/schedule?'+urlencode({'sportId':1,'startDate':day,'endDate':day,'hydrate':'linescore'})
               payload=json.loads(urlopen(url,timeout=30).read())
               for d in payload.get('dates') or []:
                   for g in d.get('games') or []:
                       if not (g.get('resumeDate') or g.get('resumedFromDate')): continue
-                      teams=g.get('teams') or {}; status=g.get('status') or {}; utc=str(g.get('gameDate') or '')
+                      t=g.get('teams') or {}; s=g.get('status') or {}; utc=str(g.get('gameDate') or '')
                       try: game_et=datetime.fromisoformat(utc.replace('Z','+00:00')).astimezone(et).date().isoformat()
                       except Exception: game_et=None
                       rows.append({'day':day,'pk':g.get('gamePk'),'official':g.get('officialDate'),'gameUtc':utc,'gameEt':game_et,
                                    'resumeDate':g.get('resumeDate'),'resumedFromDate':g.get('resumedFromDate'),
-                                   'status':status,'away':(((teams.get('away') or {}).get('team') or {}).get('name')),
-                                   'home':(((teams.get('home') or {}).get('team') or {}).get('name')),
-                                   'awayScore':(teams.get('away') or {}).get('score'),'homeScore':(teams.get('home') or {}).get('score'),
-                                   'linescore':g.get('linescore')})
+                                   'abstract':s.get('abstractGameState'),'detail':s.get('detailedState'),'code':s.get('statusCode'),
+                                   'away':(((t.get('away') or {}).get('team') or {}).get('name')),
+                                   'home':(((t.get('home') or {}).get('team') or {}).get('name')),
+                                   'awayScore':(t.get('away') or {}).get('score'),'homeScore':(t.get('home') or {}).get('score'),
+                                   'inningCount':len((g.get('linescore') or {}).get('innings') or [])})
           print('RESUMED_ROWS='+json.dumps(rows,sort_keys=True,separators=(',',':')))
           PY
