@@ -155,8 +155,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          grep -Fq 'MIN_TRAINING_GAMES = 1000' hello_world/mlb_historical_daily_optimizer_v1.py
-          grep -Fq 'MIN_DAILY_ACCURACY = 0.80' hello_world/mlb_historical_daily_optimizer_v1.py
+          grep -Fq 'MIN_TRAINING_GAMES = 1000' hello_world/mlb_historical_policy_v1.py
+          grep -Fq 'MIN_DAILY_ACCURACY = 0.80' hello_world/mlb_historical_policy_v1.py
 
       - uses: actions/setup-python@v5
         with:
