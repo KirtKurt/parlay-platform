@@ -1,0 +1,302 @@
+name: MLB Historical Daily Optimizer
+
+"on":
+  pull_request:
+    paths:
+      - 'hello_world/mlb_historical_*'
+      - 'hello_world/mlb_ranked_primary_v15_10.py'
+      - 'hello_world/mlb_ml_runtime_install_v3*'
+      - 'hello_world/mlb_v3_read_api*'
+      - 'tests/unit/test_mlb_historical_*'
+      - 'mlb_historical_optimizer/**'
+      - 'docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md'
+      - '.github/workflows/mlb-historical-optimizer.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_historical_*'
+      - 'hello_world/mlb_ranked_primary_v15_10.py'
+      - 'hello_world/mlb_ml_runtime_install_v3*'
+      - 'hello_world/mlb_v3_read_api*'
+      - 'tests/unit/test_mlb_historical_*'
+      - 'mlb_historical_optimizer/**'
+      - 'docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md'
+      - '.github/workflows/mlb-historical-optimizer.yml'
+  workflow_dispatch:
+    inputs:
+      deploy_runtime_guard:
+        description: Install the fail-closed historical authority guard in the production MLB Lambda
+        type: boolean
+        default: false
+      runtime_guard_confirmation:
+        description: Type INSTALL_FAIL_CLOSED_HISTORICAL_RUNTIME_GUARD
+        type: string
+        default: ''
+      deploy_optimizer_stack:
+        description: Deploy/update the historical optimizer and build a zero-paid-call credit plan
+        type: boolean
+        default: false
+      execute_paid_backfill:
+        description: Authorize the exact plan and begin historical ingestion
+        type: boolean
+        default: false
+      paid_authorization:
+        description: Type AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS
+        type: string
+        default: ''
+      production_cutover_confirmation:
+        description: Type DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE
+        type: string
+        default: ''
+      start_date:
+        description: First MLB game date (America/New_York)
+        type: string
+        default: '2025-04-01'
+      end_date:
+        description: Last MLB game date (America/New_York)
+        type: string
+        default: '2025-08-31'
+      maximum_credits:
+        description: Immutable historical-program credit ceiling
+        type: string
+        default: '120000'
+      maximum_candidates:
+        description: Signal-weight combinations per optimization round
+        type: string
+        default: '25000'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: parlay-platform-deploy
+  cancel-in-progress: false
+
+env:
+  HISTORICAL_TARGET_GAMES: '1600'
+  HISTORICAL_START_DATE: ${{ inputs.start_date || '2025-04-01' }}
+  HISTORICAL_END_DATE: ${{ inputs.end_date || '2025-08-31' }}
+  HISTORICAL_MAX_CREDITS: ${{ inputs.maximum_credits || '120000' }}
+  HISTORICAL_MAX_CANDIDATES: ${{ inputs.maximum_candidates || '25000' }}
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - name: Install validation dependencies
+        run: python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<10' 'cfn-lint>=1,<2' 'pyyaml>=6,<7'
+      - name: Verify historical optimizer contracts
+        run: |
+          set -euo pipefail
+          python -m pytest -q \
+            tests/unit/test_mlb_historical_policy_v1.py \
+            tests/unit/test_mlb_historical_daily_optimizer_v1.py \
+            tests/unit/test_mlb_historical_optimizer_handler.py \
+            tests/unit/test_mlb_historical_read_api_contract.py
+          python -m py_compile \
+            hello_world/mlb_historical_policy_v1.py \
+            hello_world/mlb_historical_daily_optimizer_v1.py \
+            hello_world/mlb_historical_optimizer_handler.py \
+            hello_world/mlb_ranked_primary_v15_10.py \
+            hello_world/mlb_ml_runtime_install_v3.py \
+            hello_world/mlb_v3_read_api.py
+          PYTHONPATH=hello_world python - <<'PY'
+          import mlb_historical_daily_optimizer_v1 as optimizer
+          import mlb_historical_policy_v1 as policy
+          assert policy.CHAMPION_PK == 'MLB_HISTORICAL_CHAMPION#V1'
+          assert policy.CUTOVER_PK == 'MLB_HISTORICAL_PRODUCTION_CUTOVER#V1'
+          assert policy.CUTOVER_SK == 'PRODUCTION_CUTOVER'
+          assert policy.MIN_TRAINING_GAMES == 1000
+          assert policy.MIN_WALK_FORWARD_GAMES == 200
+          assert policy.MIN_UNTOUCHED_AUDIT_GAMES == 200
+          assert optimizer.PULL_START_ET == '01:00'
+          assert optimizer.PULL_INTERVAL_MINUTES == 15
+          assert policy.MIN_DAILY_ACCURACY == 0.80
+          assert policy.TARGET_DAILY_ACCURACY_HIGH == 0.90
+          PY
+          grep -Fq 'mlb_historical_policy_v1.apply_runtime_authority' hello_world/mlb_ranked_primary_v15_10.py
+          grep -Fq 'DeleteLeaseOnlyFromOptimizerStatePartition' mlb_historical_optimizer/template.yaml
+          sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+          sam validate --template-file template.yaml
+      - name: Build historical optimizer cleanly
+        run: sam build --no-cached --build-dir .aws-sam-historical --template-file mlb_historical_optimizer/template.yaml
+
+  deploy-runtime-guard:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.deploy_runtime_guard == true &&
+      inputs.runtime_guard_confirmation == 'INSTALL_FAIL_CLOSED_HISTORICAL_RUNTIME_GUARD'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Build and deploy fail-closed production guard
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          test -n "${BBS_API_KEY_VALUE:-}"
+          test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}"
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<10'
+          python -m pytest -q tests/unit/test_mlb_historical_*.py
+          sam build --no-cached --build-dir .aws-sam-runtime --template-file template.yaml
+          TEMPLATE_SHA256=$(sha256sum template.yaml | awk '{print $1}')
+          DEPLOY_RUN_ID="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-mlb-historical-guard"
+          sam deploy \
+            --template-file .aws-sam-runtime/template.yaml \
+            --stack-name parlay-platform-dev \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 --force-upload --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "BbsApiKey=${BBS_API_KEY_VALUE}" \
+              "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}" \
+              "DeployGitSha=${GITHUB_SHA}" \
+              "DeployTemplateSha256=${TEMPLATE_SHA256}" \
+              "DeployRunId=${DEPLOY_RUN_ID}"
+      - name: Prove deployed MLB runtime authority is coherent
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stack-resource \
+            --stack-name parlay-platform-dev --logical-resource-id MLBV3ReadFunction \
+            --region "${{ secrets.AWS_REGION }}" --query 'StackResourceDetail.PhysicalResourceId' --output text)
+          CODE_URL=$(aws lambda get-function --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" --query 'Code.Location' --output text)
+          curl --fail --location --silent --show-error "$CODE_URL" -o /tmp/mlb-runtime.zip
+          unzip -p /tmp/mlb-runtime.zip mlb_ranked_primary_v15_10.py | \
+            grep -Fq 'mlb_historical_policy_v1.apply_runtime_authority'
+          unzip -l /tmp/mlb-runtime.zip | grep -q 'mlb_historical_policy_v1.py'
+
+  deploy-plan-and-optionally-authorize:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.deploy_optimizer_stack == true &&
+      inputs.deploy_runtime_guard == true &&
+      inputs.runtime_guard_confirmation == 'INSTALL_FAIL_CLOSED_HISTORICAL_RUNTIME_GUARD'
+    needs: [validate, deploy-runtime-guard]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Validate authorization inputs and deploy optimizer
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          [[ "$HISTORICAL_MAX_CREDITS" =~ ^[0-9]+$ ]]
+          [[ "$HISTORICAL_MAX_CANDIDATES" =~ ^[0-9]+$ ]]
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<10'
+          python -m pytest -q tests/unit/test_mlb_historical_*.py
+          sam build --no-cached --build-dir .aws-sam-historical --template-file mlb_historical_optimizer/template.yaml
+          sam deploy \
+            --template-file .aws-sam-historical/template.yaml \
+            --stack-name parlay-platform-mlb-historical-optimizer \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 --force-upload --no-confirm-changeset --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "TargetSnapshotsTable=parlay_platform_snapshots" \
+              "HistoricalStartDate=${HISTORICAL_START_DATE}" \
+              "HistoricalEndDate=${HISTORICAL_END_DATE}" \
+              "HistoricalTargetGames=${HISTORICAL_TARGET_GAMES}" \
+              "HistoricalMaxCredits=${HISTORICAL_MAX_CREDITS}" \
+              "HistoricalRequestsPerRun=25" \
+              "HistoricalMaxCandidates=${HISTORICAL_MAX_CANDIDATES}" \
+              "HistoricalMaxOptimizationRounds=6" \
+              "HistoricalFreshAuditIncrementGames=250" \
+              "DeployGitSha=${GITHUB_SHA}"
+      - name: Build zero-paid-call plan and conditionally authorize exact fingerprint
+        env:
+          EXECUTE_PAID: ${{ inputs.execute_paid_backfill == true && inputs.paid_authorization == 'AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS' && inputs.production_cutover_confirmation == 'DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE' }}
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-mlb-historical-optimizer \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "${{ secrets.AWS_REGION }}" \
+            --cli-read-timeout 900 --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"initialize","run":"github_actions_initialize"}' /tmp/initialize.json
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "${{ secrets.AWS_REGION }}" \
+            --cli-read-timeout 900 --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"plan","run":"github_actions_zero_paid_call_plan"}' /tmp/plan.json
+          FUNCTION_NAME="$FUNCTION_NAME" EXECUTE_PAID="$EXECUTE_PAID" python - <<'PY'
+          import json, os, subprocess
+          from pathlib import Path
+          payload = json.loads(Path('/tmp/plan.json').read_text())
+          if payload.get('ok') is not True:
+              raise SystemExit('historical planning failed')
+          state = payload.get('state') or {}
+          plan = payload.get('plan') or state.get('plan') or {}
+          required = {
+              'minimumTrainingGames': 1000,
+              'minimumWalkForwardGames': 200,
+              'minimumUntouchedAuditGames': 200,
+              'snapshotStartAtEt': '01:00',
+              'snapshotIntervalMinutes': 15,
+              'dailyAccuracyRequirement': 0.80,
+          }
+          for key, expected in required.items():
+              actual = state.get(key)
+              if isinstance(expected, float):
+                  assert float(actual or 0) >= expected, (key, actual)
+              else:
+                  assert actual == expected, (key, actual, expected)
+          assert plan.get('paidHistoricalCallsMadeByPlan') == 0
+          assert plan.get('completeDateRangeLedger') is True
+          assert int(plan.get('planningErrorCount') or 0) == 0
+          assert not plan.get('rejectedDates')
+          assert plan.get('perGameFeatureCutoff') == 'each_game_t_minus_45'
+          fingerprint = plan.get('fingerprint')
+          assert fingerprint
+          if os.environ['EXECUTE_PAID'] == 'true':
+              body = json.dumps({
+                  'mode': 'authorize',
+                  'run': 'github_actions_exact_plan_authorization',
+                  'confirm': 'AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS',
+                  'planFingerprint': fingerprint,
+              })
+              subprocess.run([
+                  'aws','lambda','invoke','--function-name',os.environ['FUNCTION_NAME'],
+                  '--region',os.environ['AWS_REGION'],'--cli-read-timeout','900',
+                  '--cli-binary-format','raw-in-base64-out','--payload',body,
+                  '/tmp/authorize.json'
+              ], check=True)
+          PY
+          if [ "$EXECUTE_PAID" = true ]; then
+            aws lambda invoke --function-name "$FUNCTION_NAME" --region "${{ secrets.AWS_REGION }}" \
+              --cli-read-timeout 900 --cli-binary-format raw-in-base64-out \
+              --payload '{"mode":"orchestrate","run":"github_actions_authorized_first_batch"}' /tmp/first-batch.json
+            cat /tmp/first-batch.json
+          else
+            echo 'Paid historical calls were not authorized; plan only.'
+          fi

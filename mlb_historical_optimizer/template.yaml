@@ -1,0 +1,199 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: >-
+  Resumable MLB historical The Odds API backfill and whole-slate daily optimizer.
+  Paid ingestion requires an explicit fingerprinted credit-plan authorization.
+  Promotion is impossible until 1,000 training games, 200 walk-forward games,
+  200 untouched-audit games, and 80 percent or better on every held-out slate.
+  First promotion atomically installs the champion and a permanent historical-only
+  cutover; any later authority loss fails closed instead of restoring V15.10.
+
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+    Description: The Odds API key with historical endpoint entitlement
+  TargetSnapshotsTable:
+    Type: String
+    Default: parlay_platform_snapshots
+    Description: Existing production DynamoDB table that stores optimizer state and the gated champion pointer
+  HistoricalStartDate:
+    Type: String
+    Default: '2025-04-01'
+  HistoricalEndDate:
+    Type: String
+    Default: '2025-08-31'
+  HistoricalTargetGames:
+    Type: Number
+    Default: 1600
+    MinValue: 1400
+  HistoricalMaxCredits:
+    Type: Number
+    Default: 120000
+    MinValue: 1000
+  HistoricalRequestsPerRun:
+    Type: Number
+    Default: 25
+    MinValue: 1
+    MaxValue: 100
+  HistoricalMaxCandidates:
+    Type: Number
+    Default: 25000
+    MinValue: 100
+  HistoricalMaxOptimizationRounds:
+    Type: Number
+    Default: 6
+    MinValue: 1
+    MaxValue: 12
+  HistoricalFreshAuditIncrementGames:
+    Type: Number
+    Default: 250
+    MinValue: 200
+  DeployGitSha:
+    Type: String
+    Default: unknown
+
+Globals:
+  Function:
+    Runtime: python3.11
+    Architectures:
+      - x86_64
+    Timeout: 900
+    MemorySize: 4096
+    Tracing: Active
+    Environment:
+      Variables:
+        ODDS_API_KEY: !Ref OddsApiKey
+        TARGET_SNAPSHOTS_TABLE: !Ref TargetSnapshotsTable
+        SNAPSHOTS_TABLE: !Ref TargetSnapshotsTable
+        MLB_HISTORICAL_ARTIFACTS_BUCKET: !Ref HistoricalArtifactsBucket
+        MLB_HISTORICAL_START_DATE: !Ref HistoricalStartDate
+        MLB_HISTORICAL_END_DATE: !Ref HistoricalEndDate
+        MLB_HISTORICAL_TARGET_GAMES: !Ref HistoricalTargetGames
+        MLB_HISTORICAL_MAX_CREDITS: !Ref HistoricalMaxCredits
+        MLB_HISTORICAL_REQUESTS_PER_RUN: !Ref HistoricalRequestsPerRun
+        MLB_HISTORICAL_MAX_CANDIDATES: !Ref HistoricalMaxCandidates
+        MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS: !Ref HistoricalMaxOptimizationRounds
+        MLB_HISTORICAL_FRESH_AUDIT_INCREMENT_GAMES: !Ref HistoricalFreshAuditIncrementGames
+        MLB_HISTORICAL_QUOTA_RESERVE: '100'
+        MLB_HISTORICAL_LEASE_SECONDS: '840'
+        MLB_HISTORICAL_HTTP_TIMEOUT_SECONDS: '20'
+        MLB_HISTORICAL_POLICY_ENABLED: 'true'
+        INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
+        INQSI_SLATE_TIMEZONE: America/New_York
+
+Resources:
+  HistoricalArtifactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: RetainHistoricalTrainingEvidence
+            Status: Enabled
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 3650
+
+  HistoricalOptimizerFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../hello_world/
+      Handler: mlb_historical_optimizer_handler.lambda_handler
+      ReservedConcurrentExecutions: 1
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 300
+        MaximumRetryAttempts: 1
+      Policies:
+        - Statement:
+            - Sid: ReadWriteOptimizerStateAndAuthority
+              Effect: Allow
+              Action:
+                - dynamodb:DescribeTable
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:UpdateItem
+                - dynamodb:TransactWriteItems
+              Resource:
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TargetSnapshotsTable}
+            - Sid: DeleteLeaseOnlyFromOptimizerStatePartition
+              Effect: Allow
+              Action:
+                - dynamodb:DeleteItem
+              Resource:
+                - !Sub arn:${AWS::Partition}:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${TargetSnapshotsTable}
+              Condition:
+                ForAllValues:StringEquals:
+                  dynamodb:LeadingKeys:
+                    - MLB_HISTORICAL_OPTIMIZER#V1
+        - Statement:
+            - Sid: ReadHistoricalEvidenceBucketMetadata
+              Effect: Allow
+              Action:
+                - s3:GetBucketLocation
+                - s3:GetBucketVersioning
+              Resource:
+                - !GetAtt HistoricalArtifactsBucket.Arn
+            - Sid: AppendAndReadVersionedHistoricalEvidence
+              Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:GetObjectVersion
+                - s3:PutObject
+              Resource:
+                - !Sub '${HistoricalArtifactsBucket.Arn}/*'
+      Events:
+        ResumeEveryFiveMinutes:
+          Type: Schedule
+          Properties:
+            Schedule: rate(5 minutes)
+            Description: Resume only after a fingerprinted paid-backfill authorization; otherwise no-op
+            Enabled: true
+            Input: '{"mode":"orchestrate","run":"scheduled_historical_daily_optimizer"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 300
+              MaximumRetryAttempts: 1
+        ReadOnlyStatus:
+          Type: Api
+          Properties:
+            Path: /v1/mlb/historical-optimizer/status
+            Method: GET
+
+  HistoricalOptimizerAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmDescription: MLB historical optimizer Lambda errors
+      Namespace: AWS/Lambda
+      MetricName: Errors
+      Dimensions:
+        - Name: FunctionName
+          Value: !Ref HistoricalOptimizerFunction
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+
+Outputs:
+  HistoricalOptimizerFunctionArn:
+    Description: Lambda ARN for bootstrap/status invocations
+    Value: !GetAtt HistoricalOptimizerFunction.Arn
+  HistoricalOptimizerFunctionName:
+    Value: !Ref HistoricalOptimizerFunction
+  HistoricalArtifactsBucketName:
+    Value: !Ref HistoricalArtifactsBucket
+  HistoricalOptimizerStatusUrl:
+    Description: Read-only status endpoint
+    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/mlb/historical-optimizer/status'
