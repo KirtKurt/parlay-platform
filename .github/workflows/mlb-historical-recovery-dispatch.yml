@@ -1,0 +1,144 @@
+name: MLB Historical Recovery and Paid Dispatch
+
+"on":
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-recovery-dispatch.yml'
+      - '.github/workflows/mlb-historical-accelerator.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-recovery-dispatch.yml'
+      - '.github/workflows/mlb-historical-accelerator.yml'
+  workflow_dispatch:
+    inputs:
+      paid_authorization:
+        description: Type AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS
+        required: true
+        type: string
+      cutover_confirmation:
+        description: Type DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate recovery and acceleration workflows
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'PyYAML>=6,<7'
+          python - <<'PY'
+          from pathlib import Path
+          import yaml
+          for path in (
+              Path('.github/workflows/mlb-historical-recovery-dispatch.yml'),
+              Path('.github/workflows/mlb-historical-accelerator.yml'),
+          ):
+              value = yaml.safe_load(path.read_text(encoding='utf-8'))
+              assert isinstance(value, dict) and value.get('jobs')
+          recovery = Path('.github/workflows/mlb-historical-recovery-dispatch.yml').read_text()
+          accelerator = Path('.github/workflows/mlb-historical-accelerator.yml').read_text()
+          assert 'ROLLBACK_COMPLETE' in recovery
+          assert 'delete-stack' in recovery
+          assert 'AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS' in recovery
+          assert "HISTORICAL_REQUESTS_PER_RUN: '100'" in accelerator
+          assert "state.get('phase') == 'PROMOTED'" in accelerator
+          print('MLB historical recovery/training workflow contracts valid')
+          PY
+
+  recover-and-dispatch:
+    if: (github.event_name == 'push' && contains(github.event.head_commit.message, '[authorize-mlb-historical-backfill]') && contains(github.event.head_commit.message, '[destroy-v15.10-after-daily80]')) || (github.event_name == 'workflow_dispatch' && inputs.paid_authorization == 'AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS' && inputs.cutover_confirmation == 'DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE')
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+      AWS_DEFAULT_REGION: ${{ secrets.AWS_REGION }}
+      OPTIMIZER_STACK: parlay-platform-mlb-historical-optimizer
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Verify credentials and historical entitlement
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+      - name: Delete only an unrecoverable rollback-complete optimizer stack
+        run: |
+          set -euo pipefail
+          STATUS=$(aws cloudformation describe-stacks \
+            --stack-name "$OPTIMIZER_STACK" \
+            --region "$AWS_REGION" \
+            --query 'Stacks[0].StackStatus' \
+            --output text 2>/dev/null || echo STACK_NOT_FOUND)
+          echo "optimizer_stack_status=${STATUS}"
+          case "$STATUS" in
+            ROLLBACK_COMPLETE)
+              aws cloudformation delete-stack \
+                --stack-name "$OPTIMIZER_STACK" \
+                --region "$AWS_REGION"
+              aws cloudformation wait stack-delete-complete \
+                --stack-name "$OPTIMIZER_STACK" \
+                --region "$AWS_REGION"
+              ;;
+            STACK_NOT_FOUND|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE)
+              ;;
+            *)
+              echo "::error::Dedicated optimizer stack is not safely recoverable: ${STATUS}"
+              exit 1
+              ;;
+          esac
+      - name: Dispatch exact paid historical optimizer workflow
+        run: |
+          set -euo pipefail
+          BEFORE=$(gh run list \
+            --repo "$GITHUB_REPOSITORY" \
+            --workflow mlb-historical-optimizer.yml \
+            --event workflow_dispatch \
+            --limit 1 \
+            --json databaseId \
+            --jq '.[0].databaseId // 0')
+          gh workflow run mlb-historical-optimizer.yml \
+            --repo "$GITHUB_REPOSITORY" \
+            --ref main \
+            -f deploy_runtime_guard=true \
+            -f runtime_guard_confirmation=INSTALL_FAIL_CLOSED_HISTORICAL_RUNTIME_GUARD \
+            -f deploy_optimizer_stack=true \
+            -f execute_paid_backfill=true \
+            -f paid_authorization=AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS \
+            -f production_cutover_confirmation=DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE \
+            -f maximum_credits=120000 \
+            -f maximum_candidates=25000
+          RUN_ID=''
+          for attempt in $(seq 1 30); do
+            RUN_ID=$(gh run list \
+              --repo "$GITHUB_REPOSITORY" \
+              --workflow mlb-historical-optimizer.yml \
+              --event workflow_dispatch \
+              --limit 5 \
+              --json databaseId \
+              --jq "map(select(.databaseId != ${BEFORE})) | .[0].databaseId // empty")
+            [ -n "$RUN_ID" ] && break
+            sleep 2
+          done
+          test -n "$RUN_ID"
+          echo "Dispatched paid historical optimizer run ${RUN_ID}."
