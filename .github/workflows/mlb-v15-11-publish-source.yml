@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: true
 
-      - name: Materialize checksum-verified V15.11.1 source
+      - name: Verify and extract V15.11 archive
         shell: bash
         run: |
           set -euo pipefail
@@ -41,9 +41,19 @@ jobs:
           test "$(wc -l < /tmp/mlb-v15-11-manifest.txt)" -eq 13
           ! grep -Eq '(^|/)\.\.(/|$)|^/' /tmp/mlb-v15-11-manifest.txt
           tar -xJf /tmp/mlb-v15-11.tar.xz -C .
+
+      - name: Verify and apply V15.11.1 safety patch
+        shell: bash
+        run: |
+          set -euo pipefail
           base64 --decode bootstrap/mlb-v15-11.1-wager-safety.patch.gz.b64 | gzip -d > /tmp/v15-11-1.patch
           echo '019ceb2fe000c319119259c9b50ce21a93f9e28de40bbfe1cbd869b8bf5f12d9  /tmp/v15-11-1.patch' | sha256sum -c -
           patch -p2 --batch --forward < /tmp/v15-11-1.patch
+
+      - name: Verify exact V15.11.1 source hashes
+        shell: bash
+        run: |
+          set -euo pipefail
           cat > /tmp/source-sha256.txt <<'SHA256'
           3fde8092c32ced2d24f16b8128cdb6c1fe0788b01046c805aadaff645ac9354e  .github/workflows/mlb-historical-optimizer.yml
           e77e5739d578dc6c795adfcafc05d607ada6344b9953502a08217d83911c4627  docs/MLB_HISTORICAL_DAILY_OPTIMIZER_V15_11.md
