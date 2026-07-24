@@ -1,4 +1,4 @@
-name: Extract second MLB planning failure response
+name: Print rejected MLB historical schedule dates
 
 "on":
   pull_request:
@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89429118420'
     steps:
-      - name: Print compact Lambda plan response and terminal reason
+      - name: Print one-line planning summary
         shell: bash
         run: |
           set -euo pipefail
@@ -37,51 +37,44 @@ jobs:
 
           raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
-          lines = [ansi.sub('', line) for line in raw.splitlines()]
-          candidates = []
-          for number, line in enumerate(lines, 1):
+          latest = None
+          for line in raw.splitlines():
+              line = ansi.sub('', line)
               marker = re.match(r'^.*?Z\s+(\{.*\})\s*$', line)
               if not marker:
                   continue
-              text = marker.group(1)
               try:
-                  value = json.loads(text)
+                  value = json.loads(marker.group(1))
               except Exception:
                   continue
-              if isinstance(value, dict) and (value.get('state') or value.get('status') or value.get('ok') is not None):
-                  candidates.append((number, value))
-          print('JSON_RESPONSE_COUNT=' + str(len(candidates)))
-          for number, value in candidates[-6:]:
-              state = value.get('state') or {}
-              plan = value.get('plan') or state.get('plan') or {}
-              compact = {
-                  'line': number,
-                  'ok': value.get('ok'),
-                  'status': value.get('status'),
-                  'phase': state.get('phase'),
-                  'lastError': state.get('lastError'),
-                  'paidBackfillAuthorized': state.get('paidBackfillAuthorized'),
-                  'networkRequestCount': state.get('networkRequestCount'),
-                  'eligibleGameCount': state.get('eligibleGameCount'),
-                  'maximumAuthorizedOfficialGames': plan.get('maximumAuthorizedOfficialGames'),
-                  'plannedCompleteSlateDays': plan.get('plannedCompleteSlateDays'),
-                  'historicalRequestCount': plan.get('historicalRequestCount'),
-                  'estimatedCredits': plan.get('estimatedCredits'),
-                  'completeDateRangeLedger': plan.get('completeDateRangeLedger'),
-                  'planningErrorCount': plan.get('planningErrorCount'),
-                  'rejectedDateCount': len(plan.get('rejectedDates') or []),
-                  'firstRejectedDates': (plan.get('rejectedDates') or [])[:5],
-                  'fingerprint': plan.get('fingerprint'),
-              }
-              print(json.dumps(compact, indent=2, sort_keys=True, default=str))
-          for number, line in enumerate(lines, 1):
-              if any(token.lower() in line.lower() for token in (
-                  'historical optimizer planning/resume failed',
-                  'process completed with exit code',
-                  'plan_status=',
-                  'plan_fingerprint=',
-                  'estimated_credits=',
-                  'maximum_authorized_games=',
-              )):
-                  print(f'{number:05d}: {line}')
+              state = value.get('state') if isinstance(value, dict) else None
+              if isinstance(state, dict) and isinstance(state.get('plan'), dict):
+                  latest = value
+          if latest is None:
+              raise SystemExit('plan response not found')
+          state = latest.get('state') or {}
+          plan = state.get('plan') or {}
+          rejected = plan.get('rejectedDates') or []
+          summary = {
+              'status': latest.get('status'),
+              'phase': state.get('phase'),
+              'plannedGames': plan.get('maximumAuthorizedOfficialGames'),
+              'plannedDays': plan.get('plannedCompleteSlateDays'),
+              'historicalRequests': plan.get('historicalRequestCount'),
+              'estimatedCredits': plan.get('estimatedCredits'),
+              'planningErrorCount': plan.get('planningErrorCount'),
+              'rejectedDateCount': len(rejected),
+              'rejectedDates': [
+                  {
+                      'date': row.get('slateDateEt'),
+                      'reason': row.get('reason'),
+                      'details': row.get('details'),
+                  }
+                  for row in rejected[:20]
+              ],
+              'fingerprint': plan.get('fingerprint'),
+              'paidAuthorized': state.get('paidBackfillAuthorized'),
+              'networkRequests': state.get('networkRequestCount'),
+          }
+          print('PLAN_SUMMARY=' + json.dumps(summary, sort_keys=True, separators=(',', ':')))
           PY
