@@ -5,6 +5,7 @@ name: MLB Live Chain PR Probe
     branches: [main]
     paths:
       - '.github/workflows/mlb-live-chain-pr-probe.yml'
+  workflow_dispatch:
 
 permissions:
   actions: read
@@ -14,4 +15,16 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - run: echo probe
+      - name: Print live chain runs and jobs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          headers=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
+          curl -fsS "${headers[@]}" "$api/actions/runs?per_page=100" > /tmp/runs.json
+          jq -c '[.workflow_runs[] | select(.name == "MLB Historical Recovery and Paid Dispatch" or .name == "MLB Historical Daily Optimizer" or .name == "MLB Historical Accelerated Training Driver")][0:15] | .[] | {id,name,event,status,conclusion,head_sha,created_at,updated_at}' /tmp/runs.json | tee /tmp/live-runs.ndjson
+          test -s /tmp/live-runs.ndjson
+          while read -r id; do
+            curl -fsS "${headers[@]}" "$api/actions/runs/$id/jobs?per_page=100" | jq -c --arg id "$id" '.jobs[] | {run_id:($id|tonumber),job_id:.id,job:.name,status,conclusion,active_steps:[.steps[]?|select(.status=="in_progress")|.name],failed_steps:[.steps[]?|select(.conclusion=="failure")|.name]}'
+          done < <(jq -r '.id' /tmp/live-runs.ndjson)
