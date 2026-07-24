@@ -148,6 +148,10 @@ Resources:
               Action:
                 - s3:GetBucketLocation
                 - s3:GetBucketVersioning
+                # HeadObject returns 403 for a missing key unless the caller can
+                # list the bucket. The optimizer needs a trustworthy 404 before
+                # creating each immutable official-schedule/snapshot artifact.
+                - s3:ListBucket
               Resource:
                 - !GetAtt HistoricalArtifactsBucket.Arn
             - Sid: AppendAndReadVersionedHistoricalEvidence
