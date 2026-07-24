@@ -1,4 +1,4 @@
-name: Snapshot active MLB historical training chain
+name: Inspect latest MLB optimizer stack failure
 
 "on":
   pull_request:
@@ -12,43 +12,45 @@ permissions:
   actions: read
 
 jobs:
-  snapshot:
+  inspect:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/observe-mlb-v15-11-live-status'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
+      FAILED_JOB_ID: '89424142807'
     steps:
-      - name: Print current MLB historical workflow runs and jobs
+      - name: Print exact terminal optimizer deployment failure
         shell: bash
         run: |
           set -euo pipefail
-          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          curl --fail --silent --show-error \
+          curl --fail --silent --show-error --location \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${api}/actions/runs?per_page=100" > /tmp/runs.json
-          jq '{
-            workflows: [
-              .workflow_runs[]
-              | select(.name == "MLB V15.11.1 Accelerated Historical Training"
-                    or .name == "Dispatch Authorized MLB Historical Training"
-                    or .name == "MLB Historical Recovery and Paid Dispatch"
-                    or .name == "MLB Historical Daily Optimizer"
-                    or .name == "MLB Historical Accelerated Training Driver"
-                    or .name == "Observe MLB V15.11.1 Historical Training Chain")
-              | {id,name,event,status,conclusion,head_sha,created_at,updated_at,html_url}
-            ] | sort_by(.created_at) | reverse
-          }' /tmp/runs.json | tee /tmp/summary.json
-          jq -r '.workflows[0:15][] | [.id,.name,.event,.status,(.conclusion // "pending"),.head_sha,.created_at] | @tsv' /tmp/summary.json
-          ids=$(jq -r '.workflows[0:12][].id' /tmp/summary.json)
-          for run_id in $ids; do
-            echo "=== RUN ${run_id} ==="
-            curl --fail --silent --show-error \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "${api}/actions/runs/${run_id}/jobs?per_page=100" > "/tmp/jobs-${run_id}.json"
-            jq '{jobs: [.jobs[] | {id,name,status,conclusion,steps:[(.steps // [])[] | {number,name,status,conclusion}]}]}' "/tmp/jobs-${run_id}.json"
-          done
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
+            > /tmp/job.log
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
+          ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+          lines = [ansi.sub('', line) for line in raw.splitlines()]
+          terms = re.compile(
+              r'CREATE_FAILED|UPDATE_FAILED|ROLLBACK|Resource handler returned message|'
+              r'Failed to create changeset|Failed to deploy|ValidationError|AccessDenied|'
+              r'InvalidRequest|LimitExceeded|ConflictException|Process completed with exit code|'
+              r'NoSuchBucket|AlreadyExists|error',
+              re.IGNORECASE,
+          )
+          hits = [i for i, line in enumerate(lines) if i > 500 and terms.search(line)]
+          print('MATCH_COUNT=' + str(len(hits)))
+          if not hits:
+              for index, line in enumerate(lines[-80:], start=max(1, len(lines) - 79)):
+                  print(f'{index:05d}: {line}')
+              raise SystemExit('No terminal failure token found')
+          start = max(0, min(hits) - 8)
+          end = min(len(lines), max(hits) + 25)
+          for index in range(start, end):
+              print(f'{index + 1:05d}: {lines[index]}')
+          PY
