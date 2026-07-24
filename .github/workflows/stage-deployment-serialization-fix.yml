@@ -22,16 +22,18 @@ jobs:
           fetch-depth: 1
           persist-credentials: true
 
-      - name: Serialize shared production deployments
+      - name: Materialize serialized production deployment workflow
         shell: bash
         run: |
           set -euo pipefail
+          python -m pip install --quiet 'PyYAML>=6,<7'
           python - <<'PY'
           from pathlib import Path
           import re
+          import yaml
 
-          path = Path('.github/workflows/deploy.yml')
-          text = path.read_text(encoding='utf-8')
+          source = Path('.github/workflows/deploy.yml')
+          text = source.read_text(encoding='utf-8')
           block = re.compile(
               r'(concurrency:\n\s+group:\s*parlay-platform-deploy\n\s+cancel-in-progress:)\s*true',
               re.MULTILINE,
@@ -43,29 +45,27 @@ jobs:
               raise SystemExit('serialized deployment contract missing')
           if 'group: parlay-platform-deploy\n  cancel-in-progress: true' in patched:
               raise SystemExit('cancelling shared deployment contract remains')
-          path.write_text(patched, encoding='utf-8')
-          PY
-          python - <<'PY'
-          from pathlib import Path
-          import yaml
-          path = Path('.github/workflows/deploy.yml')
-          with path.open(encoding='utf-8') as handle:
-              value = yaml.safe_load(handle)
+          value = yaml.safe_load(patched)
           concurrency = value.get('concurrency') or {}
           assert concurrency.get('group') == 'parlay-platform-deploy', concurrency
           assert concurrency.get('cancel-in-progress') is False, concurrency
+          target = Path('runtime_reports/deploy_serialized.staged.yml')
+          target.parent.mkdir(parents=True, exist_ok=True)
+          target.write_text(patched, encoding='utf-8')
           print('SHARED_DEPLOYMENTS_SERIALIZED')
+          print(target)
           PY
-          git diff --check -- .github/workflows/deploy.yml
-          git diff -- .github/workflows/deploy.yml
+          test "$(grep -Fc 'cancel-in-progress: false' runtime_reports/deploy_serialized.staged.yml)" -ge 1
+          git diff --check -- runtime_reports/deploy_serialized.staged.yml
+          sha256sum runtime_reports/deploy_serialized.staged.yml
 
-      - name: Commit exact concurrency repair
+      - name: Commit staged non-workflow bytes
         shell: bash
         run: |
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add .github/workflows/deploy.yml
+          git add runtime_reports/deploy_serialized.staged.yml
           test -n "$(git diff --cached --name-only)"
-          git commit -m 'Serialize shared production deployment workflows'
+          git commit -m 'Stage serialized production deployment workflow bytes'
           git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
