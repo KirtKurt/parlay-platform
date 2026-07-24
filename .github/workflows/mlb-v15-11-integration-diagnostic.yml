@@ -140,6 +140,29 @@ jobs:
       - name: Validate historical optimizer template with lint
         run: sam validate --lint --template-file mlb_historical_optimizer/template.yaml
 
+  historical-sam-plain-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: aws-actions/setup-sam@v2
+      - name: Capture plain SAM validation output
+        run: |
+          set +e
+          sam validate --template-file mlb_historical_optimizer/template.yaml > historical-sam-plain-validate.log 2>&1
+          code=$?
+          cat historical-sam-plain-validate.log
+          exit "$code"
+      - name: Upload plain-validation diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v15-11-historical-sam-plain-validate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: historical-sam-plain-validate.log
+          if-no-files-found: error
+
   root-sam-validate:
     runs-on: ubuntu-latest
     steps:
