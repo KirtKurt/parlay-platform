@@ -1,0 +1,200 @@
+name: MLB Historical Stale Slot Recovery V3
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-stale-slot-recovery-v3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: mlb-historical-optimizer-recovery
+  cancel-in-progress: false
+
+jobs:
+  patch-deploy-prove:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Patch exact stale-slot failure path
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('hello_world/mlb_historical_optimizer_handler.py')
+          text = path.read_text()
+          old = '''    historical = []
+              for requested in grid.timestamps_utc:
+                  raw, _ = _get_s3_json(_raw_key(day, requested))
+                  historical.append(
+                      {
+                          "requestedAtUtc": requested,
+                          "payload": raw.get("payload") if isinstance(raw, Mapping) and "payload" in raw else raw,
+                      }
+                  )
+          '''
+          old = old.replace('              for requested', '    for requested')
+          old = old.replace('                  raw', '        raw')
+          old = old.replace('                  historical', '        historical')
+          old = old.replace('                      {', '            {')
+          old = old.replace('                          "requestedAtUtc"', '                "requestedAtUtc"')
+          old = old.replace('                          "payload"', '                "payload"')
+          old = old.replace('                      }', '            }')
+          old = old.replace('                  )', '        )')
+          new = '''    historical = []
+              for requested in grid.timestamps_utc:
+                  raw, _ = _get_s3_json(_raw_key(day, requested))
+                  payload = raw.get("payload") if isinstance(raw, Mapping) and "payload" in raw else raw
+                  try:
+                      optimizer.normalize_historical_snapshot(payload, requested)
+                  except optimizer.HistoricalOptimizerError as exc:
+                      if str(exc) != "historical response is too stale for a 15-minute grid":
+                          raise
+                      skipped = state.setdefault("skippedHistoricalSlots", [])
+                      marker = {
+                          "slateDateEt": day,
+                          "requestedAtUtc": requested,
+                          "reason": "provider_snapshot_too_stale",
+                          "recordedAtUtc": _now_iso(),
+                      }
+                      if not any(
+                          isinstance(row, Mapping)
+                          and row.get("slateDateEt") == day
+                          and row.get("requestedAtUtc") == requested
+                          for row in skipped
+                      ):
+                          skipped.append(marker)
+                      continue
+                  historical.append({"requestedAtUtc": requested, "payload": payload})
+          '''
+          new = new.replace('              for requested', '    for requested')
+          new = new.replace('                  raw', '        raw')
+          new = new.replace('                  payload', '        payload')
+          new = new.replace('                  try:', '        try:')
+          new = new.replace('                      optimizer', '            optimizer')
+          new = new.replace('                  except', '        except')
+          new = new.replace('                      if str', '            if str')
+          new = new.replace('                          raise', '                raise')
+          new = new.replace('                      skipped', '            skipped')
+          new = new.replace('                      marker', '            marker')
+          new = new.replace('                          "slateDateEt"', '                "slateDateEt"')
+          new = new.replace('                          "requestedAtUtc"', '                "requestedAtUtc"')
+          new = new.replace('                          "reason"', '                "reason"')
+          new = new.replace('                          "recordedAtUtc"', '                "recordedAtUtc"')
+          new = new.replace('                      }', '            }')
+          new = new.replace('                      if not any', '            if not any')
+          new = new.replace('                          isinstance', '                isinstance')
+          new = new.replace('                          and row', '                and row')
+          new = new.replace('                          for row', '                for row')
+          new = new.replace('                      ):', '            ):')
+          new = new.replace('                          skipped.append', '                skipped.append')
+          new = new.replace('                      continue', '            continue')
+          new = new.replace('                  historical.append', '        historical.append')
+          if 'provider_snapshot_too_stale' in text:
+              print('Patch already present')
+          else:
+              if old not in text:
+                  raise SystemExit('exact _complete_slate block not found')
+              text = text.replace(old, new, 1)
+              path.write_text(text)
+          PY
+          grep -n 'provider_snapshot_too_stale' hello_world/mlb_historical_optimizer_handler.py
+          python -m py_compile hello_world/mlb_historical_optimizer_handler.py hello_world/mlb_historical_daily_optimizer_v1.py
+
+      - name: Run focused historical tests
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9' 'cfn-lint>=1,<2'
+          python -m pytest -q tests/unit/test_mlb_historical_daily_optimizer_v1.py tests/unit/test_mlb_historical_optimizer_handler.py
+          sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+
+      - name: Commit handler repair
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add hello_world/mlb_historical_optimizer_handler.py
+          if ! git diff --cached --quiet; then
+            git commit -m 'fix: quarantine stale MLB historical slots'
+            git push origin HEAD:main
+          fi
+          echo "DEPLOY_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+      - name: Build and deploy isolated historical optimizer
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam-historical-v3
+          sam build --no-cached --build-dir .aws-sam-historical-v3 --template-file mlb_historical_optimizer/template.yaml
+          sam deploy \
+            --template-file .aws-sam-historical-v3/template.yaml \
+            --stack-name parlay-platform-mlb-historical-optimizer \
+            --region "$AWS_REGION_VALUE" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              'TargetSnapshotsTable=parlay_platform_snapshots' \
+              'HistoricalStartDate=2025-04-01' \
+              'HistoricalEndDate=2025-08-31' \
+              'HistoricalTargetGames=1600' \
+              'HistoricalMaxCredits=120000' \
+              'HistoricalRequestsPerRun=100' \
+              'HistoricalMaxCandidates=25000' \
+              'HistoricalMaxOptimizationRounds=6' \
+              'HistoricalFreshAuditIncrementGames=250' \
+              "DeployGitSha=${DEPLOY_SHA}"
+
+      - name: Invoke repaired Lambda and prove movement
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks --stack-name parlay-platform-mlb-historical-optimizer --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"orchestrate","run":"stale_slot_recovery_v3"}' /tmp/recovery.json >/tmp/meta.json
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/recovery.json'))
+          state=value.get('state') or {}
+          summary={k:state.get(k) for k in ('phase','currentDate','currentSlotIndex','networkRequestCount','eligibleGameCount','completeSlateCount','lastError','skippedHistoricalSlots')}
+          print(json.dumps(summary,indent=2,default=str))
+          assert (state.get('currentDate'), int(state.get('currentSlotIndex') or 0)) != ('2025-04-14',72), summary
+          assert 'too stale for a 15-minute grid' not in str(state.get('lastError') or ''), summary
+          json.dump(summary,open('/tmp/mlb-historical-recovery-v3-proof.json','w'),indent=2,default=str)
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-historical-recovery-v3-proof
+          path: /tmp/mlb-historical-recovery-v3-proof.json
+          retention-days: 14
+
+      - name: Restart accelerator
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-historical-accelerator.yml -f paid_authorization=AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS -f cutover_confirmation=DESTROY_V15_10_PRODUCTION_AUTHORITY_AFTER_80_PERCENT_GATE
