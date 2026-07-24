@@ -59,7 +59,10 @@ Globals:
     Architectures:
       - x86_64
     Timeout: 900
-    MemorySize: 4096
+    # This AWS account/region enforces the legacy 3,008 MB Lambda ceiling.
+    # Keep the optimizer at that maximum so the 25,000-candidate search retains
+    # the largest available CPU allocation without making the stack undeployable.
+    MemorySize: 3008
     Tracing: Active
     Environment:
       Variables:
