@@ -18,7 +18,7 @@ jobs:
     timeout-minutes: 360
     env:
       GH_TOKEN: ${{ github.token }}
-      TARGET_SHA: afc3bcbeb0f315c4c4c022d914ce4842914b65c0
+      TARGET_SHA: 2be4091d2c1ed29f0994f9f1944f890e829e11a7
       TARGET_WORKFLOW: MLB V15.11.1 Accelerated Historical Training
       REPORT_ISSUE: "111"
     steps:
@@ -120,3 +120,5 @@ jobs:
           done
           echo "::error::Observer timed out before paid-training workflow completed"
           exit 1
+
+# observer-trigger-generation: 3
