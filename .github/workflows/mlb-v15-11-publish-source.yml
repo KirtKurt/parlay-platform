@@ -53,7 +53,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          patch -p2 --batch --forward < /tmp/v15-11-1.patch
+          git apply --check -p2 /tmp/v15-11-1.patch
+          git apply -p2 /tmp/v15-11-1.patch
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('hello_world/mlb_historical_policy_v1.py')
+          payload = path.read_bytes()
+          if payload.endswith(b'\n\n'):
+              path.write_bytes(payload[:-1])
+          PY
 
       - name: Verify exact V15.11.1 source hashes
         shell: bash
