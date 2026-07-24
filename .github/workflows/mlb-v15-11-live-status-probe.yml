@@ -1,4 +1,4 @@
-name: Probe exact second MLB V15.11.1 provider error
+name: Observe MLB V15.11.1 rollback-recovery deployment
 
 "on":
   pull_request:
@@ -12,42 +12,161 @@ permissions:
   actions: read
 
 jobs:
-  probe:
+  observe:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/observe-mlb-v15-11-live-status'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 30
     env:
       GH_TOKEN: ${{ github.token }}
-      FAILED_JOB_ID: '89418153271'
+      TARGET_SHA: a6d0fd39c8205a4944e624497c75d7c32d42c4b2
+      TARGET_WORKFLOW: MLB Historical Daily Optimizer
     steps:
-      - name: Print only the terminal CloudFormation failure block
+      - name: Wait for exact rollback-recovery deployment run
+        id: wait
+        shell: bash
         run: |
           set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100"
+          for attempt in $(seq 1 150); do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "$api" > /tmp/runs.json
+            row=$(jq -c --arg name "$TARGET_WORKFLOW" '[.workflow_runs[] | select(.name == $name)] | sort_by(.created_at) | last // empty' /tmp/runs.json)
+            if [ -n "$row" ]; then
+              run_id=$(jq -r '.id' <<<"$row")
+              status=$(jq -r '.status' <<<"$row")
+              conclusion=$(jq -r '.conclusion // "pending"' <<<"$row")
+              echo "attempt=${attempt} run_id=${run_id} status=${status} conclusion=${conclusion}"
+              if [ "$status" = completed ]; then
+                printf '%s' "$row" > /tmp/run.json
+                echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+                echo "conclusion=$conclusion" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+            else
+              echo "attempt=${attempt} exact deployment run not visible yet"
+            fi
+            sleep 10
+          done
+          echo '::error::Timed out waiting for exact rollback-recovery deployment'
+          exit 1
+
+      - name: Fetch exact deployment jobs
+        id: jobs
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id='${{ steps.wait.outputs.run_id }}'
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/jobs?per_page=100" \
+            > /tmp/jobs.json
+          jq '{jobs: [.jobs[] | {id,name,status,conclusion,started_at,completed_at,steps:[(.steps // [])[] | {number,name,status,conclusion}]}]}' /tmp/jobs.json
+          deploy_job=$(jq -r '[.jobs[] | select(.name == "deploy-and-plan")] | last | .id // empty' /tmp/jobs.json)
+          test -n "$deploy_job"
+          echo "deploy_job_id=$deploy_job" >> "$GITHUB_OUTPUT"
+          jq -e '[.jobs[] | select(.name == "validate" and .conclusion == "success")] | length == 1' /tmp/jobs.json
+          jq -e '[.jobs[] | select(.name == "deploy-gated-runtime-loader" and .conclusion == "success")] | length == 1' /tmp/jobs.json
+
+      - name: Print exact failure context when deployment is not green
+        if: steps.wait.outputs.conclusion != 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          job_id='${{ steps.jobs.outputs.deploy_job_id }}'
           curl --fail --silent --show-error --location \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
-            > /tmp/job.log
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" \
+            > /tmp/deploy-and-plan.log
           python - <<'PY'
           from pathlib import Path
           import re
-
-          raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
+          raw = Path('/tmp/deploy-and-plan.log').read_text(encoding='utf-8-sig', errors='replace')
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
           lines = [ansi.sub('', line) for line in raw.splitlines()]
           terms = re.compile(
               r'CREATE_FAILED|UPDATE_FAILED|ROLLBACK|Resource handler returned message|'
-              r'Failed to create changeset|Failed to deploy|InvalidRequest|AccessDenied|'
-              r'LimitExceeded|ConflictException|Process completed with exit code',
+              r'Failed to create changeset|Failed to deploy|ValidationError|AccessDenied|'
+              r'InvalidRequest|LimitExceeded|ConflictException|Process completed with exit code|'
+              r'PLAN_BLOCKED|planning failed|Traceback|Exception',
               re.IGNORECASE,
           )
-          hits = [i for i, line in enumerate(lines) if i > 640 and terms.search(line)]
-          if not hits:
-              raise SystemExit('No terminal provider failure found')
-          start = max(0, min(hits) - 6)
-          end = min(len(lines), max(hits) + 22)
-          print(f'RANGE={start + 1}-{end}')
-          for index in range(start, end):
+          hits = [i for i, line in enumerate(lines) if terms.search(line)]
+          selected = set(range(max(0, len(lines) - 80), len(lines)))
+          for index in hits[-30:]:
+              selected.update(range(max(0, index - 4), min(len(lines), index + 12)))
+          last = None
+          for index in sorted(selected):
+              if last is not None and index > last + 1:
+                  print('...')
               print(f'{index + 1:05d}: {lines[index]}')
+              last = index
+          PY
+          exit 1
+
+      - name: Download and verify zero-paid planning evidence
+        if: steps.wait.outputs.conclusion == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id='${{ steps.wait.outputs.run_id }}'
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs/${run_id}/artifacts?per_page=100" \
+            > /tmp/artifacts.json
+          jq '.artifacts[] | {id,name,expired,size_in_bytes}' /tmp/artifacts.json
+          artifact_id=$(jq -r '[.artifacts[] | select(.name | startswith("mlb-historical-optimizer-deployment-"))] | last | .id // empty' /tmp/artifacts.json)
+          test -n "$artifact_id"
+          curl --fail --silent --show-error --location \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/artifacts/${artifact_id}/zip" \
+            -o /tmp/evidence.zip
+          mkdir -p /tmp/evidence
+          unzip -q /tmp/evidence.zip -d /tmp/evidence
+          find /tmp/evidence -maxdepth 2 -type f -print -exec sh -c 'echo --- "$1"; cat "$1"' sh {} \;
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def load(name):
+              path = next(Path('/tmp/evidence').rglob(name))
+              return json.loads(path.read_text(encoding='utf-8'))
+
+          plan_payload = load('mlb-historical-plan.json')
+          status_payload = load('mlb-historical-status.json')
+          assert plan_payload.get('ok') is True, plan_payload
+          state = plan_payload.get('state') or {}
+          plan = plan_payload.get('plan') or state.get('plan') or {}
+          assert state.get('paidBackfillAuthorized') is not True, state
+          assert int(state.get('networkRequestCount') or 0) == 0, state
+          assert int(plan.get('paidHistoricalCallsMadeByPlan') or 0) == 0, plan
+          assert plan.get('completeDateRangeLedger') is True, plan
+          assert int(plan.get('planningErrorCount') or 0) == 0, plan
+          assert not plan.get('rejectedDates'), plan
+          assert int(plan.get('maximumAuthorizedOfficialGames') or 0) >= 1600, plan
+          assert plan.get('perGameFeatureCutoff') == 'each_game_t_minus_45', plan
+          assert bool(plan.get('fingerprint')), plan
+          assert state.get('snapshotStartAtEt') == '01:00', state
+          assert int(state.get('snapshotIntervalMinutes') or 0) == 15, state
+          assert int(state.get('minimumTrainingGames') or 0) >= 1000, state
+          assert int(state.get('minimumWalkForwardGames') or 0) >= 200, state
+          assert int(state.get('minimumUntouchedAuditGames') or 0) >= 200, state
+          assert float(state.get('dailyAccuracyRequirement') or 0) >= 0.80, state
+          phase = str((status_payload.get('state') or {}).get('phase') or state.get('phase') or '')
+          assert phase in {'READY_FOR_AUTHORIZATION','BACKFILLING','OPTIMIZING','PAUSED_QUOTA','CANDIDATE_REJECTED','DATA_RANGE_EXHAUSTED','PROMOTED'}, phase
+          print('ZERO_PAID_PLAN_VERIFIED')
+          print('PHASE=' + phase)
+          print('PLAN_FINGERPRINT=' + str(plan.get('fingerprint')))
+          print('ESTIMATED_CREDITS=' + str(plan.get('estimatedCredits')))
+          print('MAXIMUM_AUTHORIZED_OFFICIAL_GAMES=' + str(plan.get('maximumAuthorizedOfficialGames')))
           PY
