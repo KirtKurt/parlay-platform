@@ -1,11 +1,10 @@
-# Retriggered after the authoritative paid-training workflow existed on main.
-name: Observe MLB V15.11.1 Paid Training
+name: Observe MLB V15.11.1 Historical Training Chain
 
 "on":
   push:
     branches: [main]
     paths:
-      - ".github/workflows/mlb-v15-11-paid-training-observer.yml"
+      - '.github/workflows/mlb-v15-11-paid-training-observer.yml'
 
 permissions:
   contents: read
@@ -18,107 +17,151 @@ jobs:
     timeout-minutes: 360
     env:
       GH_TOKEN: ${{ github.token }}
-      TARGET_SHA: 2be4091d2c1ed29f0994f9f1944f890e829e11a7
-      TARGET_WORKFLOW: MLB V15.11.1 Accelerated Historical Training
-      REPORT_ISSUE: "111"
+      TRIGGER_SHA: ae0d348012f4dfc987a373ca870fcb18e2bca832
+      REPORT_ISSUE: '111'
     steps:
-      - name: Locate, monitor, and report the exact paid-training run
+      - name: Monitor trigger, recovery, paid optimizer, and accelerator
         run: |
           set -euo pipefail
           api_root="https://api.github.com/repos/${GITHUB_REPOSITORY}"
           auth=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
 
-          comment_id=""
-          run_id=""
-          run_url=""
-          for locate_attempt in $(seq 1 120); do
+          fetch_runs() {
             curl --fail --silent --show-error "${auth[@]}" \
-              "${api_root}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100" \
-              > /tmp/runs.json
-            row=$(jq -c --arg name "$TARGET_WORKFLOW" \
-              '.workflow_runs[] | select(.name == $name) | . ' \
-              /tmp/runs.json | head -1 || true)
-            if [ -n "$row" ]; then
-              run_id=$(jq -r '.id' <<<"$row")
-              run_url=$(jq -r '.html_url' <<<"$row")
-              break
-            fi
-            sleep 5
-          done
-          test -n "$run_id" || {
-            echo "::error::Unable to locate accelerated paid-training workflow run"
-            exit 1
+              "${api_root}/actions/runs?per_page=100" > /tmp/mlb-chain-runs.json
           }
 
-          body=$(cat <<EOF
-          <!-- mlb-v15-11-paid-training-live-observer -->
-          ## MLB V15.11.1 paid historical training
+          run_by_sha() {
+            local name="$1"
+            local sha="$2"
+            jq -c --arg name "$name" --arg sha "$sha" '
+              [.workflow_runs[] | select(.name == $name and .head_sha == $sha)]
+              | sort_by(.created_at) | last // empty
+            ' /tmp/mlb-chain-runs.json
+          }
 
-          - Exact source SHA: \`${TARGET_SHA}\`
-          - Workflow run: ${run_url}
-          - Status: locating jobs
-          - Production cutover: **not assumed**
-          - Automatic wagering: **disabled**
-          EOF
-          )
-          jq -n --arg body "$body" '{body:$body}' >/tmp/comment.json
-          curl --fail --silent --show-error -X POST "${auth[@]}" \
-            "${api_root}/issues/${REPORT_ISSUE}/comments" \
-            --data-binary @/tmp/comment.json > /tmp/comment-response.json
-          comment_id=$(jq -r '.id' /tmp/comment-response.json)
-          test -n "$comment_id"
-          test "$comment_id" != "null"
+          run_after() {
+            local name="$1"
+            local event="$2"
+            local created="$3"
+            jq -c --arg name "$name" --arg event "$event" --arg created "$created" '
+              [.workflow_runs[] | select(.name == $name and .event == $event and .created_at >= $created)]
+              | sort_by(.created_at) | last // empty
+            ' /tmp/mlb-chain-runs.json
+          }
 
-          for attempt in $(seq 1 720); do
+          post_comment() {
+            local body="$1"
+            jq -n --arg body "$body" '{body:$body}' >/tmp/mlb-chain-comment.json
+            if [ -z "${comment_id:-}" ]; then
+              curl --fail --silent --show-error -X POST "${auth[@]}" \
+                "${api_root}/issues/${REPORT_ISSUE}/comments" \
+                --data-binary @/tmp/mlb-chain-comment.json > /tmp/mlb-chain-comment-response.json
+              comment_id=$(jq -r '.id' /tmp/mlb-chain-comment-response.json)
+              test -n "$comment_id"
+              test "$comment_id" != null
+            else
+              curl --fail --silent --show-error -X PATCH "${auth[@]}" \
+                "${api_root}/issues/comments/${comment_id}" \
+                --data-binary @/tmp/mlb-chain-comment.json > /tmp/mlb-chain-comment-response.json
+            fi
+          }
+
+          summarize() {
+            local label="$1"
+            local row="$2"
+            if [ -z "$row" ]; then
+              printf '%s' "- ${label}: **not located yet**"
+              return
+            fi
+            local id status conclusion url event
+            id=$(jq -r '.id' <<<"$row")
+            status=$(jq -r '.status' <<<"$row")
+            conclusion=$(jq -r '.conclusion // "pending"' <<<"$row")
+            url=$(jq -r '.html_url' <<<"$row")
+            event=$(jq -r '.event' <<<"$row")
+            printf '%s' "- ${label}: [run ${id}](${url}) — **${status}/${conclusion}** (${event})"
+          }
+
+          failure_details() {
+            local row="$1"
+            local id
+            id=$(jq -r '.id' <<<"$row")
             curl --fail --silent --show-error "${auth[@]}" \
-              "${api_root}/actions/runs/${run_id}" > /tmp/run.json
-            curl --fail --silent --show-error "${auth[@]}" \
-              "${api_root}/actions/runs/${run_id}/jobs?per_page=100" > /tmp/jobs.json
+              "${api_root}/actions/runs/${id}/jobs?per_page=100" > /tmp/mlb-chain-jobs.json
+            jq -r '
+              [.jobs[]
+                | select(.conclusion == "failure" or .conclusion == "cancelled" or .conclusion == "timed_out")
+                | "    - job `" + .name + "`: **" + (.conclusion // .status) + "**; failed step `" +
+                  (([.steps[]? | select(.conclusion == "failure") | .name][0]) // "unavailable") + "`"
+              ] | join("\n")
+            ' /tmp/mlb-chain-jobs.json
+          }
 
-            status=$(jq -r '.status' /tmp/run.json)
-            conclusion=$(jq -r '.conclusion // "pending"' /tmp/run.json)
-            active_job=$(jq -r '
-              [.jobs[] | select(.status != "completed") | .name][0]
-              // [.jobs[] | select(.conclusion == "failure") | .name][0]
-              // [.jobs[] | .name][-1]
-              // "job unavailable"
-            ' /tmp/jobs.json)
-            active_step=$(jq -r '
-              [.jobs[] | .steps[]? | select(.status == "in_progress") | .name][0]
-              // [.jobs[] | .steps[]? | select(.conclusion == "failure") | .name][0]
-              // "step unavailable"
-            ' /tmp/jobs.json)
-            completed_jobs=$(jq '[.jobs[] | select(.status == "completed")] | length' /tmp/jobs.json)
-            total_jobs=$(jq '.jobs | length' /tmp/jobs.json)
+          comment_id=''
+          trigger=''
+          recovery=''
+          optimizer=''
+          accelerator=''
+
+          for attempt in $(seq 1 1440); do
+            fetch_runs
+            trigger=$(run_by_sha 'MLB V15.11.1 Accelerated Historical Training' "$TRIGGER_SHA")
+            if [ -n "$trigger" ]; then
+              trigger_created=$(jq -r '.created_at' <<<"$trigger")
+              recovery=$(run_after 'MLB Historical Recovery and Paid Dispatch' workflow_dispatch "$trigger_created")
+            fi
+            if [ -n "$recovery" ]; then
+              recovery_created=$(jq -r '.created_at' <<<"$recovery")
+              optimizer=$(run_after 'MLB Historical Daily Optimizer' workflow_dispatch "$recovery_created")
+            fi
+            if [ -n "$optimizer" ]; then
+              optimizer_created=$(jq -r '.created_at' <<<"$optimizer")
+              accelerator=$(run_after 'MLB Historical Accelerated Training Driver' workflow_run "$optimizer_created")
+            fi
+
             observed=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-
             body=$(cat <<EOF
-          <!-- mlb-v15-11-paid-training-live-observer -->
-          ## MLB V15.11.1 paid historical training
+          <!-- mlb-v15-11-training-chain-observer -->
+          ## MLB V15.11.1 real historical training chain
 
-          - Exact source SHA: \`${TARGET_SHA}\`
-          - Workflow run: ${run_url}
-          - Status: **${status}**
-          - Conclusion: **${conclusion}**
-          - Active job: \`${active_job}\`
-          - Active step: \`${active_step}\`
-          - Jobs completed: ${completed_jobs}/${total_jobs}
+          $(summarize 'Dispatch trigger' "$trigger")
+          $(summarize 'Rollback recovery / paid dispatch' "$recovery")
+          $(summarize 'Historical deploy, plan, and authorization' "$optimizer")
+          $(summarize 'Backfill, optimization, untouched audit, and cutover' "$accelerator")
+
+          - Exact trigger SHA: \`${TRIGGER_SHA}\`
           - Last observed: ${observed}
-          - Production cutover: **only if the immutable 1,000/200/200, exact-slate, every-day 80% gates pass**
+          - Required promotion: **1,000 train + 200 walk-forward + 200 untouched audit; exact complete slates; at least 80% on every held-out date**
+          - Production cutover: **not assumed unless the accelerator succeeds and the champion/cutover proofs validate**
           - Automatic wagering: **disabled**
           EOF
           )
-            jq -n --arg body "$body" '{body:$body}' >/tmp/comment.json
-            curl --fail --silent --show-error -X PATCH "${auth[@]}" \
-              "${api_root}/issues/comments/${comment_id}" \
-              --data-binary @/tmp/comment.json >/tmp/comment-update.json
+            post_comment "$body"
 
-            if [ "$status" = "completed" ]; then
+            for row in "$trigger" "$recovery" "$optimizer" "$accelerator"; do
+              if [ -n "$row" ] && [ "$(jq -r '.status' <<<"$row")" = completed ]; then
+                conclusion=$(jq -r '.conclusion // "failure"' <<<"$row")
+                if [ "$conclusion" != success ] && [ "$conclusion" != neutral ] && [ "$conclusion" != skipped ]; then
+                  details=$(failure_details "$row")
+                  post_comment "${body}
+
+          ### Chain failure
+          ${details}"
+                  exit 1
+                fi
+              fi
+            done
+
+            if [ -n "$accelerator" ] && [ "$(jq -r '.status' <<<"$accelerator")" = completed ]; then
+              test "$(jq -r '.conclusion' <<<"$accelerator")" = success
               exit 0
             fi
-            sleep 30
+            sleep 15
           done
-          echo "::error::Observer timed out before paid-training workflow completed"
-          exit 1
 
-# observer-trigger-generation: 3
+          post_comment "${body}
+
+          ### Observer failure
+          Timed out before the real historical training chain reached a terminal accelerator result."
+          exit 1
