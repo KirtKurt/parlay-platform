@@ -1,11 +1,10 @@
-name: Inspect raw MLB schedule-date exceptions
+name: Compress MLB schedule exception provenance
 
 "on":
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened]
-    paths:
-      - '.github/workflows/mlb-v15-11-live-status-probe.yml'
+    paths: ['.github/workflows/mlb-v15-11-live-status-probe.yml']
 
 permissions:
   contents: read
@@ -20,130 +19,60 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89429118420'
     steps:
-      - name: Recover rejected dates and inspect exact MLB schedule rows
+      - name: Print compact schedule exception report
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location \
-            -H "Authorization: Bearer ${GH_TOKEN}" \
-            -H "Accept: application/vnd.github+json" \
-            -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
-            > /tmp/job.log
+          curl -fsSL -H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28" "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" > /tmp/job.log
           python - <<'PY'
-          from __future__ import annotations
-
           from datetime import datetime
           from pathlib import Path
           from urllib.parse import urlencode
           from urllib.request import Request, urlopen
           from zoneinfo import ZoneInfo
-          import json
-          import re
+          import json, re
 
-          ET = ZoneInfo('America/New_York')
-          raw_log = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
+          et = ZoneInfo('America/New_York')
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
-          plan_payload = None
-          for raw_line in raw_log.splitlines():
-              line = ansi.sub('', raw_line)
-              marker = re.match(r'^.*?Z\s+(\{.*\})\s*$', line)
-              if not marker:
-                  continue
-              try:
-                  value = json.loads(marker.group(1))
-              except Exception:
-                  continue
+          plan = None
+          for raw in Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace').splitlines():
+              line = ansi.sub('', raw)
+              match = re.match(r'^.*?Z\s+(\{.*\})\s*$', line)
+              if not match: continue
+              try: value = json.loads(match.group(1))
+              except Exception: continue
               state = value.get('state') if isinstance(value, dict) else None
-              if isinstance(state, dict) and isinstance(state.get('plan'), dict):
-                  plan_payload = value
-          if plan_payload is None:
-              raise SystemExit('historical plan response not found')
-
-          plan = (plan_payload.get('state') or {}).get('plan') or {}
-          rejected = plan.get('rejectedDates') or []
-          dates = [str(row.get('slateDateEt') or '') for row in rejected if row.get('slateDateEt')]
-          print('REJECTED_DATE_COUNT=' + str(len(dates)))
-          print('REJECTED_DATES=' + ','.join(dates))
-
-          def parse_et_date(value):
-              text = str(value or '')
-              if not text:
-                  return None
-              try:
-                  parsed = datetime.fromisoformat(text.replace('Z', '+00:00'))
-              except Exception:
-                  return None
-              if parsed.tzinfo is None:
-                  return parsed.date().isoformat()
-              return parsed.astimezone(ET).date().isoformat()
-
-          rows = []
-          for slate_date in dates:
-              query = urlencode({
-                  'sportId': '1',
-                  'startDate': slate_date,
-                  'endDate': slate_date,
-                  'hydrate': 'linescore,gameInfo,decisions,weather',
-              })
-              url = 'https://statsapi.mlb.com/api/v1/schedule?' + query
-              request = Request(url, headers={
-                  'accept': 'application/json',
-                  'user-agent': 'inqsi-mlb-schedule-date-inspector/1.0',
-              })
-              with urlopen(request, timeout=30) as response:
-                  payload = json.loads(response.read().decode('utf-8'))
+              if isinstance(state, dict) and isinstance(state.get('plan'), dict): plan = state['plan']
+          if plan is None: raise SystemExit('plan response missing')
+          dates = [str(x['slateDateEt']) for x in plan.get('rejectedDates') or []]
+          out = []
+          for day in dates:
+              url = 'https://statsapi.mlb.com/api/v1/schedule?' + urlencode({'sportId':1,'startDate':day,'endDate':day,'hydrate':'linescore,gameInfo'})
+              with urlopen(Request(url, headers={'accept':'application/json','user-agent':'inqsi-date-inspector/1.0'}), timeout=30) as response:
+                  payload = json.loads(response.read())
               for date_row in payload.get('dates') or []:
-                  date_row_date = str(date_row.get('date') or '')
                   for game in date_row.get('games') or []:
-                      raw_official = str(game.get('officialDate') or '')
-                      if raw_official == slate_date:
-                          continue
-                      teams = game.get('teams') or {}
-                      home = teams.get('home') or {}
-                      away = teams.get('away') or {}
-                      status = game.get('status') or {}
-                      game_info = game.get('gameInfo') or {}
-                      row = {
-                          'requestedSlateDateEt': slate_date,
-                          'dateRowDate': date_row_date,
-                          'gamePk': game.get('gamePk'),
-                          'officialDate': raw_official,
-                          'gameDateUtc': game.get('gameDate'),
-                          'gameDateEt': parse_et_date(game.get('gameDate')),
-                          'rescheduleDate': game.get('rescheduleDate'),
-                          'rescheduledFromDate': game.get('rescheduledFromDate'),
-                          'resumeDate': game.get('resumeDate'),
-                          'resumedFromDate': game.get('resumedFromDate'),
-                          'gameType': game.get('gameType'),
-                          'doubleHeader': game.get('doubleHeader'),
-                          'gameNumber': game.get('gameNumber'),
-                          'seriesGameNumber': game.get('seriesGameNumber'),
-                          'scheduledInnings': game.get('scheduledInnings'),
-                          'statusAbstract': status.get('abstractGameState'),
-                          'statusDetailed': status.get('detailedState'),
-                          'statusCode': status.get('statusCode'),
-                          'homeTeam': ((home.get('team') or {}).get('name')),
-                          'awayTeam': ((away.get('team') or {}).get('name')),
-                          'homeScore': home.get('score'),
-                          'awayScore': away.get('score'),
-                          'venue': ((game.get('venue') or {}).get('name')),
-                          'firstPitch': game_info.get('firstPitch'),
-                          'gameInfo': game_info,
-                          'topLevelKeys': sorted(game.keys()),
-                      }
-                      rows.append(row)
-                      print('MISMATCH=' + json.dumps(row, sort_keys=True, separators=(',', ':'), default=str))
-
-          print('MISMATCH_GAME_COUNT=' + str(len(rows)))
-          counts = {}
-          for row in rows:
-              key = (
-                  row.get('statusAbstract'),
-                  bool(row.get('resumeDate') or row.get('resumedFromDate')),
-                  bool(row.get('rescheduleDate') or row.get('rescheduledFromDate')),
-                  row.get('gameDateEt') == row.get('requestedSlateDateEt'),
-              )
-              counts[str(key)] = counts.get(str(key), 0) + 1
-          print('MISMATCH_CLASS_COUNTS=' + json.dumps(counts, sort_keys=True, separators=(',', ':')))
+                      official = str(game.get('officialDate') or '')
+                      if official == day: continue
+                      game_utc = str(game.get('gameDate') or '')
+                      try: game_et = datetime.fromisoformat(game_utc.replace('Z','+00:00')).astimezone(et).date().isoformat()
+                      except Exception: game_et = None
+                      status = game.get('status') or {}; teams = game.get('teams') or {}
+                      out.append({
+                          'day':day,'row':date_row.get('date'),'pk':game.get('gamePk'),'official':official,
+                          'gameUtc':game_utc,'gameEt':game_et,'resume':game.get('resumeDate'),
+                          'resumedFrom':game.get('resumedFromDate'),'reschedule':game.get('rescheduleDate'),
+                          'rescheduledFrom':game.get('rescheduledFromDate'),'abstract':status.get('abstractGameState'),
+                          'detail':status.get('detailedState'),'code':status.get('statusCode'),
+                          'away':(((teams.get('away') or {}).get('team') or {}).get('name')),
+                          'home':(((teams.get('home') or {}).get('team') or {}).get('name')),
+                          'awayScore':(teams.get('away') or {}).get('score'),'homeScore':(teams.get('home') or {}).get('score'),
+                          'doubleHeader':game.get('doubleHeader'),'gameNumber':game.get('gameNumber'),
+                          'seriesGame':game.get('seriesGameNumber'),'gameType':game.get('gameType')
+                      })
+          classes = {}
+          for row in out:
+              key = '|'.join([str(row['abstract']),str(bool(row['resume'] or row['resumedFrom'])),str(bool(row['reschedule'] or row['rescheduledFrom'])),str(row['gameEt']==row['day'])])
+              classes[key] = classes.get(key,0)+1
+          print('EXCEPTION_REPORT=' + json.dumps({'count':len(out),'classes':classes,'rows':out}, sort_keys=True, separators=(',',':')))
           PY
