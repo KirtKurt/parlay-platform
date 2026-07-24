@@ -1,16 +1,17 @@
-name: Migrate MLB V15.10 canonical deployment contracts
+name: Migrate MLB V15.10 non-workflow deployment contracts
 
 on:
-  push:
-    branches: [agent/mlb-ranked-winner-v15-10-production]
+  pull_request:
+    branches: [main]
     paths:
       - ".github/workflows/patch-mlb-v15-10-runtime-marker.yml"
+  workflow_dispatch:
 
 permissions:
   contents: write
 
 concurrency:
-  group: patch-mlb-v15-10-runtime-marker
+  group: patch-mlb-v15-10-nonworkflow-contracts
   cancel-in-progress: false
 
 jobs:
@@ -30,113 +31,11 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Apply exact V15.10 canonical-contract migration
+      - name: Apply exact V15.10 verifier migration
         run: |
           set -euo pipefail
           python - <<'PY'
           from pathlib import Path
-
-          deploy = Path('.github/workflows/deploy.yml')
-          text = deploy.read_text(encoding='utf-8')
-          old = """          if payload.get('model_version') != 'INQSI-MLB-v4.0-canonical-probability-aws-v2-shadow-manual-first':
-              raise SystemExit('Live MLB model version is stale')
-          if payload.get('productionAuthoritySource') != 'persisted_canonical_rules_market_prediction_v2_shadow_only':
-              raise SystemExit('Live MLB authority source is stale')
-          if payload.get('automaticPromotionPolicy') != 'disabled_manual_review_creates_shadow_pointer_only':
-              raise SystemExit('Live MLB promotion policy is stale')
-          if payload.get('legacyV1AuthorityEnabled') is not False:
-              raise SystemExit('Legacy V1 authority is not disabled')
-          if payload.get('awsNativeTrainingInstalled') is not True:
-              raise SystemExit('AWS-native V2 training is not installed')
-          if payload.get('awsNativeTrainingAuthority') is not False:
-              raise SystemExit('AWS-native V2 training incorrectly claims live authority')
-          if payload.get('awsNativeTrainingHealthSource') != 'separate_mode_specific_status_contract':
-              raise SystemExit('AWS-native V2 training health source is stale')
-          if payload.get('firstPromotionRequiresManualReview') is not True:
-              raise SystemExit('Manual-first V2 promotion is not enforced')
-          if payload.get('manualReviewCreatesShadowApprovalOnly') is not True:
-              raise SystemExit('Manual V2 review is not shadow-only')
-          if payload.get('v2InferenceConsumerInstalled') is not False:
-              raise SystemExit('Unreviewed V2 inference consumer is installed')
-          if payload.get('runtimeAuthorityActivationAvailable') is not False:
-              raise SystemExit('Unreviewed V2 runtime authority activation is available')
-          runtime = payload.get('ml_runtime_install') or {}
-          if runtime.get('ok') is not True:
-              raise SystemExit('Live MLB runtime installation is not healthy')
-          if runtime.get('version') != 'MLB-ML-RUNTIME-INSTALL-v4.1-verified-stage-promotion-authority-aws-v2-shadow-manual-first':
-              raise SystemExit('Live MLB runtime contract is stale')
-          steps = runtime.get('steps') or {}
-          for name in (
-              'legacyV1ChampionRuntimeInstalledForShadowDiagnostics',
-              'legacyV1AuthorityDisabled',
-              'v2ShadowManualFirst',
-              'canonicalProbabilityAndPersistedPrelockAuthority',
-              'providerNeutralCalibrationAndActionability',
-              'sourceHonestFundamentalsV2',
-          ):
-"""
-          new = """          expected = {
-              'model_version': 'INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble',
-              'primaryAlgorithm': 'INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble',
-              'primaryAlgorithmActive': True,
-              'rankedWinnerPolicyVersion': '2026-07-24-mlb-ranked-winner-primary-v1',
-              'productionAuthoritySource': 'mlb_ranked_winner_v15_10_active_ensemble',
-              'automaticPromotionPolicy': 'winner model fixed for release; precision/trade promotion remains disabled',
-              'legacyV1AuthorityEnabled': False,
-              'awsNativeTrainingInstalled': True,
-              'awsNativeTrainingAuthority': False,
-              'awsNativeTrainingHealthSource': 'separate_mode_specific_status_contract',
-              'firstPromotionRequiresManualReview': True,
-              'manualReviewCreatesShadowApprovalOnly': True,
-              'v2InferenceConsumerInstalled': False,
-              'runtimeAuthorityActivationAvailable': True,
-              'allowedProductionOutput': ['PICK'],
-              'productionSelectionAllowed': True,
-              'automaticWagerAllowed': False,
-              'legacyRecommendationAuthority': False,
-              'legacyFallbackAllowed': False,
-              'precisionHitRateEvidencePassed': False,
-          }
-          mismatches = {
-              key: {'expected': value, 'actual': payload.get(key)}
-              for key, value in expected.items()
-              if payload.get(key) != value
-          }
-          if mismatches:
-              raise SystemExit(
-                  'Live MLB V15.10 authority contract is stale: '
-                  + json.dumps(mismatches, sort_keys=True)
-              )
-          runtime = payload.get('ml_runtime_install') or {}
-          if runtime.get('ok') is not True:
-              raise SystemExit('Live MLB runtime installation is not healthy')
-          if runtime.get('version') != 'MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority':
-              raise SystemExit('Live MLB V15.10 runtime contract is stale')
-          steps = runtime.get('steps') or {}
-          for name in (
-              'legacyV1ChampionRuntimeInstalledForShadowDiagnostics',
-              'legacyV1AuthorityDisabled',
-              'v2ShadowManualFirst',
-              'canonicalProbabilityAndPersistedPrelockAuthority',
-              'providerNeutralCalibrationAndActionability',
-              'sourceHonestFundamentalsV2',
-              'lastPrelockPromotionAuthority',
-              'rankedWinnerV15_10DirectionInstalled',
-              'rankedWinnerV15_10SelectionInstalled',
-              'canonicalLockedStorageFinalizer',
-          ):
-"""
-          if text.count(old) != 1:
-              raise SystemExit(f'deploy smoke replacement count was {text.count(old)}, expected 1')
-          text = text.replace(old, new)
-          needle = '            tests/unit/test_mlb_ml_runtime_install_explicit.py\n'
-          if text.count(needle) != 1:
-              raise SystemExit(f'ranked regression insertion point count was {text.count(needle)}, expected 1')
-          text = text.replace(
-              needle,
-              '            tests/unit/test_mlb_ranked_primary_v15_10.py\n' + needle,
-          )
-          deploy.write_text(text, encoding='utf-8')
 
           cold = Path('scripts/verify_api_function_mlb_v3_import.py')
           text = cold.read_text(encoding='utf-8')
@@ -149,9 +48,12 @@ jobs:
     "prelock-persistence-verified-stage-promotion-authority-"
     "verified-active-model-authority"
 )"""
-          if text.count(old) != 1:
-              raise SystemExit(f'cold-import runtime replacement count was {text.count(old)}, expected 1')
-          cold.write_text(text.replace(old, new), encoding='utf-8')
+          if old in text:
+              if text.count(old) != 1:
+                  raise SystemExit('cold-import runtime replacement was not unique')
+              cold.write_text(text.replace(old, new), encoding='utf-8')
+          elif new not in text:
+              raise SystemExit('cold-import verifier has neither old nor new runtime identity')
 
           authority = Path('scripts/verify_mlb_workflow_authority.py')
           text = authority.read_text(encoding='utf-8')
@@ -227,9 +129,12 @@ jobs:
             if token not in deploy:
                 errors.append(error)
 """
-          if text.count(old) != 1:
-              raise SystemExit(f'workflow-authority replacement count was {text.count(old)}, expected 1')
-          authority.write_text(text.replace(old, new), encoding='utf-8')
+          if old in text:
+              if text.count(old) != 1:
+                  raise SystemExit('workflow-authority replacement was not unique')
+              authority.write_text(text.replace(old, new), encoding='utf-8')
+          elif 'ranked_runtime_tokens' not in text:
+              raise SystemExit('workflow-authority verifier has neither old nor new token contract')
 
           test = Path('tests/unit/test_mlb_workflow_authority.py')
           text = test.read_text(encoding='utf-8')
@@ -243,12 +148,15 @@ jobs:
             "'awsNativeTrainingAuthority': True",
             1,
         ),"""
-          if text.count(old) != 1:
-              raise SystemExit(f'workflow-authority test replacement count was {text.count(old)}, expected 1')
-          test.write_text(text.replace(old, new), encoding='utf-8')
+          if old in text:
+              if text.count(old) != 1:
+                  raise SystemExit('workflow-authority test replacement was not unique')
+              test.write_text(text.replace(old, new), encoding='utf-8')
+          elif new not in text:
+              raise SystemExit('workflow-authority test has neither old nor new mutation')
           PY
 
-      - name: Validate canonical schedule, workflow and runtime authority
+      - name: Validate verifier migration against canonical deployment source
         run: |
           set -euo pipefail
           python -m pip install --quiet "boto3>=1.34,<2" "pytest>=8,<9" "PyYAML>=6,<7"
@@ -263,20 +171,19 @@ jobs:
             scripts/verify_mlb_workflow_authority.py
           git diff --check
 
-      - name: Commit verified canonical-contract migration
+      - name: Commit verified non-workflow migration
         run: |
           set -euo pipefail
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add \
-            .github/workflows/deploy.yml \
             scripts/verify_api_function_mlb_v3_import.py \
             scripts/verify_mlb_workflow_authority.py \
             tests/unit/test_mlb_workflow_authority.py
-          git diff --cached --exit-code && {
-            echo "::error::Expected V15.10 canonical-contract changes were not staged"
-            exit 1
-          } || true
-          git commit -m "Migrate canonical MLB deployment checks to V15.10"
+          if git diff --cached --quiet; then
+            echo "Non-workflow verifier migration is already committed."
+            exit 0
+          fi
+          git commit -m "Migrate MLB V15.10 verifier contracts"
           git pull --rebase origin agent/mlb-ranked-winner-v15-10-production
           git push origin HEAD:agent/mlb-ranked-winner-v15-10-production
