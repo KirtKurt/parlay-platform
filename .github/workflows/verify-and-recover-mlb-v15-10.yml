@@ -31,7 +31,7 @@ env:
   MLB_STACK_NAME: parlay-platform-dev
   EXPECTED_MODEL_VERSION: INQSI-MLB-v5.0-ranked-winner-v15.10-active-ensemble
   EXPECTED_SELECTOR_VERSION: INQSI-MLB-RANKED-WINNER-v15.10.0-active-ensemble
-  EXPECTED_RUNTIME_VERSION: MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-active-model-authority
+  EXPECTED_RUNTIME_VERSION: MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority
 
 jobs:
   verify-or-recover:
@@ -99,7 +99,7 @@ jobs:
               and body.get('allowedProductionOutput') == ['PICK']
               and body.get('legacyRecommendationAuthority') is False
               and body.get('automaticWagerAllowed') is False
-              and runtime.get('version') == 'MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-active-model-authority'
+              and runtime.get('version') == 'MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority'
           )
           raise SystemExit(0 if ok else 1)
           PY
@@ -183,7 +183,7 @@ jobs:
               'precisionHitRateEvidencePassed': False,
           }
           mismatches={k:{'expected':v,'actual':body.get(k)} for k,v in expected.items() if body.get(k)!=v}
-          if runtime.get('version')!='MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-active-model-authority':
+          if runtime.get('version')!='MLB-ML-RUNTIME-INSTALL-v4.4-ranked-winner-v15.10-prelock-persistence-verified-stage-promotion-authority-verified-active-model-authority':
               mismatches['runtime.version']={'expected':'v4.4 ranked winner','actual':runtime.get('version')}
           for name in ('rankedWinnerV15_10DirectionInstalled','rankedWinnerV15_10SelectionInstalled'):
               if (runtime.get('steps') or {}).get(name) is not True:
