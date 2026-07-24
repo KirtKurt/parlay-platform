@@ -1,0 +1,130 @@
+name: Probe current Tennis provider catalog and events
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/probe-tennis-provider-catalog.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TENNIS_ODDS_API_KEY: ${{ secrets.TENNIS_ODDS_API_KEY || secrets.ODDS_API_KEY }}
+
+    steps:
+      - name: Query complete non-outright Tennis catalog and free event rosters
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${TENNIS_ODDS_API_KEY:-}" || {
+            echo "::error::No Tennis/provider odds key is configured"
+            exit 1
+          }
+          python - <<'PY'
+          from __future__ import annotations
+          import concurrent.futures
+          import json
+          import os
+          import urllib.parse
+          import urllib.request
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          key = os.environ["TENNIS_ODDS_API_KEY"]
+          base = "https://api.the-odds-api.com/v4"
+
+          def get_json(path, params):
+              query = urllib.parse.urlencode(params)
+              request = urllib.request.Request(
+                  f"{base}/{path.lstrip('/')}?{query}",
+                  headers={"Accept": "application/json", "User-Agent": "Inqsi-Tennis-Catalog-Probe/1.0"},
+              )
+              with urllib.request.urlopen(request, timeout=20) as response:
+                  return json.loads(response.read().decode("utf-8"))
+
+          sports = get_json("sports/", {"apiKey": key, "all": "true"})
+          catalog = []
+          for row in sports:
+              group = str(row.get("group") or "").casefold()
+              sport_key = str(row.get("key") or "").casefold()
+              if "tennis" not in group and not sport_key.startswith("tennis_"):
+                  continue
+              if row.get("has_outrights") is True or "winner" in sport_key or "outright" in sport_key:
+                  continue
+              catalog.append({
+                  "key": str(row.get("key")),
+                  "title": str(row.get("title") or row.get("key")),
+                  "active": bool(row.get("active")),
+              })
+          catalog.sort(key=lambda row: row["key"])
+
+          def fetch(row):
+              try:
+                  events = get_json(f"sports/{urllib.parse.quote(row['key'], safe='')}/events", {"apiKey": key})
+                  if not isinstance(events, list):
+                      raise RuntimeError("events payload was not a list")
+                  normalized = []
+                  for event in events:
+                      normalized.append({
+                          "id": str(event.get("id") or ""),
+                          "commence_time": event.get("commence_time"),
+                          "home_team": event.get("home_team"),
+                          "away_team": event.get("away_team"),
+                      })
+                  normalized.sort(key=lambda event: (str(event.get("commence_time") or ""), event["id"]))
+                  return row["key"], normalized, None
+              except Exception as exc:
+                  return row["key"], [], f"{type(exc).__name__}: {exc}"
+
+          event_rows = {}
+          errors = []
+          with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+              futures = [pool.submit(fetch, row) for row in catalog]
+              for future in concurrent.futures.as_completed(futures):
+                  sport_key, events, error = future.result()
+                  event_rows[sport_key] = events
+                  if error:
+                      errors.append({"sport_key": sport_key, "error": error})
+
+          competitions = []
+          all_events = []
+          by_key = {row["key"]: row for row in catalog}
+          for sport_key in sorted(event_rows):
+              events = event_rows[sport_key]
+              competitions.append({**by_key[sport_key], "event_count": len(events), "events": events})
+              all_events.extend({"sport_key": sport_key, **event} for event in events)
+          all_events.sort(key=lambda event: (str(event.get("commence_time") or ""), event["sport_key"], event["id"]))
+          report = {
+              "ok": not errors,
+              "checked_at_utc": datetime.now(timezone.utc).isoformat(),
+              "source": "the_odds_api_v4_sports_all_true_plus_free_events",
+              "catalog_count": len(catalog),
+              "active_catalog_count": sum(1 for row in catalog if row["active"]),
+              "competition_keys_with_events": [row["key"] for row in competitions if row["event_count"]],
+              "competition_key_count_with_events": sum(1 for row in competitions if row["event_count"]),
+              "event_count": len(all_events),
+              "first_event_at_utc": all_events[0]["commence_time"] if all_events else None,
+              "last_event_at_utc": all_events[-1]["commence_time"] if all_events else None,
+              "competitions": competitions,
+              "errors": sorted(errors, key=lambda row: row["sport_key"]),
+          }
+          Path("tennis-provider-catalog-probe.json").write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+          print(json.dumps({key: report[key] for key in (
+              "ok", "checked_at_utc", "catalog_count", "active_catalog_count",
+              "competition_keys_with_events", "event_count", "first_event_at_utc", "last_event_at_utc", "errors"
+          )}, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload sanitized catalog evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: tennis-provider-catalog-probe-${{ github.run_id }}-${{ github.run_attempt }}
+          if-no-files-found: error
+          retention-days: 30
+          path: tennis-provider-catalog-probe.json
