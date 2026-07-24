@@ -1,4 +1,4 @@
-# refresh: 2026-07-24T09:18Z
+# refresh: 2026-07-24T09:22Z
 name: MLB Live Chain PR Probe
 
 "on":
@@ -15,7 +15,7 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - name: Extract optimizer state and latest chain
+      - name: Print current optimizer and accelerator runs
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -23,7 +23,7 @@ jobs:
           api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
           headers=(-H "Authorization: Bearer ${GH_TOKEN}" -H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28")
           curl -fsS "${headers[@]}" "$api/actions/runs?per_page=100" > /tmp/runs.json
-          jq -c '[.workflow_runs[] | select(.name == "MLB Historical Recovery and Paid Dispatch" or .name == "MLB Historical Daily Optimizer" or .name == "MLB Historical Accelerated Training Driver")][0:20] | .[] | {id,name,event,status,conclusion,head_sha,created_at,updated_at}' /tmp/runs.json
-          curl -fsSL "${headers[@]}" "$api/actions/jobs/89444959858/logs" | sed -r 's/\x1B\[[0-9;?]*[ -\/]*[@-~]//g' > /tmp/job.log
-          echo '--- optimizer state lines ---'
-          grep -Ei 'PLAN_STATUS|PLAN_FINGERPRINT|ESTIMATED_CREDITS|MAXIMUM_AUTHORIZED_GAMES|paidBackfillAuthorized|networkRequestCount|creditsConsumed|eligibleGameCount|completeSlateCount|currentDate|currentSlotIndex|phase|PROMOTED|CANDIDATE_REJECTED|DATA_RANGE_EXHAUSTED|BACKFILLING|OPTIMIZING|authorized historical backfill|historical optimizer planning|historical backfill batch failed' /tmp/job.log | tail -n 120 || true
+          jq -c '[.workflow_runs[] | select(.name == "Dispatch Authorized MLB Historical Accelerator" or .name == "MLB Historical Recovery and Paid Dispatch" or .name == "MLB Historical Daily Optimizer" or .name == "MLB Historical Accelerated Training Driver")][0:20] | .[] | {id,name,event,status,conclusion,head_sha,created_at,updated_at}' /tmp/runs.json | tee /tmp/live-runs.ndjson
+          while read -r id; do
+            curl -fsS "${headers[@]}" "$api/actions/runs/$id/jobs?per_page=100" | jq -c --arg id "$id" '.jobs[] | {run_id:($id|tonumber),job_id:.id,job:.name,status,conclusion,active_steps:[.steps[]?|select(.status=="in_progress")|.name],failed_steps:[.steps[]?|select(.conclusion=="failure")|.name]}'
+          done < <(jq -r '.id' /tmp/live-runs.ndjson)
