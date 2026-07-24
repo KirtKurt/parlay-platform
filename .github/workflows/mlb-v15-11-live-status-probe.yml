@@ -1,4 +1,4 @@
-name: Print exact MLB planning response lines
+name: Snapshot S3-fixed MLB historical retry
 
 "on":
   pull_request:
@@ -12,48 +12,50 @@ permissions:
   actions: read
 
 jobs:
-  inspect:
+  snapshot:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/observe-mlb-v15-11-live-status'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
-      FAILED_JOB_ID: '89426541736'
+      RETRY_SHA: 5be59848b88be1d24055c6a05e44f18b86ed0cb8
     steps:
-      - name: Extract JSON responses and terminal assertion
+      - name: Print current S3-fixed planning and training chain
         shell: bash
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error --location \
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
+          curl --fail --silent --show-error \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
-            > /tmp/job.log
-          python - <<'PY'
-          from pathlib import Path
-          import re
-
-          raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
-          ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
-          lines = [ansi.sub('', line) for line in raw.splitlines()]
-          keep = re.compile(
-              r'^.*Z\s+\{.*(?:"ok"|"statusCode"|"FunctionError"|"errorMessage"|"phase"|"state"|"plan").*\}\s*$|'
-              r'planning/resume failed|Process completed with exit code|PLAN_STATUS=|PLAN_FINGERPRINT=|'
-              r'ESTIMATED_CREDITS=|MAXIMUM_AUTHORIZED_GAMES=|Unexpected optimizer phase|historical optimizer planning',
-              re.IGNORECASE,
-          )
-          matches = [(index + 1, line) for index, line in enumerate(lines) if keep.search(line)]
-          print('MATCH_COUNT=' + str(len(matches)))
-          for number, line in matches[-50:]:
-              print(f'{number:05d}: {line}')
-          print('--- FIXED RANGE 940-1045 ---')
-          for number in range(940, min(1046, len(lines) + 1)):
-              line = lines[number - 1]
-              if any(token in line for token in (
-                  '/tmp/mlb-historical-', 'StatusCode', 'FunctionError', 'errorMessage',
-                  'planning/resume failed', 'Process completed', '{"', "raise SystemExit",
-                  'PLAN_', 'completeDateRangeLedger', 'planningErrorCount', 'rejectedDates'
-              )):
-                  print(f'{number:05d}: {line}')
-          PY
+            "${api}/actions/runs?per_page=100" > /tmp/runs.json
+          jq --arg sha "$RETRY_SHA" '{
+            workflows: [
+              .workflow_runs[]
+              | select(.head_sha == $sha
+                    or .name == "MLB Historical Recovery and Paid Dispatch"
+                    or .name == "MLB Historical Daily Optimizer"
+                    or .name == "MLB Historical Accelerated Training Driver"
+                    or .name == "MLB V15.11.1 Accelerated Historical Training"
+                    or .name == "Dispatch Authorized MLB Historical Training")
+              | {id,name,event,status,conclusion,head_sha,created_at,updated_at,html_url}
+            ] | sort_by(.created_at) | reverse | .[0:15]
+          }' /tmp/runs.json > /tmp/summary.json
+          jq -r '.workflows[] | [.id,.name,.event,.status,(.conclusion // "pending"),.head_sha,.created_at] | @tsv' /tmp/summary.json
+          ids=$(jq -r '.workflows[].id' /tmp/summary.json)
+          for id in $ids; do
+            curl --fail --silent --show-error \
+              -H "Authorization: Bearer ${GH_TOKEN}" \
+              -H "Accept: application/vnd.github+json" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "${api}/actions/runs/${id}/jobs?per_page=100" > "/tmp/jobs-${id}.json"
+            jq -r --arg id "$id" '
+              .jobs[]
+              | [$id,.id,.name,.status,(.conclusion // "pending"),
+                 (([.steps[]? | select(.status == "in_progress") | .name][0])
+                  // ([.steps[]? | select(.conclusion == "failure") | .name][0])
+                  // "waiting")]
+              | @tsv
+            ' "/tmp/jobs-${id}.json"
+          done
