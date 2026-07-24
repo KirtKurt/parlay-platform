@@ -19,7 +19,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Print exact recent chain runs and job steps
+      - name: Print newest exact chain run for each stage
         run: |
           set -euo pipefail
           api_root="https://api.github.com/repos/${GITHUB_REPOSITORY}"
@@ -29,25 +29,29 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          names = {
+          ordered_names = [
               'MLB V15.11.1 Accelerated Historical Training',
               'Dispatch Authorized MLB Historical Training',
               'MLB Historical Recovery and Paid Dispatch',
               'MLB Historical Daily Optimizer',
               'MLB Historical Accelerated Training Driver',
-              'Observe MLB V15.11.1 Paid Training',
               'Observe MLB V15.11.1 Historical Training Chain',
-          }
-          data = json.loads(Path('/tmp/runs.json').read_text())
-          rows = [
-              row for row in data.get('workflow_runs', [])
-              if row.get('name') in names and str(row.get('created_at') or '') >= '2026-07-24T06:45:00Z'
           ]
-          rows.sort(key=lambda row: (row.get('created_at') or '', int(row.get('id') or 0)))
-          Path('/tmp/relevant-runs.json').write_text(json.dumps(rows, indent=2, sort_keys=True))
-          print('RELEVANT_RUN_COUNT=' + str(len(rows)))
-          for row in rows:
-              print(json.dumps({
+          data = json.loads(Path('/tmp/runs.json').read_text())
+          all_rows = [
+              row for row in data.get('workflow_runs', [])
+              if row.get('name') in ordered_names
+              and str(row.get('created_at') or '') >= '2026-07-24T06:45:00Z'
+          ]
+          selected = []
+          for name in ordered_names:
+              matches = [row for row in all_rows if row.get('name') == name]
+              if matches:
+                  selected.append(max(matches, key=lambda row: (row.get('created_at') or '', int(row.get('id') or 0))))
+          Path('/tmp/relevant-runs.json').write_text(json.dumps(selected, indent=2, sort_keys=True))
+          print('CURRENT_CHAIN_RUN_COUNT=' + str(len(selected)))
+          for row in selected:
+              print('RUN=' + json.dumps({
                   'id': row.get('id'),
                   'name': row.get('name'),
                   'event': row.get('event'),
@@ -58,7 +62,7 @@ jobs:
                   'updated_at': row.get('updated_at'),
                   'html_url': row.get('html_url'),
               }, sort_keys=True))
-          if not rows:
+          if not selected:
               raise SystemExit('No relevant MLB historical training Actions runs found')
           PY
           jq -r '.[].id' /tmp/relevant-runs.json | while read -r run_id; do
@@ -69,11 +73,11 @@ jobs:
           from pathlib import Path
           run_id = os.environ['RUN_ID']
           value = json.loads(Path(f'/tmp/jobs-{run_id}.json').read_text())
-          print('JOBS_FOR_RUN=' + run_id)
           for job in value.get('jobs', []):
               active = [step.get('name') for step in job.get('steps', []) if step.get('status') == 'in_progress']
               failed = [step.get('name') for step in job.get('steps', []) if step.get('conclusion') == 'failure']
-              print(json.dumps({
+              print('JOB=' + json.dumps({
+                  'run_id': int(run_id),
                   'job_id': job.get('id'),
                   'job': job.get('name'),
                   'status': job.get('status'),
