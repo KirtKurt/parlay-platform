@@ -17,7 +17,10 @@ _RESOURCE_PARTS = [
 _EXPECTED_RESOURCE_SHA256 = "4c4e037c5d2aef3789a297cf6d9a14a02ff2a89dbdc2e2589727a5b78c9f51a0"
 _EXPECTED_SOURCE_SHA256 = "ac8a3a1a3acc687ac916389e156abba6f9675f07a1b590b01023d80727bb2910"
 
-_encoded = b"".join(Path(__file__).with_name(name).read_bytes() for name in _RESOURCE_PARTS)
+_encoded = b"".join(
+    Path(__file__).with_name(name).read_bytes().strip()
+    for name in _RESOURCE_PARTS
+) + b"\n"
 if hashlib.sha256(_encoded).hexdigest() != _EXPECTED_RESOURCE_SHA256:
     raise RuntimeError("TEST_MLB_HISTORICAL_DAILY_OPTIMIZER_V1_RESOURCE_CHECKSUM_MISMATCH")
 _source = gzip.decompress(base64.b64decode(_encoded))
