@@ -1,4 +1,4 @@
-name: Probe MLB V15.11.1 deployment failure logs
+name: Probe MLB V15.11.1 exact SAM failure
 
 "on":
   pull_request:
@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89415006701'
     steps:
-      - name: Download exact failed deploy-and-plan job log
+      - name: Print only the exact deployment failure messages
         run: |
           set -euo pipefail
           curl --fail --silent --show-error --location \
@@ -28,41 +28,32 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
-            > /tmp/deploy-and-plan.log
-          test -s /tmp/deploy-and-plan.log
-          wc -l /tmp/deploy-and-plan.log
-
-      - name: Extract the SAM and CloudFormation failure context
-        run: |
-          set -euo pipefail
+            > /tmp/job.log
           python - <<'PY'
           from pathlib import Path
           import re
 
-          raw = Path('/tmp/deploy-and-plan.log').read_text(encoding='utf-8-sig', errors='replace')
+          raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
           ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
           lines = [ansi.sub('', line) for line in raw.splitlines()]
-          pattern = re.compile(
+          terms = re.compile(
               r'CREATE_FAILED|UPDATE_FAILED|ROLLBACK|ValidationError|AccessDenied|'
               r'AlreadyExists|already exists|Resource handler returned message|'
-              r'Error:|ERROR|Failed to create changeset|Failed to deploy|'
-              r'NoSuchBucket|InsufficientCapabilities|Parameter.*invalid',
+              r'Failed to create changeset|Failed to deploy|Error:|NoSuchBucket|'
+              r'InsufficientCapabilities|No updates are to be performed',
               re.IGNORECASE,
           )
-          hits = [index for index, line in enumerate(lines) if pattern.search(line)]
-          selected = set()
-          for index in hits:
-              selected.update(range(max(0, index - 8), min(len(lines), index + 18)))
-          # Include the final SAM output even when the provider message does not
-          # contain one of the common failure tokens.
-          selected.update(range(max(0, len(lines) - 140), len(lines)))
-          print('=== EXTRACTED FAILURE CONTEXT ===')
-          last = None
-          for index in sorted(selected):
-              if last is not None and index > last + 1:
-                  print('...')
-              print(f'{index + 1:05d}: {lines[index]}')
-              last = index
+          hits = [i for i, line in enumerate(lines) if terms.search(line)]
+          print('EXACT_MATCH_COUNT=' + str(len(hits)))
+          for i in hits[-30:]:
+              start = max(0, i - 2)
+              end = min(len(lines), i + 4)
+              print('---')
+              for j in range(start, end):
+                  print(f'{j + 1:05d}: {lines[j]}')
+          print('=== FINAL 45 JOB LINES ===')
+          for j, line in enumerate(lines[-45:], start=max(1, len(lines) - 44)):
+              print(f'{j:05d}: {line}')
           if not hits:
-              raise SystemExit('No recognized deployment failure token found')
+              raise SystemExit('No recognized failure line found')
           PY
