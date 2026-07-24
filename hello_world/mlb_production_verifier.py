@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any, Dict, Iterable, List, Optional
 from zoneinfo import ZoneInfo
@@ -380,27 +380,56 @@ def _locked_row_integrity(
     }
 
 
+def _official_lock_times(games: Iterable[Dict[str, Any]]) -> Dict[str, datetime]:
+    """Return exact official T-minus-45 cutoffs keyed by canonical identity.
+
+    The schedule, not an optional status row, determines whether a lock is due.
+    An incomplete map is returned as empty so legacy test fixtures and historical
+    payloads continue through the status-row fallback instead of inventing time.
+    """
+
+    source = [game for game in games if isinstance(game, dict)]
+    schedule: Dict[str, datetime] = {}
+    for game in source:
+        identity = _row_identity(game)
+        start = _parse_dt(game.get("commence_time") or game.get("commenceTime"))
+        if not identity or not start or identity in schedule:
+            return {}
+        schedule[identity] = start - timedelta(minutes=45)
+    return schedule if source and len(schedule) == len(source) else {}
+
+
 def _per_game_lock_progress(
     lock_status: Dict[str, Any],
     *,
     checked_at: datetime,
     expected_identities: Iterable[str],
+    expected_lock_times: Optional[Dict[str, datetime]] = None,
 ) -> Dict[str, Any]:
     expected = {
         _identity_from_value(value) for value in expected_identities if value
     }
     expected_count = len(expected)
+    schedule: Dict[str, datetime] = {}
+    for raw_identity, raw_lock_at in (expected_lock_times or {}).items():
+        identity = _identity_from_value(raw_identity)
+        lock_at = raw_lock_at if isinstance(raw_lock_at, datetime) else _parse_dt(raw_lock_at)
+        if identity in expected and lock_at:
+            schedule[identity] = lock_at.astimezone(timezone.utc)
+    schedule_complete = bool(expected_count and set(schedule) == expected)
+
     raw_statuses = lock_status.get("perGameStatus") or []
     statuses = [row for row in raw_statuses if isinstance(row, dict)]
-    due: List[Dict[str, Any]] = []
-    pending: List[Dict[str, Any]] = []
     invalid: List[Dict[str, Any]] = []
     seen_game_ids: set[str] = set()
-    valid_cutoffs: List[datetime] = []
+    valid_rows: Dict[str, Dict[str, Any]] = {}
+    fallback_due: set[str] = set()
+    fallback_pending: set[str] = set()
+    fallback_cutoffs: List[datetime] = []
 
     for row in statuses:
         game_id = _row_identity(row)
-        lock_at = _parse_dt(row.get("scheduledLockAtUtc"))
+        reported_lock_at = _parse_dt(row.get("scheduledLockAtUtc"))
         validation_errors: List[str] = []
         if not game_id:
             validation_errors.append("game_identity_missing")
@@ -408,11 +437,18 @@ def _per_game_lock_progress(
             validation_errors.append("duplicate_game_identity")
         else:
             seen_game_ids.add(game_id)
-        if not lock_at:
+        if not reported_lock_at:
             validation_errors.append("scheduled_lock_at_missing_or_invalid")
+        if (
+            schedule_complete
+            and game_id in schedule
+            and reported_lock_at
+            and reported_lock_at != schedule[game_id]
+        ):
+            validation_errors.append("scheduled_lock_at_official_mismatch")
         compact = {
             "gameId": game_id or None,
-            "scheduledLockAtUtc": lock_at.isoformat() if lock_at else None,
+            "scheduledLockAtUtc": reported_lock_at.isoformat() if reported_lock_at else None,
             "lockStatus": row.get("lockStatus") or row.get("state"),
             "lockOutcomeRecorded": row.get("lockOutcomeRecorded") is True,
             "lockedPrediction": row.get("lockedPrediction") is True,
@@ -421,29 +457,53 @@ def _per_game_lock_progress(
         if validation_errors:
             invalid.append(compact)
             continue
-        valid_cutoffs.append(lock_at)
-        if lock_at <= checked_at:
-            due.append(compact)
-        else:
-            pending.append(compact)
+        valid_rows[game_id] = compact
+        if not schedule_complete:
+            fallback_cutoffs.append(reported_lock_at)
+            if reported_lock_at <= checked_at:
+                fallback_due.add(game_id)
+            else:
+                fallback_pending.add(game_id)
 
-    missing_due = [row for row in due if row["lockOutcomeRecorded"] is not True]
-    observed = set(seen_game_ids)
+    if schedule_complete:
+        due_ids = {identity for identity, lock_at in schedule.items() if lock_at <= checked_at}
+        pending_ids = expected - due_ids
+        final_cutoff = max(schedule.values()) if schedule else None
+    else:
+        due_ids = fallback_due
+        pending_ids = fallback_pending
+        final_cutoff = max(fallback_cutoffs) if fallback_cutoffs else None
+
+    due_rows: List[Dict[str, Any]] = []
+    missing_due: List[Dict[str, Any]] = []
+    for identity in sorted(due_ids):
+        row = valid_rows.get(identity)
+        if row is None:
+            lock_at = schedule.get(identity)
+            row = {
+                "gameId": identity,
+                "scheduledLockAtUtc": lock_at.isoformat() if lock_at else None,
+                "lockStatus": None,
+                "lockOutcomeRecorded": False,
+                "lockedPrediction": False,
+                "validationErrors": ["due_status_row_missing"],
+            }
+        due_rows.append(row)
+        if row.get("lockOutcomeRecorded") is not True:
+            missing_due.append(row)
+
+    observed = set(valid_rows)
     missing_identities = sorted(expected - observed)
     unexpected_identities = sorted(observed - expected)
-    final_cutoff = max(valid_cutoffs) if valid_cutoffs else None
     status_complete = bool(
         expected_count > 0
         and len(statuses) == expected_count
-        and len(valid_cutoffs) == expected_count
-        and len(seen_game_ids) == expected_count
+        and len(valid_rows) == expected_count
         and not invalid
         and not missing_identities
         and not unexpected_identities
     )
-    final_cutoff_reached = bool(
-        status_complete and final_cutoff and checked_at >= final_cutoff
-    )
+    final_cutoff_reached = bool(final_cutoff and checked_at >= final_cutoff)
     terminal_slate = bool(
         lock_status.get("lockStatusComplete") is True
         or lock_status.get("dailyCardComplete") is True
@@ -451,40 +511,35 @@ def _per_game_lock_progress(
     return {
         "statusComplete": status_complete,
         "statusCount": len(statuses),
-        "uniqueGameCount": len(seen_game_ids),
+        "uniqueGameCount": len(observed),
         "gameIdentities": sorted(observed),
         "expectedGameIdentities": sorted(expected),
         "missingGameIdentities": missing_identities,
         "unexpectedGameIdentities": unexpected_identities,
         "invalidStatusCount": len(invalid),
         "invalidStatuses": invalid,
-        "dueGameCount": len(due),
-        "dueGameIdentities": sorted(
-            str(row.get("gameId") or "") for row in due if row.get("gameId")
-        ),
-        "dueTerminalGameCount": len(due) - len(missing_due),
+        "dueGameCount": len(due_ids),
+        "dueGameIdentities": sorted(due_ids),
+        "dueTerminalGameCount": len(due_ids) - len(missing_due),
         "dueMissingGameCount": len(missing_due),
         "dueMissingGames": missing_due,
-        "pendingGameCount": len(pending),
-        "pendingGameIdentities": sorted(
-            str(row.get("gameId") or "") for row in pending if row.get("gameId")
-        ),
-        "finalPerGameCutoffAtUtc": (
-            final_cutoff.isoformat() if final_cutoff else None
-        ),
+        "pendingGameCount": len(pending_ids),
+        "pendingGameIdentities": sorted(pending_ids),
+        "finalPerGameCutoffAtUtc": final_cutoff.isoformat() if final_cutoff else None,
         "finalPerGameCutoffReached": final_cutoff_reached,
         "terminalSlate": terminal_slate,
-        "fullSlateVectorEvaluationDue": bool(
-            terminal_slate or final_cutoff_reached
+        "fullSlateVectorEvaluationDue": bool(terminal_slate or final_cutoff_reached),
+        "officialLockScheduleComplete": schedule_complete,
+        "lockTimingAuthority": (
+            "official_schedule_tminus45" if schedule_complete else "status_payload_fallback"
         ),
         "policy": (
-            "Only games whose own scheduled T-45 cutoff is at or before "
-            "checkedAt must have a terminal lock outcome. Full-slate vector "
-            "coverage is evaluated only after the final per-game cutoff or "
-            "an explicitly terminal slate."
+            "Only games whose official scheduled T-45 cutoff is at or before "
+            "checkedAt must have a terminal lock outcome. An empty status payload "
+            "before the first cutoff is healthy. Full-slate status/vector coverage "
+            "is required only after the final cutoff or an explicitly terminal slate."
         ),
     }
-
 
 def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any]:
     checked_at = _now_utc()
@@ -549,7 +604,7 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
     lock_official_count = lock_status.get("officialScheduleGameCount")
     lock_manifest_count = lock_status.get("manifestGameCount")
     lock_verified_count = lock_status.get("verifiedFullSlateGameCount")
-    lock_authority_valid = bool(
+    lock_authority_observed_valid = bool(
         official_authority_valid
         and lock_status.get("officialScheduleBacked") is True
         and _exact_count(lock_status.get("gameCount"), official_count)
@@ -560,24 +615,67 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
         == str(roster.get("officialScheduleAuthorityFingerprint") or "")
         and bool(lock_status.get("officialScheduleAuthorityFingerprint"))
     )
-    if lock_status.get("ok") is not True:
-        blockers.append("LOCK_STATUS_FAILED")
-    if not lock_authority_valid:
-        blockers.append("LOCK_STATUS_ROSTER_AUTHORITY_MISMATCH")
 
     game_count = _count_or_zero(predictions.get("gameCount"))
     prediction_count = _count_or_zero(predictions.get("count"))
     pull_count = len(pulls)
     expected_slate_count = official_count
+    official_lock_times = _official_lock_times(official_games)
     per_game = _per_game_lock_progress(
         lock_status,
         checked_at=checked_at,
         expected_identities=official_identities,
+        expected_lock_times=official_lock_times,
     )
-    if per_game["statusComplete"] is not True:
+    lock_status_rows = lock_status.get("perGameStatus") or []
+    lock_evidence_present = bool(
+        (isinstance(lock_status_rows, list) and lock_status_rows)
+        or lock_status.get("officialScheduleBacked") is True
+        or lock_status.get("officialScheduleAuthorityFingerprint")
+        or lock_status.get("locked") is True
+        or lock_status.get("lockStatusComplete") is True
+        or lock_status.get("dailyCardComplete") is True
+    )
+    lock_evidence_required = bool(
+        per_game["dueGameCount"] > 0
+        or per_game["fullSlateVectorEvaluationDue"] is True
+        or lock_evidence_present
+    )
+    lock_authority_valid = bool(
+        not lock_evidence_required or lock_authority_observed_valid
+    )
+    if lock_evidence_required and lock_status.get("ok") is not True:
+        blockers.append("LOCK_STATUS_FAILED")
+    if lock_evidence_required and not lock_authority_observed_valid:
+        blockers.append("LOCK_STATUS_ROSTER_AUTHORITY_MISMATCH")
+
+    malformed_status_membership = bool(
+        per_game["invalidStatusCount"]
+        or per_game["unexpectedGameIdentities"]
+    )
+    full_status_membership_required = bool(
+        per_game["fullSlateVectorEvaluationDue"] is True
+        or (lock_evidence_present and per_game["dueGameCount"] == 0)
+    )
+    if malformed_status_membership:
         blockers.append("PER_GAME_LOCK_STATUS_MISSING_OR_INVALID")
-    if per_game["gameIdentities"] != official_identities:
         blockers.append("PER_GAME_LOCK_ROSTER_MEMBERSHIP_MISMATCH")
+    elif full_status_membership_required and per_game["statusComplete"] is not True:
+        blockers.append("PER_GAME_LOCK_STATUS_MISSING_OR_INVALID")
+        blockers.append("PER_GAME_LOCK_ROSTER_MEMBERSHIP_MISMATCH")
+
+    lock_membership_valid = bool(
+        not lock_evidence_required
+        or (
+            lock_authority_observed_valid
+            and not malformed_status_membership
+            and (
+                per_game["statusComplete"] is True
+                if full_status_membership_required
+                else per_game["dueMissingGameCount"] == 0
+            )
+        )
+    )
     integrity = _locked_row_integrity(
         slate_date,
         official_identities,
@@ -649,7 +747,11 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
                 "reportedPredictionCount": predictions.get("count"),
             },
             "lockStatus": {
-                "ok": lock_status.get("ok") is True and lock_authority_valid,
+                "ok": lock_authority_valid and lock_membership_valid,
+                "required": lock_evidence_required,
+                "evidencePresent": lock_evidence_present,
+                "observedAuthorityValid": lock_authority_observed_valid,
+                "membershipValid": lock_membership_valid,
                 "reportedGameCount": lock_status.get("gameCount"),
                 "reportedManifestGameCount": lock_manifest_count,
                 "reportedVerifiedFullSlateGameCount": lock_verified_count,
@@ -687,8 +789,7 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
                 official_authority_valid
                 and prediction_identity_valid
                 and lock_authority_valid
-                and per_game["statusComplete"] is True
-                and per_game["gameIdentities"] == official_identities
+                and lock_membership_valid
                 and integrity.get("authoritySafe") is True
             ),
         },
@@ -699,6 +800,8 @@ def _verification_payload(slate_date: str, mode: str, run: str) -> Dict[str, Any
             "minutesUntilLock": lock_status.get("minutesUntilLock"),
             "expectedSlateGameCount": expected_slate_count,
             "expectedLockedGameCount": per_game["dueGameCount"],
+            "lockEvidenceRequired": lock_evidence_required,
+            "lockEvidencePresent": lock_evidence_present,
             "perGameProgress": per_game,
         },
         "lockedRowIntegrity": integrity,
