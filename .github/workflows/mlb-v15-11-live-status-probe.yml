@@ -1,4 +1,4 @@
-name: Snapshot S3-fixed MLB historical retry
+name: Extract second MLB planning failure response
 
 "on":
   pull_request:
@@ -12,50 +12,76 @@ permissions:
   actions: read
 
 jobs:
-  snapshot:
+  inspect:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/observe-mlb-v15-11-live-status'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     env:
       GH_TOKEN: ${{ github.token }}
-      RETRY_SHA: 5be59848b88be1d24055c6a05e44f18b86ed0cb8
+      FAILED_JOB_ID: '89429118420'
     steps:
-      - name: Print current S3-fixed planning and training chain
+      - name: Print compact Lambda plan response and terminal reason
         shell: bash
         run: |
           set -euo pipefail
-          api="https://api.github.com/repos/${GITHUB_REPOSITORY}"
-          curl --fail --silent --show-error \
+          curl --fail --silent --show-error --location \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "${api}/actions/runs?per_page=100" > /tmp/runs.json
-          jq --arg sha "$RETRY_SHA" '{
-            workflows: [
-              .workflow_runs[]
-              | select(.head_sha == $sha
-                    or .name == "MLB Historical Recovery and Paid Dispatch"
-                    or .name == "MLB Historical Daily Optimizer"
-                    or .name == "MLB Historical Accelerated Training Driver"
-                    or .name == "MLB V15.11.1 Accelerated Historical Training"
-                    or .name == "Dispatch Authorized MLB Historical Training")
-              | {id,name,event,status,conclusion,head_sha,created_at,updated_at,html_url}
-            ] | sort_by(.created_at) | reverse | .[0:15]
-          }' /tmp/runs.json > /tmp/summary.json
-          jq -r '.workflows[] | [.id,.name,.event,.status,(.conclusion // "pending"),.head_sha,.created_at] | @tsv' /tmp/summary.json
-          ids=$(jq -r '.workflows[].id' /tmp/summary.json)
-          for id in $ids; do
-            curl --fail --silent --show-error \
-              -H "Authorization: Bearer ${GH_TOKEN}" \
-              -H "Accept: application/vnd.github+json" \
-              -H "X-GitHub-Api-Version: 2022-11-28" \
-              "${api}/actions/runs/${id}/jobs?per_page=100" > "/tmp/jobs-${id}.json"
-            jq -r --arg id "$id" '
-              .jobs[]
-              | [$id,.id,.name,.status,(.conclusion // "pending"),
-                 (([.steps[]? | select(.status == "in_progress") | .name][0])
-                  // ([.steps[]? | select(.conclusion == "failure") | .name][0])
-                  // "waiting")]
-              | @tsv
-            ' "/tmp/jobs-${id}.json"
-          done
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
+            > /tmp/job.log
+          python - <<'PY'
+          from pathlib import Path
+          import json
+          import re
+
+          raw = Path('/tmp/job.log').read_text(encoding='utf-8-sig', errors='replace')
+          ansi = re.compile(r'\x1b\[[0-9;?]*[ -/]*[@-~]')
+          lines = [ansi.sub('', line) for line in raw.splitlines()]
+          candidates = []
+          for number, line in enumerate(lines, 1):
+              marker = re.match(r'^.*?Z\s+(\{.*\})\s*$', line)
+              if not marker:
+                  continue
+              text = marker.group(1)
+              try:
+                  value = json.loads(text)
+              except Exception:
+                  continue
+              if isinstance(value, dict) and (value.get('state') or value.get('status') or value.get('ok') is not None):
+                  candidates.append((number, value))
+          print('JSON_RESPONSE_COUNT=' + str(len(candidates)))
+          for number, value in candidates[-6:]:
+              state = value.get('state') or {}
+              plan = value.get('plan') or state.get('plan') or {}
+              compact = {
+                  'line': number,
+                  'ok': value.get('ok'),
+                  'status': value.get('status'),
+                  'phase': state.get('phase'),
+                  'lastError': state.get('lastError'),
+                  'paidBackfillAuthorized': state.get('paidBackfillAuthorized'),
+                  'networkRequestCount': state.get('networkRequestCount'),
+                  'eligibleGameCount': state.get('eligibleGameCount'),
+                  'maximumAuthorizedOfficialGames': plan.get('maximumAuthorizedOfficialGames'),
+                  'plannedCompleteSlateDays': plan.get('plannedCompleteSlateDays'),
+                  'historicalRequestCount': plan.get('historicalRequestCount'),
+                  'estimatedCredits': plan.get('estimatedCredits'),
+                  'completeDateRangeLedger': plan.get('completeDateRangeLedger'),
+                  'planningErrorCount': plan.get('planningErrorCount'),
+                  'rejectedDateCount': len(plan.get('rejectedDates') or []),
+                  'firstRejectedDates': (plan.get('rejectedDates') or [])[:5],
+                  'fingerprint': plan.get('fingerprint'),
+              }
+              print(json.dumps(compact, indent=2, sort_keys=True, default=str))
+          for number, line in enumerate(lines, 1):
+              if any(token.lower() in line.lower() for token in (
+                  'historical optimizer planning/resume failed',
+                  'process completed with exit code',
+                  'plan_status=',
+                  'plan_fingerprint=',
+                  'estimated_credits=',
+                  'maximum_authorized_games=',
+              )):
+                  print(f'{number:05d}: {line}')
+          PY
