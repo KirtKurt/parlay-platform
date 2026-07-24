@@ -6,6 +6,7 @@ name: Stage MLB V15.11.1 rollback recovery
     types: [opened, synchronize, reopened]
     paths:
       - '.github/workflows/mlb-v15-11-stage-rollback-recovery.yml'
+      - 'scripts/stage_mlb_v15_11_rollback_recovery.py'
 
 permissions:
   contents: write
@@ -32,108 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --quiet 'PyYAML>=6,<7'
-          python - <<'PY'
-          from pathlib import Path
-          import yaml
-
-          source = Path('.github/workflows/mlb-historical-optimizer.yml')
-          text = source.read_text(encoding='utf-8')
-          anchor = "      - name: Deploy fail-closed historical optimizer\n"
-          if text.count(anchor) != 1:
-              raise SystemExit(f'deploy anchor count={text.count(anchor)}')
-          if 'Recover historical optimizer stack from failed create' in text:
-              raise SystemExit('rollback recovery step is already present')
-
-          recovery = r'''      - name: Recover historical optimizer stack from failed create
-                env:
-                  HISTORICAL_STACK_NAME: parlay-platform-mlb-historical-optimizer
-                  AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
-                run: |
-                  set -euo pipefail
-
-                  read_stack_status() {
-                    local output
-                    if output=$(aws cloudformation describe-stacks \
-                      --stack-name "$HISTORICAL_STACK_NAME" \
-                      --region "$AWS_REGION_VALUE" \
-                      --query 'Stacks[0].StackStatus' \
-                      --output text 2>/tmp/mlb-historical-stack-status.err); then
-                      printf '%s\n' "$output"
-                    elif grep -qiE 'does not exist|not exist' /tmp/mlb-historical-stack-status.err; then
-                      printf 'STACK_NOT_FOUND\n'
-                    else
-                      cat /tmp/mlb-historical-stack-status.err >&2
-                      return 1
-                    fi
-                  }
-
-                  for attempt in $(seq 1 120); do
-                    status="$(read_stack_status)"
-                    echo "Historical optimizer stack status: $status"
-                    case "$status" in
-                      STACK_NOT_FOUND)
-                        break
-                        ;;
-                      ROLLBACK_COMPLETE)
-                        echo 'Deleting failed-create optimizer stack before clean recreation.'
-                        aws cloudformation delete-stack \
-                          --stack-name "$HISTORICAL_STACK_NAME" \
-                          --region "$AWS_REGION_VALUE"
-                        aws cloudformation wait stack-delete-complete \
-                          --stack-name "$HISTORICAL_STACK_NAME" \
-                          --region "$AWS_REGION_VALUE"
-                        status="$(read_stack_status)"
-                        if [ "$status" != 'STACK_NOT_FOUND' ]; then
-                          echo "::error::Historical optimizer stack still exists after delete: $status"
-                          exit 1
-                        fi
-                        break
-                        ;;
-                      CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE)
-                        echo 'Historical optimizer stack is updateable.'
-                        break
-                        ;;
-                      *_IN_PROGRESS)
-                        if [ "$attempt" -eq 120 ]; then
-                          echo "::error::Timed out waiting for historical optimizer stack: $status"
-                          exit 1
-                        fi
-                        sleep 15
-                        ;;
-                      *)
-                        echo "::error::Unexpected non-updateable historical optimizer stack status: $status"
-                        exit 1
-                        ;;
-                    esac
-                  done
-          '''
-          # The raw block is indented eight spaces inside this Python heredoc.
-          # Normalize it back to the workflow's six-space step indentation.
-          lines = recovery.splitlines()
-          minimum = min(len(line) - len(line.lstrip()) for line in lines if line.strip())
-          recovery = '\n'.join(line[minimum:] for line in lines) + '\n'
-          if not recovery.startswith('      - name: Recover historical optimizer stack from failed create\n'):
-              raise SystemExit('recovery indentation normalization failed')
-
-          patched = text.replace(anchor, recovery + anchor, 1)
-          if patched.index('Recover historical optimizer stack from failed create') > patched.index('Deploy fail-closed historical optimizer'):
-              raise SystemExit('recovery step was not inserted before deployment')
-          for required in (
-              'ROLLBACK_COMPLETE',
-              'aws cloudformation delete-stack',
-              'aws cloudformation wait stack-delete-complete',
-              'Unexpected non-updateable historical optimizer stack status',
-              'STACK_NOT_FOUND',
-          ):
-              if required not in patched:
-                  raise SystemExit(f'missing recovery contract: {required}')
-
-          yaml.safe_load(patched)
-          target = Path('runtime_reports/mlb_v15_11_1_rollback_recovery_workflow.staged.yml')
-          target.parent.mkdir(parents=True, exist_ok=True)
-          target.write_text(patched, encoding='utf-8')
-          print(target)
-          PY
+          python scripts/stage_mlb_v15_11_rollback_recovery.py
           sha256sum runtime_reports/mlb_v15_11_1_rollback_recovery_workflow.staged.yml
 
       - name: Commit staged non-workflow blob
