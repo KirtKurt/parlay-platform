@@ -1,0 +1,64 @@
+name: MLB Historical Status Probe 3
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-status-probe-3.yml'
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Read optimizer status and recent workflow state
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks --stack-name parlay-platform-mlb-historical-optimizer --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          aws lambda invoke --function-name "$FUNCTION_NAME" --region "${{ secrets.AWS_REGION }}" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"automation_live_status_probe_3"}' /tmp/status.json >/tmp/meta.json
+          python - <<'PY'
+          import json, os, urllib.request
+          value=json.load(open('/tmp/status.json'))
+          state=value.get('state') or {}
+          summary={
+            'ok':value.get('ok'),
+            'phase':state.get('phase'),
+            'currentDate':state.get('currentDate'),
+            'currentSlotIndex':state.get('currentSlotIndex'),
+            'networkRequestCount':state.get('networkRequestCount'),
+            'creditsConsumed':state.get('creditsConsumed'),
+            'eligibleGameCount':state.get('eligibleGameCount'),
+            'completeSlateCount':state.get('completeSlateCount'),
+            'optimizationRound':state.get('optimizationRound'),
+            'lastError':state.get('lastError'),
+            'championValidation':value.get('championValidation'),
+            'cutoverValidation':value.get('cutoverValidation'),
+            'productionAuthority':value.get('productionAuthority'),
+          }
+          req=urllib.request.Request('https://api.github.com/repos/KirtKurt/parlay-platform/actions/runs?per_page=30',headers={'Authorization':'Bearer '+os.environ['GH_TOKEN'],'Accept':'application/vnd.github+json'})
+          with urllib.request.urlopen(req) as r:
+            runs=json.load(r).get('workflow_runs',[])
+          wanted=[]
+          for run in runs:
+            name=run.get('name','')
+            if 'Historical' in name or 'historical' in name:
+              wanted.append({k:run.get(k) for k in ['id','name','status','conclusion','event','created_at','updated_at','head_sha']})
+          summary['recentHistoricalWorkflowRuns']=wanted[:10]
+          print(json.dumps(summary,indent=2,sort_keys=True))
+          json.dump(summary,open('/tmp/status-summary.json','w'),indent=2,sort_keys=True)
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-historical-status-probe-3-${{ github.sha }}
+          path: /tmp/status-summary.json
+          retention-days: 2
