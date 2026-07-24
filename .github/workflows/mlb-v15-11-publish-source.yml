@@ -188,16 +188,13 @@ jobs:
               yaml.compose(handle, Loader=yaml.BaseLoader)
           PY
 
-      - name: Replace bootstrap artifacts with reviewable direct source
+      - name: Publish validated non-workflow source tree
         shell: bash
         run: |
           set -euo pipefail
           rm -rf .pytest_cache
           find . -type d -name __pycache__ -prune -exec rm -rf {} +
           rm -f \
-            .github/workflows/mlb-v15-11-bootstrap.yml \
-            .github/workflows/mlb-v15-11-diagnostics.yml \
-            .github/workflows/mlb-v15-11-publish-source.yml \
             bootstrap/mlb-v15-11.tar.xz.b64.part00 \
             bootstrap/mlb-v15-11.tar.xz.b64.part01 \
             bootstrap/mlb-v15-11.tar.xz.b64.part02 \
@@ -205,10 +202,14 @@ jobs:
             bootstrap/mlb-v15-11.tar.xz.b64.part04 \
             bootstrap/mlb-v15-11.1-wager-safety.patch.gz.b64
           test "$(find bootstrap -maxdepth 1 -type f -name 'mlb-v15-11*' | wc -l)" -eq 0
-          git diff --check
+          git diff --check -- docs hello_world mlb_historical_optimizer tests bootstrap
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
+          git add -A -- docs hello_world mlb_historical_optimizer tests bootstrap
           test -n "$(git diff --cached --name-only)"
-          git commit -m 'Publish reviewable MLB V15.11.1 source'
+          if git diff --cached --name-only | grep -q '^\.github/workflows/'; then
+            echo '::error::Workflow file entered non-workflow publication commit'
+            exit 1
+          fi
+          git commit -m 'Publish reviewable MLB V15.11.1 source modules'
           git push origin "HEAD:${TARGET_BRANCH}"
