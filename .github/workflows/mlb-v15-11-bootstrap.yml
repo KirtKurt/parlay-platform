@@ -107,16 +107,16 @@ jobs:
             hello_world/mlb_ml_runtime_install_v3.py \
             hello_world/mlb_v3_read_api.py
 
-      - name: Replace temporary bootstrap with reviewed source
+      - name: Publish verified non-workflow source
         shell: bash
         run: |
           set -euo pipefail
           branch='${{ github.event.pull_request.head.ref || github.ref_name }}'
           rm -rf bootstrap
-          rm -f .github/workflows/mlb-v15-11-bootstrap.yml
+          rm -f .github/workflows/mlb-historical-optimizer.yml
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -A
           git diff --cached --check
-          git commit -m 'Add MLB V15.11 historical daily optimizer'
+          git commit -m 'Add MLB V15.11 historical daily optimizer source'
           git push origin "HEAD:${branch}"
