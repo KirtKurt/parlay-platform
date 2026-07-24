@@ -25,3 +25,13 @@ def test_historical_optimizer_keeps_maximum_execution_window():
     timeout_values = re.findall(r"^\s+Timeout:\s*(\d+)\s*$", text, re.MULTILINE)
 
     assert timeout_values == ["900"]
+
+
+def test_historical_optimizer_does_not_reserve_lambda_concurrency():
+    """A one-unit reservation violates this account's minimum unreserved quota."""
+
+    text = TEMPLATE.read_text(encoding="utf-8")
+
+    assert "ReservedConcurrentExecutions" not in text
+    assert "MLB_HISTORICAL_LEASE_SECONDS" in text
+    assert "DeleteLeaseOnlyFromOptimizerStatePartition" in text
