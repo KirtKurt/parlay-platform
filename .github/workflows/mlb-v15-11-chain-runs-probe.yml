@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89426541736'
     steps:
-      - name: Print exact zero-paid-call planning failure
+      - name: Print broad zero-paid-call planning diagnostics
         run: |
           set -euo pipefail
           curl -fsSL \
@@ -29,6 +29,7 @@ jobs:
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
           | sed -r 's/\x1B\[[0-9;?]*[ -\/]*[@-~]//g' > /tmp/job.log
-          grep -n -A 100 -B 20 'Initialize or resume and build the no-paid-history credit plan' /tmp/job.log | tail -n 180
-          echo '--- concise errors and state ---'
-          grep -Ei 'historical optimizer planning|contract missing|contract mismatch|credit plan|configured date range|authorized ledger|fingerprint|planningError|rejectedDates|PLAN_STATUS|ESTIMATED_CREDITS|MAXIMUM_AUTHORIZED_GAMES|FunctionError|Unhandled|Traceback|errorMessage|errorType|Process completed with exit code' /tmp/job.log | tail -n 100
+          grep -nEi 'FunctionError|PLAN|planning|rejected|error|failed|READY|maximumAuthorized|estimatedCredits|schedule|totalGames|AccessDenied|ResourceNotFound|TooManyRequests|Exception|Task timed out|ImportModuleError|initialize|invoke' /tmp/job.log \
+          | tail -n 160 || true
+          echo '--- final 80 lines ---'
+          tail -n 80 /tmp/job.log
