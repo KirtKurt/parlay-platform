@@ -1,4 +1,4 @@
-name: Observe MLB V15.11.1 rollback-recovery deployment
+name: Dispatch isolated zero-paid MLB V15.11.1 deployment
 
 "on":
   pull_request:
@@ -9,31 +9,70 @@ name: Observe MLB V15.11.1 rollback-recovery deployment
 
 permissions:
   contents: read
-  actions: read
+  actions: write
 
 jobs:
-  observe:
+  dispatch-and-verify:
     if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/observe-mlb-v15-11-live-status'
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     env:
       GH_TOKEN: ${{ github.token }}
-      TARGET_SHA: a6d0fd39c8205a4944e624497c75d7c32d42c4b2
-      TARGET_WORKFLOW: MLB Historical Daily Optimizer
+      WORKFLOW_FILE: mlb-historical-optimizer.yml
+      WORKFLOW_NAME: MLB Historical Daily Optimizer
     steps:
-      - name: Wait for exact rollback-recovery deployment run
-        id: wait
-        shell: bash
+      - name: Snapshot existing workflow-dispatch run IDs
         run: |
           set -euo pipefail
-          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${TARGET_SHA}&event=push&per_page=100"
-          for attempt in $(seq 1 150); do
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs?event=workflow_dispatch&per_page=100" \
+            > /tmp/before.json
+          jq '[.workflow_runs[].id]' /tmp/before.json > /tmp/before-ids.json
+          cat /tmp/before-ids.json
+
+      - name: Dispatch isolated deployment and zero-paid planning
+        run: |
+          set -euo pipefail
+          jq -n '{
+            ref: "main",
+            inputs: {
+              deploy_runtime_guard: "true",
+              runtime_guard_confirmation: "INSTALL_FAIL_CLOSED_HISTORICAL_RUNTIME_GUARD",
+              deploy_optimizer_stack: "true",
+              execute_paid_backfill: "false",
+              paid_authorization: "",
+              production_cutover_confirmation: "",
+              maximum_credits: "120000",
+              maximum_candidates: "25000"
+            }
+          }' > /tmp/dispatch.json
+          cat /tmp/dispatch.json
+          curl --fail --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/dispatches" \
+            --data-binary @/tmp/dispatch.json
+
+      - name: Wait for isolated workflow to complete
+        id: wait
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/${WORKFLOW_FILE}/runs?event=workflow_dispatch&per_page=100"
+          for attempt in $(seq 1 240); do
             curl --fail --silent --show-error \
               -H "Authorization: Bearer ${GH_TOKEN}" \
               -H "Accept: application/vnd.github+json" \
               -H "X-GitHub-Api-Version: 2022-11-28" \
               "$api" > /tmp/runs.json
-            row=$(jq -c --arg name "$TARGET_WORKFLOW" '[.workflow_runs[] | select(.name == $name)] | sort_by(.created_at) | last // empty' /tmp/runs.json)
+            row=$(jq -c --slurpfile before /tmp/before-ids.json '
+              [.workflow_runs[] | select((.id as $id | ($before[0] | index($id))) == null)]
+              | sort_by(.created_at) | last // empty
+            ' /tmp/runs.json)
             if [ -n "$row" ]; then
               run_id=$(jq -r '.id' <<<"$row")
               status=$(jq -r '.status' <<<"$row")
@@ -46,16 +85,15 @@ jobs:
                 exit 0
               fi
             else
-              echo "attempt=${attempt} exact deployment run not visible yet"
+              echo "attempt=${attempt} dispatched run not visible yet"
             fi
             sleep 10
           done
-          echo '::error::Timed out waiting for exact rollback-recovery deployment'
+          echo '::error::Timed out waiting for isolated deployment workflow'
           exit 1
 
-      - name: Fetch exact deployment jobs
+      - name: Fetch isolated deployment job states
         id: jobs
-        shell: bash
         run: |
           set -euo pipefail
           run_id='${{ steps.wait.outputs.run_id }}'
@@ -69,12 +107,9 @@ jobs:
           deploy_job=$(jq -r '[.jobs[] | select(.name == "deploy-and-plan")] | last | .id // empty' /tmp/jobs.json)
           test -n "$deploy_job"
           echo "deploy_job_id=$deploy_job" >> "$GITHUB_OUTPUT"
-          jq -e '[.jobs[] | select(.name == "validate" and .conclusion == "success")] | length == 1' /tmp/jobs.json
-          jq -e '[.jobs[] | select(.name == "deploy-gated-runtime-loader" and .conclusion == "success")] | length == 1' /tmp/jobs.json
 
-      - name: Print exact failure context when deployment is not green
+      - name: Print exact failure context
         if: steps.wait.outputs.conclusion != 'success'
-        shell: bash
         run: |
           set -euo pipefail
           job_id='${{ steps.jobs.outputs.deploy_job_id }}'
@@ -94,13 +129,13 @@ jobs:
               r'CREATE_FAILED|UPDATE_FAILED|ROLLBACK|Resource handler returned message|'
               r'Failed to create changeset|Failed to deploy|ValidationError|AccessDenied|'
               r'InvalidRequest|LimitExceeded|ConflictException|Process completed with exit code|'
-              r'PLAN_BLOCKED|planning failed|Traceback|Exception',
+              r'PLAN_BLOCKED|planning failed|Traceback|Exception|error',
               re.IGNORECASE,
           )
           hits = [i for i, line in enumerate(lines) if terms.search(line)]
-          selected = set(range(max(0, len(lines) - 80), len(lines)))
-          for index in hits[-30:]:
-              selected.update(range(max(0, index - 4), min(len(lines), index + 12)))
+          selected = set(range(max(0, len(lines) - 100), len(lines)))
+          for index in hits[-40:]:
+              selected.update(range(max(0, index - 5), min(len(lines), index + 15)))
           last = None
           for index in sorted(selected):
               if last is not None and index > last + 1:
@@ -110,11 +145,13 @@ jobs:
           PY
           exit 1
 
-      - name: Download and verify zero-paid planning evidence
+      - name: Verify deployment jobs and zero-paid planning artifact
         if: steps.wait.outputs.conclusion == 'success'
-        shell: bash
         run: |
           set -euo pipefail
+          jq -e '[.jobs[] | select(.name == "validate" and .conclusion == "success")] | length == 1' /tmp/jobs.json
+          jq -e '[.jobs[] | select(.name == "deploy-gated-runtime-loader" and .conclusion == "success")] | length == 1' /tmp/jobs.json
+          jq -e '[.jobs[] | select(.name == "deploy-and-plan" and .conclusion == "success")] | length == 1' /tmp/jobs.json
           run_id='${{ steps.wait.outputs.run_id }}'
           curl --fail --silent --show-error \
             -H "Authorization: Bearer ${GH_TOKEN}" \
@@ -163,8 +200,8 @@ jobs:
           assert int(state.get('minimumUntouchedAuditGames') or 0) >= 200, state
           assert float(state.get('dailyAccuracyRequirement') or 0) >= 0.80, state
           phase = str((status_payload.get('state') or {}).get('phase') or state.get('phase') or '')
-          assert phase in {'READY_FOR_AUTHORIZATION','BACKFILLING','OPTIMIZING','PAUSED_QUOTA','CANDIDATE_REJECTED','DATA_RANGE_EXHAUSTED','PROMOTED'}, phase
-          print('ZERO_PAID_PLAN_VERIFIED')
+          assert phase == 'READY_FOR_AUTHORIZATION', phase
+          print('ISOLATED_DEPLOYMENT_AND_ZERO_PAID_PLAN_VERIFIED')
           print('PHASE=' + phase)
           print('PLAN_FINGERPRINT=' + str(plan.get('fingerprint')))
           print('ESTIMATED_CREDITS=' + str(plan.get('estimatedCredits')))
