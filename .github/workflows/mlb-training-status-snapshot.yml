@@ -1,4 +1,4 @@
-name: MLB Training Status Snapshot
+name: MLB Training Failure Snapshot
 
 "on":
   push:
@@ -21,14 +21,21 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Print latest MLB historical workflow runs
+      - name: Print exact optimizer deployment failure tail
         env:
           GITHUB_TOKEN: ${{ github.token }}
+          TARGET_JOB_ID: "89424142807"
         run: |
           set -euo pipefail
-          curl --fail --silent --show-error \
+          curl --fail --silent --show-error --location \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
-            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/runs?per_page=100" \
-            | jq -c '[.workflow_runs[] | select(.name == "MLB V15.11.1 Accelerated Historical Training" or .name == "MLB Historical Recovery and Paid Dispatch" or .name == "MLB Historical Daily Optimizer" or .name == "MLB Historical Accelerated Training Driver" or .name == "Dispatch Authorized MLB Historical Training" or .name == "Observe MLB V15.11.1 Historical Training Chain") | {name,id,status,conclusion,event,head_sha,created_at,updated_at,html_url}] | sort_by(.created_at)'
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${TARGET_JOB_ID}/logs" \
+            --output /tmp/optimizer-deploy.log
+          echo MLB_OPTIMIZER_DEPLOY_ERROR_LINES_BEGIN
+          grep -Eai 'error|failed|rollback|validation|resource handler|limit|exceed|already exists|CREATE_FAILED|UPDATE_FAILED' /tmp/optimizer-deploy.log | tail -n 80 || true
+          echo MLB_OPTIMIZER_DEPLOY_ERROR_LINES_END
+          echo MLB_OPTIMIZER_DEPLOY_LOG_TAIL_BEGIN
+          tail -n 120 /tmp/optimizer-deploy.log
+          echo MLB_OPTIMIZER_DEPLOY_LOG_TAIL_END
