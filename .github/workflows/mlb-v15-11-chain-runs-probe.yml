@@ -20,7 +20,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
       FAILED_JOB_ID: '89424142807'
     steps:
-      - name: Print exact optimizer deployment failure
+      - name: Print full Lambda CREATE_FAILED context
         run: |
           set -euo pipefail
           curl -fsSL \
@@ -28,6 +28,7 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             -H "X-GitHub-Api-Version: 2022-11-28" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${FAILED_JOB_ID}/logs" \
-          | sed -r 's/\x1B\[[0-9;?]*[ -\/]*[@-~]//g' \
-          | grep -Ei 'CREATE_FAILED|UPDATE_FAILED|ROLLBACK|ValidationError|AccessDenied|AlreadyExists|Resource handler returned message|Failed to create changeset|Failed to deploy|Error:|NoSuchBucket|InsufficientCapabilities|InvalidRequest|LimitExceeded|ConflictException|Process completed with exit code|EXECUTE_PAID_BACKFILL' \
-          | tail -n 40
+          | sed -r 's/\x1B\[[0-9;?]*[ -\/]*[@-~]//g' > /tmp/job.log
+          grep -n -A 18 -B 5 'CREATE_FAILED.*AWS::Lambda::Function' /tmp/job.log
+          echo '--- deploy command and parameter context ---'
+          grep -n -A 35 -B 5 'sam deploy' /tmp/job.log | tail -n 80
