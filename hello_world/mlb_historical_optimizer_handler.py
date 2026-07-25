@@ -31,7 +31,7 @@ import mlb_historical_daily_optimizer_v1 as optimizer
 import mlb_historical_policy_v1 as policy_runtime
 
 
-VERSION = "MLB-HISTORICAL-OPTIMIZER-AWS-v1.6-complete-ledger-fresh-audit-append-only-authority"
+VERSION = "MLB-HISTORICAL-OPTIMIZER-AWS-v1.8-archive-before-freshness-quarantine"
 STATE_PK = "MLB_HISTORICAL_OPTIMIZER#V1"
 STATE_SK = "STATE"
 LEASE_SK = "LEASE"
@@ -354,8 +354,9 @@ def _fetch_historical(requested_at_utc: str) -> Tuple[Dict[str, Any], Dict[str, 
     payload, headers = _http_json(_historical_url(requested_at_utc))
     if not isinstance(payload, Mapping):
         raise OrchestrationError("historical response is not a JSON object")
-    # Validate time direction and basic schema before spending another credit.
-    optimizer.normalize_historical_snapshot(payload, requested_at_utc)
+    # Archive the provider response before applying freshness policy.
+    # Freshness is evaluated during slate assembly, where stale slots are
+    # quarantined without trapping the resumable cursor.
     return dict(payload), headers
 
 
