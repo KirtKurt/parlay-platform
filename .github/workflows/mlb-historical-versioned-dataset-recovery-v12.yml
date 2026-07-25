@@ -1,0 +1,307 @@
+name: MLB Historical Versioned Dataset Recovery V12
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_historical_versioned_dataset_key_v3.py'
+      - 'hello_world/mlb_historical_optimizer_entrypoint.py'
+      - 'tests/unit/test_mlb_historical_versioned_dataset_key_v3.py'
+      - '.github/workflows/mlb-historical-versioned-dataset-recovery-v12.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-historical-versioned-dataset-recovery-v12
+  cancel-in-progress: false
+
+env:
+  HIST_STACK: parlay-platform-mlb-historical-optimizer
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate exact source and contracts
+        id: validate
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python -m py_compile \
+            hello_world/mlb_historical_quarantine_contract_v2.py \
+            hello_world/mlb_historical_versioned_dataset_key_v3.py \
+            hello_world/mlb_historical_optimizer_entrypoint.py \
+            hello_world/mlb_historical_optimizer_handler.py \
+            hello_world/mlb_historical_daily_optimizer_v1.py
+          grep -Fq 'versioned_dataset_key.install()' \
+            hello_world/mlb_historical_optimizer_entrypoint.py
+          PYTHONPATH=hello_world python -m pytest -q \
+            tests/unit/test_mlb_historical_quarantine_contract_v2.py \
+            tests/unit/test_mlb_historical_versioned_dataset_key_v3.py \
+            tests/unit/test_mlb_historical_optimizer_handler.py \
+            tests/unit/test_mlb_historical_daily_optimizer_v1.py
+
+      - name: Resolve isolated historical Lambda
+        id: resolve
+        if: steps.validate.outcome == 'success'
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          HIST_FN=$(aws cloudformation describe-stacks \
+            --stack-name "$HIST_STACK" \
+            --region "$AWS_REGION_VALUE" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+            --output text)
+          test -n "$HIST_FN"
+          test "$HIST_FN" != None
+          PROD_FNS=$(aws cloudformation describe-stack-resources \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION_VALUE" \
+            --query "StackResources[?ResourceType=='AWS::Lambda::Function'].PhysicalResourceId" \
+            --output text || true)
+          for fn in $PROD_FNS; do
+            test "$fn" != "$HIST_FN"
+          done
+          echo "HIST_FN=$HIST_FN" >> "$GITHUB_ENV"
+
+      - name: Capture baseline status
+        id: baseline
+        if: steps.resolve.outcome == 'success'
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name "$HIST_FN" \
+            --region "$AWS_REGION_VALUE" \
+            --cli-read-timeout 900 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"status","run":"versioned_v12_baseline"}' \
+            /tmp/baseline-v12.json >/tmp/baseline-v12-meta.json
+
+      - name: Directly deploy only the historical Lambda
+        id: deploy
+        if: steps.baseline.outcome == 'success'
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          rm -f /tmp/mlb-historical-v12.zip
+          (
+            cd hello_world
+            zip -qr /tmp/mlb-historical-v12.zip . -x '__pycache__/*' '*.pyc'
+          )
+          aws lambda update-function-code \
+            --function-name "$HIST_FN" \
+            --region "$AWS_REGION_VALUE" \
+            --zip-file fileb:///tmp/mlb-historical-v12.zip \
+            --publish \
+            >/tmp/update-v12.json
+          aws lambda wait function-updated-v2 \
+            --function-name "$HIST_FN" \
+            --region "$AWS_REGION_VALUE"
+
+      - name: Verify deployed package identity
+        id: verify
+        if: steps.deploy.outcome == 'success'
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          URL=$(aws lambda get-function \
+            --function-name "$HIST_FN" \
+            --region "$AWS_REGION_VALUE" \
+            --query 'Code.Location' \
+            --output text)
+          curl -fsSL "$URL" -o /tmp/deployed-v12.zip
+          unzip -p /tmp/deployed-v12.zip mlb_historical_versioned_dataset_key_v3.py \
+            >/tmp/deployed-versioned-key-v12.py
+          grep -Fq 'MLB-HISTORICAL-VERSIONED-DATASET-KEY-v3' \
+            /tmp/deployed-versioned-key-v12.py
+          unzip -p /tmp/deployed-v12.zip mlb_historical_optimizer_entrypoint.py \
+            >/tmp/deployed-entrypoint-v12.py
+          grep -Fq 'versioned_dataset_key.install()' \
+            /tmp/deployed-entrypoint-v12.py
+
+      - name: Invoke until the April 14 checkpoint advances
+        id: recover
+        if: steps.verify.outcome == 'success'
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 8); do
+            aws lambda invoke \
+              --function-name "$HIST_FN" \
+              --region "$AWS_REGION_VALUE" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload "{\"mode\":\"orchestrate\",\"run\":\"versioned_v12_${i}\"}" \
+              "/tmp/run-v12-${i}.json" >/tmp/meta-v12-${i}.json
+            aws lambda invoke \
+              --function-name "$HIST_FN" \
+              --region "$AWS_REGION_VALUE" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload "{\"mode\":\"status\",\"run\":\"versioned_v12_status_${i}\"}" \
+              /tmp/status-v12.json >/tmp/status-v12-meta.json
+            if python - <<'PY'
+          import json
+          value=json.load(open('/tmp/status-v12.json'))
+          state=value.get('state') or {}
+          version=str(value.get('version') or '')
+          error=str(state.get('lastError') or '')
+          recovered=(str(state.get('currentDate')), int(state.get('currentSlotIndex') or 0)) != ('2025-04-14',72)
+          clean='immutable S3 artifact collision' not in error and 'historical request ledger is incomplete' not in error and 'too stale for a 15-minute grid' not in error
+          raise SystemExit(0 if recovered and clean and 'versioned-dataset-key-v3' in version else 1)
+          PY
+            then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'Historical cursor did not recover after eight invocations' >&2
+          exit 1
+
+      - name: Capture and publish immutable proof
+        if: always()
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          RESOLVE_OUTCOME: ${{ steps.resolve.outcome }}
+          BASELINE_OUTCOME: ${{ steps.baseline.outcome }}
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          VERIFY_OUTCOME: ${{ steps.verify.outcome }}
+          RECOVER_OUTCOME: ${{ steps.recover.outcome }}
+        run: |
+          set -euo pipefail
+          if [ -n "${HIST_FN:-}" ]; then
+            aws lambda invoke \
+              --function-name "$HIST_FN" \
+              --region "$AWS_REGION_VALUE" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload '{"mode":"status","run":"versioned_v12_final"}' \
+              /tmp/final-v12.json >/tmp/final-v12-meta.json || true
+          fi
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+
+          def load(path):
+              try:
+                  return json.load(open(path))
+              except Exception:
+                  return {}
+
+          baseline_value=load('/tmp/baseline-v12.json')
+          final_value=load('/tmp/final-v12.json')
+          baseline=baseline_value.get('state') or {}
+          final=final_value.get('state') or {}
+          outcomes={
+              'validate': os.environ.get('VALIDATE_OUTCOME'),
+              'resolve': os.environ.get('RESOLVE_OUTCOME'),
+              'baseline': os.environ.get('BASELINE_OUTCOME'),
+              'deploy': os.environ.get('DEPLOY_OUTCOME'),
+              'verify': os.environ.get('VERIFY_OUTCOME'),
+              'recover': os.environ.get('RECOVER_OUTCOME'),
+          }
+          version=str(final_value.get('version') or '')
+          error=str(final.get('lastError') or '')
+          before=(str(baseline.get('currentDate')), int(baseline.get('currentSlotIndex') or 0), int(baseline.get('networkRequestCount') or 0), int(baseline.get('eligibleGameCount') or 0), int(baseline.get('completeSlateCount') or 0))
+          after=(str(final.get('currentDate')), int(final.get('currentSlotIndex') or 0), int(final.get('networkRequestCount') or 0), int(final.get('eligibleGameCount') or 0), int(final.get('completeSlateCount') or 0))
+          advancing=after != before
+          recovered=(str(final.get('currentDate')), int(final.get('currentSlotIndex') or 0)) != ('2025-04-14',72)
+          blockers_cleared=all(text not in error for text in (
+              'immutable S3 artifact collision',
+              'historical request ledger is incomplete',
+              'too stale for a 15-minute grid',
+          ))
+          success=(
+              all(outcomes[name] == 'success' for name in outcomes)
+              and 'versioned-dataset-key-v3' in version
+              and advancing
+              and recovered
+              and blockers_cleared
+          )
+          proof={
+              'checkedAt': datetime.now(timezone.utc).isoformat(),
+              'result': 'SUCCESS' if success else 'FAILED',
+              'sourceSha': os.environ.get('GITHUB_SHA'),
+              'historicalFunctionName': os.environ.get('HIST_FN') or None,
+              'stepOutcomes': outcomes,
+              'version': final_value.get('version'),
+              'baseline': {
+                  'phase': baseline.get('phase'),
+                  'currentDate': baseline.get('currentDate'),
+                  'currentSlotIndex': baseline.get('currentSlotIndex'),
+                  'networkRequestCount': baseline.get('networkRequestCount'),
+                  'eligibleGameCount': baseline.get('eligibleGameCount'),
+                  'completeSlateCount': baseline.get('completeSlateCount'),
+                  'lastError': baseline.get('lastError'),
+              },
+              'final': {
+                  'phase': final.get('phase'),
+                  'currentDate': final.get('currentDate'),
+                  'currentSlotIndex': final.get('currentSlotIndex'),
+                  'networkRequestCount': final.get('networkRequestCount'),
+                  'eligibleGameCount': final.get('eligibleGameCount'),
+                  'completeSlateCount': final.get('completeSlateCount'),
+                  'optimizationRound': final.get('optimizationRound'),
+                  'lastError': final.get('lastError'),
+                  'quarantinedHistoricalSlotCount': final.get('quarantinedHistoricalSlotCount'),
+                  'lastRejectedSlateError': final.get('lastRejectedSlateError'),
+              },
+              'ingestionAdvancing': advancing,
+              'cursorRecovered': recovered,
+              'priorBlockersCleared': blockers_cleared,
+          }
+          os.makedirs('docs/runtime',exist_ok=True)
+          json.dump(proof,open('docs/runtime/mlb-historical-versioned-dataset-v12-proof.json','w'),indent=2)
+          print(json.dumps(proof,indent=2))
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in 1 2 3 4; do
+            git fetch origin main
+            git rebase origin/main
+            git add docs/runtime/mlb-historical-versioned-dataset-v12-proof.json
+            git commit -m 'chore: publish MLB historical versioned dataset v12 proof' || true
+            git push origin HEAD:main && break
+            sleep 3
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-historical-versioned-dataset-v12-proof
+          path: docs/runtime/mlb-historical-versioned-dataset-v12-proof.json
+          retention-days: 30
+
+      - name: Require live recovery
+        run: |
+          python - <<'PY'
+          import json
+          proof=json.load(open('docs/runtime/mlb-historical-versioned-dataset-v12-proof.json'))
+          assert proof.get('result') == 'SUCCESS', proof
+          PY
