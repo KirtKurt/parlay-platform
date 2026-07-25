@@ -16,7 +16,18 @@ import mlb_historical_optimizer_handler as optimizer_handler
 import mlb_historical_quarantine_contract_v2 as quarantine_contract
 import mlb_historical_versioned_dataset_key_v3 as versioned_dataset_key
 
-VERSION = "MLB-HISTORICAL-ENTRYPOINT-v3-cross-date-quarantine-versioned-datasets"
+VERSION = "MLB-HISTORICAL-ENTRYPOINT-v4-runtime-bounds-cross-date-quarantine"
+
+# A historical request can consume multiple seconds and may retry upstream
+# failures. The previous 100-request batch could exceed Lambda's 900-second hard
+# timeout before the handler reached its state checkpoint. Keep each resumable
+# invocation bounded and let the five-minute schedule continue from the saved
+# cursor. The lease must outlive the Lambda timeout so two invocations cannot
+# write competing copies of optimizer state during the final minute.
+optimizer_handler.MAX_NETWORK_REQUESTS = min(
+    int(optimizer_handler.MAX_NETWORK_REQUESTS), 20
+)
+optimizer_handler.LEASE_SECONDS = max(int(optimizer_handler.LEASE_SECONDS), 960)
 
 
 def _team_name(raw: Mapping[str, Any], side: str) -> Optional[str]:
