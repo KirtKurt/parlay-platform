@@ -1,0 +1,147 @@
+name: MLB Historical Ingestion Watchdog
+
+"on":
+  schedule:
+    - cron: '*/15 * * * *'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-watchdog.yml'
+      - 'hello_world/mlb_historical_optimizer_entrypoint.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  OPTIMIZER_STACK: parlay-platform-mlb-historical-optimizer
+
+concurrency:
+  group: mlb-historical-ingestion-watchdog
+  cancel-in-progress: false
+
+jobs:
+  resume-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Deploy bounded runtime fix
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
+          sam build --no-cached --build-dir .aws-sam-watchdog --template-file mlb_historical_optimizer/template.yaml
+          sam deploy \
+            --template-file .aws-sam-watchdog/template.yaml \
+            --stack-name "$OPTIMIZER_STACK" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              'TargetSnapshotsTable=parlay_platform_snapshots' \
+              'HistoricalStartDate=2025-04-01' \
+              'HistoricalEndDate=2025-08-31' \
+              'HistoricalTargetGames=1600' \
+              'HistoricalMaxCredits=120000' \
+              'HistoricalRequestsPerRun=20' \
+              'HistoricalMaxCandidates=25000' \
+              'HistoricalMaxOptimizationRounds=6' \
+              'HistoricalFreshAuditIncrementGames=250' \
+              "DeployGitSha=${GITHUB_SHA}"
+
+      - name: Resume once and verify durable progress
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$OPTIMIZER_STACK" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+            --output text)
+          test -n "$FUNCTION_NAME"
+          test "$FUNCTION_NAME" != None
+
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --cli-read-timeout 900 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"status","run":"watchdog_before"}' \
+            /tmp/before.json >/tmp/before-meta.json
+
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --cli-read-timeout 900 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"orchestrate","run":"github_watchdog_resume"}' \
+            /tmp/resume.json >/tmp/resume-meta.json
+
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --cli-read-timeout 900 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"status","run":"watchdog_after"}' \
+            /tmp/after.json >/tmp/after-meta.json
+
+          python - <<'PY'
+          import json
+
+          before = json.load(open('/tmp/before.json'))
+          resume = json.load(open('/tmp/resume.json'))
+          after = json.load(open('/tmp/after.json'))
+          if before.get('ok') is not True or after.get('ok') is not True:
+              raise SystemExit(f"status invocation failed: before={before} after={after}")
+          if resume.get('ok') is not True:
+              raise SystemExit(f"optimizer resume failed: {resume}")
+
+          b = before.get('state') or {}
+          a = after.get('state') or {}
+          terminal = {'PROMOTED', 'DATA_RANGE_EXHAUSTED', 'CANDIDATE_REJECTED', 'PAUSED_QUOTA'}
+          progress_fields = ('networkRequestCount', 'eligibleGameCount', 'completeSlateCount', 'revision')
+          advanced = any(int(a.get(k) or 0) > int(b.get(k) or 0) for k in progress_fields)
+          cursor_advanced = (a.get('currentDate'), a.get('currentSlotIndex')) != (b.get('currentDate'), b.get('currentSlotIndex'))
+          lease_held = resume.get('status') == 'LEASE_HELD'
+          phase = str(a.get('phase') or '')
+
+          report = {
+              'before': {k: b.get(k) for k in ('phase', 'currentDate', 'currentSlotIndex', *progress_fields, 'lastError')},
+              'after': {k: a.get(k) for k in ('phase', 'currentDate', 'currentSlotIndex', *progress_fields, 'lastError')},
+              'advanced': advanced or cursor_advanced,
+              'leaseHeld': lease_held,
+          }
+          print(json.dumps(report, indent=2, sort_keys=True))
+
+          if a.get('lastError') and phase not in terminal:
+              raise SystemExit(f"optimizer persisted an error: {a.get('lastError')}")
+          if phase not in terminal and not (advanced or cursor_advanced or lease_held):
+              raise SystemExit('optimizer returned successfully but made no durable progress')
+          PY
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-historical-watchdog-${{ github.run_id }}
+          path: |
+            /tmp/before.json
+            /tmp/resume.json
+            /tmp/after.json
+            /tmp/*-meta.json
+          if-no-files-found: warn
+          retention-days: 30
