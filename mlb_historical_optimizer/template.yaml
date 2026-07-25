@@ -22,14 +22,14 @@ Parameters:
     Default: '2025-04-01'
   HistoricalEndDate:
     Type: String
-    Default: '2025-08-31'
+    Default: '2025-10-31'
   HistoricalTargetGames:
     Type: Number
     Default: 1600
     MinValue: 1400
   HistoricalMaxCredits:
     Type: Number
-    Default: 120000
+    Default: 300000
     MinValue: 1000
   HistoricalRequestsPerRun:
     Type: Number
@@ -49,6 +49,13 @@ Parameters:
     Type: Number
     Default: 250
     MinValue: 200
+  HistoricalRangeExtensionAuthorized:
+    Type: String
+    Default: 'true'
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Description: Explicit deployment authorization to append strictly later dates to an exhausted fingerprinted ledger
   DeployGitSha:
     Type: String
     Default: unknown
@@ -75,6 +82,7 @@ Globals:
         MLB_HISTORICAL_MAX_CANDIDATES: !Ref HistoricalMaxCandidates
         MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS: !Ref HistoricalMaxOptimizationRounds
         MLB_HISTORICAL_FRESH_AUDIT_INCREMENT_GAMES: !Ref HistoricalFreshAuditIncrementGames
+        MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED: !Ref HistoricalRangeExtensionAuthorized
         MLB_HISTORICAL_QUOTA_RESERVE: '100'
         MLB_HISTORICAL_LEASE_SECONDS: '840'
         MLB_HISTORICAL_HTTP_TIMEOUT_SECONDS: '20'
