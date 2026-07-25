@@ -14,8 +14,9 @@ import inqsi_pull_history as history
 import mlb_canonical_final_labels_v1 as final_labels
 import mlb_historical_optimizer_handler as optimizer_handler
 import mlb_historical_quarantine_contract_v2 as quarantine_contract
+import mlb_historical_versioned_dataset_key_v3 as versioned_dataset_key
 
-VERSION = "MLB-HISTORICAL-ENTRYPOINT-v2-cross-date-and-quarantine-ledger"
+VERSION = "MLB-HISTORICAL-ENTRYPOINT-v3-cross-date-quarantine-versioned-datasets"
 
 
 def _team_name(raw: Mapping[str, Any], side: str) -> Optional[str]:
@@ -121,6 +122,7 @@ optimizer_handler.final_labels.fetch_official_schedule = (
     fetch_official_schedule_cross_date_safe
 )
 quarantine_contract.install()
+versioned_dataset_key.install()
 
 
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
