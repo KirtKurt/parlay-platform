@@ -1,61 +1,94 @@
-# refresh: 2026-07-25T14:41Z
 name: MLB Historical Status Snapshot
 
 "on":
+  schedule:
+    - cron: '7 * * * *'
   push:
     branches: [main]
     paths:
       - '.github/workflows/mlb-historical-status-snapshot.yml'
+      - '.github/workflows/mlb-historical-watchdog.yml'
+      - 'hello_world/mlb_historical_optimizer_entrypoint.py'
   workflow_dispatch:
 
 permissions:
   contents: write
 
+env:
+  OPTIMIZER_STACK: parlay-platform-mlb-historical-optimizer
+
+concurrency:
+  group: mlb-historical-status-snapshot
+  cancel-in-progress: true
+
 jobs:
   status:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Read compact optimizer status
+      - name: Read and validate compact optimizer status
         run: |
           set -euo pipefail
-          FUNCTION_NAME=$(aws cloudformation describe-stacks --stack-name parlay-platform-mlb-historical-optimizer --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
-          aws lambda invoke --function-name "$FUNCTION_NAME" --region "${{ secrets.AWS_REGION }}" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"manual_live_status_snapshot"}' /tmp/status.json >/tmp/meta.json
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$OPTIMIZER_STACK" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+            --output text)
+          test -n "$FUNCTION_NAME"
+          test "$FUNCTION_NAME" != None
+          aws lambda invoke \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --cli-read-timeout 900 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"status","run":"scheduled_live_status_snapshot"}' \
+            /tmp/status.json >/tmp/meta.json
           python - <<'PY'
           import json
           from datetime import datetime, timezone
-          value=json.load(open('/tmp/status.json'))
-          state=value.get('state') or {}
-          summary={
-            'checkedAt': datetime.now(timezone.utc).isoformat(),
-            'ok':value.get('ok'),
-            'phase':state.get('phase'),
-            'currentDate':state.get('currentDate'),
-            'currentSlotIndex':state.get('currentSlotIndex'),
-            'networkRequestCount':state.get('networkRequestCount'),
-            'creditsConsumed':state.get('creditsConsumed'),
-            'eligibleGameCount':state.get('eligibleGameCount'),
-            'completeSlateCount':state.get('completeSlateCount'),
-            'optimizationRound':state.get('optimizationRound'),
-            'lastError':state.get('lastError'),
-            'championValidation':value.get('championValidation'),
-            'cutoverValidation':value.get('cutoverValidation'),
-            'productionAuthority':value.get('productionAuthority'),
+
+          value = json.load(open('/tmp/status.json'))
+          if value.get('ok') is not True:
+              raise SystemExit(f"optimizer status failed: {value}")
+          state = value.get('state') or {}
+          summary = {
+              'checkedAt': datetime.now(timezone.utc).isoformat(),
+              'ok': True,
+              'phase': state.get('phase'),
+              'currentDate': state.get('currentDate'),
+              'currentSlotIndex': state.get('currentSlotIndex'),
+              'networkRequestCount': state.get('networkRequestCount'),
+              'creditsConsumed': state.get('creditsConsumed'),
+              'eligibleGameCount': state.get('eligibleGameCount'),
+              'completeSlateCount': state.get('completeSlateCount'),
+              'optimizationRound': state.get('optimizationRound'),
+              'latestExperiment': state.get('latestExperiment'),
+              'lastError': state.get('lastError'),
+              'lastErrorAtUtc': state.get('lastErrorAtUtc'),
+              'stateUpdatedAtUtc': state.get('updatedAtUtc'),
+              'revision': state.get('revision'),
+              'championValidation': value.get('championValidation'),
+              'cutoverValidation': value.get('cutoverValidation'),
+              'productionAuthority': value.get('productionAuthority'),
           }
-          print(json.dumps(summary,indent=2,sort_keys=True))
-          json.dump(summary,open('/tmp/status-summary.json','w'),indent=2,sort_keys=True)
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          json.dump(summary, open('/tmp/status-summary.json', 'w'), indent=2, sort_keys=True)
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: mlb-historical-live-status-${{ github.sha }}
+          name: mlb-historical-live-status-${{ github.run_id }}
           path: /tmp/status-summary.json
-          retention-days: 7
-      - name: Publish canonical live status
+          retention-days: 30
+      - name: Publish canonical live status safely
         run: |
           set -euo pipefail
           mkdir -p docs/runtime
@@ -68,4 +101,12 @@ jobs:
             exit 0
           fi
           git commit -m "chore: publish MLB historical live status"
-          git push
+          for attempt in 1 2 3; do
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              exit 0
+            fi
+            git rebase --abort || true
+            sleep $((attempt * 5))
+          done
+          echo '::error::Unable to publish MLB historical status after three retries.'
+          exit 1
