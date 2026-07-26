@@ -1,0 +1,235 @@
+name: MLB Historical Watch Repair V13
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-watch-repair-v13.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-historical-watch-repair-v13
+  cancel-in-progress: false
+
+env:
+  OPTIMIZER_STACK: parlay-platform-mlb-historical-optimizer
+
+jobs:
+  inspect-repair-drive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Resolve optimizer and repair schedule authority
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$OPTIMIZER_STACK" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+            --output text)
+          test -n "$FUNCTION_NAME"
+          test "$FUNCTION_NAME" != None
+          FUNCTION_ARN=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query FunctionArn --output text)
+          HANDLER=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query Handler --output text)
+          test "$HANDLER" = 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler'
+          echo "FUNCTION_NAME=$FUNCTION_NAME" >> "$GITHUB_ENV"
+          echo "FUNCTION_ARN=$FUNCTION_ARN" >> "$GITHUB_ENV"
+
+          mapfile -t RULES < <(aws events list-rule-names-by-target \
+            --target-arn "$FUNCTION_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'RuleNames[]' --output text | tr '\t' '\n' | sed '/^$/d')
+          if [ ${#RULES[@]} -eq 0 ]; then
+            echo '::error::No EventBridge schedule targets the historical optimizer Lambda.'
+            exit 1
+          fi
+          : > /tmp/mlb-historical-rules.ndjson
+          scheduled_enabled=0
+          for rule in "${RULES[@]}"; do
+            aws events describe-rule --name "$rule" --region "${{ secrets.AWS_REGION }}" > /tmp/rule.json
+            python - "$rule" <<'PY' >> /tmp/mlb-historical-rules.ndjson
+          import json,sys
+          value=json.load(open('/tmp/rule.json'))
+          value['ruleName']=sys.argv[1]
+          print(json.dumps(value,sort_keys=True))
+          PY
+            state=$(python -c "import json; print(json.load(open('/tmp/rule.json')).get('State') or '')")
+            schedule=$(python -c "import json; print(json.load(open('/tmp/rule.json')).get('ScheduleExpression') or '')")
+            if [ -n "$schedule" ]; then
+              if [ "$state" != ENABLED ]; then
+                aws events enable-rule --name "$rule" --region "${{ secrets.AWS_REGION }}"
+              fi
+              scheduled_enabled=$((scheduled_enabled + 1))
+            fi
+          done
+          test "$scheduled_enabled" -ge 1
+
+      - name: Drive resumable ingestion and optimization
+        run: |
+          set -euo pipefail
+          invoke_status() {
+            aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload '{"mode":"status","run":"mlb_historical_watch_repair_v13_status"}' \
+              "$1" >/tmp/invoke-meta.json
+          }
+          invoke_status /tmp/before.json
+          python - <<'PY'
+          import json
+          value=json.load(open('/tmp/before.json'))
+          assert value.get('ok') is True, value
+          state=value.get('state') or {}
+          assert state.get('featureRematerializationComplete') is True, state
+          assert not (state.get('featureRematerializationErrors') or []), state.get('featureRematerializationErrors')
+          print(json.dumps({k:state.get(k) for k in ('phase','currentDate','currentSlotIndex','networkRequestCount','eligibleGameCount','completeSlateCount','optimizationRound','targetSettledGames','lastError','updatedAtUtc')},indent=2,sort_keys=True))
+          PY
+
+          : > /tmp/progress.ndjson
+          terminal=''
+          for attempt in $(seq 1 80); do
+            aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload "{\"mode\":\"orchestrate\",\"run\":\"mlb_historical_watch_repair_v13_${attempt}\"}" \
+              /tmp/current.json >/tmp/invoke-meta.json
+            summary=$(python - <<'PY'
+          import json
+          value=json.load(open('/tmp/current.json'))
+          state=value.get('state') or {}
+          row={
+            'ok':value.get('ok'), 'status':value.get('status'),
+            'phase':state.get('phase'), 'currentDate':state.get('currentDate'),
+            'currentSlotIndex':state.get('currentSlotIndex'),
+            'networkRequestCount':state.get('networkRequestCount'),
+            'eligibleGameCount':state.get('eligibleGameCount'),
+            'completeSlateCount':state.get('completeSlateCount'),
+            'optimizationRound':state.get('optimizationRound'),
+            'targetSettledGames':state.get('targetSettledGames'),
+            'lastError':state.get('lastError'),
+          }
+          with open('/tmp/progress.ndjson','a') as handle:
+            handle.write(json.dumps(row,sort_keys=True)+'\n')
+          print(json.dumps(row,separators=(',',':')))
+          PY
+          )
+            echo "attempt=$attempt $summary"
+            ok=$(python -c "import json; print('true' if json.load(open('/tmp/current.json')).get('ok') is True else 'false')")
+            status=$(python -c "import json; v=json.load(open('/tmp/current.json')); print(v.get('status') or (v.get('state') or {}).get('phase') or '')")
+            if [ "$status" = LEASE_HELD ]; then
+              sleep 12
+              continue
+            fi
+            if [ "$ok" != true ]; then
+              sleep 15
+              continue
+            fi
+            case "$status" in
+              BACKFILLING|OPTIMIZING)
+                sleep 2
+                ;;
+              PROMOTED|CANDIDATE_REJECTED|DATA_RANGE_EXHAUSTED|PAUSED_QUOTA|OPTIMIZATION_BLOCKED|PLAN_BLOCKED_*)
+                terminal="$status"
+                break
+                ;;
+              *)
+                sleep 5
+                ;;
+            esac
+          done
+          invoke_status /tmp/after.json
+          echo "TERMINAL=$terminal" >> "$GITHUB_ENV"
+
+      - name: Validate movement and write proof
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json,os
+          from datetime import datetime,timezone
+          before=json.load(open('/tmp/before.json'))
+          after=json.load(open('/tmp/after.json'))
+          b=before.get('state') or {}
+          a=after.get('state') or {}
+          movement={
+            'networkRequestDelta':int(a.get('networkRequestCount') or 0)-int(b.get('networkRequestCount') or 0),
+            'eligibleGameDelta':int(a.get('eligibleGameCount') or 0)-int(b.get('eligibleGameCount') or 0),
+            'completeSlateDelta':int(a.get('completeSlateCount') or 0)-int(b.get('completeSlateCount') or 0),
+            'dateChanged':a.get('currentDate')!=b.get('currentDate'),
+            'slotChanged':a.get('currentSlotIndex')!=b.get('currentSlotIndex'),
+            'roundChanged':a.get('optimizationRound')!=b.get('optimizationRound'),
+            'phaseChanged':a.get('phase')!=b.get('phase'),
+          }
+          progressed=any(movement.values())
+          blockers=[]
+          if a.get('featureRematerializationComplete') is not True: blockers.append('feature_rematerialization_incomplete')
+          if a.get('featureRematerializationErrors'): blockers.append('feature_rematerialization_errors')
+          if a.get('phase')=='PAUSED_QUOTA': blockers.append('quota_paused')
+          if a.get('phase')=='DATA_RANGE_EXHAUSTED': blockers.append('data_range_exhausted')
+          if a.get('phase')=='OPTIMIZATION_BLOCKED': blockers.append('optimization_blocked')
+          if not progressed and a.get('phase') not in {'PROMOTED','CANDIDATE_REJECTED'}: blockers.append('no_runtime_movement')
+          report={
+            'proofType':'MLB_HISTORICAL_WATCH_REPAIR_V13',
+            'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+            'sourceSha':os.environ.get('GITHUB_SHA'),
+            'rules':[json.loads(line) for line in open('/tmp/mlb-historical-rules.ndjson') if line.strip()],
+            'before':before,
+            'after':after,
+            'movement':movement,
+            'terminal':os.environ.get('TERMINAL') or None,
+            'blockers':blockers,
+            'ok':not blockers,
+          }
+          path='docs/runtime/mlb-historical-watch-repair-v13-proof.json'
+          open(path,'w').write(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps({
+            'ok':report['ok'],'blockers':blockers,'movement':movement,
+            'phase':a.get('phase'),'currentDate':a.get('currentDate'),
+            'currentSlotIndex':a.get('currentSlotIndex'),
+            'eligibleGameCount':a.get('eligibleGameCount'),
+            'completeSlateCount':a.get('completeSlateCount'),
+            'optimizationRound':a.get('optimizationRound'),
+            'latestExperiment':a.get('latestExperiment'),
+          },indent=2,sort_keys=True))
+          if blockers:
+            raise SystemExit(','.join(blockers))
+          PY
+
+      - name: Publish durable repair proof
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f docs/runtime/mlb-historical-watch-repair-v13-proof.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/runtime/mlb-historical-watch-repair-v13-proof.json
+          git commit -m 'Publish MLB historical watch repair V13 proof' || exit 0
+          for attempt in 1 2 3; do
+            if git pull --rebase origin main && git push origin HEAD:main; then exit 0; fi
+            git rebase --abort || true
+            sleep $((attempt * 5))
+          done
+          exit 1
