@@ -89,7 +89,8 @@ def test_supervised_schema_is_numeric_and_fail_closed():
     def run():
         assert policy.validate_policy(policy.BASELINE_POLICY) == ()
         assert policy.BASELINE_POLICY["supervisedEnabled"] == 0.0
-        assert "supervisedCoefficientDeltaDiff" in policy.BASELINE_POLICY
+        coefficient = supervised._field("Coefficient", "deltaDiff")
+        assert coefficient in policy.BASELINE_POLICY
         invalid = copy.deepcopy(policy.BASELINE_POLICY)
         invalid["supervisedTemperature"] = 0.1
         assert "policy_field_out_of_bounds:supervisedTemperature" in policy.validate_policy(invalid)
