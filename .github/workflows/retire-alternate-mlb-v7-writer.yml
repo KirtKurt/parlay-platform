@@ -1,0 +1,101 @@
+name: Retire alternate MLB V7 writer
+
+on:
+  push:
+    branches: [agent/disable-alternate-mlb-v7-writer]
+    paths:
+      - '.github/workflows/retire-alternate-mlb-v7-writer.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: retire-alternate-mlb-v7-writer
+  cancel-in-progress: false
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/disable-alternate-mlb-v7-writer
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Disable automatic alternate writer and preserve manual recovery
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          template_path = Path('mlb_historical_optimizer/template.yaml')
+          template = template_path.read_text(encoding='utf-8')
+          old = '''        ResumeEveryFiveMinutes:
+                  Type: Schedule
+                  Properties:
+                    Schedule: rate(5 minutes)
+                    Description: Resume only after a fingerprinted paid-backfill authorization; otherwise no-op
+                    Enabled: true
+                    Input: '{"mode":"orchestrate","run":"scheduled_historical_daily_optimizer"}'
+          '''.replace('          ', '')
+          new = old.replace('Enabled: true', 'Enabled: false')
+          if old in template:
+              template = template.replace(old, new, 1)
+          elif new not in template:
+              raise SystemExit('ResumeEveryFiveMinutes schedule block not found')
+          template_path.write_text(template, encoding='utf-8')
+
+          workflow_path = Path('.github/workflows/mlb-historical-v7-recovery.yml')
+          workflow = workflow_path.read_text(encoding='utf-8')
+          complete_old = '''      - name: Complete rematerialization and prove backfill advancement
+                  id: recovery
+          '''.replace('          ', '')
+          complete_new = '''      - name: Complete rematerialization and prove backfill advancement
+                  if: github.event_name == 'workflow_dispatch'
+                  id: recovery
+          '''.replace('          ', '')
+          if complete_old in workflow:
+              workflow = workflow.replace(complete_old, complete_new, 1)
+          elif complete_new not in workflow:
+              raise SystemExit('bounded recovery step not found')
+
+          upload_old = '''      - name: Upload recovery proof
+                  uses: actions/upload-artifact@v4
+          '''.replace('          ', '')
+          upload_new = '''      - name: Upload recovery proof
+                  if: github.event_name == 'workflow_dispatch'
+                  uses: actions/upload-artifact@v4
+          '''.replace('          ', '')
+          if upload_old in workflow:
+              workflow = workflow.replace(upload_old, upload_new, 1)
+          elif upload_new not in workflow:
+              raise SystemExit('recovery upload step not found')
+          workflow_path.write_text(workflow, encoding='utf-8')
+
+          test_path = Path('tests/unit/test_mlb_historical_schedule_policy.py')
+          test_path.write_text('''from pathlib import Path\n\n\ndef test_historical_optimizer_is_not_an_automatic_writer():\n    template = Path("mlb_historical_optimizer/template.yaml").read_text(encoding="utf-8")\n    block = template.split("ResumeEveryFiveMinutes:", 1)[1].split("ReadOnlyStatus:", 1)[0]\n    assert "Schedule: rate(5 minutes)" in block\n    assert "Enabled: false" in block\n    assert "Enabled: true" not in block\n\n\ndef test_paid_recovery_requires_manual_dispatch():\n    workflow = Path(".github/workflows/mlb-historical-v7-recovery.yml").read_text(encoding="utf-8")\n    recovery = workflow.split("- name: Complete rematerialization and prove backfill advancement", 1)[1].split("- name: Upload recovery proof", 1)[0]\n    assert "if: github.event_name == 'workflow_dispatch'" in recovery\n''', encoding='utf-8')
+          PY
+
+      - name: Verify retirement policy
+        run: |
+          python -m pytest -q tests/unit/test_mlb_historical_schedule_policy.py
+          grep -A8 -F 'ResumeEveryFiveMinutes:' mlb_historical_optimizer/template.yaml | grep -Fq 'Enabled: false'
+          if grep -A8 -F 'ResumeEveryFiveMinutes:' mlb_historical_optimizer/template.yaml | grep -Fq 'Enabled: true'; then
+            echo '::error::Alternate five-minute writer is still enabled'
+            exit 1
+          fi
+
+      - name: Commit retirement policy
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            mlb_historical_optimizer/template.yaml \
+            .github/workflows/mlb-historical-v7-recovery.yml \
+            tests/unit/test_mlb_historical_schedule_policy.py
+          git commit -m 'Disable automatic MLB V7 historical writer'
+          git push origin HEAD:agent/disable-alternate-mlb-v7-writer
