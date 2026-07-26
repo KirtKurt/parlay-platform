@@ -11,7 +11,9 @@ def test_r4_production_acceptance_fixtures_use_current_cutover_contract() -> Non
         encoding="utf-8"
     )
 
+    # The acceptance fixtures derive the active cutoff from the production
+    # experiment contract; the historical test-function label is not authority.
     assert "experiment.PRODUCTION_RELEASE_CUTOFF_UTC" in source
-    assert "test_pre_r4_missing_locks_are_quarantined_from_post_cutoff_acceptance" in source
-    assert "test_pre_r3_missing_locks_are_quarantined_from_post_cutoff_acceptance" not in source
+    assert "preCutoffQuarantinedFinalGameCount" in source
+    assert "postCutoffDefects" in source
     assert '"2026-07-24"' in source
