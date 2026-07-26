@@ -1,0 +1,32 @@
+from pathlib import Path
+
+
+def test_recovery_entrypoint_installs_trainable_v8_dataset_before_rematerialization():
+    source = Path("hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py").read_text()
+    import_line = "import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset"
+    install_line = "supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerialization)"
+    assert import_line in source
+    assert install_line in source
+    assert source.index("odds_market_v8.install(") < source.index(install_line)
+    assert source.index(install_line) < source.index("def lambda_handler")
+    assert '"authority": "SHADOW_ONLY"' in source
+    assert '"productionAuthorityChanged": False' in source
+    assert '"providerCallsRequiredForRematerialization": 0' in source
+
+
+def test_historical_template_accelerates_no_cost_rematerialization_safely():
+    source = Path("mlb_historical_optimizer/template.yaml").read_text()
+    assert "Handler: mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler" in source
+    assert "MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN: '5'" in source
+    assert "Timeout: 900" in source
+    assert "HistoricalMaxOptimizationRounds:" in source
+    assert "Default: 12" in source
+
+
+def test_supervised_shadow_workflow_requires_trainable_dataset_and_no_authority_change():
+    source = Path(".github/workflows/mlb-supervised-shadow-v2.yml").read_text()
+    assert "MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable" in source
+    assert "productionAuthorityChanged') is False" in source
+    assert "automaticWagerAllowed') is False" in source
+    assert "productionPromotionEligible') is False" in source
+    assert "selectionUsedUntouchedAudit') is False" in source
