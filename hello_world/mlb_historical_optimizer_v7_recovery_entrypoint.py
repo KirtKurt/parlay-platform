@@ -15,7 +15,7 @@ import mlb_historical_round_extension_v1 as round_extension
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v6-supervised-v8-trainable"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v7-supervised-v8-rematerialization-proof"
 
 # Reopen only a terminal rejected state that was caused by the previous six-round
 # deployment ceiling. The patch requires a strictly later untouched-audit start
