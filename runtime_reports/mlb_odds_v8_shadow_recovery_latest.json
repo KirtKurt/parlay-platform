@@ -1,7 +1,8 @@
 {
   "authority": "SHADOW_ONLY",
   "blockers": [
-    "canaryDeploy:failure",
+    "stackWait:failure",
+    "canaryDeploy:skipped",
     "identity:skipped",
     "canary:skipped",
     "secondStackWait:skipped",
@@ -9,7 +10,14 @@
     "scheduledVerification:skipped",
     "schedule_final_state:UNKNOWN"
   ],
-  "createdAtUtc": "2026-07-26T07:00:02.456705+00:00",
+  "canaryDeployment": {
+    "logTail": null,
+    "stack": null,
+    "stackDescribeError": null,
+    "stackEvents": null,
+    "stackEventsError": null
+  },
+  "createdAtUtc": "2026-07-26T07:06:27.123409+00:00",
   "deploymentIdentity": null,
   "finalScheduleState": "UNKNOWN",
   "manualCanary": null,
@@ -17,23 +25,23 @@
   "productionAuthorityChanged": false,
   "proofType": "MLB_ODDS_V8_SHADOW_RECOVERY",
   "runAttempt": "1",
-  "runId": "30191954557",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30191954557",
+  "runId": "30192181813",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30192181813",
   "scheduledCollection": null,
   "scheduledRecord": null,
-  "sourceSha": "08c41f475f7c5d36f61f027ce433efed69dfb8e4",
+  "sourceSha": "52769d26529f8a892484fbad0eb0cc7a41cd85ae",
   "stackName": "parlay-platform-mlb-odds-v8-shadow",
   "stepOutcomes": {
     "build": "success",
     "canary": "skipped",
-    "canaryDeploy": "failure",
+    "canaryDeploy": "skipped",
     "cleanup": "skipped",
     "credentials": "success",
     "enable": "skipped",
     "identity": "skipped",
     "scheduledVerification": "skipped",
     "secondStackWait": "skipped",
-    "stackWait": "success",
+    "stackWait": "failure",
     "validate": "success"
   },
   "templateSha256": "423adc633ec13731bddc6a1a7a086692acb4fbabf010c822e977bc1446b470f5"
