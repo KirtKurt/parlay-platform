@@ -5,6 +5,10 @@ name: MLB Historical Supervised V9 Shadow Evaluation
   push:
     branches: [main]
     paths:
+      - 'hello_world/mlb_historical_supervised_v9.py'
+      - 'scripts/run_mlb_historical_supervised_v9_shadow.py'
+      - 'tests/unit/test_mlb_historical_supervised_v9.py'
+      - '.github/workflows/mlb-historical-supervised-v9-shadow.yml'
       - 'hello_world/mlb_historical_optimizer_entrypoint.py'
       - 'hello_world/mlb_historical_feature_rematerialization_v1.py'
       - 'hello_world/mlb_ml_runtime_install_v3.py'
@@ -120,6 +124,8 @@ jobs:
               'runId':os.environ['GITHUB_RUN_ID'],
               'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
               'readOnly':True,
+              'retrospectiveShadowOnly':True,
+              'prospectiveAuditRequiredBeforePromotion':True,
               'providerCallsMade':0,
               'productionAuthorityChanged':False,
               'errorLogTail':log,
@@ -172,6 +178,8 @@ jobs:
           value=json.loads(Path('runtime_reports/mlb_historical_supervised_v9_shadow_latest.json').read_text())
           assert value.get('ok') is True, value
           assert value.get('readOnly') is True, value
+          assert value.get('retrospectiveShadowOnly') is True, value
+          assert value.get('prospectiveAuditRequiredBeforePromotion') is True, value
           assert int(value.get('providerCallsMade') or 0) == 0, value
           assert value.get('productionAuthorityChanged') is False, value
           assert not value.get('blockers'), value
