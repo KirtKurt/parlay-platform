@@ -1,0 +1,87 @@
+name: V8 Concurrency Repair Once
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v8-concurrency-repair-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: v8-concurrency-repair-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Apply exact V8 concurrency repair
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          python - <<'PY'
+          from pathlib import Path
+
+          template_path = Path('mlb_odds_v8_shadow/template.yaml')
+          workflow_path = Path('.github/workflows/mlb-odds-v8-shadow-deploy.yml')
+          repair_path = Path('.github/workflows/v8-concurrency-repair-once.yml')
+
+          template = template_path.read_text()
+          workflow = workflow_path.read_text()
+
+          template_old = '      ReservedConcurrentExecutions: 1\n'
+          assertion_old = "          assert int(concurrency.get('ReservedConcurrentExecutions') or 0) == 1, concurrency\n"
+          identity_old = "              'reservedConcurrency': 1,\n"
+
+          assert template.count(template_old) == 1, 'unexpected V8 template concurrency contract'
+          assert workflow.count(assertion_old) == 1, 'unexpected V8 workflow concurrency assertion'
+          assert workflow.count(identity_old) == 1, 'unexpected V8 workflow identity contract'
+
+          template = template.replace(
+              template_old,
+              "      # Account concurrency remains unreserved. The 15-minute schedule, five-minute timeout,\n"
+              "      # EventBridge retry limit, and per-cycle credit cap bound this shadow collector.\n",
+          )
+          workflow = workflow.replace(
+              assertion_old,
+              "          assert concurrency.get('ReservedConcurrentExecutions') is None, concurrency\n",
+          )
+          workflow = workflow.replace(
+              identity_old,
+              "              'reservedConcurrency': None,\n"
+              "              'concurrencyMode': 'ACCOUNT_UNRESERVED',\n",
+          )
+
+          assert 'ReservedConcurrentExecutions: 1' not in template
+          assert "concurrency.get('ReservedConcurrentExecutions') is None" in workflow
+          assert "'concurrencyMode': 'ACCOUNT_UNRESERVED'" in workflow
+
+          template_path.write_text(template)
+          workflow_path.write_text(workflow)
+          repair_path.unlink()
+          PY
+
+          git diff --check
+          grep -Fq 'Schedule: rate(15 minutes)' mlb_odds_v8_shadow/template.yaml
+          grep -Fq 'Value: SHADOW_ONLY' mlb_odds_v8_shadow/template.yaml
+          ! grep -Fq 'ReservedConcurrentExecutions: 1' mlb_odds_v8_shadow/template.yaml
+          grep -Fq "concurrency.get('ReservedConcurrentExecutions') is None" .github/workflows/mlb-odds-v8-shadow-deploy.yml
+          test ! -e .github/workflows/v8-concurrency-repair-once.yml
+
+      - name: Publish repair to main
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add mlb_odds_v8_shadow/template.yaml .github/workflows/mlb-odds-v8-shadow-deploy.yml .github/workflows/v8-concurrency-repair-once.yml
+          git commit -m 'Fix V8 Lambda concurrency recovery'
+          git push origin HEAD:main
