@@ -10,9 +10,15 @@ from typing import Any, Dict, Mapping
 
 import mlb_historical_feature_rematerialization_v1 as rematerialization
 import mlb_historical_optimizer_entrypoint as base
+import mlb_historical_round_extension_v1 as round_extension
 import mlb_odds_market_expansion_v8 as odds_market_v8
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v4-status-lease-bypass"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v5-fresh-audit-round-extension"
+
+# Reopen only a terminal rejected state that was caused by the previous six-round
+# deployment ceiling. The patch requires a strictly later untouched-audit start
+# and leaves every prior experiment and promotion decision immutable.
+round_extension.install(base.optimizer_handler)
 
 # Package and install the V8 normalizer patch. With MLB_V8_ENABLED=false it only
 # recognizes already-present expanded markets and does not change provider cost.
