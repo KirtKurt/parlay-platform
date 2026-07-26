@@ -112,4 +112,12 @@ def test_historical_optimizer_is_not_classified_as_live_writer() -> None:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add scripts/verify_mlb_deploy_identity.py tests/unit/test_mlb_deploy_identity.py
           git commit -m "Fix MLB historical optimizer authority classification"
-          git push origin HEAD:main
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git rebase origin/main
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 2))
+          done
+          exit 1
