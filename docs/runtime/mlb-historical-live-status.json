@@ -1,30 +1,106 @@
 {
-  "championValidation": null,
-  "checkedAt": "2026-07-26T06:22:56.437737+00:00",
-  "completeSlateCount": null,
-  "creditsConsumed": null,
-  "currentDate": null,
-  "currentSlotIndex": null,
-  "cutoverValidation": null,
-  "eligibleGameCount": null,
-  "endDate": null,
-  "featureDatasetVersion": null,
-  "featureRematerializationComplete": null,
-  "featureRematerializationErrors": null,
-  "featureRematerializationTotalSlateCount": null,
-  "featureRematerializedSlateCount": null,
-  "freshAuditCollectedDayCount": null,
-  "freshAuditCollectedGameCount": null,
-  "freshAuditStartDate": null,
+  "championValidation": {
+    "errors": [
+      "no_active_champion"
+    ],
+    "ok": false
+  },
+  "checkedAt": "2026-07-26T06:25:44.479759+00:00",
+  "completeSlateCount": 169,
+  "creditsConsumed": 133270,
+  "currentDate": "2025-09-21",
+  "currentSlotIndex": 17,
+  "cutoverValidation": {
+    "errors": [
+      "not_cut_over_before_first_promotion"
+    ],
+    "ok": false
+  },
+  "eligibleGameCount": 2258,
+  "endDate": "2025-10-31",
+  "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack",
+  "featureRematerializationComplete": true,
+  "featureRematerializationErrors": [],
+  "featureRematerializationTotalSlateCount": 149,
+  "featureRematerializedSlateCount": 149,
+  "freshAuditCollectedDayCount": 0,
+  "freshAuditCollectedGameCount": 0,
+  "freshAuditStartDate": "2025-09-11",
   "lastError": null,
-  "lastErrorAtUtc": null,
-  "lastQuota": null,
-  "latestExperiment": null,
-  "networkRequestCount": null,
+  "lastErrorAtUtc": "2026-07-25T08:27:49.393989+00:00",
+  "lastQuota": {
+    "x-requests-last": 10,
+    "x-requests-remaining": 4748134,
+    "x-requests-used": 251866
+  },
+  "latestExperiment": {
+    "artifact": {
+      "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
+      "etag": "23a0f1a5a7c8d83274abf4a9c84ec830",
+      "key": "mlb/historical-daily-v1/experiments/20260726T050112Z-608617f0be.json",
+      "sha256": "d67c4aeeb3eceb9a40e8388a0ccee2838b2a9032473a0e941b344b8eacfab117",
+      "versionId": "Y.LV.6AkLM7l.LoYvuf4UzYVtrRflE7D"
+    },
+    "candidatePolicyDigest": "bac9dbeef9ff9c7b8a5a90a99bc7f6624efd845ff9151ee8c260616e9c5aff52",
+    "experimentId": "20260726T050112Z-608617f0be",
+    "promotionGate": {
+      "candidateImprovedWalkForwardDailyObjective": true,
+      "chronologicalWholeSlateSplits": true,
+      "dailyAccuracyRequirement": 0.8,
+      "dailyAccuracyTargetHigh": 0.9,
+      "errors": [
+        "untouched_holdout_contains_day_below_80_percent",
+        "untouched_holdout_mean_daily_accuracy_failed",
+        "untouched_holdout_minimum_daily_accuracy_failed",
+        "walk_forward_contains_day_below_80_percent",
+        "walk_forward_mean_daily_accuracy_failed",
+        "walk_forward_minimum_daily_accuracy_failed"
+      ],
+      "gameSpecificLockClipping": true,
+      "holdoutWasUntouchedDuringSearch": true,
+      "overfitChecks": {
+        "brierDeltaVsBaseline": -0.02849637,
+        "logLossDeltaVsBaseline": -0.07620684,
+        "maximumAllowedAccuracyGap": 0.1,
+        "maximumAllowedBrierDegradation": 0.005,
+        "maximumAllowedLogLossDegradation": 0.01,
+        "passed": true,
+        "trainValidationMeanDailyAccuracyGap": 0.0036647
+      },
+      "overfitChecksPassed": true,
+      "passed": false,
+      "postLockDataExcluded": true,
+      "requiredSettledGameCount": 1400,
+      "requiredTrainingGameCount": 1000,
+      "requiredUntouchedHoldoutGameCount": 200,
+      "requiredWalkForwardGameCount": 200,
+      "settledGameCount": 2123,
+      "trainingGameCount": 1598,
+      "untouchedHoldoutDayCount": 19,
+      "untouchedHoldoutGameCount": 259,
+      "untouchedHoldoutMeanDailyAccuracy": 0.5095737605263159,
+      "untouchedHoldoutMinimumDailyAccuracy": 0.26666667,
+      "untouchedHoldoutReached90PctMean": false,
+      "untouchedHoldoutSlateCoverage": 1,
+      "version": "MLB-HISTORICAL-DAILY-PROMOTION-GATE-v2-1000-200-200",
+      "walkForwardDayCount": 20,
+      "walkForwardGameCount": 266,
+      "walkForwardMeanDailyAccuracy": 0.553276238,
+      "walkForwardMinimumDailyAccuracy": 0.33333333,
+      "walkForwardReached90PctMean": false,
+      "walkForwardSlateCoverage": 1
+    },
+    "status": "CANDIDATE_REJECTED"
+  },
+  "networkRequestCount": 13327,
   "ok": true,
-  "optimizationRound": null,
-  "phase": null,
-  "productionAuthority": null,
-  "revision": null,
-  "stateUpdatedAtUtc": null
+  "optimizationRound": 3,
+  "phase": "BACKFILLING",
+  "productionAuthority": {
+    "automaticLegacyFallbackAllowed": false,
+    "historicalChampionOnly": false,
+    "incumbentProductionAuthorityDestroyed": false
+  },
+  "revision": 745,
+  "stateUpdatedAtUtc": "2026-07-26T06:25:43.094286+00:00"
 }
