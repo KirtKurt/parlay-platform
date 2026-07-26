@@ -65,7 +65,8 @@ jobs:
             tests/unit/test_mlb_historical_daily_optimizer_v1.py \
             tests/unit/test_mlb_historical_optimizer_handler.py \
             tests/unit/test_mlb_historical_read_api_contract.py \
-            tests/unit/test_mlb_historical_optimizer_template.py
+            tests/unit/test_mlb_historical_optimizer_template.py \
+            tests/unit/test_mlb_historical_competitive_schedule_filter.py
           grep -Fq 'Handler: mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler' mlb_historical_optimizer/template.yaml
           grep -Fq "Default: '2026-07-24'" mlb_historical_optimizer/template.yaml
           grep -Fq 'Default: 300000' mlb_historical_optimizer/template.yaml
@@ -198,7 +199,6 @@ jobs:
             fi
           done
 
-          # One additional invocation must enter or advance the post-rematerialization path.
           aws lambda invoke \
             --function-name "$FUNCTION_NAME" \
             --region "${{ secrets.AWS_REGION }}" \
@@ -247,7 +247,7 @@ jobs:
       - name: Publish durable recovery run evidence
         if: always()
         env:
-          JOB_STATUS: ${{ job.status }}
+          RECOVERY_OUTCOME: ${{ steps.recovery.outcome }}
           SOURCE_SHA: ${{ github.sha }}
           RUN_ID: ${{ github.run_id }}
           RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -265,28 +265,32 @@ jobs:
                   recovery=json.loads(recovery_path.read_text())
               except Exception as exc:
                   recovery={'parseError': f'{type(exc).__name__}:{exc}'}
+          outcome=os.environ['RECOVERY_OUTCOME']
           report={
               'proofType':'MLB_HISTORICAL_V7_RECOVERY_RUN',
               'createdAtUtc':datetime.now(timezone.utc).isoformat(),
-              'jobStatus':os.environ['JOB_STATUS'],
+              'jobStatus':'success' if outcome == 'success' else 'failure',
+              'recoveryStepOutcome':outcome,
               'sourceSha':os.environ['SOURCE_SHA'],
               'runId':os.environ['RUN_ID'],
               'runAttempt':os.environ['RUN_ATTEMPT'],
               'runUrl':os.environ['RUN_URL'],
               'recovery':recovery,
           }
-          path=Path('runtime_reports/mlb_historical_v7_recovery_latest.json')
-          path.parent.mkdir(parents=True, exist_ok=True)
+          path=Path('/tmp/mlb_historical_v7_recovery_latest.json')
           path.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
           PY
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git fetch origin main
-          git checkout -B main origin/main
-          git add runtime_reports/mlb_historical_v7_recovery_latest.json
-          git commit -m 'Publish MLB historical V7 recovery evidence' || exit 0
-          for attempt in 1 2 3; do
-            if git push origin main; then exit 0; fi
-            git pull --rebase origin main
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B historical-v7-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb_historical_v7_recovery_latest.json runtime_reports/mlb_historical_v7_recovery_latest.json
+            git add runtime_reports/mlb_historical_v7_recovery_latest.json
+            if git diff --cached --quiet; then exit 0; fi
+            git commit -m 'Publish MLB historical V7 recovery evidence'
+            if git push origin HEAD:main; then exit 0; fi
+            sleep $((attempt * 3))
           done
           exit 1
