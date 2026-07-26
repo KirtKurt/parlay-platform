@@ -2,7 +2,9 @@
 """Evaluate the supervised historical learner against current immutable AWS data.
 
 Read-only: this script does not invoke The Odds API, mutate DynamoDB, write S3,
-change a champion, or change production authority.
+change a champion, or change production authority. The supervised architecture is
+installed only in this process so current production and historical authority stay
+unchanged while the replacement model is evaluated against immutable evidence.
 """
 from __future__ import annotations
 
@@ -23,8 +25,15 @@ def main() -> int:
     args = parser.parse_args()
 
     import mlb_historical_optimizer_v7_recovery_entrypoint as runtime
+    import mlb_historical_supervised_v9 as supervised_v9
 
     handler = runtime.base.optimizer_handler
+    supervised_v9.install(handler.optimizer, handler.policy_runtime)
+    if not getattr(handler.optimizer, "_INQSI_MLB_SUPERVISED_V9_INSTALLED", False):
+        raise RuntimeError("supervised V9 optimizer install did not complete")
+    if not getattr(handler.policy_runtime, "_INQSI_MLB_SUPERVISED_V9_POLICY_INSTALLED", False):
+        raise RuntimeError("supervised V9 policy runtime install did not complete")
+
     state = handler._load_state()
     if not isinstance(state, dict):
         raise RuntimeError("historical optimizer state is missing")
@@ -52,10 +61,22 @@ def main() -> int:
             f"{os.environ.get('GITHUB_RUN_ID')}"
         ),
         "readOnly": True,
+        "retrospectiveShadowOnly": True,
+        "prospectiveAuditRequiredBeforePromotion": True,
         "providerCallsMade": 0,
         "productionAuthorityChanged": False,
         "historicalChampionWritten": False,
         "productionCutoverWritten": False,
+        "runtimeInstall": {
+            "supervisedOptimizerInstalled": bool(
+                getattr(handler.optimizer, "_INQSI_MLB_SUPERVISED_V9_INSTALLED", False)
+            ),
+            "supervisedPolicyRuntimeInstalled": bool(
+                getattr(handler.policy_runtime, "_INQSI_MLB_SUPERVISED_V9_POLICY_INSTALLED", False)
+            ),
+            "modelVersion": supervised_v9.VERSION,
+            "featureVersion": supervised_v9.FEATURE_VERSION,
+        },
         "state": {
             "phase": state.get("phase"),
             "currentDate": state.get("currentDate"),
