@@ -19,10 +19,14 @@ def test_rematerialization_quarantines_invalid_archived_slots():
     assert '"usableForFeatures": False' in source
 
 
-def test_supervised_dataset_patch_versions_rematerialized_records():
+def test_supervised_dataset_patch_versions_event_ids_for_enrichment():
     source = Path("hello_world/mlb_supervised_v8_dataset_patch_v1.py").read_text()
-    assert 'FEATURE_DATASET_VERSION = "MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable"' in source
-    assert 'REMATERIALIZATION_VERSION = "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v2-v8-supervised"' in source
+    assert 'FEATURE_DATASET_VERSION = "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable"' in source
+    assert 'REMATERIALIZATION_VERSION = "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v3-v8-event-id"' in source
+    assert 'signal["providerEventId"]' in source
+    assert 'row["providerEventId"]' in source
+    assert 'dataset["providerEventIdCoverage"]' in source
+    assert 'dataset["historicalFirstFiveEnrichmentReady"]' in source
     assert 'signal["oddsMarketExpansionAvailable"] = True' in source
     assert 'signal["oddsMarketExpansionAvailable"] = False' in source
     assert 'dataset["sameSlateOutcomeFeaturesProhibited"] = True' in source
