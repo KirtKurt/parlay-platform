@@ -1,0 +1,366 @@
+name: MLB Historical V7 Recovery
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_historical_feature_rematerialization_v1.py'
+      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
+      - 'hello_world/mlb_historical_round_extension_v1.py'
+      - 'hello_world/mlb_historical_derived_features_v1.py'
+      - 'hello_world/mlb_odds_pattern_features_v1.py'
+      - 'hello_world/mlb_historical_optimizer_entrypoint.py'
+      - 'hello_world/mlb_historical_optimizer_handler.py'
+      - 'tests/unit/test_mlb_historical_round_extension_v1.py'
+      - 'mlb_historical_optimizer/**'
+      - '.github/workflows/mlb-historical-v7-recovery.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: parlay-platform-mlb-historical-recovery
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-historical-optimizer
+  REPORT_PATH: runtime_reports/mlb_historical_v7_recovery_latest.json
+  HISTORICAL_START_DATE: '2025-04-01'
+  HISTORICAL_END_DATE: '2026-07-24'
+  HISTORICAL_TARGET_GAMES: '1600'
+  HISTORICAL_MAX_CREDITS: '300000'
+  HISTORICAL_MAX_CANDIDATES: '25000'
+  HISTORICAL_MAX_OPTIMIZATION_ROUNDS: '12'
+  PRIOR_CURSOR_DATE: '2026-05-01'
+  PRIOR_CURSOR_SLOT: '0'
+  PRIOR_NETWORK_REQUESTS: '18910'
+  PRIOR_TARGET_SETTLED_GAMES: '2877'
+
+jobs:
+  validate-deploy-recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate source, tests, template, and AWS identity
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity >/tmp/mlb-historical-aws-identity.json
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python -m py_compile \
+            hello_world/mlb_historical_feature_rematerialization_v1.py \
+            hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
+            hello_world/mlb_historical_round_extension_v1.py \
+            hello_world/mlb_historical_derived_features_v1.py \
+            hello_world/mlb_odds_pattern_features_v1.py \
+            hello_world/mlb_historical_optimizer_entrypoint.py \
+            hello_world/mlb_historical_optimizer_handler.py
+          python -m pytest -q --tb=short \
+            tests/unit/test_mlb_historical_policy_v1.py \
+            tests/unit/test_mlb_historical_daily_optimizer_v1.py \
+            tests/unit/test_mlb_historical_optimizer_handler.py \
+            tests/unit/test_mlb_historical_round_extension_v1.py \
+            tests/unit/test_mlb_historical_read_api_contract.py \
+            tests/unit/test_mlb_historical_optimizer_template.py \
+            tests/unit/test_mlb_historical_competitive_schedule_filter.py
+          grep -Fq 'Handler: mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler' mlb_historical_optimizer/template.yaml
+          grep -Fq "Default: '2026-07-24'" mlb_historical_optimizer/template.yaml
+          grep -Fq 'Default: 300000' mlb_historical_optimizer/template.yaml
+          grep -Fq 'Default: 12' mlb_historical_optimizer/template.yaml
+          sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+          rm -rf .aws-sam-historical-v7
+          sam build \
+            --no-cached \
+            --build-dir .aws-sam-historical-v7 \
+            --template-file mlb_historical_optimizer/template.yaml
+          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_historical_optimizer_v7_recovery_entrypoint.py
+          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_historical_round_extension_v1.py
+          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_historical_feature_rematerialization_v1.py
+          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_odds_pattern_features_v1.py
+
+      - name: Deploy and verify resumed fresh-audit backfill
+        id: recovery
+        continue-on-error: true
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -uo pipefail
+          mkdir -p runtime_reports
+          (
+            set -euo pipefail
+            for attempt in $(seq 1 80); do
+              status=$(aws cloudformation describe-stacks \
+                --stack-name "$STACK_NAME" \
+                --region "$AWS_REGION_VALUE" \
+                --query 'Stacks[0].StackStatus' \
+                --output text 2>/dev/null || echo STACK_NOT_FOUND)
+              case "$status" in
+                STACK_NOT_FOUND|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE) break ;;
+                *_IN_PROGRESS) sleep 15 ;;
+                *) echo "CloudFormation is not updateable: $status"; exit 1 ;;
+              esac
+              test "$attempt" != 80
+            done
+
+            sam deploy \
+              --template-file .aws-sam-historical-v7/template.yaml \
+              --stack-name "$STACK_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --capabilities CAPABILITY_IAM \
+              --resolve-s3 \
+              --force-upload \
+              --no-confirm-changeset \
+              --no-fail-on-empty-changeset \
+              --parameter-overrides \
+                "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+                'TargetSnapshotsTable=parlay_platform_snapshots' \
+                "HistoricalStartDate=${HISTORICAL_START_DATE}" \
+                "HistoricalEndDate=${HISTORICAL_END_DATE}" \
+                "HistoricalTargetGames=${HISTORICAL_TARGET_GAMES}" \
+                "HistoricalMaxCredits=${HISTORICAL_MAX_CREDITS}" \
+                'HistoricalRequestsPerRun=20' \
+                "HistoricalMaxCandidates=${HISTORICAL_MAX_CANDIDATES}" \
+                "HistoricalMaxOptimizationRounds=${HISTORICAL_MAX_OPTIMIZATION_ROUNDS}" \
+                'HistoricalFreshAuditIncrementGames=250' \
+                'HistoricalRangeExtensionAuthorized=true' \
+                "DeployGitSha=${GITHUB_SHA}"
+
+            FUNCTION_NAME=$(aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+              --output text)
+            test -n "$FUNCTION_NAME"; test "$FUNCTION_NAME" != None
+            CONFIG=$(aws lambda get-function-configuration \
+              --function-name "$FUNCTION_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --output json)
+            CONFIG="$CONFIG" FUNCTION_NAME="$FUNCTION_NAME" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value=json.loads(os.environ['CONFIG'])
+          env=(value.get('Environment') or {}).get('Variables') or {}
+          checks={
+              'handler':value.get('Handler') == 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler',
+              'deploySha':env.get('INQSI_DEPLOY_GIT_SHA') == os.environ['GITHUB_SHA'],
+              'endDate':env.get('MLB_HISTORICAL_END_DATE') == '2026-07-24',
+              'maximumCredits':env.get('MLB_HISTORICAL_MAX_CREDITS') == '300000',
+              'maximumRounds':env.get('MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS') == '12',
+              'rangeExtensionAuthorized':env.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED') == 'true',
+          }
+          assert all(checks.values()), {'checks':checks,'handler':value.get('Handler'),'environment':env}
+          Path('/tmp/mlb-historical-runtime-identity.json').write_text(json.dumps({
+              'functionName':os.environ['FUNCTION_NAME'],
+              'handler':value.get('Handler'),
+              'deployGitSha':env.get('INQSI_DEPLOY_GIT_SHA'),
+              'endDate':env.get('MLB_HISTORICAL_END_DATE'),
+              'maximumCredits':env.get('MLB_HISTORICAL_MAX_CREDITS'),
+              'maximumOptimizationRounds':env.get('MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS'),
+              'checks':checks,
+          },indent=2,sort_keys=True)+'\n')
+          PY
+
+            invoke() {
+              local payload="$1" destination="$2"
+              aws lambda invoke \
+                --function-name "$FUNCTION_NAME" \
+                --region "$AWS_REGION_VALUE" \
+                --cli-read-timeout 900 \
+                --cli-binary-format raw-in-base64-out \
+                --payload "$payload" "$destination" >/tmp/mlb-historical-invoke-meta.json
+              python - "$destination" <<'PY'
+          import json,sys
+          value=json.load(open(sys.argv[1]))
+          assert value.get('ok') is True, value
+          PY
+            }
+
+            invoke '{"mode":"status","run":"v12_recovery_baseline"}' /tmp/mlb-historical-before.json
+            for attempt in $(seq 1 18); do
+              invoke "{\"mode\":\"orchestrate\",\"run\":\"v12_round_extension_${GITHUB_RUN_ID}_${attempt}\"}" /tmp/mlb-historical-orchestrate.json
+              decision=$(python - <<'PY'
+          import json
+          value=json.load(open('/tmp/mlb-historical-orchestrate.json'))
+          state=value.get('state') or {}
+          status=str(value.get('status') or state.get('phase') or '')
+          if status == 'LEASE_HELD':
+              print('RETRY')
+          elif status in {'BACKFILLING','OPTIMIZING'}:
+              print('READY')
+          else:
+              print('RETRY')
+          PY
+          )
+              test "$decision" = READY && break
+              sleep 10
+              test "$attempt" != 18
+            done
+            invoke '{"mode":"status","run":"v12_recovery_final"}' /tmp/mlb-historical-after.json
+
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          before=json.load(open('/tmp/mlb-historical-before.json'))
+          after=json.load(open('/tmp/mlb-historical-after.json'))
+          identity=json.load(open('/tmp/mlb-historical-runtime-identity.json'))
+          b=before.get('state') or {}
+          a=after.get('state') or {}
+          current=(str(a.get('currentDate') or ''),int(a.get('currentSlotIndex') or 0))
+          prior=(os.environ['PRIOR_CURSOR_DATE'],int(os.environ['PRIOR_CURSOR_SLOT']))
+          quota=(a.get('lastQuota') or {}).get('x-requests-remaining')
+          recovery=a.get('optimizationRoundLimitRecovery') or {}
+          checks={
+              'statusOk':after.get('ok') is True,
+              'activePhase':a.get('phase') in {'BACKFILLING','OPTIMIZING'},
+              'v7HandlerActive':identity.get('checks',{}).get('handler') is True,
+              'maximumRounds12':identity.get('checks',{}).get('maximumRounds') is True,
+              'rematerializationComplete':a.get('featureRematerializationComplete') is True,
+              'rematerializationCountsMatch':int(a.get('featureRematerializedSlateCount') or 0) == int(a.get('featureRematerializationTotalSlateCount') or 0),
+              'rematerializationErrorsEmpty':not (a.get('featureRematerializationErrors') or []),
+              'targetAdvanced':int(a.get('targetSettledGames') or 0) >= int(os.environ['PRIOR_TARGET_SETTLED_GAMES']) + 250,
+              'freshAuditStartsStrictlyLater':str(a.get('freshAuditStartDate') or '') >= os.environ['PRIOR_CURSOR_DATE'],
+              'roundRecoveryRecorded':recovery.get('strictlyLaterAuditRequired') is True and int(recovery.get('activeMaximumOptimizationRounds') or 0) == 12,
+              'priorCandidateNotAuthorized':recovery.get('priorCandidateAuthorityGranted') is False,
+              'ingestionAdvanced':current > prior or int(a.get('networkRequestCount') or 0) > int(os.environ['PRIOR_NETWORK_REQUESTS']),
+              'quotaAvailable':not isinstance(quota,int) or quota > 100,
+              'lastErrorEmpty':not a.get('lastError'),
+              'noChampion':after.get('champion') is None,
+              'noProductionCutover':after.get('productionCutover') is None,
+          }
+          assert all(checks.values()), {'checks':checks,'state':a,'identity':identity}
+          report={
+              'proofType':'MLB_HISTORICAL_V7_RECOVERY_RUN',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'jobStatus':'success',
+              'recoveryStepOutcome':'success',
+              'sourceSha':os.environ['GITHUB_SHA'],
+              'runId':os.environ['GITHUB_RUN_ID'],
+              'runAttempt':os.environ['GITHUB_RUN_ATTEMPT'],
+              'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'runtimeIdentity':identity,
+              'baseline':b,
+              'recovery':after,
+              'checks':checks,
+              'blockers':[],
+              'ok':True,
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+          ) 2>&1 | tee /tmp/mlb-historical-v12-recovery.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Ensure durable recovery evidence exists
+        if: always()
+        env:
+          RECOVERY_OUTCOME: ${{ steps.recovery.outcome }}
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          if test ! -s "$REPORT_PATH"; then
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          log=Path('/tmp/mlb-historical-v12-recovery.log').read_text(errors='replace')[-12000:] if Path('/tmp/mlb-historical-v12-recovery.log').exists() else ''
+          secret=os.environ.get('ODDS_API_KEY_VALUE','')
+          if secret:
+              log=log.replace(secret,'[REDACTED]')
+          report={
+              'proofType':'MLB_HISTORICAL_V7_RECOVERY_RUN',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'jobStatus':'failure',
+              'recoveryStepOutcome':os.environ.get('RECOVERY_OUTCOME'),
+              'sourceSha':os.environ['GITHUB_SHA'],
+              'runId':os.environ['GITHUB_RUN_ID'],
+              'runAttempt':os.environ['GITHUB_RUN_ATTEMPT'],
+              'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'errorLogTail':log,
+              'blockers':['recovery_verification_failed'],
+              'ok':False,
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+          fi
+          python -m json.tool "$REPORT_PATH" >/dev/null
+
+      - name: Upload recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-historical-v7-recovery-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_historical_v7_recovery_latest.json
+            /tmp/mlb-historical-v12-recovery.log
+            /tmp/mlb-historical-runtime-identity.json
+            /tmp/mlb-historical-before.json
+            /tmp/mlb-historical-after.json
+            /tmp/mlb-historical-orchestrate.json
+            /tmp/mlb-historical-aws-identity.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish durable recovery evidence safely
+        if: always()
+        run: |
+          set -euo pipefail
+          cp "$REPORT_PATH" /tmp/mlb-historical-v7-recovery-proof.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B historical-v7-recovery-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-historical-v7-recovery-proof.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            if git diff --cached --quiet; then
+              exit 0
+            fi
+            git commit -m 'Publish MLB historical V7 recovery evidence'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 3))
+          done
+          echo '::error::Unable to publish MLB historical V7 recovery evidence after bounded retries.'
+          exit 1
+
+      - name: Enforce successful recovery
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('runtime_reports/mlb_historical_v7_recovery_latest.json').read_text())
+          assert value.get('ok') is True, value
+          assert value.get('jobStatus') == 'success', value
+          assert not value.get('blockers'), value
+          checks=value.get('checks') or {}
+          assert checks and all(checks.values()), value
+          PY
