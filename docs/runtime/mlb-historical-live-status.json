@@ -6,18 +6,18 @@
     ],
     "ok": false
   },
-  "checkedAt": "2026-07-26T14:05:25.070780+00:00",
-  "completeSlateCount": 216,
-  "creditsConsumed": 171830,
-  "currentDate": "2026-04-08",
-  "currentSlotIndex": 55,
+  "checkedAt": "2026-07-26T14:23:07.029821+00:00",
+  "completeSlateCount": 220,
+  "creditsConsumed": 175020,
+  "currentDate": "2026-04-12",
+  "currentSlotIndex": 60,
   "cutoverValidation": {
     "errors": [
       "not_cut_over_before_first_promotion"
     ],
     "ok": false
   },
-  "eligibleGameCount": 2576,
+  "eligibleGameCount": 2627,
   "endDate": "2026-07-24",
   "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack",
   "featureRematerializationComplete": true,
@@ -27,33 +27,33 @@
   "freshAuditCollectedDayCount": 0,
   "freshAuditCollectedGameCount": 0,
   "freshAuditExpansionRequired": true,
-  "freshAuditStartDate": "2025-10-03",
-  "gamesUntilNextOptimization": 48,
-  "lastError": null,
+  "freshAuditStartDate": "2026-04-12",
+  "gamesUntilNextOptimization": 250,
+  "lastError": "80% every-day walk-forward/untouched-audit gate was not achieved; the candidate is rejected without authority",
   "lastErrorAtUtc": "2026-07-25T08:27:49.393989+00:00",
   "lastQuota": {
     "x-requests-last": 10,
-    "x-requests-remaining": 4707690,
-    "x-requests-used": 292310
+    "x-requests-remaining": 4704404,
+    "x-requests-used": 295596
   },
   "latestAccuracy": {
     "promotionPassed": false,
-    "settledGameCount": 2374,
-    "untouchedHoldoutMeanDailyAccuracy": 0.6111772495238097,
-    "untouchedHoldoutMinimumDailyAccuracy": 0.33333333,
-    "walkForwardMeanDailyAccuracy": 0.5207617390000001,
-    "walkForwardMinimumDailyAccuracy": 0.26666667
+    "settledGameCount": 2627,
+    "untouchedHoldoutMeanDailyAccuracy": 0.5497724150000001,
+    "untouchedHoldoutMinimumDailyAccuracy": 0,
+    "walkForwardMeanDailyAccuracy": 0.5972916675000002,
+    "walkForwardMinimumDailyAccuracy": 0.33333333
   },
   "latestExperiment": {
     "artifact": {
       "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-      "etag": "066f090b69288764cb1b444566483ebf",
-      "key": "mlb/historical-daily-v1/experiments/20260726T064038Z-45ab0a233b.json",
-      "sha256": "b266ec358ebb5bf00ea0e64848b34147aeb9d7208bd7e8820879763efe5bd516",
-      "versionId": "V9gKM7ae34lC5NRqPqv22I4_aZRENz6d"
+      "etag": "d6040b8ee2f4b4786d7cdb6e1b4964f2",
+      "key": "mlb/historical-daily-v1/experiments/20260726T141321Z-9f579cd04d.json",
+      "sha256": "c6f4623fadbf0f218ae61056f0a94e595a98dd736550f022bebc1afd96b8efe7",
+      "versionId": "Jdwh5Me60rcWHoobcFqKz3CGzBWgsgAg"
     },
-    "candidatePolicyDigest": "b4367f77213cd9eb19806340e365a8c7897ccc2b60ac4891d19d4814658312fd",
-    "experimentId": "20260726T064038Z-45ab0a233b",
+    "candidatePolicyDigest": "058b9e27b41f00a0e661e87779bc142bc010e5934ff3ae65cc5ea52763ac7c0a",
+    "experimentId": "20260726T141321Z-9f579cd04d",
     "promotionGate": {
       "candidateImprovedWalkForwardDailyObjective": true,
       "chronologicalWholeSlateSplits": true,
@@ -61,6 +61,7 @@
       "dailyAccuracyTargetHigh": 0.9,
       "errors": [
         "untouched_holdout_contains_day_below_80_percent",
+        "untouched_holdout_log_loss_degraded",
         "untouched_holdout_mean_daily_accuracy_failed",
         "untouched_holdout_minimum_daily_accuracy_failed",
         "walk_forward_contains_day_below_80_percent",
@@ -70,13 +71,13 @@
       "gameSpecificLockClipping": true,
       "holdoutWasUntouchedDuringSearch": true,
       "overfitChecks": {
-        "brierDeltaVsBaseline": -0.02137973,
-        "logLossDeltaVsBaseline": -0.05437026,
+        "brierDeltaVsBaseline": -0.01894537,
+        "logLossDeltaVsBaseline": -0.04207616,
         "maximumAllowedAccuracyGap": 0.1,
         "maximumAllowedBrierDegradation": 0.005,
         "maximumAllowedLogLossDegradation": 0.01,
         "passed": true,
-        "trainValidationMeanDailyAccuracyGap": 0.03438289
+        "trainValidationMeanDailyAccuracyGap": 0.04505344
       },
       "overfitChecksPassed": true,
       "passed": false,
@@ -85,38 +86,38 @@
       "requiredTrainingGameCount": 1000,
       "requiredUntouchedHoldoutGameCount": 200,
       "requiredWalkForwardGameCount": 200,
-      "settledGameCount": 2374,
-      "trainingGameCount": 1849,
-      "untouchedHoldoutDayCount": 21,
-      "untouchedHoldoutGameCount": 251,
-      "untouchedHoldoutMeanDailyAccuracy": 0.6111772495238097,
-      "untouchedHoldoutMinimumDailyAccuracy": 0.33333333,
+      "settledGameCount": 2627,
+      "trainingGameCount": 2132,
+      "untouchedHoldoutDayCount": 40,
+      "untouchedHoldoutGameCount": 253,
+      "untouchedHoldoutMeanDailyAccuracy": 0.5497724150000001,
+      "untouchedHoldoutMinimumDailyAccuracy": 0,
       "untouchedHoldoutReached90PctMean": false,
       "untouchedHoldoutSlateCoverage": 1,
       "version": "MLB-HISTORICAL-DAILY-PROMOTION-GATE-v2-1000-200-200",
       "walkForwardDayCount": 20,
-      "walkForwardGameCount": 274,
-      "walkForwardMeanDailyAccuracy": 0.5207617390000001,
-      "walkForwardMinimumDailyAccuracy": 0.26666667,
+      "walkForwardGameCount": 242,
+      "walkForwardMeanDailyAccuracy": 0.5972916675000002,
+      "walkForwardMinimumDailyAccuracy": 0.33333333,
       "walkForwardReached90PctMean": false,
       "walkForwardSlateCoverage": 1
     },
     "status": "CANDIDATE_REJECTED"
   },
-  "networkRequestCount": 17183,
+  "networkRequestCount": 17502,
   "nextOptimizationReady": false,
   "ok": true,
-  "optimizationCompletedAtUtc": "2026-07-26T06:40:38.872127+00:00",
-  "optimizationRound": 4,
+  "optimizationCompletedAtUtc": "2026-07-26T14:13:21.650839+00:00",
+  "optimizationRound": 5,
   "phase": "BACKFILLING",
   "productionAuthority": {
     "automaticLegacyFallbackAllowed": false,
     "historicalChampionOnly": false,
     "incumbentProductionAuthorityDestroyed": false
   },
-  "provisionalFreshAuditCollectedDayCount": 36,
-  "provisionalFreshAuditCollectedGameCount": 202,
-  "revision": 980,
-  "stateUpdatedAtUtc": "2026-07-26T14:01:59.079190+00:00",
-  "targetSettledGames": 2624
+  "provisionalFreshAuditCollectedDayCount": 0,
+  "provisionalFreshAuditCollectedGameCount": 0,
+  "revision": 996,
+  "stateUpdatedAtUtc": "2026-07-26T14:21:59.084827+00:00",
+  "targetSettledGames": 2877
 }
