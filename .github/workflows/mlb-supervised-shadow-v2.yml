@@ -8,6 +8,7 @@ name: MLB Supervised Shadow V2
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'scripts/run_mlb_supervised_shadow_v2.py'
       - 'tests/unit/test_mlb_supervised_shadow_v2.py'
+      - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'
       - '.github/workflows/mlb-supervised-shadow-v2.yml'
   push:
     branches: [main]
@@ -16,6 +17,7 @@ name: MLB Supervised Shadow V2
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'scripts/run_mlb_supervised_shadow_v2.py'
       - 'tests/unit/test_mlb_supervised_shadow_v2.py'
+      - 'tests/unit/test_mlb_supervised_daily_objective_v2_1.py'
       - '.github/workflows/mlb-supervised-shadow-v2.yml'
 
 permissions:
@@ -47,23 +49,26 @@ jobs:
           python -m py_compile \
             hello_world/mlb_supervised_features_v2.py \
             hello_world/mlb_supervised_model_v2.py \
+            hello_world/mlb_supervised_daily_objective_v2_1.py \
             hello_world/mlb_supervised_v8_dataset_patch_v1.py \
             hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
             scripts/run_mlb_supervised_shadow_v2.py
           PYTHONPATH=hello_world python -m pytest -q --tb=short \
             tests/unit/test_mlb_supervised_shadow_v2.py \
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py \
             tests/unit/test_mlb_historical_v7_status_bypass.py \
             tests/unit/test_mlb_historical_feature_rematerialization_v1.py \
             tests/unit/test_mlb_odds_market_expansion_v8.py
           grep -Fq 'authority": "SHADOW_ONLY"' hello_world/mlb_supervised_model_v2.py
           grep -Fq 'productionPromotionEligible": False' hello_world/mlb_supervised_model_v2.py
           grep -Fq 'sameSlateOutcomeFeaturesProhibited' hello_world/mlb_supervised_v8_dataset_patch_v1.py
+          grep -Fq 'productionAuthorityChanged": False' hello_world/mlb_supervised_daily_objective_v2_1.py
 
   evaluate-aws:
     if: github.event_name != 'pull_request'
     needs: validate
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,7 +83,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Wait for deployed code and complete no-cost rematerialization
+      - name: Verify deployed evidence dataset and complete no-cost rematerialization
         id: rematerialize
         continue-on-error: true
         env:
@@ -95,7 +100,7 @@ jobs:
 
           region=os.environ['AWS_REGION_VALUE']
           expected_dataset=os.environ['EXPECTED_FEATURE_DATASET']
-          expected_sha=os.environ['GITHUB_SHA']
+          model_source_sha=os.environ['GITHUB_SHA']
           cf=boto3.client('cloudformation',region_name=region)
           lam=boto3.client('lambda',region_name=region)
           outputs={str(x.get('OutputKey')):str(x.get('OutputValue')) for x in (cf.describe_stacks(StackName=os.environ['STACK_NAME']).get('Stacks') or [])[0].get('Outputs') or []}
@@ -111,7 +116,11 @@ jobs:
                   raise RuntimeError(f"lambda_function_error:{response.get('FunctionError')}:{value}")
               return value
 
-          deadline=time.monotonic()+3000
+          # The shadow model executes from this exact checked-out commit on the
+          # runner. Only the immutable evidence schema must be deployed. Requiring
+          # Lambda's deploy SHA to equal every model-only commit caused a permanent
+          # wait even though model code has no production authority.
+          deadline=time.monotonic()+900
           attempt=0
           while time.monotonic()<deadline:
               attempt+=1
@@ -122,24 +131,20 @@ jobs:
                   progress.append({'attempt':attempt,'status':'WAITING_FOR_HANDLER','handler':config.get('Handler'),'atUtc':datetime.now(timezone.utc).isoformat()})
                   time.sleep(15)
                   continue
-              if deployed_sha!=expected_sha:
-                  progress.append({'attempt':attempt,'status':'WAITING_FOR_DEPLOY','deployGitSha':deployed_sha,'expectedSha':expected_sha,'atUtc':datetime.now(timezone.utc).isoformat()})
-                  time.sleep(20)
-                  continue
               status=invoke({'mode':'status','run':f'supervised_v2_status_{attempt}'})
               state=status.get('state') or {}
               complete=(state.get('featureRematerializationComplete') is True and state.get('featureDatasetVersion')==expected_dataset and not state.get('featureRematerializationErrors'))
-              progress.append({'attempt':attempt,'status':status.get('status') or state.get('phase'),'featureDatasetVersion':state.get('featureDatasetVersion'),'rematerialized':state.get('featureRematerializedSlateCount'),'total':state.get('featureRematerializationTotalSlateCount'),'complete':complete,'atUtc':datetime.now(timezone.utc).isoformat()})
+              progress.append({'attempt':attempt,'status':status.get('status') or state.get('phase'),'modelSourceSha':model_source_sha,'deployedEvidenceSha':deployed_sha,'featureDatasetVersion':state.get('featureDatasetVersion'),'rematerialized':state.get('featureRematerializedSlateCount'),'total':state.get('featureRematerializationTotalSlateCount'),'complete':complete,'atUtc':datetime.now(timezone.utc).isoformat()})
               if complete:
-                  Path('/tmp/supervised-rematerialization-progress.json').write_text(json.dumps({'functionName':function_name,'deployedSha':deployed_sha,'progress':progress[-40:],'finalState':state},indent=2,sort_keys=True)+'\n')
+                  Path('/tmp/supervised-rematerialization-progress.json').write_text(json.dumps({'functionName':function_name,'modelSourceSha':model_source_sha,'deployedEvidenceSha':deployed_sha,'progress':progress[-40:],'finalState':state},indent=2,sort_keys=True)+'\n')
                   break
               value=invoke({'mode':'orchestrate','run':f'supervised_v2_rematerialize_{os.environ["GITHUB_RUN_ID"]}_{attempt}'})
               if value.get('ok') is not True:
                   raise RuntimeError(f'rematerialization_orchestration_failed:{value}')
               time.sleep(3 if value.get('status')!='LEASE_HELD' else 12)
           else:
-              Path('/tmp/supervised-rematerialization-progress.json').write_text(json.dumps({'functionName':function_name,'progress':progress[-40:]},indent=2,sort_keys=True)+'\n')
-              raise TimeoutError('supervised V8 rematerialization did not complete within 50 minutes')
+              Path('/tmp/supervised-rematerialization-progress.json').write_text(json.dumps({'functionName':function_name,'modelSourceSha':model_source_sha,'progress':progress[-40:]},indent=2,sort_keys=True)+'\n')
+              raise TimeoutError('supervised V8 evidence rematerialization did not complete within 15 minutes')
           PY
           status=${PIPESTATUS[0]}
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
@@ -192,7 +197,7 @@ jobs:
               progress=json.loads(Path('/tmp/supervised-rematerialization-progress.json').read_text())
           blockers=[]
           if os.environ.get('REMATERIALIZE_OUTCOME')!='success':
-              blockers.append('rematerialization_or_deployment_verification_failed')
+              blockers.append('rematerialization_or_evidence_schema_verification_failed')
           if os.environ.get('EVALUATION_OUTCOME')!='success':
               blockers.append('supervised_evaluation_failed_or_skipped')
           value={
@@ -235,6 +240,7 @@ jobs:
           assert value.get('productionPromotionEligible') is False, value
           assert int(value.get('recordCountLoaded') or 0) >= 1400, value
           assert (value.get('selection') or {}).get('selectionUsedUntouchedAudit') is False, value
+          assert (value.get('selectionObjective') or {}).get('productionAuthorityChanged') is False, value
           assert float((value.get('featureCoverage') or {}).get('strictlyPastTeamHistory') or 0) > 0.80, value
           assert float((value.get('featureCoverage') or {}).get('v8Any') or 0) > 0.80, value
           assert (value.get('metrics') or {}).get('walkForward'), value
