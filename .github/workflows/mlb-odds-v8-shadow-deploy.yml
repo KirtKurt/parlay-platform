@@ -63,7 +63,7 @@ jobs:
             scripts/recover_mlb_v8_shadow.py
           python -m pytest -q --tb=short tests/unit/test_mlb_odds_market_expansion_v8.py
           sam validate --lint --template-file mlb_odds_v8_shadow/template.yaml
-          grep -Fq 'Enabled: !If [EnableV8Schedule, true, false]' mlb_odds_v8_shadow/template.yaml
+          grep -Fq 'State: !If [EnableV8Schedule, ENABLED, DISABLED]' mlb_odds_v8_shadow/template.yaml
           ! grep -Fq 'Condition: EnableV8Schedule' mlb_odds_v8_shadow/template.yaml
           ! grep -Fq 'ReservedConcurrentExecutions' mlb_odds_v8_shadow/template.yaml
           grep -Fq 'Value: SHADOW_ONLY' mlb_odds_v8_shadow/template.yaml
