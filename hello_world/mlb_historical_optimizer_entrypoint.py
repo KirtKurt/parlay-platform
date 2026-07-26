@@ -24,12 +24,13 @@ import mlb_historical_optimizer_handler as optimizer_handler
 import mlb_historical_quarantine_contract_v2 as quarantine_contract
 import mlb_historical_versioned_dataset_key_v3 as versioned_dataset_key
 
-VERSION = "MLB-HISTORICAL-ENTRYPOINT-v8-competitive-schedule-filter"
+VERSION = "MLB-HISTORICAL-ENTRYPOINT-v9-opening-day-range-repair"
 
 # MLB Stats API game types that can produce authoritative championship-season
 # labels. Spring Training (S), exhibition, All-Star, and other non-competitive
 # games are retained as exclusion evidence but never enter training datasets.
 COMPETITIVE_GAME_TYPES = frozenset({"R", "F", "D", "L", "W"})
+DEFAULT_COMPETITIVE_EXTENSION_START_DATE = "2026-03-25"
 
 optimizer_handler.MAX_NETWORK_REQUESTS = min(
     int(optimizer_handler.MAX_NETWORK_REQUESTS), 20
@@ -39,6 +40,22 @@ optimizer_handler.LEASE_SECONDS = max(int(optimizer_handler.LEASE_SECONDS), 960)
 
 def _truthy(name: str) -> bool:
     return str(os.environ.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _competitive_extension_start() -> date:
+    raw = str(
+        os.environ.get(
+            "MLB_HISTORICAL_COMPETITIVE_EXTENSION_START_DATE",
+            DEFAULT_COMPETITIVE_EXTENSION_START_DATE,
+        )
+        or DEFAULT_COMPETITIVE_EXTENSION_START_DATE
+    ).strip()
+    try:
+        return date.fromisoformat(raw)
+    except ValueError as exc:
+        raise RuntimeError(
+            "MLB_HISTORICAL_COMPETITIVE_EXTENSION_START_DATE_INVALID"
+        ) from exc
 
 
 def _team_name(raw: Mapping[str, Any], side: str) -> Optional[str]:
@@ -173,6 +190,184 @@ def fetch_official_schedule_cross_date_safe(
     return canonical
 
 
+def _date_value(value: Any) -> date:
+    try:
+        return date.fromisoformat(str(value or ""))
+    except ValueError as exc:
+        raise RuntimeError("MLB_HISTORICAL_LEDGER_DATE_INVALID") from exc
+
+
+def _recalculate_plan(plan: Dict[str, Any]) -> None:
+    slates = list(plan.get("slates") or [])
+    if not slates:
+        raise RuntimeError("MLB_HISTORICAL_COMPETITIVE_REPAIR_EMPTY_PLAN")
+    plan["plannedThroughDate"] = str(slates[-1].get("slateDateEt") or "")
+    plan["plannedOfficialGames"] = sum(
+        int(row.get("officialGameCount") or 0) for row in slates
+    )
+    plan["maximumAuthorizedOfficialGames"] = plan["plannedOfficialGames"]
+    plan["plannedCompleteSlateDays"] = len(slates)
+    plan["historicalRequestCount"] = sum(
+        int(row.get("historicalRequestCount") or 0) for row in slates
+    )
+    plan["estimatedCredits"] = sum(int(row.get("estimatedCredits") or 0) for row in slates)
+    plan["slateLedgerDigest"] = optimizer_handler._sha256(
+        optimizer_handler._json_bytes(slates)
+    )
+
+
+def _repair_precompetitive_extension_state() -> None:
+    """Remove cached Spring Training slate rows from an already-authorized extension.
+
+    Immutable S3 evidence and actual provider usage are retained. Only active ledger,
+    cursor, completion, rejection, and quarantine indexes are re-fingerprinted so the
+    optimizer resumes at the first 2026 championship-season game.
+    """
+    if not _truthy("MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED"):
+        return
+    state = optimizer_handler._load_state()
+    if not isinstance(state, dict):
+        return
+    plan = copy.deepcopy(state.get("plan") or {})
+    range_info = copy.deepcopy(plan.get("rangeExtension") or state.get("rangeExtension") or {})
+    if not plan or not range_info.get("competitiveGameTypes"):
+        return
+
+    start = _competitive_extension_start()
+    previous_raw = range_info.get("previousEndDate")
+    if not previous_raw:
+        return
+    previous_end = _date_value(previous_raw)
+    if start <= previous_end + timedelta(days=1):
+        return
+
+    def in_gap(value: Any) -> bool:
+        day = _date_value(value)
+        return previous_end < day < start
+
+    original_slates = list(plan.get("slates") or [])
+    removed_slates = [
+        copy.deepcopy(row)
+        for row in original_slates
+        if in_gap(row.get("slateDateEt"))
+    ]
+    kept_slates = [
+        copy.deepcopy(row)
+        for row in original_slates
+        if not in_gap(row.get("slateDateEt"))
+    ]
+
+    current_raw = str(state.get("currentDate") or "")
+    cursor_needs_repair = bool(current_raw and in_gap(current_raw))
+    if not removed_slates and not cursor_needs_repair:
+        return
+    if not kept_slates:
+        raise RuntimeError("MLB_HISTORICAL_COMPETITIVE_REPAIR_REMOVED_ALL_SLATES")
+
+    completed = list(state.get("completedSlates") or [])
+    removed_completed = [
+        copy.deepcopy(row)
+        for row in completed
+        if in_gap(row.get("slateDateEt"))
+    ]
+    kept_completed = [
+        copy.deepcopy(row)
+        for row in completed
+        if not in_gap(row.get("slateDateEt"))
+    ]
+    rejected = list(state.get("rejectedSlates") or [])
+    removed_rejected = [
+        copy.deepcopy(row)
+        for row in rejected
+        if in_gap(row.get("slateDateEt"))
+    ]
+    kept_rejected = [
+        copy.deepcopy(row)
+        for row in rejected
+        if not in_gap(row.get("slateDateEt"))
+    ]
+    skipped = list(state.get("skippedHistoricalSlots") or [])
+    removed_skipped = [
+        copy.deepcopy(row)
+        for row in skipped
+        if in_gap(row.get("slateDateEt"))
+    ]
+    kept_skipped = [
+        copy.deepcopy(row)
+        for row in skipped
+        if not in_gap(row.get("slateDateEt"))
+    ]
+
+    plan["slates"] = sorted(
+        kept_slates, key=lambda row: str(row.get("slateDateEt") or "")
+    )
+    _recalculate_plan(plan)
+    range_info.update(
+        {
+            "version": "MLB-HISTORICAL-RANGE-EXTENSION-v3-opening-day-bounded",
+            "competitiveStartDate": start.isoformat(),
+            "removedPreCompetitiveSlateCount": len(removed_slates),
+            "removedPreCompetitiveSlateDates": sorted(
+                str(row.get("slateDateEt") or "") for row in removed_slates
+            ),
+            "repairedAtUtc": optimizer_handler._now_iso(),
+        }
+    )
+    plan["rangeExtension"] = range_info
+    plan["fingerprint"] = optimizer_handler._plan_fingerprint(plan)
+
+    state["plan"] = plan
+    state["authorizedPlanFingerprint"] = plan["fingerprint"]
+    state["rangeExtension"] = copy.deepcopy(range_info)
+    state["completedSlates"] = kept_completed
+    state["completeSlateCount"] = len(kept_completed)
+    state["eligibleGameCount"] = sum(
+        int(row.get("eligibleGameCount") or 0) for row in kept_completed
+    )
+    state["rejectedSlates"] = kept_rejected
+    state["skippedHistoricalSlots"] = kept_skipped
+    state["lastRejectedSlateError"] = (
+        str(kept_rejected[-1].get("reason") or "") if kept_rejected else None
+    )
+    state["currentDate"] = start.isoformat()
+    state["currentSlotIndex"] = 0
+    state["phase"] = "BACKFILLING"
+    state["lastError"] = None
+    state.pop("rangeExtensionRejectedDates", None)
+
+    removed_dates = sorted(
+        {
+            str(row.get("slateDateEt") or "")
+            for row in removed_slates + removed_completed + removed_rejected
+            if row.get("slateDateEt")
+        }
+    )
+    state["competitiveRangeRepair"] = {
+        "version": "MLB-HISTORICAL-COMPETITIVE-RANGE-REPAIR-v1",
+        "previousEndDate": previous_end.isoformat(),
+        "competitiveStartDate": start.isoformat(),
+        "previousCursorDate": current_raw,
+        "previousCursorSlotIndex": int(state.get("currentSlotIndex") or 0),
+        "removedPlanSlateCount": len(removed_slates),
+        "removedCompletedSlateCount": len(removed_completed),
+        "removedRejectedSlateCount": len(removed_rejected),
+        "removedSkippedSlotCount": len(removed_skipped),
+        "removedDateCount": len(removed_dates),
+        "removedDatesFingerprint": history.canonical_payload_fingerprint(removed_dates),
+        "providerCreditsRetained": True,
+        "immutableS3EvidenceRetained": True,
+        "repairedAtUtc": optimizer_handler._now_iso(),
+    }
+
+    last_finals = state.get("lastCompletedFinalsArtifact") or {}
+    last_finals_key = str(last_finals.get("key") or "")
+    if any(f"/{day}.json" in last_finals_key for day in removed_dates):
+        state["lastCompletedFinalsArtifact"] = None
+        state["lastCompletedQuarantineCount"] = 0
+
+    optimizer_handler._save_state(state)
+
+
 def _append_authorized_range_extension() -> None:
     """Append a strictly later, fingerprinted ledger when deployment authorizes it."""
     if not _truthy("MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED"):
@@ -204,7 +399,8 @@ def _append_authorized_range_extension() -> None:
     }
     appended = []
     rejected = []
-    cursor = previous_end + timedelta(days=1)
+    start = _competitive_extension_start()
+    cursor = max(previous_end + timedelta(days=1), start)
     while cursor <= configured_end:
         day = cursor.isoformat()
         try:
@@ -277,30 +473,17 @@ def _append_authorized_range_extension() -> None:
     merged = sorted(merged, key=lambda row: str(row.get("slateDateEt") or ""))
     plan["slates"] = merged
     plan["endDate"] = configured_end.isoformat()
-    plan["plannedThroughDate"] = merged[-1]["slateDateEt"]
-    plan["plannedOfficialGames"] = sum(
-        int(row.get("officialGameCount") or 0) for row in merged
-    )
-    plan["maximumAuthorizedOfficialGames"] = plan["plannedOfficialGames"]
-    plan["plannedCompleteSlateDays"] = len(merged)
-    plan["historicalRequestCount"] = sum(
-        int(row.get("historicalRequestCount") or 0) for row in merged
-    )
-    plan["estimatedCredits"] = sum(
-        int(row.get("estimatedCredits") or 0) for row in merged
-    )
+    _recalculate_plan(plan)
     plan["maximumCredits"] = maximum
     plan["providerReportedRemainingCredits"] = remaining
     plan["completeDateRangeLedger"] = True
     plan["planningErrorCount"] = 0
     plan["rejectedDates"] = []
-    plan["slateLedgerDigest"] = optimizer_handler._sha256(
-        optimizer_handler._json_bytes(merged)
-    )
     plan["rangeExtension"] = {
-        "version": "MLB-HISTORICAL-RANGE-EXTENSION-v2-competitive-only",
+        "version": "MLB-HISTORICAL-RANGE-EXTENSION-v3-opening-day-bounded",
         "previousEndDate": previous_end.isoformat(),
         "newEndDate": configured_end.isoformat(),
+        "competitiveStartDate": start.isoformat(),
         "appendedSlateCount": len(appended),
         "appendedEstimatedCredits": extension_credits,
         "competitiveGameTypes": sorted(COMPETITIVE_GAME_TYPES),
@@ -329,5 +512,6 @@ odds_pattern_features.install(optimizer_handler.optimizer, optimizer_handler.pol
 
 
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
+    _repair_precompetitive_extension_state()
     _append_authorized_range_extension()
     return optimizer_handler.lambda_handler(event, context)
