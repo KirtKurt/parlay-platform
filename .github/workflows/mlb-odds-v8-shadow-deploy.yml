@@ -118,7 +118,8 @@ jobs:
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          set +e
           sam deploy \
             --template-file .aws-sam-v8-shadow/template.yaml \
             --stack-name "$STACK_NAME" \
@@ -136,7 +137,23 @@ jobs:
               "V8FeaturedRegions=us" \
               "V8EventRegions=us,us2" \
               "V8MaxEventsPerCycle=2" \
-              "V8MaxCreditsPerCycle=100"
+              "V8MaxCreditsPerCycle=100" \
+            > /tmp/v8-canary-deploy.log 2>&1
+          status=$?
+          set -e
+          cat /tmp/v8-canary-deploy.log
+          if test "$status" -ne 0; then
+            aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --output json > /tmp/v8-canary-stack.json 2>/tmp/v8-canary-stack-describe-error.log || true
+            aws cloudformation describe-stack-events \
+              --stack-name "$STACK_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --max-items 40 \
+              --output json > /tmp/v8-canary-stack-events.json 2>/tmp/v8-canary-stack-events-error.log || true
+            exit "$status"
+          fi
 
       - name: Verify canary identity and isolation
         id: identity
@@ -510,6 +527,13 @@ jobs:
               'finalScheduleState': final_state,
               'stepOutcomes': outcomes,
               'deploymentIdentity': load('/tmp/v8-identity.json'),
+              'canaryDeployment': {
+                  'logTail': Path('/tmp/v8-canary-deploy.log').read_text(errors='replace')[-12000:] if Path('/tmp/v8-canary-deploy.log').exists() else None,
+                  'stack': load('/tmp/v8-canary-stack.json'),
+                  'stackEvents': load('/tmp/v8-canary-stack-events.json'),
+                  'stackDescribeError': Path('/tmp/v8-canary-stack-describe-error.log').read_text(errors='replace')[-4000:] if Path('/tmp/v8-canary-stack-describe-error.log').exists() else None,
+                  'stackEventsError': Path('/tmp/v8-canary-stack-events-error.log').read_text(errors='replace')[-4000:] if Path('/tmp/v8-canary-stack-events-error.log').exists() else None,
+              },
               'manualCanary': load('/tmp/v8-shadow-canary.json'),
               'scheduledCollection': load('/tmp/v8-scheduled-proof.json'),
               'scheduledRecord': load('/tmp/v8-scheduled-record.json'),
@@ -529,6 +553,11 @@ jobs:
           path: |
             runtime_reports/mlb_odds_v8_shadow_recovery_latest.json
             /tmp/v8-aws-identity.json
+            /tmp/v8-canary-deploy.log
+            /tmp/v8-canary-stack.json
+            /tmp/v8-canary-stack-events.json
+            /tmp/v8-canary-stack-describe-error.log
+            /tmp/v8-canary-stack-events-error.log
             /tmp/v8-identity.json
             /tmp/v8-shadow-canary.json
             /tmp/v8-shadow-canary-invocation.json
