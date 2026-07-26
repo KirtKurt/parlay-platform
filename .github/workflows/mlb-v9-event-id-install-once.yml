@@ -1,0 +1,109 @@
+name: MLB V9 Event ID Schema Install Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v9-event-id-install-once.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: mlb-v9-event-id-schema-install-once
+  cancel-in-progress: true
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install event ID schema into canonical workflows
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          python - <<'PY'
+          from pathlib import Path
+
+          old='MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable'
+          new='MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable'
+          for name in (
+              '.github/workflows/mlb-supervised-shadow-v2.yml',
+              '.github/workflows/mlb-supervised-v2-immediate-eval-once.yml',
+          ):
+              path=Path(name)
+              text=path.read_text()
+              assert text.count(old) == 1, f'expected one dataset version anchor in {name}'
+              path.write_text(text.replace(old,new,1))
+
+          recovery_path=Path('.github/workflows/mlb-historical-v7-recovery.yml')
+          recovery=recovery_path.read_text()
+          trigger="      - 'hello_world/mlb_historical_derived_features_v1.py'\n"
+          if "      - 'hello_world/mlb_supervised_v8_dataset_patch_v1.py'\n" not in recovery:
+              assert recovery.count(trigger) == 1
+              recovery=recovery.replace(trigger,trigger+"      - 'hello_world/mlb_supervised_v8_dataset_patch_v1.py'\n",1)
+          compile_line='            hello_world/mlb_historical_derived_features_v1.py \\\n'
+          if '            hello_world/mlb_supervised_v8_dataset_patch_v1.py \\\n' not in recovery:
+              assert recovery.count(compile_line) == 1
+              recovery=recovery.replace(compile_line,compile_line+'            hello_world/mlb_supervised_v8_dataset_patch_v1.py \\\n',1)
+          test_line='            tests/unit/test_mlb_historical_competitive_schedule_filter.py\n'
+          if '            tests/unit/test_mlb_historical_feature_rematerialization_v1.py \\\n' not in recovery:
+              assert recovery.count(test_line) == 1
+              recovery=recovery.replace(
+                  test_line,
+                  '            tests/unit/test_mlb_historical_competitive_schedule_filter.py \\\n'
+                  '            tests/unit/test_mlb_historical_feature_rematerialization_v1.py \\\n'
+                  '            tests/unit/test_mlb_supervised_v2_runtime_integration.py\n',
+                  1,
+              )
+          artifact='          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_odds_pattern_features_v1.py\n'
+          if '          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_supervised_v8_dataset_patch_v1.py\n' not in recovery:
+              assert recovery.count(artifact) == 1
+              recovery=recovery.replace(artifact,artifact+'          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_supervised_v8_dataset_patch_v1.py\n',1)
+          recovery=recovery.replace('  cancel-in-progress: false\n','  cancel-in-progress: true\n',1)
+          recovery_path.write_text(recovery)
+
+          self_path=Path('.github/workflows/mlb-v9-event-id-install-once.yml')
+          self_path.unlink()
+          PY
+          git diff --check
+          test ! -e .github/workflows/mlb-v9-event-id-install-once.yml
+
+      - name: Publish canonical workflow changes
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add \
+            .github/workflows/mlb-supervised-shadow-v2.yml \
+            .github/workflows/mlb-supervised-v2-immediate-eval-once.yml \
+            .github/workflows/mlb-historical-v7-recovery.yml \
+            .github/workflows/mlb-v9-event-id-install-once.yml
+          git commit -m 'Install MLB V9 provider event ID schema workflows'
+          for attempt in 1 2 3 4 5; do
+            git push origin HEAD:main && exit 0
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Dispatch canonical recovery and shadow evaluation
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          for workflow in mlb-historical-v7-recovery.yml mlb-supervised-shadow-v2.yml; do
+            gh api --method POST \
+              -H 'Accept: application/vnd.github+json' \
+              -H 'X-GitHub-Api-Version: 2022-11-28' \
+              "/repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
+              -f ref=main
+          done
