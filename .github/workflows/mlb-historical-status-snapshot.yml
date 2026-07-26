@@ -9,6 +9,7 @@ name: MLB Historical Status Snapshot
       - '.github/workflows/mlb-historical-status-snapshot.yml'
       - '.github/workflows/mlb-historical-watchdog.yml'
       - '.github/workflows/mlb-historical-v7-recovery.yml'
+      - '.github/workflows/mlb-historical-next-round-catchup.yml'
       - 'hello_world/mlb_historical_optimizer_entrypoint.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'hello_world/mlb_historical_feature_rematerialization_v1.py'
@@ -89,10 +90,24 @@ jobs:
           state = value.get('state')
           if not isinstance(state, dict):
               raise SystemExit(f"optimizer status omitted state: {value}")
-          required=('phase','currentDate','currentSlotIndex','eligibleGameCount','completeSlateCount','optimizationRound','updatedAtUtc')
+          required=(
+              'phase','currentDate','currentSlotIndex','eligibleGameCount',
+              'completeSlateCount','optimizationRound','targetSettledGames','updatedAtUtc'
+          )
           missing=[name for name in required if state.get(name) is None]
           if missing:
               raise SystemExit('optimizer status missing required fields: '+','.join(missing))
+
+          eligible=int(state.get('eligibleGameCount') or 0)
+          target=int(state.get('targetSettledGames') or 0)
+          latest=state.get('latestExperiment') or {}
+          gate=latest.get('promotionGate') or {}
+          start=str(state.get('freshAuditStartDate') or '')
+          completed=state.get('completedSlates') or []
+          provisional=[
+              row for row in completed
+              if isinstance(row,dict) and start and str(row.get('slateDateEt') or '') >= start
+          ]
           summary = {
               'checkedAt': datetime.now(timezone.utc).isoformat(),
               'ok': True,
@@ -101,10 +116,23 @@ jobs:
               'currentSlotIndex': state.get('currentSlotIndex'),
               'networkRequestCount': state.get('networkRequestCount'),
               'creditsConsumed': state.get('creditsConsumed'),
-              'eligibleGameCount': state.get('eligibleGameCount'),
+              'eligibleGameCount': eligible,
               'completeSlateCount': state.get('completeSlateCount'),
+              'targetSettledGames': target,
+              'gamesUntilNextOptimization': max(0,target-eligible),
+              'nextOptimizationReady': eligible >= target,
               'optimizationRound': state.get('optimizationRound'),
-              'latestExperiment': state.get('latestExperiment'),
+              'optimizationCompletedAtUtc': state.get('optimizationCompletedAtUtc'),
+              'latestExperiment': latest,
+              'latestAccuracy': {
+                  'settledGameCount': gate.get('settledGameCount'),
+                  'walkForwardMeanDailyAccuracy': gate.get('walkForwardMeanDailyAccuracy'),
+                  'walkForwardMinimumDailyAccuracy': gate.get('walkForwardMinimumDailyAccuracy'),
+                  'untouchedHoldoutMeanDailyAccuracy': gate.get('untouchedHoldoutMeanDailyAccuracy'),
+                  'untouchedHoldoutMinimumDailyAccuracy': gate.get('untouchedHoldoutMinimumDailyAccuracy'),
+                  'promotionPassed': gate.get('passed') is True,
+              },
+              'accuracyTargetReached': gate.get('passed') is True,
               'lastError': state.get('lastError'),
               'lastErrorAtUtc': state.get('lastErrorAtUtc'),
               'stateUpdatedAtUtc': state.get('updatedAtUtc'),
@@ -114,8 +142,11 @@ jobs:
               'featureRematerializedSlateCount': state.get('featureRematerializedSlateCount'),
               'featureRematerializationTotalSlateCount': state.get('featureRematerializationTotalSlateCount'),
               'featureRematerializationErrors': state.get('featureRematerializationErrors'),
+              'freshAuditExpansionRequired': state.get('freshAuditExpansionRequired'),
               'freshAuditCollectedDayCount': state.get('freshAuditCollectedDayCount'),
               'freshAuditCollectedGameCount': state.get('freshAuditCollectedGameCount'),
+              'provisionalFreshAuditCollectedDayCount': len(provisional),
+              'provisionalFreshAuditCollectedGameCount': sum(int(row.get('eligibleGameCount') or 0) for row in provisional),
               'freshAuditStartDate': state.get('freshAuditStartDate'),
               'endDate': state.get('endDate'),
               'lastQuota': state.get('lastQuota'),
