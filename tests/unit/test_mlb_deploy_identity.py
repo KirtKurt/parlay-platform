@@ -1336,3 +1336,17 @@ def test_fails_closed_when_regional_writer_discovery_fails(aws) -> None:
         blocker.startswith("MLB_ALTERNATE_WRITER_DISCOVERY_FAILED:")
         for blocker in result["blockers"]
     )
+
+
+def test_historical_optimizer_is_not_classified_as_live_writer() -> None:
+    assert deploy_identity._is_mlb_pull_or_training_writer(
+        "parlay-platform-mlb-histo-HistoricalOptimizerFunction",
+        "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler",
+    ) is False
+    assert deploy_identity._is_mlb_pull_or_training_writer(
+        "parlay-platform-dev-MLBMLTrainingFunction",
+        "mlb_ml_aws_training_v1.lambda_handler",
+    ) is True
+    assert deploy_identity._is_mlb_pull_or_training_writer(
+        "MLBBasePullLegacyRule",
+    ) is True

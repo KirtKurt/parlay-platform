@@ -275,6 +275,11 @@ MLB_WRITER_TOKENS = (
     "CHALLENGER",
 )
 
+HISTORICAL_NONCANONICAL_WRITER_TOKENS = (
+    "HISTORICALOPTIMIZER",
+    "HISTORICALOPTIMIZERV7RECOVERYENTRYPOINT",
+)
+
 
 def _normalize_async_destination_config(
     value: Any,
@@ -389,6 +394,8 @@ def _is_mlb_pull_or_training_writer(*values: Any) -> bool:
     text = _authority_text(*values)
     if any(token in text for token in LEGACY_TOKENS):
         return True
+    if any(token in text for token in HISTORICAL_NONCANONICAL_WRITER_TOKENS):
+        return False
     return "MLB" in text and any(token in text for token in MLB_WRITER_TOKENS)
 
 
