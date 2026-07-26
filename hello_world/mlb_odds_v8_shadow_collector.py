@@ -18,7 +18,7 @@ import boto3
 
 import mlb_odds_market_expansion_v8 as v8
 
-VERSION = "MLB-ODDS-V8-SHADOW-COLLECTOR-v1"
+VERSION = "MLB-ODDS-V8-SHADOW-COLLECTOR-v1.1"
 API_KEY = os.environ.get("ODDS_API_KEY", "")
 BUCKET = os.environ.get("MLB_V8_SHADOW_BUCKET", "")
 HTTP_TIMEOUT = max(5, int(os.environ.get("MLB_V8_HTTP_TIMEOUT_SECONDS", "20")))
@@ -68,6 +68,50 @@ def _events_from_featured(payload: Any) -> List[Mapping[str, Any]]:
     return [x for x in payload if isinstance(x, Mapping)] if isinstance(payload, list) else []
 
 
+def _available_market_keys(payload: Any) -> List[str]:
+    """Extract event-market keys from all documented response shapes."""
+    keys: List[str] = []
+    if isinstance(payload, list):
+        for row in payload:
+            if isinstance(row, str):
+                keys.append(row)
+            elif isinstance(row, Mapping) and row.get("key"):
+                keys.append(str(row["key"]))
+    elif isinstance(payload, Mapping):
+        for row in payload.get("markets") or payload.get("data") or []:
+            if isinstance(row, str):
+                keys.append(row)
+            elif isinstance(row, Mapping) and row.get("key"):
+                keys.append(str(row["key"]))
+        for book in payload.get("bookmakers") or []:
+            if not isinstance(book, Mapping):
+                continue
+            for market in book.get("markets") or []:
+                if isinstance(market, str):
+                    keys.append(market)
+                elif isinstance(market, Mapping) and market.get("key"):
+                    keys.append(str(market["key"]))
+    return sorted(set(x for x in keys if x))
+
+
+def _historical_market_plan(cfg: v8.V8Config) -> Tuple[str, ...]:
+    """Historical API has no event-market discovery endpoint.
+
+    Use a conservative allowlisted plan. Unsupported markets are isolated by the
+    shadow workflow and never affect V7 authority.
+    """
+    preferred: List[str] = []
+    if cfg.first_five_enabled:
+        preferred.extend(v8.FIRST_FIVE_MARKETS)
+    if cfg.alternates_enabled:
+        preferred.extend(v8.ALTERNATE_MARKETS)
+    if cfg.team_props_enabled:
+        preferred.extend(v8.TEAM_PROP_MARKETS)
+    if cfg.player_props_enabled:
+        preferred.extend(v8.PLAYER_PROP_ALLOWLIST)
+    return tuple(preferred[: cfg.max_event_markets])
+
+
 def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
     cfg = v8.load_config()
     if not cfg.enabled:
@@ -75,6 +119,7 @@ def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
     if not API_KEY:
         raise RuntimeError("ODDS_API_KEY is not configured")
 
+    is_historical = historical_at is not None
     featured_raw, featured_headers = _get(v8.featured_odds_url(API_KEY, historical_at=historical_at, config=cfg))
     raw_events = _events_from_featured(featured_raw)
     normalized = [v8.normalize_event(event) for event in raw_events]
@@ -87,21 +132,26 @@ def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
         event_id = str(event.get("id") or "")
         if not event_id:
             continue
-        available_raw, discovery_headers = _get(v8.event_markets_url(API_KEY, event_id))
-        available = []
-        if isinstance(available_raw, list):
-            available = [str(x.get("key") or "") for x in available_raw if isinstance(x, Mapping)]
-        elif isinstance(available_raw, Mapping):
-            rows = available_raw.get("markets") or available_raw.get("data") or []
-            available = [str(x.get("key") or x) for x in rows if isinstance(x, (str, Mapping))]
-        selected = v8.selected_event_markets(available, cfg)
+        if is_historical:
+            selected = _historical_market_plan(cfg)
+            discoveries.append({
+                "eventId": event_id,
+                "availableMarkets": [],
+                "selectedMarkets": list(selected),
+                "discoveryMode": "HISTORICAL_ALLOWLIST_NO_DISCOVERY_ENDPOINT",
+            })
+        else:
+            available_raw, discovery_headers = _get(v8.event_markets_url(API_KEY, event_id, cfg))
+            available = _available_market_keys(available_raw)
+            selected = v8.selected_event_markets(available, cfg)
+            discoveries.append({
+                "eventId": event_id,
+                "availableMarkets": available,
+                "selectedMarkets": list(selected),
+                "headers": discovery_headers,
+                "discoveryMode": "LIVE_EVENT_MARKETS",
+            })
         requested_market_count = max(requested_market_count, len(selected))
-        discoveries.append({
-            "eventId": event_id,
-            "availableMarkets": sorted(set(x for x in available if x)),
-            "selectedMarkets": list(selected),
-            "headers": discovery_headers,
-        })
         if selected:
             plans.append((event, selected))
 
@@ -109,6 +159,7 @@ def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
         event_count=len(plans),
         event_market_count=requested_market_count,
         config=cfg,
+        historical=is_historical,
     )
     if not budget["withinBudget"]:
         return {
@@ -121,11 +172,17 @@ def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
         }
 
     enriched: List[Dict[str, Any]] = []
+    enrichment_errors: List[Dict[str, Any]] = []
     for event, markets in plans:
         event_id = str(event.get("id"))
-        raw, headers = _get(v8.event_odds_url(API_KEY, event_id, markets, historical_at=historical_at, config=cfg))
+        try:
+            raw, headers = _get(v8.event_odds_url(API_KEY, event_id, markets, historical_at=historical_at, config=cfg))
+        except urllib.error.HTTPError as exc:
+            enrichment_errors.append({"eventId": event_id, "status": exc.code, "markets": list(markets)})
+            continue
         payload = raw.get("data") if isinstance(raw, Mapping) and isinstance(raw.get("data"), Mapping) else raw
         if not isinstance(payload, Mapping):
+            enrichment_errors.append({"eventId": event_id, "status": "MALFORMED_PAYLOAD", "markets": list(markets)})
             continue
         normalized_event = v8.normalize_event(payload)
         enriched.append({
@@ -147,6 +204,7 @@ def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
         "featuredEvents": normalized,
         "discoveries": discoveries,
         "eventEnrichment": enriched,
+        "eventEnrichmentErrors": enrichment_errors,
         "productionAuthorityChanged": False,
     }
     pointer = _put(f"mlb/odds-v8-shadow/{stamp}.json", record)
@@ -156,6 +214,7 @@ def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
         "version": VERSION,
         "eventCount": len(normalized),
         "eventEnrichmentCount": len(enriched),
+        "eventEnrichmentErrorCount": len(enrichment_errors),
         "budget": budget,
         "artifact": pointer,
         "productionAuthorityChanged": False,
