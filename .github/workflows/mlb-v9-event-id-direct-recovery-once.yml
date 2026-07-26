@@ -1,0 +1,317 @@
+name: MLB V9 Event ID Direct Recovery Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v9-event-id-direct-recovery-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v9-event-id-direct-recovery-once
+  cancel-in-progress: true
+
+env:
+  STACK_NAME: parlay-platform-mlb-historical-optimizer
+  RECOVERY_REPORT: runtime_reports/mlb_v9_event_id_recovery_latest.json
+  SHADOW_REPORT: runtime_reports/mlb_supervised_shadow_v2_latest.json
+  EXPECTED_DATASET: MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable
+
+jobs:
+  recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate source and build exact historical Lambda
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          aws sts get-caller-identity >/tmp/mlb-v9-aws-identity.json
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          python -m py_compile \
+            hello_world/mlb_supervised_v8_dataset_patch_v1.py \
+            hello_world/mlb_historical_feature_rematerialization_v1.py \
+            hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
+            hello_world/mlb_supervised_features_v2.py \
+            hello_world/mlb_supervised_model_v2.py \
+            hello_world/mlb_supervised_daily_objective_v2_1.py \
+            scripts/run_mlb_supervised_shadow_v2.py
+          PYTHONPATH=hello_world python -m pytest -q --tb=short \
+            tests/unit/test_mlb_v8_provider_event_id_schema.py \
+            tests/unit/test_mlb_historical_feature_rematerialization_v1.py \
+            tests/unit/test_mlb_supervised_v2_runtime_integration.py \
+            tests/unit/test_mlb_supervised_shadow_v2.py \
+            tests/unit/test_mlb_supervised_daily_objective_v2_1.py
+          grep -Fq 'FEATURE_DATASET_VERSION = "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable"' hello_world/mlb_supervised_v8_dataset_patch_v1.py
+          grep -Fq 'Handler: mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler' mlb_historical_optimizer/template.yaml
+          sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+          rm -rf .aws-sam-v9-event-id
+          sam build --no-cached --build-dir .aws-sam-v9-event-id --template-file mlb_historical_optimizer/template.yaml
+          test -f .aws-sam-v9-event-id/HistoricalOptimizerFunction/mlb_supervised_v8_dataset_patch_v1.py
+          test -f .aws-sam-v9-event-id/HistoricalOptimizerFunction/mlb_historical_optimizer_v7_recovery_entrypoint.py
+
+      - name: Deploy V9 event-ID schema and complete zero-cost rematerialization
+        id: recovery
+        continue-on-error: true
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -o pipefail
+          mkdir -p runtime_reports
+          rm -f "$RECOVERY_REPORT" /tmp/mlb-v9-recovery.log
+          (
+            set -euo pipefail
+            for attempt in $(seq 1 80); do
+              status=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_NOT_FOUND)
+              case "$status" in
+                STACK_NOT_FOUND|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE) break ;;
+                *_IN_PROGRESS) sleep 15 ;;
+                *) echo "CloudFormation is not updateable: $status"; exit 1 ;;
+              esac
+              test "$attempt" != 80
+            done
+
+            sam deploy \
+              --template-file .aws-sam-v9-event-id/template.yaml \
+              --stack-name "$STACK_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --capabilities CAPABILITY_IAM \
+              --resolve-s3 \
+              --force-upload \
+              --no-confirm-changeset \
+              --no-fail-on-empty-changeset \
+              --parameter-overrides \
+                "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+                'TargetSnapshotsTable=parlay_platform_snapshots' \
+                'HistoricalStartDate=2025-04-01' \
+                'HistoricalEndDate=2026-07-24' \
+                'HistoricalTargetGames=1600' \
+                'HistoricalMaxCredits=300000' \
+                'HistoricalRequestsPerRun=20' \
+                'HistoricalMaxCandidates=25000' \
+                'HistoricalMaxOptimizationRounds=12' \
+                'HistoricalFreshAuditIncrementGames=250' \
+                'HistoricalRangeExtensionAuthorized=true' \
+                "DeployGitSha=${GITHUB_SHA}"
+
+            function_name=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+            bucket_name=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalArtifactsBucketName'].OutputValue" --output text)
+            test -n "$function_name"; test "$function_name" != None
+            test -n "$bucket_name"; test "$bucket_name" != None
+            config=$(aws lambda get-function-configuration --function-name "$function_name" --region "$AWS_REGION_VALUE" --output json)
+            CONFIG="$config" FUNCTION_NAME="$function_name" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value=json.loads(os.environ['CONFIG'])
+          env=(value.get('Environment') or {}).get('Variables') or {}
+          checks={
+              'handler':value.get('Handler')=='mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler',
+              'deploySha':env.get('INQSI_DEPLOY_GIT_SHA')==os.environ['GITHUB_SHA'],
+              'endDate':env.get('MLB_HISTORICAL_END_DATE')=='2026-07-24',
+              'maximumCredits':env.get('MLB_HISTORICAL_MAX_CREDITS')=='300000',
+              'maximumRounds':env.get('MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS')=='12',
+          }
+          assert all(checks.values()), {'checks':checks,'configuration':value}
+          Path('/tmp/mlb-v9-runtime-identity.json').write_text(json.dumps({'functionName':os.environ['FUNCTION_NAME'],'handler':value.get('Handler'),'deployGitSha':env.get('INQSI_DEPLOY_GIT_SHA'),'checks':checks},indent=2,sort_keys=True)+'\n')
+          PY
+
+            invoke() {
+              local payload="$1" destination="$2"
+              aws lambda invoke --function-name "$function_name" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload "$payload" "$destination" >/tmp/mlb-v9-invoke-meta.json
+              python - "$destination" <<'PY'
+          import json,sys
+          value=json.load(open(sys.argv[1]))
+          assert value.get('ok') is True, value
+          PY
+            }
+
+            invoke '{"mode":"status","run":"v9_event_id_baseline"}' /tmp/mlb-v9-before.json
+            for attempt in $(seq 1 90); do
+              invoke "{\"mode\":\"orchestrate\",\"run\":\"v9_event_id_rematerialize_${GITHUB_RUN_ID}_${attempt}\"}" /tmp/mlb-v9-orchestrate.json
+              invoke "{\"mode\":\"status\",\"run\":\"v9_event_id_status_${attempt}\"}" /tmp/mlb-v9-after.json
+              decision=$(python - <<'PY'
+          import json, os
+          value=json.load(open('/tmp/mlb-v9-after.json'))
+          state=value.get('state') or {}
+          complete=(
+              state.get('featureDatasetVersion')==os.environ['EXPECTED_DATASET']
+              and state.get('featureRematerializationComplete') is True
+              and int(state.get('featureRematerializedSlateCount') or 0)==int(state.get('featureRematerializationTotalSlateCount') or 0)
+              and not state.get('featureRematerializationErrors')
+              and not state.get('lastError')
+          )
+          print('COMPLETE' if complete else 'RETRY')
+          PY
+          )
+              test "$decision" = COMPLETE && break
+              sleep 5
+              test "$attempt" != 90
+            done
+
+            IDENTITY=$(cat /tmp/mlb-v9-runtime-identity.json) BEFORE=$(cat /tmp/mlb-v9-before.json) AFTER=$(cat /tmp/mlb-v9-after.json) python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          identity=json.loads(os.environ['IDENTITY'])
+          before=json.loads(os.environ['BEFORE'])
+          after=json.loads(os.environ['AFTER'])
+          b=before.get('state') or {}
+          a=after.get('state') or {}
+          completed=a.get('completedSlates') or []
+          event_id_ready=sum(1 for row in completed if str(row.get('featureDatasetVersion') or '')==os.environ['EXPECTED_DATASET'])
+          checks={
+              'statusOk':after.get('ok') is True,
+              'v7HandlerActive':identity.get('checks',{}).get('handler') is True,
+              'deployShaMatches':identity.get('checks',{}).get('deploySha') is True,
+              'expectedDataset':a.get('featureDatasetVersion')==os.environ['EXPECTED_DATASET'],
+              'rematerializationComplete':a.get('featureRematerializationComplete') is True,
+              'rematerializationCountsMatch':int(a.get('featureRematerializedSlateCount') or 0)==int(a.get('featureRematerializationTotalSlateCount') or 0),
+              'rematerializationErrorsEmpty':not (a.get('featureRematerializationErrors') or []),
+              'paidCallsZero':int(a.get('featureRematerializationPaidHistoricalCalls') or 0)==0,
+              'lastErrorEmpty':not a.get('lastError'),
+              'noChampion':after.get('champion') is None,
+              'noProductionCutover':after.get('productionCutover') is None,
+              'completedSlatePointersVersioned':event_id_ready==len(completed) and len(completed)>0,
+          }
+          assert all(checks.values()), {'checks':checks,'state':a}
+          report={
+              'proofType':'MLB_V9_PROVIDER_EVENT_ID_RECOVERY',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ['GITHUB_SHA'],
+              'runId':os.environ['GITHUB_RUN_ID'],
+              'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'runtimeIdentity':identity,
+              'baseline':b,
+              'recovery':after,
+              'checks':checks,
+              'providerCallsMadeByRematerialization':0,
+              'productionAuthorityChanged':False,
+              'blockers':[],
+              'ok':True,
+          }
+          Path(os.environ['RECOVERY_REPORT']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+            echo "bucket_name=$bucket_name" >> "$GITHUB_OUTPUT"
+          ) 2>&1 | tee /tmp/mlb-v9-recovery.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Evaluate daily-objective shadow against recovered evidence
+        id: evaluation
+        if: steps.recovery.outcome == 'success'
+        continue-on-error: true
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          PYTHONPATH: hello_world
+        run: |
+          set -o pipefail
+          python scripts/run_mlb_supervised_shadow_v2.py --region "$AWS_REGION_VALUE" --stack-name "$STACK_NAME" --table-name parlay_platform_snapshots --output "$SHADOW_REPORT" 2>&1 | tee /tmp/mlb-v9-shadow-evaluation.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Ensure durable failure evidence exists
+        if: always()
+        env:
+          RECOVERY_OUTCOME: ${{ steps.recovery.outcome }}
+          RECOVERY_EXIT_CODE: ${{ steps.recovery.outputs.exit_code }}
+          EVALUATION_OUTCOME: ${{ steps.evaluation.outcome }}
+          EVALUATION_EXIT_CODE: ${{ steps.evaluation.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          def tail(path):
+              value=Path(path)
+              return value.read_text(errors='replace')[-16000:] if value.exists() else ''
+          if not Path(os.environ['RECOVERY_REPORT']).exists():
+              value={'proofType':'MLB_V9_PROVIDER_EVENT_ID_RECOVERY','createdAtUtc':datetime.now(timezone.utc).isoformat(),'sourceSha':os.environ['GITHUB_SHA'],'runId':os.environ['GITHUB_RUN_ID'],'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",'recoveryOutcome':os.environ.get('RECOVERY_OUTCOME'),'recoveryExitCode':os.environ.get('RECOVERY_EXIT_CODE'),'productionAuthorityChanged':False,'providerCallsMadeByRematerialization':0,'errorLogTail':tail('/tmp/mlb-v9-recovery.log'),'blockers':['v9_event_id_recovery_failed'],'ok':False}
+              Path(os.environ['RECOVERY_REPORT']).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+          if not Path(os.environ['SHADOW_REPORT']).exists():
+              value={'proofType':'MLB_SUPERVISED_SHADOW_V2_EVIDENCE','createdAtUtc':datetime.now(timezone.utc).isoformat(),'sourceSha':os.environ['GITHUB_SHA'],'runId':os.environ['GITHUB_RUN_ID'],'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",'authority':'SHADOW_ONLY','productionAuthorityChanged':False,'automaticWagerAllowed':False,'productionPromotionEligible':False,'evaluationOutcome':os.environ.get('EVALUATION_OUTCOME'),'evaluationExitCode':os.environ.get('EVALUATION_EXIT_CODE'),'errorLogTail':tail('/tmp/mlb-v9-shadow-evaluation.log'),'blockers':['v9_shadow_evaluation_failed_or_skipped'],'ok':False}
+              Path(os.environ['SHADOW_REPORT']).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+          PY
+          python -m json.tool "$RECOVERY_REPORT" >/dev/null
+          python -m json.tool "$SHADOW_REPORT" >/dev/null
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-v9-event-id-recovery-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_v9_event_id_recovery_latest.json
+            runtime_reports/mlb_supervised_shadow_v2_latest.json
+            /tmp/mlb-v9-recovery.log
+            /tmp/mlb-v9-shadow-evaluation.log
+            /tmp/mlb-v9-runtime-identity.json
+            /tmp/mlb-v9-before.json
+            /tmp/mlb-v9-after.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish durable recovery and shadow evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          cp "$RECOVERY_REPORT" /tmp/mlb-v9-recovery-report.json
+          cp "$SHADOW_REPORT" /tmp/mlb-v9-shadow-report.json
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v9-event-id-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-v9-recovery-report.json "$RECOVERY_REPORT"
+            cp /tmp/mlb-v9-shadow-report.json "$SHADOW_REPORT"
+            git add "$RECOVERY_REPORT" "$SHADOW_REPORT"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V9 event ID recovery evidence'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Enforce successful safe recovery
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          recovery=json.loads(Path('runtime_reports/mlb_v9_event_id_recovery_latest.json').read_text())
+          shadow=json.loads(Path('runtime_reports/mlb_supervised_shadow_v2_latest.json').read_text())
+          assert recovery.get('ok') is True, recovery
+          assert recovery.get('productionAuthorityChanged') is False, recovery
+          assert int(recovery.get('providerCallsMadeByRematerialization') or 0)==0, recovery
+          assert not recovery.get('blockers'), recovery
+          assert shadow.get('ok') is True, shadow
+          assert shadow.get('authority')=='SHADOW_ONLY', shadow
+          assert shadow.get('productionAuthorityChanged') is False, shadow
+          assert shadow.get('automaticWagerAllowed') is False, shadow
+          assert shadow.get('productionPromotionEligible') is False, shadow
+          assert not shadow.get('blockers'), shadow
+          PY
