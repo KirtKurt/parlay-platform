@@ -23,9 +23,9 @@ def test_historical_template_accelerates_no_cost_rematerialization_safely():
     assert "Default: 12" in source
 
 
-def test_supervised_shadow_workflow_requires_trainable_dataset_and_no_authority_change():
+def test_supervised_shadow_workflow_requires_event_id_dataset_and_no_authority_change():
     source = Path(".github/workflows/mlb-supervised-shadow-v2.yml").read_text()
-    assert "MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable" in source
+    assert "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable" in source
     assert "productionAuthorityChanged') is False" in source
     assert "automaticWagerAllowed') is False" in source
     assert "productionPromotionEligible') is False" in source
