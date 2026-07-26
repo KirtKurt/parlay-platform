@@ -19,9 +19,12 @@ Parameters:
   V8EventRegions:
     Type: String
     Default: us,us2
+  V8MaxEventsPerCycle:
+    Type: Number
+    Default: 2
   V8MaxCreditsPerCycle:
     Type: Number
-    Default: 500
+    Default: 100
 
 Resources:
   ShadowArtifactsBucket:
@@ -64,7 +67,7 @@ Resources:
           MLB_V8_TEAM_PROPS_ENABLED: 'true'
           MLB_V8_PLAYER_PROPS_ENABLED: 'false'
           MLB_V8_MAX_EVENT_MARKETS: '18'
-          MLB_V8_MAX_EVENTS_PER_CYCLE: '8'
+          MLB_V8_MAX_EVENTS_PER_CYCLE: !Ref V8MaxEventsPerCycle
           MLB_V8_MAX_CREDITS_PER_CYCLE: !Ref V8MaxCreditsPerCycle
           MLB_V8_HTTP_TIMEOUT_SECONDS: '20'
           INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
@@ -90,3 +93,5 @@ Outputs:
     Value: !Ref ShadowArtifactsBucket
   ScheduleStatus:
     Value: DISABLED_MANUAL_CANARY_ONLY
+  Authority:
+    Value: SHADOW_ONLY
