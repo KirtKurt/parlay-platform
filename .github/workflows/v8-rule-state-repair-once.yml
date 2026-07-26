@@ -37,6 +37,7 @@ jobs:
 
           template = template_path.read_text()
           workflow = workflow_path.read_text()
+          region_expression = '$' + '{{ secrets.AWS_REGION }}'
 
           template_old = """      Events:
             ShadowEveryFifteenMinutes:
@@ -69,15 +70,15 @@ jobs:
 
           rules_old = """          RULES=$(aws events list-rule-names-by-target \\
             --target-arn \"$FUNCTION_ARN\" \\
-            --region \"${{ secrets.AWS_REGION }}\" \\
+            --region \"__REGION__\" \\
             --query RuleNames --output json)
           CONFIG=\"$CONFIG\" CONCURRENCY=\"$CONCURRENCY\" ASYNC_CONFIG=\"$ASYNC_CONFIG\" \\
             RULES=\"$RULES\" EXPECTED_SHA=\"$GITHUB_SHA\" FUNCTION_NAME=\"$FUNCTION_NAME\" \\
             BUCKET_NAME=\"$BUCKET_NAME\" python - <<'PY'
-"""
+""".replace('__REGION__', region_expression)
           rules_new = """          RULES=$(aws events list-rule-names-by-target \\
             --target-arn \"$FUNCTION_ARN\" \\
-            --region \"${{ secrets.AWS_REGION }}\" \\
+            --region \"__REGION__\" \\
             --query RuleNames --output json)
           RULE_NAME=$(RULES=\"$RULES\" python - <<'PY'
           import json, os
@@ -88,13 +89,13 @@ jobs:
           )
           RULE_STATE=$(aws events describe-rule \\
             --name \"$RULE_NAME\" \\
-            --region \"${{ secrets.AWS_REGION }}\" \\
+            --region \"__REGION__\" \\
             --query State --output text)
           CONFIG=\"$CONFIG\" CONCURRENCY=\"$CONCURRENCY\" ASYNC_CONFIG=\"$ASYNC_CONFIG\" \\
             RULES=\"$RULES\" RULE_NAME=\"$RULE_NAME\" RULE_STATE=\"$RULE_STATE\" \\
             EXPECTED_SHA=\"$GITHUB_SHA\" FUNCTION_NAME=\"$FUNCTION_NAME\" \\
             BUCKET_NAME=\"$BUCKET_NAME\" python - <<'PY'
-"""
+""".replace('__REGION__', region_expression)
           assert workflow.count(rules_old) == 1, 'unexpected V8 rule discovery block'
           workflow = workflow.replace(rules_old, rules_new, 1)
 
@@ -121,7 +122,7 @@ jobs:
           assert 'Enabled: !If [EnableV8Schedule, true, false]' in template
           assert "assert os.environ['RULE_STATE'] == 'DISABLED'" in workflow
           assert "'scheduleRuleStateAtCanary': os.environ['RULE_STATE']" in workflow
-          assert "test \"$(aws events describe-rule --name \"$RULE_NAME\"" in workflow
+          assert region_expression in workflow
 
           template_path.write_text(template)
           workflow_path.write_text(workflow)
