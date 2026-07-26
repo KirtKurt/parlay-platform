@@ -1,5 +1,5 @@
 name: MLB Supervised V9 Install Once
-# Trusted second push after installation on the default branch.
+# Trusted activation push after V7 integrity merge.
 
 "on":
   push:
@@ -47,9 +47,9 @@ jobs:
           entry=entry.replace(old,new,1)
           assert 'VERSION = "MLB-HISTORICAL-ENTRYPOINT-v9-opening-day-range-repair"' in entry
           entry=entry.replace(
-              'VERSION = "MLB-HISTORICAL-ENTRYPOINT-v9-opening-day-range-repair"',
-              'VERSION = "MLB-HISTORICAL-ENTRYPOINT-v10-supervised-v9-v8-trainable"',
-              1,
+            'VERSION = "MLB-HISTORICAL-ENTRYPOINT-v9-opening-day-range-repair"',
+            'VERSION = "MLB-HISTORICAL-ENTRYPOINT-v10-supervised-v9-v8-trainable"',
+            1,
           )
           install_anchor='derived_features.install(optimizer_handler.optimizer, optimizer_handler.policy_runtime)\nodds_pattern_features.install(optimizer_handler.optimizer, optimizer_handler.policy_runtime)\n'
           install_new=install_anchor+'supervised_v9.install(optimizer_handler.optimizer, optimizer_handler.policy_runtime)\n'
@@ -61,27 +61,27 @@ jobs:
           assert 'MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.1-v7-quarantine-aware' in remat
           assert 'MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack' in remat
           remat=remat.replace(
-              'MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.1-v7-quarantine-aware',
-              'MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v2-supervised-v9-v8-trainable',
-              1,
+            'MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.1-v7-quarantine-aware',
+            'MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v2-supervised-v9-v8-trainable',
+            1,
           ).replace(
-              'MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack',
-              'MLB-HISTORICAL-FEATURE-DATASET-v9-supervised-v8-trainable',
-              1,
+            'MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack',
+            'MLB-HISTORICAL-FEATURE-DATASET-v9-supervised-v8-trainable',
+            1,
           )
           old_batch='BATCH_SIZE = max(1, min(5, int(os.environ.get("MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN", "2"))))'
           new_batch='BATCH_SIZE = max(1, min(10, int(os.environ.get("MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN", "5"))))'
-          assert remat.count(old_batch) == 1, 'rematerialization batch anchor changed'
+          assert remat.count(old_batch) == 1, 'historical template rematerialization env anchor changed'
           remat=remat.replace(old_batch,new_batch,1)
           remat_path.write_text(remat)
 
           template=template_path.read_text()
           old_env="        MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN: '2'\n"
           new_env=(
-              "        MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN: '5'\n"
-              "        MLB_SUPERVISED_EPOCHS: '160'\n"
-              "        MLB_SUPERVISED_LEARNING_RATE: '0.06'\n"
-              "        MLB_SUPERVISED_MIN_WF_MEAN_GAIN: '0.0025'\n"
+            "        MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN: '5'\n"
+            "        MLB_SUPERVISED_EPOCHS: '160'\n"
+            "        MLB_SUPERVISED_LEARNING_RATE: '0.06'\n"
+            "        MLB_SUPERVISED_MIN_WF_MEAN_GAIN: '0.0025'\n"
           )
           assert template.count(old_env) == 1, 'historical template rematerialization env anchor changed'
           template=template.replace(old_env,new_env,1)
@@ -93,13 +93,13 @@ jobs:
           runtime=runtime.replace(import_anchor,import_anchor+'        import mlb_historical_supervised_v9\n',1)
           apply_anchor='        if hasattr(engine, "_side_score"):\n            mlb_historical_policy_v1.apply(engine)\n'
           apply_new=(
-              '        mlb_historical_supervised_v9.install_policy_runtime(mlb_historical_policy_v1)\n'
-              '        status["steps"]["historicalSupervisedV9RuntimeInstalled"] = bool(\n'
-              '            getattr(mlb_historical_policy_v1, "_INQSI_MLB_SUPERVISED_V9_POLICY_INSTALLED", False)\n'
-              '        )\n'
-              '        status["historicalSupervisedV9Version"] = mlb_historical_supervised_v9.VERSION\n'
-              '        if hasattr(engine, "_side_score"):\n'
-              '            mlb_historical_policy_v1.apply(engine)\n'
+            '        mlb_historical_supervised_v9.install_policy_runtime(mlb_historical_policy_v1)\n'
+            '        status["steps"]["historicalSupervisedV9RuntimeInstalled"] = bool(\n'
+            '            getattr(mlb_historical_policy_v1, "_INQSI_MLB_SUPERVISED_V9_POLICY_INSTALLED", False)\n'
+            '        )\n'
+            '        status["historicalSupervisedV9Version"] = mlb_historical_supervised_v9.VERSION\n'
+            '        if hasattr(engine, "_side_score"):\n'
+            '            mlb_historical_policy_v1.apply(engine)\n'
           )
           assert runtime.count(apply_anchor) == 1, 'production runtime historical apply anchor changed'
           runtime=runtime.replace(apply_anchor,apply_new,1)
