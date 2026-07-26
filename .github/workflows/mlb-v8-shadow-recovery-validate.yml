@@ -1,0 +1,64 @@
+name: MLB V8 Shadow Recovery Validate
+
+"on":
+  pull_request:
+    paths:
+      - 'hello_world/mlb_odds_market_expansion_v8.py'
+      - 'hello_world/mlb_odds_v8_shadow_collector.py'
+      - 'tests/unit/test_mlb_odds_market_expansion_v8.py'
+      - 'mlb_odds_v8_shadow/**'
+      - '.github/workflows/mlb-odds-v8-shadow-deploy.yml'
+      - '.github/workflows/mlb-v8-shadow-recovery-validate.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-v8-shadow-recovery-validate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  validate-shadow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - name: Validate V8 source and tests
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_ACCESS_KEY_ID: testing
+          AWS_SECRET_ACCESS_KEY: testing
+          AWS_SESSION_TOKEN: testing
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m py_compile \
+            hello_world/mlb_odds_market_expansion_v8.py \
+            hello_world/mlb_odds_v8_shadow_collector.py
+          python -m pytest -q --tb=short tests/unit/test_mlb_odds_market_expansion_v8.py
+      - name: Validate controlled scheduled shadow template
+        run: |
+          set -euo pipefail
+          sam validate --lint --template-file mlb_odds_v8_shadow/template.yaml
+          grep -Fq 'Value: SHADOW_ONLY' mlb_odds_v8_shadow/template.yaml
+          grep -Fq 'Schedule: rate(15 minutes)' mlb_odds_v8_shadow/template.yaml
+          grep -Fq "Default: 'false'" mlb_odds_v8_shadow/template.yaml
+          grep -Fq 'MLB_V8_MAX_CREDITS_PER_CYCLE' mlb_odds_v8_shadow/template.yaml
+          grep -Fq "MLB_V8_PLAYER_PROPS_ENABLED: 'false'" mlb_odds_v8_shadow/template.yaml
+      - name: Build V8 shadow cleanly
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam-v8-shadow-validation
+          sam build \
+            --no-cached \
+            --build-dir .aws-sam-v8-shadow-validation \
+            --template-file mlb_odds_v8_shadow/template.yaml
+          test -f .aws-sam-v8-shadow-validation/ShadowCollectorFunction/mlb_odds_v8_shadow_collector.py
+          test -f .aws-sam-v8-shadow-validation/ShadowCollectorFunction/mlb_odds_market_expansion_v8.py
