@@ -1,4 +1,4 @@
-"""Resumable V7 feature rematerialization from immutable historical archives.
+"""Resumable V8-supervised feature rematerialization from immutable archives.
 
 This migration never calls The Odds API. It rebuilds completed slate datasets from
 already archived lock-bounded raw snapshots, writes content-addressed replacement
@@ -15,9 +15,9 @@ from typing import Any, Dict, Mapping, Optional
 
 import mlb_historical_optimizer_handler as handler
 
-VERSION = "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.1-v7-quarantine-aware"
-FEATURE_DATASET_VERSION = "MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack"
-BATCH_SIZE = max(1, min(5, int(os.environ.get("MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN", "2"))))
+VERSION = "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v2.0-v8-supervised-shadow"
+FEATURE_DATASET_VERSION = "MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-shadow-ready"
+BATCH_SIZE = max(1, min(10, int(os.environ.get("MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN", "5"))))
 ELIGIBLE_PHASES = {
     "DATA_RANGE_EXHAUSTED",
     "CANDIDATE_REJECTED",
@@ -105,6 +105,13 @@ def _rebuild_slate(day: str) -> Dict[str, Any]:
         dataset,
         record_type="mlb_historical_complete_slate",
     )
+    records = dataset.get("records") or []
+    v8_feature_count = sum(
+        isinstance((row.get("homeSignal") or {}).get("oddsMarketExpansionFeatures"), Mapping)
+        and bool((row.get("homeSignal") or {}).get("oddsMarketExpansionFeatures"))
+        for row in records
+        if isinstance(row, Mapping)
+    )
     return {
         "slateDateEt": day,
         "officialGameCount": int(dataset.get("officialGameCount") or 0),
@@ -116,6 +123,7 @@ def _rebuild_slate(day: str) -> Dict[str, Any]:
         "rematerializedAtUtc": dataset["rematerializedAtUtc"],
         "paidHistoricalCallsMade": 0,
         "quarantinedSnapshotCount": int(dataset.get("quarantinedSnapshotCount") or 0),
+        "v8ShadowFeatureRecordCount": int(v8_feature_count),
     }
 
 
@@ -185,6 +193,9 @@ def run_once() -> Optional[Dict[str, Any]]:
         state["featureRematerializedSlateCount"] = len(completed)
         state["featureRematerializationPaidHistoricalCalls"] = 0
         state["featureRematerializationErrors"] = []
+        state["v8ShadowFeatureRecordCount"] = sum(
+            int(row.get("v8ShadowFeatureRecordCount") or 0) for row in completed
+        )
         if state.get("freshAuditExpansionRequired") is True:
             state["phase"] = "BACKFILLING"
         else:
