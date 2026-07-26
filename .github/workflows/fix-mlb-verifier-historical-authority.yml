@@ -1,4 +1,3 @@
-# One-time repair trigger: 2026-07-26
 name: Fix MLB verifier historical authority
 
 on:
@@ -82,21 +81,24 @@ jobs:
           test_text = tests.read_text(encoding="utf-8")
           marker = "def test_historical_optimizer_is_not_classified_as_live_writer()"
           if marker not in test_text:
-              test_text += '''\n\n
-def test_historical_optimizer_is_not_classified_as_live_writer() -> None:
-    assert deploy_identity._is_mlb_pull_or_training_writer(
-        "parlay-platform-mlb-histo-HistoricalOptimizerFunction",
-        "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler",
-    ) is False
-    assert deploy_identity._is_mlb_pull_or_training_writer(
-        "parlay-platform-dev-MLBMLTrainingFunction",
-        "mlb_ml_aws_training_v1.lambda_handler",
-    ) is True
-    assert deploy_identity._is_mlb_pull_or_training_writer(
-        "MLBBasePullLegacyRule",
-    ) is True
-'''
-              tests.write_text(test_text, encoding="utf-8")
+              test_lines = [
+                  "",
+                  "",
+                  "def test_historical_optimizer_is_not_classified_as_live_writer() -> None:",
+                  "    assert deploy_identity._is_mlb_pull_or_training_writer(",
+                  "        \"parlay-platform-mlb-histo-HistoricalOptimizerFunction\",",
+                  "        \"mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler\",",
+                  "    ) is False",
+                  "    assert deploy_identity._is_mlb_pull_or_training_writer(",
+                  "        \"parlay-platform-dev-MLBMLTrainingFunction\",",
+                  "        \"mlb_ml_aws_training_v1.lambda_handler\",",
+                  "    ) is True",
+                  "    assert deploy_identity._is_mlb_pull_or_training_writer(",
+                  "        \"MLBBasePullLegacyRule\",",
+                  "    ) is True",
+                  "",
+              ]
+              tests.write_text(test_text + "\n".join(test_lines), encoding="utf-8")
           PY
       - name: Run targeted regression tests
         run: |
