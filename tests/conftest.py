@@ -1,12 +1,22 @@
-"""Deterministic AWS SDK defaults for offline unit-test collection.
+"""Deterministic Lambda-style imports and AWS defaults for offline tests.
 
-Production Lambda receives its region and credentials from AWS. Unit tests import
-several modules that construct boto3 resources at module import time, so CI must
-provide non-network defaults before those imports occur.
+Production Lambda receives its region, credentials, and flattened code root from
+AWS. Repository tests import the same modules through ``hello_world`` as a
+package, so CI provides equivalent non-network defaults before collection.
 """
 from __future__ import annotations
 
 import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+HELLO_WORLD = ROOT / "hello_world"
+SCRIPTS = ROOT / "scripts"
+for path in (HELLO_WORLD, SCRIPTS):
+    value = str(path)
+    if value not in sys.path:
+        sys.path.insert(0, value)
 
 os.environ.setdefault("AWS_DEFAULT_REGION", "us-east-1")
 os.environ.setdefault("AWS_REGION", "us-east-1")
