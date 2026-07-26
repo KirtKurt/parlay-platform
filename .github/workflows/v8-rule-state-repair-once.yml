@@ -1,0 +1,158 @@
+name: V8 Rule State Repair Once
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v8-rule-state-repair-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: v8-rule-state-repair-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch exact V8 schedule-state contracts
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          python - <<'PY'
+          from pathlib import Path
+
+          template_path = Path('mlb_odds_v8_shadow/template.yaml')
+          workflow_path = Path('.github/workflows/mlb-odds-v8-shadow-deploy.yml')
+          repair_path = Path('.github/workflows/v8-rule-state-repair-once.yml')
+
+          template = template_path.read_text()
+          workflow = workflow_path.read_text()
+
+          template_old = """      Events:
+            ShadowEveryFifteenMinutes:
+              Type: Schedule
+              Condition: EnableV8Schedule
+              Properties:
+                Schedule: rate(15 minutes)
+                Description: Isolated V8 shadow-only market collection under a fixed per-cycle credit cap
+                Enabled: true
+"""
+          template_new = """      Events:
+            ShadowEveryFifteenMinutes:
+              Type: Schedule
+              Properties:
+                Schedule: rate(15 minutes)
+                Description: Isolated V8 shadow-only market collection under a fixed per-cycle credit cap
+                Enabled: !If [EnableV8Schedule, true, false]
+"""
+          assert template.count(template_old) == 1, 'unexpected V8 SAM schedule block'
+          template = template.replace(template_old, template_new, 1)
+
+          validate_old = "          sam validate --lint --template-file mlb_odds_v8_shadow/template.yaml\n"
+          validate_new = (
+              validate_old
+              + "          grep -Fq 'Enabled: !If [EnableV8Schedule, true, false]' mlb_odds_v8_shadow/template.yaml\n"
+              + "          ! grep -Fq 'Condition: EnableV8Schedule' mlb_odds_v8_shadow/template.yaml\n"
+          )
+          assert workflow.count(validate_old) == 1, 'unexpected V8 validation anchor'
+          workflow = workflow.replace(validate_old, validate_new, 1)
+
+          rules_old = """          RULES=$(aws events list-rule-names-by-target \\
+            --target-arn \"$FUNCTION_ARN\" \\
+            --region \"${{ secrets.AWS_REGION }}\" \\
+            --query RuleNames --output json)
+          CONFIG=\"$CONFIG\" CONCURRENCY=\"$CONCURRENCY\" ASYNC_CONFIG=\"$ASYNC_CONFIG\" \\
+            RULES=\"$RULES\" EXPECTED_SHA=\"$GITHUB_SHA\" FUNCTION_NAME=\"$FUNCTION_NAME\" \\
+            BUCKET_NAME=\"$BUCKET_NAME\" python - <<'PY'
+"""
+          rules_new = """          RULES=$(aws events list-rule-names-by-target \\
+            --target-arn \"$FUNCTION_ARN\" \\
+            --region \"${{ secrets.AWS_REGION }}\" \\
+            --query RuleNames --output json)
+          RULE_NAME=$(RULES=\"$RULES\" python - <<'PY'
+          import json, os
+          rows=json.loads(os.environ['RULES'])
+          assert len(rows) == 1, rows
+          print(rows[0])
+          PY
+          )
+          RULE_STATE=$(aws events describe-rule \\
+            --name \"$RULE_NAME\" \\
+            --region \"${{ secrets.AWS_REGION }}\" \\
+            --query State --output text)
+          CONFIG=\"$CONFIG\" CONCURRENCY=\"$CONCURRENCY\" ASYNC_CONFIG=\"$ASYNC_CONFIG\" \\
+            RULES=\"$RULES\" RULE_NAME=\"$RULE_NAME\" RULE_STATE=\"$RULE_STATE\" \\
+            EXPECTED_SHA=\"$GITHUB_SHA\" FUNCTION_NAME=\"$FUNCTION_NAME\" \\
+            BUCKET_NAME=\"$BUCKET_NAME\" python - <<'PY'
+"""
+          assert workflow.count(rules_old) == 1, 'unexpected V8 rule discovery block'
+          workflow = workflow.replace(rules_old, rules_new, 1)
+
+          assertion_old = "          assert rules == [], rules\n"
+          assertion_new = (
+              "          assert rules == [os.environ['RULE_NAME']], rules\n"
+              "          assert os.environ['RULE_STATE'] == 'DISABLED', os.environ['RULE_STATE']\n"
+          )
+          assert workflow.count(assertion_old) == 1, 'unexpected disabled-rule assertion'
+          workflow = workflow.replace(assertion_old, assertion_new, 1)
+
+          identity_old = """              'scheduleStatusAtCanary': 'DISABLED_MANUAL_CANARY_ONLY',
+              'concurrencyMode': 'ACCOUNT_UNRESERVED',
+"""
+          identity_new = """              'scheduleStatusAtCanary': 'DISABLED_MANUAL_CANARY_ONLY',
+              'scheduleRuleName': os.environ['RULE_NAME'],
+              'scheduleRuleStateAtCanary': os.environ['RULE_STATE'],
+              'concurrencyMode': 'ACCOUNT_UNRESERVED',
+"""
+          assert workflow.count(identity_old) == 1, 'unexpected V8 identity block'
+          workflow = workflow.replace(identity_old, identity_new, 1)
+
+          assert 'Condition: EnableV8Schedule' not in template
+          assert 'Enabled: !If [EnableV8Schedule, true, false]' in template
+          assert "assert os.environ['RULE_STATE'] == 'DISABLED'" in workflow
+          assert "'scheduleRuleStateAtCanary': os.environ['RULE_STATE']" in workflow
+          assert "test \"$(aws events describe-rule --name \"$RULE_NAME\"" in workflow
+
+          template_path.write_text(template)
+          workflow_path.write_text(workflow)
+          repair_path.unlink()
+          PY
+
+          git diff --check
+          test ! -e .github/workflows/v8-rule-state-repair-once.yml
+
+      - name: Publish corrected contracts
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add mlb_odds_v8_shadow/template.yaml .github/workflows/mlb-odds-v8-shadow-deploy.yml .github/workflows/v8-rule-state-repair-once.yml
+          git commit -m 'Fix V8 disabled EventBridge rule verification'
+          for attempt in $(seq 1 8); do
+            git push origin HEAD:main && exit 0
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Dispatch corrected V8 recovery
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/mlb-odds-v8-shadow-deploy.yml/dispatches" \
+            -f ref=main
