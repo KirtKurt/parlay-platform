@@ -4,8 +4,8 @@
   "blockers": [
     "analysis_process_failed_before_report_creation:failure"
   ],
-  "createdAtUtc": "2026-07-26T15:42:12.528870+00:00",
-  "errorLogTail": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v7_v8_today_test.py\", line 702, in <module>\n    raise SystemExit(main())\n                     ^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v7_v8_today_test.py\", line 696, in main\n    value = run(args.date, Path(args.output), args.region)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v7_v8_today_test.py\", line 579, in run\n    policy, v7_meta = _load_v7_candidate(ddb, s3)\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v7_v8_today_test.py\", line 542, in _load_v7_candidate\n    raise RuntimeError(\"latest V7 candidate policy is invalid: \" + \",\".join(errors))\nRuntimeError: latest V7 candidate policy is invalid: policy_fields_unknown:bookFollowThroughWeight,bookLeadershipWeight,curveEfficiencyWeight,curveShockPenalty,derivedAccelerationInteractionWeight,derivedAgreementMomentumWeight,derivedInstabilityPenalty,derivedMovementSqrtWeight,derivedVelocityGapWeight,derivedVelocityInteractionWeight,fingerprintConfidenceWeight,fingerprintSimilarityWeight,patternBookLeadershipWeight,patternCompressionBreakoutWeight,patternConsensusPersistenceWeight,patternCurveWeight,patternEntropyPenalty,patternFingerprintWeight,patternRegimeWeight,patternShockPersistenceWeight,regimeChaosPenalty,regimeTrendWeight\n",
+  "createdAtUtc": "2026-07-26T15:46:32.232011+00:00",
+  "errorLogTail": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v7_v8_today_test_v2.py\", line 20, in <module>\n    raise SystemExit(main())\n                     ^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v7_v8_today_test.py\", line 696, in main\n    value = run(args.date, Path(args.output), args.region)\n            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v7_v8_today_test.py\", line 686, in run\n    output.write_text(json.dumps(report, indent=2, sort_keys=True) + \"\\n\")\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/__init__.py\", line 238, in dumps\n    **kw).encode(obj)\n          ^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/encoder.py\", line 202, in encode\n    chunks = list(chunks)\n             ^^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/encoder.py\", line 432, in _iterencode\n    yield from _iterencode_dict(o, _current_indent_level)\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/encoder.py\", line 406, in _iterencode_dict\n    yield from chunks\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/encoder.py\", line 326, in _iterencode_list\n    yield from chunks\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/encoder.py\", line 406, in _iterencode_dict\n    yield from chunks\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/encoder.py\", line 406, in _iterencode_dict\n    yield from chunks\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/encoder.py\", line 439, in _iterencode\n    o = _default(o)\n        ^^^^^^^^^^^\n  File \"/opt/hostedtoolcache/Python/3.11.15/x64/lib/python3.11/json/encoder.py\", line 180, in default\n    raise TypeError(f'Object of type {o.__class__.__name__} '\nTypeError: Object of type Decimal is not JSON serializable\n",
   "gameCount": 0,
   "games": [],
   "ok": false,
@@ -13,9 +13,9 @@
   "proofType": "MLB_V7_V8_ONE_TIME_TODAY_TEST",
   "researchOnly": true,
   "runAttempt": "1",
-  "runId": "30208754246",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30208754246",
+  "runId": "30208865317",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30208865317",
   "slateDateEt": "2026-07-26",
   "testOnly": true,
-  "version": "MLB-V7-V8-TODAY-TEST-v1-diagnostic"
+  "version": "MLB-V7-V8-TODAY-TEST-v2-runtime-parity-diagnostic"
 }
