@@ -1,8 +1,7 @@
 {
   "authority": "SHADOW_ONLY",
   "blockers": [
-    "canaryDeploy:failure",
-    "identity:skipped",
+    "identity:failure",
     "canary:skipped",
     "secondStackWait:skipped",
     "enable:skipped",
@@ -10,81 +9,20 @@
     "schedule_final_state:UNKNOWN"
   ],
   "canaryDeployment": {
-    "logTail": "\n\tManaged S3 bucket: aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr\n\tAuto resolution of buckets can be turned off by setting resolve_s3=False\n\tTo use a specific S3 bucket, set --s3-bucket=<bucket_name>\n\tAbove settings can be stored in samconfig.toml\n\n\tUploading to da094fee238fc4094ffb07f3480f4874  1048576 / 1368268  (76.64%)\n\tUploading to da094fee238fc4094ffb07f3480f4874  1368268 / 1368268  (100.00%)\n\n\tDeploying with following values\n\t===============================\n\tStack name                   : parlay-platform-mlb-odds-v8-shadow\n\tRegion                       : us-east-1\n\tConfirm changeset            : False\n\tDisable rollback             : False\n\tDeployment s3 bucket         : aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr\n\tCapabilities                 : [\"CAPABILITY_IAM\"]\n\tParameter overrides          : {\"OddsApiKey\": \"*****\", \"DeployGitSha\": \"93581f9ebfd93ec6a5363681699f9e904413a758\", \"V8Enabled\": \"true\", \"V8ScheduleEnabled\": \"false\", \"V8FeaturedRegions\": \"us\", \"V8EventRegions\": \"us,us2\", \"V8MaxEventsPerCycle\": \"2\", \"V8MaxCreditsPerCycle\": \"100\"}\n\tSigning Profiles             : {}\n\nInitiating deployment\n=====================\n\n\n\tUploading to f522d8c6c000511618d931900cd8fb2f.template  4037 / 4037  (100.00%)\n\n\nWaiting for changeset to be created..\n\nCloudFormation stack changeset\n-------------------------------------------------------------------------------------------------\nOperation                LogicalResourceId        ResourceType             Replacement            \n-------------------------------------------------------------------------------------------------\n+ Add                    ShadowArtifactsBucket    AWS::S3::Bucket          N/A                    \n+ Add                    ShadowCollectorFunctio   AWS::IAM::Role           N/A                    \n                         nRole                                                                    \n+ Add                    ShadowCollectorFunctio   AWS::Lambda::Permissio   N/A                    \n                         nShadowEveryFifteenMin   n                                               \n                         utesPermission                                                           \n+ Add                    ShadowCollectorFunctio   AWS::Events::Rule        N/A                    \n                         nShadowEveryFifteenMin                                                   \n                         utes                                                                     \n+ Add                    ShadowCollectorFunctio   AWS::Lambda::Function    N/A                    \n                         n                                                                        \n-------------------------------------------------------------------------------------------------\n\n\nChangeset created successfully. arn:aws:cloudformation:us-east-1:735707987003:changeSet/samcli-deploy1785049944/82af05c0-1869-4dfe-a85b-489134693e24\n\n\n2026-07-26 07:12:30 - Waiting for stack create/update to complete\n\nCloudFormation events from stack operations (refresh every 5.0 seconds)\n-------------------------------------------------------------------------------------------------\nResourceStatus           ResourceType             LogicalResourceId        ResourceStatusReason   \n-------------------------------------------------------------------------------------------------\nCREATE_IN_PROGRESS       AWS::CloudFormation::S   parlay-platform-mlb-     User Initiated         \n                         tack                     odds-v8-shadow                                  \nCREATE_IN_PROGRESS       AWS::S3::Bucket          ShadowArtifactsBucket    -                      \nCREATE_IN_PROGRESS       AWS::S3::Bucket          ShadowArtifactsBucket    Resource creation      \n                                                                           Initiated              \nCREATE_COMPLETE          AWS::S3::Bucket          ShadowArtifactsBucket    -                      \nCREATE_IN_PROGRESS       AWS::IAM::Role           ShadowCollectorFunctio   -                      \n                                                  nRole                                           \nCREATE_IN_PROGRESS       AWS::IAM::Role           ShadowCollectorFunctio   Resource creation      \n                                                  nRole                    Initiated              \nCREATE_COMPLETE          AWS::IAM::Role           ShadowCollectorFunctio   -                      \n                                                  nRole                                           \nCREATE_IN_PROGRESS       AWS::Lambda::Function    ShadowCollectorFunctio   -                      \n                                                  n                                               \nCREATE_IN_PROGRESS       AWS::Lambda::Function    ShadowCollectorFunctio   Resource creation      \n                                                  n                        Initiated              \nCREATE_FAILED            AWS::Lambda::Function    ShadowCollectorFunctio   Resource handler       \n                                                  n                        returned message:      \n                                                                           \"Specified ReservedCon \n                                                                           currentExecutions for  \n                                                                           function decreases     \n                                                                           account's UnreservedCo \n                                                                           ncurrentExecution      \n                                                                           below its minimum      \n                                                                           value of [10].         \n                                                                           (Service: Lambda,      \n                                                                           Status Code: 400,      \n                                                                           Request ID: b17875db-  \n                                                                           f6ed-46d7-96b6-        \n                                                                           689530e671f6) (SDK     \n                                                                           Attempt Count: 1)\"     \n                                                                           (RequestToken: ca85cb0 \n                                                                           a-c048-93f3-0aa9-      \n                                                                           df65eba3d22e,          \n                                                                           HandlerErrorCode:      \n                                                                           InvalidRequest)        \nROLLBACK_IN_PROGRESS     AWS::CloudFormation::S   parlay-platform-mlb-     The following          \n                         tack                     odds-v8-shadow           resource(s) failed to  \n                                                                           create: [ShadowCollect \n                                                                           orFunction]. Rollback  \n                                                                           requested by user.     \nDELETE_IN_PROGRESS       AWS::Lambda::Function    ShadowCollectorFunctio   -                      \n                                                  n                                               \nDELETE_COMPLETE          AWS::Lambda::Function    ShadowCollectorFunctio   -                      \n                                                  n                                               \nDELETE_IN_PROGRESS       AWS::IAM::Role           ShadowCollectorFunctio   -                      \n                                                  nRole                                           \nDELETE_COMPLETE          AWS::IAM::Role           ShadowCollectorFunctio   -                      \n                                                  nRole                                           \nDELETE_SKIPPED           AWS::S3::Bucket          ShadowArtifactsBucket    -                      \nROLLBACK_COMPLETE        AWS::CloudFormation::S   parlay-platform-mlb-     -                      \n                         tack                     odds-v8-shadow                                  \n-------------------------------------------------------------------------------------------------\n\nError: Failed to create/update the stack: parlay-platform-mlb-odds-v8-shadow, Waiter StackCreateComplete failed: Waiter encountered a terminal failure state: For expression \"Stacks[].StackStatus\" we matched expected path: \"ROLLBACK_COMPLETE\" at least once\n",
-    "stack": {
-      "Stacks": [
-        {
-          "Capabilities": [
-            "CAPABILITY_IAM"
-          ],
-          "CreationTime": "2026-07-26T07:12:25.243000+00:00",
-          "DeletionTime": "2026-07-26T07:13:09.574000+00:00",
-          "DeploymentConfig": {
-            "DisableRollback": false,
-            "Mode": "STANDARD"
-          },
-          "Description": "Isolated MLB Odds V8 shadow collector with controlled 15-minute schedule",
-          "DisableRollback": false,
-          "DriftInformation": {
-            "StackDriftStatus": "NOT_CHECKED"
-          },
-          "EnableTerminationProtection": false,
-          "LastOperations": [
-            {
-              "OperationId": "9bcfb7bf-2f22-4178-b3ba-852eb2902d42",
-              "OperationType": "ROLLBACK"
-            },
-            {
-              "OperationId": "1aae62b4-4ded-4598-bd62-f149e073c9b5",
-              "OperationType": "CREATE_STACK"
-            }
-          ],
-          "LastUpdatedTime": "2026-07-26T07:12:30.863000+00:00",
-          "NotificationARNs": [],
-          "Parameters": [
-            {
-              "ParameterKey": "V8EventRegions",
-              "ParameterValue": "us,us2"
-            },
-            {
-              "ParameterKey": "OddsApiKey",
-              "ParameterValue": "****"
-            },
-            {
-              "ParameterKey": "DeployGitSha",
-              "ParameterValue": "93581f9ebfd93ec6a5363681699f9e904413a758"
-            },
-            {
-              "ParameterKey": "V8Enabled",
-              "ParameterValue": "true"
-            },
-            {
-              "ParameterKey": "V8MaxEventsPerCycle",
-              "ParameterValue": "2"
-            },
-            {
-              "ParameterKey": "V8ScheduleEnabled",
-              "ParameterValue": "false"
-            },
-            {
-              "ParameterKey": "V8FeaturedRegions",
-              "ParameterValue": "us"
-            },
-            {
-              "ParameterKey": "V8MaxCreditsPerCycle",
-              "ParameterValue": "100"
-            }
-          ],
-          "RollbackConfiguration": {},
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/5a574350-88c1-11f1-9359-12ab7a8d6287",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "StackStatus": "ROLLBACK_COMPLETE",
-          "Tags": []
-        }
-      ]
-    },
-    "stackDescribeError": "",
-    "stackEvents": {
+    "logTail": "\n\tManaged S3 bucket: aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr\n\tAuto resolution of buckets can be turned off by setting resolve_s3=False\n\tTo use a specific S3 bucket, set --s3-bucket=<bucket_name>\n\tAbove settings can be stored in samconfig.toml\n\n\tUploading to da094fee238fc4094ffb07f3480f4874  1048576 / 1368268  (76.64%)\n\tUploading to da094fee238fc4094ffb07f3480f4874  1368268 / 1368268  (100.00%)\n\n\tDeploying with following values\n\t===============================\n\tStack name                   : parlay-platform-mlb-odds-v8-shadow\n\tRegion                       : us-east-1\n\tConfirm changeset            : False\n\tDisable rollback             : False\n\tDeployment s3 bucket         : aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr\n\tCapabilities                 : [\"CAPABILITY_IAM\"]\n\tParameter overrides          : {\"OddsApiKey\": \"*****\", \"DeployGitSha\": \"7c15ab4c8d4a8ea5f85c6cde24d4d3f8f54a183b\", \"V8Enabled\": \"true\", \"V8ScheduleEnabled\": \"false\", \"V8FeaturedRegions\": \"us\", \"V8EventRegions\": \"us,us2\", \"V8MaxEventsPerCycle\": \"2\", \"V8MaxCreditsPerCycle\": \"100\"}\n\tSigning Profiles             : {}\n\nInitiating deployment\n=====================\n\n\n\tUploading to 7d56bd2b43b4d9a33994460d25dafcef.template  4108 / 4108  (100.00%)\n\n\nWaiting for changeset to be created..\n\nCloudFormation stack changeset\n-------------------------------------------------------------------------------------------------\nOperation                LogicalResourceId        ResourceType             Replacement            \n-------------------------------------------------------------------------------------------------\n+ Add                    ShadowArtifactsBucket    AWS::S3::Bucket          N/A                    \n+ Add                    ShadowCollectorFunctio   AWS::Lambda::EventInvo   N/A                    \n                         nEventInvokeConfig       keConfig                                        \n+ Add                    ShadowCollectorFunctio   AWS::IAM::Role           N/A                    \n                         nRole                                                                    \n+ Add                    ShadowCollectorFunctio   AWS::Lambda::Permissio   N/A                    \n                         nShadowEveryFifteenMin   n                                               \n                         utesPermission                                                           \n+ Add                    ShadowCollectorFunctio   AWS::Events::Rule        N/A                    \n                         nShadowEveryFifteenMin                                                   \n                         utes                                                                     \n+ Add                    ShadowCollectorFunctio   AWS::Lambda::Function    N/A                    \n                         n                                                                        \n-------------------------------------------------------------------------------------------------\n\n\nChangeset created successfully. arn:aws:cloudformation:us-east-1:735707987003:changeSet/samcli-deploy1785050865/b23692ff-56a8-4ddd-acf7-14c0e69a6be8\n\n\n2026-07-26 07:27:51 - Waiting for stack create/update to complete\n\nCloudFormation events from stack operations (refresh every 5.0 seconds)\n-------------------------------------------------------------------------------------------------\nResourceStatus           ResourceType             LogicalResourceId        ResourceStatusReason   \n-------------------------------------------------------------------------------------------------\nCREATE_IN_PROGRESS       AWS::CloudFormation::S   parlay-platform-mlb-     User Initiated         \n                         tack                     odds-v8-shadow                                  \nCREATE_IN_PROGRESS       AWS::S3::Bucket          ShadowArtifactsBucket    -                      \nCREATE_IN_PROGRESS       AWS::S3::Bucket          ShadowArtifactsBucket    Resource creation      \n                                                                           Initiated              \nCREATE_COMPLETE          AWS::S3::Bucket          ShadowArtifactsBucket    -                      \nCREATE_IN_PROGRESS       AWS::IAM::Role           ShadowCollectorFunctio   -                      \n                                                  nRole                                           \nCREATE_IN_PROGRESS       AWS::IAM::Role           ShadowCollectorFunctio   Resource creation      \n                                                  nRole                    Initiated              \nCREATE_COMPLETE          AWS::IAM::Role           ShadowCollectorFunctio   -                      \n                                                  nRole                                           \nCREATE_IN_PROGRESS       AWS::Lambda::Function    ShadowCollectorFunctio   -                      \n                                                  n                                               \nCREATE_IN_PROGRESS       AWS::Lambda::Function    ShadowCollectorFunctio   Resource creation      \n                                                  n                        Initiated              \nCREATE_IN_PROGRESS -     AWS::Lambda::Function    ShadowCollectorFunctio   Eventual consistency   \nCONFIGURATION_COMPLETE                            n                        check initiated        \nCREATE_IN_PROGRESS       AWS::Lambda::EventInvo   ShadowCollectorFunctio   -                      \n                         keConfig                 nEventInvokeConfig                              \nCREATE_IN_PROGRESS       AWS::Events::Rule        ShadowCollectorFunctio   -                      \n                                                  nShadowEveryFifteenMin                          \n                                                  utes                                            \nCREATE_IN_PROGRESS       AWS::Events::Rule        ShadowCollectorFunctio   Resource creation      \n                                                  nShadowEveryFifteenMin   Initiated              \n                                                  utes                                            \nCREATE_IN_PROGRESS       AWS::Lambda::EventInvo   ShadowCollectorFunctio   Resource creation      \n                         keConfig                 nEventInvokeConfig       Initiated              \nCREATE_COMPLETE          AWS::Lambda::EventInvo   ShadowCollectorFunctio   -                      \n                         keConfig                 nEventInvokeConfig                              \nCREATE_COMPLETE          AWS::Lambda::Function    ShadowCollectorFunctio   -                      \n                                                  n                                               \nCREATE_IN_PROGRESS -     AWS::Events::Rule        ShadowCollectorFunctio   Eventual consistency   \nCONFIGURATION_COMPLETE                            nShadowEveryFifteenMin   check initiated        \n                                                  utes                                            \nCREATE_IN_PROGRESS       AWS::Lambda::Permissio   ShadowCollectorFunctio   -                      \n                         n                        nShadowEveryFifteenMin                          \n                                                  utesPermission                                  \nCREATE_IN_PROGRESS       AWS::Lambda::Permissio   ShadowCollectorFunctio   Resource creation      \n                         n                        nShadowEveryFifteenMin   Initiated              \n                                                  utesPermission                                  \nCREATE_COMPLETE          AWS::Lambda::Permissio   ShadowCollectorFunctio   -                      \n                         n                        nShadowEveryFifteenMin                          \n                                                  utesPermission                                  \nCREATE_COMPLETE          AWS::Events::Rule        ShadowCollectorFunctio   -                      \n                                                  nShadowEveryFifteenMin                          \n                                                  utes                                            \nCREATE_COMPLETE          AWS::CloudFormation::S   parlay-platform-mlb-     -                      \n                         tack                     odds-v8-shadow                                  \n-------------------------------------------------------------------------------------------------\n\nCloudFormation outputs from deployed stack\n-------------------------------------------------------------------------------------------------\nOutputs                                                                                         \n-------------------------------------------------------------------------------------------------\nKey                 ShadowCollectorFunctionArn                                                  \nDescription         -                                                                           \nValue               arn:aws:lambda:us-east-1:735707987003:function:parlay-platform-mlb-odds-v-  \nShadowCollectorFunction-EfhhSk2C83oP                                                            \n\nKey                 Authority                                                                   \nDescription         -                                                                           \nValue               SHADOW_ONLY                                                                 \n\nKey                 ShadowCollectorFunctionName                                                 \nDescription         -                                                                           \nValue               parlay-platform-mlb-odds-v-ShadowCollectorFunction-EfhhSk2C83oP             \n\nKey                 ShadowArtifactsBucketName                                                   \nDescription         -                                                                           \nValue               parlay-platform-mlb-odds-v8--shadowartifactsbucket-i9zj7b1lvqey             \n\nKey                 ScheduleStatus                                                              \nDescription         -                                                                           \nValue               DISABLED_MANUAL_CANARY_ONLY                                                 \n-------------------------------------------------------------------------------------------------\n\n\nSuccessfully created/updated stack - parlay-platform-mlb-odds-v8-shadow in us-east-1\n\n",
+    "stack": null,
+    "stackDescribeError": null,
+    "stackEvents": null,
+    "stackEventsError": null
+  },
+  "createdAtUtc": "2026-07-26T07:29:42.451809+00:00",
+  "deploymentIdentity": null,
+  "finalScheduleState": "UNKNOWN",
+  "manualCanary": null,
+  "ok": false,
+  "predeployStackRecovery": {
+    "action": "DELETED_FAILED_CREATE_STACK",
+    "events": {
       "StackEvents": [
         {
           "ClientRequestToken": "e359c999-cc09-466b-be37-dc434566f489",
@@ -323,278 +261,30 @@
         }
       ]
     },
-    "stackEventsError": ""
-  },
-  "createdAtUtc": "2026-07-26T07:13:33.937652+00:00",
-  "deploymentIdentity": null,
-  "finalScheduleState": "UNKNOWN",
-  "manualCanary": null,
-  "ok": false,
-  "predeployStackRecovery": {
-    "action": "DELETED_FAILED_CREATE_STACK",
-    "events": {
-      "StackEvents": [
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "9d51c970-88bf-11f1-a016-0edde434bb89",
-          "LogicalResourceId": "parlay-platform-mlb-odds-v8-shadow",
-          "OperationId": "049b5698-4c6c-43b6-ac7f-36d243a81411",
-          "PhysicalResourceId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "ResourceStatus": "ROLLBACK_COMPLETE",
-          "ResourceType": "AWS::CloudFormation::Stack",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:58.450000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowArtifactsBucket-DELETE_SKIPPED-2026-07-26T06:59:58.098Z",
-          "LogicalResourceId": "ShadowArtifactsBucket",
-          "OperationId": "049b5698-4c6c-43b6-ac7f-36d243a81411",
-          "PhysicalResourceId": "parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh",
-          "ResourceProperties": "{\"PublicAccessBlockConfiguration\":{\"RestrictPublicBuckets\":\"true\",\"BlockPublicPolicy\":\"true\",\"BlockPublicAcls\":\"true\",\"IgnorePublicAcls\":\"true\"},\"BucketEncryption\":{\"ServerSideEncryptionConfiguration\":[{\"ServerSideEncryptionByDefault\":{\"SSEAlgorithm\":\"AES256\"}}]},\"VersioningConfiguration\":{\"Status\":\"Enabled\"}}",
-          "ResourceStatus": "DELETE_SKIPPED",
-          "ResourceType": "AWS::S3::Bucket",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:58.098000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowCollectorFunctionRole-DELETE_COMPLETE-2026-07-26T06:59:57.105Z",
-          "LogicalResourceId": "ShadowCollectorFunctionRole",
-          "OperationId": "049b5698-4c6c-43b6-ac7f-36d243a81411",
-          "PhysicalResourceId": "parlay-platform-mlb-odds--ShadowCollectorFunctionRo-pXvGvJy50fD0",
-          "ResourceProperties": "{\"ManagedPolicyArns\":[\"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole\",\"arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess\"],\"Policies\":[{\"PolicyName\":\"ShadowCollectorFunctionRolePolicy0\",\"PolicyDocument\":{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"s3:PutObject\",\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh/*\",\"Effect\":\"Allow\"},{\"Action\":[\"s3:GetBucketLocation\",\"s3:ListBucket\"],\"Resource\":\"arn:aws:s3:::parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh\",\"Effect\":\"Allow\"}]}}],\"AssumeRolePolicyDocument\":{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"sts:AssumeRole\"],\"Effect\":\"Allow\",\"Principal\":{\"Service\":[\"lambda.amazonaws.com\"]}}]},\"Tags\":[{\"Value\":\"SAM\",\"Key\":\"lambda:createdBy\"}]}",
-          "ResourceStatus": "DELETE_COMPLETE",
-          "ResourceType": "AWS::IAM::Role",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:57.105000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowCollectorFunctionRole-DELETE_IN_PROGRESS-2026-07-26T06:59:45.638Z",
-          "LogicalResourceId": "ShadowCollectorFunctionRole",
-          "OperationId": "049b5698-4c6c-43b6-ac7f-36d243a81411",
-          "PhysicalResourceId": "parlay-platform-mlb-odds--ShadowCollectorFunctionRo-pXvGvJy50fD0",
-          "ResourceProperties": "{\"ManagedPolicyArns\":[\"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole\",\"arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess\"],\"Policies\":[{\"PolicyName\":\"ShadowCollectorFunctionRolePolicy0\",\"PolicyDocument\":{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"s3:PutObject\",\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh/*\",\"Effect\":\"Allow\"},{\"Action\":[\"s3:GetBucketLocation\",\"s3:ListBucket\"],\"Resource\":\"arn:aws:s3:::parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh\",\"Effect\":\"Allow\"}]}}],\"AssumeRolePolicyDocument\":{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"sts:AssumeRole\"],\"Effect\":\"Allow\",\"Principal\":{\"Service\":[\"lambda.amazonaws.com\"]}}]},\"Tags\":[{\"Value\":\"SAM\",\"Key\":\"lambda:createdBy\"}]}",
-          "ResourceStatus": "DELETE_IN_PROGRESS",
-          "ResourceType": "AWS::IAM::Role",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:45.638000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowCollectorFunction-DELETE_COMPLETE-2026-07-26T06:59:45.159Z",
-          "LogicalResourceId": "ShadowCollectorFunction",
-          "OperationId": "049b5698-4c6c-43b6-ac7f-36d243a81411",
-          "PhysicalResourceId": "parlay-platform-mlb-odds-v-ShadowCollectorFunction-qaKdmjE7yLAc",
-          "ResourceProperties": "{\"Role\":\"arn:aws:iam::735707987003:role/parlay-platform-mlb-odds--ShadowCollectorFunctionRo-pXvGvJy50fD0\",\"MemorySize\":\"1024\",\"Runtime\":\"python3.11\",\"TracingConfig\":{\"Mode\":\"Active\"},\"Timeout\":\"300\",\"Handler\":\"mlb_odds_v8_shadow_collector.lambda_handler\",\"Environment\":{\"Variables\":{\"MLB_V8_MAX_CREDITS_PER_CYCLE\":\"100\",\"MLB_V8_FEATURED_REGIONS\":\"us\",\"ODDS_API_KEY\":\"****\",\"MLB_V8_PLAYER_PROPS_ENABLED\":\"false\",\"INQSI_DEPLOY_GIT_SHA\":\"08c41f475f7c5d36f61f027ce433efed69dfb8e4\",\"MLB_V8_FEATURED_MARKETS\":\"h2h,spreads,totals\",\"MLB_V8_FIRST_FIVE_ENABLED\":\"true\",\"MLB_V8_TEAM_PROPS_ENABLED\":\"true\",\"MLB_V8_SHADOW_BUCKET\":\"parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh\",\"MLB_V8_ENABLED\":\"true\",\"MLB_V8_MAX_EVENTS_PER_CYCLE\":\"2\",\"MLB_V8_ALTERNATES_ENABLED\":\"true\",\"MLB_V8_EVENT_REGIONS\":\"us,us2\",\"MLB_V8_HTTP_TIMEOUT_SECONDS\":\"20\",\"MLB_V8_MAX_EVENT_MARKETS\":\"18\"}},\"ReservedConcurrentExecutions\":\"1\",\"Code\":{\"S3Bucket\":\"aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr\",\"S3Key\":\"da094fee238fc4094ffb07f3480f4874\"},\"Tags\":[{\"Value\":\"SAM\",\"Key\":\"lambda:createdBy\"}],\"Architectures\":[\"x86_64\"]}",
-          "ResourceStatus": "DELETE_COMPLETE",
-          "ResourceType": "AWS::Lambda::Function",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:45.159000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowCollectorFunction-DELETE_IN_PROGRESS-2026-07-26T06:59:41.535Z",
-          "LogicalResourceId": "ShadowCollectorFunction",
-          "OperationId": "049b5698-4c6c-43b6-ac7f-36d243a81411",
-          "PhysicalResourceId": "parlay-platform-mlb-odds-v-ShadowCollectorFunction-qaKdmjE7yLAc",
-          "ResourceProperties": "{\"Role\":\"arn:aws:iam::735707987003:role/parlay-platform-mlb-odds--ShadowCollectorFunctionRo-pXvGvJy50fD0\",\"MemorySize\":\"1024\",\"Runtime\":\"python3.11\",\"TracingConfig\":{\"Mode\":\"Active\"},\"Timeout\":\"300\",\"Handler\":\"mlb_odds_v8_shadow_collector.lambda_handler\",\"Environment\":{\"Variables\":{\"MLB_V8_MAX_CREDITS_PER_CYCLE\":\"100\",\"MLB_V8_FEATURED_REGIONS\":\"us\",\"ODDS_API_KEY\":\"****\",\"MLB_V8_PLAYER_PROPS_ENABLED\":\"false\",\"INQSI_DEPLOY_GIT_SHA\":\"08c41f475f7c5d36f61f027ce433efed69dfb8e4\",\"MLB_V8_FEATURED_MARKETS\":\"h2h,spreads,totals\",\"MLB_V8_FIRST_FIVE_ENABLED\":\"true\",\"MLB_V8_TEAM_PROPS_ENABLED\":\"true\",\"MLB_V8_SHADOW_BUCKET\":\"parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh\",\"MLB_V8_ENABLED\":\"true\",\"MLB_V8_MAX_EVENTS_PER_CYCLE\":\"2\",\"MLB_V8_ALTERNATES_ENABLED\":\"true\",\"MLB_V8_EVENT_REGIONS\":\"us,us2\",\"MLB_V8_HTTP_TIMEOUT_SECONDS\":\"20\",\"MLB_V8_MAX_EVENT_MARKETS\":\"18\"}},\"ReservedConcurrentExecutions\":\"1\",\"Code\":{\"S3Bucket\":\"aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr\",\"S3Key\":\"da094fee238fc4094ffb07f3480f4874\"},\"Tags\":[{\"Value\":\"SAM\",\"Key\":\"lambda:createdBy\"}],\"Architectures\":[\"x86_64\"]}",
-          "ResourceStatus": "DELETE_IN_PROGRESS",
-          "ResourceType": "AWS::Lambda::Function",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:41.535000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "924bd390-88bf-11f1-8e81-0e05a95aba6d",
-          "LogicalResourceId": "parlay-platform-mlb-odds-v8-shadow",
-          "OperationId": "049b5698-4c6c-43b6-ac7f-36d243a81411",
-          "PhysicalResourceId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "ResourceStatus": "ROLLBACK_IN_PROGRESS",
-          "ResourceStatusReason": "The following resource(s) failed to create: [ShadowCollectorFunction]. Rollback requested by user.",
-          "ResourceType": "AWS::CloudFormation::Stack",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:39.936000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowCollectorFunction-CREATE_FAILED-2026-07-26T06:59:39.634Z",
-          "LogicalResourceId": "ShadowCollectorFunction",
-          "OperationId": "f11931ac-54b2-4791-9768-f00580098809",
-          "PhysicalResourceId": "parlay-platform-mlb-odds-v-ShadowCollectorFunction-qaKdmjE7yLAc",
-          "ResourceProperties": "{\"Role\":\"arn:aws:iam::735707987003:role/parlay-platform-mlb-odds--ShadowCollectorFunctionRo-pXvGvJy50fD0\",\"MemorySize\":\"1024\",\"Runtime\":\"python3.11\",\"TracingConfig\":{\"Mode\":\"Active\"},\"Timeout\":\"300\",\"Handler\":\"mlb_odds_v8_shadow_collector.lambda_handler\",\"Environment\":{\"Variables\":{\"MLB_V8_MAX_CREDITS_PER_CYCLE\":\"100\",\"MLB_V8_FEATURED_REGIONS\":\"us\",\"ODDS_API_KEY\":\"****\",\"MLB_V8_PLAYER_PROPS_ENABLED\":\"false\",\"INQSI_DEPLOY_GIT_SHA\":\"08c41f475f7c5d36f61f027ce433efed69dfb8e4\",\"MLB_V8_FEATURED_MARKETS\":\"h2h,spreads,totals\",\"MLB_V8_FIRST_FIVE_ENABLED\":\"true\",\"MLB_V8_TEAM_PROPS_ENABLED\":\"true\",\"MLB_V8_SHADOW_BUCKET\":\"parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh\",\"MLB_V8_ENABLED\":\"true\",\"MLB_V8_MAX_EVENTS_PER_CYCLE\":\"2\",\"MLB_V8_ALTERNATES_ENABLED\":\"true\",\"MLB_V8_EVENT_REGIONS\":\"us,us2\",\"MLB_V8_HTTP_TIMEOUT_SECONDS\":\"20\",\"MLB_V8_MAX_EVENT_MARKETS\":\"18\"}},\"ReservedConcurrentExecutions\":\"1\",\"Code\":{\"S3Bucket\":\"aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr\",\"S3Key\":\"da094fee238fc4094ffb07f3480f4874\"},\"Tags\":[{\"Value\":\"SAM\",\"Key\":\"lambda:createdBy\"}],\"Architectures\":[\"x86_64\"]}",
-          "ResourceStatus": "CREATE_FAILED",
-          "ResourceStatusReason": "Resource handler returned message: \"Specified ReservedConcurrentExecutions for function decreases account's UnreservedConcurrentExecution below its minimum value of [10]. (Service: Lambda, Status Code: 400, Request ID: 4674d6ee-36e8-4233-b2da-724d9ed767ab) (SDK Attempt Count: 1)\" (RequestToken: bcbc01d6-d2fa-db22-3edf-748acfd66845, HandlerErrorCode: InvalidRequest)",
-          "ResourceType": "AWS::Lambda::Function",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:39.634000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowCollectorFunction-CREATE_IN_PROGRESS-2026-07-26T06:59:39.219Z",
-          "LogicalResourceId": "ShadowCollectorFunction",
-          "OperationId": "f11931ac-54b2-4791-9768-f00580098809",
-          "PhysicalResourceId": "parlay-platform-mlb-odds-v-ShadowCollectorFunction-qaKdmjE7yLAc",
-          "ResourceProperties": "{\"Role\":\"arn:aws:iam::735707987003:role/parlay-platform-mlb-odds--ShadowCollectorFunctionRo-pXvGvJy50fD0\",\"MemorySize\":\"1024\",\"Runtime\":\"python3.11\",\"TracingConfig\":{\"Mode\":\"Active\"},\"Timeout\":\"300\",\"Handler\":\"mlb_odds_v8_shadow_collector.lambda_handler\",\"Environment\":{\"Variables\":{\"MLB_V8_MAX_CREDITS_PER_CYCLE\":\"100\",\"MLB_V8_FEATURED_REGIONS\":\"us\",\"ODDS_API_KEY\":\"****\",\"MLB_V8_PLAYER_PROPS_ENABLED\":\"false\",\"INQSI_DEPLOY_GIT_SHA\":\"08c41f475f7c5d36f61f027ce433efed69dfb8e4\",\"MLB_V8_FEATURED_MARKETS\":\"h2h,spreads,totals\",\"MLB_V8_FIRST_FIVE_ENABLED\":\"true\",\"MLB_V8_TEAM_PROPS_ENABLED\":\"true\",\"MLB_V8_SHADOW_BUCKET\":\"parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh\",\"MLB_V8_ENABLED\":\"true\",\"MLB_V8_MAX_EVENTS_PER_CYCLE\":\"2\",\"MLB_V8_ALTERNATES_ENABLED\":\"true\",\"MLB_V8_EVENT_REGIONS\":\"us,us2\",\"MLB_V8_HTTP_TIMEOUT_SECONDS\":\"20\",\"MLB_V8_MAX_EVENT_MARKETS\":\"18\"}},\"ReservedConcurrentExecutions\":\"1\",\"Code\":{\"S3Bucket\":\"aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr\",\"S3Key\":\"da094fee238fc4094ffb07f3480f4874\"},\"Tags\":[{\"Value\":\"SAM\",\"Key\":\"lambda:createdBy\"}],\"Architectures\":[\"x86_64\"]}",
-          "ResourceStatus": "CREATE_IN_PROGRESS",
-          "ResourceStatusReason": "Resource creation Initiated",
-          "ResourceType": "AWS::Lambda::Function",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:39.219000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowCollectorFunction-CREATE_IN_PROGRESS-2026-07-26T06:59:37.474Z",
-          "LogicalResourceId": "ShadowCollectorFunction",
-          "OperationId": "f11931ac-54b2-4791-9768-f00580098809",
-          "PhysicalResourceId": "",
-          "ResourceProperties": "{\"Role\":\"arn:aws:iam::735707987003:role/parlay-platform-mlb-odds--ShadowCollectorFunctionRo-pXvGvJy50fD0\",\"MemorySize\":\"1024\",\"Runtime\":\"python3.11\",\"TracingConfig\":{\"Mode\":\"Active\"},\"Timeout\":\"300\",\"Handler\":\"mlb_odds_v8_shadow_collector.lambda_handler\",\"Environment\":{\"Variables\":{\"MLB_V8_MAX_CREDITS_PER_CYCLE\":\"100\",\"MLB_V8_FEATURED_REGIONS\":\"us\",\"ODDS_API_KEY\":\"****\",\"MLB_V8_PLAYER_PROPS_ENABLED\":\"false\",\"INQSI_DEPLOY_GIT_SHA\":\"08c41f475f7c5d36f61f027ce433efed69dfb8e4\",\"MLB_V8_FEATURED_MARKETS\":\"h2h,spreads,totals\",\"MLB_V8_FIRST_FIVE_ENABLED\":\"true\",\"MLB_V8_TEAM_PROPS_ENABLED\":\"true\",\"MLB_V8_SHADOW_BUCKET\":\"parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh\",\"MLB_V8_ENABLED\":\"true\",\"MLB_V8_MAX_EVENTS_PER_CYCLE\":\"2\",\"MLB_V8_ALTERNATES_ENABLED\":\"true\",\"MLB_V8_EVENT_REGIONS\":\"us,us2\",\"MLB_V8_HTTP_TIMEOUT_SECONDS\":\"20\",\"MLB_V8_MAX_EVENT_MARKETS\":\"18\"}},\"ReservedConcurrentExecutions\":\"1\",\"Code\":{\"S3Bucket\":\"aws-sam-cli-managed-default-samclisourcebucket-ftu2d3mnzcsr\",\"S3Key\":\"da094fee238fc4094ffb07f3480f4874\"},\"Tags\":[{\"Value\":\"SAM\",\"Key\":\"lambda:createdBy\"}],\"Architectures\":[\"x86_64\"]}",
-          "ResourceStatus": "CREATE_IN_PROGRESS",
-          "ResourceType": "AWS::Lambda::Function",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:37.474000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowCollectorFunctionRole-CREATE_COMPLETE-2026-07-26T06:59:36.798Z",
-          "LogicalResourceId": "ShadowCollectorFunctionRole",
-          "OperationId": "f11931ac-54b2-4791-9768-f00580098809",
-          "PhysicalResourceId": "parlay-platform-mlb-odds--ShadowCollectorFunctionRo-pXvGvJy50fD0",
-          "ResourceProperties": "{\"ManagedPolicyArns\":[\"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole\",\"arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess\"],\"Policies\":[{\"PolicyName\":\"ShadowCollectorFunctionRolePolicy0\",\"PolicyDocument\":{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"s3:PutObject\",\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh/*\",\"Effect\":\"Allow\"},{\"Action\":[\"s3:GetBucketLocation\",\"s3:ListBucket\"],\"Resource\":\"arn:aws:s3:::parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh\",\"Effect\":\"Allow\"}]}}],\"AssumeRolePolicyDocument\":{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"sts:AssumeRole\"],\"Effect\":\"Allow\",\"Principal\":{\"Service\":[\"lambda.amazonaws.com\"]}}]},\"Tags\":[{\"Value\":\"SAM\",\"Key\":\"lambda:createdBy\"}]}",
-          "ResourceStatus": "CREATE_COMPLETE",
-          "ResourceType": "AWS::IAM::Role",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:36.798000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowCollectorFunctionRole-CREATE_IN_PROGRESS-2026-07-26T06:59:20.313Z",
-          "LogicalResourceId": "ShadowCollectorFunctionRole",
-          "OperationId": "f11931ac-54b2-4791-9768-f00580098809",
-          "PhysicalResourceId": "parlay-platform-mlb-odds--ShadowCollectorFunctionRo-pXvGvJy50fD0",
-          "ResourceProperties": "{\"ManagedPolicyArns\":[\"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole\",\"arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess\"],\"Policies\":[{\"PolicyName\":\"ShadowCollectorFunctionRolePolicy0\",\"PolicyDocument\":{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"s3:PutObject\",\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh/*\",\"Effect\":\"Allow\"},{\"Action\":[\"s3:GetBucketLocation\",\"s3:ListBucket\"],\"Resource\":\"arn:aws:s3:::parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh\",\"Effect\":\"Allow\"}]}}],\"AssumeRolePolicyDocument\":{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"sts:AssumeRole\"],\"Effect\":\"Allow\",\"Principal\":{\"Service\":[\"lambda.amazonaws.com\"]}}]},\"Tags\":[{\"Value\":\"SAM\",\"Key\":\"lambda:createdBy\"}]}",
-          "ResourceStatus": "CREATE_IN_PROGRESS",
-          "ResourceStatusReason": "Resource creation Initiated",
-          "ResourceType": "AWS::IAM::Role",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:20.313000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowCollectorFunctionRole-CREATE_IN_PROGRESS-2026-07-26T06:59:19.380Z",
-          "LogicalResourceId": "ShadowCollectorFunctionRole",
-          "OperationId": "f11931ac-54b2-4791-9768-f00580098809",
-          "PhysicalResourceId": "",
-          "ResourceProperties": "{\"ManagedPolicyArns\":[\"arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole\",\"arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess\"],\"Policies\":[{\"PolicyName\":\"ShadowCollectorFunctionRolePolicy0\",\"PolicyDocument\":{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"s3:PutObject\",\"s3:GetObject\"],\"Resource\":\"arn:aws:s3:::parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh/*\",\"Effect\":\"Allow\"},{\"Action\":[\"s3:GetBucketLocation\",\"s3:ListBucket\"],\"Resource\":\"arn:aws:s3:::parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh\",\"Effect\":\"Allow\"}]}}],\"AssumeRolePolicyDocument\":{\"Version\":\"2012-10-17\",\"Statement\":[{\"Action\":[\"sts:AssumeRole\"],\"Effect\":\"Allow\",\"Principal\":{\"Service\":[\"lambda.amazonaws.com\"]}}]},\"Tags\":[{\"Value\":\"SAM\",\"Key\":\"lambda:createdBy\"}]}",
-          "ResourceStatus": "CREATE_IN_PROGRESS",
-          "ResourceType": "AWS::IAM::Role",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:19.380000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowArtifactsBucket-CREATE_COMPLETE-2026-07-26T06:59:18.015Z",
-          "LogicalResourceId": "ShadowArtifactsBucket",
-          "OperationId": "f11931ac-54b2-4791-9768-f00580098809",
-          "PhysicalResourceId": "parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh",
-          "ResourceProperties": "{\"PublicAccessBlockConfiguration\":{\"RestrictPublicBuckets\":\"true\",\"BlockPublicPolicy\":\"true\",\"BlockPublicAcls\":\"true\",\"IgnorePublicAcls\":\"true\"},\"BucketEncryption\":{\"ServerSideEncryptionConfiguration\":[{\"ServerSideEncryptionByDefault\":{\"SSEAlgorithm\":\"AES256\"}}]},\"VersioningConfiguration\":{\"Status\":\"Enabled\"}}",
-          "ResourceStatus": "CREATE_COMPLETE",
-          "ResourceType": "AWS::S3::Bucket",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:18.015000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowArtifactsBucket-CREATE_IN_PROGRESS-2026-07-26T06:59:04.338Z",
-          "LogicalResourceId": "ShadowArtifactsBucket",
-          "OperationId": "f11931ac-54b2-4791-9768-f00580098809",
-          "PhysicalResourceId": "parlay-platform-mlb-odds-v8--shadowartifactsbucket-63smstbqjfjh",
-          "ResourceProperties": "{\"PublicAccessBlockConfiguration\":{\"RestrictPublicBuckets\":\"true\",\"BlockPublicPolicy\":\"true\",\"BlockPublicAcls\":\"true\",\"IgnorePublicAcls\":\"true\"},\"BucketEncryption\":{\"ServerSideEncryptionConfiguration\":[{\"ServerSideEncryptionByDefault\":{\"SSEAlgorithm\":\"AES256\"}}]},\"VersioningConfiguration\":{\"Status\":\"Enabled\"}}",
-          "ResourceStatus": "CREATE_IN_PROGRESS",
-          "ResourceStatusReason": "Resource creation Initiated",
-          "ResourceType": "AWS::S3::Bucket",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:04.338000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "ShadowArtifactsBucket-CREATE_IN_PROGRESS-2026-07-26T06:59:03.314Z",
-          "LogicalResourceId": "ShadowArtifactsBucket",
-          "OperationId": "f11931ac-54b2-4791-9768-f00580098809",
-          "PhysicalResourceId": "",
-          "ResourceProperties": "{\"PublicAccessBlockConfiguration\":{\"RestrictPublicBuckets\":\"true\",\"BlockPublicPolicy\":\"true\",\"BlockPublicAcls\":\"true\",\"IgnorePublicAcls\":\"true\"},\"BucketEncryption\":{\"ServerSideEncryptionConfiguration\":[{\"ServerSideEncryptionByDefault\":{\"SSEAlgorithm\":\"AES256\"}}]},\"VersioningConfiguration\":{\"Status\":\"Enabled\"}}",
-          "ResourceStatus": "CREATE_IN_PROGRESS",
-          "ResourceType": "AWS::S3::Bucket",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:03.314000+00:00"
-        },
-        {
-          "ClientRequestToken": "71ca82ba-4d26-4e62-9a4d-a890cb5b9406",
-          "EventId": "7b28ab70-88bf-11f1-98b1-0e33dc2f834d",
-          "LogicalResourceId": "parlay-platform-mlb-odds-v8-shadow",
-          "OperationId": "f11931ac-54b2-4791-9768-f00580098809",
-          "PhysicalResourceId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "ResourceStatus": "CREATE_IN_PROGRESS",
-          "ResourceStatusReason": "User Initiated",
-          "ResourceType": "AWS::CloudFormation::Stack",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:59:01.137000+00:00"
-        },
-        {
-          "EventId": "77ca1720-88bf-11f1-bdad-126405eab07b",
-          "LogicalResourceId": "parlay-platform-mlb-odds-v8-shadow",
-          "PhysicalResourceId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "ResourceStatus": "REVIEW_IN_PROGRESS",
-          "ResourceStatusReason": "User Initiated",
-          "ResourceType": "AWS::CloudFormation::Stack",
-          "StackId": "arn:aws:cloudformation:us-east-1:735707987003:stack/parlay-platform-mlb-odds-v8-shadow/77cab360-88bf-11f1-bdad-126405eab07b",
-          "StackName": "parlay-platform-mlb-odds-v8-shadow",
-          "Timestamp": "2026-07-26T06:58:55.647000+00:00"
-        }
-      ]
-    },
     "eventsError": "",
-    "statusHistory": "2026-07-26T07:11:50Z ROLLBACK_COMPLETE\n"
+    "statusHistory": "2026-07-26T07:27:11Z ROLLBACK_COMPLETE\n"
   },
   "productionAuthorityChanged": false,
   "proofType": "MLB_ODDS_V8_SHADOW_RECOVERY",
   "runAttempt": "1",
-  "runId": "30192339248",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30192339248",
+  "runId": "30192805088",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30192805088",
   "scheduledCollection": null,
   "scheduledRecord": null,
-  "sourceSha": "93581f9ebfd93ec6a5363681699f9e904413a758",
+  "sourceSha": "7c15ab4c8d4a8ea5f85c6cde24d4d3f8f54a183b",
   "stackName": "parlay-platform-mlb-odds-v8-shadow",
   "stepOutcomes": {
     "build": "success",
     "canary": "skipped",
-    "canaryDeploy": "failure",
+    "canaryDeploy": "success",
     "cleanup": "skipped",
     "credentials": "success",
     "enable": "skipped",
-    "identity": "skipped",
+    "identity": "failure",
     "scheduledVerification": "skipped",
     "secondStackWait": "skipped",
     "stackWait": "success",
     "validate": "success"
   },
-  "templateSha256": "423adc633ec13731bddc6a1a7a086692acb4fbabf010c822e977bc1446b470f5"
+  "templateSha256": "5e8166a68712cec1e53c1817065217e9dd395255e435c3215932b35f599a8eb4"
 }
