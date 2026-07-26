@@ -1,8 +1,9 @@
-name: MLB V8 Repeated Runtime Proof
-# Second trusted push after workflow installation.
+name: MLB V8 Runtime Continuity
 
 "on":
   workflow_dispatch:
+  schedule:
+    - cron: '19 * * * *'
   push:
     branches: [main]
     paths:
@@ -12,13 +13,15 @@ permissions:
   contents: write
 
 concurrency:
-  group: mlb-v8-repeat-runtime-proof
+  group: mlb-v8-runtime-continuity
   cancel-in-progress: false
 
 env:
   STACK_NAME: parlay-platform-mlb-odds-v8-shadow
   PROOF_PATH: runtime_reports/mlb_odds_v8_shadow_recovery_latest.json
   CONTINUITY_PATH: runtime_reports/mlb_odds_v8_shadow_continuity_latest.json
+  LIVE_STATUS_PATH: docs/runtime/mlb-v8-live-status.json
+  PREFIX: mlb/odds-v8-shadow/
 
 jobs:
   prove-continuity:
@@ -27,6 +30,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -39,7 +43,7 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Wait for and validate the next scheduled artifact
+      - name: Verify current V8 runtime and S3 advancement
         env:
           AWS_EC2_METADATA_DISABLED: 'true'
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
@@ -56,140 +60,231 @@ jobs:
 
           import boto3
 
-          proof_path=Path(os.environ['PROOF_PATH'])
-          continuity_path=Path(os.environ['CONTINUITY_PATH'])
-          report=json.loads(proof_path.read_text())
+          proof_path = Path(os.environ['PROOF_PATH'])
+          continuity_path = Path(os.environ['CONTINUITY_PATH'])
+          live_status_path = Path(os.environ['LIVE_STATUS_PATH'])
+          prefix = os.environ['PREFIX']
+
+          report = json.loads(proof_path.read_text())
           assert report.get('ok') is True, report
           assert report.get('authority') == 'SHADOW_ONLY', report
           assert report.get('productionAuthorityChanged') is False, report
           assert report.get('finalScheduleState') == 'ENABLED_EVERY_15_MINUTES', report
 
-          identity=report.get('deploymentIdentity') or {}
-          scheduled=report.get('scheduledCollection') or {}
-          manual=report.get('manualCanary') or {}
-          first_key=str(scheduled.get('scheduledArtifactKey') or '')
-          first_time=datetime.fromisoformat(str(scheduled.get('scheduledCollectedAtUtc')).replace('Z','+00:00'))
-          manual_key=str((manual.get('artifact') or {}).get('key') or '')
-          bucket=str(identity.get('bucketName') or '')
-          function_name=str(identity.get('functionName') or '')
-          rule_name=str(identity.get('scheduleRuleName') or '')
-          assert first_key and bucket and function_name and rule_name, report
+          identity = report.get('deploymentIdentity') or {}
+          bucket = str(identity.get('bucketName') or '')
+          function_name = str(identity.get('functionName') or '')
+          rule_name = str(identity.get('scheduleRuleName') or '')
+          assert bucket and function_name and rule_name, identity
 
-          region=os.environ['AWS_REGION_VALUE']
-          cf=boto3.client('cloudformation', region_name=region)
-          lam=boto3.client('lambda', region_name=region)
-          events=boto3.client('events', region_name=region)
-          s3=boto3.client('s3', region_name=region)
+          previous = {}
+          if continuity_path.exists():
+              previous = json.loads(continuity_path.read_text())
+          previous_latest = (
+              previous.get('latestScheduledArtifact')
+              or previous.get('secondScheduledArtifact')
+              or {}
+          )
+          if not previous_latest:
+              scheduled = report.get('scheduledCollection') or {}
+              previous_latest = (
+                  scheduled.get('secondScheduledArtifact')
+                  or {
+                      'key': scheduled.get('scheduledArtifactKey'),
+                      'collectedAtUtc': scheduled.get('scheduledCollectedAtUtc'),
+                      'sha256': scheduled.get('scheduledArtifactSha256'),
+                  }
+              )
+          previous_key = str(previous_latest.get('key') or '')
+          previous_time_raw = str(previous_latest.get('collectedAtUtc') or '')
+          assert previous_key and previous_time_raw, previous_latest
+          previous_time = datetime.fromisoformat(previous_time_raw.replace('Z', '+00:00'))
 
-          stack=(cf.describe_stacks(StackName=os.environ['STACK_NAME']).get('Stacks') or [])[0]
-          outputs={str(x.get('OutputKey')):str(x.get('OutputValue')) for x in stack.get('Outputs') or []}
-          config=lam.get_function_configuration(FunctionName=function_name)
-          env=(config.get('Environment') or {}).get('Variables') or {}
-          rule=events.describe_rule(Name=rule_name)
-          identity_checks={
-              'stackAuthorityShadowOnly':outputs.get('Authority') == 'SHADOW_ONLY',
-              'stackScheduleEnabled':outputs.get('ScheduleStatus') == 'ENABLED_EVERY_15_MINUTES',
-              'handlerActive':config.get('Handler') == 'mlb_odds_v8_shadow_collector.lambda_handler',
-              'v8Enabled':env.get('MLB_V8_ENABLED') == 'true',
-              'playerPropsDisabled':env.get('MLB_V8_PLAYER_PROPS_ENABLED') == 'false',
-              'ruleEnabled':rule.get('State') == 'ENABLED',
+          region = os.environ['AWS_REGION_VALUE']
+          cf = boto3.client('cloudformation', region_name=region)
+          lam = boto3.client('lambda', region_name=region)
+          events = boto3.client('events', region_name=region)
+          s3 = boto3.client('s3', region_name=region)
+
+          stack = (cf.describe_stacks(StackName=os.environ['STACK_NAME']).get('Stacks') or [])[0]
+          outputs = {str(x.get('OutputKey')): str(x.get('OutputValue')) for x in stack.get('Outputs') or []}
+          config = lam.get_function_configuration(FunctionName=function_name)
+          env = (config.get('Environment') or {}).get('Variables') or {}
+          rule = events.describe_rule(Name=rule_name)
+
+          identity_checks = {
+              'stackAuthorityShadowOnly': outputs.get('Authority') == 'SHADOW_ONLY',
+              'stackScheduleEnabled': outputs.get('ScheduleStatus') == 'ENABLED_EVERY_15_MINUTES',
+              'handlerActive': config.get('Handler') == 'mlb_odds_v8_shadow_collector.lambda_handler',
+              'v8Enabled': env.get('MLB_V8_ENABLED') == 'true',
+              'playerPropsDisabled': env.get('MLB_V8_PLAYER_PROPS_ENABLED') == 'false',
+              'maxEventsBounded': env.get('MLB_V8_MAX_EVENTS_PER_CYCLE') == '2',
+              'maxCreditsBounded': env.get('MLB_V8_MAX_CREDITS_PER_CYCLE') == '100',
+              'ruleEnabled': rule.get('State') == 'ENABLED',
+              'fifteenMinuteRate': rule.get('ScheduleExpression') == 'rate(15 minutes)',
           }
-          assert all(identity_checks.values()), identity_checks
+          assert all(identity_checks.values()), {
+              'checks': identity_checks,
+              'outputs': outputs,
+              'handler': config.get('Handler'),
+              'environment': env,
+              'rule': rule,
+          }
 
           def objects():
-              rows=[]
-              paginator=s3.get_paginator('list_objects_v2')
-              for page in paginator.paginate(Bucket=bucket, Prefix='mlb/odds-v8-shadow/'):
+              rows = []
+              paginator = s3.get_paginator('list_objects_v2')
+              for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
                   rows.extend(page.get('Contents') or [])
               return rows
 
-          deadline=time.monotonic()+1200
-          candidate=None
-          observed=[]
+          deadline = time.monotonic() + 1200
+          rows = []
+          candidates = []
           while time.monotonic() < deadline:
-              observed=objects()
-              candidates=[]
-              for row in observed:
-                  key=str(row.get('Key') or '')
-                  modified=row.get('LastModified')
-                  if key and key not in {first_key,manual_key} and isinstance(modified,datetime) and modified > first_time:
-                      candidates.append(row)
+              rows = objects()
+              candidates = [
+                  row for row in rows
+                  if str(row.get('Key') or '')
+                  and str(row.get('Key') or '') != previous_key
+                  and isinstance(row.get('LastModified'), datetime)
+                  and row['LastModified'] > previous_time
+              ]
               if candidates:
-                  candidate=min(candidates,key=lambda row:row['LastModified'])
                   break
               time.sleep(30)
-          if candidate is None:
-              raise TimeoutError('No second scheduled V8 artifact appeared within 20 minutes')
+          if not candidates:
+              raise TimeoutError(
+                  f'No V8 S3 artifact advanced beyond {previous_key} at {previous_time.isoformat()} '
+                  'within 20 minutes'
+              )
 
-          second_key=str(candidate['Key'])
-          body=s3.get_object(Bucket=bucket,Key=second_key)['Body'].read()
-          record=json.loads(body.decode('utf-8'))
-          second_time=datetime.fromisoformat(str(record.get('collectedAtUtc')).replace('Z','+00:00'))
-          contract=record.get('contract') or {}
-          budget=record.get('budget') or {}
-          runtime_checks={
-              'distinctArtifact':second_key != first_key,
-              'collectedAfterFirst':second_time > first_time,
-              'authorityUnchanged':record.get('productionAuthorityChanged') is False,
-              'shadowOnly':contract.get('authority') == 'SHADOW_ONLY',
-              'v7Unchanged':contract.get('productionV7Unchanged') is True,
-              'playerPropsDisabled':contract.get('playerPropsEnabled') is False,
-              'withinBudget':budget.get('withinBudget') is True,
-              'creditsBounded':int(budget.get('estimatedCredits') or 0) <= 100,
-              'ruleStillEnabled':events.describe_rule(Name=rule_name).get('State') == 'ENABLED',
-          }
-          assert all(runtime_checks.values()), {'checks':runtime_checks,'record':record}
+          latest_row = max(candidates, key=lambda row: row['LastModified'])
+          latest_key = str(latest_row['Key'])
+          body = s3.get_object(Bucket=bucket, Key=latest_key)['Body'].read()
+          record = json.loads(body.decode('utf-8'))
+          latest_time = datetime.fromisoformat(
+              str(record.get('collectedAtUtc') or '').replace('Z', '+00:00')
+          )
+          now = datetime.now(timezone.utc)
+          age_seconds = max(0, int((now - latest_time).total_seconds()))
+          contract = record.get('contract') or {}
+          budget = record.get('budget') or {}
 
-          continuity={
-              'proofType':'MLB_ODDS_V8_SHADOW_CONTINUITY',
-              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
-              'deploymentSourceSha':report.get('sourceSha'),
-              'runId':os.environ['GITHUB_RUN_ID'],
-              'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
-              'authority':'SHADOW_ONLY',
-              'productionAuthorityChanged':False,
-              'ruleName':rule_name,
-              'ruleState':'ENABLED',
-              'scheduleStatus':'ENABLED_EVERY_15_MINUTES',
-              'repeatedScheduledCollectionsVerified':True,
-              'scheduledCollectionCount':2,
-              'firstScheduledArtifact':{
-                  'key':first_key,
-                  'collectedAtUtc':scheduled.get('scheduledCollectedAtUtc'),
-                  'sha256':scheduled.get('scheduledArtifactSha256'),
-              },
-              'secondScheduledArtifact':{
-                  'key':second_key,
-                  'collectedAtUtc':record.get('collectedAtUtc'),
-                  'sha256':hashlib.sha256(body).hexdigest(),
-                  'budget':budget,
-                  'contract':contract,
-              },
-              'identityChecks':identity_checks,
-              'runtimeChecks':runtime_checks,
-              'ok':True,
-              'blockers':[],
+          runtime_checks = {
+              'distinctArtifact': latest_key != previous_key,
+              'collectedAfterPrevious': latest_time > previous_time,
+              'recentArtifact': age_seconds <= 2400,
+              'authorityUnchanged': record.get('productionAuthorityChanged') is False,
+              'shadowOnly': contract.get('authority') == 'SHADOW_ONLY',
+              'v7Unchanged': contract.get('productionV7Unchanged') is True,
+              'playerPropsDisabled': contract.get('playerPropsEnabled') is False,
+              'withinBudget': budget.get('withinBudget') is True,
+              'creditsBounded': int(budget.get('estimatedCredits') or 0) <= 100,
+              'ruleStillEnabled': events.describe_rule(Name=rule_name).get('State') == 'ENABLED',
           }
-          scheduled['repeatedScheduledCollectionsVerified']=True
-          scheduled['scheduledCollectionCount']=2
-          scheduled['secondScheduledArtifact']=continuity['secondScheduledArtifact']
-          report['scheduledCollection']=scheduled
-          report['runtimeContinuity']=continuity
-          report['runtimeContinuityVerifiedAtUtc']=continuity['createdAtUtc']
-          report['blockers']=[]
-          report['ok']=True
-          proof_path.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
-          continuity_path.parent.mkdir(parents=True,exist_ok=True)
-          continuity_path.write_text(json.dumps(continuity,indent=2,sort_keys=True)+'\n')
+          assert all(runtime_checks.values()), {
+              'checks': runtime_checks,
+              'latestAgeSeconds': age_seconds,
+              'record': record,
+          }
+
+          prior_count = int(previous.get('scheduledCollectionCount') or 0)
+          new_count = len(candidates)
+          collection_count = prior_count + new_count
+          latest_artifact = {
+              'key': latest_key,
+              'collectedAtUtc': record.get('collectedAtUtc'),
+              'lastModifiedUtc': latest_row['LastModified'].astimezone(timezone.utc).isoformat(),
+              'sha256': hashlib.sha256(body).hexdigest(),
+              'estimatedCredits': int(budget.get('estimatedCredits') or 0),
+              'maximumCredits': int(budget.get('maximumCredits') or 0),
+              'withinBudget': budget.get('withinBudget'),
+              'selectedEventCount': record.get('selectedEventCount'),
+              'selectedMarketRequestCount': record.get('selectedMarketRequestCount'),
+              'eventEnrichmentErrorCount': len(record.get('eventEnrichmentErrors') or []),
+              'contract': contract,
+          }
+
+          continuity = {
+              'proofType': 'MLB_ODDS_V8_SHADOW_CONTINUITY',
+              'createdAtUtc': now.isoformat(),
+              'deploymentSourceSha': report.get('sourceSha'),
+              'runId': os.environ['GITHUB_RUN_ID'],
+              'runUrl': (
+                  f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/"
+                  f"{os.environ['GITHUB_RUN_ID']}"
+              ),
+              'authority': 'SHADOW_ONLY',
+              'productionAuthorityChanged': False,
+              'ruleName': rule_name,
+              'ruleState': 'ENABLED',
+              'scheduleStatus': 'ENABLED_EVERY_15_MINUTES',
+              'scheduleExpression': rule.get('ScheduleExpression'),
+              'previousScheduledArtifact': previous_latest,
+              'latestScheduledArtifact': latest_artifact,
+              'newArtifactCountSincePreviousProof': new_count,
+              'scheduledCollectionCount': collection_count,
+              'objectCount': len(rows),
+              'latestArtifactAgeSeconds': age_seconds,
+              'advancing': True,
+              'identityChecks': identity_checks,
+              'runtimeChecks': runtime_checks,
+              'ok': True,
+              'blockers': [],
+          }
+
+          live_status = {
+              'checkedAtUtc': now.isoformat(),
+              'ok': True,
+              'advancing': True,
+              'authority': 'SHADOW_ONLY',
+              'productionAuthorityChanged': False,
+              'handler': config.get('Handler'),
+              'deployGitSha': env.get('INQSI_DEPLOY_GIT_SHA'),
+              'ruleName': rule_name,
+              'ruleState': rule.get('State'),
+              'scheduleExpression': rule.get('ScheduleExpression'),
+              'bucketName': bucket,
+              'objectCount': len(rows),
+              'previousArtifactKey': previous_key,
+              'previousCollectedAtUtc': previous_time.isoformat(),
+              'latestArtifactKey': latest_key,
+              'latestCollectedAtUtc': record.get('collectedAtUtc'),
+              'latestArtifactAgeSeconds': age_seconds,
+              'newArtifactCountSincePreviousProof': new_count,
+              'estimatedCredits': int(budget.get('estimatedCredits') or 0),
+              'maximumCredits': int(budget.get('maximumCredits') or 0),
+              'withinBudget': budget.get('withinBudget'),
+              'selectedEventCount': record.get('selectedEventCount'),
+              'selectedMarketRequestCount': record.get('selectedMarketRequestCount'),
+              'eventEnrichmentErrorCount': len(record.get('eventEnrichmentErrors') or []),
+              'playerPropsEnabled': contract.get('playerPropsEnabled'),
+              'v7Unchanged': contract.get('productionV7Unchanged'),
+              'blockers': [],
+          }
+
+          report['runtimeContinuity'] = continuity
+          report['runtimeContinuityVerifiedAtUtc'] = continuity['createdAtUtc']
+          report['blockers'] = []
+          report['ok'] = True
+
+          continuity_path.parent.mkdir(parents=True, exist_ok=True)
+          live_status_path.parent.mkdir(parents=True, exist_ok=True)
+          proof_path.write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+          continuity_path.write_text(json.dumps(continuity, indent=2, sort_keys=True) + '\n')
+          live_status_path.write_text(json.dumps(live_status, indent=2, sort_keys=True) + '\n')
+          print(json.dumps(live_status, indent=2, sort_keys=True))
           PY
 
       - name: Upload continuity evidence
         uses: actions/upload-artifact@v4
         with:
-          name: mlb-v8-continuity-${{ github.sha }}
+          name: mlb-v8-continuity-${{ github.run_id }}
           path: |
             runtime_reports/mlb_odds_v8_shadow_recovery_latest.json
             runtime_reports/mlb_odds_v8_shadow_continuity_latest.json
+            docs/runtime/mlb-v8-live-status.json
           retention-days: 90
 
       - name: Publish continuity evidence
@@ -199,15 +294,17 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           cp "$PROOF_PATH" /tmp/v8-recovery-proof.json
           cp "$CONTINUITY_PATH" /tmp/v8-continuity-proof.json
+          cp "$LIVE_STATUS_PATH" /tmp/v8-live-status.json
           for attempt in 1 2 3; do
             git fetch origin main
             git checkout -B v8-continuity origin/main
-            mkdir -p runtime_reports
+            mkdir -p runtime_reports docs/runtime
             cp /tmp/v8-recovery-proof.json "$PROOF_PATH"
             cp /tmp/v8-continuity-proof.json "$CONTINUITY_PATH"
-            git add "$PROOF_PATH" "$CONTINUITY_PATH"
+            cp /tmp/v8-live-status.json "$LIVE_STATUS_PATH"
+            git add "$PROOF_PATH" "$CONTINUITY_PATH" "$LIVE_STATUS_PATH"
             git diff --cached --quiet && exit 0
-            git commit -m 'Publish repeated MLB V8 scheduled runtime proof'
+            git commit -m 'Publish current MLB V8 runtime continuity'
             git push origin HEAD:main && exit 0
             sleep $((attempt * 3))
           done
