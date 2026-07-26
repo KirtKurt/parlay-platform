@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
-"""Read-only gate for the durable MLB r3 release-activation contract."""
+"""Read-only gate for the durable MLB R3 release-activation contract.
+
+The original R3 contract had a fixed July 24, 2026 cutoff.  It must continue to
+fail closed when an R3 manifest exists but is malformed or markerless.  When the
+legacy manifest is completely absent well after the contract window, however,
+it must not permanently block unrelated newer deployments.
+"""
 from __future__ import annotations
 
 import argparse
@@ -14,15 +20,13 @@ from typing import Any, Dict, List, Mapping, Optional, Tuple
 import boto3
 from botocore.exceptions import ClientError
 
-
 ROOT = Path(__file__).resolve().parents[1]
 HELLO_WORLD = ROOT / "hello_world"
 if str(HELLO_WORLD) not in sys.path:
     sys.path.insert(0, str(HELLO_WORLD))
 import mlb_ml_experiment_v2 as _runtime_experiment
 
-
-VERSION = "MLB-ML-RELEASE-ACTIVATION-PREDEPLOY-v1"
+VERSION = "MLB-ML-RELEASE-ACTIVATION-PREDEPLOY-v2"
 EXPERIMENT_VERSION = "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
 RELEASE_ACTIVATION_VERSION = "MLB-ML-RELEASE-ACTIVATION-v1"
 EXPERIMENT_ID = "mlb-v2-2026-07-24-future-prospective-r4"
@@ -33,12 +37,12 @@ MANIFEST_PK = f"MLB_ML_EXPERIMENT#V2#{EXPERIMENT_ID}"
 MANIFEST_SK = "MANIFEST"
 MANIFEST_RECORD_TYPE = "mlb_ml_experiment_manifest_v2"
 
-# Ninety minutes covers the bounded 6-minute capacity recovery and ~16-minute
-# Lambda admission retry while retaining over an hour for SAM/identity work.
 FIRST_ACTIVATION_LEAD = timedelta(minutes=90)
 FIRST_ACTIVATION_LEAD_SECONDS = int(FIRST_ACTIVATION_LEAD.total_seconds())
 RELEASE_CUTOFF = datetime.fromisoformat(RELEASE_CUTOFF_UTC)
 FIRST_ACTIVATION_DEADLINE = RELEASE_CUTOFF - FIRST_ACTIVATION_LEAD
+LEGACY_CONTRACT_RETIREMENT_GRACE = timedelta(hours=24)
+LEGACY_CONTRACT_RETIREMENT_AT = RELEASE_CUTOFF + LEGACY_CONTRACT_RETIREMENT_GRACE
 
 
 class GateReadError(RuntimeError):
@@ -91,10 +95,7 @@ def _canonical(value: Any) -> Any:
 
 def _digest(value: Any) -> str:
     encoded = json.dumps(
-        _canonical(value),
-        sort_keys=True,
-        separators=(",", ":"),
-        ensure_ascii=False,
+        _canonical(value), sort_keys=True, separators=(",", ":"), ensure_ascii=False
     )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
@@ -103,9 +104,7 @@ def manifest_digest(manifest: Mapping[str, Any]) -> str:
     runtime_digest = getattr(_runtime_experiment, "manifest_digest", None)
     if callable(runtime_digest):
         return str(runtime_digest(dict(manifest)))
-    return _digest(
-        {key: value for key, value in manifest.items() if key != "manifestDigest"}
-    )
+    return _digest({k: v for k, v in manifest.items() if k != "manifestDigest"})
 
 
 def _is_hex(value: Any, length: int) -> bool:
@@ -127,7 +126,6 @@ def release_activation_errors(
     expected_release_cutoff_utc: str,
     expected_created_at_utc: str,
 ) -> List[str]:
-    """Mirror the runtime's immutable release-activation validation."""
     runtime_validator = getattr(_runtime_experiment, "release_activation_errors", None)
     if callable(runtime_validator):
         return list(
@@ -142,15 +140,11 @@ def release_activation_errors(
     if not isinstance(value, Mapping):
         return ["release_activation_missing"]
     errors: List[str] = []
-    if set(value) != {
-        "version",
-        "experimentId",
-        "releaseContractId",
-        "releaseCutoffUtc",
-        "activatedAtUtc",
-        "deploymentIdentity",
-        "immutable",
-    }:
+    expected_fields = {
+        "version", "experimentId", "releaseContractId", "releaseCutoffUtc",
+        "activatedAtUtc", "deploymentIdentity", "immutable",
+    }
+    if set(value) != expected_fields:
         errors.append("release_activation_fields_mismatch")
     if value.get("version") != RELEASE_ACTIVATION_VERSION:
         errors.append("release_activation_version_mismatch")
@@ -158,7 +152,6 @@ def release_activation_errors(
         errors.append("release_activation_experiment_identity_mismatch")
     if value.get("releaseContractId") != expected_release_contract_id:
         errors.append("release_activation_contract_identity_mismatch")
-
     cutoff = _parse_time(expected_release_cutoff_utc)
     marker_cutoff = _parse_time(value.get("releaseCutoffUtc"))
     activated = _parse_time(value.get("activatedAtUtc"))
@@ -173,7 +166,6 @@ def release_activation_errors(
         errors.append("release_activation_manifest_created_at_invalid")
     elif activated is not None and activated < created:
         errors.append("release_activation_predates_manifest_creation")
-
     identity = value.get("deploymentIdentity")
     if not isinstance(identity, Mapping):
         errors.append("release_activation_deployment_identity_missing")
@@ -196,11 +188,7 @@ def _stack_missing(exc: ClientError) -> bool:
     ).lower()
 
 
-def _resolve_snapshots_table(
-    cloudformation: Any,
-    *,
-    stack_name: str,
-) -> Tuple[bool, Optional[str]]:
+def _resolve_snapshots_table(cloudformation: Any, *, stack_name: str) -> Tuple[bool, Optional[str]]:
     try:
         response = cloudformation.describe_stacks(StackName=stack_name)
     except ClientError as exc:
@@ -233,8 +221,7 @@ def _resolve_snapshots_table(
 def _read_manifest(dynamodb: Any, *, table_name: str) -> Optional[Dict[str, Any]]:
     try:
         response = dynamodb.Table(table_name).get_item(
-            Key={"PK": MANIFEST_PK, "SK": MANIFEST_SK},
-            ConsistentRead=True,
+            Key={"PK": MANIFEST_PK, "SK": MANIFEST_SK}, ConsistentRead=True
         )
     except Exception as exc:
         raise GateReadError("dynamodb_manifest_read_failed") from exc
@@ -242,11 +229,7 @@ def _read_manifest(dynamodb: Any, *, table_name: str) -> Optional[Dict[str, Any]
     return item if isinstance(item, dict) and item else None
 
 
-def _manifest_errors(
-    item: Mapping[str, Any],
-    *,
-    checked_at: datetime,
-) -> Tuple[Dict[str, Any], List[str]]:
+def _manifest_errors(item: Mapping[str, Any], *, checked_at: datetime) -> Tuple[Dict[str, Any], List[str]]:
     errors: List[str] = []
     if item.get("PK") != MANIFEST_PK:
         errors.append("manifest_envelope_partition_key_mismatch")
@@ -261,11 +244,7 @@ def _manifest_errors(
     if item.get("manifestDigest") != manifest.get("manifestDigest"):
         errors.append("manifest_envelope_digest_mismatch")
     revision = manifest.get("revision")
-    if (
-        isinstance(revision, bool)
-        or not isinstance(revision, int)
-        or item.get("revision") != revision
-    ):
+    if isinstance(revision, bool) or not isinstance(revision, int) or item.get("revision") != revision:
         errors.append("manifest_envelope_revision_mismatch")
     expected = {
         "version": EXPERIMENT_VERSION,
@@ -307,6 +286,8 @@ def _base_report(*, checked_at: datetime, stack_name: str) -> Dict[str, Any]:
         "releaseCutoffUtc": RELEASE_CUTOFF_UTC,
         "firstActivationLeadSeconds": FIRST_ACTIVATION_LEAD_SECONDS,
         "firstActivationDeadlineUtc": FIRST_ACTIVATION_DEADLINE.isoformat(),
+        "legacyContractRetirementAtUtc": LEGACY_CONTRACT_RETIREMENT_AT.isoformat(),
+        "legacyContractRetired": checked_at > LEGACY_CONTRACT_RETIREMENT_AT,
         "stackPresent": None,
         "manifestState": "UNKNOWN",
         "manifestDigestValidated": False,
@@ -317,58 +298,45 @@ def _base_report(*, checked_at: datetime, stack_name: str) -> Dict[str, Any]:
 
 
 def _first_activation_decision(
-    report: Dict[str, Any],
-    *,
-    checked_at: datetime,
-    manifest_state: str,
+    report: Dict[str, Any], *, checked_at: datetime, manifest_state: str
 ) -> Dict[str, Any]:
     report["manifestState"] = manifest_state
     if checked_at < FIRST_ACTIVATION_DEADLINE:
-        report.update(
-            {
-                "ok": True,
-                "decision": "ALLOW_FIRST_ACTIVATION",
-                "errors": [],
-            }
-        )
+        report.update({"ok": True, "decision": "ALLOW_FIRST_ACTIVATION", "errors": []})
+    elif checked_at > LEGACY_CONTRACT_RETIREMENT_AT and manifest_state in {
+        "STACK_AND_MANIFEST_MISSING", "MANIFEST_MISSING"
+    }:
+        report.update({
+            "ok": True,
+            "decision": "ALLOW_RETIRED_LEGACY_CONTRACT_ABSENT",
+            "legacyContractRetired": True,
+            "errors": [],
+        })
     else:
         report["errors"] = ["first_activation_lead_deadline_reached"]
     return report
 
 
 def verify_predeploy(
-    *,
-    cloudformation: Any,
-    dynamodb: Any,
-    stack_name: str,
-    now: Optional[datetime] = None,
+    *, cloudformation: Any, dynamodb: Any, stack_name: str, now: Optional[datetime] = None
 ) -> Dict[str, Any]:
-    """Evaluate the gate without making any AWS mutation."""
     checked_at = _utc(now or datetime.now(timezone.utc))
     report = _base_report(checked_at=checked_at, stack_name=stack_name)
     try:
-        stack_present, table_name = _resolve_snapshots_table(
-            cloudformation, stack_name=stack_name
-        )
+        stack_present, table_name = _resolve_snapshots_table(cloudformation, stack_name=stack_name)
         report["stackPresent"] = stack_present
         if not stack_present:
             return _first_activation_decision(
-                report,
-                checked_at=checked_at,
-                manifest_state="STACK_AND_MANIFEST_MISSING",
+                report, checked_at=checked_at, manifest_state="STACK_AND_MANIFEST_MISSING"
             )
         item = _read_manifest(dynamodb, table_name=str(table_name))
     except GateReadError as exc:
         report["errors"] = [exc.code]
         return report
-
     if item is None:
         return _first_activation_decision(
-            report,
-            checked_at=checked_at,
-            manifest_state="MANIFEST_MISSING",
+            report, checked_at=checked_at, manifest_state="MANIFEST_MISSING"
         )
-
     manifest, errors = _manifest_errors(item, checked_at=checked_at)
     if errors:
         report["manifestState"] = "INVALID"
@@ -378,11 +346,8 @@ def verify_predeploy(
     activation = manifest.get("releaseActivation")
     if activation is None:
         return _first_activation_decision(
-            report,
-            checked_at=checked_at,
-            manifest_state="MARKERLESS_MANIFEST",
+            report, checked_at=checked_at, manifest_state="MARKERLESS_MANIFEST"
         )
-
     activation_errors = release_activation_errors(
         activation,
         expected_experiment_id=EXPERIMENT_ID,
@@ -390,11 +355,7 @@ def verify_predeploy(
         expected_release_cutoff_utc=RELEASE_CUTOFF_UTC,
         expected_created_at_utc=str(manifest.get("createdAtUtc") or ""),
     )
-    activated_at = _parse_time(
-        activation.get("activatedAtUtc")
-        if isinstance(activation, Mapping)
-        else None
-    )
+    activated_at = _parse_time(activation.get("activatedAtUtc") if isinstance(activation, Mapping) else None)
     if activated_at is not None and activated_at > checked_at:
         activation_errors.append("release_activation_timestamp_from_future")
     activation_errors = sorted(set(activation_errors))
@@ -402,26 +363,21 @@ def verify_predeploy(
         report["manifestState"] = "INVALID_RELEASE_ACTIVATION"
         report["errors"] = activation_errors
         return report
-    report.update(
-        {
-            "ok": True,
-            "decision": "ALLOW_EXISTING_ACTIVATION",
-            "manifestState": "VALID_RELEASE_ACTIVATION",
-            "releaseActivationValidated": True,
-            "activationRecordedAtUtc": activation.get("activatedAtUtc"),
-            "errors": [],
-        }
-    )
+    report.update({
+        "ok": True,
+        "decision": "ALLOW_EXISTING_ACTIVATION",
+        "manifestState": "VALID_RELEASE_ACTIVATION",
+        "releaseActivationValidated": True,
+        "activationRecordedAtUtc": activation.get("activatedAtUtc"),
+        "errors": [],
+    })
     return report
 
 
 def _write_report(path: str, report: Mapping[str, Any]) -> None:
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    destination.write_text(
-        json.dumps(report, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    destination.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def main() -> int:
