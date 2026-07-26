@@ -15,6 +15,9 @@ permissions:
 
 env:
   OPTIMIZER_STACK: parlay-platform-mlb-historical-optimizer
+  EXPECTED_HANDLER: mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler
+  EXPECTED_END_DATE: '2026-07-24'
+  EXPECTED_MAX_CREDITS: '300000'
 
 concurrency:
   group: mlb-historical-ingestion-watchdog
@@ -26,112 +29,221 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - uses: aws-actions/setup-sam@v2
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Deploy bounded runtime fix
-        env:
-          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+      - name: Resolve and verify canonical V7 runtime
+        id: runtime
         run: |
           set -euo pipefail
-          test -n "${ODDS_API_KEY_VALUE:-}" || { echo '::error::Missing ODDS_API_KEY'; exit 1; }
-          sam build --no-cached --build-dir .aws-sam-watchdog --template-file mlb_historical_optimizer/template.yaml
-          sam deploy \
-            --template-file .aws-sam-watchdog/template.yaml \
-            --stack-name "$OPTIMIZER_STACK" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --capabilities CAPABILITY_IAM \
-            --resolve-s3 \
-            --force-upload \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --parameter-overrides \
-              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
-              'TargetSnapshotsTable=parlay_platform_snapshots' \
-              'HistoricalStartDate=2025-04-01' \
-              'HistoricalEndDate=2025-08-31' \
-              'HistoricalTargetGames=1600' \
-              'HistoricalMaxCredits=120000' \
-              'HistoricalRequestsPerRun=20' \
-              'HistoricalMaxCandidates=25000' \
-              'HistoricalMaxOptimizationRounds=6' \
-              'HistoricalFreshAuditIncrementGames=250' \
-              "DeployGitSha=${GITHUB_SHA}"
+          : >/tmp/runtime-config-history.txt
+          for attempt in $(seq 1 80); do
+            STACK_STATUS=$(aws cloudformation describe-stacks \
+              --stack-name "$OPTIMIZER_STACK" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || echo STACK_NOT_FOUND)
+            printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$STACK_STATUS" >>/tmp/runtime-config-history.txt
+            case "$STACK_STATUS" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE)
+                ;;
+              *_IN_PROGRESS)
+                sleep 15
+                continue
+                ;;
+              *)
+                echo "::error::Historical stack is not readable: $STACK_STATUS"
+                exit 1
+                ;;
+            esac
+
+            FUNCTION_NAME=$(aws cloudformation describe-stacks \
+              --stack-name "$OPTIMIZER_STACK" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+              --output text)
+            test -n "$FUNCTION_NAME"
+            test "$FUNCTION_NAME" != None
+            CONFIG=$(aws lambda get-function-configuration \
+              --function-name "$FUNCTION_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --output json)
+            DECISION=$(CONFIG="$CONFIG" python - <<'PY'
+          import json, os
+          value=json.loads(os.environ['CONFIG'])
+          env=(value.get('Environment') or {}).get('Variables') or {}
+          checks={
+              'handler': value.get('Handler') == os.environ['EXPECTED_HANDLER'],
+              'endDate': env.get('MLB_HISTORICAL_END_DATE') == os.environ['EXPECTED_END_DATE'],
+              'maxCredits': env.get('MLB_HISTORICAL_MAX_CREDITS') == os.environ['EXPECTED_MAX_CREDITS'],
+              'rangeExtensionAuthorized': env.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED') == 'true',
+          }
+          print('READY' if all(checks.values()) else 'WAIT')
+          open('/tmp/runtime-config.json','w').write(json.dumps({
+              'functionName': value.get('FunctionName'),
+              'handler': value.get('Handler'),
+              'environment': {
+                  'MLB_HISTORICAL_END_DATE': env.get('MLB_HISTORICAL_END_DATE'),
+                  'MLB_HISTORICAL_MAX_CREDITS': env.get('MLB_HISTORICAL_MAX_CREDITS'),
+                  'MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED': env.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED'),
+              },
+              'checks': checks,
+          }, indent=2, sort_keys=True)+'\n')
+          PY
+          )
+            if test "$DECISION" = READY; then
+              echo "function_name=$FUNCTION_NAME" >>"$GITHUB_OUTPUT"
+              exit 0
+            fi
+            sleep 15
+          done
+          cat /tmp/runtime-config.json || true
+          echo '::error::Canonical V7 runtime configuration did not become active within 20 minutes'
+          exit 1
 
       - name: Resume once and verify durable progress
         run: |
           set -euo pipefail
-          FUNCTION_NAME=$(aws cloudformation describe-stacks \
-            --stack-name "$OPTIMIZER_STACK" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
-            --output text)
-          test -n "$FUNCTION_NAME"
-          test "$FUNCTION_NAME" != None
+          FUNCTION_NAME="${{ steps.runtime.outputs.function_name }}"
+
+          read_status() {
+            local destination="$1"
+            local run_name="$2"
+            local meta="${destination%.json}-meta.json"
+            for attempt in $(seq 1 24); do
+              aws lambda invoke \
+                --function-name "$FUNCTION_NAME" \
+                --region "${{ secrets.AWS_REGION }}" \
+                --cli-read-timeout 900 \
+                --cli-binary-format raw-in-base64-out \
+                --payload "{\"mode\":\"status\",\"run\":\"${run_name}_${attempt}\"}" \
+                "$destination" >"$meta"
+              DECISION=$(PAYLOAD="$destination" META="$meta" python - <<'PY'
+          import json, os
+          meta=json.load(open(os.environ['META']))
+          value=json.load(open(os.environ['PAYLOAD']))
+          if meta.get('FunctionError'):
+              print('FAIL')
+          elif value.get('status') == 'LEASE_HELD' and not isinstance(value.get('state'),dict):
+              print('RETRY')
+          elif value.get('ok') is True and isinstance(value.get('state'),dict):
+              print('READY')
+          else:
+              print('FAIL')
+          PY
+          )
+              case "$DECISION" in
+                READY) return 0 ;;
+                RETRY) sleep 15 ;;
+                FAIL) cat "$destination"; echo '::error::Historical status invocation failed'; return 1 ;;
+              esac
+            done
+            echo '::error::Historical status remained lease-held for six minutes'
+            return 1
+          }
+
+          read_status /tmp/before.json watchdog_before
 
           aws lambda invoke \
             --function-name "$FUNCTION_NAME" \
             --region "${{ secrets.AWS_REGION }}" \
             --cli-read-timeout 900 \
             --cli-binary-format raw-in-base64-out \
-            --payload '{"mode":"status","run":"watchdog_before"}' \
-            /tmp/before.json >/tmp/before-meta.json
-
-          aws lambda invoke \
-            --function-name "$FUNCTION_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --cli-read-timeout 900 \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"mode":"orchestrate","run":"github_watchdog_resume"}' \
+            --payload '{"mode":"orchestrate","run":"github_watchdog_resume_canonical_v7"}' \
             /tmp/resume.json >/tmp/resume-meta.json
 
-          aws lambda invoke \
-            --function-name "$FUNCTION_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --cli-read-timeout 900 \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"mode":"status","run":"watchdog_after"}' \
-            /tmp/after.json >/tmp/after-meta.json
+          read_status /tmp/after.json watchdog_after
 
           python - <<'PY'
           import json
+          from datetime import datetime, timezone
+          from pathlib import Path
 
           before = json.load(open('/tmp/before.json'))
           resume = json.load(open('/tmp/resume.json'))
           after = json.load(open('/tmp/after.json'))
-          if before.get('ok') is not True or after.get('ok') is not True:
-              raise SystemExit(f"status invocation failed: before={before} after={after}")
-          if resume.get('ok') is not True:
-              raise SystemExit(f"optimizer resume failed: {resume}")
+          resume_meta = json.load(open('/tmp/resume-meta.json'))
+          published_path=Path('docs/runtime/mlb-historical-live-status.json')
+          published=json.loads(published_path.read_text()) if published_path.exists() else {}
 
-          b = before.get('state') or {}
-          a = after.get('state') or {}
-          terminal = {'PROMOTED', 'DATA_RANGE_EXHAUSTED', 'CANDIDATE_REJECTED', 'PAUSED_QUOTA'}
-          progress_fields = ('networkRequestCount', 'eligibleGameCount', 'completeSlateCount', 'revision')
-          advanced = any(int(a.get(k) or 0) > int(b.get(k) or 0) for k in progress_fields)
-          cursor_advanced = (a.get('currentDate'), a.get('currentSlotIndex')) != (b.get('currentDate'), b.get('currentSlotIndex'))
-          lease_held = resume.get('status') == 'LEASE_HELD'
+          if before.get('ok') is not True or after.get('ok') is not True:
+              raise SystemExit(f'status invocation failed: before={before} after={after}')
+          if resume_meta.get('FunctionError'):
+              raise SystemExit(f'optimizer resume returned FunctionError: {resume_meta} {resume}')
+          if resume.get('ok') is not True:
+              raise SystemExit(f'optimizer resume failed: {resume}')
+
+          b = before.get('state')
+          a = after.get('state')
+          if not isinstance(b,dict) or not isinstance(a,dict):
+              raise SystemExit('optimizer status omitted durable state')
+
           phase = str(a.get('phase') or '')
+          terminal = {'PROMOTED', 'DATA_RANGE_EXHAUSTED', 'CANDIDATE_REJECTED'}
+          active = {'BACKFILLING', 'OPTIMIZING', 'REMATERIALIZING_FEATURES'}
+          if phase == 'PAUSED_QUOTA':
+              raise SystemExit('historical ingestion is blocked by quota')
+          if phase not in terminal | active:
+              raise SystemExit(f'unexpected historical phase: {phase}')
+          if a.get('featureRematerializationComplete') is not True:
+              raise SystemExit('feature rematerialization is not complete')
+          if int(a.get('featureRematerializedSlateCount') or 0) != int(a.get('featureRematerializationTotalSlateCount') or 0):
+              raise SystemExit('feature rematerialization counts disagree')
+          if a.get('featureRematerializationErrors'):
+              raise SystemExit(f"feature rematerialization errors remain: {a.get('featureRematerializationErrors')}")
+          if a.get('lastError'):
+              raise SystemExit(f"optimizer persisted an error: {a.get('lastError')}")
+          if str(a.get('endDate') or '') != '2026-07-24':
+              raise SystemExit(f"historical end date drifted: {a.get('endDate')}")
+
+          quota=(a.get('lastQuota') or {}).get('x-requests-remaining')
+          if isinstance(quota,int) and quota <= 100:
+              raise SystemExit(f'historical provider quota is at or below reserve: {quota}')
+
+          progress_fields = ('networkRequestCount', 'eligibleGameCount', 'completeSlateCount', 'revision')
+          advanced_in_run = any(int(a.get(k) or 0) > int(b.get(k) or 0) for k in progress_fields)
+          cursor_advanced_in_run = (a.get('currentDate'), a.get('currentSlotIndex')) != (b.get('currentDate'), b.get('currentSlotIndex'))
+          advanced_since_published = any(int(a.get(k) or 0) > int(published.get(k) or 0) for k in progress_fields)
+          cursor_advanced_since_published = (
+              str(a.get('currentDate') or ''), int(a.get('currentSlotIndex') or 0)
+          ) > (
+              str(published.get('currentDate') or ''), int(published.get('currentSlotIndex') or 0)
+          )
+          lease_held = resume.get('status') == 'LEASE_HELD'
+
+          if phase in active and not (
+              advanced_in_run or cursor_advanced_in_run or lease_held or
+              advanced_since_published or cursor_advanced_since_published
+          ):
+              raise SystemExit('optimizer is active but did not advance in-run or beyond the published cursor')
 
           report = {
-              'before': {k: b.get(k) for k in ('phase', 'currentDate', 'currentSlotIndex', *progress_fields, 'lastError')},
-              'after': {k: a.get(k) for k in ('phase', 'currentDate', 'currentSlotIndex', *progress_fields, 'lastError')},
-              'advanced': advanced or cursor_advanced,
+              'proofType':'MLB_HISTORICAL_WATCHDOG_PROGRESS',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'runtimeConfig':json.load(open('/tmp/runtime-config.json')),
+              'publishedBaseline': {k: published.get(k) for k in ('checkedAt','phase','currentDate','currentSlotIndex',*progress_fields)},
+              'before': {k: b.get(k) for k in ('phase','currentDate','currentSlotIndex',*progress_fields,'lastError')},
+              'after': {k: a.get(k) for k in ('phase','currentDate','currentSlotIndex',*progress_fields,'lastError')},
+              'advancedInRun': advanced_in_run or cursor_advanced_in_run,
+              'advancedSincePublished': advanced_since_published or cursor_advanced_since_published,
               'leaseHeld': lease_held,
+              'featureRematerializationComplete': a.get('featureRematerializationComplete'),
+              'featureRematerializationErrors': a.get('featureRematerializationErrors') or [],
+              'quotaRemaining': quota,
+              'ok': True,
+              'blockers': [],
           }
-          print(json.dumps(report, indent=2, sort_keys=True))
-
-          if a.get('lastError') and phase not in terminal:
-              raise SystemExit(f"optimizer persisted an error: {a.get('lastError')}")
-          if phase not in terminal and not (advanced or cursor_advanced or lease_held):
-              raise SystemExit('optimizer returned successfully but made no durable progress')
+          Path('/tmp/watchdog-report.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True))
           PY
 
       - uses: actions/upload-artifact@v4
@@ -139,6 +251,9 @@ jobs:
         with:
           name: mlb-historical-watchdog-${{ github.run_id }}
           path: |
+            /tmp/runtime-config.json
+            /tmp/runtime-config-history.txt
+            /tmp/watchdog-report.json
             /tmp/before.json
             /tmp/resume.json
             /tmp/after.json
