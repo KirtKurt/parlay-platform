@@ -91,7 +91,9 @@ Resources:
                 - s3:GetBucketLocation
                 - s3:ListBucket
               Resource: !GetAtt ShadowArtifactsBucket.Arn
-      ReservedConcurrentExecutions: 1
+      # Do not reserve account concurrency. The account must retain at least ten
+      # unreserved executions; the 15-minute schedule, five-minute timeout, and
+      # per-cycle credit cap already bound this isolated shadow collector.
       Events:
         ShadowEveryFifteenMinutes:
           Type: Schedule
