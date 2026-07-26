@@ -1,0 +1,134 @@
+name: V8 Rule State Repair Once
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/v8-rule-state-repair-once.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: v8-rule-state-repair-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact repository state
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Align V8 canary verification with disabled EventBridge rule
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          git reset --hard origin/main
+          python - <<'PY'
+          from pathlib import Path
+
+          workflow_path = Path('.github/workflows/mlb-odds-v8-shadow-deploy.yml')
+          template_path = Path('mlb_odds_v8_shadow/template.yaml')
+          repair_path = Path('.github/workflows/v8-rule-state-repair-once.yml')
+
+          workflow = workflow_path.read_text()
+          template = template_path.read_text()
+
+          rules_old = '''          RULES=$(aws events list-rule-names-by-target \\
+            --target-arn "$FUNCTION_ARN" \\
+            --region "${{ secrets.AWS_REGION }}" \\
+            --query RuleNames --output json)
+          CONFIG="$CONFIG" CONCURRENCY="$CONCURRENCY" ASYNC_CONFIG="$ASYNC_CONFIG" \\
+            RULES="$RULES" EXPECTED_SHA="$GITHUB_SHA" FUNCTION_NAME="$FUNCTION_NAME" \\
+            BUCKET_NAME="$BUCKET_NAME" python - <<'PY'
+'''
+          rules_new = '''          RULES=$(aws events list-rule-names-by-target \\
+            --target-arn "$FUNCTION_ARN" \\
+            --region "${{ secrets.AWS_REGION }}" \\
+            --query RuleNames --output json)
+          RULE_NAME=$(RULES="$RULES" python - <<'PY'
+          import json,os
+          rows=json.loads(os.environ['RULES'])
+          assert len(rows)==1, rows
+          print(rows[0])
+          PY
+          )
+          RULE_STATE=$(aws events describe-rule \\
+            --name "$RULE_NAME" \\
+            --region "${{ secrets.AWS_REGION }}" \\
+            --query State --output text)
+          CONFIG="$CONFIG" CONCURRENCY="$CONCURRENCY" ASYNC_CONFIG="$ASYNC_CONFIG" \\
+            RULES="$RULES" RULE_NAME="$RULE_NAME" RULE_STATE="$RULE_STATE" \\
+            EXPECTED_SHA="$GITHUB_SHA" FUNCTION_NAME="$FUNCTION_NAME" \\
+            BUCKET_NAME="$BUCKET_NAME" python - <<'PY'
+'''
+          assertion_old = "          assert rules == [], rules\n"
+          assertion_new = (
+              "          assert len(rules) == 1 and rules[0] == os.environ['RULE_NAME'], rules\n"
+              "          assert os.environ['RULE_STATE'] == 'DISABLED', os.environ['RULE_STATE']\n"
+          )
+          identity_old = "              'scheduleStatusAtCanary': 'DISABLED_MANUAL_CANARY_ONLY',\n"
+          identity_new = (
+              "              'scheduleStatusAtCanary': 'DISABLED_MANUAL_CANARY_ONLY',\n"
+              "              'scheduleRuleName': os.environ['RULE_NAME'],\n"
+              "              'scheduleRuleStateAtCanary': os.environ['RULE_STATE'],\n"
+          )
+
+          assert workflow.count(rules_old) == 1, 'unexpected V8 rule discovery block'
+          assert workflow.count(assertion_old) == 1, 'unexpected V8 disabled-rule assertion'
+          assert workflow.count(identity_old) == 1, 'unexpected V8 identity block'
+          assert 'Condition: EnableV8Schedule' not in template
+          assert 'Enabled: !If [EnableV8Schedule, true, false]' in template
+
+          workflow = workflow.replace(rules_old, rules_new, 1)
+          workflow = workflow.replace(assertion_old, assertion_new, 1)
+          workflow = workflow.replace(identity_old, identity_new, 1)
+
+          assert "assert os.environ['RULE_STATE'] == 'DISABLED'" in workflow
+          assert "'scheduleRuleStateAtCanary': os.environ['RULE_STATE']" in workflow
+          assert 'rules == []' not in workflow
+
+          workflow_path.write_text(workflow)
+          repair_path.unlink()
+          PY
+
+          git diff --check
+          grep -Fq "assert os.environ['RULE_STATE'] == 'DISABLED'" .github/workflows/mlb-odds-v8-shadow-deploy.yml
+          grep -Fq "'scheduleRuleStateAtCanary': os.environ['RULE_STATE']" .github/workflows/mlb-odds-v8-shadow-deploy.yml
+          grep -Fq 'Enabled: !If [EnableV8Schedule, true, false]' mlb_odds_v8_shadow/template.yaml
+          test ! -e .github/workflows/v8-rule-state-repair-once.yml
+
+      - name: Publish exact repair to main
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/mlb-odds-v8-shadow-deploy.yml .github/workflows/v8-rule-state-repair-once.yml
+          git commit -m 'Align V8 disabled canary rule verification'
+          for attempt in $(seq 1 8); do
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            git fetch origin main
+            git rebase origin/main
+            sleep $((attempt * 3))
+          done
+          echo '::error::Unable to publish V8 rule-state repair'
+          exit 1
+
+      - name: Dispatch corrected V8 recovery
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh api \
+            --method POST \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "/repos/${GITHUB_REPOSITORY}/actions/workflows/mlb-odds-v8-shadow-deploy.yml/dispatches" \
+            -f ref=main
