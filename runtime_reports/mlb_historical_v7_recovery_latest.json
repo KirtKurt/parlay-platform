@@ -1,9 +1,10 @@
 {
-  "createdAtUtc": "2026-07-26T01:15:18.272862+00:00",
-  "jobStatus": "failure",
+  "createdAtUtc": "2026-07-26T01:40:30.755477+00:00",
+  "jobStatus": "success",
   "proofType": "MLB_HISTORICAL_V7_RECOVERY_RUN",
   "recovery": {
     "ok": true,
+    "rematerializing": true,
     "state": {
       "authorizationContract": "AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS",
       "authorizedPlanFingerprint": "2858d6bd2733d65413028636cf0a937500e579be317a5a4cd5f951ef47203d62",
@@ -250,29 +251,37 @@
         {
           "artifact": {
             "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-            "etag": "99f6b6ab9753b30ff7e125c741185d03",
-            "key": "mlb/historical-daily-v1/datasets-versioned/2025-04-15/59c8af673a44dfc3e72126e15c8165e191fe1cd287ec2d40d4cfb91bc8d15fbc.json",
-            "sha256": "59c8af673a44dfc3e72126e15c8165e191fe1cd287ec2d40d4cfb91bc8d15fbc",
-            "versionId": "3d98kO9i1g3XGlH.nGhvu5yu6PWvTHHt"
+            "etag": "f07efc394e1cd0e1a675fb29e6013cd5",
+            "key": "mlb/historical-daily-v1/datasets-versioned/2025-04-15/ecbd00060b4f87b6d455e17c55f658ed72305dca4aad6fe12d87ab0609a45acb.json",
+            "sha256": "ecbd00060b4f87b6d455e17c55f658ed72305dca4aad6fe12d87ab0609a45acb",
+            "versionId": "KQJJolFh2NFfnC50mqz.Lz1Kz9Nfdfco"
           },
           "eligibleGameCount": 15,
-          "fingerprint": "827634bff06fecc004c81fa0d3c224fabe6d30566294c06d2b5a30a126a5d808",
+          "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack",
+          "fingerprint": "7d6eea2b87d70cd46e44fb81280863c63d517f3cd89ccd85daa5e0f90914d980",
           "officialGameCount": 15,
+          "paidHistoricalCallsMade": 0,
           "quarantinedSnapshotCount": 16,
+          "rematerializationVersion": "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.1-v7-quarantine-aware",
+          "rematerializedAtUtc": "2026-07-26T01:40:24.123146+00:00",
           "slateDateEt": "2025-04-15"
         },
         {
           "artifact": {
             "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-            "etag": "7b46a5abd171a5c944b546aa2d90e439",
-            "key": "mlb/historical-daily-v1/datasets-versioned/2025-04-16/25713f66d2ce0fda5e8fb5b71da8c74522bdcbd6cdefcc0b99594051c4b35b54.json",
-            "sha256": "25713f66d2ce0fda5e8fb5b71da8c74522bdcbd6cdefcc0b99594051c4b35b54",
-            "versionId": "klMvf2qnyPm5rnThcKIXZrZ3HFnlaHPu"
+            "etag": "3851d0d328b924ce1c5535bdb0ba82dd",
+            "key": "mlb/historical-daily-v1/datasets-versioned/2025-04-16/973f7a53d6a6c9b43a01467163693b6ed7a9ebcedda29ac0cf2981a3124e5f4c.json",
+            "sha256": "973f7a53d6a6c9b43a01467163693b6ed7a9ebcedda29ac0cf2981a3124e5f4c",
+            "versionId": "ypsZSUiwLag8J7PLqarym6gzum9GKqcS"
           },
           "eligibleGameCount": 15,
-          "fingerprint": "3f62844ab40f2ecd2979eaf4928ecad4e2e216c3f0894b34d45c539ee1f304dd",
+          "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack",
+          "fingerprint": "e2f36959522ed5dbb4d93818ba498077e0d2f634225aa7c466026d57fdfe175b",
           "officialGameCount": 15,
+          "paidHistoricalCallsMade": 0,
           "quarantinedSnapshotCount": 0,
+          "rematerializationVersion": "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.1-v7-quarantine-aware",
+          "rematerializedAtUtc": "2026-07-26T01:40:28.941464+00:00",
           "slateDateEt": "2025-04-16"
         },
         {
@@ -2220,18 +2229,12 @@
           "passed": false
         }
       ],
-      "featureRematerializationCursor": 14,
-      "featureRematerializationErrors": [
-        {
-          "error": "feature rematerialization failed for 2025-04-15: HistoricalOptimizerError:historical request ledger is incomplete",
-          "recordedAtUtc": "2026-07-26T01:13:58.197627+00:00",
-          "slateDateEt": "2025-04-15"
-        }
-      ],
+      "featureRematerializationCursor": 16,
+      "featureRematerializationErrors": [],
       "featureRematerializationPreviousPhase": "BACKFILLING",
       "featureRematerializationStartedAtUtc": "2026-07-26T00:46:14.915231+00:00",
       "featureRematerializationTotalSlateCount": 149,
-      "featureRematerializedSlateCount": 14,
+      "featureRematerializedSlateCount": 16,
       "freshAuditCollectedDayCount": 0,
       "freshAuditCollectedGameCount": 0,
       "freshAuditExpansionRequired": true,
@@ -2245,7 +2248,6 @@
         "versionId": "hktiVX9dcmgrqAgiR2szOx.oX1vHERnt"
       },
       "lastCompletedQuarantineCount": 0,
-      "lastError": "feature rematerialization failed for 2025-04-15: HistoricalOptimizerError:historical request ledger is incomplete",
       "lastErrorAtUtc": "2026-07-25T08:27:49.393989+00:00",
       "lastQuota": {
         "x-requests-last": 10,
@@ -2253,7 +2255,7 @@
         "x-requests-used": 233741
       },
       "lastRejectedSlateError": "incomplete_full_slate_dataset",
-      "lastRematerializedSlateDate": "2025-04-14",
+      "lastRematerializedSlateDate": "2025-04-16",
       "latestExperiment": {
         "artifact": {
           "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
@@ -2324,7 +2326,7 @@
       "paidBackfillAuthorized": true,
       "paidBackfillAuthorizedAtUtc": "2026-07-24T09:16:06.517614+00:00",
       "perGameLockMinutesBeforeCommence": 45,
-      "phase": "FEATURE_REMATERIALIZATION_BLOCKED",
+      "phase": "REMATERIALIZING_FEATURES",
       "plan": {
         "completeDateRangeLedger": true,
         "createdAtUtc": "2026-07-24T09:16:05.582633+00:00",
@@ -4450,7 +4452,7 @@
           "slateDateEt": "2025-07-17"
         }
       ],
-      "revision": 591,
+      "revision": 597,
       "skippedHistoricalSlots": [
         {
           "reason": "historical response is too stale for a 15-minute grid",
@@ -4586,14 +4588,14 @@
       "snapshotStartAtEt": "01:00",
       "startDate": "2025-04-01",
       "targetSettledGames": 2114,
-      "updatedAtUtc": "2026-07-26T01:15:17.870365+00:00",
+      "updatedAtUtc": "2026-07-26T01:40:29.019302+00:00",
       "version": "MLB-HISTORICAL-OPTIMIZER-AWS-v1.9-quarantine-ledger-complete-versioned-dataset-key-v3"
     },
-    "status": "FEATURE_REMATERIALIZATION_BLOCKED",
-    "version": "MLB-HISTORICAL-OPTIMIZER-AWS-v1.9-quarantine-ledger-complete-versioned-dataset-key-v3"
+    "status": "REMATERIALIZING_FEATURES",
+    "version": "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v2"
   },
   "runAttempt": "1",
-  "runId": "30182538240",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30182538240",
-  "sourceSha": "f447b95955c0a763b071c26c926e91c74bc33aca"
+  "runId": "30183221338",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30183221338",
+  "sourceSha": "908b53c6ad06da1a32c7e41498bc1795287159d9"
 }
