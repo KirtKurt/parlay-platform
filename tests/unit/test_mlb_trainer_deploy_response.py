@@ -115,7 +115,7 @@ def _payloads():
         "automaticPromotionEnabled": False,
         "firstPromotionRequiresManualReview": True,
         "v2InferenceConsumerInstalled": False,
-        "runtimeAuthorityActivationAvailable": False,
+        "runtimeAuthorityActivationAvailable": True,
         "trainingHealth": {
             "ok": True,
             "executionMode": "training",
