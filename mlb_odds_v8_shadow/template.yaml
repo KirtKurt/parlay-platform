@@ -97,11 +97,10 @@ Resources:
       Events:
         ShadowEveryFifteenMinutes:
           Type: Schedule
-          Condition: EnableV8Schedule
           Properties:
             Schedule: rate(15 minutes)
             Description: Isolated V8 shadow-only market collection under a fixed per-cycle credit cap
-            Enabled: true
+            Enabled: !If [EnableV8Schedule, true, false]
             Input: '{"mode":"scheduled_shadow"}'
             RetryPolicy:
               MaximumEventAgeInSeconds: 300
