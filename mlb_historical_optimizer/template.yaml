@@ -83,6 +83,7 @@ Globals:
         MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS: !Ref HistoricalMaxOptimizationRounds
         MLB_HISTORICAL_FRESH_AUDIT_INCREMENT_GAMES: !Ref HistoricalFreshAuditIncrementGames
         MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED: !Ref HistoricalRangeExtensionAuthorized
+        MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN: '2'
         MLB_HISTORICAL_QUOTA_RESERVE: '100'
         MLB_HISTORICAL_LEASE_SECONDS: '840'
         MLB_HISTORICAL_HTTP_TIMEOUT_SECONDS: '20'
@@ -118,7 +119,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ../hello_world/
-      Handler: mlb_historical_optimizer_entrypoint.lambda_handler
+      Handler: mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler
       EventInvokeConfig:
         MaximumEventAgeInSeconds: 300
         MaximumRetryAttempts: 1
