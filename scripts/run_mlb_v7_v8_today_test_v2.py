@@ -13,7 +13,20 @@ import mlb_odds_pattern_features_v1 as odds_pattern_features
 derived_features.install(optimizer, policy_runtime)
 odds_pattern_features.install(optimizer, policy_runtime)
 
-from run_mlb_v7_v8_today_test import main  # noqa: E402
+import run_mlb_v7_v8_today_test as runner  # noqa: E402
+
+# Current canonical DynamoDB signal rows contain Decimal values. Preserve numeric
+# types in the durable report instead of failing after the analysis has completed.
+_original_dumps = runner.json.dumps
+
+
+def _dumps(value, *args, **kwargs):
+    kwargs.setdefault("default", runner._plain)
+    return _original_dumps(value, *args, **kwargs)
+
+
+runner.json.dumps = _dumps
+main = runner.main
 
 
 if __name__ == "__main__":
