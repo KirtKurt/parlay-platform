@@ -1,0 +1,40 @@
+name: MLB Odds V8 Shadow CI
+
+"on":
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_odds_market_expansion_v8.py'
+      - 'tests/unit/test_mlb_odds_market_expansion_v8.py'
+      - '.github/workflows/mlb-odds-v8-shadow-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-v8-shadow:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and test V8 market expansion
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9'
+          python -m py_compile hello_world/mlb_odds_market_expansion_v8.py
+          python -m pytest -q tests/unit/test_mlb_odds_market_expansion_v8.py
+      - name: Prove shadow-only safety contract
+        run: |
+          set -euo pipefail
+          PYTHONPATH=. python - <<'PY'
+          import json
+          from hello_world import mlb_odds_market_expansion_v8 as v8
+          contract=v8.shadow_contract()
+          assert contract['authority']=='SHADOW_ONLY'
+          assert contract['productionV7Unchanged'] is True
+          assert contract['promotionRequiresUntouchedAudit80Pct'] is True
+          print(json.dumps(contract,sort_keys=True))
+          PY
