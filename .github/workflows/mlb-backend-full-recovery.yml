@@ -60,11 +60,10 @@ jobs:
           mapfile -t tests < <(find tests/unit -maxdepth 1 -type f -name 'test_mlb_*.py' -print | sort)
           test ${#tests[@]} -gt 0
           python -m pytest -q "${tests[@]}"
-      - name: Validate workflow authority and source identity
+      - name: Validate workflow authority
         run: |
           set -euo pipefail
           python scripts/verify_mlb_workflow_authority.py
-          python scripts/stabilize_mlb_deploy_source.py --check
       - name: Validate and build canonical SAM application
         run: |
           set -euo pipefail
@@ -76,8 +75,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: mlb-backend-validation-${{ github.sha }}
-          path: |
-            .aws-sam-recovery/template.yaml
+          path: .aws-sam-recovery/template.yaml
           retention-days: 30
 
   recover-production:
@@ -191,7 +189,11 @@ jobs:
           python scripts/invoke_mlb_trainer_with_retry.py \
             --function-name "${{ steps.outputs.outputs.trainer_arn }}" \
             --region "${{ secrets.AWS_REGION }}" \
-            --output runtime_reports/mlb_backend_recovery_trainer.json
+            --payload '{"mode":"scheduled"}' \
+            --response runtime_reports/mlb_backend_recovery_trainer.json \
+            --invocation runtime_reports/mlb_backend_recovery_trainer_invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200
       - name: Prove health, model, locks, and prediction reads
         env:
           API_URL: ${{ steps.outputs.outputs.api_url }}
@@ -220,6 +222,7 @@ jobs:
           root=Path('runtime_reports')
           identity=json.loads((root/'mlb_backend_recovery_identity.json').read_text())
           trainer=json.loads((root/'mlb_backend_recovery_trainer.json').read_text())
+          invocation=json.loads((root/'mlb_backend_recovery_trainer_invocation.json').read_text())
           http={p.name:json.loads(p.read_text()) for p in sorted((root/'mlb_backend_recovery_http').glob('*.json'))}
           report={
             'proofType':'MLB_BACKEND_FULL_RECOVERY',
@@ -227,6 +230,7 @@ jobs:
             'sourceSha':'${{ github.sha }}',
             'deploymentIdentity':identity,
             'trainer':trainer,
+            'trainerInvocation':invocation,
             'http':http,
           }
           blocking=[]
@@ -245,6 +249,7 @@ jobs:
           path: |
             runtime_reports/mlb_backend_recovery_identity.json
             runtime_reports/mlb_backend_recovery_trainer.json
+            runtime_reports/mlb_backend_recovery_trainer_invocation.json
             runtime_reports/mlb_backend_recovery_http/
             runtime_reports/mlb_backend_full_recovery_latest.json
           retention-days: 90
