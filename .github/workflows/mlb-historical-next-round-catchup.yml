@@ -1,0 +1,499 @@
+name: MLB Historical Next Round Catch-up
+
+"on":
+  pull_request:
+    paths:
+      - '.github/workflows/mlb-historical-next-round-catchup.yml'
+      - '.github/workflows/mlb-historical-status-snapshot.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-next-round-catchup.yml'
+      - '.github/workflows/mlb-historical-status-snapshot.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-historical-next-round-catchup
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-historical-optimizer
+  EXPECTED_HANDLER: mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler
+  EXPECTED_END_DATE: '2026-07-24'
+  EXPECTED_MAX_CREDITS: '300000'
+  REPORT_PATH: runtime_reports/mlb_historical_next_round_catchup_latest.json
+  STATUS_PATH: docs/runtime/mlb-historical-live-status.json
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Validate workflow contracts and shell syntax
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pyyaml>=6,<7'
+          python - <<'PY'
+          import re
+          import subprocess
+          from pathlib import Path
+          import yaml
+
+          paths = [
+              Path('.github/workflows/mlb-historical-next-round-catchup.yml'),
+              Path('.github/workflows/mlb-historical-status-snapshot.yml'),
+          ]
+          for path in paths:
+              data = yaml.safe_load(path.read_text())
+              assert isinstance(data, dict), path
+              for job in (data.get('jobs') or {}).values():
+                  for step in job.get('steps') or []:
+                      script = step.get('run') if isinstance(step, dict) else None
+                      if not script:
+                          continue
+                      sanitized = re.sub(r'\$\{\{.*?\}\}', 'GITHUB_EXPRESSION', script)
+                      subprocess.run(['bash', '-n'], input=sanitized, text=True, check=True)
+
+          catchup = paths[0].read_text()
+          assert 'sam deploy' not in catchup
+          assert 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler' in catchup
+          assert 'MAX_ADDITIONAL_NETWORK_REQUESTS=600' in catchup
+          assert 'newExperimentCompleted' in catchup
+          PY
+
+  catch-up:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout current main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Resolve canonical V7 runtime and capture baseline
+        id: baseline
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+            --output text)
+          test -n "$FUNCTION_NAME"
+          test "$FUNCTION_NAME" != None
+
+          CONFIG=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --output json)
+          CONFIG="$CONFIG" python - <<'PY'
+          import json, os
+          value=json.loads(os.environ['CONFIG'])
+          env=(value.get('Environment') or {}).get('Variables') or {}
+          checks={
+              'handler':value.get('Handler') == os.environ['EXPECTED_HANDLER'],
+              'endDate':env.get('MLB_HISTORICAL_END_DATE') == os.environ['EXPECTED_END_DATE'],
+              'maxCredits':env.get('MLB_HISTORICAL_MAX_CREDITS') == os.environ['EXPECTED_MAX_CREDITS'],
+              'rangeExtensionAuthorized':env.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED') == 'true',
+          }
+          assert all(checks.values()), {'checks':checks,'handler':value.get('Handler'),'environment':env}
+          open('/tmp/runtime-identity.json','w').write(json.dumps({
+              'functionName':value.get('FunctionName'),
+              'handler':value.get('Handler'),
+              'deployGitSha':env.get('INQSI_DEPLOY_GIT_SHA'),
+              'endDate':env.get('MLB_HISTORICAL_END_DATE'),
+              'maximumCredits':env.get('MLB_HISTORICAL_MAX_CREDITS'),
+              'rangeExtensionAuthorized':env.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED'),
+              'checks':checks,
+          },indent=2,sort_keys=True)+'\n')
+          PY
+
+          status_ready=false
+          for attempt in $(seq 1 30); do
+            aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload "{\"mode\":\"status\",\"run\":\"next_round_baseline_${attempt}\"}" \
+              /tmp/baseline.json >/tmp/baseline-meta.json
+            decision=$(python - <<'PY'
+          import json
+          meta=json.load(open('/tmp/baseline-meta.json'))
+          value=json.load(open('/tmp/baseline.json'))
+          if meta.get('FunctionError'):
+              print('FAIL')
+          elif value.get('status') == 'LEASE_HELD' and not isinstance(value.get('state'),dict):
+              print('RETRY')
+          elif value.get('ok') is True and isinstance(value.get('state'),dict):
+              print('READY')
+          else:
+              print('FAIL')
+          PY
+          )
+            case "$decision" in
+              READY) status_ready=true; break ;;
+              RETRY) sleep 10 ;;
+              FAIL) cat /tmp/baseline.json; exit 1 ;;
+            esac
+          done
+          test "$status_ready" = true || { echo '::error::Unable to obtain durable optimizer baseline'; exit 1; }
+
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.load(open('/tmp/baseline.json'))
+          state=value['state']
+          phase=str(state.get('phase') or '')
+          assert phase in {'BACKFILLING','OPTIMIZING','CANDIDATE_REJECTED','PROMOTED'}, phase
+          assert state.get('featureRematerializationComplete') is True, state
+          assert int(state.get('featureRematerializedSlateCount') or 0) == int(state.get('featureRematerializationTotalSlateCount') or 0), state
+          assert not (state.get('featureRematerializationErrors') or []), state
+          assert str(state.get('endDate') or '') == '2026-07-24', state
+          assert int(state.get('maximumCredits') or 0) == 300000, state
+          assert state.get('paidBackfillAuthorized') is True, state
+          quota=(state.get('lastQuota') or {}).get('x-requests-remaining')
+          assert not isinstance(quota,int) or quota > 100, quota
+          latest=state.get('latestExperiment') or {}
+          target=int(state.get('targetSettledGames') or 0)
+          eligible=int(state.get('eligibleGameCount') or 0)
+          summary={
+              'phase':phase,
+              'currentDate':state.get('currentDate'),
+              'currentSlotIndex':state.get('currentSlotIndex'),
+              'networkRequestCount':int(state.get('networkRequestCount') or 0),
+              'creditsConsumed':int(state.get('creditsConsumed') or 0),
+              'eligibleGameCount':eligible,
+              'completeSlateCount':int(state.get('completeSlateCount') or 0),
+              'targetSettledGames':target,
+              'gamesUntilNextOptimization':max(0,target-eligible),
+              'optimizationRound':int(state.get('optimizationRound') or 0),
+              'optimizationCompletedAtUtc':state.get('optimizationCompletedAtUtc'),
+              'experimentId':latest.get('experimentId'),
+              'revision':int(state.get('revision') or 0),
+              'freshAuditExpansionRequired':state.get('freshAuditExpansionRequired') is True,
+              'freshAuditStartDate':state.get('freshAuditStartDate'),
+              'quotaRemaining':quota,
+          }
+          Path('/tmp/baseline-summary.json').write_text(json.dumps(summary,indent=2,sort_keys=True)+'\n')
+          PY
+          echo "function_name=$FUNCTION_NAME" >>"$GITHUB_OUTPUT"
+
+      - name: Advance through the next completed optimization experiment
+        id: catchup
+        continue-on-error: true
+        run: |
+          set -uo pipefail
+          FUNCTION_NAME="${{ steps.baseline.outputs.function_name }}"
+          MAX_ADDITIONAL_NETWORK_REQUESTS=600
+          : >/tmp/catchup-progress.jsonl
+          rm -f /tmp/final-state.json /tmp/external-action.txt /tmp/catchup-error.txt
+
+          for attempt in $(seq 1 42); do
+            if ! aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload "{\"mode\":\"orchestrate\",\"run\":\"github_next_round_catchup_${GITHUB_RUN_ID}_${attempt}\"}" \
+              /tmp/catchup-result.json >/tmp/catchup-meta.json; then
+              sleep 10
+              continue
+            fi
+
+            DECISION=$(ATTEMPT="$attempt" MAX_ADDITIONAL_NETWORK_REQUESTS="$MAX_ADDITIONAL_NETWORK_REQUESTS" python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          baseline=json.load(open('/tmp/baseline-summary.json'))
+          meta=json.load(open('/tmp/catchup-meta.json'))
+          value=json.load(open('/tmp/catchup-result.json'))
+          attempt=int(os.environ['ATTEMPT'])
+          if meta.get('FunctionError'):
+              Path('/tmp/catchup-error.txt').write_text('lambda_function_error\n')
+              print('FAIL')
+              raise SystemExit(0)
+          if value.get('status') == 'LEASE_HELD':
+              print('RETRY')
+              raise SystemExit(0)
+          state=value.get('state')
+          if value.get('ok') is not True or not isinstance(state,dict):
+              Path('/tmp/catchup-error.txt').write_text('invalid_optimizer_response\n')
+              print('FAIL')
+              raise SystemExit(0)
+
+          phase=str(state.get('phase') or '')
+          latest=state.get('latestExperiment') or {}
+          target=int(state.get('targetSettledGames') or 0)
+          eligible=int(state.get('eligibleGameCount') or 0)
+          network=int(state.get('networkRequestCount') or 0)
+          quota=(state.get('lastQuota') or {}).get('x-requests-remaining')
+          row={
+              'attempt':attempt,
+              'observedAtUtc':datetime.now(timezone.utc).isoformat(),
+              'phase':phase,
+              'currentDate':state.get('currentDate'),
+              'currentSlotIndex':state.get('currentSlotIndex'),
+              'networkRequestCount':network,
+              'eligibleGameCount':eligible,
+              'completeSlateCount':int(state.get('completeSlateCount') or 0),
+              'targetSettledGames':target,
+              'gamesUntilNextOptimization':max(0,target-eligible),
+              'optimizationRound':int(state.get('optimizationRound') or 0),
+              'experimentId':latest.get('experimentId'),
+              'quotaRemaining':quota,
+              'lastError':state.get('lastError'),
+          }
+          with open('/tmp/catchup-progress.jsonl','a') as handle:
+              handle.write(json.dumps(row,sort_keys=True)+'\n')
+
+          if state.get('featureRematerializationComplete') is not True or state.get('featureRematerializationErrors'):
+              Path('/tmp/catchup-error.txt').write_text('feature_rematerialization_regressed\n')
+              print('FAIL')
+              raise SystemExit(0)
+          if str(state.get('endDate') or '') != '2026-07-24':
+              Path('/tmp/catchup-error.txt').write_text('historical_end_date_drifted\n')
+              print('FAIL')
+              raise SystemExit(0)
+          if phase == 'PAUSED_QUOTA' or (isinstance(quota,int) and quota <= 100):
+              Path('/tmp/external-action.txt').write_text('provider_quota_or_credit_reserve\n')
+              print('EXTERNAL')
+              raise SystemExit(0)
+          if phase in {'DATA_RANGE_EXHAUSTED','OPTIMIZATION_BLOCKED','PLAN_BLOCKED','PLAN_BLOCKED_INCOMPLETE_LEDGER'}:
+              Path('/tmp/catchup-error.txt').write_text('blocking_phase:'+phase+'\n')
+              print('FAIL')
+              raise SystemExit(0)
+          if network-int(baseline['networkRequestCount']) > int(os.environ['MAX_ADDITIONAL_NETWORK_REQUESTS']):
+              Path('/tmp/catchup-error.txt').write_text('bounded_catchup_request_limit_reached\n')
+              print('FAIL')
+              raise SystemExit(0)
+
+          new_experiment=(latest.get('experimentId') and latest.get('experimentId') != baseline.get('experimentId'))
+          completion_changed=(state.get('optimizationCompletedAtUtc') and state.get('optimizationCompletedAtUtc') != baseline.get('optimizationCompletedAtUtc'))
+          round_advanced=int(state.get('optimizationRound') or 0) > int(baseline.get('optimizationRound') or 0)
+          if new_experiment and (completion_changed or round_advanced or phase == 'PROMOTED'):
+              Path('/tmp/final-state.json').write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+              print('DONE')
+          else:
+              print('CONTINUE')
+          PY
+          )
+
+            case "$DECISION" in
+              DONE) exit 0 ;;
+              EXTERNAL) exit 2 ;;
+              FAIL) exit 1 ;;
+              RETRY) sleep 10 ;;
+              CONTINUE) sleep 2 ;;
+            esac
+          done
+          echo 'bounded catch-up ended before a new optimization experiment completed' >/tmp/catchup-error.txt
+          exit 1
+
+      - name: Build catch-up and refreshed status evidence
+        if: always()
+        env:
+          CATCHUP_OUTCOME: ${{ steps.catchup.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports docs/runtime
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def load(path, default=None):
+              p=Path(path)
+              if not p.exists() or not p.read_text().strip():
+                  return default
+              return json.loads(p.read_text())
+
+          baseline=load('/tmp/baseline-summary.json',{})
+          final_response=load('/tmp/final-state.json')
+          final_state=(final_response or {}).get('state') if isinstance(final_response,dict) else None
+          progress=[]
+          progress_path=Path('/tmp/catchup-progress.jsonl')
+          if progress_path.exists():
+              for line in progress_path.read_text().splitlines():
+                  if line.strip(): progress.append(json.loads(line))
+          external=(Path('/tmp/external-action.txt').read_text().strip() if Path('/tmp/external-action.txt').exists() else None)
+          error=(Path('/tmp/catchup-error.txt').read_text().strip() if Path('/tmp/catchup-error.txt').exists() else None)
+          latest=(final_state or {}).get('latestExperiment') or {}
+          gate=latest.get('promotionGate') or {}
+          new_experiment=bool(final_state and latest.get('experimentId') and latest.get('experimentId') != baseline.get('experimentId'))
+          ok=os.environ['CATCHUP_OUTCOME'] == 'success' and new_experiment
+          blockers=[]
+          if external: blockers.append(external)
+          if error: blockers.append(error)
+          if not new_experiment: blockers.append('new_optimization_experiment_not_completed')
+
+          report={
+              'proofType':'MLB_HISTORICAL_NEXT_ROUND_CATCHUP',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'runId':os.environ['GITHUB_RUN_ID'],
+              'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'sourceSha':os.environ['GITHUB_SHA'],
+              'baseline':baseline,
+              'final':{
+                  'phase':(final_state or {}).get('phase'),
+                  'currentDate':(final_state or {}).get('currentDate'),
+                  'currentSlotIndex':(final_state or {}).get('currentSlotIndex'),
+                  'networkRequestCount':(final_state or {}).get('networkRequestCount'),
+                  'creditsConsumed':(final_state or {}).get('creditsConsumed'),
+                  'eligibleGameCount':(final_state or {}).get('eligibleGameCount'),
+                  'completeSlateCount':(final_state or {}).get('completeSlateCount'),
+                  'targetSettledGames':(final_state or {}).get('targetSettledGames'),
+                  'optimizationRound':(final_state or {}).get('optimizationRound'),
+                  'optimizationCompletedAtUtc':(final_state or {}).get('optimizationCompletedAtUtc'),
+                  'experimentId':latest.get('experimentId'),
+                  'candidateStatus':latest.get('status'),
+                  'walkForwardMeanDailyAccuracy':gate.get('walkForwardMeanDailyAccuracy'),
+                  'walkForwardMinimumDailyAccuracy':gate.get('walkForwardMinimumDailyAccuracy'),
+                  'untouchedHoldoutMeanDailyAccuracy':gate.get('untouchedHoldoutMeanDailyAccuracy'),
+                  'untouchedHoldoutMinimumDailyAccuracy':gate.get('untouchedHoldoutMinimumDailyAccuracy'),
+                  'promotionPassed':gate.get('passed') is True,
+                  'lastError':(final_state or {}).get('lastError'),
+              },
+              'movement':{
+                  'networkRequests':int((final_state or {}).get('networkRequestCount') or baseline.get('networkRequestCount') or 0)-int(baseline.get('networkRequestCount') or 0),
+                  'eligibleGames':int((final_state or {}).get('eligibleGameCount') or baseline.get('eligibleGameCount') or 0)-int(baseline.get('eligibleGameCount') or 0),
+                  'completeSlates':int((final_state or {}).get('completeSlateCount') or baseline.get('completeSlateCount') or 0)-int(baseline.get('completeSlateCount') or 0),
+                  'optimizationRounds':int((final_state or {}).get('optimizationRound') or baseline.get('optimizationRound') or 0)-int(baseline.get('optimizationRound') or 0),
+              },
+              'newExperimentCompleted':new_experiment,
+              'target80Reached':gate.get('passed') is True,
+              'externalActionRequired':bool(external),
+              'progressSamples':progress[-12:],
+              'blockers':blockers,
+              'ok':ok,
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+
+          if final_state:
+              completed=final_state.get('completedSlates') or []
+              start=str(final_state.get('freshAuditStartDate') or '')
+              fresh=[row for row in completed if isinstance(row,dict) and str(row.get('slateDateEt') or '') >= start] if start else []
+              target=int(final_state.get('targetSettledGames') or 0)
+              eligible=int(final_state.get('eligibleGameCount') or 0)
+              status_value={
+                  'checkedAt':datetime.now(timezone.utc).isoformat(),
+                  'ok':True,
+                  'phase':final_state.get('phase'),
+                  'currentDate':final_state.get('currentDate'),
+                  'currentSlotIndex':final_state.get('currentSlotIndex'),
+                  'networkRequestCount':final_state.get('networkRequestCount'),
+                  'creditsConsumed':final_state.get('creditsConsumed'),
+                  'eligibleGameCount':eligible,
+                  'completeSlateCount':final_state.get('completeSlateCount'),
+                  'targetSettledGames':target,
+                  'gamesUntilNextOptimization':max(0,target-eligible),
+                  'nextOptimizationReady':eligible >= target,
+                  'optimizationRound':final_state.get('optimizationRound'),
+                  'optimizationCompletedAtUtc':final_state.get('optimizationCompletedAtUtc'),
+                  'latestExperiment':latest,
+                  'latestAccuracy':{
+                      'walkForwardMeanDailyAccuracy':gate.get('walkForwardMeanDailyAccuracy'),
+                      'walkForwardMinimumDailyAccuracy':gate.get('walkForwardMinimumDailyAccuracy'),
+                      'untouchedHoldoutMeanDailyAccuracy':gate.get('untouchedHoldoutMeanDailyAccuracy'),
+                      'untouchedHoldoutMinimumDailyAccuracy':gate.get('untouchedHoldoutMinimumDailyAccuracy'),
+                      'promotionPassed':gate.get('passed') is True,
+                  },
+                  'lastError':final_state.get('lastError'),
+                  'lastErrorAtUtc':final_state.get('lastErrorAtUtc'),
+                  'stateUpdatedAtUtc':final_state.get('updatedAtUtc'),
+                  'revision':final_state.get('revision'),
+                  'featureDatasetVersion':final_state.get('featureDatasetVersion'),
+                  'featureRematerializationComplete':final_state.get('featureRematerializationComplete'),
+                  'featureRematerializedSlateCount':final_state.get('featureRematerializedSlateCount'),
+                  'featureRematerializationTotalSlateCount':final_state.get('featureRematerializationTotalSlateCount'),
+                  'featureRematerializationErrors':final_state.get('featureRematerializationErrors'),
+                  'freshAuditExpansionRequired':final_state.get('freshAuditExpansionRequired'),
+                  'freshAuditCollectedDayCount':final_state.get('freshAuditCollectedDayCount'),
+                  'freshAuditCollectedGameCount':final_state.get('freshAuditCollectedGameCount'),
+                  'provisionalFreshAuditCollectedDayCount':len(fresh),
+                  'provisionalFreshAuditCollectedGameCount':sum(int(row.get('eligibleGameCount') or 0) for row in fresh),
+                  'freshAuditStartDate':final_state.get('freshAuditStartDate'),
+                  'endDate':final_state.get('endDate'),
+                  'lastQuota':final_state.get('lastQuota'),
+                  'championValidation':(final_response or {}).get('championValidation'),
+                  'cutoverValidation':(final_response or {}).get('cutoverValidation'),
+                  'productionAuthority':(final_response or {}).get('productionAuthority'),
+              }
+              Path(os.environ['STATUS_PATH']).write_text(json.dumps(status_value,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Upload catch-up evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-historical-next-round-catchup-${{ github.sha }}
+          path: |
+            runtime_reports/mlb_historical_next_round_catchup_latest.json
+            docs/runtime/mlb-historical-live-status.json
+            /tmp/runtime-identity.json
+            /tmp/baseline.json
+            /tmp/baseline-summary.json
+            /tmp/catchup-progress.jsonl
+            /tmp/catchup-result.json
+            /tmp/final-state.json
+            /tmp/catchup-error.txt
+            /tmp/external-action.txt
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish durable catch-up evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          cp "$REPORT_PATH" /tmp/catchup-report-copy.json
+          test -s "$STATUS_PATH" && cp "$STATUS_PATH" /tmp/status-copy.json || true
+          for attempt in 1 2 3 4; do
+            git fetch origin main
+            git checkout -B historical-catchup-proof origin/main
+            mkdir -p runtime_reports docs/runtime
+            cp /tmp/catchup-report-copy.json "$REPORT_PATH"
+            test -s /tmp/status-copy.json && cp /tmp/status-copy.json "$STATUS_PATH" || true
+            git add "$REPORT_PATH" "$STATUS_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB historical next-round catch-up evidence'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 4))
+          done
+          exit 1
+
+      - name: Enforce completed next optimization
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('runtime_reports/mlb_historical_next_round_catchup_latest.json').read_text())
+          assert value.get('ok') is True, value
+          assert value.get('newExperimentCompleted') is True, value
+          assert value.get('externalActionRequired') is False, value
+          assert not value.get('blockers'), value
+          PY
