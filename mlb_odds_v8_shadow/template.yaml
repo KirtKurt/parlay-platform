@@ -36,7 +36,7 @@ Conditions:
 Resources:
   ShadowArtifactsBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BucketEncryption:
@@ -61,6 +61,9 @@ Resources:
       Timeout: 300
       MemorySize: 1024
       Tracing: Active
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 300
+        MaximumRetryAttempts: 0
       Environment:
         Variables:
           ODDS_API_KEY: !Ref OddsApiKey
@@ -91,7 +94,6 @@ Resources:
                 - s3:GetBucketLocation
                 - s3:ListBucket
               Resource: !GetAtt ShadowArtifactsBucket.Arn
-      ReservedConcurrentExecutions: 1
       Events:
         ShadowEveryFifteenMinutes:
           Type: Schedule
