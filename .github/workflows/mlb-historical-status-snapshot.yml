@@ -8,7 +8,11 @@ name: MLB Historical Status Snapshot
     paths:
       - '.github/workflows/mlb-historical-status-snapshot.yml'
       - '.github/workflows/mlb-historical-watchdog.yml'
+      - '.github/workflows/mlb-historical-v7-recovery.yml'
       - 'hello_world/mlb_historical_optimizer_entrypoint.py'
+      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
+      - 'hello_world/mlb_historical_feature_rematerialization_v1.py'
+      - 'mlb_historical_optimizer/**'
   workflow_dispatch:
 
 permissions:
@@ -76,6 +80,16 @@ jobs:
               'lastErrorAtUtc': state.get('lastErrorAtUtc'),
               'stateUpdatedAtUtc': state.get('updatedAtUtc'),
               'revision': state.get('revision'),
+              'featureDatasetVersion': state.get('featureDatasetVersion'),
+              'featureRematerializationComplete': state.get('featureRematerializationComplete'),
+              'featureRematerializedSlateCount': state.get('featureRematerializedSlateCount'),
+              'featureRematerializationTotalSlateCount': state.get('featureRematerializationTotalSlateCount'),
+              'featureRematerializationErrors': state.get('featureRematerializationErrors'),
+              'freshAuditCollectedDayCount': state.get('freshAuditCollectedDayCount'),
+              'freshAuditCollectedGameCount': state.get('freshAuditCollectedGameCount'),
+              'freshAuditStartDate': state.get('freshAuditStartDate'),
+              'endDate': state.get('endDate'),
+              'lastQuota': state.get('lastQuota'),
               'championValidation': value.get('championValidation'),
               'cutoverValidation': value.get('cutoverValidation'),
               'productionAuthority': value.get('productionAuthority'),
