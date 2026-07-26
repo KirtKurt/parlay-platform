@@ -1,0 +1,191 @@
+name: MLB Historical Hourly Liveness V1
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-historical-hourly-liveness-v1.yml'
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-historical-hourly-liveness-v1
+  cancel-in-progress: false
+
+env:
+  OPTIMIZER_STACK: parlay-platform-mlb-historical-optimizer
+
+jobs:
+  verify-refresh-recover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Resolve live optimizer and schedule
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$OPTIMIZER_STACK" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
+            --output text)
+          test -n "$FUNCTION_NAME" && test "$FUNCTION_NAME" != None
+          FUNCTION_ARN=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query FunctionArn --output text)
+          HANDLER=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query Handler --output text)
+          test "$HANDLER" = 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler'
+          echo "FUNCTION_NAME=$FUNCTION_NAME" >> "$GITHUB_ENV"
+          echo "FUNCTION_ARN=$FUNCTION_ARN" >> "$GITHUB_ENV"
+
+          mapfile -t RULES < <(aws events list-rule-names-by-target \
+            --target-arn "$FUNCTION_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'RuleNames[]' --output text | tr '\t' '\n' | sed '/^$/d')
+          test ${#RULES[@]} -ge 1
+          : > /tmp/rules.ndjson
+          enabled=0
+          for rule in "${RULES[@]}"; do
+            aws events describe-rule --name "$rule" --region "${{ secrets.AWS_REGION }}" > /tmp/rule.json
+            python - "$rule" <<'PY' >> /tmp/rules.ndjson
+          import json,sys
+          value=json.load(open('/tmp/rule.json'))
+          value['ruleName']=sys.argv[1]
+          print(json.dumps(value,sort_keys=True))
+          PY
+            schedule=$(python -c "import json; print(json.load(open('/tmp/rule.json')).get('ScheduleExpression') or '')")
+            state=$(python -c "import json; print(json.load(open('/tmp/rule.json')).get('State') or '')")
+            if [ -n "$schedule" ]; then
+              if [ "$state" != ENABLED ]; then
+                aws events enable-rule --name "$rule" --region "${{ secrets.AWS_REGION }}"
+              fi
+              enabled=$((enabled+1))
+            fi
+          done
+          test "$enabled" -ge 1
+
+      - name: Refresh status and recover only if stale
+        run: |
+          set -euo pipefail
+          invoke() {
+            local payload="$1" output="$2"
+            aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload "$payload" "$output" >/tmp/invoke-meta.json
+          }
+          invoke '{"mode":"status","run":"mlb_historical_hourly_liveness_before"}' /tmp/before.json
+          stale=$(python - <<'PY'
+          import json
+          from datetime import datetime,timezone
+          value=json.load(open('/tmp/before.json'))
+          assert value.get('ok') is True, value
+          state=value.get('state') or {}
+          raw=state.get('updatedAtUtc') or state.get('stateUpdatedAtUtc')
+          if not raw:
+              print('true')
+          else:
+              stamp=datetime.fromisoformat(str(raw).replace('Z','+00:00'))
+              if stamp.tzinfo is None: stamp=stamp.replace(tzinfo=timezone.utc)
+              age=(datetime.now(timezone.utc)-stamp.astimezone(timezone.utc)).total_seconds()/60
+              print('true' if age > 75 else 'false')
+          PY
+          )
+          recovered=false
+          if [ "$stale" = true ]; then
+            invoke '{"mode":"orchestrate","run":"mlb_historical_hourly_liveness_recovery"}' /tmp/recovery.json
+            recovered=true
+          fi
+          invoke '{"mode":"status","run":"mlb_historical_hourly_liveness_after"}' /tmp/after.json
+          echo "RECOVERED=$recovered" >> "$GITHUB_ENV"
+
+      - name: Validate and publish compact proof
+        run: |
+          set -euo pipefail
+          mkdir -p docs/runtime
+          python - <<'PY'
+          import json,os
+          from datetime import datetime,timezone
+          before=json.load(open('/tmp/before.json'))
+          after=json.load(open('/tmp/after.json'))
+          b=before.get('state') or {}
+          a=after.get('state') or {}
+          def i(v):
+              try: return int(v or 0)
+              except Exception: return 0
+          movement={
+              'eligibleGameDelta':i(a.get('eligibleGameCount'))-i(b.get('eligibleGameCount')),
+              'completeSlateDelta':i(a.get('completeSlateCount'))-i(b.get('completeSlateCount')),
+              'networkRequestDelta':i(a.get('networkRequestCount'))-i(b.get('networkRequestCount')),
+              'revisionDelta':i(a.get('revision'))-i(b.get('revision')),
+              'dateChanged':a.get('currentDate')!=b.get('currentDate'),
+              'slotChanged':a.get('currentSlotIndex')!=b.get('currentSlotIndex'),
+              'phaseChanged':a.get('phase')!=b.get('phase'),
+          }
+          blockers=[]
+          if after.get('ok') is not True: blockers.append('status_not_ok')
+          if a.get('featureRematerializationComplete') is not True: blockers.append('feature_rematerialization_incomplete')
+          if a.get('featureRematerializationErrors'): blockers.append('feature_rematerialization_errors')
+          if a.get('phase') in {'PAUSED_QUOTA','DATA_RANGE_EXHAUSTED','OPTIMIZATION_BLOCKED'}:
+              blockers.append(str(a.get('phase')).lower())
+          raw=a.get('updatedAtUtc') or a.get('stateUpdatedAtUtc')
+          stale=True
+          age=None
+          if raw:
+              stamp=datetime.fromisoformat(str(raw).replace('Z','+00:00'))
+              if stamp.tzinfo is None: stamp=stamp.replace(tzinfo=timezone.utc)
+              age=(datetime.now(timezone.utc)-stamp.astimezone(timezone.utc)).total_seconds()/60
+              stale=age>75
+          if stale: blockers.append('state_still_stale_after_recovery')
+          report={
+              'proofType':'MLB_HISTORICAL_HOURLY_LIVENESS_V1',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'recoveryInvoked':os.environ.get('RECOVERED')=='true',
+              'rules':[json.loads(x) for x in open('/tmp/rules.ndjson') if x.strip()],
+              'before':{k:b.get(k) for k in ('phase','currentDate','currentSlotIndex','eligibleGameCount','completeSlateCount','networkRequestCount','revision','targetSettledGames','updatedAtUtc','stateUpdatedAtUtc','lastError')},
+              'after':{k:a.get(k) for k in ('phase','currentDate','currentSlotIndex','eligibleGameCount','completeSlateCount','networkRequestCount','revision','targetSettledGames','updatedAtUtc','stateUpdatedAtUtc','lastError')},
+              'stateAgeMinutes':age,
+              'movement':movement,
+              'blockers':blockers,
+              'ok':not blockers,
+          }
+          open('docs/runtime/mlb-historical-hourly-liveness-latest.json','w').write(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          print(json.dumps(report,indent=2,sort_keys=True))
+          if blockers: raise SystemExit(','.join(blockers))
+          PY
+
+      - name: Commit proof
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f docs/runtime/mlb-historical-hourly-liveness-latest.json || exit 0
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add docs/runtime/mlb-historical-hourly-liveness-latest.json
+          git commit -m 'Publish MLB historical hourly liveness proof' || exit 0
+          for attempt in 1 2 3; do
+            git pull --rebase origin main && git push origin HEAD:main && exit 0
+            git rebase --abort || true
+            sleep $((attempt*3))
+          done
+          exit 1
