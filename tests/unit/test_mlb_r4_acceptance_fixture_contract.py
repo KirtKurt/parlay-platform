@@ -12,8 +12,8 @@ def test_r4_production_acceptance_fixtures_use_current_cutover_contract() -> Non
     )
 
     # The acceptance fixtures derive the active cutoff from the production
-    # experiment contract; the historical test-function label is not authority.
+    # experiment contract; historical literal dates and test labels are not
+    # authority and must not be required by this regression.
     assert "experiment.PRODUCTION_RELEASE_CUTOFF_UTC" in source
     assert "preCutoffQuarantinedFinalGameCount" in source
     assert "postCutoffDefects" in source
-    assert '"2026-07-24"' in source
