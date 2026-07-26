@@ -1,5 +1,5 @@
 name: MLB Supervised Recovery Contract Repair Once
-# Trusted second push after workflow installation.
+# Trusted retry with decision-environment import repair.
 
 "on":
   push:
@@ -127,6 +127,16 @@ jobs:
               assert text.count(decision_old)==1, 'recovery rematerialization decision anchor changed'
               text=text.replace(decision_old,decision_new,1)
 
+          decision_import_old="""          import json
+          value=json.load(open('/tmp/mlb-historical-orchestrate.json'))
+          state=value.get('state') or {}
+          status=str(value.get('status') or state.get('phase') or '')
+          expected=os.environ['EXPECTED_FEATURE_DATASET']
+"""
+          decision_import_new=decision_import_old.replace('          import json\n','          import json, os\n',1)
+          if decision_import_old in text:
+              text=text.replace(decision_import_old,decision_import_new,1)
+
           check_anchor="              'rematerializationComplete':a.get('featureRematerializationComplete') is True,\n"
           dataset_check="              'supervisedFeatureDatasetActive':a.get('featureDatasetVersion') == os.environ['EXPECTED_FEATURE_DATASET'],\n"
           if dataset_check not in text:
@@ -142,6 +152,7 @@ jobs:
           assert 'for attempt in $(seq 1 120); do' in text
           assert 'test "$attempt" != 120' in text
           assert "expected=os.environ['EXPECTED_FEATURE_DATASET']" in text
+          assert "import json, os\n          value=json.load(open('/tmp/mlb-historical-orchestrate.json'))" in text
           assert "'supervisedFeatureDatasetActive'" in text
           assert "'rematerializationBatch'" in text
           workflow_path.write_text(text)
