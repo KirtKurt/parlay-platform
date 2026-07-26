@@ -132,7 +132,7 @@ jobs:
               "HistoricalFreshAuditIncrementGames=250" \
               "HistoricalRangeExtensionAuthorized=true" \
               "DeployGitSha=${GITHUB_SHA}"
-      - name: Prove deployed handler and start recovery
+      - name: Complete rematerialization and prove backfill advancement
         id: recovery
         run: |
           set -euo pipefail
@@ -148,36 +148,83 @@ jobs:
             --region "${{ secrets.AWS_REGION }}" \
             --query Handler --output text)
           test "$CONFIG_HANDLER" = 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler'
+
+          rm -f /tmp/mlb-historical-v7-recovery.json
+          for attempt in $(seq 1 90); do
+            aws lambda invoke \
+              --function-name "$FUNCTION_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --cli-read-timeout 900 \
+              --cli-binary-format raw-in-base64-out \
+              --payload "{\"mode\":\"orchestrate\",\"run\":\"mlb_historical_v7_recovery_${attempt}\"}" \
+              /tmp/mlb-historical-v7-recovery.json >/tmp/mlb-historical-v7-invoke-meta.json
+            cat /tmp/mlb-historical-v7-recovery.json
+            DECISION=$(python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('/tmp/mlb-historical-v7-recovery.json').read_text())
+          if value.get('ok') is not True:
+              print('FAIL')
+              raise SystemExit(0)
+          state=value.get('state') or {}
+          status=str(value.get('status') or state.get('phase') or '')
+          if status == 'LEASE_HELD':
+              print('RETRY')
+          elif status == 'REMATERIALIZING_FEATURES':
+              cursor=int(state.get('featureRematerializedSlateCount') or 0)
+              total=int(state.get('featureRematerializationTotalSlateCount') or 0)
+              print(f'RETRY:{cursor}:{total}')
+          elif status in {'FEATURE_REMATERIALIZATION_COMPLETE','BACKFILLING','OPTIMIZING'}:
+              if str(state.get('endDate') or '') < '2025-10-31':
+                  print('FAIL')
+              elif int(state.get('featureRematerializationPaidHistoricalCalls') or 0) != 0:
+                  print('FAIL')
+              else:
+                  print('DONE')
+          else:
+              print('FAIL')
+          PY
+          )
+            echo "Recovery decision: $DECISION"
+            case "$DECISION" in
+              DONE) break ;;
+              FAIL) echo '::error::Historical recovery returned a blocking state'; exit 1 ;;
+              RETRY*) sleep 3 ;;
+            esac
+            if [ "$attempt" = 90 ]; then
+              echo '::error::Historical feature rematerialization did not finish in the bounded recovery loop'
+              exit 1
+            fi
+          done
+
+          # One additional invocation must enter or advance the post-rematerialization path.
           aws lambda invoke \
             --function-name "$FUNCTION_NAME" \
             --region "${{ secrets.AWS_REGION }}" \
             --cli-read-timeout 900 \
             --cli-binary-format raw-in-base64-out \
-            --payload '{"mode":"orchestrate","run":"mlb_historical_v7_recovery_deploy"}' \
-            /tmp/mlb-historical-v7-recovery.json
+            --payload '{"mode":"orchestrate","run":"mlb_historical_v7_post_rematerialization_backfill"}' \
+            /tmp/mlb-historical-v7-recovery.json >/tmp/mlb-historical-v7-invoke-meta.json
           cat /tmp/mlb-historical-v7-recovery.json
           python - <<'PY'
           import json
           from pathlib import Path
           value=json.loads(Path('/tmp/mlb-historical-v7-recovery.json').read_text())
           if value.get('ok') is not True:
-              raise SystemExit(f"recovery invocation failed: {value}")
+              raise SystemExit(f'post-rematerialization invocation failed: {value}')
           state=value.get('state') or {}
           status=str(value.get('status') or state.get('phase') or '')
-          allowed={
-              'REMATERIALIZING_FEATURES',
-              'FEATURE_REMATERIALIZATION_COMPLETE',
-              'BACKFILLING',
-              'OPTIMIZING',
-              'LEASE_HELD',
-          }
+          allowed={'BACKFILLING','OPTIMIZING','PAUSED_QUOTA','LEASE_HELD','CANDIDATE_REJECTED'}
           if status not in allowed:
-              raise SystemExit(f'unexpected recovery status: {status}')
-          if status in {'FEATURE_REMATERIALIZATION_COMPLETE','BACKFILLING','OPTIMIZING'}:
-              if str(state.get('endDate') or '') < '2025-10-31':
-                  raise SystemExit('expanded historical range is not active after rematerialization')
-          if int(state.get('featureRematerializationPaidHistoricalCalls') or 0) != 0:
-              raise SystemExit('rematerialization made paid historical calls')
+              raise SystemExit(f'unexpected post-rematerialization status: {status}')
+          if state and state.get('featureRematerializationComplete') is not True:
+              raise SystemExit('feature rematerialization is not complete')
+          if state and int(state.get('featureRematerializedSlateCount') or 0) != int(state.get('featureRematerializationTotalSlateCount') or 0):
+              raise SystemExit('not all completed slates were rematerialized')
+          if state and str(state.get('endDate') or '') < '2025-10-31':
+              raise SystemExit('expanded historical range is not active')
+          if status == 'PAUSED_QUOTA':
+              raise SystemExit('historical ingestion is blocked by quota')
           PY
           echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
       - name: Upload recovery proof
