@@ -71,45 +71,63 @@
   "runId": "30194381113",
   "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30194381113",
   "runtimeContinuity": {
+    "advancing": true,
     "authority": "SHADOW_ONLY",
     "blockers": [],
-    "createdAtUtc": "2026-07-26T08:35:44.012714+00:00",
+    "createdAtUtc": "2026-07-26T13:39:44.758669+00:00",
     "deploymentSourceSha": "957aa96aead8f90bbd83c3247e65a554c3bd9cfa",
-    "firstScheduledArtifact": {
-      "collectedAtUtc": "2026-07-26T08:20:29.273557+00:00",
-      "key": "mlb/odds-v8-shadow/20260726T0820292735870000/8b94958921c48f01926d75a692d989bdaddf3c04e92352b91ae62a701d8abec3.json",
-      "sha256": "8b94958921c48f01926d75a692d989bdaddf3c04e92352b91ae62a701d8abec3"
-    },
     "identityChecks": {
+      "fifteenMinuteRate": true,
       "handlerActive": true,
+      "maxCreditsBounded": true,
+      "maxEventsBounded": true,
       "playerPropsDisabled": true,
       "ruleEnabled": true,
       "stackAuthorityShadowOnly": true,
       "stackScheduleEnabled": true,
       "v8Enabled": true
     },
-    "ok": true,
-    "productionAuthorityChanged": false,
-    "proofType": "MLB_ODDS_V8_SHADOW_CONTINUITY",
-    "repeatedScheduledCollectionsVerified": true,
-    "ruleName": "parlay-platform-mlb-odds--ShadowCollectorFunctionSh-HRpP1fiDGc6b",
-    "ruleState": "ENABLED",
-    "runId": "30194549856",
-    "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30194549856",
-    "runtimeChecks": {
-      "authorityUnchanged": true,
-      "collectedAfterFirst": true,
-      "creditsBounded": true,
-      "distinctArtifact": true,
-      "playerPropsDisabled": true,
-      "ruleStillEnabled": true,
-      "shadowOnly": true,
-      "v7Unchanged": true,
+    "latestArtifactAgeSeconds": 254,
+    "latestScheduledArtifact": {
+      "collectedAtUtc": "2026-07-26T13:35:30.369939+00:00",
+      "contract": {
+        "alternatesEnabled": true,
+        "authority": "SHADOW_ONLY",
+        "enabled": true,
+        "eventRegions": [
+          "us",
+          "us2"
+        ],
+        "featuredMarkets": [
+          "h2h",
+          "spreads",
+          "totals"
+        ],
+        "featuredRegions": [
+          "us"
+        ],
+        "firstFiveEnabled": true,
+        "playerPropsEnabled": false,
+        "playerPropsRequireAuthoritativeTeamAttribution": true,
+        "productionV7Unchanged": true,
+        "promotionRequiresUntouchedAudit80Pct": true,
+        "teamPropsEnabled": true,
+        "version": "MLB-ODDS-MARKET-EXPANSION-v8.2-shadow-corrected"
+      },
+      "estimatedCredits": 29,
+      "eventEnrichmentErrorCount": 0,
+      "key": "mlb/odds-v8-shadow/20260726T1335303699870000/79acefb3113c5f6874e71b2ef6a64fa27f5d267cf567ee9f7106295b1dbd6aa9.json",
+      "lastModifiedUtc": "2026-07-26T13:35:31+00:00",
+      "maximumCredits": 100,
+      "selectedEventCount": 2,
+      "selectedMarketRequestCount": 12,
+      "sha256": "79acefb3113c5f6874e71b2ef6a64fa27f5d267cf567ee9f7106295b1dbd6aa9",
       "withinBudget": true
     },
-    "scheduleStatus": "ENABLED_EVERY_15_MINUTES",
-    "scheduledCollectionCount": 2,
-    "secondScheduledArtifact": {
+    "newArtifactCountSincePreviousProof": 20,
+    "objectCount": 26,
+    "ok": true,
+    "previousScheduledArtifact": {
       "budget": {
         "discoveryEstimatedCredits": 2,
         "estimatedCredits": 29,
@@ -146,9 +164,30 @@
       },
       "key": "mlb/odds-v8-shadow/20260726T0835303316020000/67057a789c50a28b085010c35fe29a9e4712d5652d4e94b83bfce7398d02a002.json",
       "sha256": "67057a789c50a28b085010c35fe29a9e4712d5652d4e94b83bfce7398d02a002"
-    }
+    },
+    "productionAuthorityChanged": false,
+    "proofType": "MLB_ODDS_V8_SHADOW_CONTINUITY",
+    "ruleName": "parlay-platform-mlb-odds--ShadowCollectorFunctionSh-HRpP1fiDGc6b",
+    "ruleState": "ENABLED",
+    "runId": "30204487157",
+    "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30204487157",
+    "runtimeChecks": {
+      "authorityUnchanged": true,
+      "collectedAfterPrevious": true,
+      "creditsBounded": true,
+      "distinctArtifact": true,
+      "playerPropsDisabled": true,
+      "recentArtifact": true,
+      "ruleStillEnabled": true,
+      "shadowOnly": true,
+      "v7Unchanged": true,
+      "withinBudget": true
+    },
+    "scheduleExpression": "rate(15 minutes)",
+    "scheduleStatus": "ENABLED_EVERY_15_MINUTES",
+    "scheduledCollectionCount": 22
   },
-  "runtimeContinuityVerifiedAtUtc": "2026-07-26T08:35:44.012714+00:00",
+  "runtimeContinuityVerifiedAtUtc": "2026-07-26T13:39:44.758669+00:00",
   "scheduledCollection": {
     "baselineObjectCount": 4,
     "budget": {
