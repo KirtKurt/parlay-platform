@@ -3949,9 +3949,9 @@
         "slateDateEt": "2026-04-30"
       }
     ],
-    "creditsConsumed": 189100,
+    "creditsConsumed": 189500,
     "currentDate": "2026-05-01",
-    "currentSlotIndex": 0,
+    "currentSlotIndex": 40,
     "dailyAccuracyRequirement": 0.8,
     "dailyAccuracyTargetHigh": 0.9,
     "dataCollectionCompletedAtUtc": "2026-07-26T17:26:54.016097+00:00",
@@ -4217,10 +4217,10 @@
     "featureRematerializationTotalSlateCount": 149,
     "featureRematerializationVersion": "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.1-v7-quarantine-aware",
     "featureRematerializedSlateCount": 149,
-    "freshAuditCollectedDayCount": 19,
-    "freshAuditCollectedGameCount": 250,
+    "freshAuditCollectedDayCount": 0,
+    "freshAuditCollectedGameCount": 0,
     "freshAuditExpansionRequired": true,
-    "freshAuditStartDate": "2026-04-12",
+    "freshAuditStartDate": "2026-05-01",
     "initializedAtUtc": "2026-07-24T07:37:42.029216+00:00",
     "lastCompletedFinalsArtifact": {
       "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
@@ -4230,12 +4230,11 @@
       "versionId": "Zin0ch1lcSbtkeuMcoG2aCl71b8kbcg5"
     },
     "lastCompletedQuarantineCount": 0,
-    "lastError": "80% every-day walk-forward/untouched-audit gate was not achieved; the candidate is rejected without authority",
     "lastErrorAtUtc": "2026-07-25T08:27:49.393989+00:00",
     "lastQuota": {
       "x-requests-last": 10,
-      "x-requests-remaining": 4689260,
-      "x-requests-used": 310740
+      "x-requests-remaining": 4688571,
+      "x-requests-used": 311429
     },
     "lastRejectedSlateError": "official_off_day",
     "lastRematerializedSlateDate": "2025-08-31",
@@ -4303,13 +4302,25 @@
     "minimumTrainingGames": 1000,
     "minimumUntouchedAuditGames": 200,
     "minimumWalkForwardGames": 200,
-    "networkRequestCount": 18910,
+    "networkRequestCount": 18950,
     "optimizationCompletedAtUtc": "2026-07-26T17:30:52.079180+00:00",
     "optimizationRound": 6,
+    "optimizationRoundLimitRecovery": {
+      "activeMaximumOptimizationRounds": 12,
+      "freshAuditStartDate": "2026-05-01",
+      "latestPreviouslyEvaluatedAuditDate": "2026-04-30",
+      "newTargetSettledGames": 3127,
+      "optimizationRound": 6,
+      "priorCandidateAuthorityGranted": false,
+      "priorTargetSettledGames": 2877,
+      "recoveredAtUtc": "2026-07-26T18:34:31.184202+00:00",
+      "strictlyLaterAuditRequired": true,
+      "version": "MLB-HISTORICAL-ROUND-EXTENSION-v1-strictly-later-audit-only"
+    },
     "paidBackfillAuthorized": true,
     "paidBackfillAuthorizedAtUtc": "2026-07-24T09:16:06.517614+00:00",
     "perGameLockMinutesBeforeCommence": 45,
-    "phase": "CANDIDATE_REJECTED",
+    "phase": "BACKFILLING",
     "plan": {
       "completeDateRangeLedger": true,
       "createdAtUtc": "2026-07-24T09:16:05.582633+00:00",
@@ -7727,7 +7738,7 @@
         "slateDateEt": "2025-10-30"
       }
     ],
-    "revision": 1082,
+    "revision": 1084,
     "skippedHistoricalSlots": [
       {
         "reason": "historical response is too stale for a 15-minute grid",
@@ -8022,8 +8033,8 @@
     "snapshotIntervalMinutes": 15,
     "snapshotStartAtEt": "01:00",
     "startDate": "2025-04-01",
-    "targetSettledGames": 2877,
-    "updatedAtUtc": "2026-07-26T18:31:44.388412+00:00",
+    "targetSettledGames": 3127,
+    "updatedAtUtc": "2026-07-26T18:36:58.608930+00:00",
     "version": "MLB-HISTORICAL-OPTIMIZER-AWS-v1.9-quarantine-ledger-complete-versioned-dataset-key-v3"
   },
   "blockers": [],
@@ -8045,7 +8056,7 @@
     "targetAdvanced": true,
     "v7HandlerActive": true
   },
-  "createdAtUtc": "2026-07-26T18:34:46.767531+00:00",
+  "createdAtUtc": "2026-07-26T18:37:43.691086+00:00",
   "jobStatus": "success",
   "ok": true,
   "proofType": "MLB_HISTORICAL_V7_RECOVERY_RUN",
@@ -12071,9 +12082,9 @@
           "slateDateEt": "2026-04-30"
         }
       ],
-      "creditsConsumed": 189300,
+      "creditsConsumed": 189700,
       "currentDate": "2026-05-01",
-      "currentSlotIndex": 20,
+      "currentSlotIndex": 60,
       "dailyAccuracyRequirement": 0.8,
       "dailyAccuracyTargetHigh": 0.9,
       "dataCollectionCompletedAtUtc": "2026-07-26T17:26:54.016097+00:00",
@@ -12355,8 +12366,8 @@
       "lastErrorAtUtc": "2026-07-25T08:27:49.393989+00:00",
       "lastQuota": {
         "x-requests-last": 10,
-        "x-requests-remaining": 4688800,
-        "x-requests-used": 311200
+        "x-requests-remaining": 4688371,
+        "x-requests-used": 311629
       },
       "lastRejectedSlateError": "official_off_day",
       "lastRematerializedSlateDate": "2025-08-31",
@@ -12424,7 +12435,7 @@
       "minimumTrainingGames": 1000,
       "minimumUntouchedAuditGames": 200,
       "minimumWalkForwardGames": 200,
-      "networkRequestCount": 18930,
+      "networkRequestCount": 18970,
       "optimizationCompletedAtUtc": "2026-07-26T17:30:52.079180+00:00",
       "optimizationRound": 6,
       "optimizationRoundLimitRecovery": {
@@ -15860,7 +15871,7 @@
           "slateDateEt": "2025-10-30"
         }
       ],
-      "revision": 1083,
+      "revision": 1085,
       "skippedHistoricalSlots": [
         {
           "reason": "historical response is too stale for a 15-minute grid",
@@ -16156,15 +16167,15 @@
       "snapshotStartAtEt": "01:00",
       "startDate": "2025-04-01",
       "targetSettledGames": 3127,
-      "updatedAtUtc": "2026-07-26T18:34:45.086659+00:00",
+      "updatedAtUtc": "2026-07-26T18:37:42.598366+00:00",
       "version": "MLB-HISTORICAL-OPTIMIZER-AWS-v1.9-quarantine-ledger-complete-versioned-dataset-key-v3"
     },
     "version": "MLB-HISTORICAL-OPTIMIZER-AWS-v1.9-quarantine-ledger-complete-versioned-dataset-key-v3"
   },
   "recoveryStepOutcome": "success",
   "runAttempt": "1",
-  "runId": "30214947785",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30214947785",
+  "runId": "30215059143",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30215059143",
   "runtimeIdentity": {
     "checks": {
       "deploySha": true,
@@ -16174,12 +16185,12 @@
       "maximumRounds": true,
       "rangeExtensionAuthorized": true
     },
-    "deployGitSha": "0dc5573d89f7f657356c8bf25bd83c8bfe7ac057",
+    "deployGitSha": "65bb66b7e212cd5a419e77c399300533ed9c8aaa",
     "endDate": "2026-07-24",
     "functionName": "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv",
     "handler": "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler",
     "maximumCredits": "300000",
     "maximumOptimizationRounds": "12"
   },
-  "sourceSha": "0dc5573d89f7f657356c8bf25bd83c8bfe7ac057"
+  "sourceSha": "65bb66b7e212cd5a419e77c399300533ed9c8aaa"
 }
