@@ -19,7 +19,7 @@ from botocore.exceptions import ClientError
 
 import mlb_odds_market_expansion_v8 as v8
 
-VERSION = "MLB-ODDS-V8-SHADOW-COLLECTOR-v1.3"
+VERSION = "MLB-ODDS-V8-SHADOW-COLLECTOR-v1.4"
 API_KEY = os.environ.get("ODDS_API_KEY", "")
 BUCKET = os.environ.get("MLB_V8_SHADOW_BUCKET", "")
 
@@ -103,7 +103,7 @@ def _events_from_featured(payload: Any) -> List[Mapping[str, Any]]:
 def _available_market_keys(payload: Any) -> List[str]:
     keys: List[str] = []
     if isinstance(payload, list):
-        rows = payload
+        rows = list(payload)
     elif isinstance(payload, Mapping):
         rows = list(payload.get("markets") or payload.get("data") or [])
         for book in payload.get("bookmakers") or []:
@@ -128,14 +128,18 @@ def _historical_market_plan(cfg: v8.V8Config) -> Tuple[str, ...]:
     return tuple(preferred[: cfg.max_event_markets])
 
 
-def _plan_budget_before_discovery(event_count: int, cfg: v8.V8Config, historical: bool) -> Dict[str, Any]:
-    # Use maximum configured event-market count before spending discovery credits.
-    return v8.enforce_cycle_budget(
-        event_count=min(event_count, cfg.max_events_per_cycle),
-        event_market_count=cfg.max_event_markets,
-        config=cfg,
-        historical=historical,
-    )
+def _affordable_event_limit(event_count: int, cfg: v8.V8Config, historical: bool) -> Tuple[int, Dict[str, Any]]:
+    bounded = min(max(0, event_count), cfg.max_events_per_cycle)
+    last = v8.enforce_cycle_budget(event_count=0, event_market_count=cfg.max_event_markets, config=cfg, historical=historical)
+    for count in range(bounded, -1, -1):
+        budget = v8.enforce_cycle_budget(
+            event_count=count, event_market_count=cfg.max_event_markets,
+            config=cfg, historical=historical,
+        )
+        last = budget
+        if budget["withinBudget"]:
+            return count, budget
+    return 0, last
 
 
 def _fetch_event_markets_individually(
@@ -146,7 +150,6 @@ def _fetch_event_markets_individually(
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     enriched: List[Dict[str, Any]] = []
     errors: List[Dict[str, Any]] = []
-    # One-market requests isolate unsupported historical markets and preserve usable data.
     for market in markets:
         try:
             raw, headers = _get(v8.event_odds_url(API_KEY, event_id, (market,), historical_at=historical_at, config=cfg))
@@ -161,8 +164,7 @@ def _fetch_event_markets_individually(
         enriched.append({
             "event": normalized_event,
             "features": v8.derive_team_level_features(normalized_event),
-            "selectedMarkets": [market],
-            "headers": headers,
+            "selectedMarkets": [market], "headers": headers,
         })
     return enriched, errors
 
@@ -178,12 +180,12 @@ def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
     is_historical = historical_at is not None
     featured_raw, featured_headers = _get(v8.featured_odds_url(API_KEY, historical_at=historical_at, config=cfg))
     raw_events = _events_from_featured(featured_raw)
-    selected_events = raw_events[: cfg.max_events_per_cycle]
+    affordable_count, pre_budget = _affordable_event_limit(len(raw_events), cfg, is_historical)
+    selected_events = raw_events[:affordable_count]
 
-    pre_budget = _plan_budget_before_discovery(len(selected_events), cfg, is_historical)
-    if not pre_budget["withinBudget"]:
+    if affordable_count == 0 and raw_events and pre_budget["featuredEstimatedCredits"] > pre_budget["maximumCredits"]:
         return {
-            "ok": False, "status": "BLOCKED_COST_GUARD_PRE_DISCOVERY", "version": VERSION,
+            "ok": False, "status": "BLOCKED_FEATURED_COST_GUARD", "version": VERSION,
             "budget": pre_budget, "eventCount": len(raw_events), "productionAuthorityChanged": False,
         }
 
@@ -212,14 +214,10 @@ def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
             plans.append((event, selected))
             total_selected_markets += len(selected)
 
-    # Exact upper bound for one-market requests across all selected events and regions.
-    event_count_for_cost = len(plans)
     max_markets_for_any_event = max((len(markets) for _, markets in plans), default=0)
     budget = v8.enforce_cycle_budget(
-        event_count=event_count_for_cost,
-        event_market_count=max_markets_for_any_event,
-        config=cfg,
-        historical=is_historical,
+        event_count=len(plans), event_market_count=max_markets_for_any_event,
+        config=cfg, historical=is_historical,
     )
     if not budget["withinBudget"]:
         return {
@@ -231,8 +229,7 @@ def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
     enriched: List[Dict[str, Any]] = []
     enrichment_errors: List[Dict[str, Any]] = []
     for event, markets in plans:
-        event_id = str(event.get("id"))
-        rows, errors = _fetch_event_markets_individually(event_id, markets, historical_at, cfg)
+        rows, errors = _fetch_event_markets_individually(str(event.get("id")), markets, historical_at, cfg)
         enriched.extend(rows)
         enrichment_errors.extend(errors)
 
@@ -245,7 +242,7 @@ def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
         "discoveries": discoveries, "eventEnrichment": enriched,
         "eventEnrichmentErrors": enrichment_errors,
         "selectedEventCount": len(plans), "selectedMarketRequestCount": total_selected_markets,
-        "productionAuthorityChanged": False,
+        "affordableEventLimit": affordable_count, "productionAuthorityChanged": False,
     }
     stamp = (historical_at or _now_iso()).replace(":", "").replace("-", "").replace("+", "").replace(".", "")
     pointer = _put_immutable(f"mlb/odds-v8-shadow/{stamp}", record)
@@ -253,7 +250,8 @@ def collect_once(*, historical_at: str | None = None) -> Dict[str, Any]:
         "ok": True, "status": "COLLECTED_SHADOW", "version": VERSION,
         "eventCount": len(normalized_featured), "eventEnrichmentCount": len(enriched),
         "eventEnrichmentErrorCount": len(enrichment_errors), "budget": budget,
-        "artifact": pointer, "productionAuthorityChanged": False,
+        "affordableEventLimit": affordable_count, "artifact": pointer,
+        "productionAuthorityChanged": False,
     }
 
 
