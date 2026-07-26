@@ -1,3 +1,6 @@
+import importlib
+import os
+
 from hello_world import mlb_odds_market_expansion_v8 as v8
 
 
@@ -89,3 +92,44 @@ def test_shadow_contract_never_changes_v7_authority():
     assert contract["promotionRequiresUntouchedAudit80Pct"] is True
     assert contract["featuredRegions"] == ["us"]
     assert contract["eventRegions"] == ["us", "us2"]
+
+
+def _collector_module(monkeypatch):
+    monkeypatch.setenv("AWS_DEFAULT_REGION", "us-east-1")
+    monkeypatch.setenv("AWS_ACCESS_KEY_ID", "testing")
+    monkeypatch.setenv("AWS_SECRET_ACCESS_KEY", "testing")
+    monkeypatch.setenv("AWS_EC2_METADATA_DISABLED", "true")
+    module = importlib.import_module("hello_world.mlb_odds_v8_shadow_collector")
+    return importlib.reload(module)
+
+
+def test_discovery_parser_reads_bookmaker_scoped_market_keys(monkeypatch):
+    collector = _collector_module(monkeypatch)
+    payload = {
+        "bookmakers": [
+            {"key": "book1", "markets": [{"key": "h2h_1st_5_innings"}, {"key": "team_totals"}]},
+            {"key": "book2", "markets": [{"key": "alternate_totals"}]},
+        ]
+    }
+    assert collector._available_market_keys(payload) == [
+        "alternate_totals", "h2h_1st_5_innings", "team_totals"
+    ]
+
+
+def test_historical_plan_uses_allowlist_and_costs_ten_x(monkeypatch):
+    collector = _collector_module(monkeypatch)
+    plan = collector._historical_market_plan(cfg())
+    assert plan[:3] == v8.FIRST_FIVE_MARKETS
+    budget = v8.enforce_cycle_budget(
+        event_count=1,
+        event_market_count=len(plan),
+        config=cfg(max_estimated_credits_per_cycle=5000),
+        historical=True,
+    )
+    live_budget = v8.enforce_cycle_budget(
+        event_count=1,
+        event_market_count=len(plan),
+        config=cfg(max_estimated_credits_per_cycle=5000),
+        historical=False,
+    )
+    assert budget["estimatedCredits"] == live_budget["estimatedCredits"] * 10
