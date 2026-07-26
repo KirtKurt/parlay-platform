@@ -1,21 +1,20 @@
 """Versioned MLB Odds API market expansion for shadow optimizer testing.
 
 V8 adds featured spreads/totals plus discovery-gated first-five, regional,
-alternate and selected player-prop features. Production authority remains V7
-until the existing chronological walk-forward and untouched-audit gate passes.
+alternate and selected prop observations. Production authority remains V7 until
+chronological walk-forward and untouched-audit gates pass.
 """
 from __future__ import annotations
 
 import copy
 import hashlib
 import json
-import math
 import os
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
 
-VERSION = "MLB-ODDS-MARKET-EXPANSION-v8-shadow-integrated"
+VERSION = "MLB-ODDS-MARKET-EXPANSION-v8.2-shadow-corrected"
 SPORT_KEY = "baseball_mlb"
 ODDS_API_BASE = "https://api.the-odds-api.com/v4"
 FEATURED_MARKETS = ("h2h", "spreads", "totals")
@@ -39,6 +38,14 @@ def _csv(name: str, default: Sequence[str]) -> Tuple[str, ...]:
     return tuple(dict.fromkeys(x for x in values if x))
 
 
+def _bounded_int(name: str, default: int, lower: int, upper: int) -> int:
+    try:
+        value = int(os.environ.get(name, str(default)))
+    except (TypeError, ValueError):
+        value = default
+    return max(lower, min(upper, value))
+
+
 @dataclass(frozen=True)
 class V8Config:
     enabled: bool
@@ -55,8 +62,9 @@ class V8Config:
 
 
 def load_config() -> V8Config:
-    featured_regions = _csv("MLB_V8_FEATURED_REGIONS", ("us",))[:2] or ("us",)
-    event_regions = _csv("MLB_V8_EVENT_REGIONS", ("us", "us2"))[:3] or ("us",)
+    valid_regions = {"us", "us2", "uk", "eu", "au"}
+    featured_regions = tuple(x for x in _csv("MLB_V8_FEATURED_REGIONS", ("us",)) if x in valid_regions)[:2] or ("us",)
+    event_regions = tuple(x for x in _csv("MLB_V8_EVENT_REGIONS", ("us", "us2")) if x in valid_regions)[:3] or ("us",)
     featured = tuple(x for x in _csv("MLB_V8_FEATURED_MARKETS", FEATURED_MARKETS) if x in FEATURED_MARKETS)
     return V8Config(
         enabled=_truthy("MLB_V8_ENABLED", False),
@@ -67,9 +75,9 @@ def load_config() -> V8Config:
         alternates_enabled=_truthy("MLB_V8_ALTERNATES_ENABLED", True),
         team_props_enabled=_truthy("MLB_V8_TEAM_PROPS_ENABLED", True),
         player_props_enabled=_truthy("MLB_V8_PLAYER_PROPS_ENABLED", False),
-        max_event_markets=max(1, min(40, int(os.environ.get("MLB_V8_MAX_EVENT_MARKETS", "18")))),
-        max_events_per_cycle=max(1, min(20, int(os.environ.get("MLB_V8_MAX_EVENTS_PER_CYCLE", "8")))),
-        max_estimated_credits_per_cycle=max(1, int(os.environ.get("MLB_V8_MAX_CREDITS_PER_CYCLE", "500"))),
+        max_event_markets=_bounded_int("MLB_V8_MAX_EVENT_MARKETS", 18, 1, 40),
+        max_events_per_cycle=_bounded_int("MLB_V8_MAX_EVENTS_PER_CYCLE", 8, 1, 20),
+        max_estimated_credits_per_cycle=_bounded_int("MLB_V8_MAX_CREDITS_PER_CYCLE", 500, 1, 100000),
     )
 
 
@@ -80,12 +88,9 @@ def _query(params: Mapping[str, Any]) -> str:
 def featured_odds_url(api_key: str, *, historical_at: str | None = None, config: V8Config | None = None) -> str:
     cfg = config or load_config()
     params = {
-        "apiKey": api_key,
-        "regions": ",".join(cfg.featured_regions),
-        "markets": ",".join(cfg.featured_markets),
-        "oddsFormat": "american",
-        "dateFormat": "iso",
-        "includeSids": "true",
+        "apiKey": api_key, "regions": ",".join(cfg.featured_regions),
+        "markets": ",".join(cfg.featured_markets), "oddsFormat": "american",
+        "dateFormat": "iso", "includeSids": "true",
     }
     if historical_at:
         params["date"] = historical_at
@@ -93,8 +98,12 @@ def featured_odds_url(api_key: str, *, historical_at: str | None = None, config:
     return f"{ODDS_API_BASE}/sports/{SPORT_KEY}/odds?{_query(params)}"
 
 
-def events_url(api_key: str) -> str:
-    return f"{ODDS_API_BASE}/sports/{SPORT_KEY}/events?{_query({'apiKey': api_key, 'dateFormat': 'iso'})}"
+def events_url(api_key: str, *, historical_at: str | None = None) -> str:
+    params = {"apiKey": api_key, "dateFormat": "iso"}
+    if historical_at:
+        params["date"] = historical_at
+        return f"{ODDS_API_BASE}/historical/sports/{SPORT_KEY}/events?{_query(params)}"
+    return f"{ODDS_API_BASE}/sports/{SPORT_KEY}/events?{_query(params)}"
 
 
 def event_markets_url(api_key: str, event_id: str, config: V8Config | None = None) -> str:
@@ -110,19 +119,15 @@ def selected_event_markets(available: Iterable[str], config: V8Config | None = N
     if cfg.team_props_enabled: preferred.extend(TEAM_PROP_MARKETS)
     if cfg.player_props_enabled: preferred.extend(PLAYER_PROP_ALLOWLIST)
     available_set = {str(x) for x in available}
-    selected = [x for x in preferred if x in available_set]
-    return tuple(dict.fromkeys(selected[:cfg.max_event_markets]))
+    return tuple(dict.fromkeys(x for x in preferred if x in available_set))[:cfg.max_event_markets]
 
 
 def event_odds_url(api_key: str, event_id: str, markets: Sequence[str], *, historical_at: str | None = None, config: V8Config | None = None) -> str:
     cfg = config or load_config()
     params = {
-        "apiKey": api_key,
-        "regions": ",".join(cfg.event_regions),
-        "markets": ",".join(markets),
-        "oddsFormat": "american",
-        "dateFormat": "iso",
-        "includeSids": "true",
+        "apiKey": api_key, "regions": ",".join(cfg.event_regions),
+        "markets": ",".join(markets), "oddsFormat": "american",
+        "dateFormat": "iso", "includeSids": "true",
     }
     if historical_at:
         params["date"] = historical_at
@@ -132,27 +137,32 @@ def event_odds_url(api_key: str, event_id: str, markets: Sequence[str], *, histo
 
 def estimate_featured_credits(config: V8Config | None = None, *, historical: bool = False) -> int:
     cfg = config or load_config()
-    multiplier = 10 if historical else 1
-    return multiplier * len(cfg.featured_regions) * len(cfg.featured_markets)
+    return (10 if historical else 1) * len(cfg.featured_regions) * len(cfg.featured_markets)
+
+
+def estimate_discovery_credits(event_count: int, config: V8Config | None = None, *, historical: bool = False) -> int:
+    if historical:
+        return 0
+    cfg = config or load_config()
+    return max(0, min(event_count, cfg.max_events_per_cycle))
 
 
 def estimate_event_credits(event_count: int, market_count: int, config: V8Config | None = None, *, historical: bool = False) -> int:
     cfg = config or load_config()
-    multiplier = 10 if historical else 1
-    return multiplier * max(0, event_count) * max(0, market_count) * len(cfg.event_regions)
+    return (10 if historical else 1) * max(0, event_count) * max(0, market_count) * len(cfg.event_regions)
 
 
 def enforce_cycle_budget(*, event_count: int, event_market_count: int, config: V8Config | None = None, historical: bool = False) -> Dict[str, Any]:
     cfg = config or load_config()
+    bounded_events = min(max(0, event_count), cfg.max_events_per_cycle)
     featured = estimate_featured_credits(cfg, historical=historical)
-    event_cost = estimate_event_credits(min(event_count, cfg.max_events_per_cycle), event_market_count, cfg, historical=historical)
-    total = featured + event_cost
+    discovery = estimate_discovery_credits(bounded_events, cfg, historical=historical)
+    event_cost = estimate_event_credits(bounded_events, event_market_count, cfg, historical=historical)
+    total = featured + discovery + event_cost
     return {
-        "version": VERSION,
-        "featuredEstimatedCredits": featured,
-        "eventEstimatedCredits": event_cost,
-        "estimatedCredits": total,
-        "maximumCredits": cfg.max_estimated_credits_per_cycle,
+        "version": VERSION, "featuredEstimatedCredits": featured,
+        "discoveryEstimatedCredits": discovery, "eventEstimatedCredits": event_cost,
+        "estimatedCredits": total, "maximumCredits": cfg.max_estimated_credits_per_cycle,
         "withinBudget": total <= cfg.max_estimated_credits_per_cycle,
     }
 
@@ -179,12 +189,9 @@ def normalize_event(event: Mapping[str, Any]) -> Dict[str, Any]:
             key = str(market.get("key") or "")
             if not key: continue
             markets[key] = [{
-                "name": outcome.get("name"),
-                "description": outcome.get("description"),
-                "price": outcome.get("price"),
-                "point": outcome.get("point"),
-                "sid": outcome.get("sid"),
-                "impliedProbability": _american_to_probability(outcome.get("price")),
+                "name": outcome.get("name"), "description": outcome.get("description"),
+                "price": outcome.get("price"), "point": outcome.get("point"),
+                "sid": outcome.get("sid"), "impliedProbability": _american_to_probability(outcome.get("price")),
             } for outcome in _outcomes(market)]
         normalized_books.append({
             "key": book.get("key"), "title": book.get("title"), "sid": book.get("sid"),
@@ -215,25 +222,50 @@ def _median(values: Sequence[float]) -> float | None:
     return data[n // 2] if n % 2 else (data[n // 2 - 1] + data[n // 2]) / 2.0
 
 
+def _side_rows(event: Mapping[str, Any], market_key: str, side: str) -> List[Mapping[str, Any]]:
+    side_l = side.strip().lower()
+    return [row for row in _market_rows(event, market_key) if str(row.get("name") or "").strip().lower() == side_l]
+
+
+def _market_side_features(event: Mapping[str, Any], market_key: str, side: str) -> Dict[str, Any]:
+    rows = _side_rows(event, market_key, side)
+    probs = [float(x["impliedProbability"]) for x in rows if x.get("impliedProbability") is not None]
+    points = [float(x["point"]) for x in rows if x.get("point") is not None]
+    prefix = f"{market_key}_{side.replace(' ', '_')}"
+    return {
+        f"{prefix}BookCount": len(rows), f"{prefix}MedianImpliedProbability": _median(probs),
+        f"{prefix}MedianPoint": _median(points),
+        f"{prefix}ProbabilityDispersion": max(probs) - min(probs) if probs else None,
+    }
+
+
 def derive_team_level_features(event: Mapping[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {"version": VERSION}
-    for key in FEATURED_MARKETS + FIRST_FIVE_MARKETS + ALTERNATE_MARKETS + TEAM_PROP_MARKETS:
+    home = str(event.get("homeTeam") or "")
+    away = str(event.get("awayTeam") or "")
+    for key in ("h2h", "spreads", "h2h_1st_5_innings", "spreads_1st_5_innings"):
+        if home: out.update(_market_side_features(event, key, home))
+        if away: out.update(_market_side_features(event, key, away))
+    for key in ("totals", "totals_1st_5_innings", "alternate_totals"):
+        out.update(_market_side_features(event, key, "Over"))
+        out.update(_market_side_features(event, key, "Under"))
+    for key in ("alternate_spreads", "team_totals"):
         rows = _market_rows(event, key)
-        probs = [float(x["impliedProbability"]) for x in rows if x.get("impliedProbability") is not None]
-        points = [float(x["point"]) for x in rows if x.get("point") is not None]
-        out[f"{key}BookOutcomeCount"] = len(rows)
-        out[f"{key}MedianImpliedProbability"] = _median(probs)
-        out[f"{key}MedianPoint"] = _median(points)
-        out[f"{key}ProbabilityDispersion"] = max(probs) - min(probs) if probs else None
-    full_total, f5_total = out.get("totalsMedianPoint"), out.get("totals_1st_5_inningsMedianPoint")
+        out[f"{key}ObservationCount"] = len(rows)
+    full_total = out.get("totals_OverMedianPoint")
+    f5_total = out.get("totals_1st_5_innings_OverMedianPoint")
     if isinstance(full_total, (int, float)) and isinstance(f5_total, (int, float)):
         out["impliedLateInningRunEnvironment"] = float(full_total) - float(f5_total)
-    full_spread, f5_spread = out.get("spreadsMedianPoint"), out.get("spreads_1st_5_inningsMedianPoint")
-    if isinstance(full_spread, (int, float)) and isinstance(f5_spread, (int, float)):
-        out["starterBullpenSpreadDivergence"] = float(full_spread) - float(f5_spread)
-    prop_values = [float(row["point"]) for key in PLAYER_PROP_ALLOWLIST for row in _market_rows(event, key) if row.get("point") is not None]
-    out["allowlistedPlayerPropObservationCount"] = len(prop_values)
-    out["allowlistedPlayerPropMedianLine"] = _median(prop_values)
+    if home:
+        full_spread = out.get(f"spreads_{home.replace(' ', '_')}MedianPoint")
+        f5_spread = out.get(f"spreads_1st_5_innings_{home.replace(' ', '_')}MedianPoint")
+        if isinstance(full_spread, (int, float)) and isinstance(f5_spread, (int, float)):
+            out["homeStarterBullpenSpreadDivergence"] = float(full_spread) - float(f5_spread)
+    # Player markets remain observational until an authoritative player-to-team map is supplied.
+    prop_rows = [row for key in PLAYER_PROP_ALLOWLIST for row in _market_rows(event, key)]
+    out["allowlistedPlayerPropObservationCount"] = len(prop_rows)
+    out["playerPropsTeamAttributionAvailable"] = False
+    out["playerPropsEligibleForTraining"] = False
     return out
 
 
@@ -251,7 +283,6 @@ def install(optimizer: Any, policy_runtime: Any) -> None:
     """Patch snapshot normalization only; V8 features remain shadow metadata."""
     if getattr(optimizer, "_INQSI_ODDS_MARKET_V8_INSTALLED", False): return
     original = optimizer.normalize_historical_snapshot
-
     def patched(payload: Any, requested_at: Any) -> Dict[str, Any]:
         out = original(payload, requested_at)
         by_id = _event_feature_by_id(payload)
@@ -263,7 +294,6 @@ def install(optimizer: Any, policy_runtime: Any) -> None:
         out["oddsMarketExpansionVersion"] = VERSION
         out["oddsMarketExpansionShadowOnly"] = True
         return out
-
     optimizer.normalize_historical_snapshot = patched
     optimizer.ODDS_MARKET_EXPANSION_VERSION = VERSION
     optimizer._INQSI_ODDS_MARKET_V8_INSTALLED = True
@@ -277,5 +307,6 @@ def shadow_contract(config: V8Config | None = None) -> Dict[str, Any]:
         "eventRegions": list(cfg.event_regions), "featuredMarkets": list(cfg.featured_markets),
         "firstFiveEnabled": cfg.first_five_enabled, "alternatesEnabled": cfg.alternates_enabled,
         "teamPropsEnabled": cfg.team_props_enabled, "playerPropsEnabled": cfg.player_props_enabled,
+        "playerPropsRequireAuthoritativeTeamAttribution": True,
         "promotionRequiresUntouchedAudit80Pct": True,
     }
