@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
+from hello_world import mlb_supervised_daily_objective_v2_1 as objective_module
 from hello_world import mlb_supervised_features_v2 as feature_module
 from hello_world import mlb_supervised_model_v2 as model_module
 
@@ -43,6 +44,18 @@ def _record(day, game_id, home, away, home_won, home_probability=0.5):
         "awaySignal": _signal(1.0 - home_probability),
         "postLockDataExcluded": True,
         "gameSpecificLockClipping": True,
+    }
+
+
+def _metrics(*, daily_pass, minimum, mean, overall, log_loss, brier, ece):
+    return {
+        "dailyPassRate": daily_pass,
+        "minimumDailyAccuracy": minimum,
+        "meanDailyAccuracy": mean,
+        "overallAccuracy": overall,
+        "logLoss": log_loss,
+        "brierScore": brier,
+        "expectedCalibrationError": ece,
     }
 
 
@@ -124,6 +137,20 @@ def test_residual_model_learns_non_market_signal_and_bounds_probability():
     metrics = model_module.evaluate_probabilities(examples[600:], probabilities)
     assert metrics["overallAccuracy"] > 0.90
     assert all(model_module.PROBABILITY_FLOOR <= value <= model_module.PROBABILITY_CEILING for value in probabilities)
+
+
+def test_daily_slate_objective_outranks_small_log_loss_advantage():
+    market = _metrics(daily_pass=0.10, minimum=0.20, mean=0.55, overall=0.55, log_loss=0.690, brier=0.245, ece=0.04)
+    daily_better = _metrics(daily_pass=0.20, minimum=0.25, mean=0.59, overall=0.58, log_loss=0.695, brier=0.247, ece=0.05)
+    logloss_better = _metrics(daily_pass=0.10, minimum=0.20, mean=0.55, overall=0.55, log_loss=0.680, brier=0.240, ece=0.03)
+    assert objective_module.daily_objective_key(daily_better, market) < objective_module.daily_objective_key(logloss_better, market)
+
+
+def test_daily_slate_objective_rejects_unsafe_calibration():
+    market = _metrics(daily_pass=0.10, minimum=0.20, mean=0.55, overall=0.55, log_loss=0.690, brier=0.245, ece=0.04)
+    safe = _metrics(daily_pass=0.15, minimum=0.20, mean=0.57, overall=0.56, log_loss=0.695, brier=0.247, ece=0.05)
+    unsafe = _metrics(daily_pass=0.40, minimum=0.40, mean=0.70, overall=0.68, log_loss=0.760, brier=0.290, ece=0.15)
+    assert objective_module.daily_objective_key(safe, market) < objective_module.daily_objective_key(unsafe, market)
 
 
 def test_v8_dataset_patch_advances_rematerialization_contract():

@@ -13,11 +13,16 @@ from typing import Any, Dict, List, Mapping
 
 import boto3
 
+import mlb_supervised_daily_objective_v2_1 as daily_objective
 import mlb_supervised_model_v2 as supervised
 
 STATE_PK = "MLB_HISTORICAL_OPTIMIZER#V1"
 STATE_SK = "STATE"
 EXPECTED_HANDLER = "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler"
+
+# Selection must optimize the actual 80%-per-slate gate rather than log loss
+# alone. The patch remains shadow-only and does not alter deployed authority.
+daily_objective.install(supervised)
 
 
 def _plain(value: Any) -> Any:
@@ -124,6 +129,7 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
             "deployGitSha": environment.get("INQSI_DEPLOY_GIT_SHA"),
             "checks": runtime_checks,
         },
+        "selectionObjective": dict(supervised.SUPERVISED_SELECTION_OBJECTIVE),
         "historicalState": {
             "phase": state.get("phase"),
             "optimizationRound": state.get("optimizationRound"),
@@ -164,6 +170,7 @@ def main() -> int:
         "ok": value.get("ok"),
         "version": value.get("version"),
         "featureCoverage": value.get("featureCoverage"),
+        "selectionObjective": value.get("selectionObjective"),
         "selectedFeatureGroup": (value.get("selection") or {}).get("selectedFeatureGroup"),
         "promotionGate": value.get("promotionGate"),
         "walkForward": ((value.get("metrics") or {}).get("walkForward")),
