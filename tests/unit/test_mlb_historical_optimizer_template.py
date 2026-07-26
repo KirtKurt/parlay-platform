@@ -44,3 +44,12 @@ def test_historical_optimizer_can_distinguish_missing_s3_evidence_objects():
     assert "ListHistoricalEvidencePrefixForExistenceChecks" in text
     assert "s3:ListBucket" in text
     assert "mlb/historical-daily-v1/*" in text
+
+
+def test_historical_optimizer_range_includes_settled_2026_slates():
+    """A failed 2025 audit round must have strictly later settled slates available."""
+
+    text = TEMPLATE.read_text(encoding="utf-8")
+
+    assert "Default: '2026-07-24'" in text
+    assert "MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED" in text
