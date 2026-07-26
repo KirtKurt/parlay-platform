@@ -24,7 +24,12 @@ import mlb_historical_optimizer_handler as optimizer_handler
 import mlb_historical_quarantine_contract_v2 as quarantine_contract
 import mlb_historical_versioned_dataset_key_v3 as versioned_dataset_key
 
-VERSION = "MLB-HISTORICAL-ENTRYPOINT-v7-odds-pattern-stack"
+VERSION = "MLB-HISTORICAL-ENTRYPOINT-v8-competitive-schedule-filter"
+
+# MLB Stats API game types that can produce authoritative championship-season
+# labels. Spring Training (S), exhibition, All-Star, and other non-competitive
+# games are retained as exclusion evidence but never enter training datasets.
+COMPETITIVE_GAME_TYPES = frozenset({"R", "F", "D", "L", "W"})
 
 optimizer_handler.MAX_NETWORK_REQUESTS = min(
     int(optimizer_handler.MAX_NETWORK_REQUESTS), 20
@@ -42,13 +47,16 @@ def _team_name(raw: Mapping[str, Any], side: str) -> Optional[str]:
     return str(value) if value else None
 
 
-def _cross_date_evidence(raw: Mapping[str, Any], slate_date: str) -> Dict[str, Any]:
+def _exclusion_evidence(
+    raw: Mapping[str, Any], slate_date: str, reason: str
+) -> Dict[str, Any]:
     status = raw.get("status") or {}
     return {
         "officialGamePk": str(raw.get("gamePk") or ""),
         "queriedSlateDateEt": slate_date,
         "officialDate": str(raw.get("officialDate") or ""),
         "gameDate": raw.get("gameDate"),
+        "gameType": str(raw.get("gameType") or ""),
         "rescheduleDate": raw.get("rescheduleDate"),
         "resumeDate": raw.get("resumeDate"),
         "rescheduledFrom": raw.get("rescheduledFrom"),
@@ -61,8 +69,14 @@ def _cross_date_evidence(raw: Mapping[str, Any], slate_date: str) -> Dict[str, A
             "statusCode": status.get("statusCode"),
             "detailedState": status.get("detailedState"),
         },
-        "exclusionReason": "provider_exact_date_response_cross_date_reference",
+        "exclusionReason": reason,
     }
+
+
+def _cross_date_evidence(raw: Mapping[str, Any], slate_date: str) -> Dict[str, Any]:
+    return _exclusion_evidence(
+        raw, slate_date, "provider_exact_date_response_cross_date_reference"
+    )
 
 
 def fetch_official_schedule_cross_date_safe(
@@ -81,7 +95,10 @@ def fetch_official_schedule_cross_date_safe(
     if not isinstance(dates, list):
         raise RuntimeError("MLB_OFFICIAL_FINAL_DATES_INVALID")
 
-    filtered_dates, exclusions, seen = [], [], set()
+    filtered_dates = []
+    cross_date_exclusions = []
+    non_competitive_exclusions = []
+    seen = set()
     provider_game_count = 0
     for date_row in dates:
         if not isinstance(date_row, dict) or str(date_row.get("date") or "") != slate_date:
@@ -98,6 +115,16 @@ def fetch_official_schedule_cross_date_safe(
             if not game_pk or game_pk in seen:
                 raise RuntimeError("MLB_OFFICIAL_FINAL_GAME_PK_INVALID_OR_DUPLICATE")
             seen.add(game_pk)
+
+            game_type = str(raw.get("gameType") or "").strip().upper()
+            if game_type and game_type not in COMPETITIVE_GAME_TYPES:
+                non_competitive_exclusions.append(
+                    _exclusion_evidence(
+                        raw, slate_date, "provider_non_competitive_game_type"
+                    )
+                )
+                continue
+
             official_date = str(raw.get("officialDate") or slate_date)
             if official_date != slate_date:
                 evidence = _cross_date_evidence(raw, slate_date)
@@ -105,7 +132,7 @@ def fetch_official_schedule_cross_date_safe(
                     raise RuntimeError(
                         f"MLB_OFFICIAL_FINAL_CROSS_DATE_IDENTITY_UNPROVEN:{game_pk}"
                     )
-                exclusions.append(evidence)
+                cross_date_exclusions.append(evidence)
             else:
                 kept.append(copy.deepcopy(raw))
         row = copy.deepcopy(date_row)
@@ -117,20 +144,31 @@ def fetch_official_schedule_cross_date_safe(
     filtered["dates"] = filtered_dates
     filtered["totalGames"] = sum(len(row["games"]) for row in filtered_dates)
     canonical = final_labels.validate_official_schedule_payload(filtered, slate_date)
-    exclusions = sorted(exclusions, key=lambda row: row["officialGamePk"])
+    cross_date_exclusions = sorted(
+        cross_date_exclusions, key=lambda row: row["officialGamePk"]
+    )
+    non_competitive_exclusions = sorted(
+        non_competitive_exclusions, key=lambda row: row["officialGamePk"]
+    )
+    all_exclusions = cross_date_exclusions + non_competitive_exclusions
     canonical.update(
         {
             "crossDateCanonicalizationVersion": VERSION,
             "providerReportedGameCount": provider_game_count,
-            "crossDateExcludedCount": len(exclusions),
-            "crossDateExclusions": exclusions,
+            "crossDateExcludedCount": len(cross_date_exclusions),
+            "crossDateExclusions": cross_date_exclusions,
             "crossDateExclusionFingerprint": history.canonical_payload_fingerprint(
-                exclusions
+                cross_date_exclusions
+            ),
+            "nonCompetitiveExcludedCount": len(non_competitive_exclusions),
+            "nonCompetitiveExclusions": non_competitive_exclusions,
+            "nonCompetitiveExclusionFingerprint": history.canonical_payload_fingerprint(
+                non_competitive_exclusions
             ),
             "canonicalOfficialDateGameCount": canonical["officialGameCount"],
         }
     )
-    if provider_game_count != canonical["officialGameCount"] + len(exclusions):
+    if provider_game_count != canonical["officialGameCount"] + len(all_exclusions):
         raise RuntimeError("MLB_OFFICIAL_FINAL_CROSS_DATE_ACCOUNTING_MISMATCH")
     return canonical
 
@@ -142,7 +180,12 @@ def _append_authorized_range_extension() -> None:
     state = optimizer_handler._load_state()
     if not isinstance(state, dict):
         return
-    if state.get("phase") not in {"DATA_RANGE_EXHAUSTED", "CANDIDATE_REJECTED"}:
+    if state.get("phase") not in {
+        "DATA_RANGE_EXHAUSTED",
+        "CANDIDATE_REJECTED",
+        "RANGE_EXTENSION_BLOCKED_INCOMPLETE_LEDGER",
+        "PAUSED_QUOTA",
+    }:
         return
 
     previous_end = date.fromisoformat(str(state.get("endDate") or optimizer_handler.END_DATE))
@@ -190,12 +233,19 @@ def _append_authorized_range_extension() -> None:
                     }
                 )
         except Exception as exc:
-            rejected.append({"slateDateEt": day, "details": f"{type(exc).__name__}:{str(exc)[:200]}"})
+            rejected.append(
+                {
+                    "slateDateEt": day,
+                    "details": f"{type(exc).__name__}:{str(exc)[:200]}",
+                }
+            )
         cursor += timedelta(days=1)
 
     if rejected:
         state["phase"] = "RANGE_EXTENSION_BLOCKED_INCOMPLETE_LEDGER"
-        state["lastError"] = "historical range extension could not prove every later official schedule date"
+        state["lastError"] = (
+            "historical range extension could not prove every later competitive schedule date"
+        )
         state["rangeExtensionRejectedDates"] = rejected
         optimizer_handler._save_state(state)
         return
@@ -210,9 +260,14 @@ def _append_authorized_range_extension() -> None:
     maximum = max(int(state.get("maximumCredits") or 0), int(optimizer_handler.MAX_CREDITS))
     quota = optimizer_handler._quota_status()
     remaining = quota.get("x-requests-remaining")
-    if projected > maximum or (isinstance(remaining, int) and remaining < extension_credits + optimizer_handler.QUOTA_RESERVE):
+    if projected > maximum or (
+        isinstance(remaining, int)
+        and remaining < extension_credits + optimizer_handler.QUOTA_RESERVE
+    ):
         state["phase"] = "PAUSED_QUOTA"
-        state["lastError"] = "range extension is valid but the configured credit/quota guard blocks paid requests"
+        state["lastError"] = (
+            "range extension is valid but the configured credit/quota guard blocks paid requests"
+        )
         state["rangeExtensionEstimatedCredits"] = extension_credits
         state["lastQuota"] = quota
         optimizer_handler._save_state(state)
@@ -223,23 +278,32 @@ def _append_authorized_range_extension() -> None:
     plan["slates"] = merged
     plan["endDate"] = configured_end.isoformat()
     plan["plannedThroughDate"] = merged[-1]["slateDateEt"]
-    plan["plannedOfficialGames"] = sum(int(row.get("officialGameCount") or 0) for row in merged)
+    plan["plannedOfficialGames"] = sum(
+        int(row.get("officialGameCount") or 0) for row in merged
+    )
     plan["maximumAuthorizedOfficialGames"] = plan["plannedOfficialGames"]
     plan["plannedCompleteSlateDays"] = len(merged)
-    plan["historicalRequestCount"] = sum(int(row.get("historicalRequestCount") or 0) for row in merged)
-    plan["estimatedCredits"] = sum(int(row.get("estimatedCredits") or 0) for row in merged)
+    plan["historicalRequestCount"] = sum(
+        int(row.get("historicalRequestCount") or 0) for row in merged
+    )
+    plan["estimatedCredits"] = sum(
+        int(row.get("estimatedCredits") or 0) for row in merged
+    )
     plan["maximumCredits"] = maximum
     plan["providerReportedRemainingCredits"] = remaining
     plan["completeDateRangeLedger"] = True
     plan["planningErrorCount"] = 0
     plan["rejectedDates"] = []
-    plan["slateLedgerDigest"] = optimizer_handler._sha256(optimizer_handler._json_bytes(merged))
+    plan["slateLedgerDigest"] = optimizer_handler._sha256(
+        optimizer_handler._json_bytes(merged)
+    )
     plan["rangeExtension"] = {
-        "version": "MLB-HISTORICAL-RANGE-EXTENSION-v1",
+        "version": "MLB-HISTORICAL-RANGE-EXTENSION-v2-competitive-only",
         "previousEndDate": previous_end.isoformat(),
         "newEndDate": configured_end.isoformat(),
         "appendedSlateCount": len(appended),
         "appendedEstimatedCredits": extension_credits,
+        "competitiveGameTypes": sorted(COMPETITIVE_GAME_TYPES),
         "authorizedByDeployment": True,
         "authorizedAtUtc": optimizer_handler._now_iso(),
     }
@@ -251,6 +315,8 @@ def _append_authorized_range_extension() -> None:
     state["maximumCredits"] = maximum
     state["phase"] = "BACKFILLING"
     state["lastError"] = None
+    state.pop("rangeExtensionRejectedDates", None)
+    state.pop("rangeExtensionEstimatedCredits", None)
     state["rangeExtension"] = copy.deepcopy(plan["rangeExtension"])
     optimizer_handler._save_state(state)
 
