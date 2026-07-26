@@ -1,0 +1,77 @@
+from __future__ import annotations
+
+from hello_world import mlb_supervised_model_v2 as model
+
+
+def _metrics(*, daily_pass, minimum, mean, overall, log_loss, brier, ece):
+    return {
+        "dailyPassRate": daily_pass,
+        "minimumDailyAccuracy": minimum,
+        "meanDailyAccuracy": mean,
+        "overallAccuracy": overall,
+        "logLoss": log_loss,
+        "brierScore": brier,
+        "expectedCalibrationError": ece,
+    }
+
+
+def test_daily_slate_objective_outranks_small_log_loss_advantage():
+    market = _metrics(
+        daily_pass=0.10,
+        minimum=0.20,
+        mean=0.55,
+        overall=0.55,
+        log_loss=0.690,
+        brier=0.245,
+        ece=0.04,
+    )
+    daily_better = _metrics(
+        daily_pass=0.20,
+        minimum=0.25,
+        mean=0.59,
+        overall=0.58,
+        log_loss=0.695,
+        brier=0.247,
+        ece=0.05,
+    )
+    logloss_better = _metrics(
+        daily_pass=0.10,
+        minimum=0.20,
+        mean=0.55,
+        overall=0.55,
+        log_loss=0.680,
+        brier=0.240,
+        ece=0.03,
+    )
+    assert model._config_key(daily_better, market) < model._config_key(logloss_better, market)
+
+
+def test_calibration_ineligible_candidate_is_ranked_after_safe_candidate():
+    market = _metrics(
+        daily_pass=0.10,
+        minimum=0.20,
+        mean=0.55,
+        overall=0.55,
+        log_loss=0.690,
+        brier=0.245,
+        ece=0.04,
+    )
+    safe = _metrics(
+        daily_pass=0.15,
+        minimum=0.20,
+        mean=0.57,
+        overall=0.56,
+        log_loss=0.695,
+        brier=0.247,
+        ece=0.05,
+    )
+    unsafe = _metrics(
+        daily_pass=0.40,
+        minimum=0.40,
+        mean=0.70,
+        overall=0.68,
+        log_loss=0.760,
+        brier=0.290,
+        ece=0.15,
+    )
+    assert model._config_key(safe, market) < model._config_key(unsafe, market)
