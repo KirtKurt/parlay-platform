@@ -22,7 +22,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: mlb-supervised-shadow-v2
+  group: mlb-supervised-shadow-v2-${{ github.event_name }}
   cancel-in-progress: false
 
 env:
