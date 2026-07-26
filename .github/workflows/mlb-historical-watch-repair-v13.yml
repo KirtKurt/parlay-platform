@@ -88,13 +88,35 @@ jobs:
         run: |
           set -euo pipefail
           invoke_status() {
-            aws lambda invoke \
-              --function-name "$FUNCTION_NAME" \
-              --region "${{ secrets.AWS_REGION }}" \
-              --cli-read-timeout 900 \
-              --cli-binary-format raw-in-base64-out \
-              --payload '{"mode":"status","run":"mlb_historical_watch_repair_v13_status"}' \
-              "$1" >/tmp/invoke-meta.json
+            local output="$1"
+            for attempt in $(seq 1 24); do
+              aws lambda invoke \
+                --function-name "$FUNCTION_NAME" \
+                --region "${{ secrets.AWS_REGION }}" \
+                --cli-read-timeout 900 \
+                --cli-binary-format raw-in-base64-out \
+                --payload '{"mode":"status","run":"mlb_historical_watch_repair_v13_status"}' \
+                "$output" >/tmp/invoke-meta.json
+              decision=$(python - "$output" <<'PY'
+          import json,sys
+          value=json.load(open(sys.argv[1]))
+          state=value.get('state')
+          if value.get('status') == 'LEASE_HELD' and not isinstance(state,dict):
+              print('RETRY')
+          elif value.get('ok') is True and isinstance(state,dict):
+              print('READY')
+          else:
+              print('FAIL')
+          PY
+          )
+              case "$decision" in
+                READY) return 0 ;;
+                RETRY) sleep 15 ;;
+                FAIL) cat "$output"; return 1 ;;
+              esac
+            done
+            echo '::error::Optimizer status remained lease-held for six minutes.'
+            return 1
           }
           invoke_status /tmp/before.json
           python - <<'PY'
