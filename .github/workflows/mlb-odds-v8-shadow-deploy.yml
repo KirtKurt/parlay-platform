@@ -67,8 +67,9 @@ jobs:
               "V8Enabled=true" \
               "V8FeaturedRegions=us" \
               "V8EventRegions=us,us2" \
-              "V8MaxCreditsPerCycle=500"
-      - name: Verify handler and disabled schedule
+              "V8MaxEventsPerCycle=2" \
+              "V8MaxCreditsPerCycle=100"
+      - name: Verify handler, authority, disabled schedule, and live canary
         run: |
           set -euo pipefail
           FUNCTION_NAME=$(aws cloudformation describe-stacks \
@@ -76,7 +77,13 @@ jobs:
             --region "${{ secrets.AWS_REGION }}" \
             --query "Stacks[0].Outputs[?OutputKey=='ShadowCollectorFunctionName'].OutputValue" \
             --output text)
+          AUTHORITY=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-mlb-odds-v8-shadow \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='Authority'].OutputValue" \
+            --output text)
           test -n "$FUNCTION_NAME"
+          test "$AUTHORITY" = 'SHADOW_ONLY'
           HANDLER=$(aws lambda get-function-configuration \
             --function-name "$FUNCTION_NAME" \
             --region "${{ secrets.AWS_REGION }}" \
@@ -100,6 +107,18 @@ jobs:
           from pathlib import Path
           value=json.loads(Path('/tmp/v8-shadow-canary.json').read_text())
           assert value.get('ok') is True, value
-          assert value.get('status') in {'COLLECTED_SHADOW','DISABLED'}, value
-          assert value.get('productionAuthorityChanged') is False or value.get('status') == 'DISABLED', value
+          assert value.get('status') == 'COLLECTED_SHADOW', value
+          assert value.get('productionAuthorityChanged') is False, value
+          budget=value.get('budget') or {}
+          assert budget.get('withinBudget') is True, value
+          assert int(budget.get('estimatedCredits') or 0) <= 100, value
+          artifact=value.get('artifact') or {}
+          assert artifact.get('sha256'), value
+          assert str(artifact.get('key') or '').endswith('.json'), value
           PY
+      - name: Upload canary proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-odds-v8-shadow-canary-${{ github.sha }}
+          path: /tmp/v8-shadow-canary.json
+          retention-days: 90
