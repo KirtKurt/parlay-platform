@@ -87,24 +87,53 @@ jobs:
           test -f .aws-sam-v8-shadow/ShadowCollectorFunction/mlb_odds_market_expansion_v8.py
           sha256sum .aws-sam-v8-shadow/template.yaml | awk '{print $1}' >/tmp/v8-template-sha256.txt
 
-      - name: Wait for CloudFormation updateability
+      - name: Recover and wait for CloudFormation updateability
         id: stack_wait
         run: |
           set -euo pipefail
+          : >/tmp/v8-predeploy-stack-status-history.txt
           for attempt in $(seq 1 80); do
             status=$(aws cloudformation describe-stacks \
               --stack-name "$STACK_NAME" \
               --region "${{ secrets.AWS_REGION }}" \
               --query 'Stacks[0].StackStatus' \
               --output text 2>/dev/null || echo STACK_MISSING)
+            printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$status" >>/tmp/v8-predeploy-stack-status-history.txt
             case "$status" in
               STACK_MISSING|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE)
                 exit 0
+                ;;
+              ROLLBACK_COMPLETE|CREATE_FAILED)
+                aws cloudformation describe-stack-events \
+                  --stack-name "$STACK_NAME" \
+                  --region "${{ secrets.AWS_REGION }}" \
+                  --max-items 40 \
+                  --output json >/tmp/v8-predeploy-recovery-events.json 2>/tmp/v8-predeploy-recovery-events-error.log || true
+                aws cloudformation delete-stack \
+                  --stack-name "$STACK_NAME" \
+                  --region "${{ secrets.AWS_REGION }}"
+                aws cloudformation wait stack-delete-complete \
+                  --stack-name "$STACK_NAME" \
+                  --region "${{ secrets.AWS_REGION }}"
+                echo 'DELETED_FAILED_CREATE_STACK' >/tmp/v8-predeploy-recovery-action.txt
+                exit 0
+                ;;
+              UPDATE_ROLLBACK_FAILED)
+                aws cloudformation continue-update-rollback \
+                  --stack-name "$STACK_NAME" \
+                  --region "${{ secrets.AWS_REGION }}"
+                echo 'CONTINUED_UPDATE_ROLLBACK' >/tmp/v8-predeploy-recovery-action.txt
+                sleep 15
                 ;;
               *_IN_PROGRESS)
                 sleep 15
                 ;;
               *)
+                aws cloudformation describe-stack-events \
+                  --stack-name "$STACK_NAME" \
+                  --region "${{ secrets.AWS_REGION }}" \
+                  --max-items 40 \
+                  --output json >/tmp/v8-predeploy-recovery-events.json 2>/tmp/v8-predeploy-recovery-events-error.log || true
                 echo "::error::CloudFormation is not updateable: $status"
                 exit 1
                 ;;
@@ -527,6 +556,12 @@ jobs:
               'finalScheduleState': final_state,
               'stepOutcomes': outcomes,
               'deploymentIdentity': load('/tmp/v8-identity.json'),
+              'predeployStackRecovery': {
+                  'statusHistory': Path('/tmp/v8-predeploy-stack-status-history.txt').read_text(errors='replace')[-8000:] if Path('/tmp/v8-predeploy-stack-status-history.txt').exists() else None,
+                  'action': Path('/tmp/v8-predeploy-recovery-action.txt').read_text(errors='replace').strip() if Path('/tmp/v8-predeploy-recovery-action.txt').exists() else None,
+                  'events': load('/tmp/v8-predeploy-recovery-events.json'),
+                  'eventsError': Path('/tmp/v8-predeploy-recovery-events-error.log').read_text(errors='replace')[-4000:] if Path('/tmp/v8-predeploy-recovery-events-error.log').exists() else None,
+              },
               'canaryDeployment': {
                   'logTail': Path('/tmp/v8-canary-deploy.log').read_text(errors='replace')[-12000:] if Path('/tmp/v8-canary-deploy.log').exists() else None,
                   'stack': load('/tmp/v8-canary-stack.json'),
@@ -553,6 +588,10 @@ jobs:
           path: |
             runtime_reports/mlb_odds_v8_shadow_recovery_latest.json
             /tmp/v8-aws-identity.json
+            /tmp/v8-predeploy-stack-status-history.txt
+            /tmp/v8-predeploy-recovery-action.txt
+            /tmp/v8-predeploy-recovery-events.json
+            /tmp/v8-predeploy-recovery-events-error.log
             /tmp/v8-canary-deploy.log
             /tmp/v8-canary-stack.json
             /tmp/v8-canary-stack-events.json
