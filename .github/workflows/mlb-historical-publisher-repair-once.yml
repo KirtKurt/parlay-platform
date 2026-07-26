@@ -33,6 +33,7 @@ jobs:
 
           workflow_path = Path('.github/workflows/mlb-historical-v7-recovery.yml')
           repair_path = Path('.github/workflows/mlb-historical-publisher-repair-once.yml')
+          marker_path = Path('runtime_reports/.historical_publisher_repair_bootstrap')
           text = workflow_path.read_text()
           old = """          git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
@@ -69,23 +70,35 @@ jobs:
           assert 'git pull --rebase origin main' not in text
           workflow_path.write_text(text)
           repair_path.unlink()
+          marker_path.unlink(missing_ok=True)
           PY
           git diff --check
           grep -Fq 'git checkout -B historical-v7-evidence origin/main' .github/workflows/mlb-historical-v7-recovery.yml
           grep -Fq 'Unable to publish MLB historical V7 recovery evidence after bounded retries' .github/workflows/mlb-historical-v7-recovery.yml
           test ! -e .github/workflows/mlb-historical-publisher-repair-once.yml
+          test ! -e runtime_reports/.historical_publisher_repair_bootstrap
 
       - name: Publish repaired workflow
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add .github/workflows/mlb-historical-v7-recovery.yml .github/workflows/mlb-historical-publisher-repair-once.yml
+          git add .github/workflows/mlb-historical-v7-recovery.yml \
+            .github/workflows/mlb-historical-publisher-repair-once.yml \
+            runtime_reports/.historical_publisher_repair_bootstrap
           git commit -m 'Harden MLB historical recovery evidence publishing'
+          cp .github/workflows/mlb-historical-v7-recovery.yml /tmp/mlb-historical-v7-recovery.yml
           for attempt in 1 2 3 4 5; do
             git push origin HEAD:main && exit 0
             git fetch origin main
-            git rebase origin/main
+            git reset --hard origin/main
+            cp /tmp/mlb-historical-v7-recovery.yml .github/workflows/mlb-historical-v7-recovery.yml
+            rm -f .github/workflows/mlb-historical-publisher-repair-once.yml \
+              runtime_reports/.historical_publisher_repair_bootstrap
+            git add .github/workflows/mlb-historical-v7-recovery.yml \
+              .github/workflows/mlb-historical-publisher-repair-once.yml \
+              runtime_reports/.historical_publisher_repair_bootstrap
+            git commit -m 'Harden MLB historical recovery evidence publishing'
             sleep $((attempt * 3))
           done
           exit 1
