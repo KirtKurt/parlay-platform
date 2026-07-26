@@ -26,6 +26,7 @@ jobs:
       - name: Apply exact V8 concurrency repair
         run: |
           set -euo pipefail
+          # This second push guarantees the workflow already exists on the default branch.
           git fetch origin main
           git reset --hard origin/main
           python - <<'PY'
