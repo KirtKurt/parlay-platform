@@ -54,12 +54,27 @@ jobs:
         run: |
           set -euo pipefail
           python -m compileall -q hello_world scripts
-      - name: Run complete MLB unit suite
+      - name: Run complete MLB unit suite with concise evidence
         run: |
-          set -euo pipefail
+          set -uo pipefail
+          mkdir -p runtime_reports
           mapfile -t tests < <(find tests/unit -maxdepth 1 -type f -name 'test_mlb_*.py' -print | sort)
           test ${#tests[@]} -gt 0
-          python -m pytest -q "${tests[@]}"
+          set +e
+          python -m pytest -q --tb=short --junitxml=runtime_reports/mlb_backend_pytest.xml "${tests[@]}" >runtime_reports/mlb_backend_pytest.log 2>&1
+          status=$?
+          set -e
+          tail -n 240 runtime_reports/mlb_backend_pytest.log
+          exit "$status"
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-backend-tests-${{ github.sha }}
+          path: |
+            runtime_reports/mlb_backend_pytest.log
+            runtime_reports/mlb_backend_pytest.xml
+          retention-days: 30
       - name: Validate workflow authority
         run: |
           set -euo pipefail
@@ -119,7 +134,7 @@ jobs:
         run: |
           set -euo pipefail
           mapfile -t tests < <(find tests/unit -maxdepth 1 -type f -name 'test_mlb_*.py' -print | sort)
-          python -m pytest -q "${tests[@]}"
+          python -m pytest -q --tb=short "${tests[@]}"
           sam validate --lint --template-file template.yaml
           rm -rf .aws-sam-recovery
           sam build --no-cached --build-dir .aws-sam-recovery --template-file template.yaml
