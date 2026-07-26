@@ -19,11 +19,12 @@ from typing import Any, Callable, Dict, Mapping, Optional
 import inqsi_pull_history as history
 import mlb_canonical_final_labels_v1 as final_labels
 import mlb_historical_derived_features_v1 as derived_features
+import mlb_odds_pattern_features_v1 as odds_pattern_features
 import mlb_historical_optimizer_handler as optimizer_handler
 import mlb_historical_quarantine_contract_v2 as quarantine_contract
 import mlb_historical_versioned_dataset_key_v3 as versioned_dataset_key
 
-VERSION = "MLB-HISTORICAL-ENTRYPOINT-v6-safe-range-extension-derived-features"
+VERSION = "MLB-HISTORICAL-ENTRYPOINT-v7-odds-pattern-stack"
 
 optimizer_handler.MAX_NETWORK_REQUESTS = min(
     int(optimizer_handler.MAX_NETWORK_REQUESTS), 20
@@ -258,6 +259,7 @@ optimizer_handler.final_labels.fetch_official_schedule = fetch_official_schedule
 quarantine_contract.install()
 versioned_dataset_key.install()
 derived_features.install(optimizer_handler.optimizer, optimizer_handler.policy_runtime)
+odds_pattern_features.install(optimizer_handler.optimizer, optimizer_handler.policy_runtime)
 
 
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
