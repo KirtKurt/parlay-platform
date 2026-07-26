@@ -22,7 +22,7 @@ concurrency:
 
 env:
   HISTORICAL_START_DATE: '2025-04-01'
-  HISTORICAL_END_DATE: '2025-10-31'
+  HISTORICAL_END_DATE: '2026-07-24'
   HISTORICAL_TARGET_GAMES: '1600'
   HISTORICAL_MAX_CREDITS: '300000'
   HISTORICAL_MAX_CANDIDATES: '25000'
@@ -64,9 +64,10 @@ jobs:
             tests/unit/test_mlb_historical_policy_v1.py \
             tests/unit/test_mlb_historical_daily_optimizer_v1.py \
             tests/unit/test_mlb_historical_optimizer_handler.py \
-            tests/unit/test_mlb_historical_read_api_contract.py
+            tests/unit/test_mlb_historical_read_api_contract.py \
+            tests/unit/test_mlb_historical_optimizer_template.py
           grep -Fq 'Handler: mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler' mlb_historical_optimizer/template.yaml
-          grep -Fq "Default: '2025-10-31'" mlb_historical_optimizer/template.yaml
+          grep -Fq "Default: '2026-07-24'" mlb_historical_optimizer/template.yaml
           grep -Fq 'Default: 300000' mlb_historical_optimizer/template.yaml
           sam validate --lint --template-file mlb_historical_optimizer/template.yaml
       - name: Build historical optimizer cleanly
@@ -175,7 +176,7 @@ jobs:
               total=int(state.get('featureRematerializationTotalSlateCount') or 0)
               print(f'RETRY:{cursor}:{total}')
           elif status in {'FEATURE_REMATERIALIZATION_COMPLETE','BACKFILLING','OPTIMIZING'}:
-              if str(state.get('endDate') or '') < '2025-10-31':
+              if str(state.get('endDate') or '') < '2026-07-24':
                   print('FAIL')
               elif int(state.get('featureRematerializationPaidHistoricalCalls') or 0) != 0:
                   print('FAIL')
@@ -221,10 +222,20 @@ jobs:
               raise SystemExit('feature rematerialization is not complete')
           if state and int(state.get('featureRematerializedSlateCount') or 0) != int(state.get('featureRematerializationTotalSlateCount') or 0):
               raise SystemExit('not all completed slates were rematerialized')
-          if state and str(state.get('endDate') or '') < '2025-10-31':
+          if state and state.get('featureRematerializationErrors'):
+              raise SystemExit(f"feature rematerialization errors remain: {state.get('featureRematerializationErrors')}")
+          if state and str(state.get('endDate') or '') < '2026-07-24':
               raise SystemExit('expanded historical range is not active')
           if status == 'PAUSED_QUOTA':
               raise SystemExit('historical ingestion is blocked by quota')
+          current_date=str(state.get('currentDate') or '')
+          current_slot=int(state.get('currentSlotIndex') or 0)
+          if not (current_date > '2025-10-31' or (current_date == '2025-10-31' and current_slot > 0)):
+              raise SystemExit(f'historical ingestion did not advance beyond the prior cursor: {current_date} slot {current_slot}')
+          if int(state.get('networkRequestCount') or 0) <= 14417:
+              raise SystemExit('historical network request count did not advance beyond the prior evidence')
+          if state.get('lastError'):
+              raise SystemExit(f"historical optimizer still reports a blocker: {state.get('lastError')}")
           PY
           echo "function_name=$FUNCTION_NAME" >> "$GITHUB_OUTPUT"
       - name: Upload recovery proof
