@@ -1,0 +1,112 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Isolated MLB Odds API V8 shadow market collector
+
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+  DeployGitSha:
+    Type: String
+    Default: unknown
+  ScheduleEnabled:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'false'
+  ScheduleExpression:
+    Type: String
+    Default: rate(15 minutes)
+  FeaturedRegions:
+    Type: String
+    Default: us
+  EventRegions:
+    Type: String
+    Default: us,us2
+  PlayerPropsEnabled:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'false'
+  MaxCreditsPerCycle:
+    Type: Number
+    Default: 500
+  MaxEventsPerCycle:
+    Type: Number
+    Default: 8
+  RetentionDays:
+    Type: Number
+    Default: 90
+
+Conditions:
+  EnableSchedule: !Equals [!Ref ScheduleEnabled, 'true']
+
+Resources:
+  V8FeatureTable:
+    Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: PK
+          AttributeType: S
+        - AttributeName: SK
+          AttributeType: S
+      KeySchema:
+        - AttributeName: PK
+          KeyType: HASH
+        - AttributeName: SK
+          KeyType: RANGE
+      TimeToLiveSpecification:
+        AttributeName: expires_at
+        Enabled: true
+      PointInTimeRecoverySpecification:
+        PointInTimeRecoveryEnabled: true
+      SSESpecification:
+        SSEEnabled: true
+
+  V8CollectorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../hello_world/
+      Handler: mlb_odds_market_expansion_v8_handler.lambda_handler
+      Runtime: python3.11
+      Architectures: [x86_64]
+      MemorySize: 1024
+      Timeout: 300
+      Tracing: Active
+      Environment:
+        Variables:
+          ODDS_API_KEY: !Ref OddsApiKey
+          MLB_V8_FEATURE_TABLE: !Ref V8FeatureTable
+          MLB_V8_ENABLED: 'true'
+          MLB_V8_FEATURED_REGIONS: !Ref FeaturedRegions
+          MLB_V8_EVENT_REGIONS: !Ref EventRegions
+          MLB_V8_FEATURED_MARKETS: h2h,spreads,totals
+          MLB_V8_FIRST_FIVE_ENABLED: 'true'
+          MLB_V8_ALTERNATES_ENABLED: 'true'
+          MLB_V8_TEAM_PROPS_ENABLED: 'true'
+          MLB_V8_PLAYER_PROPS_ENABLED: !Ref PlayerPropsEnabled
+          MLB_V8_MAX_EVENT_MARKETS: '18'
+          MLB_V8_MAX_EVENTS_PER_CYCLE: !Ref MaxEventsPerCycle
+          MLB_V8_MAX_CREDITS_PER_CYCLE: !Ref MaxCreditsPerCycle
+          MLB_V8_TTL_SECONDS: !Sub '${RetentionDays} days'
+          INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref V8FeatureTable
+      Events:
+        V8Schedule:
+          Type: Schedule
+          Condition: EnableSchedule
+          Properties:
+            Schedule: !Ref ScheduleExpression
+            Enabled: true
+            Description: MLB V8 Odds API shadow collection every 15 minutes
+
+Outputs:
+  V8CollectorFunctionName:
+    Value: !Ref V8CollectorFunction
+  V8FeatureTableName:
+    Value: !Ref V8FeatureTable
+  V8ScheduleEnabled:
+    Value: !Ref ScheduleEnabled
