@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: Isolated schedule-disabled MLB Odds V8 shadow collector canary
+Description: Isolated MLB Odds V8 shadow collector with controlled 15-minute schedule
 
 Parameters:
   OddsApiKey:
@@ -13,6 +13,10 @@ Parameters:
     Type: String
     AllowedValues: ['true', 'false']
     Default: 'true'
+  V8ScheduleEnabled:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'false'
   V8FeaturedRegions:
     Type: String
     Default: us
@@ -25,6 +29,9 @@ Parameters:
   V8MaxCreditsPerCycle:
     Type: Number
     Default: 100
+
+Conditions:
+  EnableV8Schedule: !Equals [!Ref V8ScheduleEnabled, 'true']
 
 Resources:
   ShadowArtifactsBucket:
@@ -85,13 +92,27 @@ Resources:
                 - s3:ListBucket
               Resource: !GetAtt ShadowArtifactsBucket.Arn
       ReservedConcurrentExecutions: 1
+      Events:
+        ShadowEveryFifteenMinutes:
+          Type: Schedule
+          Condition: EnableV8Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Description: Isolated V8 shadow-only market collection under a fixed per-cycle credit cap
+            Enabled: true
+            Input: '{"mode":"scheduled_shadow"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 300
+              MaximumRetryAttempts: 1
 
 Outputs:
   ShadowCollectorFunctionName:
     Value: !Ref ShadowCollectorFunction
+  ShadowCollectorFunctionArn:
+    Value: !GetAtt ShadowCollectorFunction.Arn
   ShadowArtifactsBucketName:
     Value: !Ref ShadowArtifactsBucket
   ScheduleStatus:
-    Value: DISABLED_MANUAL_CANARY_ONLY
+    Value: !If [EnableV8Schedule, ENABLED_EVERY_15_MINUTES, DISABLED_MANUAL_CANARY_ONLY]
   Authority:
     Value: SHADOW_ONLY

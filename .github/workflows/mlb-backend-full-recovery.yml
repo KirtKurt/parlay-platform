@@ -1,0 +1,270 @@
+name: MLB Backend Full Recovery
+
+"on":
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'hello_world/**'
+      - 'tests/unit/test_mlb_**'
+      - 'scripts/verify_mlb_**'
+      - 'scripts/invoke_mlb_trainer_with_retry.py'
+      - 'template.yaml'
+      - '.github/workflows/mlb-backend-full-recovery.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/**'
+      - 'tests/unit/test_mlb_**'
+      - 'scripts/verify_mlb_**'
+      - 'scripts/invoke_mlb_trainer_with_retry.py'
+      - 'template.yaml'
+      - '.github/workflows/mlb-backend-full-recovery.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-backend-full-recovery
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-dev
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Setup SAM
+        uses: aws-actions/setup-sam@v2
+      - name: Install backend verification dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'boto3>=1.34,<2' 'pytest>=8,<9' 'requests>=2.31,<3' -r hello_world/requirements.txt
+      - name: Compile MLB backend and recovery scripts
+        run: |
+          set -euo pipefail
+          python -m compileall -q hello_world scripts
+      - name: Run complete MLB unit suite with concise evidence
+        run: |
+          set -uo pipefail
+          mkdir -p runtime_reports
+          mapfile -t tests < <(find tests/unit -maxdepth 1 -type f -name 'test_mlb_*.py' -print | sort)
+          test ${#tests[@]} -gt 0
+          set +e
+          python -m pytest -q --tb=short --junitxml=runtime_reports/mlb_backend_pytest.xml "${tests[@]}" >runtime_reports/mlb_backend_pytest.log 2>&1
+          status=$?
+          set -e
+          tail -n 240 runtime_reports/mlb_backend_pytest.log
+          exit "$status"
+      - name: Upload test evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-backend-tests-${{ github.sha }}
+          path: |
+            runtime_reports/mlb_backend_pytest.log
+            runtime_reports/mlb_backend_pytest.xml
+          retention-days: 30
+      - name: Validate workflow authority
+        run: |
+          set -euo pipefail
+          python scripts/verify_mlb_workflow_authority.py
+      - name: Validate and build canonical SAM application
+        run: |
+          set -euo pipefail
+          sam validate --lint --template-file template.yaml
+          rm -rf .aws-sam-recovery
+          sam build --no-cached --build-dir .aws-sam-recovery --template-file template.yaml
+          test -f .aws-sam-recovery/template.yaml
+      - name: Upload validation proof
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-backend-validation-${{ github.sha }}
+          path: .aws-sam-recovery/template.yaml
+          retention-days: 30
+
+  recover-production:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Setup SAM
+        uses: aws-actions/setup-sam@v2
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Verify required production secrets
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          aws sts get-caller-identity
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          test -n "${BBS_API_KEY_VALUE:-}"
+          test -n "${INQSI_ADMIN_API_TOKEN_VALUE:-}"
+      - name: Install production verification dependencies
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'boto3>=1.34,<2' 'pytest>=8,<9' 'requests>=2.31,<3' -r hello_world/requirements.txt
+      - name: Re-run complete MLB tests before mutation
+        run: |
+          set -euo pipefail
+          mapfile -t tests < <(find tests/unit -maxdepth 1 -type f -name 'test_mlb_*.py' -print | sort)
+          python -m pytest -q --tb=short "${tests[@]}"
+          sam validate --lint --template-file template.yaml
+          rm -rf .aws-sam-recovery
+          sam build --no-cached --build-dir .aws-sam-recovery --template-file template.yaml
+      - name: Wait for CloudFormation updateability
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            status=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "${{ secrets.AWS_REGION }}" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_MISSING)
+            case "$status" in
+              STACK_MISSING|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE) break ;;
+              *_IN_PROGRESS) sleep 15 ;;
+              *) echo "::error::CloudFormation is not updateable: $status"; exit 1 ;;
+            esac
+            test "$attempt" != 80 || { echo '::error::CloudFormation wait timed out'; exit 1; }
+          done
+      - name: Deploy canonical MLB backend
+        id: deploy
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          BBS_API_KEY_VALUE: ${{ secrets.BBS_API_KEY }}
+          INQSI_ADMIN_API_TOKEN_VALUE: ${{ secrets.INQSI_ADMIN_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          template_sha=$(sha256sum .aws-sam-recovery/template.yaml | awk '{print $1}')
+          deploy_run_id="${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          sam deploy \
+            --template-file .aws-sam-recovery/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "BbsApiKey=${BBS_API_KEY_VALUE}" \
+              "InqsiAdminApiToken=${INQSI_ADMIN_API_TOKEN_VALUE}" \
+              "DeployGitSha=${GITHUB_SHA}" \
+              "DeployTemplateSha256=${template_sha}" \
+              "DeployRunId=${deploy_run_id}"
+          echo "template_sha=$template_sha" >> "$GITHUB_OUTPUT"
+          echo "deploy_run_id=$deploy_run_id" >> "$GITHUB_OUTPUT"
+      - name: Resolve production outputs
+        id: outputs
+        run: |
+          set -euo pipefail
+          api_url=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='ApiUrl'].OutputValue" --output text)
+          trainer_arn=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" --output text)
+          test -n "$api_url"; test "$api_url" != None
+          test -n "$trainer_arn"; test "$trainer_arn" != None
+          echo "api_url=$api_url" >> "$GITHUB_OUTPUT"
+          echo "trainer_arn=$trainer_arn" >> "$GITHUB_OUTPUT"
+      - name: Verify deployed identity and schedule authority
+        run: |
+          set -euo pipefail
+          python scripts/verify_mlb_deploy_identity.py \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --expected-git-sha "$GITHUB_SHA" \
+            --expected-template-sha256 "${{ steps.deploy.outputs.template_sha }}" \
+            --expected-deploy-run-id "${{ steps.deploy.outputs.deploy_run_id }}" \
+            --output runtime_reports/mlb_backend_recovery_identity.json
+      - name: Invoke AWS-native MLB trainer
+        run: |
+          set -euo pipefail
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "${{ steps.outputs.outputs.trainer_arn }}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --payload '{"mode":"scheduled"}' \
+            --response runtime_reports/mlb_backend_recovery_trainer.json \
+            --invocation runtime_reports/mlb_backend_recovery_trainer_invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200
+      - name: Prove health, model, locks, and prediction reads
+        env:
+          API_URL: ${{ steps.outputs.outputs.api_url }}
+        run: |
+          set -euo pipefail
+          base="${API_URL%/}"
+          endpoints=(
+            '/v1/health'
+            '/v1/mlb/model/version'
+            '/v1/mlb/lock-status'
+            '/v1/slates/today?sport=mlb'
+          )
+          mkdir -p runtime_reports/mlb_backend_recovery_http
+          for endpoint in "${endpoints[@]}"; do
+            file=$(printf '%s' "$endpoint" | tr '/?=&' '_____')
+            curl --fail --silent --show-error --retry 5 --retry-all-errors --connect-timeout 3 --max-time 30 "$base$endpoint" > "runtime_reports/mlb_backend_recovery_http/${file}.json"
+            python -m json.tool "runtime_reports/mlb_backend_recovery_http/${file}.json" >/dev/null
+          done
+      - name: Write consolidated recovery proof
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from datetime import datetime, timezone
+          from pathlib import Path
+          root=Path('runtime_reports')
+          identity=json.loads((root/'mlb_backend_recovery_identity.json').read_text())
+          trainer=json.loads((root/'mlb_backend_recovery_trainer.json').read_text())
+          invocation=json.loads((root/'mlb_backend_recovery_trainer_invocation.json').read_text())
+          http={p.name:json.loads(p.read_text()) for p in sorted((root/'mlb_backend_recovery_http').glob('*.json'))}
+          report={
+            'proofType':'MLB_BACKEND_FULL_RECOVERY',
+            'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+            'sourceSha':'${{ github.sha }}',
+            'deploymentIdentity':identity,
+            'trainer':trainer,
+            'trainerInvocation':invocation,
+            'http':http,
+          }
+          blocking=[]
+          if identity.get('ok') is not True: blocking.append('deployment_identity_failed')
+          if trainer.get('ok') is not True: blocking.append('trainer_failed')
+          report['blockers']=blocking
+          report['ok']=not blocking
+          (root/'mlb_backend_full_recovery_latest.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          if blocking: raise SystemExit(','.join(blocking))
+          PY
+      - name: Upload full recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-backend-full-recovery-${{ github.sha }}
+          path: |
+            runtime_reports/mlb_backend_recovery_identity.json
+            runtime_reports/mlb_backend_recovery_trainer.json
+            runtime_reports/mlb_backend_recovery_trainer_invocation.json
+            runtime_reports/mlb_backend_recovery_http/
+            runtime_reports/mlb_backend_full_recovery_latest.json
+          retention-days: 90

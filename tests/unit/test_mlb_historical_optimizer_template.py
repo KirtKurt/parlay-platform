@@ -33,7 +33,7 @@ def test_historical_optimizer_does_not_consume_reserved_concurrency_pool():
     text = TEMPLATE.read_text(encoding="utf-8")
 
     assert "ReservedConcurrentExecutions" not in text
-    assert "DynamoDB lease" in text
+    assert "MLB_HISTORICAL_LEASE_SECONDS" in text
 
 
 def test_historical_optimizer_can_distinguish_missing_s3_evidence_objects():

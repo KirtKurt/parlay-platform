@@ -12,13 +12,29 @@ from types import ModuleType
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _runtime_payload(*, runtime_ok: bool) -> dict:
+    return {
+        "ok": runtime_ok,
+        "steps": {
+            "rankedWinnerV15_10SelectionInstalled": runtime_ok,
+            "historicalAuthorityStateCoherent": runtime_ok,
+        },
+        "version": "test-runtime",
+        "historicalDailyChampionOutermostAuthorityInstalled": runtime_ok,
+        "historicalDailyChampionActive": False,
+        "productionAuthoritySource": "mlb_ranked_winner_v15_10_active_ensemble",
+    }
+
+
 def _load_read_api(monkeypatch, calls, *, runtime_ok=True):
     runtime = ModuleType("mlb_ml_runtime_install_v3")
-    runtime.install = lambda: {"ok": runtime_ok, "steps": {}, "version": "test-runtime"}
+    runtime.install = lambda: _runtime_payload(runtime_ok=runtime_ok)
 
     engine = ModuleType("mlb_game_winner_engine")
     engine.MODEL_VERSION = "test-model"
     engine.ENGINE = "test-engine"
+    engine.MLB_RANKED_WINNER_VERSION = "test-ranked-winner"
+    engine.MLB_RANKED_WINNER_POLICY_VERSION = "test-ranked-policy"
     engine.MLB_ML_RUNTIME_INSTALL_V3 = runtime.install()
 
     def predict_all(date, *, store, limit):
@@ -35,7 +51,9 @@ def _load_read_api(monkeypatch, calls, *, runtime_ok=True):
     monkeypatch.setitem(sys.modules, optimization.__name__, optimization)
 
     module_name = "test_mlb_v3_read_api_module"
-    spec = importlib.util.spec_from_file_location(module_name, ROOT / "hello_world" / "mlb_v3_read_api.py")
+    spec = importlib.util.spec_from_file_location(
+        module_name, ROOT / "hello_world" / "mlb_v3_read_api.py"
+    )
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -74,7 +92,7 @@ def test_public_read_api_ignores_store_query_parameter(monkeypatch):
     assert calls == [{"date": "2026-07-16", "store": False, "limit": 17}]
     body = json.loads(response["body"])
     assert body["readOnly"] is True
-    assert body["apiRuntimeVersion"] == "MLB-V3-READ-API-v4-persisted-canonical-v2-shadow"
+    assert body["apiRuntimeVersion"] == "MLB-V3-READ-API-v6-ranked-winner-v15.10"
 
 
 def test_public_read_api_fails_closed_when_runtime_install_is_not_ok(monkeypatch):
@@ -113,15 +131,18 @@ def test_legacy_public_mlb_surfaces_are_also_read_only_and_fail_closed(monkeypat
 
     calls = []
     engine = ModuleType("legacy_public_test_engine")
-    engine.MLB_ML_RUNTIME_INSTALL_V3 = {"ok": True}
+    engine.MLB_ML_RUNTIME_INSTALL_V3 = {
+        "ok": True,
+        "steps": {"rankedWinnerV15_10SelectionInstalled": True},
+    }
+    engine.MLB_RANKED_WINNER_VERSION = core.PRIMARY_ALGORITHM
+    engine.MLB_RANKED_WINNER_POLICY_VERSION = core.POLICY_VERSION
     engine.predict_all = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("public legacy surface must not recompute predictions")
     )
-    engine.read_persisted_predictions = lambda date, *, store, limit: calls.append({
-        "date": date,
-        "store": store,
-        "limit": limit,
-    }) or {"ok": True, "predictions": [], "count": 0}
+    engine.read_persisted_predictions = lambda date, *, store, limit: calls.append(
+        {"date": date, "store": store, "limit": limit}
+    ) or {"ok": True, "predictions": [], "count": 0}
     monkeypatch.setattr(core, "_engine", lambda: engine)
 
     payload = core.predictions("2026-07-16", 9, store=True)
@@ -130,12 +151,18 @@ def test_legacy_public_mlb_surfaces_are_also_read_only_and_fail_closed(monkeypat
     assert payload["storage"]["callerRequestedWriteIgnored"] is True
     assert calls == [{"date": "2026-07-16", "store": False, "limit": 9}]
 
-    engine.MLB_ML_RUNTIME_INSTALL_V3 = {"ok": False}
-    failed = core.handle({
-        "path": "/v1/mlb/predictions",
-        "httpMethod": "GET",
-        "queryStringParameters": {"date": "2026-07-16", "store": "true"},
-    }, None)
+    engine.MLB_ML_RUNTIME_INSTALL_V3 = {
+        "ok": False,
+        "steps": {"rankedWinnerV15_10SelectionInstalled": False},
+    }
+    failed = core.handle(
+        {
+            "path": "/v1/mlb/predictions",
+            "httpMethod": "GET",
+            "queryStringParameters": {"date": "2026-07-16", "store": "true"},
+        },
+        None,
+    )
     assert failed["statusCode"] == 503
     assert calls == [{"date": "2026-07-16", "store": False, "limit": 9}]
 
@@ -150,19 +177,35 @@ def test_security_template_gives_public_read_lambda_no_crud_policy(tmp_path):
     v1_patcher = ROOT / "scripts" / "patch_template_mlb_v1.py"
     patcher = ROOT / "scripts" / "patch_template_mlb_security.py"
 
-    subprocess.run([sys.executable, str(v1_patcher)], cwd=tmp_path, check=True, capture_output=True, text=True)
-    subprocess.run([sys.executable, str(patcher)], cwd=tmp_path, check=True, capture_output=True, text=True)
+    subprocess.run(
+        [sys.executable, str(v1_patcher)],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    subprocess.run(
+        [sys.executable, str(patcher)],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     template = (tmp_path / "template.yaml").read_text()
     block = _resource_block(template, "MLBV3ReadFunction")
     assert "DynamoDBReadPolicy:" in block
     assert "DynamoDBCrudPolicy:" not in block
 
-    # The patch also repairs an already-installed legacy CRUD grant, while
-    # leaving authenticated writer resources unchanged.
     legacy_block = block.replace("DynamoDBReadPolicy:", "DynamoDBCrudPolicy:")
     assert legacy_block != block
     (tmp_path / "template.yaml").write_text(template.replace(block, legacy_block, 1))
-    subprocess.run([sys.executable, str(patcher)], cwd=tmp_path, check=True, capture_output=True, text=True)
+    subprocess.run(
+        [sys.executable, str(patcher)],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
     repaired = _resource_block((tmp_path / "template.yaml").read_text(), "MLBV3ReadFunction")
     assert "DynamoDBReadPolicy:" in repaired
     assert "DynamoDBCrudPolicy:" not in repaired

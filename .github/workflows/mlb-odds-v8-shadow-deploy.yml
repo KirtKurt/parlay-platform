@@ -19,10 +19,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  deploy-shadow-canary:
+  deploy-shadow:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -32,21 +34,25 @@ jobs:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Validate and test
+      - name: Validate and test V8 shadow
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
         run: |
           set -euo pipefail
           python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
           python -m py_compile hello_world/mlb_odds_market_expansion_v8.py hello_world/mlb_odds_v8_shadow_collector.py
           python -m pytest -q tests/unit/test_mlb_odds_market_expansion_v8.py
           sam validate --lint --template-file mlb_odds_v8_shadow/template.yaml
-      - name: Build
+      - name: Build V8 shadow
         run: |
           set -euo pipefail
           rm -rf .aws-sam-v8-shadow
           sam build --no-cached --build-dir .aws-sam-v8-shadow --template-file mlb_odds_v8_shadow/template.yaml
           test -f .aws-sam-v8-shadow/ShadowCollectorFunction/mlb_odds_v8_shadow_collector.py
           test -f .aws-sam-v8-shadow/ShadowCollectorFunction/mlb_odds_market_expansion_v8.py
-      - name: Deploy schedule-disabled canary
+      - name: Deploy controlled scheduled shadow
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
@@ -65,11 +71,12 @@ jobs:
               "OddsApiKey=${ODDS_API_KEY_VALUE}" \
               "DeployGitSha=${GITHUB_SHA}" \
               "V8Enabled=true" \
+              "V8ScheduleEnabled=true" \
               "V8FeaturedRegions=us" \
               "V8EventRegions=us,us2" \
               "V8MaxEventsPerCycle=2" \
               "V8MaxCreditsPerCycle=100"
-      - name: Verify handler, authority, disabled schedule, and live canary
+      - name: Verify handler, authority, schedule, and live shadow collection
         run: |
           set -euo pipefail
           FUNCTION_NAME=$(aws cloudformation describe-stacks \
@@ -82,24 +89,49 @@ jobs:
             --region "${{ secrets.AWS_REGION }}" \
             --query "Stacks[0].Outputs[?OutputKey=='Authority'].OutputValue" \
             --output text)
+          SCHEDULE_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-mlb-odds-v8-shadow \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='ScheduleStatus'].OutputValue" \
+            --output text)
           test -n "$FUNCTION_NAME"
           test "$AUTHORITY" = 'SHADOW_ONLY'
+          test "$SCHEDULE_STATUS" = 'ENABLED_EVERY_15_MINUTES'
           HANDLER=$(aws lambda get-function-configuration \
             --function-name "$FUNCTION_NAME" \
             --region "${{ secrets.AWS_REGION }}" \
             --query Handler --output text)
           test "$HANDLER" = 'mlb_odds_v8_shadow_collector.lambda_handler'
-          RULE_COUNT=$(aws events list-rule-names-by-target \
-            --target-arn "$(aws lambda get-function --function-name "$FUNCTION_NAME" --region "${{ secrets.AWS_REGION }}" --query 'Configuration.FunctionArn' --output text)" \
+          FUNCTION_ARN=$(aws lambda get-function \
+            --function-name "$FUNCTION_NAME" \
             --region "${{ secrets.AWS_REGION }}" \
-            --query 'length(RuleNames)' --output text)
-          test "$RULE_COUNT" = '0'
+            --query 'Configuration.FunctionArn' --output text)
+          RULE_NAMES=$(aws events list-rule-names-by-target \
+            --target-arn "$FUNCTION_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'RuleNames' --output json)
+          RULE_NAMES="$RULE_NAMES" python - <<'PY'
+          import json, os
+          rules=json.loads(os.environ['RULE_NAMES'])
+          assert len(rules) == 1, rules
+          print(rules[0])
+          PY
+          RULE_NAME=$(RULE_NAMES="$RULE_NAMES" python - <<'PY'
+          import json, os
+          print(json.loads(os.environ['RULE_NAMES'])[0])
+          PY
+          )
+          RULE_STATE=$(aws events describe-rule \
+            --name "$RULE_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query State --output text)
+          test "$RULE_STATE" = 'ENABLED'
           aws lambda invoke \
             --function-name "$FUNCTION_NAME" \
             --region "${{ secrets.AWS_REGION }}" \
             --cli-read-timeout 360 \
             --cli-binary-format raw-in-base64-out \
-            --payload '{}' \
+            --payload '{"mode":"manual_recovery_proof"}' \
             /tmp/v8-shadow-canary.json
           cat /tmp/v8-shadow-canary.json
           python - <<'PY'
@@ -116,9 +148,9 @@ jobs:
           assert artifact.get('sha256'), value
           assert str(artifact.get('key') or '').endswith('.json'), value
           PY
-      - name: Upload canary proof
+      - name: Upload V8 shadow proof
         uses: actions/upload-artifact@v4
         with:
-          name: mlb-odds-v8-shadow-canary-${{ github.sha }}
+          name: mlb-odds-v8-shadow-${{ github.sha }}
           path: /tmp/v8-shadow-canary.json
           retention-days: 90
