@@ -383,8 +383,8 @@ def verify(
         errors.append("manual_first_promotion_not_required")
     if status_after.get("v2InferenceConsumerInstalled") is not False:
         errors.append("v2_inference_consumer_must_remain_uninstalled")
-    if status_after.get("runtimeAuthorityActivationAvailable") is not False:
-        errors.append("runtime_authority_activation_must_remain_unavailable")
+    if status_after.get("runtimeAuthorityActivationAvailable") is not True:
+        errors.append("runtime_authority_activation_not_available")
     manifest = status_after.get("manifest")
     if not isinstance(manifest, dict) or not manifest:
         errors.append("fresh_manifest_missing")
