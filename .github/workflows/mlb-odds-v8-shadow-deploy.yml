@@ -12,55 +12,288 @@ name: MLB Odds V8 Shadow Deploy
       - '.github/workflows/mlb-odds-v8-shadow-deploy.yml'
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: mlb-odds-v8-shadow-deploy
   cancel-in-progress: false
 
+env:
+  STACK_NAME: parlay-platform-mlb-odds-v8-shadow
+  PROOF_PATH: runtime_reports/mlb_odds_v8_shadow_recovery_latest.json
+
 jobs:
   deploy-shadow:
     runs-on: ubuntu-latest
+    timeout-minutes: 55
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout exact source
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - uses: aws-actions/setup-sam@v2
-      - uses: aws-actions/configure-aws-credentials@v4
+
+      - name: Setup SAM
+        uses: aws-actions/setup-sam@v2
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
-      - name: Validate and test V8 shadow
-        env:
-          AWS_DEFAULT_REGION: us-east-1
-          AWS_REGION: us-east-1
-          AWS_EC2_METADATA_DISABLED: 'true'
-        run: |
-          set -euo pipefail
-          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
-          python -m py_compile hello_world/mlb_odds_market_expansion_v8.py hello_world/mlb_odds_v8_shadow_collector.py
-          python -m pytest -q tests/unit/test_mlb_odds_market_expansion_v8.py
-          sam validate --lint --template-file mlb_odds_v8_shadow/template.yaml
-      - name: Build V8 shadow
-        run: |
-          set -euo pipefail
-          rm -rf .aws-sam-v8-shadow
-          sam build --no-cached --build-dir .aws-sam-v8-shadow --template-file mlb_odds_v8_shadow/template.yaml
-          test -f .aws-sam-v8-shadow/ShadowCollectorFunction/mlb_odds_v8_shadow_collector.py
-          test -f .aws-sam-v8-shadow/ShadowCollectorFunction/mlb_odds_market_expansion_v8.py
-      - name: Deploy controlled scheduled shadow
+
+      - name: Verify AWS and provider credentials
+        id: credentials
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
         run: |
           set -euo pipefail
+          aws sts get-caller-identity >/tmp/v8-aws-identity.json
           test -n "${ODDS_API_KEY_VALUE:-}"
+
+      - name: Validate and test V8 shadow
+        id: validate
+        env:
+          AWS_DEFAULT_REGION: us-east-1
+          AWS_REGION: us-east-1
+          AWS_EC2_METADATA_DISABLED: 'true'
+          AWS_ACCESS_KEY_ID: testing
+          AWS_SECRET_ACCESS_KEY: testing
+          AWS_SESSION_TOKEN: testing
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m py_compile \
+            hello_world/mlb_odds_market_expansion_v8.py \
+            hello_world/mlb_odds_v8_shadow_collector.py
+          python -m pytest -q --tb=short tests/unit/test_mlb_odds_market_expansion_v8.py
+          sam validate --lint --template-file mlb_odds_v8_shadow/template.yaml
+
+      - name: Build isolated V8 stack
+        id: build
+        run: |
+          set -euo pipefail
+          rm -rf .aws-sam-v8-shadow
+          sam build \
+            --no-cached \
+            --build-dir .aws-sam-v8-shadow \
+            --template-file mlb_odds_v8_shadow/template.yaml
+          test -f .aws-sam-v8-shadow/ShadowCollectorFunction/mlb_odds_v8_shadow_collector.py
+          test -f .aws-sam-v8-shadow/ShadowCollectorFunction/mlb_odds_market_expansion_v8.py
+          sha256sum .aws-sam-v8-shadow/template.yaml | awk '{print $1}' >/tmp/v8-template-sha256.txt
+
+      - name: Wait for CloudFormation updateability
+        id: stack_wait
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            status=$(aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --query 'Stacks[0].StackStatus' \
+              --output text 2>/dev/null || echo STACK_MISSING)
+            case "$status" in
+              STACK_MISSING|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE)
+                exit 0
+                ;;
+              *_IN_PROGRESS)
+                sleep 15
+                ;;
+              *)
+                echo "::error::CloudFormation is not updateable: $status"
+                exit 1
+                ;;
+            esac
+          done
+          echo '::error::CloudFormation wait timed out'
+          exit 1
+
+      - name: Deploy schedule-disabled canary
+        id: canary_deploy
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
           sam deploy \
             --template-file .aws-sam-v8-shadow/template.yaml \
-            --stack-name parlay-platform-mlb-odds-v8-shadow \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "DeployGitSha=${GITHUB_SHA}" \
+              "V8Enabled=true" \
+              "V8ScheduleEnabled=false" \
+              "V8FeaturedRegions=us" \
+              "V8EventRegions=us,us2" \
+              "V8MaxEventsPerCycle=2" \
+              "V8MaxCreditsPerCycle=100"
+
+      - name: Verify canary identity and isolation
+        id: identity
+        run: |
+          set -euo pipefail
+          FUNCTION_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='ShadowCollectorFunctionName'].OutputValue" \
+            --output text)
+          BUCKET_NAME=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='ShadowArtifactsBucketName'].OutputValue" \
+            --output text)
+          AUTHORITY=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='Authority'].OutputValue" \
+            --output text)
+          SCHEDULE_STATUS=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query "Stacks[0].Outputs[?OutputKey=='ScheduleStatus'].OutputValue" \
+            --output text)
+          test -n "$FUNCTION_NAME"; test "$FUNCTION_NAME" != None
+          test -n "$BUCKET_NAME"; test "$BUCKET_NAME" != None
+          test "$AUTHORITY" = 'SHADOW_ONLY'
+          test "$SCHEDULE_STATUS" = 'DISABLED_MANUAL_CANARY_ONLY'
+
+          CONFIG=$(aws lambda get-function-configuration \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --output json)
+          CONCURRENCY=$(aws lambda get-function-concurrency \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --output json)
+          CONFIG="$CONFIG" CONCURRENCY="$CONCURRENCY" EXPECTED_SHA="$GITHUB_SHA" python - <<'PY'
+          import json, os
+          value=json.loads(os.environ['CONFIG'])
+          concurrency=json.loads(os.environ['CONCURRENCY'])
+          assert value.get('Handler') == 'mlb_odds_v8_shadow_collector.lambda_handler', value
+          env=(value.get('Environment') or {}).get('Variables') or {}
+          assert env.get('INQSI_DEPLOY_GIT_SHA') == os.environ['EXPECTED_SHA'], env
+          assert env.get('MLB_V8_ENABLED') == 'true', env
+          assert env.get('MLB_V8_PLAYER_PROPS_ENABLED') == 'false', env
+          assert int(concurrency.get('ReservedConcurrentExecutions') or 0) == 1, concurrency
+          PY
+
+          FUNCTION_ARN=$(aws lambda get-function \
+            --function-name "$FUNCTION_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'Configuration.FunctionArn' --output text)
+          RULE_COUNT=$(aws events list-rule-names-by-target \
+            --target-arn "$FUNCTION_ARN" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --query 'length(RuleNames)' --output text)
+          test "$RULE_COUNT" = '0'
+
+          echo "function_name=$FUNCTION_NAME" >>"$GITHUB_OUTPUT"
+          echo "bucket_name=$BUCKET_NAME" >>"$GITHUB_OUTPUT"
+          FUNCTION_NAME="$FUNCTION_NAME" BUCKET_NAME="$BUCKET_NAME" AUTHORITY="$AUTHORITY" \
+            SCHEDULE_STATUS="$SCHEDULE_STATUS" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          Path('/tmp/v8-identity.json').write_text(json.dumps({
+              'functionName': os.environ['FUNCTION_NAME'],
+              'bucketName': os.environ['BUCKET_NAME'],
+              'authority': os.environ['AUTHORITY'],
+              'scheduleStatusAtCanary': os.environ['SCHEDULE_STATUS'],
+              'handler': 'mlb_odds_v8_shadow_collector.lambda_handler',
+              'reservedConcurrency': 1,
+              'deployGitSha': os.environ['GITHUB_SHA'],
+              'productionAuthorityChanged': False,
+          }, indent=2, sort_keys=True) + '\n')
+          PY
+
+      - name: Invoke and verify cost-guarded canary
+        id: canary
+        run: |
+          set -euo pipefail
+          aws lambda invoke \
+            --function-name "${{ steps.identity.outputs.function_name }}" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --cli-read-timeout 360 \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"mode":"manual_recovery_proof"}' \
+            /tmp/v8-shadow-canary.json >/tmp/v8-shadow-canary-invocation.json
+          cat /tmp/v8-shadow-canary.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          invocation=json.loads(Path('/tmp/v8-shadow-canary-invocation.json').read_text())
+          assert not invocation.get('FunctionError'), invocation
+          value=json.loads(Path('/tmp/v8-shadow-canary.json').read_text())
+          assert value.get('ok') is True, value
+          assert value.get('status') == 'COLLECTED_SHADOW', value
+          assert value.get('productionAuthorityChanged') is False, value
+          budget=value.get('budget') or {}
+          assert budget.get('withinBudget') is True, value
+          assert int(budget.get('estimatedCredits') or 0) <= 100, value
+          artifact=value.get('artifact') or {}
+          assert artifact.get('sha256'), value
+          assert str(artifact.get('key') or '').endswith('.json'), value
+          PY
+          aws s3api list-objects-v2 \
+            --bucket "${{ steps.identity.outputs.bucket_name }}" \
+            --prefix 'mlb/odds-v8-shadow/' \
+            --region "${{ secrets.AWS_REGION }}" \
+            --output json >/tmp/v8-baseline-objects.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          rows=json.loads(Path('/tmp/v8-baseline-objects.json').read_text()).get('Contents') or []
+          canary=json.loads(Path('/tmp/v8-shadow-canary.json').read_text())
+          Path('/tmp/v8-baseline.json').write_text(json.dumps({
+              'objectCount': len(rows),
+              'canaryArtifactKey': (canary.get('artifact') or {}).get('key'),
+          }, indent=2, sort_keys=True) + '\n')
+          PY
+
+      - name: Recheck CloudFormation updateability
+        id: second_stack_wait
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 80); do
+            status=$(aws cloudformation describe-stacks \
+              --stack-name "$STACK_NAME" \
+              --region "${{ secrets.AWS_REGION }}" \
+              --query 'Stacks[0].StackStatus' \
+              --output text)
+            case "$status" in
+              CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE)
+                exit 0
+                ;;
+              *_IN_PROGRESS)
+                sleep 15
+                ;;
+              *)
+                echo "::error::CloudFormation is not updateable: $status"
+                exit 1
+                ;;
+            esac
+          done
+          echo '::error::CloudFormation wait timed out'
+          exit 1
+
+      - name: Enable 15-minute V8 shadow schedule
+        id: enable
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          sam deploy \
+            --template-file .aws-sam-v8-shadow/template.yaml \
+            --stack-name "$STACK_NAME" \
             --region "${{ secrets.AWS_REGION }}" \
             --capabilities CAPABILITY_IAM \
             --resolve-s3 \
@@ -76,49 +309,31 @@ jobs:
               "V8EventRegions=us,us2" \
               "V8MaxEventsPerCycle=2" \
               "V8MaxCreditsPerCycle=100"
-      - name: Verify handler, authority, schedule, and live shadow collection
+          date -u +%Y-%m-%dT%H:%M:%SZ >/tmp/v8-schedule-enabled-at.txt
+
+      - name: Verify enabled rule and scheduled artifact advancement
+        id: scheduled
         run: |
           set -euo pipefail
-          FUNCTION_NAME=$(aws cloudformation describe-stacks \
-            --stack-name parlay-platform-mlb-odds-v8-shadow \
+          FUNCTION_ARN=$(aws lambda get-function \
+            --function-name "${{ steps.identity.outputs.function_name }}" \
             --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='ShadowCollectorFunctionName'].OutputValue" \
-            --output text)
-          AUTHORITY=$(aws cloudformation describe-stacks \
-            --stack-name parlay-platform-mlb-odds-v8-shadow \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='Authority'].OutputValue" \
-            --output text)
+            --query 'Configuration.FunctionArn' --output text)
           SCHEDULE_STATUS=$(aws cloudformation describe-stacks \
-            --stack-name parlay-platform-mlb-odds-v8-shadow \
+            --stack-name "$STACK_NAME" \
             --region "${{ secrets.AWS_REGION }}" \
             --query "Stacks[0].Outputs[?OutputKey=='ScheduleStatus'].OutputValue" \
             --output text)
-          test -n "$FUNCTION_NAME"
-          test "$AUTHORITY" = 'SHADOW_ONLY'
           test "$SCHEDULE_STATUS" = 'ENABLED_EVERY_15_MINUTES'
-          HANDLER=$(aws lambda get-function-configuration \
-            --function-name "$FUNCTION_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query Handler --output text)
-          test "$HANDLER" = 'mlb_odds_v8_shadow_collector.lambda_handler'
-          FUNCTION_ARN=$(aws lambda get-function \
-            --function-name "$FUNCTION_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query 'Configuration.FunctionArn' --output text)
           RULE_NAMES=$(aws events list-rule-names-by-target \
             --target-arn "$FUNCTION_ARN" \
             --region "${{ secrets.AWS_REGION }}" \
             --query 'RuleNames' --output json)
-          RULE_NAMES="$RULE_NAMES" python - <<'PY'
+          RULE_NAME=$(RULE_NAMES="$RULE_NAMES" python - <<'PY'
           import json, os
           rules=json.loads(os.environ['RULE_NAMES'])
           assert len(rules) == 1, rules
           print(rules[0])
-          PY
-          RULE_NAME=$(RULE_NAMES="$RULE_NAMES" python - <<'PY'
-          import json, os
-          print(json.loads(os.environ['RULE_NAMES'])[0])
           PY
           )
           RULE_STATE=$(aws events describe-rule \
@@ -126,31 +341,235 @@ jobs:
             --region "${{ secrets.AWS_REGION }}" \
             --query State --output text)
           test "$RULE_STATE" = 'ENABLED'
-          aws lambda invoke \
-            --function-name "$FUNCTION_NAME" \
+
+          : >/tmp/v8-scheduled-key.txt
+          for attempt in $(seq 1 22); do
+            aws s3api list-objects-v2 \
+              --bucket "${{ steps.identity.outputs.bucket_name }}" \
+              --prefix 'mlb/odds-v8-shadow/' \
+              --region "${{ secrets.AWS_REGION }}" \
+              --output json >/tmp/v8-current-objects.json
+            python - <<'PY' >/tmp/v8-scheduled-key.candidate
+          import json
+          from datetime import datetime
+          from pathlib import Path
+          enabled=datetime.fromisoformat(Path('/tmp/v8-schedule-enabled-at.txt').read_text().strip().replace('Z','+00:00'))
+          baseline=json.loads(Path('/tmp/v8-baseline.json').read_text())
+          rows=json.loads(Path('/tmp/v8-current-objects.json').read_text()).get('Contents') or []
+          candidates=[]
+          for row in rows:
+              stamp=str(row.get('LastModified') or '')
+              key=str(row.get('Key') or '')
+              if not stamp or not key or key == baseline.get('canaryArtifactKey'):
+                  continue
+              when=datetime.fromisoformat(stamp.replace('Z','+00:00'))
+              if when >= enabled:
+                  candidates.append((when, key))
+          if candidates:
+              print(max(candidates)[1])
+          PY
+            if test -s /tmp/v8-scheduled-key.candidate; then
+              mv /tmp/v8-scheduled-key.candidate /tmp/v8-scheduled-key.txt
+              break
+            fi
+            rm -f /tmp/v8-scheduled-key.candidate
+            sleep 60
+          done
+          test -s /tmp/v8-scheduled-key.txt
+          SCHEDULED_KEY=$(cat /tmp/v8-scheduled-key.txt)
+          aws s3api get-object \
+            --bucket "${{ steps.identity.outputs.bucket_name }}" \
+            --key "$SCHEDULED_KEY" \
             --region "${{ secrets.AWS_REGION }}" \
-            --cli-read-timeout 360 \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"mode":"manual_recovery_proof"}' \
+            /tmp/v8-scheduled-record.json >/tmp/v8-scheduled-object-metadata.json
+          RULE_NAME="$RULE_NAME" RULE_STATE="$RULE_STATE" SCHEDULED_KEY="$SCHEDULED_KEY" python - <<'PY'
+          import json, os
+          from datetime import datetime
+          from pathlib import Path
+          record=json.loads(Path('/tmp/v8-scheduled-record.json').read_text())
+          enabled=datetime.fromisoformat(Path('/tmp/v8-schedule-enabled-at.txt').read_text().strip().replace('Z','+00:00'))
+          collected=datetime.fromisoformat(str(record.get('collectedAtUtc')).replace('Z','+00:00'))
+          assert collected >= enabled, (collected, enabled)
+          assert record.get('productionAuthorityChanged') is False, record
+          contract=record.get('contract') or {}
+          assert contract.get('authority') == 'SHADOW_ONLY', contract
+          assert contract.get('productionV7Unchanged') is True, contract
+          assert contract.get('playerPropsEnabled') is False, contract
+          budget=record.get('budget') or {}
+          assert budget.get('withinBudget') is True, budget
+          assert int(budget.get('estimatedCredits') or 0) <= 100, budget
+          rows=json.loads(Path('/tmp/v8-current-objects.json').read_text()).get('Contents') or []
+          baseline=json.loads(Path('/tmp/v8-baseline.json').read_text())
+          proof={
+              'ruleName': os.environ['RULE_NAME'],
+              'ruleState': os.environ['RULE_STATE'],
+              'scheduleStatus': 'ENABLED_EVERY_15_MINUTES',
+              'scheduleEnabledAtUtc': enabled.isoformat(),
+              'scheduledArtifactKey': os.environ['SCHEDULED_KEY'],
+              'scheduledCollectedAtUtc': record.get('collectedAtUtc'),
+              'baselineObjectCount': baseline.get('objectCount'),
+              'observedObjectCount': len(rows),
+              'objectCountAdvanced': len(rows) > int(baseline.get('objectCount') or 0),
+              'budget': budget,
+              'contract': contract,
+              'productionAuthorityChanged': False,
+          }
+          assert proof['objectCountAdvanced'] is True, proof
+          Path('/tmp/v8-scheduled-proof.json').write_text(json.dumps(proof, indent=2, sort_keys=True) + '\n')
+          Path('/tmp/v8-final-schedule-state.txt').write_text('ENABLED_EVERY_15_MINUTES\n')
+          PY
+
+      - name: Disable schedule after a failed post-enable verification
+        id: cleanup
+        if: ${{ failure() && steps.enable.outcome == 'success' }}
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          sam deploy \
+            --template-file .aws-sam-v8-shadow/template.yaml \
+            --stack-name "$STACK_NAME" \
+            --region "${{ secrets.AWS_REGION }}" \
+            --capabilities CAPABILITY_IAM \
+            --resolve-s3 \
+            --force-upload \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+              "DeployGitSha=${GITHUB_SHA}" \
+              "V8Enabled=true" \
+              "V8ScheduleEnabled=false" \
+              "V8FeaturedRegions=us" \
+              "V8EventRegions=us,us2" \
+              "V8MaxEventsPerCycle=2" \
+              "V8MaxCreditsPerCycle=100"
+          echo 'DISABLED_AFTER_FAILED_VERIFICATION' >/tmp/v8-final-schedule-state.txt
+
+      - name: Build durable V8 recovery report
+        id: report
+        if: always()
+        env:
+          CREDENTIALS_OUTCOME: ${{ steps.credentials.outcome }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+          BUILD_OUTCOME: ${{ steps.build.outcome }}
+          STACK_WAIT_OUTCOME: ${{ steps.stack_wait.outcome }}
+          CANARY_DEPLOY_OUTCOME: ${{ steps.canary_deploy.outcome }}
+          IDENTITY_OUTCOME: ${{ steps.identity.outcome }}
+          CANARY_OUTCOME: ${{ steps.canary.outcome }}
+          SECOND_STACK_WAIT_OUTCOME: ${{ steps.second_stack_wait.outcome }}
+          ENABLE_OUTCOME: ${{ steps.enable.outcome }}
+          SCHEDULED_OUTCOME: ${{ steps.scheduled.outcome }}
+          CLEANUP_OUTCOME: ${{ steps.cleanup.outcome }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def load(path):
+              p=Path(path)
+              if not p.exists():
+                  return None
+              try:
+                  return json.loads(p.read_text())
+              except Exception as exc:
+                  return {'unreadable': f'{type(exc).__name__}:{exc}'}
+
+          outcomes={
+              'credentials': os.environ.get('CREDENTIALS_OUTCOME'),
+              'validate': os.environ.get('VALIDATE_OUTCOME'),
+              'build': os.environ.get('BUILD_OUTCOME'),
+              'stackWait': os.environ.get('STACK_WAIT_OUTCOME'),
+              'canaryDeploy': os.environ.get('CANARY_DEPLOY_OUTCOME'),
+              'identity': os.environ.get('IDENTITY_OUTCOME'),
+              'canary': os.environ.get('CANARY_OUTCOME'),
+              'secondStackWait': os.environ.get('SECOND_STACK_WAIT_OUTCOME'),
+              'enable': os.environ.get('ENABLE_OUTCOME'),
+              'scheduledVerification': os.environ.get('SCHEDULED_OUTCOME'),
+              'cleanup': os.environ.get('CLEANUP_OUTCOME'),
+          }
+          required=('credentials','validate','build','stackWait','canaryDeploy','identity','canary','secondStackWait','enable','scheduledVerification')
+          blockers=[f'{name}:{outcomes.get(name)}' for name in required if outcomes.get(name) != 'success']
+          final_state=Path('/tmp/v8-final-schedule-state.txt').read_text().strip() if Path('/tmp/v8-final-schedule-state.txt').exists() else 'UNKNOWN'
+          if final_state != 'ENABLED_EVERY_15_MINUTES':
+              blockers.append(f'schedule_final_state:{final_state}')
+          report={
+              'proofType': 'MLB_ODDS_V8_SHADOW_RECOVERY',
+              'createdAtUtc': datetime.now(timezone.utc).isoformat(),
+              'sourceSha': os.environ['GITHUB_SHA'],
+              'runId': os.environ['GITHUB_RUN_ID'],
+              'runAttempt': os.environ['GITHUB_RUN_ATTEMPT'],
+              'runUrl': f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'stackName': os.environ['STACK_NAME'],
+              'templateSha256': Path('/tmp/v8-template-sha256.txt').read_text().strip() if Path('/tmp/v8-template-sha256.txt').exists() else None,
+              'authority': 'SHADOW_ONLY',
+              'productionAuthorityChanged': False,
+              'finalScheduleState': final_state,
+              'stepOutcomes': outcomes,
+              'deploymentIdentity': load('/tmp/v8-identity.json'),
+              'manualCanary': load('/tmp/v8-shadow-canary.json'),
+              'scheduledCollection': load('/tmp/v8-scheduled-proof.json'),
+              'scheduledRecord': load('/tmp/v8-scheduled-record.json'),
+              'blockers': blockers,
+              'ok': not blockers,
+          }
+          Path(os.environ['PROOF_PATH']).write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+          Path('/tmp/mlb_odds_v8_shadow_recovery_latest.json').write_text(json.dumps(report, indent=2, sort_keys=True) + '\n')
+          print(json.dumps({'ok': report['ok'], 'blockers': blockers, 'finalScheduleState': final_state}, sort_keys=True))
+          PY
+
+      - name: Upload V8 recovery evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-odds-v8-shadow-recovery-${{ github.sha }}
+          path: |
+            runtime_reports/mlb_odds_v8_shadow_recovery_latest.json
+            /tmp/v8-aws-identity.json
+            /tmp/v8-identity.json
             /tmp/v8-shadow-canary.json
-          cat /tmp/v8-shadow-canary.json
+            /tmp/v8-shadow-canary-invocation.json
+            /tmp/v8-scheduled-proof.json
+            /tmp/v8-scheduled-record.json
+            /tmp/v8-scheduled-object-metadata.json
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Publish durable recovery evidence to main
+        if: always()
+        run: |
+          set -euo pipefail
+          test -f /tmp/mlb_odds_v8_shadow_recovery_latest.json
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          for attempt in $(seq 1 8); do
+            git fetch origin main
+            git checkout --force -B v8-recovery-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb_odds_v8_shadow_recovery_latest.json "$PROOF_PATH"
+            git add "$PROOF_PATH"
+            if git diff --cached --quiet; then
+              exit 0
+            fi
+            git commit -m 'Publish MLB V8 shadow recovery evidence'
+            if git push origin HEAD:main; then
+              exit 0
+            fi
+            sleep $((attempt * 3))
+          done
+          echo '::error::Could not publish durable V8 recovery evidence after bounded retries'
+          exit 1
+
+      - name: Enforce successful recovery proof
+        if: always()
+        run: |
+          set -euo pipefail
           python - <<'PY'
           import json
           from pathlib import Path
-          value=json.loads(Path('/tmp/v8-shadow-canary.json').read_text())
+          value=json.loads(Path('/tmp/mlb_odds_v8_shadow_recovery_latest.json').read_text())
           assert value.get('ok') is True, value
-          assert value.get('status') == 'COLLECTED_SHADOW', value
-          assert value.get('productionAuthorityChanged') is False, value
-          budget=value.get('budget') or {}
-          assert budget.get('withinBudget') is True, value
-          assert int(budget.get('estimatedCredits') or 0) <= 100, value
-          artifact=value.get('artifact') or {}
-          assert artifact.get('sha256'), value
-          assert str(artifact.get('key') or '').endswith('.json'), value
           PY
-      - name: Upload V8 shadow proof
-        uses: actions/upload-artifact@v4
-        with:
-          name: mlb-odds-v8-shadow-${{ github.sha }}
-          path: /tmp/v8-shadow-canary.json
-          retention-days: 90
