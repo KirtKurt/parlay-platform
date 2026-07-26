@@ -26,16 +26,17 @@ jobs:
 
           path = Path("scripts/verify_mlb_trainer_deploy_response.py")
           text = path.read_text(encoding="utf-8")
-          old = '''    if status_after.get("runtimeAuthorityActivationAvailable") is not False:
-              errors.append("runtime_authority_activation_must_remain_unavailable")
-          '''
-          new = '''    if status_after.get("runtimeAuthorityActivationAvailable") is not True:
-              errors.append("runtime_authority_activation_not_available")
-          '''
-          if old not in text and new not in text:
+          old_check = 'status_after.get("runtimeAuthorityActivationAvailable") is not False'
+          new_check = 'status_after.get("runtimeAuthorityActivationAvailable") is not True'
+          old_error = 'runtime_authority_activation_must_remain_unavailable'
+          new_error = 'runtime_authority_activation_not_available'
+          if old_check in text:
+              if text.count(old_check) != 1 or text.count(old_error) != 1:
+                  raise SystemExit("trainer runtime authority assertion is ambiguous")
+              text = text.replace(old_check, new_check, 1)
+              text = text.replace(old_error, new_error, 1)
+          elif new_check not in text or new_error not in text:
               raise SystemExit("trainer runtime authority assertion anchor not found")
-          if old in text:
-              text = text.replace(old, new, 1)
           path.write_text(text, encoding="utf-8")
 
           test_path = Path("tests/unit/test_mlb_trainer_runtime_authority_contract.py")
