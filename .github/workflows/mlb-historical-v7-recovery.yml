@@ -14,7 +14,7 @@ name: MLB Historical V7 Recovery
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: parlay-platform-mlb-historical-recovery
@@ -29,13 +29,13 @@ env:
 
 jobs:
   validate-and-deploy-historical-only:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[deploy-mlb-historical-v7-recovery]')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout exact source
         uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
+          fetch-depth: 0
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
@@ -173,8 +173,9 @@ jobs:
           }
           if status not in allowed:
               raise SystemExit(f'unexpected recovery status: {status}')
-          if str(state.get('endDate') or '2025-10-31') < '2025-10-31':
-              raise SystemExit('expanded historical range is not active')
+          if status in {'FEATURE_REMATERIALIZATION_COMPLETE','BACKFILLING','OPTIMIZING'}:
+              if str(state.get('endDate') or '') < '2025-10-31':
+                  raise SystemExit('expanded historical range is not active after rematerialization')
           if int(state.get('featureRematerializationPaidHistoricalCalls') or 0) != 0:
               raise SystemExit('rematerialization made paid historical calls')
           PY
@@ -185,3 +186,49 @@ jobs:
           name: mlb-historical-v7-recovery-${{ github.sha }}
           path: /tmp/mlb-historical-v7-recovery.json
           retention-days: 90
+      - name: Publish durable recovery run evidence
+        if: always()
+        env:
+          JOB_STATUS: ${{ job.status }}
+          SOURCE_SHA: ${{ github.sha }}
+          RUN_ID: ${{ github.run_id }}
+          RUN_ATTEMPT: ${{ github.run_attempt }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          recovery_path=Path('/tmp/mlb-historical-v7-recovery.json')
+          recovery=None
+          if recovery_path.exists():
+              try:
+                  recovery=json.loads(recovery_path.read_text())
+              except Exception as exc:
+                  recovery={'parseError': f'{type(exc).__name__}:{exc}'}
+          report={
+              'proofType':'MLB_HISTORICAL_V7_RECOVERY_RUN',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'jobStatus':os.environ['JOB_STATUS'],
+              'sourceSha':os.environ['SOURCE_SHA'],
+              'runId':os.environ['RUN_ID'],
+              'runAttempt':os.environ['RUN_ATTEMPT'],
+              'runUrl':os.environ['RUN_URL'],
+              'recovery':recovery,
+          }
+          path=Path('runtime_reports/mlb_historical_v7_recovery_latest.json')
+          path.parent.mkdir(parents=True, exist_ok=True)
+          path.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git fetch origin main
+          git checkout -B main origin/main
+          git add runtime_reports/mlb_historical_v7_recovery_latest.json
+          git commit -m 'Publish MLB historical V7 recovery evidence' || exit 0
+          for attempt in 1 2 3; do
+            if git push origin main; then exit 0; fi
+            git pull --rebase origin main
+          done
+          exit 1
