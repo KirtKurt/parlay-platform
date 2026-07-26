@@ -75,6 +75,9 @@ def test_blocked_extension_can_retry_and_clear_rejected_dates(monkeypatch):
     saved = {}
 
     monkeypatch.setenv("MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED", "true")
+    monkeypatch.setenv(
+        "MLB_HISTORICAL_COMPETITIVE_EXTENSION_START_DATE", "2026-03-25"
+    )
     monkeypatch.setattr(entrypoint.optimizer_handler, "END_DATE", "2026-03-25")
     monkeypatch.setattr(entrypoint.optimizer_handler, "MAX_CREDITS", 300000)
     monkeypatch.setattr(entrypoint.optimizer_handler, "QUOTA_RESERVE", 100)
@@ -109,6 +112,7 @@ def test_blocked_extension_can_retry_and_clear_rejected_dates(monkeypatch):
     assert saved["endDate"] == "2026-03-25"
     assert saved["lastError"] is None
     assert "rangeExtensionRejectedDates" not in saved
+    assert saved["rangeExtension"]["competitiveStartDate"] == "2026-03-25"
     assert saved["rangeExtension"]["competitiveGameTypes"] == [
         "D",
         "F",
@@ -117,3 +121,111 @@ def test_blocked_extension_can_retry_and_clear_rejected_dates(monkeypatch):
         "W",
     ]
     assert saved["plan"]["slates"][0]["slateDateEt"] == "2026-03-25"
+
+
+def test_cached_spring_extension_is_removed_without_erasing_usage(monkeypatch):
+    state = {
+        "phase": "BACKFILLING",
+        "endDate": "2026-07-24",
+        "paidBackfillAuthorized": True,
+        "creditsConsumed": 159030,
+        "networkRequestCount": 15903,
+        "currentDate": "2026-02-20",
+        "currentSlotIndex": 26,
+        "lastError": None,
+        "completedSlates": [
+            {
+                "slateDateEt": "2025-10-31",
+                "eligibleGameCount": 1,
+                "artifact": {"key": "datasets/2025-10-31.json"},
+            },
+            {
+                "slateDateEt": "2026-02-20",
+                "eligibleGameCount": 0,
+                "artifact": {"key": "datasets/2026-02-20.json"},
+            },
+        ],
+        "completeSlateCount": 2,
+        "eligibleGameCount": 1,
+        "rejectedSlates": [
+            {"slateDateEt": "2026-02-20", "reason": "incomplete_full_slate_dataset"}
+        ],
+        "skippedHistoricalSlots": [
+            {"slateDateEt": "2026-02-20", "status": "QUARANTINED_STALE"}
+        ],
+        "lastCompletedFinalsArtifact": {
+            "key": "mlb/historical-daily-v1/official-finals/2026-02-20.json"
+        },
+        "lastCompletedQuarantineCount": 66,
+        "plan": {
+            "slates": [
+                {
+                    "slateDateEt": "2025-10-31",
+                    "officialGameCount": 1,
+                    "historicalRequestCount": 74,
+                    "estimatedCredits": 740,
+                },
+                {
+                    "slateDateEt": "2026-02-20",
+                    "officialGameCount": 7,
+                    "historicalRequestCount": 66,
+                    "estimatedCredits": 660,
+                },
+                {
+                    "slateDateEt": "2026-03-25",
+                    "officialGameCount": 1,
+                    "historicalRequestCount": 74,
+                    "estimatedCredits": 740,
+                },
+            ],
+            "rangeExtension": {
+                "version": "MLB-HISTORICAL-RANGE-EXTENSION-v2-competitive-only",
+                "previousEndDate": "2025-10-31",
+                "newEndDate": "2026-07-24",
+                "competitiveGameTypes": ["D", "F", "L", "R", "W"],
+            },
+            "completeDateRangeLedger": True,
+            "planningErrorCount": 0,
+            "rejectedDates": [],
+        },
+    }
+    saved = {}
+
+    monkeypatch.setenv("MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED", "true")
+    monkeypatch.setenv(
+        "MLB_HISTORICAL_COMPETITIVE_EXTENSION_START_DATE", "2026-03-25"
+    )
+    monkeypatch.setattr(
+        entrypoint.optimizer_handler, "_load_state", lambda: copy.deepcopy(state)
+    )
+    monkeypatch.setattr(
+        entrypoint.optimizer_handler,
+        "_save_state",
+        lambda value: saved.update(copy.deepcopy(value)) or value,
+    )
+
+    entrypoint._repair_precompetitive_extension_state()
+
+    assert [row["slateDateEt"] for row in saved["plan"]["slates"]] == [
+        "2025-10-31",
+        "2026-03-25",
+    ]
+    assert saved["currentDate"] == "2026-03-25"
+    assert saved["currentSlotIndex"] == 0
+    assert saved["phase"] == "BACKFILLING"
+    assert saved["lastError"] is None
+    assert saved["completeSlateCount"] == 1
+    assert saved["eligibleGameCount"] == 1
+    assert saved["rejectedSlates"] == []
+    assert saved["skippedHistoricalSlots"] == []
+    assert saved["creditsConsumed"] == 159030
+    assert saved["networkRequestCount"] == 15903
+    assert saved["lastCompletedFinalsArtifact"] is None
+    assert saved["lastCompletedQuarantineCount"] == 0
+    repair = saved["competitiveRangeRepair"]
+    assert repair["competitiveStartDate"] == "2026-03-25"
+    assert repair["removedPlanSlateCount"] == 1
+    assert repair["removedCompletedSlateCount"] == 1
+    assert repair["providerCreditsRetained"] is True
+    assert repair["immutableS3EvidenceRetained"] is True
+    assert saved["authorizedPlanFingerprint"] == saved["plan"]["fingerprint"]
