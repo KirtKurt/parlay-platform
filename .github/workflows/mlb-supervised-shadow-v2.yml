@@ -1,0 +1,200 @@
+name: MLB Supervised Shadow V2
+
+"on":
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'hello_world/mlb_supervised_*.py'
+      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
+      - 'scripts/run_mlb_supervised_shadow_v2.py'
+      - 'tests/unit/test_mlb_supervised_shadow_v2.py'
+      - '.github/workflows/mlb-supervised-shadow-v2.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_supervised_*.py'
+      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
+      - 'scripts/run_mlb_supervised_shadow_v2.py'
+      - 'tests/unit/test_mlb_supervised_shadow_v2.py'
+      - '.github/workflows/mlb-supervised-shadow-v2.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-supervised-shadow-v2
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-historical-optimizer
+  REPORT_PATH: runtime_reports/mlb_supervised_shadow_v2_latest.json
+  EXPECTED_FEATURE_DATASET: MLB-HISTORICAL-FEATURE-DATASET-v8-supervised-trainable
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Compile and test supervised architecture
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m py_compile \
+            hello_world/mlb_supervised_features_v2.py \
+            hello_world/mlb_supervised_model_v2.py \
+            hello_world/mlb_supervised_v8_dataset_patch_v1.py \
+            hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
+            scripts/run_mlb_supervised_shadow_v2.py
+          PYTHONPATH=hello_world python -m pytest -q --tb=short \
+            tests/unit/test_mlb_supervised_shadow_v2.py \
+            tests/unit/test_mlb_historical_v7_status_bypass.py \
+            tests/unit/test_mlb_historical_feature_rematerialization_v1.py \
+            tests/unit/test_mlb_odds_market_expansion_v8.py
+          grep -Fq 'authority": "SHADOW_ONLY"' hello_world/mlb_supervised_model_v2.py
+          grep -Fq 'productionPromotionEligible": False' hello_world/mlb_supervised_model_v2.py
+          grep -Fq 'sameSlateOutcomeFeaturesProhibited' hello_world/mlb_supervised_v8_dataset_patch_v1.py
+
+  evaluate-aws:
+    if: github.event_name != 'pull_request'
+    needs: validate
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Wait for deployed code and complete no-cost rematerialization
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2'
+          python - <<'PY'
+          import json, os, time
+          from datetime import datetime, timezone
+          from pathlib import Path
+          import boto3
+
+          region=os.environ['AWS_REGION_VALUE']
+          expected_dataset=os.environ['EXPECTED_FEATURE_DATASET']
+          expected_sha=os.environ['GITHUB_SHA']
+          cf=boto3.client('cloudformation',region_name=region)
+          lam=boto3.client('lambda',region_name=region)
+          outputs={str(x.get('OutputKey')):str(x.get('OutputValue')) for x in (cf.describe_stacks(StackName=os.environ['STACK_NAME']).get('Stacks') or [])[0].get('Outputs') or []}
+          function_name=outputs.get('HistoricalOptimizerFunctionName')
+          if not function_name:
+              raise RuntimeError('historical optimizer function output missing')
+          progress=[]
+
+          def invoke(payload):
+              response=lam.invoke(FunctionName=function_name,InvocationType='RequestResponse',Payload=json.dumps(payload,separators=(',',':')).encode())
+              value=json.loads(response['Payload'].read().decode())
+              if response.get('FunctionError'):
+                  raise RuntimeError(f"lambda_function_error:{response.get('FunctionError')}:{value}")
+              return value
+
+          deadline=time.monotonic()+3000
+          attempt=0
+          while time.monotonic()<deadline:
+              attempt+=1
+              config=lam.get_function_configuration(FunctionName=function_name)
+              env=(config.get('Environment') or {}).get('Variables') or {}
+              deployed_sha=env.get('INQSI_DEPLOY_GIT_SHA')
+              if config.get('Handler')!='mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler':
+                  time.sleep(15); continue
+              if deployed_sha!=expected_sha:
+                  progress.append({'attempt':attempt,'status':'WAITING_FOR_DEPLOY','deployGitSha':deployed_sha,'atUtc':datetime.now(timezone.utc).isoformat()})
+                  time.sleep(20); continue
+              status=invoke({'mode':'status','run':f'supervised_v2_status_{attempt}'})
+              state=status.get('state') or {}
+              complete=(state.get('featureRematerializationComplete') is True and state.get('featureDatasetVersion')==expected_dataset and not state.get('featureRematerializationErrors'))
+              progress.append({'attempt':attempt,'status':status.get('status') or state.get('phase'),'featureDatasetVersion':state.get('featureDatasetVersion'),'rematerialized':state.get('featureRematerializedSlateCount'),'total':state.get('featureRematerializationTotalSlateCount'),'complete':complete,'atUtc':datetime.now(timezone.utc).isoformat()})
+              if complete:
+                  Path('/tmp/supervised-rematerialization-progress.json').write_text(json.dumps({'functionName':function_name,'progress':progress[-30:],'finalState':state},indent=2,sort_keys=True)+'\n')
+                  break
+              value=invoke({'mode':'orchestrate','run':f'supervised_v2_rematerialize_{os.environ["GITHUB_RUN_ID"]}_{attempt}'})
+              if value.get('ok') is not True:
+                  raise RuntimeError(f'rematerialization_orchestration_failed:{value}')
+              time.sleep(3 if value.get('status')!='LEASE_HELD' else 12)
+          else:
+              Path('/tmp/supervised-rematerialization-progress.json').write_text(json.dumps({'functionName':function_name,'progress':progress[-30:]},indent=2,sort_keys=True)+'\n')
+              raise TimeoutError('supervised V8 rematerialization did not complete within 50 minutes')
+          PY
+      - name: Evaluate immutable historical data
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          PYTHONPATH: hello_world
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python scripts/run_mlb_supervised_shadow_v2.py \
+            --region "$AWS_REGION_VALUE" \
+            --stack-name "$STACK_NAME" \
+            --table-name parlay_platform_snapshots \
+            --output "$REPORT_PATH" \
+            | tee /tmp/mlb-supervised-shadow-v2-summary.json
+      - name: Enforce shadow safety and complete evaluation
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('runtime_reports/mlb_supervised_shadow_v2_latest.json').read_text())
+          assert value.get('ok') is True, value
+          assert value.get('authority') == 'SHADOW_ONLY', value
+          assert value.get('productionAuthorityChanged') is False, value
+          assert value.get('automaticWagerAllowed') is False, value
+          assert value.get('productionPromotionEligible') is False, value
+          assert int(value.get('recordCountLoaded') or 0) >= 1400, value
+          assert (value.get('selection') or {}).get('selectionUsedUntouchedAudit') is False, value
+          assert float((value.get('featureCoverage') or {}).get('strictlyPastTeamHistory') or 0) > 0.80, value
+          assert float((value.get('featureCoverage') or {}).get('v8Any') or 0) > 0.80, value
+          assert (value.get('metrics') or {}).get('walkForward'), value
+          assert (value.get('metrics') or {}).get('untouchedAudit'), value
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-supervised-shadow-v2-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_supervised_shadow_v2_latest.json
+            /tmp/mlb-supervised-shadow-v2-summary.json
+            /tmp/supervised-rematerialization-progress.json
+          retention-days: 90
+          if-no-files-found: warn
+      - name: Publish durable supervised shadow evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$REPORT_PATH"
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          cp "$REPORT_PATH" /tmp/mlb-supervised-shadow-v2.json
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-supervised-shadow-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-supervised-shadow-v2.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB supervised shadow V2 evidence'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
