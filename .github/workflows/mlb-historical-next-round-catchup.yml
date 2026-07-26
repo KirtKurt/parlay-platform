@@ -50,7 +50,6 @@ jobs:
           python -m pip install --quiet 'boto3>=1.34,<2'
           mkdir -p runtime_reports docs/runtime
           python - <<'PY'
-          import copy
           import json
           import os
           import time
@@ -95,6 +94,29 @@ jobs:
               if response.get('FunctionError'):
                   raise RuntimeError(f"lambda_function_error:{response.get('FunctionError')}:{value}")
               return value
+
+          def read_status(function_name,run_name,attempts=36):
+              last=None
+              for attempt in range(1,attempts+1):
+                  value=invoke(function_name,{
+                      'mode':'status',
+                      'run':f'{run_name}_{attempt}',
+                  })
+                  last=value
+                  state=value.get('state')
+                  if value.get('status') == 'LEASE_HELD' and not isinstance(state,dict):
+                      progress.append({
+                          'attempt':attempt,
+                          'observedAtUtc':now_iso(),
+                          'status':'STATUS_LEASE_HELD',
+                          'run':run_name,
+                      })
+                      time.sleep(10)
+                      continue
+                  if value.get('ok') is True and isinstance(state,dict):
+                      return value
+                  raise RuntimeError(f'invalid_status_response:{value}')
+              raise RuntimeError(f'status_remained_lease_held:{last}')
 
           def summarize(state):
               latest=state.get('latestExperiment') or {}
@@ -148,7 +170,7 @@ jobs:
               if not all(checks.values()):
                   raise RuntimeError('canonical_v7_runtime_identity_failed')
 
-              baseline_response=invoke(function_name,{'mode':'status','run':'next_round_catchup_baseline'})
+              baseline_response=read_status(function_name,'next_round_catchup_baseline')
               state=baseline_response.get('state')
               if baseline_response.get('ok') is not True or not isinstance(state,dict):
                   raise RuntimeError('durable_baseline_state_missing')
@@ -275,7 +297,7 @@ jobs:
           status_state=final_state
           if not isinstance(status_state,dict) and runtime_identity.get('functionName'):
               try:
-                  status_response=invoke(runtime_identity['functionName'],{'mode':'status','run':'next_round_catchup_final_status'})
+                  status_response=read_status(runtime_identity['functionName'],'next_round_catchup_final_status')
                   status_state=status_response.get('state')
               except Exception:
                   status_state=None
