@@ -1,8 +1,9 @@
-"""Historical recovery entrypoint with optional V8 Odds-market shadow metadata.
+"""Historical recovery entrypoint with trainable V8 shadow metadata.
 
 The separate historical optimizer remains isolated from production selection.
-V8 can be enabled only through an explicit environment flag and remains
-shadow-only until the existing chronological promotion gate passes.
+Expanded V8 market fields are propagated into rematerialized lock-bounded records
+for supervised shadow evaluation, but production authority remains unchanged until
+the existing chronological promotion gate passes.
 """
 from __future__ import annotations
 
@@ -12,17 +13,23 @@ import mlb_historical_feature_rematerialization_v1 as rematerialization
 import mlb_historical_optimizer_entrypoint as base
 import mlb_historical_round_extension_v1 as round_extension
 import mlb_odds_market_expansion_v8 as odds_market_v8
+import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v5-fresh-audit-round-extension"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v6-supervised-v8-trainable"
 
 # Reopen only a terminal rejected state that was caused by the previous six-round
 # deployment ceiling. The patch requires a strictly later untouched-audit start
 # and leaves every prior experiment and promotion decision immutable.
 round_extension.install(base.optimizer_handler)
 
-# Package and install the V8 normalizer patch. With MLB_V8_ENABLED=false it only
-# recognizes already-present expanded markets and does not change provider cost.
+# Normalize any expanded markets already present in immutable historical payloads.
+# This performs no additional provider request and does not grant V8 authority.
 odds_market_v8.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
+
+# Promote V8 fields from event shadow metadata into versioned side-signal features
+# for the supervised challenger. Missing historical fields stay explicit and zero
+# provider calls are made during rematerialization.
+supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerialization)
 
 
 def _request_mode(event: Any) -> str:
@@ -41,6 +48,17 @@ def _request_mode(event: Any) -> str:
 def _with_shadow_contract(value: Any) -> Any:
     if isinstance(value, dict):
         value.setdefault("oddsMarketExpansion", odds_market_v8.shadow_contract())
+        value.setdefault(
+            "supervisedShadow",
+            {
+                "authority": "SHADOW_ONLY",
+                "productionAuthorityChanged": False,
+                "datasetPatchVersion": supervised_v8_dataset.VERSION,
+                "featureDatasetVersion": supervised_v8_dataset.FEATURE_DATASET_VERSION,
+                "sameSlateOutcomeFeaturesProhibited": True,
+                "providerCallsRequiredForRematerialization": 0,
+            },
+        )
         value.setdefault("version", VERSION)
     return value
 
