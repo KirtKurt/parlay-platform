@@ -15,7 +15,7 @@ from typing import Any, Dict, Mapping, Optional
 
 import mlb_historical_optimizer_handler as handler
 
-VERSION = "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1-v7-odds-pattern-stack"
+VERSION = "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.1-v7-quarantine-aware"
 FEATURE_DATASET_VERSION = "MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack"
 BATCH_SIZE = max(1, min(5, int(os.environ.get("MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN", "2"))))
 ELIGIBLE_PHASES = {
@@ -25,11 +25,25 @@ ELIGIBLE_PHASES = {
     "BACKFILLING",
     "PAUSED_QUOTA",
     "REMATERIALIZING_FEATURES",
+    "FEATURE_REMATERIALIZATION_BLOCKED",
 }
 
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _quarantine_status(exc: Exception) -> str | None:
+    message = str(exc).lower()
+    if "too stale" in message:
+        return "QUARANTINED_STALE"
+    if "timestamp is after the request" in message:
+        return "QUARANTINED_FUTURE_TIMESTAMP"
+    if "timestamp is invalid" in message:
+        return "QUARANTINED_INVALID_TIMESTAMP"
+    if "payload data is not a list" in message or "non-object event" in message:
+        return "QUARANTINED_MALFORMED_PAYLOAD"
+    return None
 
 
 def _rebuild_slate(day: str) -> Dict[str, Any]:
@@ -45,16 +59,33 @@ def _rebuild_slate(day: str) -> Dict[str, Any]:
     historical = []
     skipped = []
     for requested in grid.timestamps_utc:
-        raw, _ = handler._get_s3_json(handler._raw_key(day, requested))
+        raw, pointer = handler._get_s3_json(handler._raw_key(day, requested))
         payload = raw.get("payload") if isinstance(raw, Mapping) and "payload" in raw else raw
         try:
             handler.optimizer.normalize_historical_snapshot(payload, requested)
         except handler.optimizer.HistoricalOptimizerError as exc:
-            if str(exc) != "historical response is too stale for a 15-minute grid":
+            status = _quarantine_status(exc)
+            if status is None:
                 raise
             skipped.append(requested)
+            historical.append(
+                {
+                    "requestedAtUtc": requested,
+                    "status": status,
+                    "usableForFeatures": False,
+                    "reason": str(exc),
+                    "sourceArtifact": pointer,
+                }
+            )
             continue
-        historical.append({"requestedAtUtc": requested, "payload": payload})
+        historical.append(
+            {
+                "requestedAtUtc": requested,
+                "status": "VALID",
+                "usableForFeatures": True,
+                "payload": payload,
+            }
+        )
     dataset = handler.optimizer.build_slate_dataset(
         day,
         finals.get("games") or [],
@@ -84,6 +115,7 @@ def _rebuild_slate(day: str) -> Dict[str, Any]:
         "rematerializationVersion": VERSION,
         "rematerializedAtUtc": dataset["rematerializedAtUtc"],
         "paidHistoricalCallsMade": 0,
+        "quarantinedSnapshotCount": int(dataset.get("quarantinedSnapshotCount") or 0),
     }
 
 
@@ -105,8 +137,9 @@ def run_once() -> Optional[Dict[str, Any]]:
         )
         if not completed:
             return None
-        if state.get("phase") != "REMATERIALIZING_FEATURES":
-            state["featureRematerializationPreviousPhase"] = state.get("phase")
+        prior_phase = state.get("phase")
+        if prior_phase not in {"REMATERIALIZING_FEATURES", "FEATURE_REMATERIALIZATION_BLOCKED"}:
+            state["featureRematerializationPreviousPhase"] = prior_phase
             state["featureRematerializationStartedAtUtc"] = _now_iso()
             state["featureRematerializationCursor"] = 0
             state["featureRematerializationErrors"] = []
@@ -123,9 +156,10 @@ def run_once() -> Optional[Dict[str, Any]]:
             except Exception as exc:
                 state["phase"] = "FEATURE_REMATERIALIZATION_BLOCKED"
                 state["lastError"] = f"feature rematerialization failed for {day}: {type(exc).__name__}:{str(exc)[:300]}"
-                state.setdefault("featureRematerializationErrors", []).append(
-                    {"slateDateEt": day, "error": state["lastError"], "recordedAtUtc": _now_iso()}
-                )
+                errors = state.setdefault("featureRematerializationErrors", [])
+                marker = {"slateDateEt": day, "error": state["lastError"], "recordedAtUtc": _now_iso()}
+                if not errors or errors[-1].get("error") != marker["error"]:
+                    errors.append(marker)
                 state["completedSlates"] = completed
                 handler._save_state(state)
                 return {"ok": False, "status": state["phase"], "state": state}
@@ -134,6 +168,7 @@ def run_once() -> Optional[Dict[str, Any]]:
             state["featureRematerializedSlateCount"] = index + 1
             state["featureRematerializationTotalSlateCount"] = len(completed)
             state["lastRematerializedSlateDate"] = day
+            state["featureRematerializationErrors"] = []
             handler._save_state(state)
         if stop < len(completed):
             latest = handler._load_state() or state
@@ -149,6 +184,7 @@ def run_once() -> Optional[Dict[str, Any]]:
         state["featureRematerializationCompletedAtUtc"] = _now_iso()
         state["featureRematerializedSlateCount"] = len(completed)
         state["featureRematerializationPaidHistoricalCalls"] = 0
+        state["featureRematerializationErrors"] = []
         if state.get("freshAuditExpansionRequired") is True:
             state["phase"] = "BACKFILLING"
         else:
