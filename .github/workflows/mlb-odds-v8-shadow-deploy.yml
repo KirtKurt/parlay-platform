@@ -8,6 +8,7 @@ name: MLB Odds V8 Shadow Deploy
       - 'hello_world/mlb_odds_market_expansion_v8.py'
       - 'hello_world/mlb_odds_v8_shadow_collector.py'
       - 'tests/unit/test_mlb_odds_market_expansion_v8.py'
+      - 'scripts/recover_mlb_v8_shadow.py'
       - 'mlb_odds_v8_shadow/**'
       - '.github/workflows/mlb-odds-v8-shadow-deploy.yml'
 
@@ -47,19 +48,19 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Validate source, tests, credentials, and build
-        id: validate
+      - name: Validate V8 source, tests, credentials, and build
         env:
           ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
           AWS_EC2_METADATA_DISABLED: 'true'
         run: |
           set -euo pipefail
-          aws sts get-caller-identity >/tmp/v8-aws-identity.json
+          aws sts get-caller-identity > /tmp/v8-aws-identity.json
           test -n "${ODDS_API_KEY_VALUE:-}"
           python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
           python -m py_compile \
             hello_world/mlb_odds_market_expansion_v8.py \
-            hello_world/mlb_odds_v8_shadow_collector.py
+            hello_world/mlb_odds_v8_shadow_collector.py \
+            scripts/recover_mlb_v8_shadow.py
           python -m pytest -q --tb=short tests/unit/test_mlb_odds_market_expansion_v8.py
           sam validate --lint --template-file mlb_odds_v8_shadow/template.yaml
           grep -Fq 'Enabled: !If [EnableV8Schedule, true, false]' mlb_odds_v8_shadow/template.yaml
@@ -74,423 +75,40 @@ jobs:
             --template-file mlb_odds_v8_shadow/template.yaml
           test -f .aws-sam-v8-shadow/ShadowCollectorFunction/mlb_odds_v8_shadow_collector.py
           test -f .aws-sam-v8-shadow/ShadowCollectorFunction/mlb_odds_market_expansion_v8.py
-          sha256sum .aws-sam-v8-shadow/template.yaml | awk '{print $1}' >/tmp/v8-template-sha256.txt
 
-      - name: Recover isolated CloudFormation stack
-        id: recover
-        run: |
-          set -euo pipefail
-          : >/tmp/v8-stack-history.txt
-          for attempt in $(seq 1 80); do
-            status=$(aws cloudformation describe-stacks \
-              --stack-name "$STACK_NAME" \
-              --region "${{ secrets.AWS_REGION }}" \
-              --query 'Stacks[0].StackStatus' \
-              --output text 2>/dev/null || echo STACK_MISSING)
-            printf '%s %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$status" >>/tmp/v8-stack-history.txt
-            case "$status" in
-              STACK_MISSING|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE)
-                exit 0
-                ;;
-              ROLLBACK_COMPLETE|CREATE_FAILED)
-                aws cloudformation describe-stack-events \
-                  --stack-name "$STACK_NAME" \
-                  --region "${{ secrets.AWS_REGION }}" \
-                  --max-items 50 \
-                  --output json >/tmp/v8-recovery-events.json 2>/tmp/v8-recovery-events-error.log || true
-                aws cloudformation delete-stack \
-                  --stack-name "$STACK_NAME" \
-                  --region "${{ secrets.AWS_REGION }}"
-                aws cloudformation wait stack-delete-complete \
-                  --stack-name "$STACK_NAME" \
-                  --region "${{ secrets.AWS_REGION }}"
-                echo DELETED_FAILED_CREATE_STACK >/tmp/v8-recovery-action.txt
-                exit 0
-                ;;
-              UPDATE_ROLLBACK_FAILED)
-                aws cloudformation continue-update-rollback \
-                  --stack-name "$STACK_NAME" \
-                  --region "${{ secrets.AWS_REGION }}"
-                echo CONTINUED_UPDATE_ROLLBACK >/tmp/v8-recovery-action.txt
-                sleep 15
-                ;;
-              *_IN_PROGRESS)
-                sleep 15
-                ;;
-              *)
-                echo "::error::Unrecoverable CloudFormation state: $status"
-                exit 1
-                ;;
-            esac
-          done
-          echo '::error::CloudFormation recovery timed out'
-          exit 1
-
-      - name: Deploy schedule-disabled canary
-        id: deploy_canary
+      - name: Run fail-closed AWS recovery
+        id: recovery
+        continue-on-error: true
         env:
-          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          AWS_EC2_METADATA_DISABLED: 'true'
         run: |
-          set -euo pipefail
-          sam deploy \
-            --template-file .aws-sam-v8-shadow/template.yaml \
-            --stack-name "$STACK_NAME" \
+          set -uo pipefail
+          mkdir -p runtime_reports
+          python scripts/recover_mlb_v8_shadow.py \
+            --template .aws-sam-v8-shadow/template.yaml \
+            --report "$PROOF_PATH" \
             --region "${{ secrets.AWS_REGION }}" \
-            --capabilities CAPABILITY_IAM \
-            --resolve-s3 \
-            --force-upload \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --parameter-overrides \
-              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
-              "DeployGitSha=${GITHUB_SHA}" \
-              "V8Enabled=true" \
-              "V8ScheduleEnabled=false" \
-              "V8FeaturedRegions=us" \
-              "V8EventRegions=us,us2" \
-              "V8MaxEventsPerCycle=2" \
-              "V8MaxCreditsPerCycle=100" \
-            | tee /tmp/v8-canary-deploy.log
+            --source-sha "$GITHUB_SHA" \
+            --wait-seconds 2100 \
+            --poll-seconds 30 \
+            2>&1 | tee /tmp/v8-recovery.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
 
-      - name: Verify deployed identity and disabled isolation
-        id: identity
-        run: |
-          set -euo pipefail
-          FUNCTION_NAME=$(aws cloudformation describe-stacks \
-            --stack-name "$STACK_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='ShadowCollectorFunctionName'].OutputValue" \
-            --output text)
-          BUCKET_NAME=$(aws cloudformation describe-stacks \
-            --stack-name "$STACK_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='ShadowArtifactsBucketName'].OutputValue" \
-            --output text)
-          AUTHORITY=$(aws cloudformation describe-stacks \
-            --stack-name "$STACK_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='Authority'].OutputValue" \
-            --output text)
-          SCHEDULE_STATUS=$(aws cloudformation describe-stacks \
-            --stack-name "$STACK_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='ScheduleStatus'].OutputValue" \
-            --output text)
-          test -n "$FUNCTION_NAME"; test "$FUNCTION_NAME" != None
-          test -n "$BUCKET_NAME"; test "$BUCKET_NAME" != None
-          test "$AUTHORITY" = SHADOW_ONLY
-          test "$SCHEDULE_STATUS" = DISABLED_MANUAL_CANARY_ONLY
-
-          CONFIG=$(aws lambda get-function-configuration \
-            --function-name "$FUNCTION_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --output json)
-          CONCURRENCY=$(aws lambda get-function-concurrency \
-            --function-name "$FUNCTION_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --output json)
-          ASYNC_CONFIG=$(aws lambda get-function-event-invoke-config \
-            --function-name "$FUNCTION_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --output json)
-          FUNCTION_ARN=$(aws lambda get-function \
-            --function-name "$FUNCTION_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query 'Configuration.FunctionArn' --output text)
-          RULES=$(aws events list-rule-names-by-target \
-            --target-arn "$FUNCTION_ARN" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query RuleNames --output json)
-          RULE_NAME=$(RULES="$RULES" python - <<'PY'
-          import json, os
-          rows=json.loads(os.environ['RULES'])
-          assert len(rows) == 1, rows
-          print(rows[0])
-          PY
-          )
-          RULE_STATE=$(aws events describe-rule \
-            --name "$RULE_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query State --output text)
-          CONFIG="$CONFIG" CONCURRENCY="$CONCURRENCY" ASYNC_CONFIG="$ASYNC_CONFIG" \
-            RULES="$RULES" RULE_NAME="$RULE_NAME" RULE_STATE="$RULE_STATE" \
-            EXPECTED_SHA="$GITHUB_SHA" FUNCTION_NAME="$FUNCTION_NAME" \
-            BUCKET_NAME="$BUCKET_NAME" python - <<'PY'
-          import json, os
-          from pathlib import Path
-          config=json.loads(os.environ['CONFIG'])
-          concurrency=json.loads(os.environ['CONCURRENCY'])
-          async_config=json.loads(os.environ['ASYNC_CONFIG'])
-          rules=json.loads(os.environ['RULES'])
-          env=(config.get('Environment') or {}).get('Variables') or {}
-          assert config.get('Handler') == 'mlb_odds_v8_shadow_collector.lambda_handler', config
-          assert env.get('INQSI_DEPLOY_GIT_SHA') == os.environ['EXPECTED_SHA'], env
-          assert env.get('MLB_V8_ENABLED') == 'true', env
-          assert env.get('MLB_V8_PLAYER_PROPS_ENABLED') == 'false', env
-          assert 'ReservedConcurrentExecutions' not in concurrency, concurrency
-          assert int(async_config.get('MaximumRetryAttempts')) == 0, async_config
-          assert int(async_config.get('MaximumEventAgeInSeconds')) == 300, async_config
-          assert rules == [os.environ['RULE_NAME']], rules
-          assert os.environ['RULE_STATE'] == 'DISABLED', os.environ['RULE_STATE']
-          identity={
-              'functionName': os.environ['FUNCTION_NAME'],
-              'bucketName': os.environ['BUCKET_NAME'],
-              'handler': config.get('Handler'),
-              'deployGitSha': env.get('INQSI_DEPLOY_GIT_SHA'),
-              'authority': 'SHADOW_ONLY',
-              'scheduleStatusAtCanary': 'DISABLED_MANUAL_CANARY_ONLY',
-              'scheduleRuleName': os.environ['RULE_NAME'],
-              'scheduleRuleStateAtCanary': os.environ['RULE_STATE'],
-              'concurrencyMode': 'ACCOUNT_UNRESERVED',
-              'reservedConcurrency': None,
-              'maximumRetryAttempts': async_config.get('MaximumRetryAttempts'),
-              'maximumEventAgeInSeconds': async_config.get('MaximumEventAgeInSeconds'),
-              'productionAuthorityChanged': False,
-          }
-          Path('/tmp/v8-identity.json').write_text(json.dumps(identity,indent=2,sort_keys=True)+'\n')
-          PY
-          echo "function_name=$FUNCTION_NAME" >>"$GITHUB_OUTPUT"
-          echo "bucket_name=$BUCKET_NAME" >>"$GITHUB_OUTPUT"
-          echo "rule_name=$RULE_NAME" >>"$GITHUB_OUTPUT"
-
-      - name: Invoke and verify cost-guarded canary
-        id: canary
-        run: |
-          set -euo pipefail
-          aws lambda invoke \
-            --function-name "${{ steps.identity.outputs.function_name }}" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --cli-read-timeout 360 \
-            --cli-binary-format raw-in-base64-out \
-            --payload '{"mode":"manual_recovery_proof"}' \
-            /tmp/v8-canary.json >/tmp/v8-canary-invocation.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          invocation=json.loads(Path('/tmp/v8-canary-invocation.json').read_text())
-          value=json.loads(Path('/tmp/v8-canary.json').read_text())
-          assert not invocation.get('FunctionError'), invocation
-          assert value.get('ok') is True, value
-          assert value.get('status') == 'COLLECTED_SHADOW', value
-          assert value.get('productionAuthorityChanged') is False, value
-          budget=value.get('budget') or {}
-          assert budget.get('withinBudget') is True, budget
-          assert int(budget.get('estimatedCredits') or 0) <= 100, budget
-          artifact=value.get('artifact') or {}
-          assert artifact.get('sha256'), artifact
-          assert str(artifact.get('key') or '').endswith('.json'), artifact
-          PY
-          aws s3api list-objects-v2 \
-            --bucket "${{ steps.identity.outputs.bucket_name }}" \
-            --prefix 'mlb/odds-v8-shadow/' \
-            --region "${{ secrets.AWS_REGION }}" \
-            --output json >/tmp/v8-baseline-objects.json
-          python - <<'PY'
-          import json
-          from pathlib import Path
-          rows=json.loads(Path('/tmp/v8-baseline-objects.json').read_text()).get('Contents') or []
-          canary=json.loads(Path('/tmp/v8-canary.json').read_text())
-          Path('/tmp/v8-baseline.json').write_text(json.dumps({
-              'objectCount':len(rows),
-              'keys':sorted(str(x.get('Key') or '') for x in rows),
-              'canaryArtifactKey':(canary.get('artifact') or {}).get('key'),
-          },indent=2,sort_keys=True)+'\n')
-          PY
-
-      - name: Enable controlled 15-minute schedule
-        id: enable
-        env:
-          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-        run: |
-          set -euo pipefail
-          sam deploy \
-            --template-file .aws-sam-v8-shadow/template.yaml \
-            --stack-name "$STACK_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --capabilities CAPABILITY_IAM \
-            --resolve-s3 \
-            --force-upload \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --parameter-overrides \
-              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
-              "DeployGitSha=${GITHUB_SHA}" \
-              "V8Enabled=true" \
-              "V8ScheduleEnabled=true" \
-              "V8FeaturedRegions=us" \
-              "V8EventRegions=us,us2" \
-              "V8MaxEventsPerCycle=2" \
-              "V8MaxCreditsPerCycle=100"
-          date -u +%Y-%m-%dT%H:%M:%SZ >/tmp/v8-enabled-at.txt
-
-      - name: Prove repeated scheduled S3 advancement
-        id: scheduled
-        run: |
-          set -euo pipefail
-          RULE_NAME="${{ steps.identity.outputs.rule_name }}"
-          test "$(aws events describe-rule \
-            --name "$RULE_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query State --output text)" = ENABLED
-          test "$(aws cloudformation describe-stacks \
-            --stack-name "$STACK_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='ScheduleStatus'].OutputValue" \
-            --output text)" = ENABLED_EVERY_15_MINUTES
-
-          : >/tmp/v8-scheduled-keys.txt
-          for attempt in $(seq 1 38); do
-            aws s3api list-objects-v2 \
-              --bucket "${{ steps.identity.outputs.bucket_name }}" \
-              --prefix 'mlb/odds-v8-shadow/' \
-              --region "${{ secrets.AWS_REGION }}" \
-              --output json >/tmp/v8-current-objects.json
-            python - <<'PY' >/tmp/v8-scheduled-candidates.txt
-          import json
-          from datetime import datetime
-          from pathlib import Path
-          baseline=json.loads(Path('/tmp/v8-baseline.json').read_text())
-          old=set(baseline.get('keys') or [])
-          enabled=datetime.fromisoformat(Path('/tmp/v8-enabled-at.txt').read_text().strip().replace('Z','+00:00'))
-          rows=json.loads(Path('/tmp/v8-current-objects.json').read_text()).get('Contents') or []
-          found=[]
-          for row in rows:
-              key=str(row.get('Key') or '')
-              stamp=str(row.get('LastModified') or '')
-              if not key or key in old or not stamp:
-                  continue
-              when=datetime.fromisoformat(stamp.replace('Z','+00:00'))
-              if when >= enabled:
-                  found.append((when,key))
-          for _, key in sorted(found)[:2]:
-              print(key)
-          PY
-            if test "$(wc -l </tmp/v8-scheduled-candidates.txt)" -ge 2; then
-              mv /tmp/v8-scheduled-candidates.txt /tmp/v8-scheduled-keys.txt
-              break
-            fi
-            sleep 60
-          done
-          test "$(wc -l </tmp/v8-scheduled-keys.txt)" -ge 2
-
-          i=0
-          while IFS= read -r key; do
-            i=$((i+1))
-            aws s3api get-object \
-              --bucket "${{ steps.identity.outputs.bucket_name }}" \
-              --key "$key" \
-              --region "${{ secrets.AWS_REGION }}" \
-              "/tmp/v8-scheduled-${i}.json" >/dev/null
-          done </tmp/v8-scheduled-keys.txt
-
-          RULE_NAME="$RULE_NAME" python - <<'PY'
-          import json, os
-          from datetime import datetime
-          from pathlib import Path
-          enabled=datetime.fromisoformat(Path('/tmp/v8-enabled-at.txt').read_text().strip().replace('Z','+00:00'))
-          keys=[x for x in Path('/tmp/v8-scheduled-keys.txt').read_text().splitlines() if x]
-          records=[]
-          for i,key in enumerate(keys,1):
-              record=json.loads(Path(f'/tmp/v8-scheduled-{i}.json').read_text())
-              collected=datetime.fromisoformat(str(record.get('collectedAtUtc')).replace('Z','+00:00'))
-              contract=record.get('contract') or {}
-              budget=record.get('budget') or {}
-              assert collected >= enabled, record
-              assert record.get('productionAuthorityChanged') is False, record
-              assert contract.get('authority') == 'SHADOW_ONLY', contract
-              assert contract.get('productionV7Unchanged') is True, contract
-              assert contract.get('playerPropsEnabled') is False, contract
-              assert budget.get('withinBudget') is True, budget
-              assert int(budget.get('estimatedCredits') or 0) <= 100, budget
-              records.append({
-                  'key':key,
-                  'collectedAtUtc':record.get('collectedAtUtc'),
-                  'budget':budget,
-                  'contract':contract,
-              })
-          assert len(records) >= 2, records
-          assert len({x['key'] for x in records}) >= 2, records
-          proof={
-              'ruleName':os.environ['RULE_NAME'],
-              'ruleState':'ENABLED',
-              'scheduleStatus':'ENABLED_EVERY_15_MINUTES',
-              'scheduleEnabledAtUtc':enabled.isoformat(),
-              'repeatedScheduledCollectionsVerified':True,
-              'scheduledCollectionCount':len(records),
-              'scheduledArtifacts':records,
-              'productionAuthorityChanged':False,
-          }
-          Path('/tmp/v8-scheduled-proof.json').write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
-          Path('/tmp/v8-final-state.txt').write_text('ENABLED_EVERY_15_MINUTES\n')
-          PY
-
-      - name: Disable schedule after failed post-enable proof
-        id: cleanup
-        if: ${{ failure() && steps.enable.outcome == 'success' }}
-        env:
-          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
-        run: |
-          set -euo pipefail
-          sam deploy \
-            --template-file .aws-sam-v8-shadow/template.yaml \
-            --stack-name "$STACK_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --capabilities CAPABILITY_IAM \
-            --resolve-s3 \
-            --force-upload \
-            --no-confirm-changeset \
-            --no-fail-on-empty-changeset \
-            --parameter-overrides \
-              "OddsApiKey=${ODDS_API_KEY_VALUE}" \
-              "DeployGitSha=${GITHUB_SHA}" \
-              "V8Enabled=true" \
-              "V8ScheduleEnabled=false" \
-              "V8FeaturedRegions=us" \
-              "V8EventRegions=us,us2" \
-              "V8MaxEventsPerCycle=2" \
-              "V8MaxCreditsPerCycle=100"
-          echo DISABLED_AFTER_FAILED_VERIFICATION >/tmp/v8-final-state.txt
-
-      - name: Build durable recovery report
-        id: report
+      - name: Ensure durable report exists
         if: always()
         env:
-          VALIDATE: ${{ steps.validate.outcome }}
-          RECOVER: ${{ steps.recover.outcome }}
-          CANARY_DEPLOY: ${{ steps.deploy_canary.outcome }}
-          IDENTITY: ${{ steps.identity.outcome }}
-          CANARY: ${{ steps.canary.outcome }}
-          ENABLE: ${{ steps.enable.outcome }}
-          SCHEDULED_VERIFICATION: ${{ steps.scheduled.outcome }}
-          CLEANUP: ${{ steps.cleanup.outcome }}
+          RECOVERY_OUTCOME: ${{ steps.recovery.outcome }}
         run: |
           set -euo pipefail
           mkdir -p runtime_reports
-          python - <<'PY'
+          if test ! -s "$PROOF_PATH"; then
+            python - <<'PY'
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
-
-          def load(path):
-              p=Path(path)
-              return json.loads(p.read_text()) if p.exists() else None
-
-          outcomes={
-              'validate':os.environ['VALIDATE'],
-              'recover':os.environ['RECOVER'],
-              'canaryDeploy':os.environ['CANARY_DEPLOY'],
-              'identity':os.environ['IDENTITY'],
-              'canary':os.environ['CANARY'],
-              'enable':os.environ['ENABLE'],
-              'scheduledVerification':os.environ['SCHEDULED_VERIFICATION'],
-              'cleanup':os.environ['CLEANUP'],
-          }
-          required=('validate','recover','canaryDeploy','identity','canary','enable','scheduledVerification')
-          blockers=[f'{name}:{outcomes[name]}' for name in required if outcomes[name] != 'success']
-          final_state=(Path('/tmp/v8-final-state.txt').read_text().strip()
-                       if Path('/tmp/v8-final-state.txt').exists() else 'UNKNOWN')
-          if final_state != 'ENABLED_EVERY_15_MINUTES':
-              blockers.append(f'schedule_final_state:{final_state}')
           report={
               'proofType':'MLB_ODDS_V8_SHADOW_RECOVERY',
               'createdAtUtc':datetime.now(timezone.utc).isoformat(),
@@ -499,25 +117,17 @@ jobs:
               'runAttempt':os.environ['GITHUB_RUN_ATTEMPT'],
               'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
               'stackName':os.environ['STACK_NAME'],
-              'templateSha256':Path('/tmp/v8-template-sha256.txt').read_text().strip() if Path('/tmp/v8-template-sha256.txt').exists() else None,
               'authority':'SHADOW_ONLY',
               'productionAuthorityChanged':False,
-              'finalScheduleState':final_state,
-              'stepOutcomes':outcomes,
-              'deploymentIdentity':load('/tmp/v8-identity.json'),
-              'manualCanary':load('/tmp/v8-canary.json'),
-              'scheduledCollection':load('/tmp/v8-scheduled-proof.json'),
-              'stackRecovery':{
-                  'statusHistory':Path('/tmp/v8-stack-history.txt').read_text() if Path('/tmp/v8-stack-history.txt').exists() else None,
-                  'action':Path('/tmp/v8-recovery-action.txt').read_text().strip() if Path('/tmp/v8-recovery-action.txt').exists() else None,
-                  'events':load('/tmp/v8-recovery-events.json'),
-              },
-              'blockers':blockers,
-              'ok':not blockers,
+              'finalScheduleState':'UNKNOWN',
+              'stepOutcomes':{'recovery':os.environ['RECOVERY_OUTCOME']},
+              'blockers':['recovery_report_missing'],
+              'ok':False,
           }
           Path(os.environ['PROOF_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
-          Path('/tmp/v8-proof.json').write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
           PY
+          fi
+          python -m json.tool "$PROOF_PATH" >/dev/null
 
       - name: Upload recovery evidence
         if: always()
@@ -527,16 +137,7 @@ jobs:
           path: |
             runtime_reports/mlb_odds_v8_shadow_recovery_latest.json
             /tmp/v8-aws-identity.json
-            /tmp/v8-canary-deploy.log
-            /tmp/v8-identity.json
-            /tmp/v8-canary-invocation.json
-            /tmp/v8-canary.json
-            /tmp/v8-baseline.json
-            /tmp/v8-scheduled-proof.json
-            /tmp/v8-scheduled-*.json
-            /tmp/v8-stack-history.txt
-            /tmp/v8-recovery-action.txt
-            /tmp/v8-recovery-events.json
+            /tmp/v8-recovery.log
           retention-days: 90
           if-no-files-found: warn
 
@@ -546,7 +147,7 @@ jobs:
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          cp /tmp/v8-proof.json /tmp/v8-proof-copy.json
+          cp "$PROOF_PATH" /tmp/v8-proof-copy.json
           for attempt in 1 2 3; do
             git fetch origin main
             git checkout -B v8-proof origin/main
@@ -566,7 +167,7 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          value=json.loads(Path('/tmp/v8-proof.json').read_text())
+          value=json.loads(Path('runtime_reports/mlb_odds_v8_shadow_recovery_latest.json').read_text())
           assert value.get('ok') is True, value
           assert value.get('authority') == 'SHADOW_ONLY', value
           assert value.get('productionAuthorityChanged') is False, value
@@ -576,6 +177,6 @@ jobs:
           assert identity.get('scheduleRuleStateAtCanary') == 'DISABLED', value
           scheduled=value.get('scheduledCollection') or {}
           assert scheduled.get('ruleState') == 'ENABLED', value
-          assert scheduled.get('repeatedScheduledCollectionsVerified') is True, value
-          assert int(scheduled.get('scheduledCollectionCount') or 0) >= 2, value
+          checks=scheduled.get('checks') or {}
+          assert checks and all(checks.values()), value
           PY
