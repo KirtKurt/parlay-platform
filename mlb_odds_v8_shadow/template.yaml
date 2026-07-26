@@ -1,0 +1,92 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Isolated schedule-disabled MLB Odds V8 shadow collector canary
+
+Parameters:
+  OddsApiKey:
+    Type: String
+    NoEcho: true
+  DeployGitSha:
+    Type: String
+    Default: unknown
+  V8Enabled:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'true'
+  V8FeaturedRegions:
+    Type: String
+    Default: us
+  V8EventRegions:
+    Type: String
+    Default: us,us2
+  V8MaxCreditsPerCycle:
+    Type: Number
+    Default: 500
+
+Resources:
+  ShadowArtifactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  ShadowCollectorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../hello_world/
+      Handler: mlb_odds_v8_shadow_collector.lambda_handler
+      Runtime: python3.11
+      Architectures: [x86_64]
+      Timeout: 300
+      MemorySize: 1024
+      Tracing: Active
+      Environment:
+        Variables:
+          ODDS_API_KEY: !Ref OddsApiKey
+          MLB_V8_SHADOW_BUCKET: !Ref ShadowArtifactsBucket
+          MLB_V8_ENABLED: !Ref V8Enabled
+          MLB_V8_FEATURED_REGIONS: !Ref V8FeaturedRegions
+          MLB_V8_EVENT_REGIONS: !Ref V8EventRegions
+          MLB_V8_FEATURED_MARKETS: h2h,spreads,totals
+          MLB_V8_FIRST_FIVE_ENABLED: 'true'
+          MLB_V8_ALTERNATES_ENABLED: 'true'
+          MLB_V8_TEAM_PROPS_ENABLED: 'true'
+          MLB_V8_PLAYER_PROPS_ENABLED: 'false'
+          MLB_V8_MAX_EVENT_MARKETS: '18'
+          MLB_V8_MAX_EVENTS_PER_CYCLE: '8'
+          MLB_V8_MAX_CREDITS_PER_CYCLE: !Ref V8MaxCreditsPerCycle
+          MLB_V8_HTTP_TIMEOUT_SECONDS: '20'
+          INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+              Resource: !Sub '${ShadowArtifactsBucket.Arn}/*'
+            - Effect: Allow
+              Action:
+                - s3:GetBucketLocation
+                - s3:ListBucket
+              Resource: !GetAtt ShadowArtifactsBucket.Arn
+      ReservedConcurrentExecutions: 1
+
+Outputs:
+  ShadowCollectorFunctionName:
+    Value: !Ref ShadowCollectorFunction
+  ShadowArtifactsBucketName:
+    Value: !Ref ShadowArtifactsBucket
+  ScheduleStatus:
+    Value: DISABLED_MANUAL_CANARY_ONLY
