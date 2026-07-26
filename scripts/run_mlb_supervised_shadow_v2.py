@@ -13,11 +13,16 @@ from typing import Any, Dict, List, Mapping
 
 import boto3
 
+import mlb_supervised_fold_policy_v2_2 as fold_policy
 import mlb_supervised_model_v2_2 as supervised
 
 STATE_PK = "MLB_HISTORICAL_OPTIMIZER#V1"
 STATE_SK = "STATE"
 EXPECTED_HANDLER = "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler"
+
+# The current-season fold is development-only. It never reads outer walk-forward
+# or untouched-audit labels during feature, weighting, or model selection.
+fold_policy.install(supervised.base)
 
 
 def _plain(value: Any) -> Any:
@@ -128,6 +133,7 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
         "selectionObjective": {
             **dict(selection.get("selectionObjective") or {}),
             "version": supervised.VERSION,
+            "foldPolicyVersion": fold_policy.VERSION,
             "productionAuthorityChanged": False,
             "untouchedAuditUsedForSelection": False,
         },
