@@ -1,5 +1,5 @@
 {
-  "createdAtUtc": "2026-07-26T09:51:23.508577+00:00",
+  "createdAtUtc": "2026-07-26T10:09:32.819181+00:00",
   "jobStatus": "success",
   "proofType": "MLB_HISTORICAL_V7_RECOVERY_RUN",
   "recovery": {
@@ -30,7 +30,23 @@
     "ok": true,
     "state": {
       "authorizationContract": "AUTHORIZE_THE_ODDS_API_HISTORICAL_CREDITS",
-      "authorizedPlanFingerprint": "70c10be5631d9e62f524350fc1fc0da86cf54bdf50507247be06cc226c016109",
+      "authorizedPlanFingerprint": "86959a5c1a901c9ff806a3303ec7f4a311b41b6b8aa7f84b7941892280ea084d",
+      "competitiveRangeRepair": {
+        "competitiveStartDate": "2026-03-25",
+        "immutableS3EvidenceRetained": true,
+        "previousCursorDate": "2026-02-26",
+        "previousCursorSlotIndex": 0,
+        "previousEndDate": "2025-10-31",
+        "providerCreditsRetained": true,
+        "removedCompletedSlateCount": 1,
+        "removedDateCount": 128,
+        "removedDatesFingerprint": "9c99cb37ff237830d50a5125c28e5a222cf7910c75b9f62ae21b2b84ed62fd70",
+        "removedPlanSlateCount": 14,
+        "removedRejectedSlateCount": 116,
+        "removedSkippedSlotCount": 120,
+        "repairedAtUtc": "2026-07-26T10:07:46.108726+00:00",
+        "version": "MLB-HISTORICAL-COMPETITIVE-RANGE-REPAIR-v1"
+      },
       "completeSlateCount": 203,
       "completedSlates": [
         {
@@ -3446,21 +3462,21 @@
         {
           "artifact": {
             "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-            "etag": "f81ab9caaed6b27cf5506bb403dec316",
-            "key": "mlb/historical-daily-v1/datasets-versioned/2025-11-01/9d8dece612cc5adc80ee750e58b1fe3053db0e2625af45f4c5b4733ca57cb922.json",
-            "sha256": "9d8dece612cc5adc80ee750e58b1fe3053db0e2625af45f4c5b4733ca57cb922",
-            "versionId": "ZSVg2k0FtpHYl9u8BGKBR0pLWOJGBtSW"
+            "etag": "54838a7309bb2538de996033166451e9",
+            "key": "mlb/historical-daily-v1/datasets-versioned/2026-03-25/993a964fb2ad58cd09aa10f4913adb71ea4c56e9e761e75786fb833052c73e2f.json",
+            "sha256": "993a964fb2ad58cd09aa10f4913adb71ea4c56e9e761e75786fb833052c73e2f",
+            "versionId": "dlW5wG8Gp.b3mUJrQj77MTwF5vrGkeCK"
           },
           "eligibleGameCount": 1,
-          "fingerprint": "bb7e7cdaf6141e895125d2ea49ce6097bb633989496487d932d4f501f9760d41",
+          "fingerprint": "8d5f0e69a1775f8eefddd8fcdc6135170f4cc10e61193a19e47e24d10aab1cc0",
           "officialGameCount": 1,
           "quarantinedSnapshotCount": 0,
-          "slateDateEt": "2025-11-01"
+          "slateDateEt": "2026-03-25"
         }
       ],
-      "creditsConsumed": 159430,
-      "currentDate": "2026-02-21",
-      "currentSlotIndex": 0,
+      "creditsConsumed": 161230,
+      "currentDate": "2026-03-26",
+      "currentSlotIndex": 26,
       "dailyAccuracyRequirement": 0.8,
       "dailyAccuracyTargetHigh": 0.9,
       "dataCollectionCompletedAtUtc": "2026-07-26T06:36:10.780758+00:00",
@@ -3636,20 +3652,19 @@
       "initializedAtUtc": "2026-07-24T07:37:42.029216+00:00",
       "lastCompletedFinalsArtifact": {
         "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-        "etag": "5c1d30398c6009cfdff258263969df87",
-        "key": "mlb/historical-daily-v1/official-finals/2026-02-20.json",
-        "sha256": "c1eaf91b3400e95584158ddae10e1021e08574f27ecc988a57ba80d28c9c8892",
-        "versionId": "hiJDWs9D1yzwTIIAClHcyjLq58_iFlbv"
+        "etag": "f398770070499467dec2d765c6e32974",
+        "key": "mlb/historical-daily-v1/official-finals/2026-03-25.json",
+        "sha256": "1b8f57205552f3345d0af41dbb5674179faad763f2f45c09a058e8053d995614",
+        "versionId": "78wohBKvGlUpkogNHTu6QdNPfjxHvFS4"
       },
       "lastCompletedQuarantineCount": 0,
-      "lastError": null,
       "lastErrorAtUtc": "2026-07-25T08:27:49.393989+00:00",
       "lastQuota": {
         "x-requests-last": 10,
-        "x-requests-remaining": 4721174,
-        "x-requests-used": 278826
+        "x-requests-remaining": 4719274,
+        "x-requests-used": 280726
       },
-      "lastRejectedSlateError": "incomplete_full_slate_dataset",
+      "lastRejectedSlateError": "official_off_day",
       "lastRematerializedSlateDate": "2025-08-31",
       "latestExperiment": {
         "artifact": {
@@ -3715,7 +3730,7 @@
       "minimumTrainingGames": 1000,
       "minimumUntouchedAuditGames": 200,
       "minimumWalkForwardGames": 200,
-      "networkRequestCount": 15943,
+      "networkRequestCount": 16123,
       "optimizationCompletedAtUtc": "2026-07-26T06:40:38.872127+00:00",
       "optimizationRound": 4,
       "paidBackfillAuthorized": true,
@@ -3727,12 +3742,12 @@
         "createdAtUtc": "2026-07-24T09:16:05.582633+00:00",
         "endDate": "2026-07-24",
         "enoughDateRange": true,
-        "estimatedCredits": 262870,
+        "estimatedCredits": 253300,
         "estimatedCreditsPerRequest": 10,
-        "fingerprint": "70c10be5631d9e62f524350fc1fc0da86cf54bdf50507247be06cc226c016109",
+        "fingerprint": "86959a5c1a901c9ff806a3303ec7f4a311b41b6b8aa7f84b7941892280ea084d",
         "freshAuditIncrementGames": 250,
-        "historicalRequestCount": 26287,
-        "maximumAuthorizedOfficialGames": 4153,
+        "historicalRequestCount": 25330,
+        "maximumAuthorizedOfficialGames": 3966,
         "maximumCredits": 300000,
         "maximumOptimizationRounds": 6,
         "paidHistoricalCallsMadeByPlan": 0,
@@ -3742,8 +3757,8 @@
           "minimumWalkForwardGames": 200
         },
         "perGameFeatureCutoff": "each_game_t_minus_45",
-        "plannedCompleteSlateDays": 337,
-        "plannedOfficialGames": 4153,
+        "plannedCompleteSlateDays": 323,
+        "plannedOfficialGames": 3966,
         "plannedThroughDate": "2026-07-24",
         "planningErrorCount": 0,
         "providerQuotaAppearsSufficient": true,
@@ -3761,12 +3776,31 @@
             "R",
             "W"
           ],
+          "competitiveStartDate": "2026-03-25",
           "newEndDate": "2026-07-24",
           "previousEndDate": "2025-10-31",
-          "version": "MLB-HISTORICAL-RANGE-EXTENSION-v2-competitive-only"
+          "removedPreCompetitiveSlateCount": 14,
+          "removedPreCompetitiveSlateDates": [
+            "2025-11-01",
+            "2026-02-20",
+            "2026-02-21",
+            "2026-02-26",
+            "2026-02-28",
+            "2026-03-03",
+            "2026-03-05",
+            "2026-03-06",
+            "2026-03-10",
+            "2026-03-11",
+            "2026-03-13",
+            "2026-03-19",
+            "2026-03-22",
+            "2026-03-24"
+          ],
+          "repairedAtUtc": "2026-07-26T10:07:46.108290+00:00",
+          "version": "MLB-HISTORICAL-RANGE-EXTENSION-v3-opening-day-bounded"
         },
         "rejectedDates": [],
-        "slateLedgerDigest": "e46c20bb76ad6a0b2f4ab2b5da29a97ba7fcceda8400f83f182a24d151883a5a",
+        "slateLedgerDigest": "df72d5da1e3fce1d22f72648b2915d7a49491ff7259675c635fcdb9050830fe6",
         "slates": [
           {
             "estimatedCredits": 820,
@@ -5800,146 +5834,6 @@
           },
           {
             "estimatedCredits": 740,
-            "firstGameStartUtc": "2025-11-02T00:00:00Z",
-            "firstRequestUtc": "2025-11-01T05:00:00Z",
-            "historicalRequestCount": 74,
-            "lastGameStartUtc": "2025-11-02T00:00:00Z",
-            "lastRequestUtc": "2025-11-01T23:15:00Z",
-            "officialGameCount": 1,
-            "slateDateEt": "2025-11-01"
-          },
-          {
-            "estimatedCredits": 660,
-            "firstGameStartUtc": "2026-02-20T18:05:00Z",
-            "firstRequestUtc": "2026-02-20T06:00:00Z",
-            "historicalRequestCount": 66,
-            "lastGameStartUtc": "2026-02-20T23:05:00Z",
-            "lastRequestUtc": "2026-02-20T22:15:00Z",
-            "officialGameCount": 7,
-            "slateDateEt": "2026-02-20"
-          },
-          {
-            "estimatedCredits": 540,
-            "firstGameStartUtc": "2026-02-21T18:05:00Z",
-            "firstRequestUtc": "2026-02-21T06:00:00Z",
-            "historicalRequestCount": 54,
-            "lastGameStartUtc": "2026-02-21T20:10:00Z",
-            "lastRequestUtc": "2026-02-21T19:15:00Z",
-            "officialGameCount": 16,
-            "slateDateEt": "2026-02-21"
-          },
-          {
-            "estimatedCredits": 540,
-            "firstGameStartUtc": "2026-02-26T18:05:00Z",
-            "firstRequestUtc": "2026-02-26T06:00:00Z",
-            "historicalRequestCount": 54,
-            "lastGameStartUtc": "2026-02-26T20:10:00Z",
-            "lastRequestUtc": "2026-02-26T19:15:00Z",
-            "officialGameCount": 16,
-            "slateDateEt": "2026-02-26"
-          },
-          {
-            "estimatedCredits": 540,
-            "firstGameStartUtc": "2026-02-28T18:05:00Z",
-            "firstRequestUtc": "2026-02-28T06:00:00Z",
-            "historicalRequestCount": 54,
-            "lastGameStartUtc": "2026-02-28T20:10:00Z",
-            "lastRequestUtc": "2026-02-28T19:15:00Z",
-            "officialGameCount": 16,
-            "slateDateEt": "2026-02-28"
-          },
-          {
-            "estimatedCredits": 660,
-            "firstGameStartUtc": "2026-03-03T18:05:00Z",
-            "firstRequestUtc": "2026-03-03T06:00:00Z",
-            "historicalRequestCount": 66,
-            "lastGameStartUtc": "2026-03-03T23:05:00Z",
-            "lastRequestUtc": "2026-03-03T22:15:00Z",
-            "officialGameCount": 20,
-            "slateDateEt": "2026-03-03"
-          },
-          {
-            "estimatedCredits": 740,
-            "firstGameStartUtc": "2026-03-05T18:05:00Z",
-            "firstRequestUtc": "2026-03-05T06:00:00Z",
-            "historicalRequestCount": 74,
-            "lastGameStartUtc": "2026-03-06T01:05:00Z",
-            "lastRequestUtc": "2026-03-06T00:15:00Z",
-            "officialGameCount": 14,
-            "slateDateEt": "2026-03-05"
-          },
-          {
-            "estimatedCredits": 740,
-            "firstGameStartUtc": "2026-03-06T18:05:00Z",
-            "firstRequestUtc": "2026-03-06T06:00:00Z",
-            "historicalRequestCount": 74,
-            "lastGameStartUtc": "2026-03-07T01:10:00Z",
-            "lastRequestUtc": "2026-03-07T00:15:00Z",
-            "officialGameCount": 16,
-            "slateDateEt": "2026-03-06"
-          },
-          {
-            "estimatedCredits": 580,
-            "firstGameStartUtc": "2026-03-10T17:05:00Z",
-            "firstRequestUtc": "2026-03-10T05:00:00Z",
-            "historicalRequestCount": 58,
-            "lastGameStartUtc": "2026-03-10T20:10:00Z",
-            "lastRequestUtc": "2026-03-10T19:15:00Z",
-            "officialGameCount": 14,
-            "slateDateEt": "2026-03-10"
-          },
-          {
-            "estimatedCredits": 680,
-            "firstGameStartUtc": "2026-03-11T17:05:00Z",
-            "firstRequestUtc": "2026-03-11T05:00:00Z",
-            "historicalRequestCount": 68,
-            "lastGameStartUtc": "2026-03-11T22:35:00Z",
-            "lastRequestUtc": "2026-03-11T21:45:00Z",
-            "officialGameCount": 12,
-            "slateDateEt": "2026-03-11"
-          },
-          {
-            "estimatedCredits": 780,
-            "firstGameStartUtc": "2026-03-13T17:05:00Z",
-            "firstRequestUtc": "2026-03-13T05:00:00Z",
-            "historicalRequestCount": 78,
-            "lastGameStartUtc": "2026-03-14T01:10:00Z",
-            "lastRequestUtc": "2026-03-14T00:15:00Z",
-            "officialGameCount": 17,
-            "slateDateEt": "2026-03-13"
-          },
-          {
-            "estimatedCredits": 780,
-            "firstGameStartUtc": "2026-03-19T17:05:00Z",
-            "firstRequestUtc": "2026-03-19T05:00:00Z",
-            "historicalRequestCount": 78,
-            "lastGameStartUtc": "2026-03-20T01:10:00Z",
-            "lastRequestUtc": "2026-03-20T00:15:00Z",
-            "officialGameCount": 14,
-            "slateDateEt": "2026-03-19"
-          },
-          {
-            "estimatedCredits": 780,
-            "firstGameStartUtc": "2026-03-22T16:05:00Z",
-            "firstRequestUtc": "2026-03-22T05:00:00Z",
-            "historicalRequestCount": 78,
-            "lastGameStartUtc": "2026-03-23T01:10:00Z",
-            "lastRequestUtc": "2026-03-23T00:15:00Z",
-            "officialGameCount": 14,
-            "slateDateEt": "2026-03-22"
-          },
-          {
-            "estimatedCredits": 810,
-            "firstGameStartUtc": "2026-03-24T16:05:00Z",
-            "firstRequestUtc": "2026-03-24T05:00:00Z",
-            "historicalRequestCount": 81,
-            "lastGameStartUtc": "2026-03-25T01:45:00Z",
-            "lastRequestUtc": "2026-03-25T01:00:00Z",
-            "officialGameCount": 10,
-            "slateDateEt": "2026-03-24"
-          },
-          {
-            "estimatedCredits": 740,
             "firstGameStartUtc": "2026-03-26T00:05:00Z",
             "firstRequestUtc": "2026-03-25T05:00:00Z",
             "historicalRequestCount": 74,
@@ -7147,7 +7041,7 @@
         "version": "MLB-HISTORICAL-CREDIT-PLAN-v1.1-complete-date-range-ledger",
         "withinConfiguredCreditCap": true
       },
-      "quarantinedHistoricalSlotCount": 102,
+      "quarantinedHistoricalSlotCount": 156,
       "quotaReserve": 100,
       "rangeExtension": {
         "appendedEstimatedCredits": 103920,
@@ -7161,9 +7055,28 @@
           "R",
           "W"
         ],
+        "competitiveStartDate": "2026-03-25",
         "newEndDate": "2026-07-24",
         "previousEndDate": "2025-10-31",
-        "version": "MLB-HISTORICAL-RANGE-EXTENSION-v2-competitive-only"
+        "removedPreCompetitiveSlateCount": 14,
+        "removedPreCompetitiveSlateDates": [
+          "2025-11-01",
+          "2026-02-20",
+          "2026-02-21",
+          "2026-02-26",
+          "2026-02-28",
+          "2026-03-03",
+          "2026-03-05",
+          "2026-03-06",
+          "2026-03-10",
+          "2026-03-11",
+          "2026-03-13",
+          "2026-03-19",
+          "2026-03-22",
+          "2026-03-24"
+        ],
+        "repairedAtUtc": "2026-07-26T10:07:46.108290+00:00",
+        "version": "MLB-HISTORICAL-RANGE-EXTENSION-v3-opening-day-bounded"
       },
       "rejectedSlates": [
         {
@@ -7239,578 +7152,9 @@
           "reason": "official_off_day",
           "recordedAtUtc": "2026-07-26T06:56:36.429571+00:00",
           "slateDateEt": "2025-10-30"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.313632+00:00",
-          "slateDateEt": "2025-11-02"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.359647+00:00",
-          "slateDateEt": "2025-11-03"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.403706+00:00",
-          "slateDateEt": "2025-11-04"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.441648+00:00",
-          "slateDateEt": "2025-11-05"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.484428+00:00",
-          "slateDateEt": "2025-11-06"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.521418+00:00",
-          "slateDateEt": "2025-11-07"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.557443+00:00",
-          "slateDateEt": "2025-11-08"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.599124+00:00",
-          "slateDateEt": "2025-11-09"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.633614+00:00",
-          "slateDateEt": "2025-11-10"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.706240+00:00",
-          "slateDateEt": "2025-11-11"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.740505+00:00",
-          "slateDateEt": "2025-11-12"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.777182+00:00",
-          "slateDateEt": "2025-11-13"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.818828+00:00",
-          "slateDateEt": "2025-11-14"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.862127+00:00",
-          "slateDateEt": "2025-11-15"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.900512+00:00",
-          "slateDateEt": "2025-11-16"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.940571+00:00",
-          "slateDateEt": "2025-11-17"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:08.981226+00:00",
-          "slateDateEt": "2025-11-18"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.030992+00:00",
-          "slateDateEt": "2025-11-19"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.066026+00:00",
-          "slateDateEt": "2025-11-20"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.102346+00:00",
-          "slateDateEt": "2025-11-21"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.138586+00:00",
-          "slateDateEt": "2025-11-22"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.177617+00:00",
-          "slateDateEt": "2025-11-23"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.259516+00:00",
-          "slateDateEt": "2025-11-24"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.295531+00:00",
-          "slateDateEt": "2025-11-25"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.334833+00:00",
-          "slateDateEt": "2025-11-26"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.375336+00:00",
-          "slateDateEt": "2025-11-27"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.444586+00:00",
-          "slateDateEt": "2025-11-28"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.483412+00:00",
-          "slateDateEt": "2025-11-29"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.519610+00:00",
-          "slateDateEt": "2025-11-30"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.557451+00:00",
-          "slateDateEt": "2025-12-01"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.599030+00:00",
-          "slateDateEt": "2025-12-02"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.641706+00:00",
-          "slateDateEt": "2025-12-03"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.683350+00:00",
-          "slateDateEt": "2025-12-04"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.723515+00:00",
-          "slateDateEt": "2025-12-05"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.760732+00:00",
-          "slateDateEt": "2025-12-06"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.797825+00:00",
-          "slateDateEt": "2025-12-07"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.835548+00:00",
-          "slateDateEt": "2025-12-08"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.874484+00:00",
-          "slateDateEt": "2025-12-09"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.911339+00:00",
-          "slateDateEt": "2025-12-10"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:09.964659+00:00",
-          "slateDateEt": "2025-12-11"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.033925+00:00",
-          "slateDateEt": "2025-12-12"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.073749+00:00",
-          "slateDateEt": "2025-12-13"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.106540+00:00",
-          "slateDateEt": "2025-12-14"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.145277+00:00",
-          "slateDateEt": "2025-12-15"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.187431+00:00",
-          "slateDateEt": "2025-12-16"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.224206+00:00",
-          "slateDateEt": "2025-12-17"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.260768+00:00",
-          "slateDateEt": "2025-12-18"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.351826+00:00",
-          "slateDateEt": "2025-12-19"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.396183+00:00",
-          "slateDateEt": "2025-12-20"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.437443+00:00",
-          "slateDateEt": "2025-12-21"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.487864+00:00",
-          "slateDateEt": "2025-12-22"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.527852+00:00",
-          "slateDateEt": "2025-12-23"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.564529+00:00",
-          "slateDateEt": "2025-12-24"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.609493+00:00",
-          "slateDateEt": "2025-12-25"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.646440+00:00",
-          "slateDateEt": "2025-12-26"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.688686+00:00",
-          "slateDateEt": "2025-12-27"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.722793+00:00",
-          "slateDateEt": "2025-12-28"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.759855+00:00",
-          "slateDateEt": "2025-12-29"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.799377+00:00",
-          "slateDateEt": "2025-12-30"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.838767+00:00",
-          "slateDateEt": "2025-12-31"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.878640+00:00",
-          "slateDateEt": "2026-01-01"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.930358+00:00",
-          "slateDateEt": "2026-01-02"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:10.968676+00:00",
-          "slateDateEt": "2026-01-03"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.042253+00:00",
-          "slateDateEt": "2026-01-04"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.088169+00:00",
-          "slateDateEt": "2026-01-05"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.129633+00:00",
-          "slateDateEt": "2026-01-06"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.172861+00:00",
-          "slateDateEt": "2026-01-07"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.216068+00:00",
-          "slateDateEt": "2026-01-08"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.254376+00:00",
-          "slateDateEt": "2026-01-09"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.317436+00:00",
-          "slateDateEt": "2026-01-10"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.357658+00:00",
-          "slateDateEt": "2026-01-11"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.439974+00:00",
-          "slateDateEt": "2026-01-12"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.480280+00:00",
-          "slateDateEt": "2026-01-13"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.533436+00:00",
-          "slateDateEt": "2026-01-14"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.573629+00:00",
-          "slateDateEt": "2026-01-15"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.618581+00:00",
-          "slateDateEt": "2026-01-16"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.663062+00:00",
-          "slateDateEt": "2026-01-17"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.706913+00:00",
-          "slateDateEt": "2026-01-18"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.784567+00:00",
-          "slateDateEt": "2026-01-19"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.821158+00:00",
-          "slateDateEt": "2026-01-20"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.865678+00:00",
-          "slateDateEt": "2026-01-21"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.908336+00:00",
-          "slateDateEt": "2026-01-22"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.945532+00:00",
-          "slateDateEt": "2026-01-23"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:11.987051+00:00",
-          "slateDateEt": "2026-01-24"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.028118+00:00",
-          "slateDateEt": "2026-01-25"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.071571+00:00",
-          "slateDateEt": "2026-01-26"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.123719+00:00",
-          "slateDateEt": "2026-01-27"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.187838+00:00",
-          "slateDateEt": "2026-01-28"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.227508+00:00",
-          "slateDateEt": "2026-01-29"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.271178+00:00",
-          "slateDateEt": "2026-01-30"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.351030+00:00",
-          "slateDateEt": "2026-01-31"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.393863+00:00",
-          "slateDateEt": "2026-02-01"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.447558+00:00",
-          "slateDateEt": "2026-02-02"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.492004+00:00",
-          "slateDateEt": "2026-02-03"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.546568+00:00",
-          "slateDateEt": "2026-02-04"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.592360+00:00",
-          "slateDateEt": "2026-02-05"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.631160+00:00",
-          "slateDateEt": "2026-02-06"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.674440+00:00",
-          "slateDateEt": "2026-02-07"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.712538+00:00",
-          "slateDateEt": "2026-02-08"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.754825+00:00",
-          "slateDateEt": "2026-02-09"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.793829+00:00",
-          "slateDateEt": "2026-02-10"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.869380+00:00",
-          "slateDateEt": "2026-02-11"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.910169+00:00",
-          "slateDateEt": "2026-02-12"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.950463+00:00",
-          "slateDateEt": "2026-02-13"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:12.990423+00:00",
-          "slateDateEt": "2026-02-14"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:13.033906+00:00",
-          "slateDateEt": "2026-02-15"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:13.075530+00:00",
-          "slateDateEt": "2026-02-16"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:13.119350+00:00",
-          "slateDateEt": "2026-02-17"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:13.157976+00:00",
-          "slateDateEt": "2026-02-18"
-        },
-        {
-          "reason": "official_off_day",
-          "recordedAtUtc": "2026-07-26T09:48:13.198443+00:00",
-          "slateDateEt": "2026-02-19"
-        },
-        {
-          "details": {
-            "artifact": {
-              "bucket": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
-              "etag": "64d72acfcafdaa24b2a7ff8fdc0005ae",
-              "key": "mlb/historical-daily-v1/datasets-versioned/2026-02-20/4ba5e6395792b34d1e40dba6fac57a2c94e1ed3604ca667b8d9861c6eefad31a.json",
-              "sha256": "4ba5e6395792b34d1e40dba6fac57a2c94e1ed3604ca667b8d9861c6eefad31a",
-              "versionId": "veeaSMDoZau70aURrHRS.bE1ztS6Cc4S"
-            },
-            "eligibleGameCount": 0,
-            "exactSlateCoverage": 0.0,
-            "officialGameCount": 7,
-            "quarantinedSnapshotCount": 66,
-            "validSnapshotCount": 0
-          },
-          "reason": "incomplete_full_slate_dataset",
-          "recordedAtUtc": "2026-07-26T09:51:21.697427+00:00",
-          "slateDateEt": "2026-02-20"
         }
       ],
-      "revision": 917,
+      "revision": 927,
       "skippedHistoricalSlots": [
         {
           "reason": "historical response is too stale for a 15-minute grid",
@@ -8099,534 +7443,6 @@
           "slateDateEt": "2025-10-20",
           "status": "QUARANTINED_STALE",
           "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:19.754799+00:00",
-          "requestedAtUtc": "2026-02-20T06:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:19.777359+00:00",
-          "requestedAtUtc": "2026-02-20T06:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:19.814701+00:00",
-          "requestedAtUtc": "2026-02-20T06:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:19.846223+00:00",
-          "requestedAtUtc": "2026-02-20T06:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:19.876077+00:00",
-          "requestedAtUtc": "2026-02-20T07:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:19.910010+00:00",
-          "requestedAtUtc": "2026-02-20T07:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:19.934624+00:00",
-          "requestedAtUtc": "2026-02-20T07:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:19.960802+00:00",
-          "requestedAtUtc": "2026-02-20T07:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:19.994101+00:00",
-          "requestedAtUtc": "2026-02-20T08:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.021081+00:00",
-          "requestedAtUtc": "2026-02-20T08:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.062973+00:00",
-          "requestedAtUtc": "2026-02-20T08:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.107825+00:00",
-          "requestedAtUtc": "2026-02-20T08:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.153501+00:00",
-          "requestedAtUtc": "2026-02-20T09:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.181214+00:00",
-          "requestedAtUtc": "2026-02-20T09:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.206044+00:00",
-          "requestedAtUtc": "2026-02-20T09:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.234600+00:00",
-          "requestedAtUtc": "2026-02-20T09:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.261608+00:00",
-          "requestedAtUtc": "2026-02-20T10:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.290049+00:00",
-          "requestedAtUtc": "2026-02-20T10:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.321633+00:00",
-          "requestedAtUtc": "2026-02-20T10:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.351117+00:00",
-          "requestedAtUtc": "2026-02-20T10:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.426251+00:00",
-          "requestedAtUtc": "2026-02-20T11:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.455834+00:00",
-          "requestedAtUtc": "2026-02-20T11:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.479768+00:00",
-          "requestedAtUtc": "2026-02-20T11:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.515499+00:00",
-          "requestedAtUtc": "2026-02-20T11:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.543762+00:00",
-          "requestedAtUtc": "2026-02-20T12:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.572563+00:00",
-          "requestedAtUtc": "2026-02-20T12:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.598084+00:00",
-          "requestedAtUtc": "2026-02-20T12:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.623127+00:00",
-          "requestedAtUtc": "2026-02-20T12:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.647478+00:00",
-          "requestedAtUtc": "2026-02-20T13:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.671652+00:00",
-          "requestedAtUtc": "2026-02-20T13:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.701751+00:00",
-          "requestedAtUtc": "2026-02-20T13:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.728229+00:00",
-          "requestedAtUtc": "2026-02-20T13:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.753266+00:00",
-          "requestedAtUtc": "2026-02-20T14:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.784289+00:00",
-          "requestedAtUtc": "2026-02-20T14:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.815010+00:00",
-          "requestedAtUtc": "2026-02-20T14:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.839182+00:00",
-          "requestedAtUtc": "2026-02-20T14:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.865420+00:00",
-          "requestedAtUtc": "2026-02-20T15:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.897004+00:00",
-          "requestedAtUtc": "2026-02-20T15:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.923763+00:00",
-          "requestedAtUtc": "2026-02-20T15:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.951605+00:00",
-          "requestedAtUtc": "2026-02-20T15:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:20.978859+00:00",
-          "requestedAtUtc": "2026-02-20T16:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.002643+00:00",
-          "requestedAtUtc": "2026-02-20T16:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.032612+00:00",
-          "requestedAtUtc": "2026-02-20T16:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.060972+00:00",
-          "requestedAtUtc": "2026-02-20T16:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.087705+00:00",
-          "requestedAtUtc": "2026-02-20T17:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.112627+00:00",
-          "requestedAtUtc": "2026-02-20T17:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.135210+00:00",
-          "requestedAtUtc": "2026-02-20T17:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.160501+00:00",
-          "requestedAtUtc": "2026-02-20T17:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.186802+00:00",
-          "requestedAtUtc": "2026-02-20T18:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.211747+00:00",
-          "requestedAtUtc": "2026-02-20T18:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.237944+00:00",
-          "requestedAtUtc": "2026-02-20T18:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.267129+00:00",
-          "requestedAtUtc": "2026-02-20T18:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.292865+00:00",
-          "requestedAtUtc": "2026-02-20T19:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.319998+00:00",
-          "requestedAtUtc": "2026-02-20T19:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.347487+00:00",
-          "requestedAtUtc": "2026-02-20T19:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.372916+00:00",
-          "requestedAtUtc": "2026-02-20T19:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.397890+00:00",
-          "requestedAtUtc": "2026-02-20T20:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.426933+00:00",
-          "requestedAtUtc": "2026-02-20T20:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.453394+00:00",
-          "requestedAtUtc": "2026-02-20T20:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.482310+00:00",
-          "requestedAtUtc": "2026-02-20T20:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.508539+00:00",
-          "requestedAtUtc": "2026-02-20T21:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.536532+00:00",
-          "requestedAtUtc": "2026-02-20T21:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.560083+00:00",
-          "requestedAtUtc": "2026-02-20T21:30:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.587523+00:00",
-          "requestedAtUtc": "2026-02-20T21:45:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.612167+00:00",
-          "requestedAtUtc": "2026-02-20T22:00:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
-        },
-        {
-          "reason": "historical response is too stale for a 15-minute grid",
-          "recordedAtUtc": "2026-07-26T09:51:21.643207+00:00",
-          "requestedAtUtc": "2026-02-20T22:15:00Z",
-          "slateDateEt": "2026-02-20",
-          "status": "QUARANTINED_STALE",
-          "usableForFeatures": false
         }
       ],
       "snapshotGridEndsAt": "last_game_t_minus_45",
@@ -8634,7 +7450,7 @@
       "snapshotStartAtEt": "01:00",
       "startDate": "2025-04-01",
       "targetSettledGames": 2624,
-      "updatedAtUtc": "2026-07-26T09:51:21.703540+00:00",
+      "updatedAtUtc": "2026-07-26T10:09:31.550920+00:00",
       "version": "MLB-HISTORICAL-OPTIMIZER-AWS-v1.9-quarantine-ledger-complete-versioned-dataset-key-v3"
     },
     "status": "BACKFILLING",
@@ -8642,7 +7458,7 @@
   },
   "recoveryStepOutcome": "success",
   "runAttempt": "1",
-  "runId": "30197150908",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30197150908",
-  "sourceSha": "376be3cbe7779bdca06e9f3a7de4043cc2e37a90"
+  "runId": "30197691786",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30197691786",
+  "sourceSha": "4bceca8ff03dd409fa945731ada1170a3b765dde"
 }
