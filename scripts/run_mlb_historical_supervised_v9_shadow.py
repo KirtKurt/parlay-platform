@@ -1,0 +1,113 @@
+#!/usr/bin/env python3
+"""Evaluate the supervised historical learner against current immutable AWS data.
+
+Read-only: this script does not invoke The Odds API, mutate DynamoDB, write S3,
+change a champion, or change production authority.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def _pct(value):
+    return round(float(value or 0.0) * 100.0, 4)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--output", required=True)
+    args = parser.parse_args()
+
+    import mlb_historical_optimizer_v7_recovery_entrypoint as runtime
+
+    handler = runtime.base.optimizer_handler
+    state = handler._load_state()
+    if not isinstance(state, dict):
+        raise RuntimeError("historical optimizer state is missing")
+    records = handler._load_training_records(state)
+    config = handler.optimizer.SearchConfig(
+        minimum_training_games=handler.policy_runtime.MIN_TRAINING_GAMES,
+        minimum_walk_forward_games=handler.policy_runtime.MIN_WALK_FORWARD_GAMES,
+        minimum_untouched_holdout_games=handler.policy_runtime.MIN_UNTOUCHED_AUDIT_GAMES,
+        minimum_settled_games=handler.policy_runtime.MIN_TOTAL_SETTLED_GAMES,
+        maximum_candidates=100,
+        random_seed=1541,
+    )
+    result = handler.optimizer.search(records, config)
+    latest = state.get("latestExperiment") or {}
+    old_gate = latest.get("promotionGate") or {}
+    gate = result.get("promotionGate") or {}
+    diagnostics = result.get("supervisedDiagnostics") or {}
+    report = {
+        "proofType": "MLB_HISTORICAL_SUPERVISED_V9_SHADOW_EVALUATION",
+        "createdAtUtc": datetime.now(timezone.utc).isoformat(),
+        "sourceSha": os.environ.get("GITHUB_SHA"),
+        "runId": os.environ.get("GITHUB_RUN_ID"),
+        "runUrl": (
+            f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/"
+            f"{os.environ.get('GITHUB_RUN_ID')}"
+        ),
+        "readOnly": True,
+        "providerCallsMade": 0,
+        "productionAuthorityChanged": False,
+        "historicalChampionWritten": False,
+        "productionCutoverWritten": False,
+        "state": {
+            "phase": state.get("phase"),
+            "currentDate": state.get("currentDate"),
+            "currentSlotIndex": state.get("currentSlotIndex"),
+            "networkRequestCount": state.get("networkRequestCount"),
+            "eligibleGameCount": state.get("eligibleGameCount"),
+            "completeSlateCount": state.get("completeSlateCount"),
+            "optimizationRound": state.get("optimizationRound"),
+            "featureDatasetVersion": state.get("featureDatasetVersion"),
+            "rematerializationComplete": state.get("featureRematerializationComplete"),
+            "rematerializationErrors": state.get("featureRematerializationErrors") or [],
+        },
+        "priorCandidate": {
+            "experimentId": latest.get("experimentId"),
+            "status": latest.get("status"),
+            "walkForwardMeanDailyAccuracyPct": _pct(old_gate.get("walkForwardMeanDailyAccuracy")),
+            "walkForwardMinimumDailyAccuracyPct": _pct(old_gate.get("walkForwardMinimumDailyAccuracy")),
+            "untouchedHoldoutMeanDailyAccuracyPct": _pct(old_gate.get("untouchedHoldoutMeanDailyAccuracy")),
+            "untouchedHoldoutMinimumDailyAccuracyPct": _pct(old_gate.get("untouchedHoldoutMinimumDailyAccuracy")),
+        },
+        "supervisedCandidate": {
+            "status": result.get("status"),
+            "searchVersion": result.get("searchVersion"),
+            "settledGameCount": result.get("settledGameCount"),
+            "walkForwardMeanDailyAccuracyPct": _pct(gate.get("walkForwardMeanDailyAccuracy")),
+            "walkForwardMinimumDailyAccuracyPct": _pct(gate.get("walkForwardMinimumDailyAccuracy")),
+            "untouchedHoldoutMeanDailyAccuracyPct": _pct(gate.get("untouchedHoldoutMeanDailyAccuracy")),
+            "untouchedHoldoutMinimumDailyAccuracyPct": _pct(gate.get("untouchedHoldoutMinimumDailyAccuracy")),
+            "promotionPassed": gate.get("passed") is True,
+            "errors": gate.get("errors") or [],
+            "diagnostics": diagnostics,
+        },
+    }
+    blockers = []
+    if result.get("ok") is not True:
+        blockers.append("supervised_search_failed")
+    if diagnostics.get("randomPolicySearchDisabled") is not True:
+        blockers.append("random_rule_search_not_disabled")
+    if diagnostics.get("holdoutEvaluatedAfterFreeze") is not True:
+        blockers.append("holdout_not_proven_post_freeze")
+    if diagnostics.get("holdoutLabelsUsedForFitOrSelection") is not False:
+        blockers.append("holdout_used_for_fit_or_selection")
+    if state.get("featureRematerializationErrors"):
+        blockers.append("feature_rematerialization_errors")
+    report["blockers"] = blockers
+    report["ok"] = not blockers
+    path = Path(args.output)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    print(json.dumps(report, indent=2, sort_keys=True))
+    return 0 if report["ok"] else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
