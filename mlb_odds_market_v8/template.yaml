@@ -32,9 +32,9 @@ Parameters:
   MaxEventsPerCycle:
     Type: Number
     Default: 8
-  RetentionDays:
+  RetentionSeconds:
     Type: Number
-    Default: 90
+    Default: 7776000
 
 Conditions:
   EnableSchedule: !Equals [!Ref ScheduleEnabled, 'true']
@@ -89,19 +89,31 @@ Resources:
           MLB_V8_MAX_EVENT_MARKETS: '18'
           MLB_V8_MAX_EVENTS_PER_CYCLE: !Ref MaxEventsPerCycle
           MLB_V8_MAX_CREDITS_PER_CYCLE: !Ref MaxCreditsPerCycle
-          MLB_V8_TTL_SECONDS: !Sub '${RetentionDays} days'
+          MLB_V8_TTL_SECONDS: !Ref RetentionSeconds
           INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref V8FeatureTable
-      Events:
-        V8Schedule:
-          Type: Schedule
-          Condition: EnableSchedule
-          Properties:
-            Schedule: !Ref ScheduleExpression
-            Enabled: true
-            Description: MLB V8 Odds API shadow collection every 15 minutes
+
+  V8ScheduleRule:
+    Type: AWS::Events::Rule
+    Condition: EnableSchedule
+    Properties:
+      Description: MLB V8 Odds API shadow collection every 15 minutes
+      ScheduleExpression: !Ref ScheduleExpression
+      State: ENABLED
+      Targets:
+        - Arn: !GetAtt V8CollectorFunction.Arn
+          Id: V8Collector
+
+  V8SchedulePermission:
+    Type: AWS::Lambda::Permission
+    Condition: EnableSchedule
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref V8CollectorFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt V8ScheduleRule.Arn
 
 Outputs:
   V8CollectorFunctionName:
