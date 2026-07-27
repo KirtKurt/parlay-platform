@@ -18,7 +18,7 @@ import mlb_historical_v7_learning_cadence_v1 as learning_cadence
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v9-learning-cadence-active"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v10-shadow-cadence-separated"
 
 # Reopen only a terminal rejected state that was caused by the previous deployment
 # ceiling. Prior experiments and promotion decisions remain immutable.
@@ -39,8 +39,8 @@ supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerializatio
 supervised_integrity_v2.install(supervised_v9)
 supervised_v9.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
 
-# Run optimization more frequently and select inner-fold challengers by chronological
-# mean accuracy plus calibration. This does not weaken the final promotion gate.
+# Install a separate read-only shadow-refit cadence and a better chronological
+# challenger ranking. Canonical promotion still uses the 200-game untouched audit.
 learning_cadence.install(base.optimizer_handler, supervised_v9)
 
 
@@ -72,7 +72,9 @@ def _with_shadow_contract(value: Any) -> Any:
                 "featureVersion": supervised_v9.FEATURE_VERSION,
                 "integrityPatchVersion": supervised_integrity_v2.VERSION,
                 "learningCadenceVersion": learning_cadence.VERSION,
-                "freshAuditIncrementGames": base.optimizer_handler.FRESH_AUDIT_INCREMENT_GAMES,
+                "shadowRefitIncrementGames": learning_cadence.SHADOW_REFIT_INCREMENT_GAMES,
+                "canonicalFreshAuditIncrementGames": base.optimizer_handler.FRESH_AUDIT_INCREMENT_GAMES,
+                "shadowRefitsMayPromote": False,
                 "strictBinaryLabels": True,
                 "missingLabelsCoercedToAwayWin": False,
                 "v8ExpansionFallbackEnabled": True,
