@@ -2,8 +2,16 @@ name: MLB Supervised Shadow V2 Recurring
 
 "on":
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-supervised-shadow-v2-recurring.yml'
+      - 'scripts/run_mlb_supervised_shadow_v2.py'
+      - 'hello_world/mlb_supervised_model_v2.py'
+      - 'hello_world/mlb_supervised_daily_objective_v2_1.py'
+      - 'docs/runtime/mlb-historical-emergency-v7-proof.json'
   schedule:
-    - cron: '37 2/6 * * *'
+    - cron: '17 * * * *'
 
 permissions:
   contents: write
@@ -20,7 +28,7 @@ env:
 jobs:
   retrain-shadow:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
@@ -59,7 +67,7 @@ jobs:
           assert not state.get('featureRematerializationErrors'), state
           assert not state.get('lastError'), state
           PY
-      - name: Refit and evaluate shadow challenger
+      - name: Refit and evaluate advanced shadow challenger
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: 'true'
@@ -72,13 +80,16 @@ jobs:
             --stack-name "$STACK_NAME" \
             --table-name parlay_platform_snapshots \
             --output "$REPORT_PATH"
-      - name: Enforce non-authority
+      - name: Verify fresh model artifact
         run: |
+          set -euo pipefail
           python - <<'PY'
           import json
           from pathlib import Path
           value=json.loads(Path('runtime_reports/mlb_supervised_shadow_v2_latest.json').read_text())
           assert value.get('ok') is True, value
+          assert value.get('modelDigest'), value
+          assert int(value.get('recordCountLoaded') or 0) > 0, value
           assert value.get('authority') == 'SHADOW_ONLY', value
           assert value.get('productionAuthorityChanged') is False, value
           assert value.get('productionPromotionEligible') is False, value
@@ -89,6 +100,7 @@ jobs:
           name: mlb-supervised-shadow-v2-recurring-${{ github.run_id }}
           path: runtime_reports/mlb_supervised_shadow_v2_latest.json
           retention-days: 90
+          if-no-files-found: error
       - name: Publish latest supervised evidence
         run: |
           set -euo pipefail
