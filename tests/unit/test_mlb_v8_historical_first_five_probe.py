@@ -75,7 +75,19 @@ def test_probe_config_disables_unbounded_market_families():
     assert config.max_estimated_credits_per_cycle == 500
 
 
-def test_probe_source_is_shadow_only_and_training_ineligible():
+def test_safe_wrapper_redacts_plain_and_query_string_api_keys(monkeypatch):
+    import run_mlb_v8_historical_first_five_probe_safe as safe
+
+    monkeypatch.setenv("ODDS_API_KEY", "plain-secret")
+    value = safe._redact(
+        "plain-secret https://example.test?apiKey=url%2Fencoded-secret&markets=h2h"
+    )
+    assert "plain-secret" not in value
+    assert "url%2Fencoded-secret" not in value
+    assert "apiKey=[REDACTED]" in value
+
+
+def test_probe_source_is_shadow_only_training_ineligible_and_exactly_addressed():
     source = Path("scripts/run_mlb_v8_historical_first_five_probe.py").read_text()
     safe = Path("scripts/run_mlb_v8_historical_first_five_probe_safe.py").read_text()
     assert '"authority": "SHADOW_ONLY"' in source
@@ -86,3 +98,5 @@ def test_probe_source_is_shadow_only_and_training_ineligible():
     assert "put_item(" not in source
     assert "lambda.invoke(" not in source
     assert "probe.HTTP_RETRIES = 1" in safe
+    assert "hashlib.sha256(body).hexdigest()" in safe
+    assert 'apiKey=)[^&\\s\\\"\']+' in safe
