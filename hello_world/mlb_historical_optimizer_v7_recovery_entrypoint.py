@@ -16,12 +16,13 @@ import mlb_historical_supervised_v9 as supervised_v9
 import mlb_historical_supervised_v9_integrity_v2 as supervised_integrity_v2
 import mlb_historical_v7_learning_cadence_v1 as learning_cadence
 import mlb_historical_v7_priority_repairs_v1 as priority_repairs
+import mlb_historical_v7_selected_pick_bands_v1 as selected_pick_bands
 import mlb_historical_v7_selective_objective_v1 as selective_objective
 import mlb_historical_v7_selective_search_v2 as selective_search_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v12-selective-search-v2-active"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v13-selected-pick-bands"
 
 round_extension.install(base.optimizer_handler)
 odds_market_v8.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
@@ -31,6 +32,7 @@ supervised_integrity_v2.install(supervised_v9)
 supervised_v9.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
 selective_objective.install(base.optimizer_handler.optimizer)
 selective_search_v2.install(base.optimizer_handler.optimizer)
+selected_pick_bands.install(selective_search_v2, base.optimizer_handler.optimizer)
 learning_cadence.install(base.optimizer_handler, supervised_v9)
 
 
@@ -65,6 +67,7 @@ def _with_shadow_contract(value: Any) -> Any:
                 "priorityRepairsVersion": priority_repairs.VERSION,
                 "selectiveObjectiveVersion": selective_objective.VERSION,
                 "selectiveSearchVersion": selective_search_v2.VERSION,
+                "selectedPickBandDiagnosticsVersion": selected_pick_bands.VERSION,
                 "shadowRefitIncrementGames": priority_repairs.SHADOW_REFIT_INCREMENT_GAMES,
                 "lightweightSelectiveEvaluationIncrementGames": selective_search_v2.LIGHTWEIGHT_EVALUATION_INCREMENT_GAMES,
                 "fullSelectiveSearchIncrementGames": selective_search_v2.FULL_SEARCH_INCREMENT_GAMES,
@@ -81,6 +84,10 @@ def _with_shadow_contract(value: Any) -> Any:
                 "jointPolicyThresholdReliabilitySearch": True,
                 "calibrationTemperatureSearch": True,
                 "regimeDiagnosticsEnabled": True,
+                "selectedPickBandDiagnosticsEnabled": True,
+                "selectedPickBandDiagnosticsPersistOnRejectedCandidates": True,
+                "selectedPickBandDiagnosticsReportingOnly": True,
+                "incrementalAndCumulativeBandsReported": True,
                 "thresholdStabilityRequired": True,
                 "minimumSelectiveCoverage": selective_search_v2.MIN_COVERAGE,
                 "minimumSelectiveWalkForwardPicks": selective_search_v2.MIN_WALK_FORWARD_PICKS,
