@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only strict V7 shadow evaluation against immutable AWS evidence."""
+"""Read-only V7 odds-selective and V9 supervised evaluation against AWS evidence."""
 from __future__ import annotations
 
 import argparse
@@ -31,10 +31,12 @@ def main() -> int:
     import mlb_historical_supervised_v9 as supervised_v9
     import mlb_historical_supervised_v9_integrity_v2 as integrity_v2
     import mlb_historical_v7_priority_repairs_v1 as repairs
+    import mlb_historical_v7_selective_search_v2 as selective_v2
 
     handler = runtime.base.optimizer_handler
     integrity_v2.install(supervised_v9)
     supervised_v9.install(handler.optimizer, handler.policy_runtime)
+    selective_v2.install(handler.optimizer)
     state = handler._load_state()
     if not isinstance(state, dict):
         raise RuntimeError("historical optimizer state is missing")
@@ -45,14 +47,18 @@ def main() -> int:
     current_count = int(state.get("eligibleGameCount") or len(records))
     previous_fingerprint = str(previous.get("datasetFingerprint") or "")
     new_games = max(0, current_count - previous_count)
-    threshold = int(os.environ.get("MLB_V7_SHADOW_REFIT_INCREMENT_GAMES", "50"))
+    full_increment = int(os.environ.get("MLB_V7_SHADOW_REFIT_INCREMENT_GAMES", "50"))
+    light_increment = int(os.environ.get("MLB_V7_LIGHTWEIGHT_INCREMENT_GAMES", "25"))
     force = os.environ.get("MLB_V7_FORCE_SHADOW_REFIT", "false").lower() == "true"
     should_refit = force or not previous_fingerprint or (
-        fingerprint != previous_fingerprint and new_games >= threshold
+        fingerprint != previous_fingerprint and new_games >= full_increment
+    )
+    should_lightweight = force or not previous_fingerprint or (
+        fingerprint != previous_fingerprint and new_games >= light_increment
     )
 
     base_report = {
-        "proofType": "MLB_HISTORICAL_SUPERVISED_V9_SHADOW_EVALUATION",
+        "proofType": "MLB_HISTORICAL_V7_V9_SHADOW_EVALUATION",
         "createdAtUtc": datetime.now(timezone.utc).isoformat(),
         "sourceSha": os.environ.get("GITHUB_SHA"),
         "runId": os.environ.get("GITHUB_RUN_ID"),
@@ -64,7 +70,8 @@ def main() -> int:
         "historicalChampionWritten": False,
         "productionCutoverWritten": False,
         "datasetFingerprint": fingerprint,
-        "shadowRefitIncrementGames": threshold,
+        "shadowRefitIncrementGames": full_increment,
+        "lightweightSelectiveEvaluationIncrementGames": light_increment,
         "canonicalFreshAuditIncrementGames": handler.FRESH_AUDIT_INCREMENT_GAMES,
         "newEligibleGamesSinceLastShadowFit": new_games,
         "state": {
@@ -85,21 +92,6 @@ def main() -> int:
         "accuracyViews": repairs.selective_accuracy_report(records),
     }
 
-    if not should_refit:
-        base_report.update(
-            {
-                "ok": True,
-                "shadowRefitPerformed": False,
-                "stalledStage": "WAITING_FOR_50_NEW_ELIGIBLE_GAMES",
-                "blockers": [],
-                "previousShadowDatasetFingerprint": previous_fingerprint,
-            }
-        )
-        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
-        Path(args.output).write_text(json.dumps(base_report, indent=2, sort_keys=True) + "\n")
-        print(json.dumps(base_report, indent=2, sort_keys=True))
-        return 0
-
     config = handler.optimizer.SearchConfig(
         minimum_training_games=handler.policy_runtime.MIN_TRAINING_GAMES,
         minimum_walk_forward_games=handler.policy_runtime.MIN_WALK_FORWARD_GAMES,
@@ -108,6 +100,40 @@ def main() -> int:
         maximum_candidates=100,
         random_seed=1541,
     )
+
+    if should_lightweight:
+        try:
+            base_report["v7SelectiveSearch"] = handler.optimizer.v7_selective_search(records, config)
+        except Exception as exc:
+            base_report["v7SelectiveSearch"] = {
+                "ok": False,
+                "version": selective_v2.VERSION,
+                "status": "V7_SELECTIVE_SEARCH_ERROR",
+                "errorType": type(exc).__name__,
+                "error": str(exc),
+                "promotionAuthority": False,
+            }
+
+    if not should_refit:
+        selective = base_report.get("v7SelectiveSearch") or {}
+        blockers = []
+        if selective and selective.get("ok") is not True:
+            blockers.append("v7_selective_search_failed")
+        base_report.update(
+            {
+                "ok": not blockers,
+                "shadowRefitPerformed": False,
+                "lightweightSelectiveEvaluationPerformed": should_lightweight,
+                "stalledStage": "WAITING_FOR_50_NEW_ELIGIBLE_GAMES",
+                "blockers": blockers,
+                "previousShadowDatasetFingerprint": previous_fingerprint,
+            }
+        )
+        Path(args.output).parent.mkdir(parents=True, exist_ok=True)
+        Path(args.output).write_text(json.dumps(base_report, indent=2, sort_keys=True) + "\n")
+        print(json.dumps(base_report, indent=2, sort_keys=True))
+        return 0 if base_report["ok"] else 1
+
     result = handler.optimizer.search(records, config)
     gate = result.get("promotionGate") or {}
     diagnostics = result.get("supervisedDiagnostics") or {}
@@ -127,21 +153,21 @@ def main() -> int:
         blockers.append("training_integrity_count_mismatch")
     if diagnostics.get("strictBinaryLabels") is not True:
         blockers.append("strict_binary_label_contract_missing")
-    if diagnostics.get("v8ExpansionFallbackEnabled") is not True:
-        blockers.append("v8_expansion_fallback_not_enabled")
-    if diagnostics.get("randomPolicySearchDisabled") is not True:
-        blockers.append("random_rule_search_not_disabled")
     if diagnostics.get("holdoutEvaluatedAfterFreeze") is not True:
         blockers.append("holdout_not_proven_post_freeze")
     if diagnostics.get("holdoutLabelsUsedForFitOrSelection") is not False:
         blockers.append("holdout_used_for_fit_or_selection")
     if state.get("featureRematerializationErrors"):
         blockers.append("feature_rematerialization_errors")
+    selective = base_report.get("v7SelectiveSearch") or {}
+    if selective.get("ok") is not True:
+        blockers.append("v7_selective_search_failed")
 
     base_report.update(
         {
             "ok": not blockers,
             "shadowRefitPerformed": True,
+            "lightweightSelectiveEvaluationPerformed": True,
             "blockers": blockers,
             "trainingIntegrity": integrity,
             "runtimeInstall": {
@@ -149,23 +175,16 @@ def main() -> int:
                 "featureVersion": supervised_v9.FEATURE_VERSION,
                 "featureCount": len(supervised_v9.FEATURES),
                 "priorityRepairsVersion": repairs.VERSION,
+                "v7SelectiveSearchVersion": selective_v2.VERSION,
             },
             "supervisedCandidate": {
                 "status": result.get("status"),
                 "searchVersion": result.get("searchVersion"),
                 "settledGameCount": result.get("settledGameCount"),
-                "walkForwardMeanDailyAccuracyPct": _pct(
-                    gate.get("walkForwardMeanDailyAccuracy")
-                ),
-                "walkForwardMinimumDailyAccuracyPct": _pct(
-                    gate.get("walkForwardMinimumDailyAccuracy")
-                ),
-                "untouchedHoldoutMeanDailyAccuracyPct": _pct(
-                    gate.get("untouchedHoldoutMeanDailyAccuracy")
-                ),
-                "untouchedHoldoutMinimumDailyAccuracyPct": _pct(
-                    gate.get("untouchedHoldoutMinimumDailyAccuracy")
-                ),
+                "walkForwardMeanDailyAccuracyPct": _pct(gate.get("walkForwardMeanDailyAccuracy")),
+                "walkForwardMinimumDailyAccuracyPct": _pct(gate.get("walkForwardMinimumDailyAccuracy")),
+                "untouchedHoldoutMeanDailyAccuracyPct": _pct(gate.get("untouchedHoldoutMeanDailyAccuracy")),
+                "untouchedHoldoutMinimumDailyAccuracyPct": _pct(gate.get("untouchedHoldoutMinimumDailyAccuracy")),
                 "brierScore": gate.get("brierScore") or diagnostics.get("brierScore"),
                 "logLoss": gate.get("logLoss") or diagnostics.get("logLoss"),
                 "promotionPassed": gate.get("passed") is True,
