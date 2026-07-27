@@ -1,9 +1,9 @@
-"""Historical recovery entrypoint with trainable V8 shadow metadata.
+"""Historical recovery entrypoint with trainable V8 and supervised metadata.
 
-The separate historical optimizer remains isolated from production selection.
-Expanded V8 market fields are propagated into rematerialized lock-bounded records
-for supervised shadow evaluation, but production authority remains unchanged until
-the existing chronological promotion gate passes.
+The historical optimizer evaluates the supervised challenger directly, but production
+selection remains protected by the existing chronological every-slate 80% promotion
+gate. Expanded V8 fields and strict training-integrity evidence remain shadow-only
+until that gate and a fresh prospective audit pass.
 """
 from __future__ import annotations
 
@@ -12,24 +12,31 @@ from typing import Any, Dict, Mapping
 import mlb_historical_feature_rematerialization_v1 as rematerialization
 import mlb_historical_optimizer_entrypoint as base
 import mlb_historical_round_extension_v1 as round_extension
+import mlb_historical_supervised_v9 as supervised_v9
+import mlb_historical_supervised_v9_integrity_v2 as supervised_integrity_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v7-supervised-v8-rematerialization-proof"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v8-supervised-v9-integrity-active"
 
-# Reopen only a terminal rejected state that was caused by the previous six-round
-# deployment ceiling. The patch requires a strictly later untouched-audit start
-# and leaves every prior experiment and promotion decision immutable.
+# Reopen only a terminal rejected state that was caused by the previous deployment
+# ceiling. Prior experiments and promotion decisions remain immutable.
 round_extension.install(base.optimizer_handler)
 
-# Normalize any expanded markets already present in immutable historical payloads.
+# Normalize expanded markets already present in immutable historical payloads.
 # This performs no additional provider request and does not grant V8 authority.
 odds_market_v8.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
 
-# Promote V8 fields from event shadow metadata into versioned side-signal features
-# for the supervised challenger. Missing historical fields stay explicit and zero
-# provider calls are made during rematerialization.
+# Promote expanded fields and provider event IDs into versioned side-signal metadata.
+# Missing historical fields remain explicit; rematerialization makes zero provider calls.
 supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerialization)
+
+# Install strict labels, V8 payload fallback and richer pre-lock pattern interactions
+# before activating the supervised search. The active historical search can produce a
+# challenger, but cannot create production authority unless the existing 80%-every-day
+# walk-forward and untouched-audit gate passes.
+supervised_integrity_v2.install(supervised_v9)
+supervised_v9.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
 
 
 def _request_mode(event: Any) -> str:
@@ -52,11 +59,20 @@ def _with_shadow_contract(value: Any) -> Any:
             "supervisedShadow",
             {
                 "authority": "SHADOW_ONLY",
+                "authorityMayChangeOnlyAfterPromotionGate": True,
                 "productionAuthorityChanged": False,
                 "datasetPatchVersion": supervised_v8_dataset.VERSION,
                 "featureDatasetVersion": supervised_v8_dataset.FEATURE_DATASET_VERSION,
+                "modelVersion": supervised_v9.VERSION,
+                "featureVersion": supervised_v9.FEATURE_VERSION,
+                "integrityPatchVersion": supervised_integrity_v2.VERSION,
+                "strictBinaryLabels": True,
+                "missingLabelsCoercedToAwayWin": False,
+                "v8ExpansionFallbackEnabled": True,
                 "sameSlateOutcomeFeaturesProhibited": True,
                 "providerCallsRequiredForRematerialization": 0,
+                "promotionRequiresEverySlateAtLeast80Pct": True,
+                "freshProspectiveAuditRequiredBeforeProduction": True,
             },
         )
         value.setdefault("version", VERSION)
@@ -64,9 +80,8 @@ def _with_shadow_contract(value: Any) -> Any:
 
 
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
-    # Status is strictly read-only. Route it directly to the canonical handler so
-    # it never competes for the rematerialization/orchestration lease and never
-    # performs range-extension mutation before returning durable state.
+    # Status is strictly read-only. Route it directly to the canonical handler so it
+    # never competes for the rematerialization/orchestration lease.
     if _request_mode(event) == "status":
         return _with_shadow_contract(base.optimizer_handler.lambda_handler(event, context))
 
@@ -74,6 +89,5 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     if migration is not None:
         return _with_shadow_contract(migration)
 
-    # The base entrypoint owns competitive-range repair and extension exactly
-    # once. Do not invoke its range-extension helper separately here.
+    # The base entrypoint owns competitive-range repair and extension exactly once.
     return _with_shadow_contract(base.lambda_handler(event, context))
