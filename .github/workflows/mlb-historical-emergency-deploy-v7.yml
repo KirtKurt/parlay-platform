@@ -5,10 +5,17 @@ name: MLB Historical Emergency Deploy V7
     branches: [main]
     paths:
       - '.github/workflows/mlb-historical-emergency-deploy-v7.yml'
+      - 'hello_world/mlb_historical_optimizer_handler.py'
+      - 'hello_world/mlb_historical_daily_optimizer_v1.py'
+      - 'mlb_historical_optimizer/**'
   workflow_dispatch:
 
 permissions:
   contents: write
+
+concurrency:
+  group: mlb-historical-emergency-deploy-v7
+  cancel-in-progress: false
 
 env:
   HIST_STACK: parlay-platform-mlb-historical-optimizer
@@ -59,9 +66,9 @@ jobs:
               "OddsApiKey=${ODDS_API_KEY_VALUE}" \
               'TargetSnapshotsTable=parlay_platform_snapshots' \
               'HistoricalStartDate=2025-04-01' \
-              'HistoricalEndDate=2025-08-31' \
-              'HistoricalTargetGames=1600' \
-              'HistoricalMaxCredits=120000' \
+              'HistoricalEndDate=2026-07-26' \
+              'HistoricalTargetGames=3127' \
+              'HistoricalMaxCredits=250000' \
               'HistoricalRequestsPerRun=100' \
               'HistoricalMaxCandidates=25000' \
               'HistoricalMaxOptimizationRounds=6' \
@@ -87,11 +94,18 @@ jobs:
           set -euo pipefail
           for n in 1 2 3; do
             aws lambda invoke --function-name "$HIST_FN" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload "{\"mode\":\"orchestrate\",\"run\":\"emergency_v7_${n}\"}" "/tmp/run${n}.json" >/tmp/meta.json
+            python - <<'PY'
+import json, glob
+for path in sorted(glob.glob('/tmp/run*.json')):
+    value=json.load(open(path))
+    if value.get('FunctionError') or value.get('errorMessage'):
+        raise SystemExit(f'Lambda invocation failed: {path}: {value}')
+PY
             sleep 8
           done
           aws lambda invoke --function-name "$HIST_FN" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"emergency_v7_status"}' /tmp/status.json >/tmp/status-meta.json
 
-      - name: Publish verified proof
+      - name: Build verified proof
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -109,18 +123,43 @@ jobs:
             'eligibleGameCount': state.get('eligibleGameCount'),
             'completeSlateCount': state.get('completeSlateCount'),
             'optimizationRound': state.get('optimizationRound'),
+            'revision': state.get('revision'),
+            'creditsConsumed': state.get('creditsConsumed'),
             'lastError': state.get('lastError'),
           }
           print(json.dumps(proof,indent=2))
+          assert proof['lastError'] in (None, '', []), proof
           assert 'too stale for a 15-minute grid' not in str(proof['lastError'] or ''), proof
-          assert (proof['currentDate'], int(proof['currentSlotIndex'] or 0)) != ('2025-04-14',72), proof
+          assert int(proof['eligibleGameCount'] or 0) > 0, proof
+          assert int(proof['completeSlateCount'] or 0) > 0, proof
           os.makedirs('docs/runtime',exist_ok=True)
           json.dump(proof,open('docs/runtime/mlb-historical-emergency-v7-proof.json','w'),indent=2)
           PY
+
+      - name: Upload proof artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-historical-emergency-v7-proof
+          path: docs/runtime/mlb-historical-emergency-v7-proof.json
+          if-no-files-found: error
+
+      - name: Publish verified proof to main
+        run: |
+          set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add docs/runtime/mlb-historical-emergency-v7-proof.json
+          if git diff --cached --quiet; then
+            echo 'Proof unchanged; nothing to publish.'
+            exit 0
+          fi
           git commit -m 'chore: publish MLB historical emergency v7 proof'
-          git push
-
-# activation: 2026-07-26 V7 historical learning restart
+          for attempt in 1 2 3 4 5; do
+            if git pull --rebase origin main && git push origin HEAD:main; then
+              exit 0
+            fi
+            git rebase --abort || true
+            sleep $((attempt * 5))
+          done
+          echo 'Unable to publish proof after five retries.' >&2
+          exit 1
