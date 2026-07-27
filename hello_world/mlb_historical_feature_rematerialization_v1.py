@@ -15,7 +15,7 @@ from typing import Any, Dict, Mapping, Optional
 
 import mlb_historical_optimizer_handler as handler
 
-VERSION = "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.1-v7-quarantine-aware"
+VERSION = "MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.2-fail-closed-migration-state"
 FEATURE_DATASET_VERSION = "MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack"
 BATCH_SIZE = max(1, min(5, int(os.environ.get("MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN", "2"))))
 ELIGIBLE_PHASES = {
@@ -119,6 +119,28 @@ def _rebuild_slate(day: str) -> Dict[str, Any]:
     }
 
 
+def _migration_is_current(state: Mapping[str, Any]) -> bool:
+    return str(state.get("featureRematerializationTargetDatasetVersion") or "") == FEATURE_DATASET_VERSION
+
+
+def _begin_migration(state: Dict[str, Any], completed_count: int) -> None:
+    prior_phase = str(state.get("phase") or "")
+    if prior_phase not in {"REMATERIALIZING_FEATURES", "FEATURE_REMATERIALIZATION_BLOCKED"}:
+        state["featureRematerializationPreviousPhase"] = prior_phase
+    elif not state.get("featureRematerializationPreviousPhase"):
+        state["featureRematerializationPreviousPhase"] = "BACKFILLING"
+    state["featureRematerializationStartedAtUtc"] = _now_iso()
+    state["featureRematerializationTargetDatasetVersion"] = FEATURE_DATASET_VERSION
+    state["featureRematerializationTargetVersion"] = VERSION
+    state["featureRematerializationCursor"] = 0
+    state["featureRematerializedSlateCount"] = 0
+    state["featureRematerializationTotalSlateCount"] = completed_count
+    state["featureRematerializationComplete"] = False
+    state["featureRematerializationErrors"] = []
+    state["phase"] = "REMATERIALIZING_FEATURES"
+    state["lastError"] = None
+
+
 def run_once() -> Optional[Dict[str, Any]]:
     owner = f"feature-rematerialization-{uuid.uuid4()}"
     if not handler._acquire_lease(owner):
@@ -127,7 +149,13 @@ def run_once() -> Optional[Dict[str, Any]]:
         state = handler._load_state()
         if not isinstance(state, dict):
             return None
-        if state.get("featureDatasetVersion") == FEATURE_DATASET_VERSION and state.get("featureRematerializationComplete") is True:
+        if (
+            state.get("featureDatasetVersion") == FEATURE_DATASET_VERSION
+            and state.get("featureRematerializationComplete") is True
+            and int(state.get("featureRematerializedSlateCount") or 0)
+            == int(state.get("featureRematerializationTotalSlateCount") or 0)
+            and not state.get("featureRematerializationErrors")
+        ):
             return None
         if state.get("phase") not in ELIGIBLE_PHASES:
             return None
@@ -137,15 +165,24 @@ def run_once() -> Optional[Dict[str, Any]]:
         )
         if not completed:
             return None
-        prior_phase = state.get("phase")
-        if prior_phase not in {"REMATERIALIZING_FEATURES", "FEATURE_REMATERIALIZATION_BLOCKED"}:
-            state["featureRematerializationPreviousPhase"] = prior_phase
-            state["featureRematerializationStartedAtUtc"] = _now_iso()
-            state["featureRematerializationCursor"] = 0
-            state["featureRematerializationErrors"] = []
-        state["phase"] = "REMATERIALIZING_FEATURES"
-        state["lastError"] = None
+
+        # A new feature contract must reset all migration counters even when a
+        # previous migration was already marked complete or was interrupted in a
+        # rematerializing phase. Never expose a stale true completion flag while
+        # completed-slate pointers contain mixed dataset versions.
+        if not _migration_is_current(state):
+            _begin_migration(state, len(completed))
+            state = handler._save_state(state)
+        else:
+            state["featureRematerializationComplete"] = False
+            state["featureRematerializationTotalSlateCount"] = len(completed)
+            state["phase"] = "REMATERIALIZING_FEATURES"
+            state["lastError"] = None
+
         cursor = int(state.get("featureRematerializationCursor") or 0)
+        if cursor < 0 or cursor > len(completed):
+            _begin_migration(state, len(completed))
+            cursor = 0
         stop = min(len(completed), cursor + BATCH_SIZE)
         for index in range(cursor, stop):
             day = str(completed[index].get("slateDateEt") or "")
@@ -155,6 +192,7 @@ def run_once() -> Optional[Dict[str, Any]]:
                 completed[index] = _rebuild_slate(day)
             except Exception as exc:
                 state["phase"] = "FEATURE_REMATERIALIZATION_BLOCKED"
+                state["featureRematerializationComplete"] = False
                 state["lastError"] = f"feature rematerialization failed for {day}: {type(exc).__name__}:{str(exc)[:300]}"
                 errors = state.setdefault("featureRematerializationErrors", [])
                 marker = {"slateDateEt": day, "error": state["lastError"], "recordedAtUtc": _now_iso()}
@@ -167,6 +205,7 @@ def run_once() -> Optional[Dict[str, Any]]:
             state["featureRematerializationCursor"] = index + 1
             state["featureRematerializedSlateCount"] = index + 1
             state["featureRematerializationTotalSlateCount"] = len(completed)
+            state["featureRematerializationComplete"] = False
             state["lastRematerializedSlateDate"] = day
             state["featureRematerializationErrors"] = []
             handler._save_state(state)
@@ -180,9 +219,12 @@ def run_once() -> Optional[Dict[str, Any]]:
         state["completeSlateCount"] = len(completed)
         state["featureDatasetVersion"] = FEATURE_DATASET_VERSION
         state["featureRematerializationVersion"] = VERSION
+        state["featureRematerializationTargetDatasetVersion"] = FEATURE_DATASET_VERSION
+        state["featureRematerializationTargetVersion"] = VERSION
         state["featureRematerializationComplete"] = True
         state["featureRematerializationCompletedAtUtc"] = _now_iso()
         state["featureRematerializedSlateCount"] = len(completed)
+        state["featureRematerializationTotalSlateCount"] = len(completed)
         state["featureRematerializationPaidHistoricalCalls"] = 0
         state["featureRematerializationErrors"] = []
         if state.get("freshAuditExpansionRequired") is True:
