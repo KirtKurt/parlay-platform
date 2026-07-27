@@ -1,9 +1,9 @@
-"""Historical recovery entrypoint with trainable V8 and supervised metadata.
+"""Historical recovery entrypoint with independent V7 and V9 shadow learning.
 
-The historical optimizer now evaluates V7 as a selective individual-game odds
-learner with an explicit PICK/PASS objective. Production selection remains
-fail-closed: the selective threshold is frozen on walk-forward evidence and a
-fresh chronological untouched audit must pass before authority can change.
+V7 owns immutable odds-only learning and now searches a selective PICK/PASS
+objective. V8 remains the separate fundamentals ingestion path. V9 may consume both
+later, but neither shadow learner can change production authority without a fresh
+chronological audit and the canonical promotion write path.
 """
 from __future__ import annotations
 
@@ -17,33 +17,20 @@ import mlb_historical_supervised_v9_integrity_v2 as supervised_integrity_v2
 import mlb_historical_v7_learning_cadence_v1 as learning_cadence
 import mlb_historical_v7_priority_repairs_v1 as priority_repairs
 import mlb_historical_v7_selective_objective_v1 as selective_objective
+import mlb_historical_v7_selective_search_v2 as selective_search_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v11.1-selective-objective-active"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v12-selective-search-v2-active"
 
-# Reopen only a terminal rejected state caused by the previous deployment ceiling.
 round_extension.install(base.optimizer_handler)
-
-# Normalize expanded markets already present in immutable historical payloads.
 odds_market_v8.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
-
-# Promote expanded fields and provider event IDs into versioned side-signal metadata.
 supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerialization)
-
-# Add separate starter/bullpen/lineup features and explicit missingness before V9
-# creates defaults, bounds, and fitted coefficients for its feature list.
 priority_repairs.install_feature_repairs(supervised_v9)
-
-# Install strict labels and the deterministic supervised search.
 supervised_integrity_v2.install(supervised_v9)
 supervised_v9.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
-
-# Change V7 evaluation from forced full-slate prediction to a frozen PICK/PASS
-# selective objective. This remains fail-closed and cannot self-promote.
 selective_objective.install(base.optimizer_handler.optimizer)
-
-# Keep shadow-refit cadence separate from the canonical 200-game promotion audit.
+selective_search_v2.install(base.optimizer_handler.optimizer)
 learning_cadence.install(base.optimizer_handler, supervised_v9)
 
 
@@ -77,21 +64,29 @@ def _with_shadow_contract(value: Any) -> Any:
                 "learningCadenceVersion": learning_cadence.VERSION,
                 "priorityRepairsVersion": priority_repairs.VERSION,
                 "selectiveObjectiveVersion": selective_objective.VERSION,
+                "selectiveSearchVersion": selective_search_v2.VERSION,
                 "shadowRefitIncrementGames": priority_repairs.SHADOW_REFIT_INCREMENT_GAMES,
+                "lightweightSelectiveEvaluationIncrementGames": selective_search_v2.LIGHTWEIGHT_EVALUATION_INCREMENT_GAMES,
+                "fullSelectiveSearchIncrementGames": selective_search_v2.FULL_SEARCH_INCREMENT_GAMES,
                 "canonicalFreshAuditIncrementGames": base.optimizer_handler.FRESH_AUDIT_INCREMENT_GAMES,
                 "shadowRefitsMayPromote": False,
                 "strictBinaryLabels": True,
                 "missingLabelsCoercedToAwayWin": False,
-                "v8ExpansionFallbackEnabled": True,
                 "sameSlateOutcomeFeaturesProhibited": True,
                 "providerCallsRequiredForRematerialization": 0,
+                "v7InputAuthority": "ODDS_ONLY",
+                "v8InputAuthority": "FUNDAMENTALS_ONLY",
                 "objective": "selective_individual_game_accuracy",
                 "pickPassEnabled": True,
-                "minimumSelectiveCoverage": selective_objective.MIN_COVERAGE,
-                "minimumSelectiveWalkForwardPicks": selective_objective.MIN_WALK_FORWARD_PICKS,
-                "minimumSelectiveUntouchedPicks": selective_objective.MIN_UNTOUCHED_PICKS,
-                "productionSelectiveAccuracy": selective_objective.PRODUCTION_ACCURACY,
-                "eliteSelectiveAccuracy": selective_objective.ELITE_ACCURACY,
+                "jointPolicyThresholdReliabilitySearch": True,
+                "calibrationTemperatureSearch": True,
+                "regimeDiagnosticsEnabled": True,
+                "thresholdStabilityRequired": True,
+                "minimumSelectiveCoverage": selective_search_v2.MIN_COVERAGE,
+                "minimumSelectiveWalkForwardPicks": selective_search_v2.MIN_WALK_FORWARD_PICKS,
+                "minimumSelectiveUntouchedPicks": selective_search_v2.MIN_UNTOUCHED_PICKS,
+                "productionSelectiveAccuracy": selective_search_v2.PRODUCTION_ACCURACY,
+                "eliteSelectiveAccuracy": selective_search_v2.ELITE_ACCURACY,
                 "thresholdFrozenBeforeUntouchedHoldout": True,
                 "freshProspectiveAuditRequiredBeforeProduction": True,
                 "candidateHandoffRequiresCanonicalReevaluation": True,
@@ -103,12 +98,9 @@ def _with_shadow_contract(value: Any) -> Any:
 
 
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
-    # Status is strictly read-only and does not compete for the optimizer lease.
     if _request_mode(event) == "status":
         return _with_shadow_contract(base.optimizer_handler.lambda_handler(event, context))
-
     migration = rematerialization.run_once()
     if migration is not None:
         return _with_shadow_contract(migration)
-
     return _with_shadow_contract(base.lambda_handler(event, context))
