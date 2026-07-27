@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-VERSION = "MLB-OFFICIAL-LOCK-QUALITY-v1-60pct-confirmed-direction"
+VERSION = "MLB-OFFICIAL-LOCK-QUALITY-v2-60pct-confirmed-high-movement"
 MIN_OFFICIAL_PROBABILITY_PCT = 60.0
 MAX_UNCONFIRMED_REVERSALS = 1
 MAX_UNCONFIRMED_BOOK_DIVERGENCE = 0.035
+HIGH_POSITIVE_MOVEMENT_DELTA = 0.018
 
 
 def _f(value: Any, default: Optional[float] = None) -> Optional[float]:
@@ -129,6 +130,9 @@ def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]
         reasons.append("resistance_against_selection")
     if delta is not None and delta < 0.0:
         reasons.append("movement_against_selected_team")
+    high_positive_movement = bool(delta is not None and delta >= HIGH_POSITIVE_MOVEMENT_DELTA)
+    if high_positive_movement and not confirmation["independentConfirmation"]:
+        reasons.append("high_positive_movement_without_independent_confirmation")
     if reversals > MAX_UNCONFIRMED_REVERSALS and not confirmation["independentConfirmation"]:
         reasons.append("multiple_reversals_without_independent_confirmation")
     if divergence >= MAX_UNCONFIRMED_BOOK_DIVERGENCE and not confirmation["independentConfirmation"]:
@@ -167,14 +171,17 @@ def evaluate(row: Dict[str, Any], accuracy_module: Any = None) -> Dict[str, Any]
         "selectedTeamProbabilityPct": probability_pct,
         "reversalCount": reversals,
         "selectedMovement": delta,
+        "highPositiveMovementThreshold": HIGH_POSITIVE_MOVEMENT_DELTA,
+        "highPositiveMovement": high_positive_movement,
         "bookDivergence": round(divergence, 6),
         "lateDirectionConflict": late_conflict,
         **confirmation,
         "reasons": reasons,
         "policy": (
             "A canonical locked winner remains visible and auditable, but it is official-target eligible only at "
-            "60% or higher with direction integrity. Multiple reversals, late conflict, resistance, compressed "
-            "markets, or high divergence require independent book agreement plus steam or run-line confirmation."
+            "60% or higher with direction integrity. Multiple reversals, high positive movement, late conflict, "
+            "resistance, compressed markets, or high divergence require independent book agreement plus steam or "
+            "run-line confirmation."
         ),
     }
 
