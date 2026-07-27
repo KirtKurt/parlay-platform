@@ -1,19 +1,40 @@
 {
+  "artifact": {
+    "alreadyExisted": false,
+    "bucket": "parlay-platform-mlb-odds-v8--shadowartifactsbucket-i9zj7b1lvqey",
+    "etag": "8e51355da16c876c119fc0b9725716c3",
+    "key": "mlb/v8/historical-first-five-probes/0a40d8d26c1d13cf964d5cac761b7f2b691487064fb3bd1abc666873ddf98a46.json",
+    "sha256": "0a40d8d26c1d13cf964d5cac761b7f2b691487064fb3bd1abc666873ddf98a46",
+    "versionId": "Tv_txiX0AD63WwCnmjUf_dX89Xs3va9f"
+  },
   "authority": "SHADOW_ONLY",
   "automaticWagerAllowed": false,
-  "blockers": [
-    "historical_first_five_probe_failed_before_report"
-  ],
-  "createdAtUtc": "2026-07-27T00:41:06.278011+00:00",
-  "errorLogTail": "{\"authority\": \"SHADOW_ONLY\", \"automaticWagerAllowed\": false, \"error\": \"RuntimeError:completed_slate_wrong_dataset:mlb/historical-daily-v1/datasets-versioned/2026-05-14/ad36f0281357a293c27ba3ec8e1057aa6928b3ee7da0cc93a918dfa7f07fe92e.json\", \"ok\": false, \"productionAuthorityChanged\": false, \"trainingEligible\": false}\n",
+  "blockers": [],
+  "completeGameCount": 20,
+  "coverage": 1.0,
+  "createdAtUtc": "2026-07-27T01:24:44.038489+00:00",
+  "errorCount": 0,
+  "errors": [],
+  "expectedMarketRequestCount": 40,
   "maximumCredits": 500,
-  "ok": false,
-  "probeExitCode": "",
-  "probeOutcome": "failure",
+  "ok": true,
   "productionAuthorityChanged": false,
   "proofType": "MLB_V8_HISTORICAL_FIRST_FIVE_PROBE",
-  "runId": "30227971759",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30227971759",
-  "sourceSha": "a3875b5e0295699b512cfc4735046ced715ef976",
-  "trainingEligible": false
+  "providerCreditsConsumed": 400,
+  "providerRemainingCredits": 4672852,
+  "runId": "30228736220",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30228736220",
+  "selectedGameCount": 20,
+  "selectionFingerprint": "57ee61962ecda1622d5576b9c19842e4810ce545e708af187a0762bb7c3a7e2a",
+  "sourceSha": "c33c9e4546bfbeba1944653be3a92d466e388b26",
+  "stateChecks": {
+    "expectedDataset": true,
+    "lastErrorEmpty": true,
+    "rematerializationComplete": true,
+    "rematerializationCountsMatch": true,
+    "rematerializationErrorsEmpty": true
+  },
+  "successfulMarketRequestCount": 40,
+  "trainingEligible": false,
+  "version": "MLB-V8-HISTORICAL-FIRST-FIVE-PROBE-v1"
 }
