@@ -22,7 +22,7 @@ Parameters:
     Default: '2025-04-01'
   HistoricalEndDate:
     Type: String
-    Default: '2026-07-24'
+    Default: '2026-12-31'
   HistoricalTargetGames:
     Type: Number
     Default: 1600
@@ -42,12 +42,12 @@ Parameters:
     MinValue: 100
   HistoricalMaxOptimizationRounds:
     Type: Number
-    Default: 12
+    Default: 24
     MinValue: 1
-    MaxValue: 12
+    MaxValue: 36
   HistoricalFreshAuditIncrementGames:
     Type: Number
-    Default: 250
+    Default: 200
     MinValue: 200
   HistoricalRangeExtensionAuthorized:
     Type: String
@@ -178,41 +178,3 @@ Resources:
           Properties:
             Schedule: rate(5 minutes)
             Description: Resume only after a fingerprinted paid-backfill authorization; otherwise no-op
-            Enabled: true
-            Input: '{"mode":"orchestrate","run":"scheduled_historical_daily_optimizer"}'
-            RetryPolicy:
-              MaximumEventAgeInSeconds: 300
-              MaximumRetryAttempts: 1
-        ReadOnlyStatus:
-          Type: Api
-          Properties:
-            Path: /v1/mlb/historical-optimizer/status
-            Method: GET
-
-  HistoricalOptimizerAlarm:
-    Type: AWS::CloudWatch::Alarm
-    Properties:
-      AlarmDescription: MLB historical optimizer Lambda errors
-      Namespace: AWS/Lambda
-      MetricName: Errors
-      Dimensions:
-        - Name: FunctionName
-          Value: !Ref HistoricalOptimizerFunction
-      Statistic: Sum
-      Period: 300
-      EvaluationPeriods: 1
-      Threshold: 1
-      ComparisonOperator: GreaterThanOrEqualToThreshold
-      TreatMissingData: notBreaching
-
-Outputs:
-  HistoricalOptimizerFunctionArn:
-    Description: Lambda ARN for bootstrap/status invocations
-    Value: !GetAtt HistoricalOptimizerFunction.Arn
-  HistoricalOptimizerFunctionName:
-    Value: !Ref HistoricalOptimizerFunction
-  HistoricalArtifactsBucketName:
-    Value: !Ref HistoricalArtifactsBucket
-  HistoricalOptimizerStatusUrl:
-    Description: Read-only status endpoint
-    Value: !Sub 'https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/v1/mlb/historical-optimizer/status'

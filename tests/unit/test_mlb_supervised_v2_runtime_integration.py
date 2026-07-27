@@ -20,7 +20,8 @@ def test_historical_template_accelerates_no_cost_rematerialization_safely():
     assert "MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN: '5'" in source
     assert "Timeout: 900" in source
     assert "HistoricalMaxOptimizationRounds:" in source
-    assert "Default: 12" in source
+    assert "Default: 24" in source
+    assert "MaxValue: 36" in source
 
 
 def test_event_id_installer_updates_workflows_without_authority_change():

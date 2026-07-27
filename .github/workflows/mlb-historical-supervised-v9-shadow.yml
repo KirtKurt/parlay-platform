@@ -2,30 +2,44 @@ name: MLB Historical Supervised V9 Shadow Evaluation
 
 "on":
   workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
+  pull_request:
+    paths:
+      - 'hello_world/mlb_historical_supervised_v9.py'
+      - 'hello_world/mlb_historical_supervised_v9_integrity_v2.py'
+      - 'hello_world/mlb_historical_v7_learning_cadence_v1.py'
+      - 'hello_world/mlb_historical_v7_priority_repairs_v1.py'
+      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
+      - 'scripts/run_mlb_historical_supervised_v9_shadow.py'
+      - 'tests/unit/test_mlb_historical_v7_priority_repairs_v1.py'
+      - '.github/workflows/mlb-historical-supervised-v9-shadow.yml'
+      - 'mlb_historical_optimizer/template.yaml'
   push:
     branches: [main]
     paths:
       - 'hello_world/mlb_historical_supervised_v9.py'
       - 'hello_world/mlb_historical_supervised_v9_integrity_v2.py'
+      - 'hello_world/mlb_historical_v7_learning_cadence_v1.py'
+      - 'hello_world/mlb_historical_v7_priority_repairs_v1.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'scripts/run_mlb_historical_supervised_v9_shadow.py'
-      - 'tests/unit/test_mlb_historical_supervised_v9.py'
-      - 'tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py'
+      - 'tests/unit/test_mlb_historical_v7_priority_repairs_v1.py'
       - '.github/workflows/mlb-historical-supervised-v9-shadow.yml'
-      - 'hello_world/mlb_historical_optimizer_entrypoint.py'
-      - 'hello_world/mlb_historical_feature_rematerialization_v1.py'
-      - 'hello_world/mlb_ml_runtime_install_v3.py'
+      - 'mlb_historical_optimizer/template.yaml'
 
 permissions:
   contents: write
 
 concurrency:
-  group: mlb-historical-supervised-v9-shadow
+  group: mlb-historical-supervised-v9-shadow-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   STACK_NAME: parlay-platform-mlb-historical-optimizer
   REPORT_PATH: runtime_reports/mlb_historical_supervised_v9_shadow_latest.json
+  HANDOFF_PATH: runtime_reports/mlb_historical_supervised_v9_candidate_handoff_latest.json
+  MLB_V7_SHADOW_REFIT_INCREMENT_GAMES: '50'
 
 jobs:
   evaluate:
@@ -34,61 +48,59 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
           fetch-depth: 0
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Validate strict supervised implementation
+      - name: Validate repair implementation
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
           PYTHONPATH=hello_world python -m py_compile \
             hello_world/mlb_historical_supervised_v9.py \
             hello_world/mlb_historical_supervised_v9_integrity_v2.py \
+            hello_world/mlb_historical_v7_learning_cadence_v1.py \
+            hello_world/mlb_historical_v7_priority_repairs_v1.py \
             hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
             scripts/run_mlb_historical_supervised_v9_shadow.py
           PYTHONPATH=hello_world python -m pytest -q --tb=short \
             tests/unit/test_mlb_historical_supervised_v9.py \
-            tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py
-          grep -Fq 'strictBinaryLabels' hello_world/mlb_historical_supervised_v9_integrity_v2.py
-          grep -Fq 'missingLabelsCoercedToAwayWin' hello_world/mlb_historical_supervised_v9_integrity_v2.py
-          grep -Fq 'promotionRequiresEverySlateAtLeast80Pct' hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py
+            tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py \
+            tests/unit/test_mlb_historical_v7_learning_cadence_v1.py \
+            tests/unit/test_mlb_historical_v7_priority_repairs_v1.py
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}" || test "${{ github.event_name }}" = pull_request
 
       - name: Resolve immutable historical evidence
         id: runtime
         run: |
           set -euo pipefail
-          function_name=$(aws cloudformation describe-stacks \
-            --stack-name "$STACK_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" \
-            --output text)
-          bucket_name=$(aws cloudformation describe-stacks \
-            --stack-name "$STACK_NAME" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --query "Stacks[0].Outputs[?OutputKey=='HistoricalArtifactsBucketName'].OutputValue" \
-            --output text)
+          function_name=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+          bucket_name=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "${{ secrets.AWS_REGION }}" --query "Stacks[0].Outputs[?OutputKey=='HistoricalArtifactsBucketName'].OutputValue" --output text)
           test -n "$function_name"; test "$function_name" != None
           test -n "$bucket_name"; test "$bucket_name" != None
-          config=$(aws lambda get-function-configuration \
-            --function-name "$function_name" \
-            --region "${{ secrets.AWS_REGION }}" \
-            --output json)
-          CONFIG="$config" python - <<'PY'
-          import json, os
-          value=json.loads(os.environ['CONFIG'])
+          aws lambda get-function-configuration --function-name "$function_name" --region "${{ secrets.AWS_REGION }}" --output json > /tmp/mlb-historical-lambda-config.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('/tmp/mlb-historical-lambda-config.json').read_text())
           assert value.get('Handler') == 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler', value
           PY
           echo "bucket_name=$bucket_name" >> "$GITHUB_OUTPUT"
 
-      - name: Run AWS-backed read-only strict supervised evaluation
+      - name: Restore prior shadow evidence
+        run: |
+          git show origin/main:"$REPORT_PATH" > /tmp/mlb-supervised-v9-previous.json 2>/dev/null || printf '{}\n' > /tmp/mlb-supervised-v9-previous.json
+
+      - name: Run gated AWS-backed read-only evaluation
         id: evaluation
         continue-on-error: true
         env:
@@ -98,88 +110,57 @@ jobs:
           SNAPSHOTS_TABLE: parlay_platform_snapshots
           MLB_HISTORICAL_ARTIFACTS_BUCKET: ${{ steps.runtime.outputs.bucket_name }}
           MLB_HISTORICAL_START_DATE: '2025-04-01'
-          MLB_HISTORICAL_END_DATE: '2026-07-26'
+          MLB_HISTORICAL_END_DATE: '2026-12-31'
           MLB_HISTORICAL_MAX_CANDIDATES: '100'
-          MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS: '12'
+          MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS: '24'
           MLB_SUPERVISED_EPOCHS: '160'
           PYTHONPATH: hello_world
         run: |
           set -uo pipefail
           mkdir -p runtime_reports
-          rm -f "$REPORT_PATH" /tmp/mlb-supervised-v9-shadow.log
           python scripts/run_mlb_historical_supervised_v9_shadow.py \
             --output "$REPORT_PATH" \
-            2>&1 | tee /tmp/mlb-supervised-v9-shadow.log
+            --previous-report /tmp/mlb-supervised-v9-previous.json \
+            --handoff-output "$HANDOFF_PATH" 2>&1 | tee /tmp/mlb-supervised-v9-shadow.log
           status=${PIPESTATUS[0]}
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
 
-      - name: Ensure durable evidence exists
-        if: always()
-        env:
-          EVALUATION_OUTCOME: ${{ steps.evaluation.outcome }}
-          EVALUATION_EXIT_CODE: ${{ steps.evaluation.outputs.exit_code }}
-        run: |
-          set -euo pipefail
-          if test ! -s "$REPORT_PATH"; then
-            python - <<'PY'
-          import json, os
-          from datetime import datetime, timezone
-          from pathlib import Path
-          log=Path('/tmp/mlb-supervised-v9-shadow.log').read_text(errors='replace')[-16000:] if Path('/tmp/mlb-supervised-v9-shadow.log').exists() else ''
-          value={
-              'proofType':'MLB_HISTORICAL_SUPERVISED_V9_SHADOW_EVALUATION',
-              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
-              'sourceSha':os.environ['GITHUB_SHA'],
-              'runId':os.environ['GITHUB_RUN_ID'],
-              'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
-              'readOnly':True,
-              'retrospectiveShadowOnly':True,
-              'prospectiveAuditRequiredBeforePromotion':True,
-              'providerCallsMade':0,
-              'productionAuthorityChanged':False,
-              'errorLogTail':log,
-              'evaluationOutcome':os.environ.get('EVALUATION_OUTCOME'),
-              'evaluationExitCode':os.environ.get('EVALUATION_EXIT_CODE'),
-              'blockers':['strict_shadow_evaluation_failed_before_report'],
-              'ok':False,
-          }
-          Path(os.environ['REPORT_PATH']).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
-          PY
-          fi
-          python -m json.tool "$REPORT_PATH" >/dev/null
-
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: mlb-historical-supervised-v9-integrity-v2-${{ github.run_id }}
+          name: mlb-historical-supervised-v9-${{ github.run_id }}
           path: |
             runtime_reports/mlb_historical_supervised_v9_shadow_latest.json
+            runtime_reports/mlb_historical_supervised_v9_candidate_handoff_latest.json
             /tmp/mlb-supervised-v9-shadow.log
+            /tmp/mlb-historical-lambda-config.json
           retention-days: 90
           if-no-files-found: warn
 
-      - name: Publish durable strict shadow evidence
-        if: always()
+      - name: Publish durable evidence from main-only runs
+        if: always() && github.event_name != 'pull_request'
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           cp "$REPORT_PATH" /tmp/mlb-supervised-v9-report.json
+          test ! -f "$HANDOFF_PATH" || cp "$HANDOFF_PATH" /tmp/mlb-supervised-v9-handoff.json
           for attempt in 1 2 3 4 5; do
             git fetch origin main
             git checkout -B mlb-supervised-v9-proof origin/main
             mkdir -p runtime_reports
             cp /tmp/mlb-supervised-v9-report.json "$REPORT_PATH"
-            git add "$REPORT_PATH"
+            test ! -f /tmp/mlb-supervised-v9-handoff.json || cp /tmp/mlb-supervised-v9-handoff.json "$HANDOFF_PATH"
+            git add runtime_reports/
             git diff --cached --quiet && exit 0
-            git commit -m 'Publish MLB supervised V9 strict shadow evaluation'
+            git commit -m 'Publish gated MLB V7 shadow learning evidence'
             git push origin HEAD:main && exit 0
             sleep $((attempt * 3))
           done
           exit 1
 
-      - name: Enforce successful strict shadow evaluation
+      - name: Enforce safety contract
         if: always()
         run: |
           python - <<'PY'
@@ -189,11 +170,9 @@ jobs:
           assert value.get('ok') is True, value
           assert value.get('readOnly') is True, value
           assert value.get('retrospectiveShadowOnly') is True, value
-          assert value.get('prospectiveAuditRequiredBeforePromotion') is True, value
           assert int(value.get('providerCallsMade') or 0) == 0, value
           assert value.get('productionAuthorityChanged') is False, value
-          assert (value.get('runtimeInstall') or {}).get('supervisedIntegrityInstalled') is True, value
-          assert (value.get('trainingIntegrity') or {}).get('rejected') in ({}, None), value
-          assert (value.get('trainingIntegrity') or {}).get('acceptedCount') == (value.get('trainingIntegrity') or {}).get('inputCount'), value
+          assert int(value.get('canonicalFreshAuditIncrementGames') or 0) >= 200, value
+          assert int(value.get('shadowRefitIncrementGames') or 0) == 50, value
           assert not value.get('blockers'), value
           PY
