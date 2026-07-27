@@ -200,12 +200,13 @@ def install(learner: Any) -> Any:
         original_search = optimizer.search
 
         def strict_search(records, config=None, *, untouched_holdout_dates=None):
-            verdict = integrity.validate_training_rows(records)
+            source_records = list(records or [])
+            verdict = integrity.validate_training_rows(source_records)
             rejected = copy.deepcopy(verdict.get("rejected") or {})
             accepted = list(verdict.get("accepted") or [])
             evidence = {
                 "version": VERSION,
-                "inputCount": len(list(records)) if not isinstance(records, list) else len(records),
+                "inputCount": len(source_records),
                 "acceptedCount": len(accepted),
                 "rejected": rejected,
                 "strictBinaryLabels": True,
