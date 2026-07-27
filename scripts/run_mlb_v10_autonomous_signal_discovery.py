@@ -39,6 +39,7 @@ def main() -> int:
     parser.add_argument("--force-full", action="store_true")
     args = parser.parse_args()
     path = Path(args.output)
+    previous_path = Path(args.previous) if args.previous else path
     started = datetime.now(timezone.utc)
 
     try:
@@ -48,29 +49,36 @@ def main() -> int:
         state = handler._load_state()
         if not isinstance(state, dict):
             raise RuntimeError("historical optimizer state is missing")
-        records = handler._load_training_records(state)
-        records = list(records or [])
+        records = list(handler._load_training_records(state) or [])
         if not records:
             raise RuntimeError("historical training corpus is empty")
 
-        report = v10.discover(records)
-        if int(report.get("settledGameCount") or 0) <= 0:
-            raise RuntimeError(f"no canonical settled records: {report.get('inputIntegrity')}")
-        previous = _load_previous(Path(args.previous)) if args.previous else None
+        clean, integrity = v10._deduplicate(records)
+        if not clean:
+            raise RuntimeError(f"no canonical settled records: {integrity}")
+        fingerprint = v10.dataset_fingerprint(clean)
+        previous = _load_previous(previous_path)
         unchanged = bool(
             previous
-            and previous.get("datasetFingerprint") == report.get("datasetFingerprint")
-            and previous.get("version") == report.get("version")
+            and previous.get("datasetFingerprint") == fingerprint
+            and previous.get("version") == v10.VERSION
+            and previous.get("ok") is True
             and not args.force_full
         )
         if unchanged:
-            report = dict(previous)
-            report["incrementalNoChange"] = True
-            report["reusedPriorRegistry"] = True
-        else:
-            report["incrementalNoChange"] = False
-            report["reusedPriorRegistry"] = False
+            _write(path, previous)
+            print(json.dumps({
+                "ok": True,
+                "version": previous.get("version"),
+                "settledGameCount": previous.get("settledGameCount"),
+                "datasetFingerprint": fingerprint,
+                "incrementalNoChange": True,
+                "fullRebuild": False,
+                "output": str(path),
+            }, indent=2, sort_keys=True))
+            return 0
 
+        report = v10.discover(clean)
         completed = datetime.now(timezone.utc)
         report.update({
             "ok": True,
@@ -83,7 +91,9 @@ def main() -> int:
             "durationSeconds": round((completed - started).total_seconds(), 3),
             "blockers": [],
             "storageReader": "mlb_historical_optimizer_handler_direct",
-            "fullRebuild": bool(args.force_full or not unchanged),
+            "incrementalNoChange": False,
+            "reusedPriorRegistry": False,
+            "fullRebuild": True,
         })
         report["state"] = {
             "phase": state.get("phase"),
@@ -101,7 +111,8 @@ def main() -> int:
             "generatedPatternCount": report.get("generatedPatternCount"),
             "retainedPatternCount": report.get("retainedPatternCount"),
             "datasetFingerprint": report.get("datasetFingerprint"),
-            "incrementalNoChange": report.get("incrementalNoChange"),
+            "incrementalNoChange": False,
+            "fullRebuild": True,
             "durationSeconds": report.get("durationSeconds"),
             "output": str(path),
         }, indent=2, sort_keys=True))
