@@ -1,0 +1,167 @@
+name: MLB V8 Historical First Five Probe Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v8-historical-first-five-probe-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v8-historical-first-five-probe-once
+  cancel-in-progress: true
+
+env:
+  REPORT_PATH: runtime_reports/mlb_v8_historical_first_five_probe_latest.json
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate bounded probe contracts
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          aws sts get-caller-identity >/tmp/mlb-v8-first-five-identity.json
+          python -m pip install --quiet 'boto3>=1.34,<2' 'requests>=2.31,<3' 'pytest>=8,<9'
+          PYTHONPATH=hello_world:scripts python -m py_compile \
+            scripts/run_mlb_v8_historical_first_five_probe.py \
+            scripts/run_mlb_v8_historical_first_five_probe_safe.py
+          PYTHONPATH=hello_world:scripts python -m pytest -q --tb=short \
+            tests/unit/test_mlb_v8_historical_first_five_probe.py
+          grep -Fq 'probe.HTTP_RETRIES = 1' scripts/run_mlb_v8_historical_first_five_probe_safe.py
+          grep -Fq 'DEFAULT_MAX_CREDITS = 500' scripts/run_mlb_v8_historical_first_five_probe.py
+          grep -Fq 'trainingEligible": False' scripts/run_mlb_v8_historical_first_five_probe.py
+
+      - name: Run 20-game historical first-five probe
+        id: probe
+        continue-on-error: true
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          PYTHONPATH: hello_world:scripts
+        run: |
+          set -o pipefail
+          mkdir -p runtime_reports
+          rm -f "$REPORT_PATH" /tmp/mlb-v8-first-five-probe.log
+          python scripts/run_mlb_v8_historical_first_five_probe_safe.py \
+            --region "$AWS_REGION_VALUE" \
+            --historical-stack parlay-platform-mlb-historical-optimizer \
+            --v8-stack parlay-platform-mlb-odds-v8-shadow \
+            --table-name parlay_platform_snapshots \
+            --limit 20 \
+            --max-credits 500 \
+            --output "$REPORT_PATH" \
+            2>&1 | tee /tmp/mlb-v8-first-five-probe.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Ensure exact durable evidence exists
+        if: always()
+        env:
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          PROBE_EXIT_CODE: ${{ steps.probe.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          if test ! -s "$REPORT_PATH"; then
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          log=Path('/tmp/mlb-v8-first-five-probe.log').read_text(errors='replace')[-16000:] if Path('/tmp/mlb-v8-first-five-probe.log').exists() else ''
+          secret=os.environ.get('ODDS_API_KEY','')
+          if secret:
+              log=log.replace(secret,'[REDACTED]')
+          value={
+              'proofType':'MLB_V8_HISTORICAL_FIRST_FIVE_PROBE',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ['GITHUB_SHA'],
+              'runId':os.environ['GITHUB_RUN_ID'],
+              'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'authority':'SHADOW_ONLY',
+              'trainingEligible':False,
+              'productionAuthorityChanged':False,
+              'automaticWagerAllowed':False,
+              'maximumCredits':500,
+              'probeOutcome':os.environ.get('PROBE_OUTCOME'),
+              'probeExitCode':os.environ.get('PROBE_EXIT_CODE'),
+              'errorLogTail':log,
+              'blockers':['historical_first_five_probe_failed_before_report'],
+              'ok':False,
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+          PY
+          fi
+          python -m json.tool "$REPORT_PATH" >/dev/null
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-v8-historical-first-five-probe-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_v8_historical_first_five_probe_latest.json
+            /tmp/mlb-v8-first-five-probe.log
+            /tmp/mlb-v8-first-five-identity.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish durable probe evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          cp "$REPORT_PATH" /tmp/mlb-v8-first-five-probe-report.json
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v8-first-five-probe-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-v8-first-five-probe-report.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V8 historical first-five probe evidence'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Enforce safe bounded probe
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('runtime_reports/mlb_v8_historical_first_five_probe_latest.json').read_text())
+          assert value.get('ok') is True, value
+          assert value.get('authority')=='SHADOW_ONLY', value
+          assert value.get('trainingEligible') is False, value
+          assert value.get('productionAuthorityChanged') is False, value
+          assert value.get('automaticWagerAllowed') is False, value
+          assert int(value.get('maximumCredits') or 0)==500, value
+          assert int(value.get('providerCreditsConsumed') or 0)<=500, value
+          assert int(value.get('selectedGameCount') or 0)==20, value
+          assert int(value.get('successfulMarketRequestCount') or 0)>0, value
+          assert not value.get('blockers'), value
+          PY
