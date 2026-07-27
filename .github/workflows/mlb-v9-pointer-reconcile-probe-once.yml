@@ -1,0 +1,294 @@
+name: MLB V9 Pointer Reconcile and First Five Probe Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v9-pointer-reconcile-probe-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v9-pointer-reconcile-probe-once
+  cancel-in-progress: true
+
+env:
+  STACK_NAME: parlay-platform-mlb-historical-optimizer
+  RECONCILIATION_REPORT: runtime_reports/mlb_v9_pointer_reconciliation_latest.json
+  PROBE_REPORT: runtime_reports/mlb_v8_historical_first_five_probe_latest.json
+
+jobs:
+  reconcile-and-probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Validate fail-closed reconciliation and bounded probe
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          test -n "${ODDS_API_KEY_VALUE:-}"
+          aws sts get-caller-identity >/tmp/mlb-v9-pointer-aws-identity.json
+          python -m pip install --quiet 'boto3>=1.34,<2' 'requests>=2.31,<3' 'pytest>=8,<9'
+          PYTHONPATH=hello_world:scripts python -m py_compile \
+            hello_world/mlb_historical_feature_rematerialization_v1.py \
+            hello_world/mlb_supervised_v8_dataset_patch_v1.py \
+            scripts/run_mlb_v9_pointer_reconciliation.py \
+            scripts/run_mlb_v8_historical_first_five_probe.py \
+            scripts/run_mlb_v8_historical_first_five_probe_safe.py
+          PYTHONPATH=hello_world:scripts python -m pytest -q --tb=short \
+            tests/unit/test_mlb_rematerialization_state_integrity.py \
+            tests/unit/test_mlb_v9_pointer_reconciliation.py \
+            tests/unit/test_mlb_v8_provider_event_id_schema.py \
+            tests/unit/test_mlb_v8_historical_first_five_probe.py
+          grep -Fq 'MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.3-fail-closed-pointer-reconciliation' hello_world/mlb_historical_feature_rematerialization_v1.py
+          grep -Fq 'MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable' hello_world/mlb_supervised_v8_dataset_patch_v1.py
+          grep -Fq 'probe.HTTP_RETRIES = 1' scripts/run_mlb_v8_historical_first_five_probe_safe.py
+
+      - name: Build exact historical optimizer
+        run: |
+          set -euo pipefail
+          sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+          rm -rf .aws-sam-v9-pointer
+          sam build \
+            --no-cached \
+            --build-dir .aws-sam-v9-pointer \
+            --template-file mlb_historical_optimizer/template.yaml
+          test -f .aws-sam-v9-pointer/HistoricalOptimizerFunction/mlb_historical_feature_rematerialization_v1.py
+          test -f .aws-sam-v9-pointer/HistoricalOptimizerFunction/mlb_supervised_v8_dataset_patch_v1.py
+          test -f .aws-sam-v9-pointer/HistoricalOptimizerFunction/mlb_historical_optimizer_v7_recovery_entrypoint.py
+
+      - name: Deploy fail-closed pointer reconciliation
+        id: deploy
+        continue-on-error: true
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -o pipefail
+          (
+            set -euo pipefail
+            for attempt in $(seq 1 80); do
+              status=$(aws cloudformation describe-stacks \
+                --stack-name "$STACK_NAME" \
+                --region "$AWS_REGION_VALUE" \
+                --query 'Stacks[0].StackStatus' \
+                --output text 2>/dev/null || echo STACK_NOT_FOUND)
+              case "$status" in
+                STACK_NOT_FOUND|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE) break ;;
+                *_IN_PROGRESS) sleep 15 ;;
+                *) echo "CloudFormation is not updateable: $status"; exit 1 ;;
+              esac
+              test "$attempt" != 80
+            done
+            sam deploy \
+              --template-file .aws-sam-v9-pointer/template.yaml \
+              --stack-name "$STACK_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --capabilities CAPABILITY_IAM \
+              --resolve-s3 \
+              --force-upload \
+              --no-confirm-changeset \
+              --no-fail-on-empty-changeset \
+              --parameter-overrides \
+                "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+                'TargetSnapshotsTable=parlay_platform_snapshots' \
+                'HistoricalStartDate=2025-04-01' \
+                'HistoricalEndDate=2026-07-24' \
+                'HistoricalTargetGames=1600' \
+                'HistoricalMaxCredits=300000' \
+                'HistoricalRequestsPerRun=20' \
+                'HistoricalMaxCandidates=25000' \
+                'HistoricalMaxOptimizationRounds=12' \
+                'HistoricalFreshAuditIncrementGames=250' \
+                'HistoricalRangeExtensionAuthorized=true' \
+                "DeployGitSha=${GITHUB_SHA}"
+          ) 2>&1 | tee /tmp/mlb-v9-pointer-deploy.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Reconcile every completed-slate pointer
+        id: reconciliation
+        if: steps.deploy.outcome == 'success'
+        continue-on-error: true
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          PYTHONPATH: hello_world:scripts
+        run: |
+          set -o pipefail
+          mkdir -p runtime_reports
+          rm -f "$RECONCILIATION_REPORT" /tmp/mlb-v9-pointer-reconciliation.log
+          python scripts/run_mlb_v9_pointer_reconciliation.py \
+            --region "$AWS_REGION_VALUE" \
+            --stack-name "$STACK_NAME" \
+            --maximum-attempts 90 \
+            --output "$RECONCILIATION_REPORT" \
+            2>&1 | tee /tmp/mlb-v9-pointer-reconciliation.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Run bounded 20-game first-five probe
+        id: probe
+        if: steps.reconciliation.outcome == 'success'
+        continue-on-error: true
+        env:
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+          AWS_EC2_METADATA_DISABLED: 'true'
+          PYTHONPATH: hello_world:scripts
+        run: |
+          set -o pipefail
+          rm -f "$PROBE_REPORT" /tmp/mlb-v8-first-five-probe.log
+          python scripts/run_mlb_v8_historical_first_five_probe_safe.py \
+            --region "$AWS_REGION_VALUE" \
+            --historical-stack parlay-platform-mlb-historical-optimizer \
+            --v8-stack parlay-platform-mlb-odds-v8-shadow \
+            --table-name parlay_platform_snapshots \
+            --limit 20 \
+            --max-credits 500 \
+            --output "$PROBE_REPORT" \
+            2>&1 | tee /tmp/mlb-v8-first-five-probe.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Ensure exact durable evidence exists
+        if: always()
+        env:
+          DEPLOY_OUTCOME: ${{ steps.deploy.outcome }}
+          DEPLOY_EXIT_CODE: ${{ steps.deploy.outputs.exit_code }}
+          RECONCILIATION_OUTCOME: ${{ steps.reconciliation.outcome }}
+          RECONCILIATION_EXIT_CODE: ${{ steps.reconciliation.outputs.exit_code }}
+          PROBE_OUTCOME: ${{ steps.probe.outcome }}
+          PROBE_EXIT_CODE: ${{ steps.probe.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          def tail(path):
+              value=Path(path)
+              return value.read_text(errors='replace')[-16000:] if value.exists() else ''
+
+          if not Path(os.environ['RECONCILIATION_REPORT']).exists():
+              value={
+                  'proofType':'MLB_V9_POINTER_RECONCILIATION',
+                  'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+                  'sourceSha':os.environ['GITHUB_SHA'],
+                  'runId':os.environ['GITHUB_RUN_ID'],
+                  'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+                  'deployOutcome':os.environ.get('DEPLOY_OUTCOME'),
+                  'deployExitCode':os.environ.get('DEPLOY_EXIT_CODE'),
+                  'reconciliationOutcome':os.environ.get('RECONCILIATION_OUTCOME'),
+                  'reconciliationExitCode':os.environ.get('RECONCILIATION_EXIT_CODE'),
+                  'providerCallsMadeByReconciliation':0,
+                  'productionAuthorityChanged':False,
+                  'errorLogTail':tail('/tmp/mlb-v9-pointer-deploy.log')+tail('/tmp/mlb-v9-pointer-reconciliation.log'),
+                  'blockers':['v9_pointer_reconciliation_failed_before_report'],
+                  'ok':False,
+              }
+              Path(os.environ['RECONCILIATION_REPORT']).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+          if not Path(os.environ['PROBE_REPORT']).exists():
+              value={
+                  'proofType':'MLB_V8_HISTORICAL_FIRST_FIVE_PROBE',
+                  'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+                  'sourceSha':os.environ['GITHUB_SHA'],
+                  'runId':os.environ['GITHUB_RUN_ID'],
+                  'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+                  'probeOutcome':os.environ.get('PROBE_OUTCOME'),
+                  'probeExitCode':os.environ.get('PROBE_EXIT_CODE'),
+                  'authority':'SHADOW_ONLY',
+                  'trainingEligible':False,
+                  'productionAuthorityChanged':False,
+                  'automaticWagerAllowed':False,
+                  'maximumCredits':500,
+                  'errorLogTail':tail('/tmp/mlb-v8-first-five-probe.log'),
+                  'blockers':['historical_first_five_probe_failed_or_skipped'],
+                  'ok':False,
+              }
+              Path(os.environ['PROBE_REPORT']).write_text(json.dumps(value,indent=2,sort_keys=True)+'\n')
+          PY
+          python -m json.tool "$RECONCILIATION_REPORT" >/dev/null
+          python -m json.tool "$PROBE_REPORT" >/dev/null
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-v9-pointer-reconcile-probe-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_v9_pointer_reconciliation_latest.json
+            runtime_reports/mlb_v8_historical_first_five_probe_latest.json
+            /tmp/mlb-v9-pointer-deploy.log
+            /tmp/mlb-v9-pointer-reconciliation.log
+            /tmp/mlb-v8-first-five-probe.log
+            /tmp/mlb-v9-pointer-aws-identity.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish durable reconciliation and probe evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          cp "$RECONCILIATION_REPORT" /tmp/mlb-v9-pointer-reconciliation-report.json
+          cp "$PROBE_REPORT" /tmp/mlb-v8-first-five-probe-report.json
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v9-pointer-reconcile-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-v9-pointer-reconciliation-report.json "$RECONCILIATION_REPORT"
+            cp /tmp/mlb-v8-first-five-probe-report.json "$PROBE_REPORT"
+            git add "$RECONCILIATION_REPORT" "$PROBE_REPORT"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V9 pointer reconciliation and first-five probe evidence'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Enforce successful safe reconciliation and probe
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          reconciliation=json.loads(Path('runtime_reports/mlb_v9_pointer_reconciliation_latest.json').read_text())
+          probe=json.loads(Path('runtime_reports/mlb_v8_historical_first_five_probe_latest.json').read_text())
+          assert reconciliation.get('ok') is True, reconciliation
+          assert int(reconciliation.get('providerCallsMadeByReconciliation') or 0)==0, reconciliation
+          assert reconciliation.get('authorityUnchanged') is True, reconciliation
+          assert reconciliation.get('productionAuthorityChanged') is False, reconciliation
+          assert not reconciliation.get('blockers'), reconciliation
+          assert probe.get('ok') is True, probe
+          assert probe.get('authority')=='SHADOW_ONLY', probe
+          assert probe.get('trainingEligible') is False, probe
+          assert probe.get('productionAuthorityChanged') is False, probe
+          assert probe.get('automaticWagerAllowed') is False, probe
+          assert int(probe.get('providerCreditsConsumed') or 0)<=500, probe
+          assert int(probe.get('selectedGameCount') or 0)==20, probe
+          assert int(probe.get('successfulMarketRequestCount') or 0)>0, probe
+          assert not probe.get('blockers'), probe
+          PY
