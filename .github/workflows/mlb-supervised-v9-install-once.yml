@@ -1,5 +1,4 @@
-name: MLB Supervised V9 Install Once
-# Trusted activation push after V7 integrity merge.
+name: Repair and Activate Supervised V7 Learning
 
 "on":
   push:
@@ -13,149 +12,86 @@ permissions:
   actions: write
 
 concurrency:
-  group: mlb-supervised-v9-install-once
+  group: repair-activate-supervised-v7
   cancel-in-progress: false
 
 jobs:
-  install:
+  repair-test-activate:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Install supervised training and runtime parity
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Apply idempotent supervised V7 repairs
         run: |
           set -euo pipefail
           git fetch origin main
           git reset --hard origin/main
           python - <<'PY'
           from pathlib import Path
-
           entry_path=Path('hello_world/mlb_historical_optimizer_entrypoint.py')
-          remat_path=Path('hello_world/mlb_historical_feature_rematerialization_v1.py')
-          template_path=Path('mlb_historical_optimizer/template.yaml')
-          runtime_path=Path('hello_world/mlb_ml_runtime_install_v3.py')
+          learner_path=Path('hello_world/mlb_historical_supervised_v9.py')
           recovery_path=Path('.github/workflows/mlb-historical-v7-recovery.yml')
-          status_path=Path('.github/workflows/mlb-historical-status-snapshot.yml')
-          self_path=Path('.github/workflows/mlb-supervised-v9-install-once.yml')
-
+          test_path=Path('tests/unit/test_mlb_supervised_v7_integrity_wiring.py')
           entry=entry_path.read_text()
-          old='import mlb_historical_derived_features_v1 as derived_features\nimport mlb_odds_pattern_features_v1 as odds_pattern_features\n'
-          new=old+'import mlb_historical_supervised_v9 as supervised_v9\n'
-          assert entry.count(old) == 1, 'historical entrypoint import anchor changed'
-          entry=entry.replace(old,new,1)
-          assert 'VERSION = "MLB-HISTORICAL-ENTRYPOINT-v9-opening-day-range-repair"' in entry
-          entry=entry.replace(
-            'VERSION = "MLB-HISTORICAL-ENTRYPOINT-v9-opening-day-range-repair"',
-            'VERSION = "MLB-HISTORICAL-ENTRYPOINT-v10-supervised-v9-v8-trainable"',
-            1,
-          )
-          install_anchor='derived_features.install(optimizer_handler.optimizer, optimizer_handler.policy_runtime)\nodds_pattern_features.install(optimizer_handler.optimizer, optimizer_handler.policy_runtime)\n'
-          install_new=install_anchor+'supervised_v9.install(optimizer_handler.optimizer, optimizer_handler.policy_runtime)\n'
-          assert entry.count(install_anchor) == 1, 'historical entrypoint install anchor changed'
-          entry=entry.replace(install_anchor,install_new,1)
+          if 'import mlb_historical_supervised_v9 as supervised_v9' not in entry:
+              entry=entry.replace('import mlb_odds_pattern_features_v1 as odds_pattern_features\n','import mlb_odds_pattern_features_v1 as odds_pattern_features\nimport mlb_historical_supervised_v9 as supervised_v9\n',1)
+          entry=entry.replace('VERSION = "MLB-HISTORICAL-ENTRYPOINT-v9-opening-day-range-repair"','VERSION = "MLB-HISTORICAL-ENTRYPOINT-v10-supervised-v7-active"')
+          anchor='odds_pattern_features.install(optimizer_handler.optimizer, optimizer_handler.policy_runtime)\n'
+          if 'supervised_v9.install(optimizer_handler.optimizer, optimizer_handler.policy_runtime)' not in entry:
+              assert anchor in entry
+              entry=entry.replace(anchor,anchor+'supervised_v9.install(optimizer_handler.optimizer, optimizer_handler.policy_runtime)\n',1)
           entry_path.write_text(entry)
-
-          remat=remat_path.read_text()
-          assert 'MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.1-v7-quarantine-aware' in remat
-          assert 'MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack' in remat
-          remat=remat.replace(
-            'MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v1.1-v7-quarantine-aware',
-            'MLB-HISTORICAL-FEATURE-REMATERIALIZATION-v2-supervised-v9-v8-trainable',
-            1,
-          ).replace(
-            'MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack',
-            'MLB-HISTORICAL-FEATURE-DATASET-v9-supervised-v8-trainable',
-            1,
-          )
-          old_batch='BATCH_SIZE = max(1, min(5, int(os.environ.get("MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN", "2"))))'
-          new_batch='BATCH_SIZE = max(1, min(10, int(os.environ.get("MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN", "5"))))'
-          assert remat.count(old_batch) == 1, 'historical template rematerialization env anchor changed'
-          remat=remat.replace(old_batch,new_batch,1)
-          remat_path.write_text(remat)
-
-          template=template_path.read_text()
-          old_env="        MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN: '2'\n"
-          new_env=(
-            "        MLB_HISTORICAL_REMATERIALIZE_SLATES_PER_RUN: '5'\n"
-            "        MLB_SUPERVISED_EPOCHS: '160'\n"
-            "        MLB_SUPERVISED_LEARNING_RATE: '0.06'\n"
-            "        MLB_SUPERVISED_MIN_WF_MEAN_GAIN: '0.0025'\n"
-          )
-          assert template.count(old_env) == 1, 'historical template rematerialization env anchor changed'
-          template=template.replace(old_env,new_env,1)
-          template_path.write_text(template)
-
-          runtime=runtime_path.read_text()
-          import_anchor='        import mlb_historical_policy_v1\n'
-          assert runtime.count(import_anchor) == 1, 'production runtime historical import anchor changed'
-          runtime=runtime.replace(import_anchor,import_anchor+'        import mlb_historical_supervised_v9\n',1)
-          apply_anchor='        if hasattr(engine, "_side_score"):\n            mlb_historical_policy_v1.apply(engine)\n'
-          apply_new=(
-            '        mlb_historical_supervised_v9.install_policy_runtime(mlb_historical_policy_v1)\n'
-            '        status["steps"]["historicalSupervisedV9RuntimeInstalled"] = bool(\n'
-            '            getattr(mlb_historical_policy_v1, "_INQSI_MLB_SUPERVISED_V9_POLICY_INSTALLED", False)\n'
-            '        )\n'
-            '        status["historicalSupervisedV9Version"] = mlb_historical_supervised_v9.VERSION\n'
-            '        if hasattr(engine, "_side_score"):\n'
-            '            mlb_historical_policy_v1.apply(engine)\n'
-          )
-          assert runtime.count(apply_anchor) == 1, 'production runtime historical apply anchor changed'
-          runtime=runtime.replace(apply_anchor,apply_new,1)
-          runtime_path.write_text(runtime)
-
+          learner=learner_path.read_text()
+          if 'import mlb_v7_integrity_pattern_v1 as v7_integrity' not in learner:
+              learner=learner.replace('import os\n','import os\nimport mlb_v7_integrity_pattern_v1 as v7_integrity\n',1)
+          learner=learner.replace('FEATURE_VERSION = "MLB-SUPERVISED-PAIR-FEATURES-v1"','FEATURE_VERSION = "MLB-SUPERVISED-PAIR-FEATURES-v2-v7-integrity-patterns"')
+          old='    "v8SpreadDirection", "fundamentalsDiff", "featureAvailability",\n)'
+          new='    "v8SpreadDirection", "fundamentalsDiff", "featureAvailability",\n    "movementNetDiff", "movementEfficiencyDiff", "reversalMagnitudeDiff",\n    "lateMoveShareDiff", "trendPersistenceDiff", "accelerationEnergyDiff",\n    "stableConsensusDiff", "lowCoveragePenaltyDiff",\n)'
+          if old in learner: learner=learner.replace(old,new,1)
+          pair_anchor='        "featureAvailability": observed / 10.0,\n    }'
+          pair_new='        "featureAvailability": observed / 10.0,\n        "movementNetDiff": _derived(home, "movementNet") - _derived(away, "movementNet"),\n        "movementEfficiencyDiff": _derived(home, "movementEfficiency") - _derived(away, "movementEfficiency"),\n        "reversalMagnitudeDiff": _derived(home, "reversalMagnitude") - _derived(away, "reversalMagnitude"),\n        "lateMoveShareDiff": _derived(home, "lateMoveShare") - _derived(away, "lateMoveShare"),\n        "trendPersistenceDiff": _derived(home, "trendPersistence") - _derived(away, "trendPersistence"),\n        "accelerationEnergyDiff": _derived(home, "accelerationEnergy") - _derived(away, "accelerationEnergy"),\n        "stableConsensusDiff": _derived(home, "stableConsensusSignal") - _derived(away, "stableConsensusSignal"),\n        "lowCoveragePenaltyDiff": _derived(home, "lowCoveragePenaltySignal") - _derived(away, "lowCoveragePenaltySignal"),\n    }'
+          if '"movementNetDiff": _derived(home' not in learner:
+              assert pair_anchor in learner
+              learner=learner.replace(pair_anchor,pair_new,1)
+          learner=learner.replace('out.append((day, [_f(values.get(name)) for name in FEATURES], int(row.get("homeWon") or 0)))','out.append((day, [_f(values.get(name)) for name in FEATURES], v7_integrity.strict_binary_label(row)))')
+          learner=learner.replace('return (_f(metrics.get("dailyPassRate")),_f(metrics.get("minimumDailyAccuracy")),_f(metrics.get("meanDailyAccuracy")),_f(metrics.get("overallAccuracy")),-_f(metrics.get("brierScore"),1),-_f(metrics.get("logLoss"),10))','return v7_integrity.candidate_rank(metrics)')
+          learner_path.write_text(learner)
           recovery=recovery_path.read_text()
-          trigger_anchor="      - 'hello_world/mlb_historical_derived_features_v1.py'\n"
-          assert recovery.count(trigger_anchor) == 1
-          recovery=recovery.replace(trigger_anchor,trigger_anchor+"      - 'hello_world/mlb_historical_supervised_v9.py'\n",1)
-          compile_anchor='            hello_world/mlb_historical_derived_features_v1.py \\\n'
-          assert recovery.count(compile_anchor) == 1
-          recovery=recovery.replace(compile_anchor,compile_anchor+'            hello_world/mlb_historical_supervised_v9.py \\\n',1)
-          test_anchor='            tests/unit/test_mlb_historical_competitive_schedule_filter.py\n'
-          assert recovery.count(test_anchor) == 1
-          recovery=recovery.replace(test_anchor,'            tests/unit/test_mlb_historical_competitive_schedule_filter.py \\\n            tests/unit/test_mlb_historical_supervised_v9.py\n',1)
-          artifact_anchor='          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_odds_pattern_features_v1.py\n'
-          assert recovery.count(artifact_anchor) == 1
-          recovery=recovery.replace(artifact_anchor,artifact_anchor+'          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_historical_supervised_v9.py\n',1)
-          assert recovery.count('for attempt in $(seq 1 18); do') == 1
-          assert recovery.count('test "$attempt" != 18') == 1
-          recovery=recovery.replace('for attempt in $(seq 1 18); do','for attempt in $(seq 1 80); do',1)
-          recovery=recovery.replace('test "$attempt" != 18','test "$attempt" != 80',1)
-          recovery=recovery.replace('v12_recovery_baseline','supervised_v9_recovery_baseline')
-          recovery=recovery.replace('v12_round_extension_','supervised_v9_recovery_')
-          recovery=recovery.replace('v12_recovery_final','supervised_v9_recovery_final')
+          old_cfg='''            CONFIG=$(aws lambda get-function-configuration \\\n              --function-name "$FUNCTION_NAME" \\\n              --region "$AWS_REGION_VALUE" \\\n              --output json)\n            CONFIG="$CONFIG" FUNCTION_NAME="$FUNCTION_NAME" python - <<'PY'\n          import json, os\n          from pathlib import Path\n          value=json.loads(os.environ['CONFIG'])'''
+          new_cfg='''            aws lambda get-function-configuration \\\n              --function-name "$FUNCTION_NAME" \\\n              --region "$AWS_REGION_VALUE" \\\n              --output json > /tmp/mlb-historical-function-config.json\n            FUNCTION_NAME="$FUNCTION_NAME" python - <<'PY'\n          import json, os\n          from pathlib import Path\n          value=json.loads(Path('/tmp/mlb-historical-function-config.json').read_text())'''
+          recovery=recovery.replace(old_cfg,new_cfg)
+          if "hello_world/mlb_historical_supervised_v9.py" not in recovery:
+              recovery=recovery.replace("      - 'hello_world/mlb_historical_derived_features_v1.py'\n","      - 'hello_world/mlb_historical_derived_features_v1.py'\n      - 'hello_world/mlb_historical_supervised_v9.py'\n",1)
+          if 'tests/unit/test_mlb_supervised_v7_integrity_wiring.py' not in recovery:
+              recovery=recovery.replace('            tests/unit/test_mlb_historical_competitive_schedule_filter.py\n','            tests/unit/test_mlb_historical_competitive_schedule_filter.py \\\n            tests/unit/test_mlb_historical_supervised_v9.py \\\n            tests/unit/test_mlb_supervised_v7_integrity_wiring.py\n',1)
+          if 'HistoricalOptimizerFunction/mlb_historical_supervised_v9.py' not in recovery:
+              recovery=recovery.replace('          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_odds_pattern_features_v1.py\n','          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_odds_pattern_features_v1.py\n          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_historical_supervised_v9.py\n          test -f .aws-sam-historical-v7/HistoricalOptimizerFunction/mlb_v7_integrity_pattern_v1.py\n',1)
           recovery_path.write_text(recovery)
-
-          status=status_path.read_text()
-          status_anchor="      - 'hello_world/mlb_historical_feature_rematerialization_v1.py'\n"
-          assert status.count(status_anchor) == 1
-          status=status.replace(status_anchor,status_anchor+"      - 'hello_world/mlb_historical_supervised_v9.py'\n",1)
-          status_path.write_text(status)
-
+          test_path.write_text('''import pathlib\nimport sys\nimport pytest\nsys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "hello_world"))\nimport mlb_historical_supervised_v9 as learner\n\ndef test_missing_label_fails_closed():\n    learner._ORIGINAL_SELECT=lambda h,a,p:("home", {"score":50}, {"score":50})\n    learner._ORIGINAL_COMPLEMENT=lambda h,a:(0.5,{})\n    with pytest.raises(ValueError):\n        learner._examples([{"slateDateEt":"2026-01-01","homeSignal":{},"awaySignal":{}}],["2026-01-01"],{})\n\ndef test_v7_features_and_rank_are_active():\n    required={"movementNetDiff","movementEfficiencyDiff","reversalMagnitudeDiff","lateMoveShareDiff","trendPersistenceDiff","accelerationEnergyDiff","stableConsensusDiff","lowCoveragePenaltyDiff"}\n    assert required.issubset(set(learner.FEATURES))\n    better={"meanDailyAccuracy":.61,"overallAccuracy":.60,"brierScore":.23,"logLoss":.66,"dailyPassRate":.1,"minimumDailyAccuracy":.4}\n    worse={"meanDailyAccuracy":.60,"overallAccuracy":.70,"brierScore":.20,"logLoss":.60,"dailyPassRate":.9,"minimumDailyAccuracy":.9}\n    assert learner._rank(better) > learner._rank(worse)\n''')
           assert 'supervised_v9.install(' in entry_path.read_text()
-          assert 'MLB-HISTORICAL-FEATURE-DATASET-v9-supervised-v8-trainable' in remat_path.read_text()
-          assert 'historicalSupervisedV9RuntimeInstalled' in runtime_path.read_text()
-          assert 'for attempt in $(seq 1 80); do' in recovery_path.read_text()
-          self_path.unlink()
+          assert 'strict_binary_label(row)' in learner_path.read_text()
+          assert 'candidate_rank(metrics)' in learner_path.read_text()
+          assert '/tmp/mlb-historical-function-config.json' in recovery_path.read_text()
           PY
+      - name: Test repaired learning path
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'pytest>=8,<9' 'boto3>=1.34,<2'
+          python -m py_compile hello_world/mlb_historical_supervised_v9.py hello_world/mlb_v7_integrity_pattern_v1.py hello_world/mlb_historical_optimizer_entrypoint.py
+          python -m pytest -q --tb=short tests/unit/test_mlb_v7_integrity_pattern_v1.py tests/unit/test_mlb_v7_learning_integration_v1.py tests/unit/test_mlb_historical_supervised_v9.py tests/unit/test_mlb_supervised_v7_integrity_wiring.py
           git diff --check
-          test ! -e .github/workflows/mlb-supervised-v9-install-once.yml
-
-      - name: Publish supervised architecture
+      - name: Publish repairs
         run: |
           set -euo pipefail
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
-          git add \
-            hello_world/mlb_historical_optimizer_entrypoint.py \
-            hello_world/mlb_historical_feature_rematerialization_v1.py \
-            hello_world/mlb_ml_runtime_install_v3.py \
-            mlb_historical_optimizer/template.yaml \
-            .github/workflows/mlb-historical-v7-recovery.yml \
-            .github/workflows/mlb-historical-status-snapshot.yml \
-            .github/workflows/mlb-supervised-v9-install-once.yml
-          git commit -m 'Install supervised MLB V9 training architecture'
+          git add hello_world/mlb_historical_optimizer_entrypoint.py hello_world/mlb_historical_supervised_v9.py .github/workflows/mlb-historical-v7-recovery.yml tests/unit/test_mlb_supervised_v7_integrity_wiring.py
+          git commit -m 'Fix and activate supervised V7 historical learning'
           for attempt in 1 2 3 4 5 6; do
             git push origin HEAD:main && exit 0
             git fetch origin main
@@ -163,16 +99,11 @@ jobs:
             sleep $((attempt * 3))
           done
           exit 1
-
-      - name: Dispatch canonical recovery and shadow evaluation
+      - name: Dispatch recovery and shadow verification
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
           for workflow in mlb-historical-v7-recovery.yml mlb-historical-supervised-v9-shadow.yml; do
-            gh api --method POST \
-              -H 'Accept: application/vnd.github+json' \
-              -H 'X-GitHub-Api-Version: 2022-11-28' \
-              "/repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" \
-              -f ref=main
+            gh api --method POST -H 'Accept: application/vnd.github+json' -H 'X-GitHub-Api-Version: 2022-11-28' "/repos/${GITHUB_REPOSITORY}/actions/workflows/${workflow}/dispatches" -f ref=main
           done
