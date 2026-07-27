@@ -2,15 +2,19 @@ name: MLB Historical Supervised V9 Shadow Evaluation
 
 "on":
   workflow_dispatch:
+  schedule:
+    - cron: '17 * * * *'
   push:
     branches: [main]
     paths:
       - 'hello_world/mlb_historical_supervised_v9.py'
       - 'hello_world/mlb_historical_supervised_v9_integrity_v2.py'
+      - 'hello_world/mlb_historical_v7_learning_cadence_v1.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'scripts/run_mlb_historical_supervised_v9_shadow.py'
       - 'tests/unit/test_mlb_historical_supervised_v9.py'
       - 'tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py'
+      - 'tests/unit/test_mlb_historical_v7_learning_cadence_v1.py'
       - '.github/workflows/mlb-historical-supervised-v9-shadow.yml'
       - 'hello_world/mlb_historical_optimizer_entrypoint.py'
       - 'hello_world/mlb_historical_feature_rematerialization_v1.py'
@@ -26,6 +30,7 @@ concurrency:
 env:
   STACK_NAME: parlay-platform-mlb-historical-optimizer
   REPORT_PATH: runtime_reports/mlb_historical_supervised_v9_shadow_latest.json
+  MLB_V7_SHADOW_REFIT_INCREMENT_GAMES: '50'
 
 jobs:
   evaluate:
@@ -52,14 +57,17 @@ jobs:
           PYTHONPATH=hello_world python -m py_compile \
             hello_world/mlb_historical_supervised_v9.py \
             hello_world/mlb_historical_supervised_v9_integrity_v2.py \
+            hello_world/mlb_historical_v7_learning_cadence_v1.py \
             hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
             scripts/run_mlb_historical_supervised_v9_shadow.py
           PYTHONPATH=hello_world python -m pytest -q --tb=short \
             tests/unit/test_mlb_historical_supervised_v9.py \
-            tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py
+            tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py \
+            tests/unit/test_mlb_historical_v7_learning_cadence_v1.py
           grep -Fq 'strictBinaryLabels' hello_world/mlb_historical_supervised_v9_integrity_v2.py
           grep -Fq 'missingLabelsCoercedToAwayWin' hello_world/mlb_historical_supervised_v9_integrity_v2.py
           grep -Fq 'promotionRequiresEverySlateAtLeast80Pct' hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py
+          grep -Fq 'shadowRefitsMayPromote": False' hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py
 
       - name: Resolve immutable historical evidence
         id: runtime
@@ -77,13 +85,14 @@ jobs:
             --output text)
           test -n "$function_name"; test "$function_name" != None
           test -n "$bucket_name"; test "$bucket_name" != None
-          config=$(aws lambda get-function-configuration \
+          aws lambda get-function-configuration \
             --function-name "$function_name" \
             --region "${{ secrets.AWS_REGION }}" \
-            --output json)
-          CONFIG="$config" python - <<'PY'
-          import json, os
-          value=json.loads(os.environ['CONFIG'])
+            --output json > /tmp/mlb-historical-lambda-config.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('/tmp/mlb-historical-lambda-config.json').read_text())
           assert value.get('Handler') == 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler', value
           PY
           echo "bucket_name=$bucket_name" >> "$GITHUB_OUTPUT"
@@ -135,6 +144,7 @@ jobs:
               'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
               'readOnly':True,
               'retrospectiveShadowOnly':True,
+              'shadowRefitIncrementGames':int(os.environ.get('MLB_V7_SHADOW_REFIT_INCREMENT_GAMES','50')),
               'prospectiveAuditRequiredBeforePromotion':True,
               'providerCallsMade':0,
               'productionAuthorityChanged':False,
@@ -156,6 +166,7 @@ jobs:
           path: |
             runtime_reports/mlb_historical_supervised_v9_shadow_latest.json
             /tmp/mlb-supervised-v9-shadow.log
+            /tmp/mlb-historical-lambda-config.json
           retention-days: 90
           if-no-files-found: warn
 
