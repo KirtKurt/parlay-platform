@@ -14,10 +14,11 @@ import mlb_historical_optimizer_entrypoint as base
 import mlb_historical_round_extension_v1 as round_extension
 import mlb_historical_supervised_v9 as supervised_v9
 import mlb_historical_supervised_v9_integrity_v2 as supervised_integrity_v2
+import mlb_historical_v7_learning_cadence_v1 as learning_cadence
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v8-supervised-v9-integrity-active"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v9-learning-cadence-active"
 
 # Reopen only a terminal rejected state that was caused by the previous deployment
 # ceiling. Prior experiments and promotion decisions remain immutable.
@@ -37,6 +38,10 @@ supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerializatio
 # walk-forward and untouched-audit gate passes.
 supervised_integrity_v2.install(supervised_v9)
 supervised_v9.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
+
+# Run optimization more frequently and select inner-fold challengers by chronological
+# mean accuracy plus calibration. This does not weaken the final promotion gate.
+learning_cadence.install(base.optimizer_handler, supervised_v9)
 
 
 def _request_mode(event: Any) -> str:
@@ -66,6 +71,8 @@ def _with_shadow_contract(value: Any) -> Any:
                 "modelVersion": supervised_v9.VERSION,
                 "featureVersion": supervised_v9.FEATURE_VERSION,
                 "integrityPatchVersion": supervised_integrity_v2.VERSION,
+                "learningCadenceVersion": learning_cadence.VERSION,
+                "freshAuditIncrementGames": base.optimizer_handler.FRESH_AUDIT_INCREMENT_GAMES,
                 "strictBinaryLabels": True,
                 "missingLabelsCoercedToAwayWin": False,
                 "v8ExpansionFallbackEnabled": True,
