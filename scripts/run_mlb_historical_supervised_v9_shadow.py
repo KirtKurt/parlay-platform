@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""Evaluate the supervised historical learner against current immutable AWS data.
+"""Evaluate the strict supervised historical learner against immutable AWS data.
 
-Read-only: this script does not invoke The Odds API, mutate DynamoDB, write S3,
-change a champion, or change production authority. The supervised architecture is
-installed only in this process so current production and historical authority stay
-unchanged while the replacement model is evaluated against immutable evidence.
+Read-only: this script makes no provider request, mutates no DynamoDB/S3 state, and
+cannot write a champion or production cutover. Promotion still requires the existing
+chronological every-slate 80% gate and a fresh prospective audit.
 """
 from __future__ import annotations
 
@@ -26,11 +25,19 @@ def main() -> int:
 
     import mlb_historical_optimizer_v7_recovery_entrypoint as runtime
     import mlb_historical_supervised_v9 as supervised_v9
+    import mlb_historical_supervised_v9_integrity_v2 as integrity_v2
 
     handler = runtime.base.optimizer_handler
+    integrity_v2.install(supervised_v9)
     supervised_v9.install(handler.optimizer, handler.policy_runtime)
     if not getattr(handler.optimizer, "_INQSI_MLB_SUPERVISED_V9_INSTALLED", False):
         raise RuntimeError("supervised V9 optimizer install did not complete")
+    if not getattr(
+        handler.optimizer,
+        "_INQSI_MLB_SUPERVISED_INTEGRITY_V2_SEARCH_INSTALLED",
+        False,
+    ):
+        raise RuntimeError("supervised V9 integrity search install did not complete")
     if not getattr(handler.policy_runtime, "_INQSI_MLB_SUPERVISED_V9_POLICY_INSTALLED", False):
         raise RuntimeError("supervised V9 policy runtime install did not complete")
 
@@ -51,6 +58,7 @@ def main() -> int:
     old_gate = latest.get("promotionGate") or {}
     gate = result.get("promotionGate") or {}
     diagnostics = result.get("supervisedDiagnostics") or {}
+    training_integrity = result.get("trainingIntegrity") or {}
     report = {
         "proofType": "MLB_HISTORICAL_SUPERVISED_V9_SHADOW_EVALUATION",
         "createdAtUtc": datetime.now(timezone.utc).isoformat(),
@@ -71,11 +79,20 @@ def main() -> int:
             "supervisedOptimizerInstalled": bool(
                 getattr(handler.optimizer, "_INQSI_MLB_SUPERVISED_V9_INSTALLED", False)
             ),
+            "supervisedIntegrityInstalled": bool(
+                getattr(
+                    handler.optimizer,
+                    "_INQSI_MLB_SUPERVISED_INTEGRITY_V2_SEARCH_INSTALLED",
+                    False,
+                )
+            ),
             "supervisedPolicyRuntimeInstalled": bool(
                 getattr(handler.policy_runtime, "_INQSI_MLB_SUPERVISED_V9_POLICY_INSTALLED", False)
             ),
             "modelVersion": supervised_v9.VERSION,
             "featureVersion": supervised_v9.FEATURE_VERSION,
+            "integrityPatchVersion": integrity_v2.VERSION,
+            "featureCount": len(supervised_v9.FEATURES),
         },
         "state": {
             "phase": state.get("phase"),
@@ -89,6 +106,7 @@ def main() -> int:
             "rematerializationComplete": state.get("featureRematerializationComplete"),
             "rematerializationErrors": state.get("featureRematerializationErrors") or [],
         },
+        "trainingIntegrity": training_integrity,
         "priorCandidate": {
             "experimentId": latest.get("experimentId"),
             "status": latest.get("status"),
@@ -113,6 +131,14 @@ def main() -> int:
     blockers = []
     if result.get("ok") is not True:
         blockers.append("supervised_search_failed")
+    if training_integrity.get("rejected"):
+        blockers.append("training_integrity_rejected_rows")
+    if training_integrity.get("acceptedCount") != training_integrity.get("inputCount"):
+        blockers.append("training_integrity_count_mismatch")
+    if diagnostics.get("strictBinaryLabels") is not True:
+        blockers.append("strict_binary_label_contract_missing")
+    if diagnostics.get("v8ExpansionFallbackEnabled") is not True:
+        blockers.append("v8_expansion_fallback_not_enabled")
     if diagnostics.get("randomPolicySearchDisabled") is not True:
         blockers.append("random_rule_search_not_disabled")
     if diagnostics.get("holdoutEvaluatedAfterFreeze") is not True:
