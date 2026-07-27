@@ -47,9 +47,9 @@ def test_historical_optimizer_can_distinguish_missing_s3_evidence_objects():
 
 
 def test_historical_optimizer_range_includes_settled_2026_slates():
-    """A failed 2025 audit round must have strictly later settled slates available."""
+    """A failed audit round must retain strictly later settled slates."""
 
     text = TEMPLATE.read_text(encoding="utf-8")
 
-    assert "Default: '2026-07-24'" in text
+    assert "Default: '2026-12-31'" in text
     assert "MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED" in text
