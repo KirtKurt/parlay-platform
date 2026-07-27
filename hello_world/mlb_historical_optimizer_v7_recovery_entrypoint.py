@@ -1,9 +1,9 @@
 """Historical recovery entrypoint with trainable V8 and supervised metadata.
 
-The historical optimizer evaluates the supervised challenger directly, but production
-selection remains protected by the existing chronological every-slate 80% promotion
-gate. Expanded V8 fields and strict training-integrity evidence remain shadow-only
-until that gate and a fresh prospective audit pass.
+The historical optimizer now evaluates V7 as a selective individual-game odds
+learner with an explicit PICK/PASS objective. Production selection remains
+fail-closed: the selective threshold is frozen on walk-forward evidence and a
+fresh chronological untouched audit must pass before authority can change.
 """
 from __future__ import annotations
 
@@ -16,10 +16,11 @@ import mlb_historical_supervised_v9 as supervised_v9
 import mlb_historical_supervised_v9_integrity_v2 as supervised_integrity_v2
 import mlb_historical_v7_learning_cadence_v1 as learning_cadence
 import mlb_historical_v7_priority_repairs_v1 as priority_repairs
+import mlb_historical_v7_selective_objective_v1 as selective_objective
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v10-priority-repairs-active"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v11-selective-objective-active"
 
 # Reopen only a terminal rejected state caused by the previous deployment ceiling.
 round_extension.install(base.optimizer_handler)
@@ -37,6 +38,10 @@ priority_repairs.install_feature_repairs(supervised_v9)
 # Install strict labels and the deterministic supervised search.
 supervised_integrity_v2.install(supervised_v9)
 supervised_v9.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
+
+# Change V7 evaluation from forced full-slate prediction to a frozen PICK/PASS
+# selective objective. This remains fail-closed and cannot self-promote.
+selective_objective.install(base.optimizer_handler.optimizer)
 
 # Keep shadow-refit cadence separate from the canonical 200-game promotion audit.
 learning_cadence.install(base.optimizer_handler, supervised_v9)
@@ -71,6 +76,7 @@ def _with_shadow_contract(value: Any) -> Any:
                 "integrityPatchVersion": supervised_integrity_v2.VERSION,
                 "learningCadenceVersion": learning_cadence.VERSION,
                 "priorityRepairsVersion": priority_repairs.VERSION,
+                "selectiveObjectiveVersion": selective_objective.VERSION,
                 "shadowRefitIncrementGames": priority_repairs.SHADOW_REFIT_INCREMENT_GAMES,
                 "canonicalFreshAuditIncrementGames": base.optimizer_handler.FRESH_AUDIT_INCREMENT_GAMES,
                 "shadowRefitsMayPromote": False,
@@ -79,7 +85,14 @@ def _with_shadow_contract(value: Any) -> Any:
                 "v8ExpansionFallbackEnabled": True,
                 "sameSlateOutcomeFeaturesProhibited": True,
                 "providerCallsRequiredForRematerialization": 0,
-                "promotionRequiresEverySlateAtLeast80Pct": True,
+                "objective": "selective_individual_game_accuracy",
+                "pickPassEnabled": True,
+                "minimumSelectiveCoverage": selective_objective.MIN_COVERAGE,
+                "minimumSelectiveWalkForwardPicks": selective_objective.MIN_WALK_FORWARD_PICKS,
+                "minimumSelectiveUntouchedPicks": selective_objective.MIN_UNTOUCHED_PICKS,
+                "productionSelectiveAccuracy": selective_objective.PRODUCTION_ACCURACY,
+                "eliteSelectiveAccuracy": selective_objective.ELITE_ACCURACY,
+                "thresholdFrozenBeforeUntouchedHoldout": True,
                 "freshProspectiveAuditRequiredBeforeProduction": True,
                 "candidateHandoffRequiresCanonicalReevaluation": True,
                 "separateFullSlateAndSelectiveAccuracy": True,
