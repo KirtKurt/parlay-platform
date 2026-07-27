@@ -1,19 +1,14 @@
-"""V7 shadow-refit cadence and challenger-selection repair.
+"""V7 challenger-ranking repair with separated learning cadence.
 
-Canonical promotion still requires a genuinely untouched 200-game audit. This
-module does not change that threshold. It defines a separate 50-game cadence for
-read-only shadow refits so model diagnostics can advance without granting any
-production authority.
-
-It also changes inner-model ranking so chronological mean accuracy, worst-day
-accuracy and calibration decide among shadow candidates when the coarse
-80%-every-day pass-rate signal is tied. The final production gate is unchanged.
+Shadow refits are scheduled independently every 50 new eligible games.  This
+module does not modify FRESH_AUDIT_INCREMENT_GAMES: the canonical optimizer must
+retain the policy minimum of 200 genuinely untouched games before promotion.
 """
 from __future__ import annotations
 
 from typing import Any, Mapping
 
-VERSION = "MLB-HISTORICAL-V7-LEARNING-CADENCE-v2-shadow-separated"
+VERSION = "MLB-HISTORICAL-V7-LEARNING-CADENCE-v2-separated-shadow-canonical"
 SHADOW_REFIT_INCREMENT_GAMES = 50
 
 
@@ -21,10 +16,8 @@ def install(handler: Any, learner: Any) -> None:
     if getattr(handler, "_INQSI_MLB_V7_LEARNING_CADENCE_INSTALLED", False):
         return
 
-    # Do not lower FRESH_AUDIT_INCREMENT_GAMES. The canonical handler clamps that
-    # value to the 200-game untouched-audit floor by design. Shadow refits are
-    # read-only and use their own cadence outside the promotion state machine.
-    handler.V7_SHADOW_REFIT_INCREMENT_GAMES = SHADOW_REFIT_INCREMENT_GAMES
+    if int(getattr(handler, "FRESH_AUDIT_INCREMENT_GAMES", 0) or 0) < 200:
+        raise RuntimeError("canonical untouched-audit increment cannot be below 200")
 
     def chronological_rank(metrics: Mapping[str, Any]):
         f = learner._f
@@ -41,4 +34,5 @@ def install(handler: Any, learner: Any) -> None:
     learner.V7_LEARNING_CADENCE_VERSION = VERSION
     learner.V7_SHADOW_REFIT_INCREMENT_GAMES = SHADOW_REFIT_INCREMENT_GAMES
     handler.V7_LEARNING_CADENCE_VERSION = VERSION
+    handler.V7_SHADOW_REFIT_INCREMENT_GAMES = SHADOW_REFIT_INCREMENT_GAMES
     handler._INQSI_MLB_V7_LEARNING_CADENCE_INSTALLED = True
