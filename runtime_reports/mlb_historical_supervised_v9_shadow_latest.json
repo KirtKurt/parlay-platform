@@ -1,6 +1,6 @@
 {
   "blockers": [],
-  "createdAtUtc": "2026-07-26T21:18:42.673717+00:00",
+  "createdAtUtc": "2026-07-27T00:54:05.688144+00:00",
   "historicalChampionWritten": false,
   "ok": true,
   "priorCandidate": {
@@ -18,22 +18,22 @@
   "providerCallsMade": 0,
   "readOnly": true,
   "retrospectiveShadowOnly": true,
-  "runId": "30220704516",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30220704516",
+  "runId": "30228368942",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30228368942",
   "runtimeInstall": {
     "featureVersion": "MLB-SUPERVISED-PAIR-FEATURES-v1",
     "modelVersion": "MLB-HISTORICAL-SUPERVISED-v9.0-nested-chrono-v8-trainable-calibrated",
     "supervisedOptimizerInstalled": true,
     "supervisedPolicyRuntimeInstalled": true
   },
-  "sourceSha": "738abe8726eac29080914fa8be539bd84e27291b",
+  "sourceSha": "1f1c90614d1c953c6947541a60f305afe584e53a",
   "state": {
-    "completeSlateCount": 248,
-    "currentDate": "2026-05-10",
-    "currentSlotIndex": 3,
-    "eligibleGameCount": 3001,
-    "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v7-odds-pattern-stack",
-    "networkRequestCount": 19630,
+    "completeSlateCount": 256,
+    "currentDate": "2026-05-18",
+    "currentSlotIndex": 33,
+    "eligibleGameCount": 3108,
+    "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
+    "networkRequestCount": 20290,
     "optimizationRound": 6,
     "phase": "BACKFILLING",
     "rematerializationComplete": true,
@@ -67,101 +67,29 @@
       "finalFit": {
         "dayBalancedWeights": true,
         "epochsCompleted": 160,
-        "l2": 0.1,
-        "trainingDayCount": 213,
-        "trainingExampleCount": 2532,
-        "trainingLoss": 0.6786162311
+        "l2": 0.01,
+        "trainingDayCount": 221,
+        "trainingExampleCount": 2642,
+        "trainingLoss": 0.6774777222
       },
       "holdoutEvaluatedAfterFreeze": true,
       "holdoutLabelsUsedForFitOrSelection": false,
       "hyperparameterCandidateCount": 48,
       "innerFoldCount": 3,
       "outerOverfitChecks": {
-        "brierDeltaVsBaseline": -0.00992304,
-        "logLossDeltaVsBaseline": -0.02422381,
+        "brierDeltaVsBaseline": -0.00587513,
+        "logLossDeltaVsBaseline": -0.01421356,
         "maximumAllowedAccuracyGap": 0.1,
         "maximumAllowedBrierDegradation": 0.005,
         "maximumAllowedLogLossDegradation": 0.01,
         "passed": true,
-        "trainValidationMeanDailyAccuracyGap": 0.04279639
+        "trainValidationMeanDailyAccuracyGap": 0.02485863
       },
       "outerWalkForwardAccepted": false,
       "outerWalkForwardBaseline": {
-        "brierScore": 0.25972786501336326,
-        "correct": 144,
+        "brierScore": 0.2520382338434476,
+        "correct": 155,
         "daily": [
-          {
-            "accuracy": 0.1875,
-            "correct": 3,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 16,
-            "predictionCount": 16,
-            "slateDateEt": "2026-04-05"
-          },
-          {
-            "accuracy": 0.53846154,
-            "correct": 7,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 13,
-            "predictionCount": 13,
-            "slateDateEt": "2026-04-06"
-          },
-          {
-            "accuracy": 0.53333333,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-04-07"
-          },
-          {
-            "accuracy": 0.4,
-            "correct": 6,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-04-08"
-          },
-          {
-            "accuracy": 0.33333333,
-            "correct": 2,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 6,
-            "predictionCount": 6,
-            "slateDateEt": "2026-04-09"
-          },
-          {
-            "accuracy": 0.46666667,
-            "correct": 7,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-04-10"
-          },
-          {
-            "accuracy": 0.53333333,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-04-11"
-          },
-          {
-            "accuracy": 0.53333333,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-04-12"
-          },
           {
             "accuracy": 0.8,
             "correct": 8,
@@ -269,40 +197,69 @@
             "officialGameCount": 14,
             "predictionCount": 14,
             "slateDateEt": "2026-04-24"
-          }
-        ],
-        "dailyPassRate": 0.05,
-        "dayCount": 20,
-        "gameCount": 268,
-        "logLoss": 0.7168789834400354,
-        "meanDailyAccuracy": 0.5401076,
-        "meanSlateCoverage": 1.0,
-        "minimumDailyAccuracy": 0.1875,
-        "minimumSlateCoverage": 1.0,
-        "overallAccuracy": 0.53731343,
-        "policyDigest": "2cbc22ad8ae52c2cbc32e4eb81c8631ba440bd779609ca363adff14c3dc27f95"
-      },
-      "outerWalkForwardSupervised": {
-        "brierScore": 0.24980482880155708,
-        "correct": 139,
-        "daily": [
+          },
           {
-            "accuracy": 0.3125,
-            "correct": 5,
+            "accuracy": 0.57142857,
+            "correct": 8,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 14,
+            "predictionCount": 14,
+            "slateDateEt": "2026-04-25"
+          },
+          {
+            "accuracy": 0.5625,
+            "correct": 9,
             "coverage": 1.0,
             "dayPassed": false,
             "officialGameCount": 16,
             "predictionCount": 16,
-            "slateDateEt": "2026-04-05"
+            "slateDateEt": "2026-04-26"
           },
           {
-            "accuracy": 0.38461538,
-            "correct": 5,
+            "accuracy": 0.5,
+            "correct": 4,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 8,
+            "predictionCount": 8,
+            "slateDateEt": "2026-04-27"
+          },
+          {
+            "accuracy": 0.73333333,
+            "correct": 11,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 15,
+            "predictionCount": 15,
+            "slateDateEt": "2026-04-28"
+          },
+          {
+            "accuracy": 0.30769231,
+            "correct": 4,
             "coverage": 1.0,
             "dayPassed": false,
             "officialGameCount": 13,
             "predictionCount": 13,
-            "slateDateEt": "2026-04-06"
+            "slateDateEt": "2026-04-29"
+          },
+          {
+            "accuracy": 0.54545455,
+            "correct": 6,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 11,
+            "predictionCount": 11,
+            "slateDateEt": "2026-04-30"
+          },
+          {
+            "accuracy": 0.66666667,
+            "correct": 10,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 15,
+            "predictionCount": 15,
+            "slateDateEt": "2026-05-01"
           },
           {
             "accuracy": 0.53333333,
@@ -311,53 +268,24 @@
             "dayPassed": false,
             "officialGameCount": 15,
             "predictionCount": 15,
-            "slateDateEt": "2026-04-07"
-          },
-          {
-            "accuracy": 0.46666667,
-            "correct": 7,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-04-08"
-          },
-          {
-            "accuracy": 0.33333333,
-            "correct": 2,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 6,
-            "predictionCount": 6,
-            "slateDateEt": "2026-04-09"
-          },
-          {
-            "accuracy": 0.53333333,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-04-10"
-          },
-          {
-            "accuracy": 0.6,
-            "correct": 9,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-04-11"
-          },
-          {
-            "accuracy": 0.46666667,
-            "correct": 7,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-04-12"
-          },
+            "slateDateEt": "2026-05-02"
+          }
+        ],
+        "dailyPassRate": 0.05,
+        "dayCount": 20,
+        "gameCount": 265,
+        "logLoss": 0.6997099808982453,
+        "meanDailyAccuracy": 0.5848299615000001,
+        "meanSlateCoverage": 1.0,
+        "minimumDailyAccuracy": 0.30769231,
+        "minimumSlateCoverage": 1.0,
+        "overallAccuracy": 0.58490566,
+        "policyDigest": "2cbc22ad8ae52c2cbc32e4eb81c8631ba440bd779609ca363adff14c3dc27f95"
+      },
+      "outerWalkForwardSupervised": {
+        "brierScore": 0.2461631058243513,
+        "correct": 143,
+        "daily": [
           {
             "accuracy": 0.8,
             "correct": 8,
@@ -386,8 +314,8 @@
             "slateDateEt": "2026-04-15"
           },
           {
-            "accuracy": 0.3,
-            "correct": 3,
+            "accuracy": 0.2,
+            "correct": 2,
             "coverage": 1.0,
             "dayPassed": false,
             "officialGameCount": 10,
@@ -395,8 +323,8 @@
             "slateDateEt": "2026-04-16"
           },
           {
-            "accuracy": 0.53333333,
-            "correct": 8,
+            "accuracy": 0.66666667,
+            "correct": 10,
             "coverage": 1.0,
             "dayPassed": false,
             "officialGameCount": 15,
@@ -431,8 +359,8 @@
             "slateDateEt": "2026-04-20"
           },
           {
-            "accuracy": 0.4,
-            "correct": 6,
+            "accuracy": 0.46666667,
+            "correct": 7,
             "coverage": 1.0,
             "dayPassed": false,
             "officialGameCount": 15,
@@ -465,32 +393,104 @@
             "officialGameCount": 14,
             "predictionCount": 14,
             "slateDateEt": "2026-04-24"
+          },
+          {
+            "accuracy": 0.57142857,
+            "correct": 8,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 14,
+            "predictionCount": 14,
+            "slateDateEt": "2026-04-25"
+          },
+          {
+            "accuracy": 0.4375,
+            "correct": 7,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 16,
+            "predictionCount": 16,
+            "slateDateEt": "2026-04-26"
+          },
+          {
+            "accuracy": 0.375,
+            "correct": 3,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 8,
+            "predictionCount": 8,
+            "slateDateEt": "2026-04-27"
+          },
+          {
+            "accuracy": 0.53333333,
+            "correct": 8,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 15,
+            "predictionCount": 15,
+            "slateDateEt": "2026-04-28"
+          },
+          {
+            "accuracy": 0.38461538,
+            "correct": 5,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 13,
+            "predictionCount": 13,
+            "slateDateEt": "2026-04-29"
+          },
+          {
+            "accuracy": 0.54545455,
+            "correct": 6,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 11,
+            "predictionCount": 11,
+            "slateDateEt": "2026-04-30"
+          },
+          {
+            "accuracy": 0.53333333,
+            "correct": 8,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 15,
+            "predictionCount": 15,
+            "slateDateEt": "2026-05-01"
+          },
+          {
+            "accuracy": 0.53333333,
+            "correct": 8,
+            "coverage": 1.0,
+            "dayPassed": false,
+            "officialGameCount": 15,
+            "predictionCount": 15,
+            "slateDateEt": "2026-05-02"
           }
         ],
         "dailyPassRate": 0.1,
         "dayCount": 20,
-        "gameCount": 268,
-        "logLoss": 0.6926551758598216,
-        "meanDailyAccuracy": 0.5214430705,
+        "gameCount": 265,
+        "logLoss": 0.6854964251091018,
+        "meanDailyAccuracy": 0.54062056,
         "meanSlateCoverage": 1.0,
-        "minimumDailyAccuracy": 0.3,
+        "minimumDailyAccuracy": 0.2,
         "minimumSlateCoverage": 1.0,
-        "overallAccuracy": 0.51865672,
-        "policyDigest": "7e747a6c0f74ad2cc6b4d4ce0022bf579469a9abcee3163842878d3104b07379"
+        "overallAccuracy": 0.53962264,
+        "policyDigest": "5d61481fb582dc38ad5995d1953eec165ba74bce6c3c8b5c13072cda7fee2d6c"
       },
       "probabilityModel": "day-balanced L2 logistic regression",
       "randomPolicySearchDisabled": true,
       "selectedBlend": 1.0,
       "selectedInnerMetrics": {
-        "brierScore": 0.24115569414875074,
-        "dailyPassRate": 0.13333333333333333,
-        "logLoss": 0.6751253717766404,
-        "meanDailyAccuracy": 0.5622279343333333,
+        "brierScore": 0.24597608942585616,
+        "dailyPassRate": 0.18333333333333335,
+        "logLoss": 0.6850335051678025,
+        "meanDailyAccuracy": 0.5540664661666667,
         "minimumDailyAccuracy": 0.0,
-        "overallAccuracy": 0.57748652
+        "overallAccuracy": 0.5635756066666667
       },
-      "selectedL2": 0.1,
-      "selectedTemperature": 0.8,
+      "selectedL2": 0.01,
+      "selectedTemperature": 1.25,
       "version": "MLB-HISTORICAL-SUPERVISED-v9.0-nested-chrono-v8-trainable-calibrated"
     },
     "errors": [
@@ -504,11 +504,11 @@
     ],
     "promotionPassed": false,
     "searchVersion": "MLB-HISTORICAL-SUPERVISED-v9.0-nested-chrono-v8-trainable-calibrated",
-    "settledGameCount": 3001,
+    "settledGameCount": 3108,
     "status": "CANDIDATE_REJECTED",
-    "untouchedHoldoutMeanDailyAccuracyPct": 56.9004,
-    "untouchedHoldoutMinimumDailyAccuracyPct": 30.7692,
-    "walkForwardMeanDailyAccuracyPct": 54.0108,
-    "walkForwardMinimumDailyAccuracyPct": 18.75
+    "untouchedHoldoutMeanDailyAccuracyPct": 55.0674,
+    "untouchedHoldoutMinimumDailyAccuracyPct": 33.3333,
+    "walkForwardMeanDailyAccuracyPct": 58.483,
+    "walkForwardMinimumDailyAccuracyPct": 30.7692
   }
 }
