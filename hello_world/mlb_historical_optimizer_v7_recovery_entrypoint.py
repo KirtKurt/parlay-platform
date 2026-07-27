@@ -58,7 +58,8 @@ def _with_shadow_contract(value: Any) -> Any:
         value.setdefault(
             "supervisedShadow",
             {
-                "authority": "SHADOW_ONLY_UNTIL_PROMOTION_GATE",
+                "authority": "SHADOW_ONLY",
+                "authorityMayChangeOnlyAfterPromotionGate": True,
                 "productionAuthorityChanged": False,
                 "datasetPatchVersion": supervised_v8_dataset.VERSION,
                 "featureDatasetVersion": supervised_v8_dataset.FEATURE_DATASET_VERSION,
