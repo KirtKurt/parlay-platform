@@ -49,6 +49,17 @@ def main() -> int:
     at_floor = _row(60.0)
     assert module._is_official(at_floor) is True, at_floor["officialLockQualityGate"]
 
+    below_high_move = _row(65.0, delta=0.017999)
+    assert module._is_official(below_high_move) is True, below_high_move["officialLockQualityGate"]
+
+    unconfirmed_high_move = _row(65.0, delta=0.018)
+    assert module._is_official(unconfirmed_high_move) is False
+    assert "high_positive_movement_without_independent_confirmation" in unconfirmed_high_move["officialLockQualityGate"]["reasons"]
+    assert unconfirmed_high_move["officialLockQualityGate"]["highPositiveMovement"] is True
+
+    confirmed_high_move = _row(65.0, delta=0.03, tags=["BOOK_AGREEMENT", "RUN_LINE_CONFIRMED"])
+    assert module._is_official(confirmed_high_move) is True, confirmed_high_move["officialLockQualityGate"]
+
     movement_against = _row(60.16, delta=-0.005, reversalCount=2)
     movement_against["tags"] = ["PROBABILITY_DIRECTION_INTEGRITY_CORRECTION"]
     assert module._is_official(movement_against) is False
