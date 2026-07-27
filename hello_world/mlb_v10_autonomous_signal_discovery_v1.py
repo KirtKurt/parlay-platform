@@ -14,9 +14,9 @@ import json
 import math
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
-from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
+from typing import Any, Dict, Mapping, Sequence, Tuple
 
-VERSION = "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v1"
+VERSION = "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v1.1-scaled-corpus-pass"
 MIN_PATTERN_OCCURRENCES = 8
 MAX_ATOMIC_PER_GAME = 80
 MAX_INTERACTIONS_PER_GAME = 120
@@ -38,8 +38,6 @@ def _flatten_numeric(value: Any, prefix: str = "") -> Dict[str, float]:
             name = f"{prefix}.{key}" if prefix else str(key)
             out.update(_flatten_numeric(value[key], name))
     elif isinstance(value, (list, tuple)):
-        # Lists are represented by length and numeric summary; raw indices are avoided
-        # so provider ordering cannot manufacture false patterns.
         numeric = [_f(item) for item in value]
         numeric = [item for item in numeric if item is not None]
         if numeric:
@@ -108,8 +106,6 @@ def _atomic_patterns(record: Mapping[str, Any]) -> list[str]:
 
 
 def _interactions(atomic: Sequence[str]) -> list[str]:
-    # Autonomous bounded interaction creation. Prefer the strongest directional and
-    # tag patterns, then create deterministic pairs without manual signal selection.
     eligible = [
         item for item in atomic
         if item.startswith(("diff:", "winner_gt_loser:", "winner_lt_loser:", "winner_only_tag:"))
@@ -121,13 +117,6 @@ def _interactions(atomic: Sequence[str]) -> list[str]:
             if len(pairs) >= MAX_INTERACTIONS_PER_GAME:
                 return pairs
     return pairs
-
-
-def _comparison_occurrences(record: Mapping[str, Any], patterns: Iterable[str]) -> set[str]:
-    """Return patterns that would also describe the actual winner in this record."""
-    observed = set(_atomic_patterns(record))
-    observed.update(_interactions(sorted(observed)))
-    return set(patterns) & observed
 
 
 def dataset_fingerprint(records: Sequence[Mapping[str, Any]]) -> str:
@@ -149,10 +138,12 @@ def discover(records: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
     dates_by_pattern: Dict[str, set[str]] = defaultdict(set)
     family_counts = Counter()
 
+    # Single full-corpus pass: each game's autonomous pattern set is constructed once.
     for index, record in enumerate(settled):
         atomic = _atomic_patterns(record)
-        interactions = _interactions(atomic)
-        for pattern in set(atomic + interactions):
+        observed = set(atomic)
+        observed.update(_interactions(atomic))
+        for pattern in observed:
             pattern_games[pattern].add(index)
             dates_by_pattern[pattern].add(str(record.get("slateDateEt") or ""))
             family_counts[pattern.split(":", 1)[0]] += 1
@@ -163,20 +154,18 @@ def discover(records: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
         occurrences = len(game_indexes)
         if occurrences < MIN_PATTERN_OCCURRENCES:
             continue
-        # Because patterns are winner-anchored, recurrence probability is the share
-        # of all settled games in which the same winner-associated state reappears.
-        # Beta(1,1) smoothing avoids 0%/100% claims in small samples.
+        # Beta(1,1) posterior predictive probability that a newly ingested settled
+        # game's winner-associated state will contain this same pattern.
         posterior_recurrence = (occurrences + 1.0) / (total_games + 2.0) if total_games else 0.0
-        # Cross-game persistence: compare the pattern against every other game's winner.
-        matched_other = 0
-        compared_other = 0
-        for idx, record in enumerate(settled):
-            if idx in game_indexes:
-                continue
-            compared_other += 1
-            if pattern in _comparison_occurrences(record, (pattern,)):
-                matched_other += 1
-        posterior_other_game = (matched_other + 1.0) / (compared_other + 2.0) if compared_other else 0.0
+        # Leave-one-origin recurrence measures how often a pattern seen in one game
+        # is also present among the winners of the remaining games.
+        other_games_compared = max(0, total_games - 1)
+        other_game_matches = max(0, occurrences - 1)
+        posterior_other_game = (
+            (other_game_matches + 1.0) / (other_games_compared + 2.0)
+            if other_games_compared
+            else 0.0
+        )
         registry.append(
             {
                 "signalId": hashlib.sha256(pattern.encode()).hexdigest()[:20],
@@ -185,8 +174,8 @@ def discover(records: Sequence[Mapping[str, Any]]) -> Dict[str, Any]:
                 "occurrenceCount": occurrences,
                 "occurrenceRate": occurrences / total_games if total_games else 0.0,
                 "slateDayCount": len(dates_by_pattern[pattern]),
-                "otherGamesCompared": compared_other,
-                "otherGameWinnerMatchCount": matched_other,
+                "otherGamesCompared": other_games_compared,
+                "otherGameWinnerMatchCount": other_game_matches,
                 "posteriorProbabilityOfRecurring": posterior_recurrence,
                 "posteriorProbabilityInOtherGameWinner": posterior_other_game,
                 "researchOnly": True,
