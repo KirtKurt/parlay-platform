@@ -20,7 +20,7 @@ import mlb_historical_v7_selective_objective_v1 as selective_objective
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v11-selective-objective-active"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v11.1-selective-objective-active"
 
 # Reopen only a terminal rejected state caused by the previous deployment ceiling.
 round_extension.install(base.optimizer_handler)
