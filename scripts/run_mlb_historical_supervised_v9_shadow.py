@@ -47,7 +47,9 @@ def main() -> int:
     new_games = max(0, current_count - previous_count)
     threshold = int(os.environ.get("MLB_V7_SHADOW_REFIT_INCREMENT_GAMES", "50"))
     force = os.environ.get("MLB_V7_FORCE_SHADOW_REFIT", "false").lower() == "true"
-    should_refit = force or not previous_fingerprint or fingerprint != previous_fingerprint and new_games >= threshold
+    should_refit = force or not previous_fingerprint or (
+        fingerprint != previous_fingerprint and new_games >= threshold
+    )
 
     base_report = {
         "proofType": "MLB_HISTORICAL_SUPERVISED_V9_SHADOW_EVALUATION",
@@ -76,19 +78,23 @@ def main() -> int:
             "rematerializationComplete": state.get("featureRematerializationComplete"),
             "rematerializationErrors": state.get("featureRematerializationErrors") or [],
         },
-        "featurePopulation": repairs.feature_population_report(records, supervised_v9, handler.policy_runtime.BASELINE_POLICY),
+        "featurePopulation": repairs.feature_population_report(
+            records, supervised_v9, handler.policy_runtime.BASELINE_POLICY
+        ),
         "operationsDiagnostics": repairs.rejection_and_lease_report(state, handler),
         "accuracyViews": repairs.selective_accuracy_report(records),
     }
 
     if not should_refit:
-        base_report.update({
-            "ok": True,
-            "shadowRefitPerformed": False,
-            "stalledStage": "WAITING_FOR_50_NEW_ELIGIBLE_GAMES",
-            "blockers": [],
-            "previousShadowDatasetFingerprint": previous_fingerprint,
-        })
+        base_report.update(
+            {
+                "ok": True,
+                "shadowRefitPerformed": False,
+                "stalledStage": "WAITING_FOR_50_NEW_ELIGIBLE_GAMES",
+                "blockers": [],
+                "previousShadowDatasetFingerprint": previous_fingerprint,
+            }
+        )
         Path(args.output).parent.mkdir(parents=True, exist_ok=True)
         Path(args.output).write_text(json.dumps(base_report, indent=2, sort_keys=True) + "\n")
         print(json.dumps(base_report, indent=2, sort_keys=True))
@@ -119,36 +125,56 @@ def main() -> int:
         blockers.append("training_integrity_rejected_rows")
     if integrity.get("acceptedCount") != integrity.get("inputCount"):
         blockers.append("training_integrity_count_mismatch")
+    if diagnostics.get("strictBinaryLabels") is not True:
+        blockers.append("strict_binary_label_contract_missing")
+    if diagnostics.get("v8ExpansionFallbackEnabled") is not True:
+        blockers.append("v8_expansion_fallback_not_enabled")
+    if diagnostics.get("randomPolicySearchDisabled") is not True:
+        blockers.append("random_rule_search_not_disabled")
+    if diagnostics.get("holdoutEvaluatedAfterFreeze") is not True:
+        blockers.append("holdout_not_proven_post_freeze")
+    if diagnostics.get("holdoutLabelsUsedForFitOrSelection") is not False:
+        blockers.append("holdout_used_for_fit_or_selection")
     if state.get("featureRematerializationErrors"):
         blockers.append("feature_rematerialization_errors")
 
-    base_report.update({
-        "ok": not blockers,
-        "shadowRefitPerformed": True,
-        "blockers": blockers,
-        "trainingIntegrity": integrity,
-        "runtimeInstall": {
-            "modelVersion": supervised_v9.VERSION,
-            "featureVersion": supervised_v9.FEATURE_VERSION,
-            "featureCount": len(supervised_v9.FEATURES),
-            "priorityRepairsVersion": repairs.VERSION,
-        },
-        "supervisedCandidate": {
-            "status": result.get("status"),
-            "searchVersion": result.get("searchVersion"),
-            "settledGameCount": result.get("settledGameCount"),
-            "walkForwardMeanDailyAccuracyPct": _pct(gate.get("walkForwardMeanDailyAccuracy")),
-            "walkForwardMinimumDailyAccuracyPct": _pct(gate.get("walkForwardMinimumDailyAccuracy")),
-            "untouchedHoldoutMeanDailyAccuracyPct": _pct(gate.get("untouchedHoldoutMeanDailyAccuracy")),
-            "untouchedHoldoutMinimumDailyAccuracyPct": _pct(gate.get("untouchedHoldoutMinimumDailyAccuracy")),
-            "brierScore": gate.get("brierScore") or diagnostics.get("brierScore"),
-            "logLoss": gate.get("logLoss") or diagnostics.get("logLoss"),
-            "promotionPassed": gate.get("passed") is True,
-            "errors": gate.get("errors") or [],
-            "diagnostics": diagnostics,
-        },
-        "canonicalCandidateHandoff": handoff,
-    })
+    base_report.update(
+        {
+            "ok": not blockers,
+            "shadowRefitPerformed": True,
+            "blockers": blockers,
+            "trainingIntegrity": integrity,
+            "runtimeInstall": {
+                "modelVersion": supervised_v9.VERSION,
+                "featureVersion": supervised_v9.FEATURE_VERSION,
+                "featureCount": len(supervised_v9.FEATURES),
+                "priorityRepairsVersion": repairs.VERSION,
+            },
+            "supervisedCandidate": {
+                "status": result.get("status"),
+                "searchVersion": result.get("searchVersion"),
+                "settledGameCount": result.get("settledGameCount"),
+                "walkForwardMeanDailyAccuracyPct": _pct(
+                    gate.get("walkForwardMeanDailyAccuracy")
+                ),
+                "walkForwardMinimumDailyAccuracyPct": _pct(
+                    gate.get("walkForwardMinimumDailyAccuracy")
+                ),
+                "untouchedHoldoutMeanDailyAccuracyPct": _pct(
+                    gate.get("untouchedHoldoutMeanDailyAccuracy")
+                ),
+                "untouchedHoldoutMinimumDailyAccuracyPct": _pct(
+                    gate.get("untouchedHoldoutMinimumDailyAccuracy")
+                ),
+                "brierScore": gate.get("brierScore") or diagnostics.get("brierScore"),
+                "logLoss": gate.get("logLoss") or diagnostics.get("logLoss"),
+                "promotionPassed": gate.get("passed") is True,
+                "errors": gate.get("errors") or [],
+                "diagnostics": diagnostics,
+            },
+            "canonicalCandidateHandoff": handoff,
+        }
+    )
     path = Path(args.output)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(base_report, indent=2, sort_keys=True) + "\n")
