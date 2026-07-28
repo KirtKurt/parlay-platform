@@ -1,0 +1,114 @@
+name: Deploy MLB V8 Fundamentals Shadow
+
+on:
+  workflow_dispatch:
+    inputs:
+      enable_schedule_after_canary:
+        description: Enable the 15-minute schedule after a successful provider canary
+        required: true
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_v8_fundamentals_collector.py'
+      - 'hello_world/bigballsdata_client.py'
+      - 'mlb_v8_fundamentals/template.yaml'
+      - '.github/workflows/mlb-v8-fundamentals-deploy.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mlb-v8-fundamentals-shadow-deploy
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-v8-fundamentals-shadow
+  AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+
+jobs:
+  deploy-canary-enable:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/setup-sam@v2
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Validate required secrets
+        env:
+          BBS_API_SECRET_ARN: ${{ secrets.BBS_API_SECRET_ARN }}
+        run: |
+          set -euo pipefail
+          test -n "$AWS_REGION_VALUE"
+          test -n "$BBS_API_SECRET_ARN"
+      - name: Validate, build, and deploy schedule-disabled stack
+        env:
+          BBS_API_SECRET_ARN: ${{ secrets.BBS_API_SECRET_ARN }}
+        run: |
+          set -euo pipefail
+          sam validate --lint --template-file mlb_v8_fundamentals/template.yaml || sam validate --template-file mlb_v8_fundamentals/template.yaml
+          sam build --template-file mlb_v8_fundamentals/template.yaml
+          sam deploy \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION_VALUE" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              BbsApiSecretArn="$BBS_API_SECRET_ARN" \
+              DeployGitSha="${GITHUB_SHA}" \
+              FundamentalsScheduleEnabled=false
+      - name: Invoke live provider canary and verify payload
+        id: canary
+        run: |
+          set -euo pipefail
+          function_name=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='FundamentalsCollectorFunctionName'].OutputValue" --output text)
+          test -n "$function_name"
+          aws lambda invoke --function-name "$function_name" --region "$AWS_REGION_VALUE" --payload '{"mode":"manual_canary"}' --cli-binary-format raw-in-base64-out /tmp/v8-fundamentals-canary.json >/tmp/v8-fundamentals-invoke.json
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('/tmp/v8-fundamentals-canary.json').read_text())
+          assert value.get('ok') is True, value
+          assert value.get('authority') == 'V8_FUNDAMENTALS_SHADOW_ONLY', value
+          assert value.get('productionV7Unchanged') is True, value
+          assert value.get('fingerprint'), value
+          assert value.get('artifactKey'), value
+          assert int(value.get('gameCount') or 0) >= 0, value
+          print(json.dumps(value, indent=2, sort_keys=True))
+          PY
+      - name: Enable 15-minute schedule after successful canary
+        if: ${{ github.event_name == 'push' || inputs.enable_schedule_after_canary == 'true' }}
+        env:
+          BBS_API_SECRET_ARN: ${{ secrets.BBS_API_SECRET_ARN }}
+        run: |
+          set -euo pipefail
+          sam deploy \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION_VALUE" \
+            --resolve-s3 \
+            --capabilities CAPABILITY_IAM \
+            --no-confirm-changeset \
+            --no-fail-on-empty-changeset \
+            --parameter-overrides \
+              BbsApiSecretArn="$BBS_API_SECRET_ARN" \
+              DeployGitSha="${GITHUB_SHA}" \
+              FundamentalsScheduleEnabled=true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-v8-fundamentals-canary-${{ github.run_id }}
+          path: |
+            /tmp/v8-fundamentals-canary.json
+            /tmp/v8-fundamentals-invoke.json
+          retention-days: 90
+          if-no-files-found: warn
