@@ -11,6 +11,7 @@ name: MLB V10 Autonomous Signal Discovery
       - 'scripts/run_mlb_v10_autonomous_signal_discovery.py'
       - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
       - 'tests/unit/test_mlb_v10_autonomous_signal_discovery_v1.py'
+      - 'tests/unit/test_run_mlb_v10_autonomous_signal_discovery.py'
       - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
       - '.github/workflows/mlb-v10-autonomous-signal-discovery.yml'
 
@@ -56,6 +57,7 @@ jobs:
             scripts/resolve_mlb_historical_artifacts_bucket.py
           PYTHONPATH=. python -m pytest -q --tb=short \
             tests/unit/test_mlb_v10_autonomous_signal_discovery_v1.py \
+            tests/unit/test_run_mlb_v10_autonomous_signal_discovery.py \
             tests/unit/test_resolve_mlb_historical_artifacts_bucket.py
 
       - name: Preserve prior frozen registry and clear stale output
