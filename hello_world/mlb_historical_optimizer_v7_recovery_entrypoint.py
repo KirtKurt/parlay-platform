@@ -22,7 +22,7 @@ import mlb_historical_v7_selective_search_v2 as selective_search_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v14-incremental-settled-range"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v15-range-before-rematerialization"
 
 incremental_range_extension.install(base)
 round_extension.install(base.optimizer_handler)
@@ -96,6 +96,7 @@ def _with_shadow_contract(value: Any) -> Any:
                 "candidateHandoffRequiresCanonicalReevaluation": True,
                 "separateFullSlateAndSelectiveAccuracy": True,
                 "incrementalRangeExtensionVersion": incremental_range_extension.VERSION,
+                "rangeExtensionRunsBeforeRematerialization": True,
             },
         )
         value.setdefault("version", VERSION)
@@ -105,7 +106,14 @@ def _with_shadow_contract(value: Any) -> Any:
 def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     if _request_mode(event) == "status":
         return _with_shadow_contract(base.optimizer_handler.lambda_handler(event, context))
+
+    # The settled-range ledger must advance before feature rematerialization. Otherwise
+    # a stale rematerialization completion/error marker can consume the invocation and
+    # leave an exhausted cursor outside the authorized plan for another full cycle.
+    base._repair_precompetitive_extension_state()
+    base._append_authorized_range_extension()
+
     migration = rematerialization.run_once()
     if migration is not None:
         return _with_shadow_contract(migration)
-    return _with_shadow_contract(base.lambda_handler(event, context))
+    return _with_shadow_contract(base.optimizer_handler.lambda_handler(event, context))
