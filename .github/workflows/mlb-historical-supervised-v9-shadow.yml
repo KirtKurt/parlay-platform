@@ -43,7 +43,7 @@ permissions:
 
 concurrency:
   group: mlb-historical-v7-v9-shadow-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   STACK_NAME: parlay-platform-mlb-historical-optimizer
@@ -53,11 +53,12 @@ env:
   MLB_V7_SHADOW_REFIT_INCREMENT_GAMES: '50'
   MLB_V7_LIGHTWEIGHT_INCREMENT_GAMES: '25'
   PYTHONPATH: hello_world:scripts
+  PYTHONUNBUFFERED: '1'
 
 jobs:
   evaluate:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -233,10 +234,13 @@ jobs:
           resolution=load('/tmp/mlb-v7-v9-runtime-resolution.json')
           validation_ok=os.environ.get('VALIDATION_OUTCOME') == 'success'
           runtime_ok=os.environ.get('RUNTIME_RESOLVED') == 'true'
+          evaluation_outcome=os.environ.get('EVALUATION_OUTCOME')
           if not validation_ok:
               blocker='v7_v9_validation_failed'; stage='V7_V9_VALIDATION'
           elif not runtime_ok:
               blocker='v7_v9_runtime_resolution_failed'; stage='V7_V9_RUNTIME_RESOLUTION'
+          elif evaluation_outcome == 'cancelled':
+              blocker='v7_v9_evaluation_cancelled'; stage='V7_V9_EVALUATION_CANCELLED'
           else:
               blocker='v7_v9_evaluation_failed_before_report_write'; stage='V7_V9_EVALUATION_BEFORE_REPORT_WRITE'
           log=Path('/tmp/mlb-supervised-v9-shadow.log').read_text(errors='replace')[-12000:] if Path('/tmp/mlb-supervised-v9-shadow.log').exists() else ''
@@ -261,7 +265,7 @@ jobs:
               'workflowSteps':{
                   'validation':{'outcome':os.environ.get('VALIDATION_OUTCOME'),'exitCode':os.environ.get('VALIDATION_EXIT_CODE')},
                   'runtime':{'outcome':os.environ.get('RUNTIME_OUTCOME'),'exitCode':os.environ.get('RUNTIME_EXIT_CODE'),'resolved':runtime_ok},
-                  'evaluation':{'outcome':os.environ.get('EVALUATION_OUTCOME'),'exitCode':os.environ.get('EVALUATION_EXIT_CODE')},
+                  'evaluation':{'outcome':evaluation_outcome,'exitCode':os.environ.get('EVALUATION_EXIT_CODE')},
               },
               'errorLogTail':log,
               'blockers':[blocker],
