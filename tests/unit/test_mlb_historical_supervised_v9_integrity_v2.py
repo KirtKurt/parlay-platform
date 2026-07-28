@@ -32,8 +32,8 @@ def test_v8_fallback_reads_immutable_expansion_payload():
         },
     }
     away = {
-        "side": "away",
-        "team": "Away Club",
+        "marketSide": "away",
+        "teamName": "Away Club",
         "oddsMarketExpansionFeatures": {
             "h2h_Away_ClubMedianImpliedProbability": 0.43,
             "homeStarterBullpenSpreadDivergence": 0.35,
@@ -48,6 +48,18 @@ def test_v8_fallback_reads_immutable_expansion_payload():
     assert learner._v8(away, "h2hMedianImpliedProbability") == pytest.approx(0.43)
 
 
+def test_v8_fallback_rejects_non_finite_values():
+    signal = {
+        "team": "Home Club",
+        "oddsMarketExpansionFeatures": {
+            "h2h_Home_ClubMedianImpliedProbability": "nan",
+            "homeStarterBullpenSpreadDivergence": float("inf"),
+        },
+    }
+    assert patch._fallback_v8(signal, "h2hMedianImpliedProbability") is None
+    assert patch._fallback_v8(signal, "starterBullpenSpreadDivergence") is None
+
+
 def test_strict_binary_label_never_coerces_missing_to_away_win():
     with pytest.raises(ValueError, match="invalid_or_missing_binary_label"):
         integrity.strict_binary_label({"homeWon": None})
@@ -55,6 +67,28 @@ def test_strict_binary_label_never_coerces_missing_to_away_win():
         integrity.strict_binary_label({})
     assert integrity.strict_binary_label({"homeWon": 0}) == 0
     assert integrity.strict_binary_label({"homeWon": 1}) == 1
+
+
+def test_v9_search_fails_closed_on_empty_input():
+    class Optimizer:
+        VERSION = "test"
+
+        def __init__(self):
+            self.search_called = False
+
+        def search(self, records, config=None, *, untouched_holdout_dates=None):
+            self.search_called = True
+            return {"ok": True}
+
+    optimizer = Optimizer()
+    patch.install(learner)
+    learner.install(optimizer, object())
+    result = optimizer.search([])
+    assert result["ok"] is False
+    assert result["status"] == "DATA_INTEGRITY_BLOCKED"
+    assert "training_data_empty" in result["promotionGate"]["errors"]
+    assert "no_integrity_eligible_training_rows" in result["promotionGate"]["errors"]
+    assert optimizer.search_called is False
 
 
 def test_runtime_installs_integrity_before_supervised_search():
