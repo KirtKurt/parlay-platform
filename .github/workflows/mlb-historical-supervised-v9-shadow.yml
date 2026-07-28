@@ -14,6 +14,7 @@ name: MLB Historical V7 Selective and V9 Shadow Evaluation
       - 'hello_world/mlb_historical_v7_selective_search_v2.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'scripts/run_mlb_historical_supervised_v9_shadow.py'
+      - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow.py'
       - 'tests/unit/test_mlb_historical_v7_priority_repairs_v1.py'
       - 'tests/unit/test_mlb_historical_v7_selective_objective_v1.py'
       - 'tests/unit/test_mlb_historical_v7_selective_search_v2.py'
@@ -30,6 +31,7 @@ name: MLB Historical V7 Selective and V9 Shadow Evaluation
       - 'hello_world/mlb_historical_v7_selective_search_v2.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'scripts/run_mlb_historical_supervised_v9_shadow.py'
+      - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow.py'
       - 'tests/unit/test_mlb_historical_v7_priority_repairs_v1.py'
       - 'tests/unit/test_mlb_historical_v7_selective_objective_v1.py'
       - 'tests/unit/test_mlb_historical_v7_selective_search_v2.py'
@@ -83,9 +85,10 @@ jobs:
             hello_world/mlb_historical_v7_selective_search_v2.py \
             hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
             scripts/run_mlb_historical_supervised_v9_shadow.py
-          PYTHONPATH=hello_world python -m pytest -q --tb=short \
+          PYTHONPATH=hello_world:. python -m pytest -q --tb=short \
             tests/unit/test_mlb_historical_supervised_v9.py \
             tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py \
+            tests/unit/test_run_mlb_historical_supervised_v9_shadow.py \
             tests/unit/test_mlb_historical_v7_learning_cadence_v1.py \
             tests/unit/test_mlb_historical_v7_priority_repairs_v1.py \
             tests/unit/test_mlb_historical_v7_selective_objective_v1.py \
@@ -174,7 +177,7 @@ jobs:
           done
           exit 1
 
-      - name: Enforce safety contract
+      - name: Enforce safety and V9 diagnostic report contract
         if: always()
         run: |
           python - <<'PY'
@@ -194,5 +197,20 @@ jobs:
               assert selective.get('promotionAuthority') is False, selective
               assert selective.get('thresholdFrozenBeforeUntouchedHoldout') is True, selective
               assert selective.get('thresholdSelectionUsedHoldoutLabels') is False, selective
+          diagnostics=value.get('diagnosticSelectedPickBands') or {}
+          assert set(diagnostics) == {'allCanonicalGames','training','walkForward','untouchedHoldout'}, diagnostics
+          for name, view in diagnostics.items():
+              assert view.get('version') == 'MLB-V9-DIAGNOSTIC-SELECTED-PICK-BANDS-v1', (name, view)
+              assert view.get('diagnosticOnly') is True, (name, view)
+              assert view.get('productionAuthority') is False, (name, view)
+              thresholds=view.get('bandThresholds') or {}
+              assert set(thresholds) == {'MLB_STRONG','MLB_LEAN','PASS'}, (name, thresholds)
+              assert set(view.get('byBand') or {}) == {'MLB_STRONG','MLB_LEAN','PASS'}, (name, view)
+              assert isinstance(view.get('dailySelectedPickBands'), list), (name, view)
+              assert isinstance(view.get('games'), list), (name, view)
+              for game in view.get('games') or []:
+                  assert game.get('selectedPickBand') in {'MLB_STRONG','MLB_LEAN','PASS'}, game
+                  assert game.get('predictedWinner'), game
+                  assert game.get('selectedProbabilityPct') is not None, game
           assert not value.get('blockers'), value
           PY
