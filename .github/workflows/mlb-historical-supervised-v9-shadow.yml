@@ -16,6 +16,7 @@ name: MLB Historical V7 Selective and V9 Shadow Evaluation
       - 'scripts/run_mlb_historical_supervised_v9_shadow.py'
       - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
       - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow.py'
+      - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
       - 'tests/unit/test_mlb_historical_v7_priority_repairs_v1.py'
       - 'tests/unit/test_mlb_historical_v7_selective_objective_v1.py'
       - 'tests/unit/test_mlb_historical_v7_selective_search_v2.py'
@@ -35,6 +36,7 @@ name: MLB Historical V7 Selective and V9 Shadow Evaluation
       - 'scripts/run_mlb_historical_supervised_v9_shadow.py'
       - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
       - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow.py'
+      - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
       - 'tests/unit/test_mlb_historical_v7_priority_repairs_v1.py'
       - 'tests/unit/test_mlb_historical_v7_selective_objective_v1.py'
       - 'tests/unit/test_mlb_historical_v7_selective_search_v2.py'
@@ -47,7 +49,7 @@ permissions:
 
 concurrency:
   group: mlb-historical-v7-v9-shadow-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   STACK_NAME: parlay-platform-mlb-historical-optimizer
@@ -81,7 +83,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
-          PYTHONPATH=hello_world python -m py_compile \
+          python -m py_compile \
             hello_world/mlb_historical_supervised_v9.py \
             hello_world/mlb_historical_supervised_v9_integrity_v2.py \
             hello_world/mlb_historical_v7_learning_cadence_v1.py \
@@ -95,6 +97,7 @@ jobs:
             tests/unit/test_mlb_historical_supervised_v9.py \
             tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py \
             tests/unit/test_run_mlb_historical_supervised_v9_shadow.py \
+            tests/unit/test_resolve_mlb_historical_artifacts_bucket.py \
             tests/unit/test_mlb_historical_v7_learning_cadence_v1.py \
             tests/unit/test_mlb_historical_v7_priority_repairs_v1.py \
             tests/unit/test_mlb_historical_v7_selective_objective_v1.py \
@@ -119,49 +122,32 @@ jobs:
           set -uo pipefail
           mkdir -p runtime_reports
           python - <<'PY'
-          import importlib.util
-          import json
-          import os
+          import json, os
           from pathlib import Path
           import boto3
+          from resolve_mlb_historical_artifacts_bucket import resolve_bucket
 
           region=os.environ['AWS_REGION_VALUE']
-          stack_name=os.environ['STACK_NAME']
-          session=boto3.session.Session(region_name=region)
-          cf=session.client('cloudformation')
-          lam=session.client('lambda')
-          s3=session.client('s3')
-
-          path=Path('scripts/resolve_mlb_historical_artifacts_bucket.py')
-          spec=importlib.util.spec_from_file_location('bucket_resolver', path)
-          resolver=importlib.util.module_from_spec(spec)
-          assert spec and spec.loader
-          spec.loader.exec_module(resolver)
-          bucket=resolver.resolve_bucket(
-              explicit=os.environ.get('MLB_HISTORICAL_ARTIFACTS_BUCKET'),
-              cloudformation=cf,
-              lambda_client=lam,
-              s3=s3,
-              stack_name=stack_name,
-          )
-
+          stack=os.environ['STACK_NAME']
+          cf=boto3.client('cloudformation',region_name=region)
+          lam=boto3.client('lambda',region_name=region)
+          s3=boto3.client('s3',region_name=region)
           attempts=[]
-          function_name=None
+          outputs={}
           try:
-              stacks=cf.describe_stacks(StackName=stack_name).get('Stacks') or []
+              stacks=cf.describe_stacks(StackName=stack).get('Stacks') or []
               outputs={str(x.get('OutputKey')):str(x.get('OutputValue')) for x in (stacks[0].get('Outputs') or [])} if stacks else {}
-              function_name=outputs.get('HistoricalOptimizerFunctionName')
-              attempts.append({'strategy':'cloudformation_output','found':bool(function_name),'outputKeys':sorted(outputs)})
+              attempts.append({'strategy':'cloudformation_output','outputKeys':sorted(outputs)})
           except Exception as exc:
               attempts.append({'strategy':'cloudformation_output','error':f'{type(exc).__name__}:{exc}'})
 
-          expected='mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler'
+          function_name=str(outputs.get('HistoricalOptimizerFunctionName') or '').strip()
           if not function_name:
               matches=[]
               paginator=lam.get_paginator('list_functions')
               for page in paginator.paginate():
                   for item in page.get('Functions') or []:
-                      if item.get('Handler') == expected and item.get('FunctionName'):
+                      if item.get('Handler') == 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler' and item.get('FunctionName'):
                           matches.append(str(item['FunctionName']))
               matches=sorted(set(matches))
               attempts.append({'strategy':'lambda_handler_scan','matches':matches})
@@ -172,44 +158,48 @@ jobs:
                   for name in matches:
                       config=lam.get_function_configuration(FunctionName=name)
                       env=((config.get('Environment') or {}).get('Variables') or {})
-                      if (
-                          env.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED') == 'true'
-                          and env.get('MLB_HISTORICAL_ARTIFACTS_BUCKET') == bucket.get('bucketName')
-                      ):
+                      if env.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED') == 'true' and env.get('MLB_HISTORICAL_ARTIFACTS_BUCKET'):
                           qualified.append(name)
                   qualified=sorted(set(qualified))
                   attempts.append({'strategy':'lambda_environment_filter','matches':qualified})
                   if len(qualified) == 1:
                       function_name=qualified[0]
-
-          config={}
-          if function_name:
-              config=lam.get_function_configuration(FunctionName=function_name)
-          handler_ok=config.get('Handler') == expected
-          resolved=bool(bucket.get('ok') and bucket.get('bucketName') and function_name and handler_ok)
-          blockers=list(bucket.get('blockers') or [])
           if not function_name:
-              blockers.append('historical_optimizer_lambda_unresolved')
-          elif not handler_ok:
-              blockers.append('historical_optimizer_handler_mismatch')
-          evidence={
-              'ok':resolved,
-              'bucketResolution':bucket,
+              raise RuntimeError('historical optimizer Lambda could not be resolved uniquely')
+
+          config=lam.get_function_configuration(FunctionName=function_name)
+          expected='mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler'
+          if config.get('Handler') != expected:
+              raise RuntimeError(f"unexpected optimizer handler:{config.get('Handler')}")
+          environment=((config.get('Environment') or {}).get('Variables') or {})
+          bucket_name=str(environment.get('MLB_HISTORICAL_ARTIFACTS_BUCKET') or outputs.get('HistoricalArtifactsBucketName') or '').strip()
+          bucket_resolution=None
+          if not bucket_name:
+              bucket_resolution=resolve_bucket(explicit=None,cloudformation=cf,lambda_client=lam,s3=s3,stack_name=stack)
+              if not bucket_resolution.get('ok'):
+                  raise RuntimeError('historical artifacts bucket unresolved:'+json.dumps(bucket_resolution,sort_keys=True))
+              bucket_name=str(bucket_resolution['bucketName'])
+          s3.head_bucket(Bucket=bucket_name)
+          proof={
+              'ok':True,
               'functionName':function_name,
-              'functionResolutionAttempts':attempts,
+              'bucketName':bucket_name,
               'handler':config.get('Handler'),
-              'blockers':sorted(set(blockers)),
+              'attempts':attempts,
+              'bucketResolution':bucket_resolution,
+              'blockers':[],
           }
-          Path('/tmp/mlb-v7-v9-runtime-resolution.json').write_text(json.dumps(evidence,indent=2,sort_keys=True)+'\n')
-          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as output:
-              output.write(f"resolved={'true' if resolved else 'false'}\n")
-              output.write(f"bucket_name={bucket.get('bucketName') or ''}\n")
-              output.write(f"function_name={function_name or ''}\n")
-          print(json.dumps(evidence,indent=2,sort_keys=True))
-          raise SystemExit(0 if resolved else 1)
+          Path('/tmp/mlb-v7-v9-runtime-resolution.json').write_text(json.dumps(proof,indent=2,sort_keys=True)+'\n')
+          with open(os.environ['GITHUB_OUTPUT'],'a',encoding='utf-8') as handle:
+              handle.write(f"function_name={function_name}\n")
+              handle.write(f"bucket_name={bucket_name}\n")
+              handle.write('resolved=true\n')
           PY
           status=$?
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          if test "$status" -ne 0; then
+            echo "resolved=false" >> "$GITHUB_OUTPUT"
+          fi
           exit "$status"
 
       - name: Run gated AWS-backed read-only evaluation
@@ -252,28 +242,17 @@ jobs:
           mkdir -p runtime_reports
           if test ! -s "$REPORT_PATH"; then
             python - <<'PY'
-          import json
-          import os
+          import json, os
           from datetime import datetime, timezone
           from pathlib import Path
-
-          def load(path):
-              p=Path(path)
-              if not p.exists() or not p.stat().st_size:
-                  return {}
-              try:
-                  return json.loads(p.read_text())
-              except Exception as exc:
-                  return {'ok':False,'parseError':str(exc)}
-
-          resolution=load('/tmp/mlb-v7-v9-runtime-resolution.json')
+          resolution={}
+          p=Path('/tmp/mlb-v7-v9-runtime-resolution.json')
+          if p.exists():
+              try: resolution=json.loads(p.read_text())
+              except Exception as exc: resolution={'ok':False,'parseError':str(exc)}
           log=Path('/tmp/mlb-supervised-v9-shadow.log').read_text(errors='replace')[-12000:] if Path('/tmp/mlb-supervised-v9-shadow.log').exists() else ''
-          runtime_resolved=os.environ.get('RUNTIME_RESOLVED') == 'true'
-          blockers=list(resolution.get('blockers') or [])
-          if runtime_resolved:
-              blockers.append('v7_v9_report_missing_after_evaluation')
-          elif not blockers:
-              blockers.append('v7_v9_runtime_resolution_failed')
+          resolved=os.environ.get('RUNTIME_RESOLVED') == 'true'
+          blocker='v7_v9_runtime_resolution_failed' if not resolved else 'v7_v9_report_missing_after_evaluation'
           report={
               'ok':False,
               'proofType':'MLB_HISTORICAL_V7_V9_SHADOW_EVALUATION',
@@ -289,21 +268,14 @@ jobs:
               'productionCutoverWritten':False,
               'promotionAuthority':False,
               'previousReportPreservedSeparately':True,
-              'stalledStage':'V7_V9_RUNTIME_RESOLUTION' if not runtime_resolved else 'V7_V9_EVALUATION_BEFORE_REPORT_WRITE',
+              'stalledStage':'V7_V9_RUNTIME_RESOLUTION' if not resolved else 'V7_V9_EVALUATION_BEFORE_REPORT_WRITE',
               'runtimeResolution':resolution,
-              'errorLogTail':log,
               'workflowSteps':{
-                  'runtime':{
-                      'outcome':os.environ.get('RUNTIME_OUTCOME'),
-                      'exitCode':os.environ.get('RUNTIME_EXIT_CODE'),
-                      'resolved':runtime_resolved,
-                  },
-                  'evaluation':{
-                      'outcome':os.environ.get('EVALUATION_OUTCOME'),
-                      'exitCode':os.environ.get('EVALUATION_EXIT_CODE'),
-                  },
+                  'runtime':{'outcome':os.environ.get('RUNTIME_OUTCOME'),'exitCode':os.environ.get('RUNTIME_EXIT_CODE'),'resolved':resolved},
+                  'evaluation':{'outcome':os.environ.get('EVALUATION_OUTCOME'),'exitCode':os.environ.get('EVALUATION_EXIT_CODE')},
               },
-              'blockers':sorted(set(blockers)),
+              'errorLogTail':log,
+              'blockers':[blocker],
           }
           Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
           PY
@@ -349,11 +321,10 @@ jobs:
         if: always()
         run: |
           python - <<'PY'
-          import json
-          import os
+          import json, os
           from pathlib import Path
           value=json.loads(Path('runtime_reports/mlb_historical_supervised_v9_shadow_latest.json').read_text())
-          assert value.get('runId') == os.environ.get('GITHUB_RUN_ID'), value
+          assert str(value.get('runId')) == str(os.environ.get('GITHUB_RUN_ID')), value
           assert value.get('sourceSha') == os.environ.get('GITHUB_SHA'), value
           assert value.get('ok') is True, value
           assert value.get('readOnly') is True, value
