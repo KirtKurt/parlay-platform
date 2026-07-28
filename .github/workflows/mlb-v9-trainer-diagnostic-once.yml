@@ -1,5 +1,6 @@
 name: MLB V9 Trainer Verification Diagnostic Once
 
+# Retrigger after initial workflow registration.
 "on":
   workflow_dispatch:
   push:
@@ -129,12 +130,12 @@ jobs:
           training=load('training.json')
           selection=load('selection.json')
           after=load('status-after.json')
-          errors=[]
           log=(root/'verifier.log').read_text(errors='replace').splitlines() if (root/'verifier.log').exists() else []
           known_prefixes=(
               'training_','selection_','selection_capture_','status_after_','manifest_',
               'requested_run_','automatic_','manual_','v2_','runtime_','lambda_',
           )
+          errors=[]
           for line in log:
               value=line.strip()
               if value and (value.startswith(known_prefixes) or value.startswith('lambda_invocation_failed')):
