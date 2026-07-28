@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import argparse
+import copy
+import hashlib
 import json
 import os
 import traceback
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any, Mapping
 
 MAX_REPORT_BYTES = 20_000_000
 
@@ -32,6 +35,150 @@ def _load_previous(path: Path):
         return None
 
 
+def _stable_row_fingerprint(row: Mapping[str, Any]) -> str:
+    """Fingerprint only immutable pregame identity and features, never outcomes."""
+    material = {
+        "slateDateEt": row.get("slateDateEt"),
+        "officialGamePk": row.get("officialGamePk") or row.get("gameId") or row.get("eventId"),
+        "predictionLockAtUtc": row.get("predictionLockAtUtc"),
+        "homeSignal": row.get("homeSignal"),
+        "awaySignal": row.get("awaySignal"),
+    }
+    raw = json.dumps(material, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def _assert_not_contradicted(row: Mapping[str, Any], key: str, expected: Any) -> None:
+    if key in row and row.get(key) is not expected and row.get(key) != expected:
+        raise RuntimeError(f"canonical row explicitly contradicts {key}:{row.get(key)!r}")
+
+
+def _load_canonical_records(handler: Any, state: Mapping[str, Any]) -> tuple[list[dict], dict]:
+    """Load immutable complete-slate artifacts and derive row eligibility from their proofs.
+
+    Historical dataset rows predate the row-level V10 eligibility fields. The immutable
+    artifact contains the stronger authority: complete full-slate coverage, per-game T-45
+    clipping, post-lock exclusion, checksums, and a deterministic slate fingerprint. We
+    validate those facts before adding the row-level aliases consumed by V10.
+    """
+    lock_minutes = int(getattr(handler.optimizer, "FULL_SLATE_LOCK_MINUTES", 0) or 0)
+    if lock_minutes != 45:
+        raise RuntimeError(f"historical optimizer lock contract is not T-45:{lock_minutes}")
+
+    completed_slates = list(state.get("completedSlates") or [])
+    if not completed_slates:
+        raise RuntimeError("historical optimizer has no completed slate pointers")
+
+    records: list[dict] = []
+    derived_flag_rows = 0
+    artifact_authorities: list[dict] = []
+    for slate in completed_slates:
+        if not isinstance(slate, Mapping):
+            raise RuntimeError("completed slate pointer is malformed")
+        artifact = slate.get("artifact") or {}
+        key = str(artifact.get("key") or "")
+        if not key:
+            raise RuntimeError("completed slate artifact pointer is missing")
+        dataset, pointer = handler._get_s3_json(key)
+        expected_sha = str(artifact.get("sha256") or "")
+        observed_sha = str(pointer.get("sha256") or "")
+        if expected_sha and observed_sha and expected_sha != observed_sha:
+            raise RuntimeError(f"completed slate artifact checksum changed:{key}")
+
+        rows = list(dataset.get("records") or [])
+        official_count = int(dataset.get("officialGameCount") or 0)
+        eligible_count = int(dataset.get("eligibleGameCount") or 0)
+        exclusions = list(dataset.get("exclusions") or [])
+        checks = {
+            "completeSlate": dataset.get("completeSlate") is True,
+            "postLockDataExcluded": dataset.get("postLockDataExcluded") is True,
+            "gameSpecificLockClipping": dataset.get("gameSpecificLockClipping") is True,
+            "exactSlateCoverage": float(dataset.get("exactSlateCoverage") or 0.0) >= 1.0 - 1e-12,
+            "recordCountMatchesOfficial": official_count > 0 and len(rows) == official_count,
+            "eligibleCountMatchesOfficial": eligible_count == official_count,
+            "noDatasetExclusions": not exclusions,
+        }
+        if not all(checks.values()):
+            raise RuntimeError(
+                "completed slate lost canonical integrity proof:"
+                + json.dumps({"key": key, "checks": checks, "exclusionCount": len(exclusions)}, sort_keys=True)
+            )
+
+        expected_fingerprint = str(dataset.get("fingerprint") or slate.get("fingerprint") or "")
+        calculated_fingerprint = str(handler.optimizer.dataset_fingerprint(rows) or "")
+        if not expected_fingerprint or expected_fingerprint != calculated_fingerprint:
+            raise RuntimeError(f"completed slate fingerprint mismatch:{key}")
+        if slate.get("fingerprint") and str(slate.get("fingerprint")) != calculated_fingerprint:
+            raise RuntimeError(f"state slate fingerprint mismatch:{key}")
+
+        seen_game_ids: set[str] = set()
+        slate_date = str(dataset.get("slateDateEt") or slate.get("slateDateEt") or "")
+        for raw in rows:
+            if not isinstance(raw, Mapping):
+                raise RuntimeError(f"completed slate contains malformed row:{key}")
+            row = copy.deepcopy(dict(raw))
+            game_id = str(row.get("officialGamePk") or row.get("gameId") or row.get("eventId") or "")
+            if not game_id or game_id in seen_game_ids:
+                raise RuntimeError(f"completed slate game identity is missing or duplicated:{key}:{game_id}")
+            seen_game_ids.add(game_id)
+            if not slate_date or str(row.get("slateDateEt") or "") != slate_date:
+                raise RuntimeError(f"completed slate row date authority mismatch:{key}:{game_id}")
+            if row.get("postLockDataExcluded") is not True:
+                raise RuntimeError(f"row lost post-lock exclusion proof:{key}:{game_id}")
+            if row.get("gameSpecificLockClipping") is not True:
+                raise RuntimeError(f"row lost per-game clipping proof:{key}:{game_id}")
+            if not row.get("predictionLockAtUtc"):
+                raise RuntimeError(f"row prediction lock timestamp is missing:{key}:{game_id}")
+            if not isinstance(row.get("homeSignal"), Mapping) or not isinstance(row.get("awaySignal"), Mapping):
+                raise RuntimeError(f"row pregame signal pair is missing:{key}:{game_id}")
+            if row.get("homeWon") not in (True, False, 0, 1):
+                raise RuntimeError(f"row settled label is invalid:{key}:{game_id}")
+
+            _assert_not_contradicted(row, "trainingEligible", True)
+            _assert_not_contradicted(row, "canonicalLockValid", True)
+            _assert_not_contradicted(row, "duplicateContaminated", False)
+            existing_cutoff = str(row.get("featureCutoff") or row.get("perGameFeatureCutoff") or "")
+            if existing_cutoff and "45" not in existing_cutoff:
+                raise RuntimeError(f"row feature cutoff contradicts T-45:{key}:{game_id}:{existing_cutoff}")
+
+            if "trainingEligible" not in row or "canonicalLockValid" not in row or "duplicateContaminated" not in row or not existing_cutoff:
+                derived_flag_rows += 1
+            row["trainingEligible"] = True
+            row["canonicalLockValid"] = True
+            row["duplicateContaminated"] = False
+            row["featureCutoff"] = existing_cutoff or "each_game_t_minus_45"
+            row["featureVectorFingerprint"] = str(
+                row.get("featureVectorFingerprint") or row.get("fingerprint") or _stable_row_fingerprint(row)
+            )
+            row["canonicalEligibilityAuthority"] = "IMMUTABLE_COMPLETE_SLATE_ARTIFACT"
+            records.append(row)
+
+        artifact_authorities.append({
+            "slateDateEt": slate_date,
+            "artifactKey": key,
+            "officialGameCount": official_count,
+            "fingerprint": calculated_fingerprint,
+        })
+
+    state_eligible = int(state.get("eligibleGameCount") or 0)
+    if state_eligible and state_eligible != len(records):
+        raise RuntimeError(
+            f"historical state eligible count disagrees with immutable artifacts:{state_eligible}!={len(records)}"
+        )
+    return records, {
+        "authority": "IMMUTABLE_COMPLETE_SLATE_ARTIFACTS",
+        "lockContract": "EACH_GAME_T_MINUS_45",
+        "completedSlateCount": len(completed_slates),
+        "recordCountLoaded": len(records),
+        "rowEligibilityAliasesDerived": derived_flag_rows,
+        "artifactChecksumValidationApplied": True,
+        "slateFingerprintValidationApplied": True,
+        "rowLockProofValidationApplied": True,
+        "artifactAuthorities": artifact_authorities[:25],
+        "artifactAuthoritiesTruncated": len(artifact_authorities) > 25,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output", required=True)
@@ -49,7 +196,7 @@ def main() -> int:
         state = handler._load_state()
         if not isinstance(state, dict):
             raise RuntimeError("historical optimizer state is missing")
-        records = list(handler._load_training_records(state) or [])
+        records, canonical_proof = _load_canonical_records(handler, state)
         if not records:
             raise RuntimeError("historical training corpus is empty")
 
@@ -69,6 +216,8 @@ def main() -> int:
             value = dict(previous)
             value["incrementalNoChange"] = True
             value["lastCheckedAtUtc"] = datetime.now(timezone.utc).isoformat()
+            value["canonicalCorpusProof"] = canonical_proof
+            value["prospectiveShadow"] = v10.evaluate_frozen_registry(clean, previous)
             _write(path, value)
             print(json.dumps({
                 "ok": True,
@@ -94,7 +243,8 @@ def main() -> int:
             "completedAtUtc": completed.isoformat(),
             "durationSeconds": round((completed - started).total_seconds(), 3),
             "blockers": report.get("blockers") or [],
-            "storageReader": "mlb_historical_optimizer_handler_direct",
+            "storageReader": "immutable_complete_slate_artifacts_with_derived_row_eligibility",
+            "canonicalCorpusProof": canonical_proof,
             "incrementalNoChange": False,
             "reusedPriorRegistryForProspectiveShadow": bool(previous and previous.get("ok") is True),
             "fullRebuild": True,
