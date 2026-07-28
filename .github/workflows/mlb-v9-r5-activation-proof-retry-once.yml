@@ -1,0 +1,256 @@
+name: MLB V9 R5 Runtime Activation Proof Retry Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v9-r5-activation-proof-retry-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v9-r5-activation-proof-retry-once
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-dev
+  REPORT_PATH: runtime_reports/mlb_v9_r5_activation_proof_latest.json
+  EXPECTED_EXPERIMENT_ID: mlb-v2-2026-07-29-future-prospective-r5
+  EXPECTED_CUTOFF_UTC: '2026-07-29T04:00:00+00:00'
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install invocation dependency
+        run: python -m pip install --quiet 'boto3>=1.34,<2'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Verify deployed R5 identity
+        id: deployment
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports /tmp/mlb-v9-r5-activation-retry
+          TRAINER_ARN=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION_VALUE" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" \
+            --output text)
+          test -n "$TRAINER_ARN"; test "$TRAINER_ARN" != None
+          echo "$TRAINER_ARN" >/tmp/mlb-v9-r5-activation-retry/trainer-arn.txt
+          aws lambda get-function-configuration \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --output json >/tmp/mlb-v9-r5-activation-retry/config.private.json
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value=json.load(open('/tmp/mlb-v9-r5-activation-retry/config.private.json'))
+          env=((value.get('Environment') or {}).get('Variables') or {})
+          checks={
+              'active':value.get('State') == 'Active',
+              'updateSuccessful':value.get('LastUpdateStatus') == 'Successful',
+              'experiment':env.get('MLB_ML_EXPERIMENT_ID') == os.environ['EXPECTED_EXPERIMENT_ID'],
+              'contract':env.get('MLB_ML_RELEASE_CONTRACT_ID') == os.environ['EXPECTED_EXPERIMENT_ID'],
+              'cutoff':env.get('MLB_ML_RELEASE_CUTOFF_UTC') == os.environ['EXPECTED_CUTOFF_UTC'],
+          }
+          assert all(checks.values()), {'checks':checks,'state':value.get('State'),'lastUpdateStatus':value.get('LastUpdateStatus')}
+          redacted={
+              'FunctionName':value.get('FunctionName'),
+              'FunctionArn':value.get('FunctionArn'),
+              'Handler':value.get('Handler'),
+              'State':value.get('State'),
+              'LastUpdateStatus':value.get('LastUpdateStatus'),
+              'CodeSha256':value.get('CodeSha256'),
+              'RevisionId':value.get('RevisionId'),
+              'Environment':{'Variables':{
+                  key:env.get(key) for key in (
+                      'MLB_ML_EXPERIMENT_ID','MLB_ML_RELEASE_CONTRACT_ID',
+                      'MLB_ML_RELEASE_CUTOFF_UTC','INQSI_DEPLOY_GIT_SHA',
+                      'INQSI_DEPLOY_TEMPLATE_SHA256','INQSI_DEPLOY_RUN_ID',
+                      'INQSI_MLB_ML_AUTO_PROMOTE','INQSI_MLB_LEGACY_V1_AUTHORITY_ENABLED'
+                  )
+              }},
+              'checks':checks,
+          }
+          Path('/tmp/mlb-v9-r5-activation-retry/config.redacted.json').write_text(json.dumps(redacted,indent=2,sort_keys=True)+'\n')
+          PY
+
+      - name: Invoke training and capture every response
+        id: invoke
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -uo pipefail
+          set +e
+          TRAINER_ARN=$(cat /tmp/mlb-v9-r5-activation-retry/trainer-arn.txt)
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"r5_activation_training_retry"}' \
+            --response /tmp/mlb-v9-r5-activation-retry/training.json \
+            --invocation /tmp/mlb-v9-r5-activation-retry/training-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
+          training_status=$?
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"r5_activation_selection_capture_retry"}' \
+            --response /tmp/mlb-v9-r5-activation-retry/selection.json \
+            --invocation /tmp/mlb-v9-r5-activation-retry/selection-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
+          selection_status=$?
+          aws lambda invoke \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"sport":"mlb","mode":"status"}' \
+            /tmp/mlb-v9-r5-activation-retry/status.json >/tmp/mlb-v9-r5-activation-retry/status-invocation.json
+          status_status=$?
+          echo "training_exit_code=$training_status" >> "$GITHUB_OUTPUT"
+          echo "selection_exit_code=$selection_status" >> "$GITHUB_OUTPUT"
+          echo "status_exit_code=$status_status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Build R5 activation proof
+        if: always()
+        env:
+          TRAINING_EXIT_CODE: ${{ steps.invoke.outputs.training_exit_code }}
+          SELECTION_EXIT_CODE: ${{ steps.invoke.outputs.selection_exit_code }}
+          STATUS_EXIT_CODE: ${{ steps.invoke.outputs.status_exit_code }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root=Path('/tmp/mlb-v9-r5-activation-retry')
+          def load(name):
+              path=root/name
+              try:
+                  return json.loads(path.read_text()) if path.exists() and path.stat().st_size else {}
+              except Exception as exc:
+                  return {'parseError':f'{type(exc).__name__}:{exc}'}
+          config=load('config.private.json')
+          training=load('training.json')
+          selection=load('selection.json')
+          status=load('status.json')
+          env=((config.get('Environment') or {}).get('Variables') or {})
+          manifest=status.get('manifest') if isinstance(status.get('manifest'),dict) else {}
+          health=status.get('trainingHealth') if isinstance(status.get('trainingHealth'),dict) else {}
+          latest=health.get('latestRun') if isinstance(health.get('latestRun'),dict) else {}
+          blockers=[]
+          if env.get('MLB_ML_EXPERIMENT_ID') != os.environ['EXPECTED_EXPERIMENT_ID']:
+              blockers.append('r5_experiment_identity_not_deployed')
+          if training.get('ok') is not True:
+              blockers.append('r5_training_invocation_failed')
+          if not manifest.get('phase'):
+              blockers.append('r5_manifest_not_created')
+          if latest.get('status') == 'TRAINING_INVOCATION_FAILED':
+              blockers.append('r5_persisted_training_failure')
+          if status.get('ok') is not True:
+              blockers.append('r5_status_not_healthy')
+          report={
+              'ok':not blockers,
+              'proofType':'MLB_V9_R5_RUNTIME_ACTIVATION_PROOF',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'runId':os.environ.get('GITHUB_RUN_ID'),
+              'deployedGitSha':env.get('INQSI_DEPLOY_GIT_SHA'),
+              'deployedTemplateSha256':env.get('INQSI_DEPLOY_TEMPLATE_SHA256'),
+              'deployedExperimentId':env.get('MLB_ML_EXPERIMENT_ID'),
+              'deployedReleaseContractId':env.get('MLB_ML_RELEASE_CONTRACT_ID'),
+              'deployedReleaseCutoffUtc':env.get('MLB_ML_RELEASE_CUTOFF_UTC'),
+              'lambdaState':config.get('State'),
+              'lambdaLastUpdateStatus':config.get('LastUpdateStatus'),
+              'training':training,
+              'selectionCapture':selection,
+              'manifest':manifest,
+              'trainingHealth':health,
+              'statusOk':status.get('ok'),
+              'exitCodes':{
+                  'training':os.environ.get('TRAINING_EXIT_CODE'),
+                  'selectionCapture':os.environ.get('SELECTION_EXIT_CODE'),
+                  'status':os.environ.get('STATUS_EXIT_CODE'),
+              },
+              'stalledStage':None if not blockers else 'R5_RUNTIME_ACTIVATION',
+              'blockers':blockers,
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          (root/'config.private.json').unlink(missing_ok=True)
+          PY
+          python -m json.tool "$REPORT_PATH" >/dev/null
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-v9-r5-activation-proof-retry-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_v9_r5_activation_proof_latest.json
+            /tmp/mlb-v9-r5-activation-retry/config.redacted.json
+            /tmp/mlb-v9-r5-activation-retry/training.json
+            /tmp/mlb-v9-r5-activation-retry/training-invocation.json
+            /tmp/mlb-v9-r5-activation-retry/selection.json
+            /tmp/mlb-v9-r5-activation-retry/selection-invocation.json
+            /tmp/mlb-v9-r5-activation-retry/status.json
+            /tmp/mlb-v9-r5-activation-retry/status-invocation.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish R5 activation proof
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$REPORT_PATH"
+          cp "$REPORT_PATH" /tmp/mlb-v9-r5-activation-proof.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v9-r5-activation-proof-retry origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-v9-r5-activation-proof.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V9 R5 runtime activation proof'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Enforce successful activation
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value=json.loads(Path(os.environ['REPORT_PATH']).read_text())
+          assert value.get('ok') is True, value
+          assert value.get('deployedExperimentId') == os.environ['EXPECTED_EXPERIMENT_ID'], value
+          assert value.get('manifest',{}).get('phase'), value
+          assert not value.get('blockers'), value
+          PY
