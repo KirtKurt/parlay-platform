@@ -5,7 +5,7 @@ def _raise(message):
     raise AssertionError(message)
 
 
-def test_status_bypasses_rematerialization_and_base_mutators(monkeypatch):
+def _block_mutators(monkeypatch):
     monkeypatch.setattr(
         entrypoint.rematerialization,
         "run_once",
@@ -13,9 +13,18 @@ def test_status_bypasses_rematerialization_and_base_mutators(monkeypatch):
     )
     monkeypatch.setattr(
         entrypoint.base,
-        "lambda_handler",
-        lambda event, context: _raise("status entered mutating base entrypoint"),
+        "_repair_precompetitive_extension_state",
+        lambda: _raise("status attempted competitive range repair"),
     )
+    monkeypatch.setattr(
+        entrypoint.base,
+        "_append_authorized_range_extension",
+        lambda: _raise("status attempted range extension"),
+    )
+
+
+def test_status_bypasses_rematerialization_and_base_mutators(monkeypatch):
+    _block_mutators(monkeypatch)
 
     observed = []
 
@@ -36,20 +45,12 @@ def test_status_bypasses_rematerialization_and_base_mutators(monkeypatch):
     assert value["ok"] is True
     assert value["state"]["revision"] == 1001
     assert value["oddsMarketExpansion"]["authority"] == "SHADOW_ONLY"
+    assert value["supervisedShadow"]["rangeExtensionRunsBeforeRematerialization"] is True
     assert value["version"] == entrypoint.VERSION
 
 
 def test_http_get_is_resolved_as_read_only_status(monkeypatch):
-    monkeypatch.setattr(
-        entrypoint.rematerialization,
-        "run_once",
-        lambda: _raise("GET status attempted feature rematerialization"),
-    )
-    monkeypatch.setattr(
-        entrypoint.base,
-        "lambda_handler",
-        lambda event, context: _raise("GET status entered mutating base entrypoint"),
-    )
+    _block_mutators(monkeypatch)
     monkeypatch.setattr(
         entrypoint.base.optimizer_handler,
         "lambda_handler",
@@ -65,44 +66,69 @@ def test_http_get_is_resolved_as_read_only_status(monkeypatch):
     assert value["state"]["phase"] == "BACKFILLING"
 
 
-def test_orchestration_does_not_duplicate_range_extension(monkeypatch):
-    monkeypatch.setattr(entrypoint.rematerialization, "run_once", lambda: None)
+def test_orchestration_extends_before_rematerialization_and_optimizer(monkeypatch):
+    calls = []
+    monkeypatch.setattr(
+        entrypoint.base,
+        "_repair_precompetitive_extension_state",
+        lambda: calls.append("repair"),
+    )
     monkeypatch.setattr(
         entrypoint.base,
         "_append_authorized_range_extension",
-        lambda: _raise("V7 entrypoint duplicated range extension"),
+        lambda: calls.append("extend"),
+    )
+    monkeypatch.setattr(
+        entrypoint.rematerialization,
+        "run_once",
+        lambda: calls.append("rematerialize") or None,
     )
 
-    calls = []
-
-    def base_handler(event, context):
-        calls.append((event, context))
+    def optimizer_handler(event, context):
+        calls.append("optimizer")
         return {"ok": True, "status": "BACKFILLING", "state": {"phase": "BACKFILLING"}}
 
-    monkeypatch.setattr(entrypoint.base, "lambda_handler", base_handler)
+    monkeypatch.setattr(entrypoint.base.optimizer_handler, "lambda_handler", optimizer_handler)
 
     event = {"mode": "orchestrate", "run": "unit_orchestrate"}
     value = entrypoint.lambda_handler(event, None)
 
-    assert calls == [(event, None)]
+    assert calls == ["repair", "extend", "rematerialize", "optimizer"]
     assert value["ok"] is True
     assert value["oddsMarketExpansion"]["productionV7Unchanged"] is True
+    assert value["supervisedShadow"]["rangeExtensionRunsBeforeRematerialization"] is True
 
 
-def test_pending_rematerialization_short_circuits_orchestration(monkeypatch):
+def test_pending_rematerialization_short_circuits_after_range_extension(monkeypatch):
+    calls = []
     migration = {
         "ok": True,
         "status": "REMATERIALIZING_FEATURES",
         "state": {"phase": "REMATERIALIZING_FEATURES"},
     }
-    monkeypatch.setattr(entrypoint.rematerialization, "run_once", lambda: migration)
     monkeypatch.setattr(
         entrypoint.base,
+        "_repair_precompetitive_extension_state",
+        lambda: calls.append("repair"),
+    )
+    monkeypatch.setattr(
+        entrypoint.base,
+        "_append_authorized_range_extension",
+        lambda: calls.append("extend"),
+    )
+    monkeypatch.setattr(
+        entrypoint.rematerialization,
+        "run_once",
+        lambda: calls.append("rematerialize") or migration,
+    )
+    monkeypatch.setattr(
+        entrypoint.base.optimizer_handler,
         "lambda_handler",
-        lambda event, context: _raise("orchestration ran before rematerialization completed"),
+        lambda event, context: _raise("optimizer ran before rematerialization completed"),
     )
 
     value = entrypoint.lambda_handler({"mode": "orchestrate"}, None)
 
+    assert calls == ["repair", "extend", "rematerialize"]
     assert value["status"] == "REMATERIALIZING_FEATURES"
     assert value["oddsMarketExpansion"]["authority"] == "SHADOW_ONLY"
