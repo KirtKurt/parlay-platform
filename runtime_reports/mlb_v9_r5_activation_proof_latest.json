@@ -1,86 +1,554 @@
 {
-  "blockers": [
-    "r5_training_invocation_failed",
-    "r5_manifest_not_created",
-    "r5_status_not_healthy"
-  ],
-  "createdAtUtc": "2026-07-28T14:34:16.134972+00:00",
+  "blockers": [],
+  "createdAtUtc": "2026-07-28T14:39:07.592107+00:00",
   "deployedExperimentId": "mlb-v2-2026-07-29-future-prospective-r5",
   "deployedGitSha": "f8904f43993f16114374ba7a9776055b81fcb755",
   "deployedReleaseContractId": "mlb-v2-2026-07-29-future-prospective-r5",
   "deployedReleaseCutoffUtc": "2026-07-29T04:00:00+00:00",
   "deployedTemplateSha256": "118ea83bdfc3a2c0ce7db5cfec7cecae86265518500d141f30126071dbd9fff0",
   "exitCodes": {
-    "selectionCapture": "",
-    "status": "",
-    "training": ""
+    "selectionCapture": "0",
+    "status": "0",
+    "training": "0"
   },
-  "expectedExperimentId": "mlb-v2-2026-07-29-future-prospective-r5",
-  "expectedReleaseCutoffUtc": "2026-07-29T04:00:00+00:00",
   "lambdaLastUpdateStatus": "Successful",
   "lambdaState": "Active",
   "manifest": {
-    "assignedSlateDates": null,
-    "createdAtUtc": null,
-    "experimentId": null,
-    "partitions": null,
-    "phase": null,
-    "releaseContractId": null,
-    "releaseCutoffUtc": null,
-    "revision": null
+    "assignedSlateDates": {},
+    "automaticPromotionEnabled": false,
+    "createdAtUtc": "2026-07-28T14:34:52.952788+00:00",
+    "experimentId": "mlb-v2-2026-07-29-future-prospective-r5",
+    "featureNames": [
+      "bookAgreementGapHome",
+      "bullpenCompositeGapHome",
+      "deltaGapHome",
+      "fundamentalOffenseLineupMissing",
+      "fundamentalPitchingMissing",
+      "homeAwayVelocityPpHr60mDiff",
+      "homeMarketDeVigProbability",
+      "lineupWrcPlusGapHome",
+      "reversalGapHome",
+      "selectedBookDivergence",
+      "selectedCoverageRatioFull",
+      "selectedDelta",
+      "selectedHome",
+      "selectedMarketDeVigProbability",
+      "selectedReversalCountFull",
+      "selectedScore",
+      "selectedVolatilityPpPerPull180m",
+      "starterCompositeGapHome"
+    ],
+    "featureSchemaFingerprint": "c9d4f53443c204d5244c67eef87437a5c121135c33f354ab5342d2af7f995f64",
+    "featureVectorVersion": "MLB-ML-FROZEN-FEATURE-SNAPSHOT-v2-lock-safe-temporal-missingness",
+    "firstPromotionRequiresManualReview": true,
+    "frozenChallenger": null,
+    "fundamentalsFingerprintVersion": "INQSI-EXACT-TYPED-JSON-SHA256-v1",
+    "fundamentalsSnapshotVersion": "MLB-FUNDAMENTALS-SNAPSHOT-v2-immutable-source-provenance",
+    "historicalDiagnosticSlateDates": {},
+    "legacyArtifacts": {
+      "fortyRow": "diagnostic_only",
+      "moving80_30_30": "diagnostic_only",
+      "movingUntouchedTest": "diagnostic_only"
+    },
+    "manifestDigest": "f5a65111e377fe4a0e34a902b492e354dcf033e4100aa30190efd0822f11287e",
+    "modelFeatureSchemas": {
+      "outcome": [
+        "homeMarketDeVigProbability",
+        "deltaGapHome",
+        "bookAgreementGapHome",
+        "reversalGapHome",
+        "homeAwayVelocityPpHr60mDiff",
+        "starterCompositeGapHome",
+        "bullpenCompositeGapHome",
+        "lineupWrcPlusGapHome",
+        "fundamentalPitchingMissing",
+        "fundamentalOffenseLineupMissing"
+      ],
+      "reliability": [
+        "selectedMarketDeVigProbability",
+        "selectedScore",
+        "selectedDelta",
+        "selectedBookDivergence",
+        "selectedReversalCountFull",
+        "selectedCoverageRatioFull",
+        "selectedVolatilityPpPerPull180m",
+        "selectedHome",
+        "fundamentalPitchingMissing",
+        "fundamentalOffenseLineupMissing"
+      ]
+    },
+    "ok": true,
+    "partitions": {
+      "prospectiveTest": {
+        "endSlateDate": null,
+        "frozen": false,
+        "frozenAtUtc": null,
+        "minimumRows": 100,
+        "partitionFingerprint": null,
+        "rowCount": 0,
+        "slateDates": [],
+        "slates": {},
+        "startSlateDate": null
+      },
+      "train": {
+        "endSlateDate": null,
+        "frozen": false,
+        "frozenAtUtc": null,
+        "minimumRows": 300,
+        "partitionFingerprint": null,
+        "rowCount": 0,
+        "slateDates": [],
+        "slates": {},
+        "startSlateDate": null
+      },
+      "validation": {
+        "endSlateDate": null,
+        "frozen": false,
+        "frozenAtUtc": null,
+        "minimumRows": 100,
+        "partitionFingerprint": null,
+        "rowCount": 0,
+        "slateDates": [],
+        "slates": {},
+        "startSlateDate": null
+      }
+    },
+    "phase": "ACCUMULATING_TRAIN",
+    "policy": "Whole MLB slate dates are assigned once in chronological order. Historical rows may fill only train and validation. After validation freezes, its exact challenger is stored durably; only games commencing strictly after that persisted cutover, with final labels observed after game commencement, may enter the next >=100-game future prospective test. No row or slate date may move between partitions.",
+    "prospectiveAfterSlateDate": null,
+    "prospectiveCutoverAtUtc": null,
+    "prospectiveTestEvaluated": false,
+    "prospectiveTestSealed": false,
+    "releaseActivation": {
+      "activatedAtUtc": "2026-07-28T14:34:52.952788+00:00",
+      "deploymentIdentity": {
+        "gitSha": "f8904f43993f16114374ba7a9776055b81fcb755",
+        "templateSha256": "118ea83bdfc3a2c0ce7db5cfec7cecae86265518500d141f30126071dbd9fff0"
+      },
+      "experimentId": "mlb-v2-2026-07-29-future-prospective-r5",
+      "immutable": true,
+      "releaseContractId": "mlb-v2-2026-07-29-future-prospective-r5",
+      "releaseCutoffUtc": "2026-07-29T04:00:00+00:00",
+      "version": "MLB-ML-RELEASE-ACTIVATION-v1"
+    },
+    "releaseContractId": "mlb-v2-2026-07-29-future-prospective-r5",
+    "releaseCutoffUtc": "2026-07-29T04:00:00+00:00",
+    "revision": 0,
+    "selectedRecommendationLedger": {
+      "authority": "conditional_write_from_unlabeled_immutable_lock_before_game_start",
+      "minimumSettledSelected": 100,
+      "storedSeparatelyFromDirectionTest": true
+    },
+    "validationEndSlateDate": null,
+    "validationFrozenAtUtc": null,
+    "version": "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
   },
-  "ok": false,
+  "ok": true,
   "proofType": "MLB_V9_R5_RUNTIME_ACTIVATION_PROOF",
-  "runId": "30368573679",
+  "runId": "30369391495",
   "selectionCapture": {
-    "createdAtUtc": null,
-    "executionMode": null,
-    "historicalTrainingScanInvoked": null,
-    "liveInferenceAuthority": null,
-    "modelTrained": null,
-    "ok": null,
-    "runId": null,
-    "selectionCaptureReady": null,
-    "status": null
+    "automaticPromotionEnabled": false,
+    "championChanged": false,
+    "createdAtUtc": "2026-07-28T14:39:06.692916+00:00",
+    "deploymentIdentity": {
+      "gitSha": "f8904f43993f16114374ba7a9776055b81fcb755",
+      "templateSha256": "118ea83bdfc3a2c0ce7db5cfec7cecae86265518500d141f30126071dbd9fff0"
+    },
+    "executionConcurrencyControl": {
+      "acquiredForRun": true,
+      "bidirectionalLegacyRuntimeFence": true,
+      "expiredLeaseReclaimEnabled": true,
+      "leaseKeys": {
+        "selection_capture": "EXECUTION_LEASE#SELECTION_CAPTURE",
+        "state_mutation": "EXECUTION_LEASE#STATE_MUTATION"
+      },
+      "leasePartitionKey": "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2",
+      "leaseSeconds": 960,
+      "legacySharedLeaseSentinelExpiresWithLease": true,
+      "legacySharedLeaseSentinelKey": "EXECUTION_LEASE",
+      "legacySharedLeaseSentinelRenewedOnAcquire": true,
+      "legacySharedLeaseSentinelVersion": "MLB-ML-EXECUTION-SENTINEL-v2-renewable-expiring",
+      "migrationAnchorExperimentId": "mlb-v2-2026-07-21-future-prospective-r2",
+      "modeLeaseDomains": {
+        "manual_review": "state_mutation",
+        "selection_capture": "selection_capture",
+        "training": "state_mutation"
+      },
+      "ownerConditionalRelease": true,
+      "protectedExecutionModes": [
+        "manual_review",
+        "selection_capture",
+        "training"
+      ],
+      "reservedLambdaConcurrencyRequired": false,
+      "rollbackSelfRecoverySeconds": 960,
+      "scope": "global_across_experiments_with_isolated_mutation_domains",
+      "selectionWriteManifestConditionCheck": true,
+      "strategy": "dynamodb_mode_isolated_conditional_leases",
+      "trainingCannotBlockSelectionCapture": true,
+      "version": "MLB-ML-EXECUTION-LEASE-v2-mode-isolated-ddb-conditional"
+    },
+    "executionMode": "selection_capture",
+    "experimentId": "mlb-v2-2026-07-29-future-prospective-r5",
+    "historicalTrainingScanInvoked": false,
+    "liveInferenceAuthority": false,
+    "manifestDigest": "f5a65111e377fe4a0e34a902b492e354dcf033e4100aa30190efd0822f11287e",
+    "modelTrained": false,
+    "ok": true,
+    "releaseCutoffUtc": "2026-07-29T04:00:00+00:00",
+    "runId": "7e6fcaa09ffa43a80d1d91dc",
+    "selectionCapture": {
+      "capturedCount": 0,
+      "errors": [],
+      "existingCount": 0,
+      "ok": true,
+      "selectedCount": 0,
+      "skippedCount": 0
+    },
+    "selectionCaptureReady": false,
+    "status": "WAITING_FOR_PERSISTED_CHALLENGER",
+    "statusFingerprint": "9198f7861b7d322ebba6091e46bb4a73f722c2d5de52a1b79338ce0bd1c7b876",
+    "statusFingerprintVersion": "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical",
+    "version": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
   },
-  "sourceSha": "f8904f43993f16114374ba7a9776055b81fcb755",
-  "stalledStage": "R5_RUNTIME_ACTIVATION",
-  "statusOk": null,
-  "stepOutcomes": {
-    "deployment": "success",
-    "invoke": "failure"
-  },
+  "sourceSha": "da3231d88b96bbc0f99f945b6d7296edd4e8fb1b",
+  "stalledStage": null,
+  "statusOk": true,
   "training": {
-    "acceptedRowCount": null,
-    "automaticPromotionEnabled": null,
-    "canonicalSlateContinuity": null,
-    "championChanged": null,
-    "createdAtUtc": null,
-    "executionMode": null,
-    "liveInferenceAuthority": null,
-    "modelTrained": null,
-    "ok": null,
-    "partitionCounts": null,
-    "rejectedRowCount": null,
-    "runId": null,
-    "status": null
+    "acceptedRowCount": 0,
+    "automaticPromotionEnabled": false,
+    "canonicalSlateContinuity": {
+      "blockedSlateDate": null,
+      "blocker": null,
+      "finalizedGameSlateDates": [],
+      "finalizedSlateAuthorities": {},
+      "ok": true,
+      "policy": "Training stops at the first unresolved official slate; only an exact official zero-game schedule may be crossed as an off-day.",
+      "processedSlateDates": [],
+      "processedThroughSlateDate": null,
+      "provenZeroGameSlateDates": [],
+      "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set"
+    },
+    "championChanged": false,
+    "createdAtUtc": "2026-07-28T14:39:06.202203+00:00",
+    "deploymentIdentity": {
+      "gitSha": "f8904f43993f16114374ba7a9776055b81fcb755",
+      "templateSha256": "118ea83bdfc3a2c0ce7db5cfec7cecae86265518500d141f30126071dbd9fff0"
+    },
+    "executionConcurrencyControl": {
+      "acquiredForRun": true,
+      "bidirectionalLegacyRuntimeFence": true,
+      "expiredLeaseReclaimEnabled": true,
+      "leaseKeys": {
+        "selection_capture": "EXECUTION_LEASE#SELECTION_CAPTURE",
+        "state_mutation": "EXECUTION_LEASE#STATE_MUTATION"
+      },
+      "leasePartitionKey": "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2",
+      "leaseSeconds": 960,
+      "legacySharedLeaseSentinelExpiresWithLease": true,
+      "legacySharedLeaseSentinelKey": "EXECUTION_LEASE",
+      "legacySharedLeaseSentinelRenewedOnAcquire": true,
+      "legacySharedLeaseSentinelVersion": "MLB-ML-EXECUTION-SENTINEL-v2-renewable-expiring",
+      "migrationAnchorExperimentId": "mlb-v2-2026-07-21-future-prospective-r2",
+      "modeLeaseDomains": {
+        "manual_review": "state_mutation",
+        "selection_capture": "selection_capture",
+        "training": "state_mutation"
+      },
+      "ownerConditionalRelease": true,
+      "protectedExecutionModes": [
+        "manual_review",
+        "selection_capture",
+        "training"
+      ],
+      "reservedLambdaConcurrencyRequired": false,
+      "rollbackSelfRecoverySeconds": 960,
+      "scope": "global_across_experiments_with_isolated_mutation_domains",
+      "selectionWriteManifestConditionCheck": true,
+      "strategy": "dynamodb_mode_isolated_conditional_leases",
+      "trainingCannotBlockSelectionCapture": true,
+      "version": "MLB-ML-EXECUTION-LEASE-v2-mode-isolated-ddb-conditional"
+    },
+    "executionMode": "training",
+    "experimentId": "mlb-v2-2026-07-29-future-prospective-r5",
+    "liveInferenceAuthority": false,
+    "manifestDigest": "f5a65111e377fe4a0e34a902b492e354dcf033e4100aa30190efd0822f11287e",
+    "milestones": {
+      "aspirationalAccuracyAffectsPromotion": false,
+      "aspirationalAccuracyPct": 90.0,
+      "assumedCleanGamesPerFullSlate": 15,
+      "automaticPromotionEnabled": false,
+      "counts": {
+        "completedFinalizedSlates": 0,
+        "integrityClean": 0,
+        "prospectiveTest": 0,
+        "settledProspectiveSelectedRecommendations": 0,
+        "train": 0,
+        "validation": 0
+      },
+      "experimentId": "mlb-v2-2026-07-29-future-prospective-r5",
+      "firstFullCleanSlateProof": {
+        "achieved": false,
+        "authority": "one nonempty verified official FINAL gamePk set must exactly equal the same immutable slate's unique, current, post-cutoff clean eligible gamePk set",
+        "completedFinalizedSlateCount": 0,
+        "completedFinalizedSlateDates": [],
+        "currentCleanGames": 0,
+        "evaluatedSlateProofs": [],
+        "exactOfficialGameSetEqualityRequired": true,
+        "globalIntegrityCleanGames": 0,
+        "planningEstimateCleanGames": 15,
+        "qualifyingOfficialGameSetFingerprint": null,
+        "qualifyingSlateDate": null,
+        "remainingCleanGames": 15,
+        "state": "WAITING_FOR_FIRST_COMPLETE_FINALIZED_SLATE",
+        "targetCleanGames": 15
+      },
+      "firstPromotionRequiresManualReview": true,
+      "ok": true,
+      "projectedFullCleanSlatesRemaining": {
+        "firstFullCleanSlateProof": 1,
+        "mechanicalShadowTrainerProof": 10,
+        "prospectiveSelectedRecommendations": 7,
+        "prospectiveTest": 7,
+        "totalClean": 34,
+        "train": 20,
+        "validation": 7
+      },
+      "remainingRows": {
+        "firstFullCleanSlateProof": 15,
+        "mechanicalShadowTrainerProof": 140,
+        "prospectiveSelectedRecommendations": 100,
+        "prospectiveTest": 100,
+        "totalClean": 500,
+        "train": 300,
+        "validation": 100
+      },
+      "stage": "COLLECTING_TRAIN",
+      "targets": {
+        "firstFullCleanSlateProof": 15,
+        "mechanicalShadowTrainerProof": 140,
+        "prospectiveSelectedRecommendations": 100,
+        "prospectiveTest": 100,
+        "totalClean": 500,
+        "train": 300,
+        "validation": 100
+      },
+      "version": "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
+    },
+    "modelTrained": false,
+    "ok": true,
+    "partitionCounts": {
+      "prospectiveTest": 0,
+      "train": 0,
+      "validation": 0
+    },
+    "prospectiveSelectionLedger": {
+      "conflicts": [],
+      "metrics": {},
+      "ok": true,
+      "settledSelectedRecommendationCount": 0
+    },
+    "rejectedRowCount": 0,
+    "rejectionReasonCounts": {},
+    "releaseCutoffUtc": "2026-07-29T04:00:00+00:00",
+    "rowsRequired": {
+      "prospectiveTest": 100,
+      "train": 300,
+      "validation": 100
+    },
+    "runId": "2e23e15ceb6360db752634c1",
+    "selectionCapture": {
+      "healthEvaluatedByTraining": false,
+      "independentHeartbeatRequired": true,
+      "invokedByTraining": false,
+      "manifestConditionCheckRequired": true,
+      "status": "OWNED_BY_INDEPENDENT_SELECTION_CAPTURE_CADENCE"
+    },
+    "selectionCaptureBeforeTraining": {
+      "collisionPolicy": "separate_global_lease_domain",
+      "healthEvaluatedByTraining": false,
+      "independentHeartbeatRequired": true,
+      "invokedByTraining": false,
+      "manifestConditionCheckRequired": true,
+      "selectionWritesIdempotent": true,
+      "status": "OWNED_BY_INDEPENDENT_SELECTION_CAPTURE_CADENCE"
+    },
+    "status": "ACCUMULATING_TRAIN",
+    "statusFingerprint": "7c9bcbd1d5a86f7c851ff93fb3a02ff6d88942487161fc1e70af1da31da9b5d2",
+    "statusFingerprintVersion": "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical",
+    "version": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
   },
   "trainingHealth": {
-    "deploymentIdentityMatches": null,
-    "errors": null,
+    "ageSeconds": 1.236,
+    "deploymentIdentityMatches": true,
+    "errors": [],
+    "executionMode": "training",
     "latestRun": {
-      "acceptedRowCount": null,
-      "canonicalSlateContinuity": null,
-      "createdAtUtc": null,
-      "executionMode": null,
-      "failure": null,
-      "modelTrained": null,
-      "ok": null,
-      "partitionCounts": null,
-      "rejectedRowCount": null,
-      "runId": null,
-      "status": null
+      "acceptedRowCount": 0,
+      "automaticPromotionEnabled": false,
+      "canonicalSlateContinuity": {
+        "blockedSlateDate": null,
+        "blocker": null,
+        "finalizedGameSlateDates": [],
+        "finalizedSlateAuthorities": {},
+        "ok": true,
+        "policy": "Training stops at the first unresolved official slate; only an exact official zero-game schedule may be crossed as an off-day.",
+        "processedSlateDates": [],
+        "processedThroughSlateDate": null,
+        "provenZeroGameSlateDates": [],
+        "version": "MLB-ML-CANONICAL-SLATE-CONTINUITY-v2-exact-official-game-set"
+      },
+      "championChanged": false,
+      "createdAtUtc": "2026-07-28T14:39:06.202203+00:00",
+      "deploymentIdentity": {
+        "gitSha": "f8904f43993f16114374ba7a9776055b81fcb755",
+        "templateSha256": "118ea83bdfc3a2c0ce7db5cfec7cecae86265518500d141f30126071dbd9fff0"
+      },
+      "executionConcurrencyControl": {
+        "acquiredForRun": true,
+        "bidirectionalLegacyRuntimeFence": true,
+        "expiredLeaseReclaimEnabled": true,
+        "leaseKeys": {
+          "selection_capture": "EXECUTION_LEASE#SELECTION_CAPTURE",
+          "state_mutation": "EXECUTION_LEASE#STATE_MUTATION"
+        },
+        "leasePartitionKey": "MLB_ML_EXPERIMENT#V2#mlb-v2-2026-07-21-future-prospective-r2",
+        "leaseSeconds": 960,
+        "legacySharedLeaseSentinelExpiresWithLease": true,
+        "legacySharedLeaseSentinelKey": "EXECUTION_LEASE",
+        "legacySharedLeaseSentinelRenewedOnAcquire": true,
+        "legacySharedLeaseSentinelVersion": "MLB-ML-EXECUTION-SENTINEL-v2-renewable-expiring",
+        "migrationAnchorExperimentId": "mlb-v2-2026-07-21-future-prospective-r2",
+        "modeLeaseDomains": {
+          "manual_review": "state_mutation",
+          "selection_capture": "selection_capture",
+          "training": "state_mutation"
+        },
+        "ownerConditionalRelease": true,
+        "protectedExecutionModes": [
+          "manual_review",
+          "selection_capture",
+          "training"
+        ],
+        "reservedLambdaConcurrencyRequired": false,
+        "rollbackSelfRecoverySeconds": 960,
+        "scope": "global_across_experiments_with_isolated_mutation_domains",
+        "selectionWriteManifestConditionCheck": true,
+        "strategy": "dynamodb_mode_isolated_conditional_leases",
+        "trainingCannotBlockSelectionCapture": true,
+        "version": "MLB-ML-EXECUTION-LEASE-v2-mode-isolated-ddb-conditional"
+      },
+      "executionMode": "training",
+      "experimentId": "mlb-v2-2026-07-29-future-prospective-r5",
+      "liveInferenceAuthority": false,
+      "manifestDigest": "f5a65111e377fe4a0e34a902b492e354dcf033e4100aa30190efd0822f11287e",
+      "milestones": {
+        "aspirationalAccuracyAffectsPromotion": false,
+        "aspirationalAccuracyPct": 90,
+        "assumedCleanGamesPerFullSlate": 15,
+        "automaticPromotionEnabled": false,
+        "counts": {
+          "completedFinalizedSlates": 0,
+          "integrityClean": 0,
+          "prospectiveTest": 0,
+          "settledProspectiveSelectedRecommendations": 0,
+          "train": 0,
+          "validation": 0
+        },
+        "experimentId": "mlb-v2-2026-07-29-future-prospective-r5",
+        "firstFullCleanSlateProof": {
+          "achieved": false,
+          "authority": "one nonempty verified official FINAL gamePk set must exactly equal the same immutable slate's unique, current, post-cutoff clean eligible gamePk set",
+          "completedFinalizedSlateCount": 0,
+          "completedFinalizedSlateDates": [],
+          "currentCleanGames": 0,
+          "evaluatedSlateProofs": [],
+          "exactOfficialGameSetEqualityRequired": true,
+          "globalIntegrityCleanGames": 0,
+          "planningEstimateCleanGames": 15,
+          "qualifyingOfficialGameSetFingerprint": null,
+          "qualifyingSlateDate": null,
+          "remainingCleanGames": 15,
+          "state": "WAITING_FOR_FIRST_COMPLETE_FINALIZED_SLATE",
+          "targetCleanGames": 15
+        },
+        "firstPromotionRequiresManualReview": true,
+        "ok": true,
+        "projectedFullCleanSlatesRemaining": {
+          "firstFullCleanSlateProof": 1,
+          "mechanicalShadowTrainerProof": 10,
+          "prospectiveSelectedRecommendations": 7,
+          "prospectiveTest": 7,
+          "totalClean": 34,
+          "train": 20,
+          "validation": 7
+        },
+        "remainingRows": {
+          "firstFullCleanSlateProof": 15,
+          "mechanicalShadowTrainerProof": 140,
+          "prospectiveSelectedRecommendations": 100,
+          "prospectiveTest": 100,
+          "totalClean": 500,
+          "train": 300,
+          "validation": 100
+        },
+        "stage": "COLLECTING_TRAIN",
+        "targets": {
+          "firstFullCleanSlateProof": 15,
+          "mechanicalShadowTrainerProof": 140,
+          "prospectiveSelectedRecommendations": 100,
+          "prospectiveTest": 100,
+          "totalClean": 500,
+          "train": 300,
+          "validation": 100
+        },
+        "version": "MLB-ML-EXPERIMENT-v2-fixed-slate-future-prospective-cutover"
+      },
+      "modelTrained": false,
+      "ok": true,
+      "partitionCounts": {
+        "prospectiveTest": 0,
+        "train": 0,
+        "validation": 0
+      },
+      "prospectiveSelectionLedger": {
+        "conflicts": [],
+        "metrics": {},
+        "ok": true,
+        "settledSelectedRecommendationCount": 0
+      },
+      "rejectedRowCount": 0,
+      "rejectionReasonCounts": {},
+      "releaseCutoffUtc": "2026-07-29T04:00:00+00:00",
+      "rowsRequired": {
+        "prospectiveTest": 100,
+        "train": 300,
+        "validation": 100
+      },
+      "runId": "2e23e15ceb6360db752634c1",
+      "selectionCapture": {
+        "healthEvaluatedByTraining": false,
+        "independentHeartbeatRequired": true,
+        "invokedByTraining": false,
+        "manifestConditionCheckRequired": true,
+        "status": "OWNED_BY_INDEPENDENT_SELECTION_CAPTURE_CADENCE"
+      },
+      "selectionCaptureBeforeTraining": {
+        "collisionPolicy": "separate_global_lease_domain",
+        "healthEvaluatedByTraining": false,
+        "independentHeartbeatRequired": true,
+        "invokedByTraining": false,
+        "manifestConditionCheckRequired": true,
+        "selectionWritesIdempotent": true,
+        "status": "OWNED_BY_INDEPENDENT_SELECTION_CAPTURE_CADENCE"
+      },
+      "status": "ACCUMULATING_TRAIN",
+      "statusFingerprint": "7c9bcbd1d5a86f7c851ff93fb3a02ff6d88942487161fc1e70af1da31da9b5d2",
+      "statusFingerprintVersion": "MLB-ML-AWS-TRAINING-STATUS-SHA256-v2-ddb-roundtrip-canonical",
+      "version": "MLB-ML-AWS-TRAINING-v1-persisted-cutover-selection-ledger-shadow"
     },
-    "ok": null
+    "latestRunCreatedAtUtc": "2026-07-28T14:39:06.202203+00:00",
+    "maximumAgeSeconds": 28800,
+    "ok": true
   }
 }
