@@ -3,9 +3,12 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import math
 from pathlib import Path
 
 import pytest
+
+from hello_world import mlb_v10_autonomous_signal_discovery_v1 as v10
 
 
 PATH = Path(__file__).resolve().parents[2] / "scripts" / "run_mlb_v10_autonomous_signal_discovery.py"
@@ -131,3 +134,12 @@ def test_state_count_must_match_immutable_artifact_count():
     state["eligibleGameCount"] = 2
     with pytest.raises(RuntimeError, match="eligible count disagrees"):
         subject._load_canonical_records(Handler(dataset), state)
+
+
+def test_exact_binomial_is_finite_and_bounded_at_full_corpus_scale():
+    for correct, total in ((1954, 3964), (3000, 3964), (0, 3964), (1982, 3964)):
+        value = v10._two_sided_binomial_pvalue(correct, total)
+        assert math.isfinite(value)
+        assert 0.0 <= value <= 1.0
+    assert v10._two_sided_binomial_pvalue(1982, 3964) == 1.0
+    assert v10._two_sided_binomial_pvalue(3000, 3964) < 1e-20
