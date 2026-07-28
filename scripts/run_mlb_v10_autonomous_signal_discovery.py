@@ -192,7 +192,9 @@ def main() -> int:
     try:
         import mlb_historical_optimizer_handler as handler
         import mlb_v10_autonomous_signal_discovery_v1 as v10
+        import mlb_v10_permutation_control_v2 as permutation_v2
 
+        permutation_v2.install(v10)
         state = handler._load_state()
         if not isinstance(state, dict):
             raise RuntimeError("historical optimizer state is missing")
@@ -217,6 +219,7 @@ def main() -> int:
             value["incrementalNoChange"] = True
             value["lastCheckedAtUtc"] = datetime.now(timezone.utc).isoformat()
             value["canonicalCorpusProof"] = canonical_proof
+            value["permutationControlImplementation"] = permutation_v2.VERSION
             value["prospectiveShadow"] = v10.evaluate_frozen_registry(clean, previous)
             _write(path, value)
             print(json.dumps({
@@ -227,6 +230,7 @@ def main() -> int:
                 "incrementalNoChange": True,
                 "fullRebuild": False,
                 "prospectiveShadowStatus": (value.get("prospectiveShadow") or {}).get("status"),
+                "permutationControlImplementation": permutation_v2.VERSION,
                 "output": str(path),
             }, indent=2, sort_keys=True))
             return 0
@@ -245,6 +249,7 @@ def main() -> int:
             "blockers": report.get("blockers") or [],
             "storageReader": "immutable_complete_slate_artifacts_with_derived_row_eligibility",
             "canonicalCorpusProof": canonical_proof,
+            "permutationControlImplementation": permutation_v2.VERSION,
             "incrementalNoChange": False,
             "reusedPriorRegistryForProspectiveShadow": bool(previous and previous.get("ok") is True),
             "fullRebuild": True,
@@ -267,6 +272,7 @@ def main() -> int:
             "predictiveSignalCount": report.get("predictiveSignalCount"),
             "datasetFingerprint": report.get("datasetFingerprint"),
             "prospectiveShadowStatus": (report.get("prospectiveShadow") or {}).get("status"),
+            "permutationControlImplementation": permutation_v2.VERSION,
             "incrementalNoChange": False,
             "fullRebuild": True,
             "durationSeconds": report.get("durationSeconds"),
