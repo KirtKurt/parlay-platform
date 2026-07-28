@@ -186,37 +186,36 @@
     "artifactAuthoritiesTruncated": true,
     "artifactChecksumValidationApplied": true,
     "authority": "IMMUTABLE_COMPLETE_SLATE_ARTIFACTS",
-    "completedSlateCount": 321,
+    "completedSlateCount": 324,
     "lockContract": "EACH_GAME_T_MINUS_45",
-    "recordCountLoaded": 3964,
-    "rowEligibilityAliasesDerived": 3964,
+    "recordCountLoaded": 4005,
+    "rowEligibilityAliasesDerived": 4005,
     "rowLockProofValidationApplied": true,
     "slateFingerprintValidationApplied": true
   },
   "canonicalDeduplicationApplied": true,
   "canonicalEligibilityFailClosed": true,
   "canonicalSortApplied": true,
-  "completedAtUtc": "2026-07-28T03:15:45.765076+00:00",
+  "completedAtUtc": "2026-07-28T07:23:41.258888+00:00",
   "conflictingDuplicatesPermanentlyQuarantined": true,
-  "createdAtUtc": "2026-07-28T03:15:45.750386+00:00",
-  "datasetFingerprint": "c7cb9dff2af731f644669356c82ab6b9e90edfd4fcef44882f9d1efcd4fd503c",
-  "durationSeconds": 59.013,
+  "createdAtUtc": "2026-07-28T07:23:41.247205+00:00",
+  "datasetFingerprint": "27ed7ba49f652cbb60ce59b3a7e3be1649b8a00a064b9962093ef22b7a37662a",
+  "durationSeconds": 66.742,
   "exactSignificanceTest": "two-sided exact binomial",
   "fdrAlpha": 0.1,
   "fdrRetainedPatternCount": 37,
   "fullRebuild": true,
   "fullRebuildRecommendedCadence": "DAILY",
-  "generatedPatternCount": 3378,
+  "generatedPatternCount": 3381,
   "incrementalExecutionSupported": true,
-  "incrementalNoChange": true,
+  "incrementalNoChange": false,
   "inputIntegrity": {
-    "canonicalRecordCount": 3964,
+    "canonicalRecordCount": 4005,
     "duplicateRecordCount": 0,
     "exclusionCounts": {},
-    "inputRecordCount": 3964,
+    "inputRecordCount": 4005,
     "quarantinedGameCount": 0
   },
-  "lastCheckedAtUtc": "2026-07-28T03:51:57.519326+00:00",
   "mayPublishPicks": false,
   "mayWriteChampion": false,
   "minimumPatternDays": 8,
@@ -225,10 +224,10 @@
   "multipleTestingCorrection": "Benjamini-Hochberg",
   "negativeControl": {
     "development": {
-      "cachedRuleApplicationCount": 25631,
+      "cachedRuleApplicationCount": 25671,
       "eligibleDefinitionCount": 37,
       "implementation": "MLB-V10-PERMUTATION-CONTROL-v2-cached-pregame-rules",
-      "maximumAccuracy95thPercentile": 0.6170212765957447,
+      "maximumAccuracy95thPercentile": 0.6382978723404256,
       "minimumPicks": 20,
       "passed": true,
       "pregameRulesCached": true,
@@ -236,10 +235,10 @@
       "seed": 17010
     },
     "untouchedHoldout": {
-      "cachedRuleApplicationCount": 7800,
+      "cachedRuleApplicationCount": 7812,
       "eligibleDefinitionCount": 35,
       "implementation": "MLB-V10-PERMUTATION-CONTROL-v2-cached-pregame-rules",
-      "maximumAccuracy95thPercentile": 0.6590909090909091,
+      "maximumAccuracy95thPercentile": 0.6637931034482759,
       "minimumPicks": 40,
       "passed": true,
       "pregameRulesCached": true,
@@ -247,10 +246,10 @@
       "seed": 17012
     },
     "walkForward": {
-      "cachedRuleApplicationCount": 6659,
+      "cachedRuleApplicationCount": 6939,
       "eligibleDefinitionCount": 34,
       "implementation": "MLB-V10-PERMUTATION-CONTROL-v2-cached-pregame-rules",
-      "maximumAccuracy95thPercentile": 0.6818181818181818,
+      "maximumAccuracy95thPercentile": 0.6739130434782609,
       "minimumPicks": 40,
       "passed": true,
       "pregameRulesCached": true,
@@ -453,12 +452,11 @@
       "2025-10-12",
       "2025-10-13",
       "2025-10-14",
-      "2025-10-15"
+      "2025-10-15",
+      "2025-10-16",
+      "2025-10-17"
     ],
     "untouchedHoldout": [
-      "2026-05-18",
-      "2026-05-19",
-      "2026-05-20",
       "2026-05-21",
       "2026-05-22",
       "2026-05-23",
@@ -520,11 +518,12 @@
       "2026-07-21",
       "2026-07-22",
       "2026-07-23",
-      "2026-07-24"
+      "2026-07-24",
+      "2026-07-25",
+      "2026-07-26",
+      "2026-07-27"
     ],
     "walkForward": [
-      "2025-10-16",
-      "2025-10-17",
       "2025-10-19",
       "2025-10-20",
       "2025-10-24",
@@ -586,14 +585,17 @@
       "2026-05-14",
       "2026-05-15",
       "2026-05-16",
-      "2026-05-17"
+      "2026-05-17",
+      "2026-05-18",
+      "2026-05-19",
+      "2026-05-20"
     ]
   },
   "patternFamilyObservationCounts": {
-    "higher_numeric": 68245,
-    "interaction": 239700,
-    "lower_numeric": 68245,
-    "tag": 15102
+    "higher_numeric": 68358,
+    "interaction": 240100,
+    "lower_numeric": 68358,
+    "tag": 15130
   },
   "permutationControlImplementation": "MLB-V10-PERMUTATION-CONTROL-v2-cached-pregame-rules",
   "predictiveSignalCount": 0,
@@ -616,8 +618,8 @@
   "proofType": "MLB_V10_AUTONOMOUS_DISCOVERY_RUN",
   "prospectiveShadow": {
     "frozenThroughDate": "2026-07-24",
-    "futureCanonicalGameCount": 0,
-    "futureSlateCount": 0,
+    "futureCanonicalGameCount": 41,
+    "futureSlateCount": 3,
     "policyChangedDuringEvaluation": false,
     "portfolio": {
       "accuracy": null,
@@ -639,31 +641,31 @@
   },
   "registryFreeze": {
     "frozenSignalCount": 0,
-    "frozenThroughDate": "2026-07-24",
+    "frozenThroughDate": "2026-07-27",
     "registryFingerprint": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
     "selectionUsedUntouchedHoldoutLabels": false
   },
   "retainedPatternCount": 37,
-  "reusedPriorRegistryForProspectiveShadow": false,
+  "reusedPriorRegistryForProspectiveShadow": true,
   "runAttempt": "1",
-  "runId": "30325359574",
-  "settledGameCount": 3964,
+  "runId": "30338131795",
+  "settledGameCount": 4005,
   "signals": [
     {
       "definition": "interaction:higher:delta:medium && higher:probStart:extreme",
-      "developmentAccuracy": 0.5884615384615385,
-      "developmentCorrect": 153,
-      "developmentPickCount": 260,
-      "developmentSlateDayCount": 139,
+      "developmentAccuracy": 0.5900383141762452,
+      "developmentCorrect": 154,
+      "developmentPickCount": 261,
+      "developmentSlateDayCount": 140,
       "developmentWilson95": [
-        0.5277783868115264,
-        0.646568645650375
+        0.5294833895695104,
+        0.6479811779304594
       ],
       "family": "interaction",
-      "pValue": 0.005159258884766094,
+      "pValue": 0.004319137524928296,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.09871895358612137,
+      "qValue": 0.08264379562623993,
       "researchOnly": true,
       "signalId": "9cc5422bd5b772311c10",
       "untouchedHoldout": {
@@ -671,14 +673,14 @@
         "correct": 45,
         "family": "interaction",
         "pickCount": 65,
-        "slateDayCount": 38
+        "slateDayCount": 39
       },
       "walkForward": {
-        "accuracy": 0.6,
-        "correct": 45,
+        "accuracy": 0.5897435897435898,
+        "correct": 46,
         "family": "interaction",
-        "pickCount": 75,
-        "slateDayCount": 43
+        "pickCount": 78,
+        "slateDayCount": 44
       }
     },
     {
@@ -699,50 +701,50 @@
       "researchOnly": true,
       "signalId": "98999a01dd6a5ca3475f",
       "untouchedHoldout": {
-        "accuracy": 0.65,
-        "correct": 39,
+        "accuracy": 0.6507936507936508,
+        "correct": 41,
         "family": "interaction",
-        "pickCount": 60,
-        "slateDayCount": 40
+        "pickCount": 63,
+        "slateDayCount": 41
       },
       "walkForward": {
-        "accuracy": 0.5,
-        "correct": 16,
+        "accuracy": 0.5151515151515151,
+        "correct": 17,
         "family": "interaction",
-        "pickCount": 32,
-        "slateDayCount": 23
+        "pickCount": 33,
+        "slateDayCount": 24
       }
     },
     {
       "definition": "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probStart:extreme",
-      "developmentAccuracy": 0.5964912280701754,
-      "developmentCorrect": 272,
-      "developmentPickCount": 456,
-      "developmentSlateDayCount": 163,
+      "developmentAccuracy": 0.5973741794310722,
+      "developmentCorrect": 273,
+      "developmentPickCount": 457,
+      "developmentSlateDayCount": 164,
       "developmentWilson95": [
-        0.550836343645892,
-        0.6405339021082982
+        0.5517781810291115,
+        0.6413467451928269
       ],
       "family": "interaction",
-      "pValue": 4.3902953278274204e-05,
+      "pValue": 3.649807990624421e-05,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.002251343444109901,
+      "qValue": 0.0019496057683252115,
       "researchOnly": true,
       "signalId": "d60e4ebd8b9b6ec9d86f",
       "untouchedHoldout": {
-        "accuracy": 0.6371681415929203,
-        "correct": 72,
+        "accuracy": 0.646551724137931,
+        "correct": 75,
         "family": "interaction",
-        "pickCount": 113,
-        "slateDayCount": 57
+        "pickCount": 116,
+        "slateDayCount": 58
       },
       "walkForward": {
-        "accuracy": 0.5576923076923077,
-        "correct": 58,
+        "accuracy": 0.5377358490566038,
+        "correct": 57,
         "family": "interaction",
-        "pickCount": 104,
-        "slateDayCount": 49
+        "pickCount": 106,
+        "slateDayCount": 50
       }
     },
     {
@@ -759,7 +761,7 @@
       "pValue": 0.003087676461518609,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.06283176545502947,
+      "qValue": 0.06489182333880093,
       "researchOnly": true,
       "signalId": "2329325676f8fcd2b4e4",
       "untouchedHoldout": {
@@ -779,66 +781,66 @@
     },
     {
       "definition": "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probStart:extreme",
-      "developmentAccuracy": 0.5908440629470673,
-      "developmentCorrect": 413,
-      "developmentPickCount": 699,
-      "developmentSlateDayCount": 178,
+      "developmentAccuracy": 0.5914285714285714,
+      "developmentCorrect": 414,
+      "developmentPickCount": 700,
+      "developmentSlateDayCount": 179,
       "developmentWilson95": [
-        0.553993817749286,
-        0.6267012350193606
+        0.5546096413045672,
+        0.6272494588111407
       ],
       "family": "interaction",
-      "pValue": 1.7683519784039703e-06,
+      "pValue": 1.4875825345983529e-06,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.00015113514908759266,
+      "qValue": 0.00012713872062367255,
       "researchOnly": true,
       "signalId": "69d0a496cc03c1a3a672",
       "untouchedHoldout": {
-        "accuracy": 0.628140703517588,
-        "correct": 125,
+        "accuracy": 0.6336633663366337,
+        "correct": 128,
         "family": "interaction",
-        "pickCount": 199,
-        "slateDayCount": 61
+        "pickCount": 202,
+        "slateDayCount": 62
       },
       "walkForward": {
-        "accuracy": 0.5963855421686747,
-        "correct": 99,
+        "accuracy": 0.5906432748538012,
+        "correct": 101,
         "family": "interaction",
-        "pickCount": 166,
-        "slateDayCount": 51
+        "pickCount": 171,
+        "slateDayCount": 52
       }
     },
     {
       "definition": "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probStart:extreme",
-      "developmentAccuracy": 0.594059405940594,
-      "developmentCorrect": 180,
-      "developmentPickCount": 303,
-      "developmentSlateDayCount": 156,
+      "developmentAccuracy": 0.5953947368421053,
+      "developmentCorrect": 181,
+      "developmentPickCount": 304,
+      "developmentSlateDayCount": 157,
       "developmentWilson95": [
-        0.5379220370472705,
-        0.6478415621517951
+        0.5393623257251677,
+        0.6490462584298003
       ],
       "family": "interaction",
-      "pValue": 0.001257566819417466,
+      "pValue": 0.001045577080568294,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.031611777695944934,
+      "qValue": 0.026808596345771058,
       "researchOnly": true,
       "signalId": "e2ff5914428ced3cbe51",
       "untouchedHoldout": {
-        "accuracy": 0.6206896551724138,
-        "correct": 54,
+        "accuracy": 0.632183908045977,
+        "correct": 55,
         "family": "interaction",
         "pickCount": 87,
-        "slateDayCount": 47
+        "slateDayCount": 48
       },
       "walkForward": {
-        "accuracy": 0.5641025641025641,
-        "correct": 44,
+        "accuracy": 0.5555555555555556,
+        "correct": 45,
         "family": "interaction",
-        "pickCount": 78,
-        "slateDayCount": 38
+        "pickCount": 81,
+        "slateDayCount": 39
       }
     },
     {
@@ -855,62 +857,62 @@
       "pValue": 3.98893467736805e-05,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.0021307559401607667,
+      "qValue": 0.002045525702554336,
       "researchOnly": true,
       "signalId": "dc871b699c969c0248f9",
       "untouchedHoldout": {
-        "accuracy": 0.6179775280898876,
-        "correct": 55,
+        "accuracy": 0.6236559139784946,
+        "correct": 58,
         "family": "interaction",
-        "pickCount": 89,
-        "slateDayCount": 51
+        "pickCount": 93,
+        "slateDayCount": 52
       },
       "walkForward": {
-        "accuracy": 0.4888888888888889,
-        "correct": 22,
+        "accuracy": 0.5,
+        "correct": 23,
         "family": "interaction",
-        "pickCount": 45,
-        "slateDayCount": 32
-      }
-    },
-    {
-      "definition": "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
-      "developmentAccuracy": 0.583793738489871,
-      "developmentCorrect": 317,
-      "developmentPickCount": 543,
-      "developmentSlateDayCount": 173,
-      "developmentWilson95": [
-        0.5418857396617448,
-        0.6245244237201192
-      ],
-      "family": "interaction",
-      "pValue": 0.00010856705057427085,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 0.004093616436359271,
-      "researchOnly": true,
-      "signalId": "a3476179c2d0d7fd9913",
-      "untouchedHoldout": {
-        "accuracy": 0.6099290780141844,
-        "correct": 86,
-        "family": "interaction",
-        "pickCount": 141,
-        "slateDayCount": 58
-      },
-      "walkForward": {
-        "accuracy": 0.5348837209302325,
-        "correct": 69,
-        "family": "interaction",
-        "pickCount": 129,
-        "slateDayCount": 50
+        "pickCount": 46,
+        "slateDayCount": 33
       }
     },
     {
       "definition": "interaction:higher:derivedFeatures.curveEfficiency:extreme && higher:fairProbability:extreme",
+      "developmentAccuracy": 0.5719769673704415,
+      "developmentCorrect": 298,
+      "developmentPickCount": 521,
+      "developmentSlateDayCount": 175,
+      "developmentWilson95": [
+        0.5291152407041297,
+        0.6137850172022556
+      ],
+      "family": "interaction",
+      "pValue": 0.0011664211903659183,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 0.029320626785276614,
+      "researchOnly": true,
+      "signalId": "d6dae3fbe9495e87e702",
+      "untouchedHoldout": {
+        "accuracy": 0.6212121212121212,
+        "correct": 82,
+        "family": "interaction",
+        "pickCount": 132,
+        "slateDayCount": 56
+      },
+      "walkForward": {
+        "accuracy": 0.5693430656934306,
+        "correct": 78,
+        "family": "interaction",
+        "pickCount": 137,
+        "slateDayCount": 50
+      }
+    },
+    {
+      "definition": "interaction:higher:derivedFeatures.curveEfficiency:extreme && higher:marketConsensusProbability:extreme",
       "developmentAccuracy": 0.5711538461538461,
       "developmentCorrect": 297,
       "developmentPickCount": 520,
-      "developmentSlateDayCount": 174,
+      "developmentSlateDayCount": 175,
       "developmentWilson95": [
         0.5282466364963874,
         0.6130174402779658
@@ -919,630 +921,630 @@
       "pValue": 0.0013457530986582533,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.033177989855382325,
-      "researchOnly": true,
-      "signalId": "d6dae3fbe9495e87e702",
-      "untouchedHoldout": {
-        "accuracy": 0.6046511627906976,
-        "correct": 78,
-        "family": "interaction",
-        "pickCount": 129,
-        "slateDayCount": 55
-      },
-      "walkForward": {
-        "accuracy": 0.5777777777777777,
-        "correct": 78,
-        "family": "interaction",
-        "pickCount": 135,
-        "slateDayCount": 49
-      }
-    },
-    {
-      "definition": "interaction:higher:derivedFeatures.curveEfficiency:extreme && higher:marketConsensusProbability:extreme",
-      "developmentAccuracy": 0.5703275529865125,
-      "developmentCorrect": 296,
-      "developmentPickCount": 519,
-      "developmentSlateDayCount": 174,
-      "developmentWilson95": [
-        0.5273748485032609,
-        0.6122467883366539
-      ],
-      "family": "interaction",
-      "pValue": 0.0015506053165703637,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 0.037507094638551064,
+      "qValue": 0.0325519900467902,
       "researchOnly": true,
       "signalId": "395a3af65bcc91ffad63",
       "untouchedHoldout": {
-        "accuracy": 0.6046511627906976,
-        "correct": 78,
+        "accuracy": 0.6212121212121212,
+        "correct": 82,
         "family": "interaction",
-        "pickCount": 129,
-        "slateDayCount": 55
+        "pickCount": 132,
+        "slateDayCount": 56
       },
       "walkForward": {
-        "accuracy": 0.5777777777777777,
+        "accuracy": 0.5693430656934306,
         "correct": 78,
         "family": "interaction",
-        "pickCount": 135,
-        "slateDayCount": 49
+        "pickCount": 137,
+        "slateDayCount": 50
       }
     },
     {
-      "definition": "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:fairProbability:extreme",
-      "developmentAccuracy": 0.5961871750433275,
-      "developmentCorrect": 344,
-      "developmentPickCount": 577,
-      "developmentSlateDayCount": 177,
+      "definition": "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:probLatest:extreme",
+      "developmentAccuracy": 0.5845588235294118,
+      "developmentCorrect": 318,
+      "developmentPickCount": 544,
+      "developmentSlateDayCount": 174,
       "developmentWilson95": [
-        0.5556426576763906,
-        0.6354593570553364
+        0.5426951344225075,
+        0.625236618113262
       ],
       "family": "interaction",
-      "pValue": 4.374543292384736e-06,
+      "pValue": 9.222731831137754e-05,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.00032989202946101363,
+      "qValue": 0.0035828915780359394,
       "researchOnly": true,
-      "signalId": "e948d61dabe41ce9dcd0",
+      "signalId": "a3476179c2d0d7fd9913",
       "untouchedHoldout": {
-        "accuracy": 0.6036585365853658,
-        "correct": 99,
+        "accuracy": 0.6197183098591549,
+        "correct": 88,
         "family": "interaction",
-        "pickCount": 164,
-        "slateDayCount": 61
+        "pickCount": 142,
+        "slateDayCount": 59
       },
       "walkForward": {
-        "accuracy": 0.5419847328244275,
-        "correct": 71,
+        "accuracy": 0.518796992481203,
+        "correct": 69,
         "family": "interaction",
-        "pickCount": 131,
-        "slateDayCount": 51
-      }
-    },
-    {
-      "definition": "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
-      "developmentAccuracy": 0.5961871750433275,
-      "developmentCorrect": 344,
-      "developmentPickCount": 577,
-      "developmentSlateDayCount": 177,
-      "developmentWilson95": [
-        0.5556426576763906,
-        0.6354593570553364
-      ],
-      "family": "interaction",
-      "pValue": 4.374543292384736e-06,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 0.00032989202946101363,
-      "researchOnly": true,
-      "signalId": "1a75a16a113c7448b94a",
-      "untouchedHoldout": {
-        "accuracy": 0.6036585365853658,
-        "correct": 99,
-        "family": "interaction",
-        "pickCount": 164,
-        "slateDayCount": 61
-      },
-      "walkForward": {
-        "accuracy": 0.5419847328244275,
-        "correct": 71,
-        "family": "interaction",
-        "pickCount": 131,
+        "pickCount": 133,
         "slateDayCount": 51
       }
     },
     {
       "definition": "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:fairProbability:extreme",
-      "developmentAccuracy": 0.5897435897435898,
-      "developmentCorrect": 207,
-      "developmentPickCount": 351,
-      "developmentSlateDayCount": 162,
+      "developmentAccuracy": 0.5909090909090909,
+      "developmentCorrect": 208,
+      "developmentPickCount": 352,
+      "developmentSlateDayCount": 163,
       "developmentWilson95": [
-        0.5375830388237259,
-        0.6399609695450788
+        0.5388326896343535,
+        0.641022616771643
       ],
       "family": "interaction",
-      "pValue": 0.0009091712600174384,
+      "pValue": 0.0007621828202457603,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.024787775103829828,
+      "qValue": 0.02124170381641445,
       "researchOnly": true,
       "signalId": "7e52e07b2543871c0f77",
       "untouchedHoldout": {
-        "accuracy": 0.5980392156862745,
-        "correct": 61,
+        "accuracy": 0.6078431372549019,
+        "correct": 62,
         "family": "interaction",
         "pickCount": 102,
-        "slateDayCount": 50
+        "slateDayCount": 51
       },
       "walkForward": {
-        "accuracy": 0.5568181818181818,
-        "correct": 49,
+        "accuracy": 0.5494505494505495,
+        "correct": 50,
         "family": "interaction",
-        "pickCount": 88,
-        "slateDayCount": 42
+        "pickCount": 91,
+        "slateDayCount": 43
       }
     },
     {
       "definition": "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:marketConsensusProbability:extreme",
-      "developmentAccuracy": 0.5897435897435898,
-      "developmentCorrect": 207,
-      "developmentPickCount": 351,
-      "developmentSlateDayCount": 162,
+      "developmentAccuracy": 0.5909090909090909,
+      "developmentCorrect": 208,
+      "developmentPickCount": 352,
+      "developmentSlateDayCount": 163,
       "developmentWilson95": [
-        0.5375830388237259,
-        0.6399609695450788
+        0.5388326896343535,
+        0.641022616771643
       ],
       "family": "interaction",
-      "pValue": 0.0009091712600174384,
+      "pValue": 0.0007621828202457603,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.024787775103829828,
+      "qValue": 0.02124170381641445,
       "researchOnly": true,
       "signalId": "c60e84b9ad75794ab6ad",
       "untouchedHoldout": {
-        "accuracy": 0.5980392156862745,
-        "correct": 61,
+        "accuracy": 0.6078431372549019,
+        "correct": 62,
         "family": "interaction",
         "pickCount": 102,
-        "slateDayCount": 50
+        "slateDayCount": 51
       },
       "walkForward": {
-        "accuracy": 0.5568181818181818,
-        "correct": 49,
+        "accuracy": 0.5494505494505495,
+        "correct": 50,
         "family": "interaction",
-        "pickCount": 88,
-        "slateDayCount": 42
+        "pickCount": 91,
+        "slateDayCount": 43
       }
     },
     {
       "definition": "interaction:higher:derivedFeatures.agreementMomentum:medium && higher:probLatest:extreme",
-      "developmentAccuracy": 0.5897435897435898,
-      "developmentCorrect": 207,
-      "developmentPickCount": 351,
-      "developmentSlateDayCount": 162,
+      "developmentAccuracy": 0.5909090909090909,
+      "developmentCorrect": 208,
+      "developmentPickCount": 352,
+      "developmentSlateDayCount": 163,
       "developmentWilson95": [
-        0.5375830388237259,
-        0.6399609695450788
+        0.5388326896343535,
+        0.641022616771643
       ],
       "family": "interaction",
-      "pValue": 0.0009091712600174384,
+      "pValue": 0.0007621828202457603,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.024787775103829828,
+      "qValue": 0.02124170381641445,
       "researchOnly": true,
       "signalId": "c4b26edfa49ee4305976",
       "untouchedHoldout": {
-        "accuracy": 0.5980392156862745,
-        "correct": 61,
+        "accuracy": 0.6078431372549019,
+        "correct": 62,
         "family": "interaction",
         "pickCount": 102,
-        "slateDayCount": 50
+        "slateDayCount": 51
       },
       "walkForward": {
-        "accuracy": 0.5568181818181818,
-        "correct": 49,
+        "accuracy": 0.5494505494505495,
+        "correct": 50,
         "family": "interaction",
-        "pickCount": 88,
-        "slateDayCount": 42
+        "pickCount": 91,
+        "slateDayCount": 43
+      }
+    },
+    {
+      "definition": "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:fairProbability:extreme",
+      "developmentAccuracy": 0.596885813148789,
+      "developmentCorrect": 345,
+      "developmentPickCount": 578,
+      "developmentSlateDayCount": 178,
+      "developmentWilson95": [
+        0.5563831901565006,
+        0.6361090620303489
+      ],
+      "family": "interaction",
+      "pValue": 3.644336850516794e-06,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 0.0002748258730801488,
+      "researchOnly": true,
+      "signalId": "e948d61dabe41ce9dcd0",
+      "untouchedHoldout": {
+        "accuracy": 0.6073619631901841,
+        "correct": 99,
+        "family": "interaction",
+        "pickCount": 163,
+        "slateDayCount": 61
+      },
+      "walkForward": {
+        "accuracy": 0.5328467153284672,
+        "correct": 73,
+        "family": "interaction",
+        "pickCount": 137,
+        "slateDayCount": 53
+      }
+    },
+    {
+      "definition": "interaction:higher:derivedFeatures.bookLeadership:extreme && higher:marketConsensusProbability:extreme",
+      "developmentAccuracy": 0.596885813148789,
+      "developmentCorrect": 345,
+      "developmentPickCount": 578,
+      "developmentSlateDayCount": 178,
+      "developmentWilson95": [
+        0.5563831901565006,
+        0.6361090620303489
+      ],
+      "family": "interaction",
+      "pValue": 3.644336850516794e-06,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 0.0002748258730801488,
+      "researchOnly": true,
+      "signalId": "1a75a16a113c7448b94a",
+      "untouchedHoldout": {
+        "accuracy": 0.6073619631901841,
+        "correct": 99,
+        "family": "interaction",
+        "pickCount": 163,
+        "slateDayCount": 61
+      },
+      "walkForward": {
+        "accuracy": 0.5328467153284672,
+        "correct": 73,
+        "family": "interaction",
+        "pickCount": 137,
+        "slateDayCount": 53
       }
     },
     {
       "definition": "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:fairProbability:extreme",
-      "developmentAccuracy": 0.5776986951364176,
-      "developmentCorrect": 487,
-      "developmentPickCount": 843,
-      "developmentSlateDayCount": 183,
+      "developmentAccuracy": 0.5781990521327014,
+      "developmentCorrect": 488,
+      "developmentPickCount": 844,
+      "developmentSlateDayCount": 184,
       "developmentWilson95": [
-        0.5440771080553337,
-        0.610615339741279
+        0.5446005328491625,
+        0.6110889261252497
       ],
       "family": "interaction",
-      "pValue": 7.259259117486927e-06,
+      "pValue": 6.2459151604077334e-06,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.00044316048517229715,
+      "qValue": 0.0003812982493163197,
       "researchOnly": true,
       "signalId": "106da8770822a00108a0",
       "untouchedHoldout": {
-        "accuracy": 0.5975609756097561,
-        "correct": 147,
+        "accuracy": 0.6032388663967612,
+        "correct": 149,
         "family": "interaction",
-        "pickCount": 246,
-        "slateDayCount": 62
+        "pickCount": 247,
+        "slateDayCount": 63
       },
       "walkForward": {
-        "accuracy": 0.5714285714285714,
-        "correct": 112,
+        "accuracy": 0.5665024630541872,
+        "correct": 115,
         "family": "interaction",
-        "pickCount": 196,
-        "slateDayCount": 53
+        "pickCount": 203,
+        "slateDayCount": 54
       }
     },
     {
       "definition": "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:marketConsensusProbability:extreme",
-      "developmentAccuracy": 0.5776986951364176,
-      "developmentCorrect": 487,
-      "developmentPickCount": 843,
-      "developmentSlateDayCount": 183,
+      "developmentAccuracy": 0.5781990521327014,
+      "developmentCorrect": 488,
+      "developmentPickCount": 844,
+      "developmentSlateDayCount": 184,
       "developmentWilson95": [
-        0.5440771080553337,
-        0.610615339741279
+        0.5446005328491625,
+        0.6110889261252497
       ],
       "family": "interaction",
-      "pValue": 7.259259117486927e-06,
+      "pValue": 6.2459151604077334e-06,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.00044316048517229715,
+      "qValue": 0.0003812982493163197,
       "researchOnly": true,
       "signalId": "80b36ed09f3746b28896",
       "untouchedHoldout": {
-        "accuracy": 0.5975609756097561,
-        "correct": 147,
+        "accuracy": 0.6032388663967612,
+        "correct": 149,
         "family": "interaction",
-        "pickCount": 246,
-        "slateDayCount": 62
+        "pickCount": 247,
+        "slateDayCount": 63
       },
       "walkForward": {
-        "accuracy": 0.5714285714285714,
-        "correct": 112,
+        "accuracy": 0.5665024630541872,
+        "correct": 115,
         "family": "interaction",
-        "pickCount": 196,
-        "slateDayCount": 53
+        "pickCount": 203,
+        "slateDayCount": 54
       }
     },
     {
       "definition": "interaction:higher:derivedFeatures.bookFollowThrough:extreme && higher:probLatest:extreme",
-      "developmentAccuracy": 0.5776986951364176,
-      "developmentCorrect": 487,
-      "developmentPickCount": 843,
-      "developmentSlateDayCount": 183,
+      "developmentAccuracy": 0.5781990521327014,
+      "developmentCorrect": 488,
+      "developmentPickCount": 844,
+      "developmentSlateDayCount": 184,
       "developmentWilson95": [
-        0.5440771080553337,
-        0.610615339741279
+        0.5446005328491625,
+        0.6110889261252497
       ],
       "family": "interaction",
-      "pValue": 7.259259117486927e-06,
+      "pValue": 6.2459151604077334e-06,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.00044316048517229715,
+      "qValue": 0.0003812982493163197,
       "researchOnly": true,
       "signalId": "2194a086a6fb0a5ea839",
       "untouchedHoldout": {
-        "accuracy": 0.5975609756097561,
-        "correct": 147,
+        "accuracy": 0.6032388663967612,
+        "correct": 149,
         "family": "interaction",
-        "pickCount": 246,
-        "slateDayCount": 62
+        "pickCount": 247,
+        "slateDayCount": 63
       },
       "walkForward": {
-        "accuracy": 0.5714285714285714,
-        "correct": 112,
+        "accuracy": 0.5665024630541872,
+        "correct": 115,
         "family": "interaction",
-        "pickCount": 196,
-        "slateDayCount": 53
+        "pickCount": 203,
+        "slateDayCount": 54
       }
     },
     {
       "definition": "higher:probStart:extreme",
-      "developmentAccuracy": 0.5900747790618627,
-      "developmentCorrect": 868,
-      "developmentPickCount": 1471,
-      "developmentSlateDayCount": 189,
+      "developmentAccuracy": 0.5902306648575305,
+      "developmentCorrect": 870,
+      "developmentPickCount": 1474,
+      "developmentSlateDayCount": 191,
       "developmentWilson95": [
-        0.5647381636859684,
-        0.61494214910152
+        0.5649210671402102,
+        0.6150711593609249
       ],
       "family": "higher",
-      "pValue": 5.3258508714293384e-12,
+      "pValue": 5.586975326821175e-12,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 8.534676021465515e-10,
+      "qValue": 8.953127961230933e-10,
       "researchOnly": true,
       "signalId": "c03a3d1402f071f30da2",
       "untouchedHoldout": {
-        "accuracy": 0.5783410138248848,
-        "correct": 251,
+        "accuracy": 0.5813953488372093,
+        "correct": 250,
         "family": "higher_numeric",
-        "pickCount": 434,
+        "pickCount": 430,
         "slateDayCount": 64
       },
       "walkForward": {
-        "accuracy": 0.5547785547785548,
-        "correct": 238,
+        "accuracy": 0.5535714285714286,
+        "correct": 248,
         "family": "higher_numeric",
-        "pickCount": 429,
-        "slateDayCount": 61
-      }
-    },
-    {
-      "definition": "interaction:higher:derivedFeatures.bookFollowThrough:extreme && lower:americanOdds:extreme",
-      "developmentAccuracy": 0.5568181818181818,
-      "developmentCorrect": 686,
-      "developmentPickCount": 1232,
-      "developmentSlateDayCount": 186,
-      "developmentWilson95": [
-        0.5289446628069275,
-        0.5843384634448509
-      ],
-      "family": "interaction",
-      "pValue": 7.367917839218308e-05,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 0.003373453810670668,
-      "researchOnly": true,
-      "signalId": "f3f4fb59a628b4d71140",
-      "untouchedHoldout": {
-        "accuracy": 0.5714285714285714,
-        "correct": 240,
-        "family": "interaction",
-        "pickCount": 420,
-        "slateDayCount": 64
-      },
-      "walkForward": {
-        "accuracy": 0.5537974683544303,
-        "correct": 175,
-        "family": "interaction",
-        "pickCount": 316,
-        "slateDayCount": 56
-      }
-    },
-    {
-      "definition": "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme",
-      "developmentAccuracy": 0.5866935483870968,
-      "developmentCorrect": 291,
-      "developmentPickCount": 496,
-      "developmentSlateDayCount": 171,
-      "developmentWilson95": [
-        0.5428521543896997,
-        0.629202352478076
-      ],
-      "family": "interaction",
-      "pValue": 0.0001305570558101099,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 0.0046492818207933585,
-      "researchOnly": true,
-      "signalId": "42c69fa3ba4c1586017e",
-      "untouchedHoldout": {
-        "accuracy": 0.5705521472392638,
-        "correct": 93,
-        "family": "interaction",
-        "pickCount": 163,
-        "slateDayCount": 55
-      },
-      "walkForward": {
-        "accuracy": 0.5416666666666666,
-        "correct": 78,
-        "family": "interaction",
-        "pickCount": 144,
-        "slateDayCount": 50
-      }
-    },
-    {
-      "definition": "has_tag:FAVORITE",
-      "developmentAccuracy": 0.5741405849153411,
-      "developmentCorrect": 1119,
-      "developmentPickCount": 1949,
-      "developmentSlateDayCount": 190,
-      "developmentWilson95": [
-        0.5520629296702841,
-        0.5959265437206964
-      ],
-      "family": "has_tag",
-      "pValue": 6.325084900282718e-11,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 8.108758842162444e-09,
-      "researchOnly": true,
-      "signalId": "812f3a78edf1206a4380",
-      "untouchedHoldout": {
-        "accuracy": 0.5705426356589147,
-        "correct": 368,
-        "family": "tag",
-        "pickCount": 645,
-        "slateDayCount": 65
-      },
-      "walkForward": {
-        "accuracy": 0.5625,
-        "correct": 324,
-        "family": "tag",
-        "pickCount": 576,
-        "slateDayCount": 64
-      }
-    },
-    {
-      "definition": "higher:fairProbability:extreme",
-      "developmentAccuracy": 0.5924657534246576,
-      "developmentCorrect": 865,
-      "developmentPickCount": 1460,
-      "developmentSlateDayCount": 189,
-      "developmentWilson95": [
-        0.5670496343666873,
-        0.6173965516140909
-      ],
-      "family": "higher",
-      "pValue": 4.0234482412415673e-13,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 8.596767742119482e-11,
-      "researchOnly": true,
-      "signalId": "baf71e16a125c4f45191",
-      "untouchedHoldout": {
-        "accuracy": 0.5673758865248227,
-        "correct": 240,
-        "family": "higher_numeric",
-        "pickCount": 423,
-        "slateDayCount": 64
-      },
-      "walkForward": {
-        "accuracy": 0.5517241379310345,
-        "correct": 224,
-        "family": "higher_numeric",
-        "pickCount": 406,
-        "slateDayCount": 61
-      }
-    },
-    {
-      "definition": "higher:probLatest:extreme",
-      "developmentAccuracy": 0.5924657534246576,
-      "developmentCorrect": 865,
-      "developmentPickCount": 1460,
-      "developmentSlateDayCount": 189,
-      "developmentWilson95": [
-        0.5670496343666873,
-        0.6173965516140909
-      ],
-      "family": "higher",
-      "pValue": 4.0234482412415673e-13,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 8.596767742119482e-11,
-      "researchOnly": true,
-      "signalId": "20947d5fb8aa52a7bb5d",
-      "untouchedHoldout": {
-        "accuracy": 0.5673758865248227,
-        "correct": 240,
-        "family": "higher_numeric",
-        "pickCount": 423,
-        "slateDayCount": 64
-      },
-      "walkForward": {
-        "accuracy": 0.5517241379310345,
-        "correct": 224,
-        "family": "higher_numeric",
-        "pickCount": 406,
-        "slateDayCount": 61
-      }
-    },
-    {
-      "definition": "higher:marketConsensusProbability:extreme",
-      "developmentAccuracy": 0.5924657534246576,
-      "developmentCorrect": 865,
-      "developmentPickCount": 1460,
-      "developmentSlateDayCount": 189,
-      "developmentWilson95": [
-        0.5670496343666873,
-        0.6173965516140909
-      ],
-      "family": "higher",
-      "pValue": 4.0234482412415673e-13,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 8.596767742119482e-11,
-      "researchOnly": true,
-      "signalId": "e1b448f6e7e7b3b56e43",
-      "untouchedHoldout": {
-        "accuracy": 0.5673758865248227,
-        "correct": 240,
-        "family": "higher_numeric",
-        "pickCount": 423,
-        "slateDayCount": 64
-      },
-      "walkForward": {
-        "accuracy": 0.5517241379310345,
-        "correct": 224,
-        "family": "higher_numeric",
-        "pickCount": 406,
-        "slateDayCount": 61
-      }
-    },
-    {
-      "definition": "lower:americanOdds:extreme",
-      "developmentAccuracy": 0.5602383993188591,
-      "developmentCorrect": 1316,
-      "developmentPickCount": 2349,
-      "developmentSlateDayCount": 192,
-      "developmentWilson95": [
-        0.540083319348777,
-        0.5801967709046426
-      ],
-      "family": "lower",
-      "pValue": 5.700406147113313e-09,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 5.219943343285191e-07,
-      "researchOnly": true,
-      "signalId": "8a9eae07fcedf01a6308",
-      "untouchedHoldout": {
-        "accuracy": 0.5649038461538461,
-        "correct": 470,
-        "family": "lower_numeric",
-        "pickCount": 832,
-        "slateDayCount": 65
-      },
-      "walkForward": {
-        "accuracy": 0.5627705627705628,
-        "correct": 390,
-        "family": "lower_numeric",
-        "pickCount": 693,
-        "slateDayCount": 64
-      }
-    },
-    {
-      "definition": "lacks_tag:UNDERDOG",
-      "developmentAccuracy": 0.5759599332220368,
-      "developmentCorrect": 1035,
-      "developmentPickCount": 1797,
-      "developmentSlateDayCount": 190,
-      "developmentWilson95": [
-        0.5529719446940167,
-        0.5986238425201393
-      ],
-      "family": "lacks_tag",
-      "pValue": 1.2963718987180073e-10,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 1.3849573117970712e-08,
-      "researchOnly": true,
-      "signalId": "f54e63bc1ecbf843e5d7",
-      "untouchedHoldout": {
-        "accuracy": 0.5638841567291312,
-        "correct": 331,
-        "family": "tag",
-        "pickCount": 587,
-        "slateDayCount": 65
-      },
-      "walkForward": {
-        "accuracy": 0.5703422053231939,
-        "correct": 300,
-        "family": "tag",
-        "pickCount": 526,
+        "pickCount": 448,
         "slateDayCount": 62
       }
     },
     {
-      "definition": "interaction:higher:derivedFeatures.bookLeadership:extreme && lower:americanOdds:extreme",
-      "developmentAccuracy": 0.5722433460076045,
-      "developmentCorrect": 301,
-      "developmentPickCount": 526,
-      "developmentSlateDayCount": 176,
+      "definition": "interaction:higher:derivedFeatures.agreementMomentum:medium && lower:americanOdds:extreme",
+      "developmentAccuracy": 0.5863453815261044,
+      "developmentCorrect": 292,
+      "developmentPickCount": 498,
+      "developmentSlateDayCount": 172,
       "developmentWilson95": [
-        0.5295881980327866,
-        0.6138508977271537
+        0.5425901375342916,
+        0.6287786768485732
       ],
       "family": "interaction",
-      "pValue": 0.0010558175406545356,
+      "pValue": 0.00013473299002964012,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.02762363443100234,
+      "qValue": 0.00479799147827774,
+      "researchOnly": true,
+      "signalId": "42c69fa3ba4c1586017e",
+      "untouchedHoldout": {
+        "accuracy": 0.5798816568047337,
+        "correct": 98,
+        "family": "interaction",
+        "pickCount": 169,
+        "slateDayCount": 56
+      },
+      "walkForward": {
+        "accuracy": 0.54421768707483,
+        "correct": 80,
+        "family": "interaction",
+        "pickCount": 147,
+        "slateDayCount": 51
+      }
+    },
+    {
+      "definition": "interaction:higher:derivedFeatures.bookLeadership:extreme && lower:americanOdds:extreme",
+      "developmentAccuracy": 0.573055028462998,
+      "developmentCorrect": 302,
+      "developmentPickCount": 527,
+      "developmentSlateDayCount": 177,
+      "developmentWilson95": [
+        0.5304447678110582,
+        0.614607918338633
+      ],
+      "family": "interaction",
+      "pValue": 0.0009135983812215143,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 0.024400690098457942,
       "researchOnly": true,
       "signalId": "cf86d42d531b2225daeb",
       "untouchedHoldout": {
-        "accuracy": 0.5625,
+        "accuracy": 0.574468085106383,
         "correct": 81,
         "family": "interaction",
-        "pickCount": 144,
+        "pickCount": 141,
         "slateDayCount": 59
       },
       "walkForward": {
-        "accuracy": 0.5620437956204379,
-        "correct": 77,
+        "accuracy": 0.5486111111111112,
+        "correct": 79,
         "family": "interaction",
-        "pickCount": 137,
-        "slateDayCount": 49
+        "pickCount": 144,
+        "slateDayCount": 51
+      }
+    },
+    {
+      "definition": "interaction:higher:derivedFeatures.bookFollowThrough:extreme && lower:americanOdds:extreme",
+      "developmentAccuracy": 0.5567260940032415,
+      "developmentCorrect": 687,
+      "developmentPickCount": 1234,
+      "developmentSlateDayCount": 187,
+      "developmentWilson95": [
+        0.5288749468070738,
+        0.5842251461288882
+      ],
+      "family": "interaction",
+      "pValue": 7.468211890693244e-05,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 0.003416286345332377,
+      "researchOnly": true,
+      "signalId": "f3f4fb59a628b4d71140",
+      "untouchedHoldout": {
+        "accuracy": 0.5734597156398105,
+        "correct": 242,
+        "family": "interaction",
+        "pickCount": 422,
+        "slateDayCount": 64
+      },
+      "walkForward": {
+        "accuracy": 0.5589123867069486,
+        "correct": 185,
+        "family": "interaction",
+        "pickCount": 331,
+        "slateDayCount": 58
+      }
+    },
+    {
+      "definition": "higher:probLatest:extreme",
+      "developmentAccuracy": 0.5930232558139535,
+      "developmentCorrect": 867,
+      "developmentPickCount": 1462,
+      "developmentSlateDayCount": 191,
+      "developmentWilson95": [
+        0.567628560652641,
+        0.6179303701349694
+      ],
+      "family": "higher",
+      "pValue": 1.2067014054650826e-12,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 2.57831866967706e-10,
+      "researchOnly": true,
+      "signalId": "20947d5fb8aa52a7bb5d",
+      "untouchedHoldout": {
+        "accuracy": 0.5731414868105515,
+        "correct": 239,
+        "family": "higher_numeric",
+        "pickCount": 417,
+        "slateDayCount": 64
+      },
+      "walkForward": {
+        "accuracy": 0.5469483568075117,
+        "correct": 233,
+        "family": "higher_numeric",
+        "pickCount": 426,
+        "slateDayCount": 62
+      }
+    },
+    {
+      "definition": "higher:marketConsensusProbability:extreme",
+      "developmentAccuracy": 0.5930232558139535,
+      "developmentCorrect": 867,
+      "developmentPickCount": 1462,
+      "developmentSlateDayCount": 191,
+      "developmentWilson95": [
+        0.567628560652641,
+        0.6179303701349694
+      ],
+      "family": "higher",
+      "pValue": 1.2067014054650826e-12,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 2.57831866967706e-10,
+      "researchOnly": true,
+      "signalId": "e1b448f6e7e7b3b56e43",
+      "untouchedHoldout": {
+        "accuracy": 0.5731414868105515,
+        "correct": 239,
+        "family": "higher_numeric",
+        "pickCount": 417,
+        "slateDayCount": 64
+      },
+      "walkForward": {
+        "accuracy": 0.5469483568075117,
+        "correct": 233,
+        "family": "higher_numeric",
+        "pickCount": 426,
+        "slateDayCount": 62
+      }
+    },
+    {
+      "definition": "higher:fairProbability:extreme",
+      "developmentAccuracy": 0.5930232558139535,
+      "developmentCorrect": 867,
+      "developmentPickCount": 1462,
+      "developmentSlateDayCount": 191,
+      "developmentWilson95": [
+        0.567628560652641,
+        0.6179303701349694
+      ],
+      "family": "higher",
+      "pValue": 1.2067014054650826e-12,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 2.57831866967706e-10,
+      "researchOnly": true,
+      "signalId": "baf71e16a125c4f45191",
+      "untouchedHoldout": {
+        "accuracy": 0.5731414868105515,
+        "correct": 239,
+        "family": "higher_numeric",
+        "pickCount": 417,
+        "slateDayCount": 64
+      },
+      "walkForward": {
+        "accuracy": 0.5469483568075117,
+        "correct": 233,
+        "family": "higher_numeric",
+        "pickCount": 426,
+        "slateDayCount": 62
+      }
+    },
+    {
+      "definition": "has_tag:FAVORITE",
+      "developmentAccuracy": 0.5742827868852459,
+      "developmentCorrect": 1121,
+      "developmentPickCount": 1952,
+      "developmentSlateDayCount": 192,
+      "developmentWilson95": [
+        0.5522228474716045,
+        0.596050918665694
+      ],
+      "family": "has_tag",
+      "pValue": 5.468325792179485e-11,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 7.0103936655741e-09,
+      "researchOnly": true,
+      "signalId": "812f3a78edf1206a4380",
+      "untouchedHoldout": {
+        "accuracy": 0.5709828393135725,
+        "correct": 366,
+        "family": "tag",
+        "pickCount": 641,
+        "slateDayCount": 65
+      },
+      "walkForward": {
+        "accuracy": 0.5619834710743802,
+        "correct": 340,
+        "family": "tag",
+        "pickCount": 605,
+        "slateDayCount": 65
+      }
+    },
+    {
+      "definition": "interaction:higher:fairProbability:extreme && higher:marketConsensusProbability:extreme",
+      "developmentAccuracy": 0.6291390728476821,
+      "developmentCorrect": 95,
+      "developmentPickCount": 151,
+      "developmentSlateDayCount": 104,
+      "developmentWilson95": [
+        0.5497841088195112,
+        0.7020861896015849
+      ],
+      "family": "interaction",
+      "pValue": 0.001887731160242434,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 0.044816136063533345,
+      "researchOnly": true,
+      "signalId": "c0497bd081985ae65d8f",
+      "untouchedHoldout": {
+        "accuracy": 0.5681818181818182,
+        "correct": 25,
+        "family": "interaction",
+        "pickCount": 44,
+        "slateDayCount": 32
+      },
+      "walkForward": {
+        "accuracy": 0.58,
+        "correct": 29,
+        "family": "interaction",
+        "pickCount": 50,
+        "slateDayCount": 33
+      }
+    },
+    {
+      "definition": "lacks_tag:UNDERDOG",
+      "developmentAccuracy": 0.5761111111111111,
+      "developmentCorrect": 1037,
+      "developmentPickCount": 1800,
+      "developmentSlateDayCount": 192,
+      "developmentWilson95": [
+        0.5531431311958039,
+        0.5987549068580917
+      ],
+      "family": "lacks_tag",
+      "pValue": 1.1279566169974942e-10,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 1.205033652492323e-08,
+      "researchOnly": true,
+      "signalId": "f54e63bc1ecbf843e5d7",
+      "untouchedHoldout": {
+        "accuracy": 0.5660377358490566,
+        "correct": 330,
+        "family": "tag",
+        "pickCount": 583,
+        "slateDayCount": 65
+      },
+      "walkForward": {
+        "accuracy": 0.5688405797101449,
+        "correct": 314,
+        "family": "tag",
+        "pickCount": 552,
+        "slateDayCount": 63
       }
     },
     {
@@ -1563,18 +1565,18 @@
       "researchOnly": true,
       "signalId": "bb14a68e2dcf1b9fe43f",
       "untouchedHoldout": {
-        "accuracy": 0.5546218487394958,
-        "correct": 66,
+        "accuracy": 0.5655737704918032,
+        "correct": 69,
         "family": "interaction",
-        "pickCount": 119,
+        "pickCount": 122,
         "slateDayCount": 56
       },
       "walkForward": {
-        "accuracy": 0.453125,
-        "correct": 29,
+        "accuracy": 0.45454545454545453,
+        "correct": 30,
         "family": "interaction",
-        "pickCount": 64,
-        "slateDayCount": 37
+        "pickCount": 66,
+        "slateDayCount": 39
       }
     },
     {
@@ -1595,18 +1597,18 @@
       "researchOnly": true,
       "signalId": "70d60e91e816834b1812",
       "untouchedHoldout": {
-        "accuracy": 0.5546218487394958,
-        "correct": 66,
+        "accuracy": 0.5655737704918032,
+        "correct": 69,
         "family": "interaction",
-        "pickCount": 119,
+        "pickCount": 122,
         "slateDayCount": 56
       },
       "walkForward": {
-        "accuracy": 0.453125,
-        "correct": 29,
+        "accuracy": 0.45454545454545453,
+        "correct": 30,
         "family": "interaction",
-        "pickCount": 64,
-        "slateDayCount": 37
+        "pickCount": 66,
+        "slateDayCount": 39
       }
     },
     {
@@ -1627,82 +1629,50 @@
       "researchOnly": true,
       "signalId": "054b79d8a366eded0700",
       "untouchedHoldout": {
-        "accuracy": 0.5546218487394958,
-        "correct": 66,
+        "accuracy": 0.5655737704918032,
+        "correct": 69,
         "family": "interaction",
-        "pickCount": 119,
+        "pickCount": 122,
         "slateDayCount": 56
       },
       "walkForward": {
-        "accuracy": 0.453125,
-        "correct": 29,
+        "accuracy": 0.45454545454545453,
+        "correct": 30,
         "family": "interaction",
-        "pickCount": 64,
-        "slateDayCount": 37
+        "pickCount": 66,
+        "slateDayCount": 39
       }
     },
     {
-      "definition": "interaction:higher:delta:large && lower:americanOdds:extreme",
-      "developmentAccuracy": 0.5903010033444817,
-      "developmentCorrect": 353,
-      "developmentPickCount": 598,
-      "developmentSlateDayCount": 175,
+      "definition": "lower:americanOdds:extreme",
+      "developmentAccuracy": 0.560135996600085,
+      "developmentCorrect": 1318,
+      "developmentPickCount": 2353,
+      "developmentSlateDayCount": 194,
       "developmentWilson95": [
-        0.5504301828806106,
-        0.6290190276757883
+        0.5399977776229811,
+        0.5800781748720868
       ],
-      "family": "interaction",
-      "pValue": 1.1505711144832453e-05,
+      "family": "lower",
+      "pValue": 5.8755638132623744e-09,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.0006704691676216002,
+      "qValue": 5.38033772043026e-07,
       "researchOnly": true,
-      "signalId": "e44a54b5484188891a25",
+      "signalId": "8a9eae07fcedf01a6308",
       "untouchedHoldout": {
-        "accuracy": 0.5494505494505495,
-        "correct": 100,
-        "family": "interaction",
-        "pickCount": 182,
-        "slateDayCount": 58
+        "accuracy": 0.5602409638554217,
+        "correct": 465,
+        "family": "lower_numeric",
+        "pickCount": 830,
+        "slateDayCount": 65
       },
       "walkForward": {
-        "accuracy": 0.5046728971962616,
-        "correct": 54,
-        "family": "interaction",
-        "pickCount": 107,
-        "slateDayCount": 44
-      }
-    },
-    {
-      "definition": "interaction:higher:fairProbability:extreme && higher:marketConsensusProbability:extreme",
-      "developmentAccuracy": 0.6291390728476821,
-      "developmentCorrect": 95,
-      "developmentPickCount": 151,
-      "developmentSlateDayCount": 104,
-      "developmentWilson95": [
-        0.5497841088195112,
-        0.7020861896015849
-      ],
-      "family": "interaction",
-      "pValue": 0.001887731160242434,
-      "predictiveResearchGatePassed": false,
-      "productionEligible": false,
-      "qValue": 0.044001297226014556,
-      "researchOnly": true,
-      "signalId": "c0497bd081985ae65d8f",
-      "untouchedHoldout": {
-        "accuracy": 0.5454545454545454,
-        "correct": 24,
-        "family": "interaction",
-        "pickCount": 44,
-        "slateDayCount": 32
-      },
-      "walkForward": {
-        "accuracy": 0.5918367346938775,
-        "correct": 29,
-        "family": "interaction",
-        "pickCount": 49,
-        "slateDayCount": 32
+        "accuracy": 0.5669398907103825,
+        "correct": 415,
+        "family": "lower_numeric",
+        "pickCount": 732,
+        "slateDayCount": 65
       }
     },
     {
@@ -1723,18 +1693,50 @@
       "researchOnly": true,
       "signalId": "ca9f0dadb6f54d3cd704",
       "untouchedHoldout": {
-        "accuracy": 0.5454545454545454,
-        "correct": 42,
+        "accuracy": 0.5584415584415584,
+        "correct": 43,
         "family": "interaction",
         "pickCount": 77,
-        "slateDayCount": 47
+        "slateDayCount": 46
       },
       "walkForward": {
-        "accuracy": 0.3409090909090909,
-        "correct": 15,
+        "accuracy": 0.34782608695652173,
+        "correct": 16,
         "family": "interaction",
-        "pickCount": 44,
-        "slateDayCount": 30
+        "pickCount": 46,
+        "slateDayCount": 32
+      }
+    },
+    {
+      "definition": "interaction:higher:delta:large && lower:americanOdds:extreme",
+      "developmentAccuracy": 0.5903010033444817,
+      "developmentCorrect": 353,
+      "developmentPickCount": 598,
+      "developmentSlateDayCount": 175,
+      "developmentWilson95": [
+        0.5504301828806106,
+        0.6290190276757883
+      ],
+      "family": "interaction",
+      "pValue": 1.1505711144832453e-05,
+      "predictiveResearchGatePassed": false,
+      "productionEligible": false,
+      "qValue": 0.0006704691676216002,
+      "researchOnly": true,
+      "signalId": "e44a54b5484188891a25",
+      "untouchedHoldout": {
+        "accuracy": 0.5561497326203209,
+        "correct": 104,
+        "family": "interaction",
+        "pickCount": 187,
+        "slateDayCount": 58
+      },
+      "walkForward": {
+        "accuracy": 0.5045871559633027,
+        "correct": 55,
+        "family": "interaction",
+        "pickCount": 109,
+        "slateDayCount": 46
       }
     },
     {
@@ -1751,53 +1753,53 @@
       "pValue": 0.0024558111032025876,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.05428189369492616,
+      "qValue": 0.05336186159840199,
       "researchOnly": true,
       "signalId": "fe6eb0a83a93fdc2e09a",
       "untouchedHoldout": {
-        "accuracy": 0.5277777777777778,
-        "correct": 19,
+        "accuracy": 0.5555555555555556,
+        "correct": 20,
         "family": "interaction",
         "pickCount": 36,
         "slateDayCount": 27
       },
       "walkForward": {
-        "accuracy": 0.6111111111111112,
+        "accuracy": 0.5945945945945946,
         "correct": 22,
         "family": "interaction",
-        "pickCount": 36,
-        "slateDayCount": 27
+        "pickCount": 37,
+        "slateDayCount": 28
       }
     },
     {
       "definition": "interaction:higher:delta:large && higher:temporalFeatures.horizons.180m.accelerationPpHr2:extreme",
-      "developmentAccuracy": 0.5805626598465473,
+      "developmentAccuracy": 0.5790816326530612,
       "developmentCorrect": 227,
-      "developmentPickCount": 391,
-      "developmentSlateDayCount": 165,
+      "developmentPickCount": 392,
+      "developmentSlateDayCount": 166,
       "developmentWilson95": [
-        0.5310978806629135,
-        0.6284597748627453
+        0.5296713891307193,
+        0.6269569187580927
       ],
       "family": "interaction",
-      "pValue": 0.0016812510237453893,
+      "pValue": 0.0020247624039825274,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.03991414467484424,
+      "qValue": 0.0463525964626,
       "researchOnly": true,
       "signalId": "502e47571d8f69c6115b",
       "untouchedHoldout": {
-        "accuracy": 0.44715447154471544,
-        "correct": 55,
+        "accuracy": 0.4566929133858268,
+        "correct": 58,
         "family": "interaction",
-        "pickCount": 123,
-        "slateDayCount": 55
+        "pickCount": 127,
+        "slateDayCount": 57
       },
       "walkForward": {
-        "accuracy": 0.5531914893617021,
-        "correct": 52,
+        "accuracy": 0.5578947368421052,
+        "correct": 53,
         "family": "interaction",
-        "pickCount": 94,
+        "pickCount": 95,
         "slateDayCount": 45
       }
     },
@@ -1815,7 +1817,7 @@
       "pValue": 0.0024467848432375705,
       "predictiveResearchGatePassed": false,
       "productionEligible": false,
-      "qValue": 0.05428189369492616,
+      "qValue": 0.05336186159840199,
       "researchOnly": true,
       "signalId": "3bd397faa88d8d5bdc1e",
       "untouchedHoldout": {
@@ -1823,32 +1825,32 @@
         "correct": 38,
         "family": "interaction",
         "pickCount": 92,
-        "slateDayCount": 46
+        "slateDayCount": 47
       },
       "walkForward": {
         "accuracy": 0.5,
-        "correct": 35,
+        "correct": 37,
         "family": "interaction",
-        "pickCount": 70,
-        "slateDayCount": 38
+        "pickCount": 74,
+        "slateDayCount": 40
       }
     }
   ],
-  "sourceSha": "0e9f26cdfa219b3733449e7ca43e0876566da863",
-  "startedAtUtc": "2026-07-28T03:14:46.751703+00:00",
+  "sourceSha": "9fc5856e1a8a1af422ec67ce28604c28b85709ec",
+  "startedAtUtc": "2026-07-28T07:22:34.516661+00:00",
   "state": {
-    "completeSlateCount": 321,
-    "currentDate": "2026-07-25",
+    "completeSlateCount": 324,
+    "currentDate": "2026-07-28",
     "currentSlotIndex": 0,
-    "eligibleGameCount": 3964,
+    "eligibleGameCount": 4005,
     "phase": "DATA_RANGE_EXHAUSTED",
-    "trainingRecordCountLoaded": 3964
+    "trainingRecordCountLoaded": 4005
   },
   "storageReader": "immutable_complete_slate_artifacts_with_derived_row_eligibility",
   "uncertaintyInterval": "Wilson 95%",
   "uniquePatternCountByFamily": {
     "higher_numeric": 146,
-    "interaction": 3074,
+    "interaction": 3077,
     "lower_numeric": 146,
     "tag": 12
   },
