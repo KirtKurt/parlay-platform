@@ -1,9 +1,11 @@
 {
   "authority": "SHADOW_ONLY",
   "automaticWagerAllowed": false,
-  "createdAtUtc": "2026-07-27T23:29:21.552265+00:00",
-  "evaluationExitCode": "",
+  "createdAtUtc": "2026-07-28T00:09:11.444151+00:00",
+  "errorLogTail": "Traceback (most recent call last):\n  File \"<stdin>\", line 50, in <module>\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_supervised_shadow_v2.py\", line 101, in run\n    raise RuntimeError(\"canonical historical runtime identity failed:\" + json.dumps(runtime_checks, sort_keys=True))\nRuntimeError: canonical historical runtime identity failed:{\"handler\": true, \"historicalEndDate\": false, \"maximumRoundsAtLeast12\": true, \"rangeExtensionAuthorized\": true}\n",
+  "evaluationExitCode": "1",
   "evaluationOutcome": "failure",
+  "evaluationSucceeded": false,
   "excludePushVoidFromAccuracy": true,
   "historicalLearningEnabled": true,
   "historicalTrainerContinuesIndependently": true,
@@ -12,10 +14,26 @@
   "proofType": "MLB_V8_REALTIME_SHADOW_72",
   "requireImmutablePregameLock": true,
   "requireSettledResultForGrading": true,
-  "runId": "30314271115",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30314271115",
+  "runId": "30316427426",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30316427426",
+  "runtimeResolution": {
+    "attempts": [
+      {
+        "found": false,
+        "outputKeys": [],
+        "strategy": "cloudformation_output"
+      },
+      {
+        "matches": [
+          "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv"
+        ],
+        "strategy": "lambda_handler_scan"
+      }
+    ],
+    "functionName": "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv"
+  },
   "sourceEvaluation": {},
-  "sourceSha": "4abd61e84d1f6e726d7634ab5b7a9f2718b755a3",
+  "sourceSha": "80abd5ae98e6dd06395ddc6d9692bb6e6ee2ff7b",
   "targetAccuracy": 0.72,
   "targetAccuracyPct": 72.0,
   "version": "MLB-V8-SHADOW-REALTIME-POLICY-v1-72pct"
