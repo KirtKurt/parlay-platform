@@ -1,0 +1,218 @@
+name: MLB V9 Trainer Verification Diagnostic Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v9-trainer-diagnostic-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v9-trainer-diagnostic-once
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-dev
+  REPORT_PATH: runtime_reports/mlb_v9_trainer_diagnostic_latest.json
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke exact deployed trainer contract and capture evidence
+        id: diagnostic
+        continue-on-error: true
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -uo pipefail
+          mkdir -p runtime_reports /tmp/mlb-v9-trainer-diagnostic
+          TRAINER_ARN=$(aws cloudformation describe-stacks \
+            --stack-name "$STACK_NAME" \
+            --region "$AWS_REGION_VALUE" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" \
+            --output text)
+          test -n "$TRAINER_ARN"; test "$TRAINER_ARN" != None
+          aws lambda get-function-configuration \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --output json > /tmp/mlb-v9-trainer-diagnostic/config.json
+          readarray -t IDENTITY < <(python - <<'PY'
+          import json
+          v=json.load(open('/tmp/mlb-v9-trainer-diagnostic/config.json'))
+          e=((v.get('Environment') or {}).get('Variables') or {})
+          print(e.get('INQSI_DEPLOY_GIT_SHA') or '')
+          print(e.get('INQSI_DEPLOY_TEMPLATE_SHA256') or '')
+          PY
+          )
+          EXPECTED_GIT_SHA="${IDENTITY[0]}"
+          EXPECTED_TEMPLATE_SHA256="${IDENTITY[1]}"
+          test "${#EXPECTED_GIT_SHA}" -eq 40
+          test "${#EXPECTED_TEMPLATE_SHA256}" -eq 64
+          RUN_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --payload '{"sport":"mlb","mode":"scheduled","run":"v9_trainer_diagnostic_training"}' \
+            --response /tmp/mlb-v9-trainer-diagnostic/training.json \
+            --invocation /tmp/mlb-v9-trainer-diagnostic/training-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
+          training_status=$?
+
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --payload '{"sport":"mlb","mode":"selection_capture","run":"v9_trainer_diagnostic_selection_capture"}' \
+            --response /tmp/mlb-v9-trainer-diagnostic/selection.json \
+            --invocation /tmp/mlb-v9-trainer-diagnostic/selection-invocation.json \
+            --retry-execution-lease \
+            --deadline-seconds 1200 \
+            --retry-delay-seconds 20
+          selection_status=$?
+
+          python scripts/invoke_mlb_trainer_with_retry.py \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --status-training-result /tmp/mlb-v9-trainer-diagnostic/training.json \
+            --status-selection-capture-result /tmp/mlb-v9-trainer-diagnostic/selection.json \
+            --response /tmp/mlb-v9-trainer-diagnostic/status-after.json \
+            --invocation /tmp/mlb-v9-trainer-diagnostic/status-invocation.json
+          status_status=$?
+
+          python scripts/verify_mlb_trainer_deploy_response.py \
+            --training /tmp/mlb-v9-trainer-diagnostic/training.json \
+            --selection-capture /tmp/mlb-v9-trainer-diagnostic/selection.json \
+            --status-after /tmp/mlb-v9-trainer-diagnostic/status-after.json \
+            --training-invocation /tmp/mlb-v9-trainer-diagnostic/training-invocation.json \
+            --selection-capture-invocation /tmp/mlb-v9-trainer-diagnostic/selection-invocation.json \
+            --status-after-invocation /tmp/mlb-v9-trainer-diagnostic/status-invocation.json \
+            --run-started-at "$RUN_STARTED_AT" \
+            --expected-git-sha "$EXPECTED_GIT_SHA" \
+            --expected-template-sha256 "$EXPECTED_TEMPLATE_SHA256" \
+            2>&1 | tee /tmp/mlb-v9-trainer-diagnostic/verifier.log
+          verifier_status=${PIPESTATUS[0]}
+
+          TRAINING_STATUS="$training_status" SELECTION_STATUS="$selection_status" STATUS_STATUS="$status_status" VERIFIER_STATUS="$verifier_status" RUN_STARTED_AT="$RUN_STARTED_AT" EXPECTED_GIT_SHA="$EXPECTED_GIT_SHA" EXPECTED_TEMPLATE_SHA256="$EXPECTED_TEMPLATE_SHA256" python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          root=Path('/tmp/mlb-v9-trainer-diagnostic')
+          def load(name):
+              p=root/name
+              try:
+                  return json.loads(p.read_text()) if p.exists() and p.stat().st_size else {}
+              except Exception as exc:
+                  return {'parseError':f'{type(exc).__name__}:{exc}'}
+          training=load('training.json')
+          selection=load('selection.json')
+          after=load('status-after.json')
+          errors=[]
+          log=(root/'verifier.log').read_text(errors='replace').splitlines() if (root/'verifier.log').exists() else []
+          known_prefixes=(
+              'training_','selection_','selection_capture_','status_after_','manifest_',
+              'requested_run_','automatic_','manual_','v2_','runtime_','lambda_',
+          )
+          for line in log:
+              value=line.strip()
+              if value and (value.startswith(known_prefixes) or value.startswith('lambda_invocation_failed')):
+                  errors.append(value)
+          report={
+              'ok': int(os.environ['VERIFIER_STATUS']) == 0,
+              'proofType':'MLB_V9_TRAINER_DEPLOY_VERIFICATION_DIAGNOSTIC',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'runId':os.environ.get('GITHUB_RUN_ID'),
+              'runStartedAt':os.environ['RUN_STARTED_AT'],
+              'deployedGitSha':os.environ['EXPECTED_GIT_SHA'],
+              'deployedTemplateSha256':os.environ['EXPECTED_TEMPLATE_SHA256'],
+              'stepExitCodes':{
+                  'training':int(os.environ['TRAINING_STATUS']),
+                  'selectionCapture':int(os.environ['SELECTION_STATUS']),
+                  'statusAfter':int(os.environ['STATUS_STATUS']),
+                  'verifier':int(os.environ['VERIFIER_STATUS']),
+              },
+              'trainingSummary':{k:training.get(k) for k in ('ok','status','executionMode','runId','createdAtUtc','acceptedRowCount','rejectedRowCount','partitionCounts','modelTrained','championChanged','automaticPromotionEnabled','liveInferenceAuthority')},
+              'selectionSummary':{k:selection.get(k) for k in ('ok','status','executionMode','runId','createdAtUtc','selectionCaptureReady','historicalTrainingScanInvoked','modelTrained','liveInferenceAuthority')},
+              'statusSummary':{
+                  'ok':after.get('ok'),
+                  'trainingHealth':after.get('trainingHealth'),
+                  'selectionCaptureHealth':after.get('selectionCaptureHealth'),
+                  'requestedRunEvidence':after.get('requestedRunEvidence'),
+              },
+              'verifierErrors':sorted(set(errors)),
+              'stalledStage':None if int(os.environ['VERIFIER_STATUS']) == 0 else 'AWS_NATIVE_TRAINER_VERIFICATION',
+              'blockers':[] if int(os.environ['VERIFIER_STATUS']) == 0 else ['trainer_verification_contract_failed'],
+          }
+          out=Path(os.environ['REPORT_PATH'])
+          out.parent.mkdir(parents=True,exist_ok=True)
+          out.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+          echo "verifier_exit_code=$verifier_status" >> "$GITHUB_OUTPUT"
+          exit 0
+
+      - name: Upload complete trainer diagnostic bundle
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v9-trainer-diagnostic-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_v9_trainer_diagnostic_latest.json
+            /tmp/mlb-v9-trainer-diagnostic/
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Publish compact diagnostic evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          test -s "$REPORT_PATH"
+          cp "$REPORT_PATH" /tmp/mlb-v9-trainer-diagnostic-report.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v9-trainer-diagnostic-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-v9-trainer-diagnostic-report.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V9 trainer diagnostic evidence'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Enforce diagnostic publication
+        if: always()
+        run: |
+          python - <<'PY'
+          import json, os
+          from pathlib import Path
+          value=json.loads(Path(os.environ['REPORT_PATH']).read_text())
+          assert value.get('proofType') == 'MLB_V9_TRAINER_DEPLOY_VERIFICATION_DIAGNOSTIC', value
+          assert value.get('deployedGitSha'), value
+          assert isinstance(value.get('verifierErrors'), list), value
+          PY
