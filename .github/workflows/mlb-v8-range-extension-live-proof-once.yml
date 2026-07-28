@@ -1,0 +1,185 @@
+name: MLB V8 Range Extension Live Proof Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v8-range-extension-live-proof-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v8-range-extension-live-proof-once
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-historical-optimizer
+  REPORT_PATH: runtime_reports/mlb_v8_range_extension_live_proof_latest.json
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  invoke-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Invoke deployed optimizer and capture before-after state
+        id: proof
+        continue-on-error: true
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -uo pipefail
+          mkdir -p runtime_reports
+          rm -f "$REPORT_PATH"
+          (
+            set -euo pipefail
+            FUNCTION_NAME=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query "Stacks[0].Outputs[?OutputKey=='HistoricalOptimizerFunctionName'].OutputValue" --output text)
+            test -n "$FUNCTION_NAME"; test "$FUNCTION_NAME" != None
+            aws lambda get-function-configuration --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --output json > /tmp/v8-live-config.json
+            aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"v8_live_proof_pre"}' /tmp/v8-live-pre.json >/tmp/v8-live-pre-meta.json
+            aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"orchestrate","run":"v8_live_proof_execute"}' /tmp/v8-live-execute.json >/tmp/v8-live-execute-meta.json
+            aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"v8_live_proof_post"}' /tmp/v8-live-post.json >/tmp/v8-live-post-meta.json
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          config=json.loads(Path('/tmp/v8-live-config.json').read_text())
+          pre=json.loads(Path('/tmp/v8-live-pre.json').read_text())
+          execution=json.loads(Path('/tmp/v8-live-execute.json').read_text())
+          post=json.loads(Path('/tmp/v8-live-post.json').read_text())
+          env=((config.get('Environment') or {}).get('Variables') or {})
+          a=pre.get('state') or {}
+          b=post.get('state') or {}
+          contract=post.get('supervisedShadow') or {}
+          def iv(row,key): return int(row.get(key) or 0)
+          changes={
+              'revision':iv(b,'revision')-iv(a,'revision'),
+              'networkRequestCount':iv(b,'networkRequestCount')-iv(a,'networkRequestCount'),
+              'creditsConsumed':iv(b,'creditsConsumed')-iv(a,'creditsConsumed'),
+              'eligibleGameCount':iv(b,'eligibleGameCount')-iv(a,'eligibleGameCount'),
+              'completeSlateCount':iv(b,'completeSlateCount')-iv(a,'completeSlateCount'),
+          }
+          checks={
+              'statusOk':pre.get('ok') is True and post.get('ok') is True,
+              'handler':config.get('Handler') == 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler',
+              'orderingVersionDeployed':contract.get('rangeExtensionRunsBeforeRematerialization') is True,
+              'incrementalExtensionInstalled':contract.get('incrementalRangeExtensionVersion') == 'MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v1-settled-horizon',
+              'endDateDidNotRegress':str(b.get('endDate') or '') >= str(a.get('endDate') or ''),
+              'revisionAdvanced':changes['revision'] > 0,
+              'noActiveError':not b.get('lastError'),
+              'productionAuthorityUnchanged':contract.get('productionAuthorityChanged') is False,
+          }
+          blockers=[]
+          if not all(checks.values()): blockers.append('live_range_extension_or_backfill_verification_failed')
+          report={
+              'proofType':'MLB_V8_RANGE_EXTENSION_LIVE_PROOF',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ['GITHUB_SHA'],
+              'deployedGitSha':env.get('INQSI_DEPLOY_GIT_SHA'),
+              'runId':os.environ['GITHUB_RUN_ID'],
+              'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'functionName':config.get('FunctionName'),
+              'ok':not blockers,
+              'checks':checks,
+              'blockers':blockers,
+              'preState':{key:a.get(key) for key in ('phase','revision','currentDate','endDate','eligibleGameCount','completeSlateCount','networkRequestCount','creditsConsumed','lastError','updatedAtUtc')},
+              'executionStatus':execution.get('status'),
+              'executionOk':execution.get('ok'),
+              'postState':{key:b.get(key) for key in ('phase','revision','currentDate','currentSlotIndex','endDate','eligibleGameCount','completeSlateCount','networkRequestCount','creditsConsumed','lastError','updatedAtUtc','rangeExtension','rangeExtensionNextRetryDate')},
+              'changes':changes,
+              'productionAuthorityChanged':False,
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
+          if blockers: raise SystemExit(json.dumps(report,sort_keys=True,default=str))
+          PY
+          ) 2>&1 | tee /tmp/v8-live-proof.log
+          code=${PIPESTATUS[0]}
+          echo "exit_code=$code" >> "$GITHUB_OUTPUT"
+          exit "$code"
+
+      - name: Ensure durable evidence
+        if: always()
+        env:
+          PROOF_OUTCOME: ${{ steps.proof.outcome }}
+          PROOF_EXIT_CODE: ${{ steps.proof.outputs.exit_code }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          if test ! -s "$REPORT_PATH"; then
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          log=Path('/tmp/v8-live-proof.log').read_text(errors='replace')[-12000:] if Path('/tmp/v8-live-proof.log').exists() else ''
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps({
+              'proofType':'MLB_V8_RANGE_EXTENSION_LIVE_PROOF','createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),'runId':os.environ.get('GITHUB_RUN_ID'),'ok':False,
+              'proofOutcome':os.environ.get('PROOF_OUTCOME'),'proofExitCode':os.environ.get('PROOF_EXIT_CODE'),
+              'errorLogTail':log,'blockers':['live_range_extension_proof_execution_failed'],
+              'productionAuthorityChanged':False,
+          },indent=2,sort_keys=True)+'\n')
+          PY
+          fi
+          python -m json.tool "$REPORT_PATH" >/dev/null
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-v8-range-extension-live-proof-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_v8_range_extension_live_proof_latest.json
+            /tmp/v8-live-proof.log
+            /tmp/v8-live-config.json
+            /tmp/v8-live-pre.json
+            /tmp/v8-live-execute.json
+            /tmp/v8-live-post.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          cp "$REPORT_PATH" /tmp/v8-live-proof.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v8-live-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/v8-live-proof.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V8 live range extension proof'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Enforce proof
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('runtime_reports/mlb_v8_range_extension_live_proof_latest.json').read_text())
+          assert value.get('ok') is True, value
+          assert not value.get('blockers'), value
+          assert value.get('productionAuthorityChanged') is False, value
+          assert all((value.get('checks') or {}).values()), value
+          PY
