@@ -72,9 +72,11 @@ def test_runtime_installs_integrity_before_supervised_search():
 
 def test_shadow_evaluator_requires_integrity_diagnostics():
     source = Path("scripts/run_mlb_historical_supervised_v9_shadow.py").read_text()
+    wrapper = Path("scripts/run_mlb_historical_supervised_v9_shadow_v2.py").read_text()
     assert "integrity_v2.install(supervised_v9)" in source
     assert "strict_binary_label_contract_missing" in source
-    assert "v8_expansion_fallback_not_enabled" in source
     assert "training_integrity_rejected_rows" in source
     assert '"providerCallsMade": 0' in source
     assert '"productionAuthorityChanged": False' in source
+    assert "v8_expansion_fallback_not_enabled" in wrapper
+    assert "integrityEnforcedByWrapper" in wrapper
