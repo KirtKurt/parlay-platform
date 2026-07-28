@@ -10,6 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, Mapping
 
 import mlb_historical_feature_rematerialization_v1 as rematerialization
+import mlb_historical_incremental_range_extension_v1 as incremental_range_extension
 import mlb_historical_optimizer_entrypoint as base
 import mlb_historical_round_extension_v1 as round_extension
 import mlb_historical_supervised_v9 as supervised_v9
@@ -21,8 +22,9 @@ import mlb_historical_v7_selective_search_v2 as selective_search_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v13-explicit-80pct-gate"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v14-incremental-settled-range"
 
+incremental_range_extension.install(base)
 round_extension.install(base.optimizer_handler)
 odds_market_v8.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
 supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerialization)
@@ -93,6 +95,7 @@ def _with_shadow_contract(value: Any) -> Any:
                 "freshProspectiveAuditRequiredBeforeProduction": True,
                 "candidateHandoffRequiresCanonicalReevaluation": True,
                 "separateFullSlateAndSelectiveAccuracy": True,
+                "incrementalRangeExtensionVersion": incremental_range_extension.VERSION,
             },
         )
         value.setdefault("version", VERSION)
