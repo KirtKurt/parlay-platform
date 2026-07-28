@@ -20,6 +20,7 @@ STATE_PK = "MLB_HISTORICAL_OPTIMIZER#V1"
 STATE_SK = "STATE"
 EXPECTED_HANDLER = "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler"
 MINIMUM_OPTIMIZATION_ROUNDS = 12
+STALE_RANGE_ERROR = "configured historical range ended before the 1,000-train plus validation/audit evidence floor"
 
 # Selection remains shadow-only and does not alter deployed authority.
 daily_objective.install(supervised)
@@ -115,10 +116,6 @@ def _runtime_date_ready(*, configured_end: date | None, state_end: date | None, 
     """Validate coverage without requiring a future configured end to equal state."""
     if configured_end is None or state_end is None or current_date is None:
         return False
-    # The Lambda may be configured to extend beyond the currently materialized
-    # immutable state.  Shadow evaluation is valid for the state corpus once the
-    # cursor has reached/passed that state's end date, provided configuration has
-    # not moved backwards.
     return configured_end >= state_end and current_date >= state_end
 
 
@@ -136,6 +133,35 @@ def _feature_materialization_ready(state: Mapping[str, Any]) -> tuple[bool, Dict
         "countsComplete": counts_complete,
         "errorCount": len(errors),
     }
+
+
+def _optimizer_error_status(
+    state: Mapping[str, Any],
+    *,
+    configured_end: date | None,
+    state_end: date | None,
+    materialization_ready: bool,
+) -> tuple[bool, Dict[str, Any]]:
+    """Distinguish a stale pre-extension range error from an active blocker."""
+    error = str(state.get("lastError") or "").strip()
+    if not error:
+        return True, {"blocking": False, "error": None, "classification": "NONE"}
+    stale_range_error = bool(
+        error == STALE_RANGE_ERROR
+        and configured_end is not None
+        and state_end is not None
+        and configured_end > state_end
+        and materialization_ready
+        and int(state.get("completeSlateCount") or 0) > 0
+        and int(state.get("eligibleGameCount") or 0) > 0
+    )
+    if stale_range_error:
+        return True, {
+            "blocking": False,
+            "error": error,
+            "classification": "STALE_PRE_EXTENSION_RANGE_EXHAUSTION",
+        }
+    return False, {"blocking": True, "error": error, "classification": "ACTIVE_OPTIMIZER_ERROR"}
 
 
 def _load_records(state: Mapping[str, Any], s3: Any) -> List[Dict[str, Any]]:
@@ -194,6 +220,12 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
     state_end = _parse_date(state.get("endDate"))
     current_date = _parse_date(state.get("currentDate"))
     materialization_ready, materialization_proof = _feature_materialization_ready(state)
+    optimizer_error_free, optimizer_error_proof = _optimizer_error_status(
+        state,
+        configured_end=configured_end,
+        state_end=state_end,
+        materialization_ready=materialization_ready,
+    )
     runtime_checks = {
         "handler": config.get("Handler") == EXPECTED_HANDLER,
         "rangeExtensionAuthorized": environment.get("MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED") == "true",
@@ -205,7 +237,7 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
             current_date=current_date,
         ),
         "featureMaterializationReady": materialization_ready,
-        "optimizerErrorFree": not bool(state.get("lastError")),
+        "optimizerHasNoActiveBlockingError": optimizer_error_free,
     }
     if not all(runtime_checks.values()):
         raise RuntimeError(
@@ -217,7 +249,7 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
                     "stateEndDate": state.get("endDate"),
                     "stateCurrentDate": state.get("currentDate"),
                     "featureMaterialization": materialization_proof,
-                    "lastError": state.get("lastError"),
+                    "optimizerError": optimizer_error_proof,
                 },
                 sort_keys=True,
             )
@@ -244,6 +276,7 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
             "configuredHistoricalEndDate": environment.get("MLB_HISTORICAL_END_DATE"),
             "checks": runtime_checks,
             "featureMaterialization": materialization_proof,
+            "optimizerError": optimizer_error_proof,
         },
         "selectionObjective": dict(supervised.SUPERVISED_SELECTION_OBJECTIVE),
         "historicalState": {
