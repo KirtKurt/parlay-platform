@@ -1,0 +1,133 @@
+from __future__ import annotations
+
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+
+import pytest
+
+
+PATH = Path(__file__).resolve().parents[2] / "scripts" / "run_mlb_v10_autonomous_signal_discovery.py"
+SPEC = importlib.util.spec_from_file_location("run_v10", PATH)
+subject = importlib.util.module_from_spec(SPEC)
+assert SPEC and SPEC.loader
+SPEC.loader.exec_module(subject)
+
+
+def _fingerprint(rows):
+    material = [
+        {
+            "slateDateEt": row.get("slateDateEt"),
+            "officialGamePk": row.get("officialGamePk"),
+            "winner": row.get("winner"),
+            "homeSignal": row.get("homeSignal"),
+            "awaySignal": row.get("awaySignal"),
+            "predictionLockAtUtc": row.get("predictionLockAtUtc"),
+        }
+        for row in sorted(rows, key=lambda row: (str(row.get("slateDateEt")), str(row.get("officialGamePk"))))
+    ]
+    return hashlib.sha256(
+        json.dumps(material, sort_keys=True, separators=(",", ":"), default=str).encode("utf-8")
+    ).hexdigest()
+
+
+class Optimizer:
+    FULL_SLATE_LOCK_MINUTES = 45
+    dataset_fingerprint = staticmethod(_fingerprint)
+
+
+class Handler:
+    optimizer = Optimizer()
+
+    def __init__(self, dataset):
+        self.dataset = dataset
+
+    def _get_s3_json(self, key):
+        assert key == "dataset.json"
+        return self.dataset, {"sha256": "abc", "key": key, "bucket": "bucket"}
+
+
+def _row(**extra):
+    value = {
+        "version": "dataset-v1",
+        "slateDateEt": "2026-07-24",
+        "officialGamePk": 123,
+        "winner": "HOME",
+        "homeWon": True,
+        "homeSignal": {"marketConsensusProbability": 0.61},
+        "awaySignal": {"marketConsensusProbability": 0.39},
+        "predictionLockAtUtc": "2026-07-24T22:15:00Z",
+        "postLockDataExcluded": True,
+        "gameSpecificLockClipping": True,
+    }
+    value.update(extra)
+    return value
+
+
+def _dataset(row=None, **extra):
+    rows = [row or _row()]
+    value = {
+        "slateDateEt": "2026-07-24",
+        "officialGameCount": len(rows),
+        "eligibleGameCount": len(rows),
+        "exactSlateCoverage": 1.0,
+        "completeSlate": True,
+        "postLockDataExcluded": True,
+        "gameSpecificLockClipping": True,
+        "records": rows,
+        "exclusions": [],
+        "fingerprint": _fingerprint(rows),
+    }
+    value.update(extra)
+    return value
+
+
+def _state(dataset):
+    return {
+        "eligibleGameCount": len(dataset["records"]),
+        "completedSlates": [
+            {
+                "slateDateEt": dataset["slateDateEt"],
+                "fingerprint": dataset["fingerprint"],
+                "artifact": {"key": "dataset.json", "sha256": "abc"},
+            }
+        ],
+    }
+
+
+def test_derives_v10_row_flags_only_after_immutable_slate_validation():
+    dataset = _dataset()
+    records, proof = subject._load_canonical_records(Handler(dataset), _state(dataset))
+    assert len(records) == 1
+    row = records[0]
+    assert row["trainingEligible"] is True
+    assert row["canonicalLockValid"] is True
+    assert row["duplicateContaminated"] is False
+    assert row["featureCutoff"] == "each_game_t_minus_45"
+    assert row["featureVectorFingerprint"]
+    assert row["canonicalEligibilityAuthority"] == "IMMUTABLE_COMPLETE_SLATE_ARTIFACT"
+    assert proof["recordCountLoaded"] == 1
+    assert proof["rowEligibilityAliasesDerived"] == 1
+    assert proof["artifactChecksumValidationApplied"] is True
+    assert proof["slateFingerprintValidationApplied"] is True
+
+
+def test_explicit_row_contradiction_fails_closed():
+    dataset = _dataset(_row(canonicalLockValid=False))
+    with pytest.raises(RuntimeError, match="explicitly contradicts canonicalLockValid"):
+        subject._load_canonical_records(Handler(dataset), _state(dataset))
+
+
+def test_incomplete_or_non_clipped_dataset_cannot_be_upgraded_to_canonical():
+    dataset = _dataset(gameSpecificLockClipping=False)
+    with pytest.raises(RuntimeError, match="lost canonical integrity proof"):
+        subject._load_canonical_records(Handler(dataset), _state(dataset))
+
+
+def test_state_count_must_match_immutable_artifact_count():
+    dataset = _dataset()
+    state = _state(dataset)
+    state["eligibleGameCount"] = 2
+    with pytest.raises(RuntimeError, match="eligible count disagrees"):
+        subject._load_canonical_records(Handler(dataset), state)
