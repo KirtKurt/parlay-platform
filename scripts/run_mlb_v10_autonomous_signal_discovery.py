@@ -66,19 +66,23 @@ def main() -> int:
             and not args.force_full
         )
         if unchanged:
-            _write(path, previous)
+            value = dict(previous)
+            value["incrementalNoChange"] = True
+            value["lastCheckedAtUtc"] = datetime.now(timezone.utc).isoformat()
+            _write(path, value)
             print(json.dumps({
                 "ok": True,
-                "version": previous.get("version"),
-                "settledGameCount": previous.get("settledGameCount"),
+                "version": value.get("version"),
+                "settledGameCount": value.get("settledGameCount"),
                 "datasetFingerprint": fingerprint,
                 "incrementalNoChange": True,
                 "fullRebuild": False,
+                "prospectiveShadowStatus": (value.get("prospectiveShadow") or {}).get("status"),
                 "output": str(path),
             }, indent=2, sort_keys=True))
             return 0
 
-        report = v10.discover(clean)
+        report = v10.discover(clean, previous_report=previous if isinstance(previous, dict) and previous.get("ok") is True else None)
         completed = datetime.now(timezone.utc)
         report.update({
             "ok": True,
@@ -89,10 +93,10 @@ def main() -> int:
             "startedAtUtc": started.isoformat(),
             "completedAtUtc": completed.isoformat(),
             "durationSeconds": round((completed - started).total_seconds(), 3),
-            "blockers": [],
+            "blockers": report.get("blockers") or [],
             "storageReader": "mlb_historical_optimizer_handler_direct",
             "incrementalNoChange": False,
-            "reusedPriorRegistry": False,
+            "reusedPriorRegistryForProspectiveShadow": bool(previous and previous.get("ok") is True),
             "fullRebuild": True,
         })
         report["state"] = {
@@ -110,7 +114,9 @@ def main() -> int:
             "settledGameCount": report.get("settledGameCount"),
             "generatedPatternCount": report.get("generatedPatternCount"),
             "retainedPatternCount": report.get("retainedPatternCount"),
+            "predictiveSignalCount": report.get("predictiveSignalCount"),
             "datasetFingerprint": report.get("datasetFingerprint"),
+            "prospectiveShadowStatus": (report.get("prospectiveShadow") or {}).get("status"),
             "incrementalNoChange": False,
             "fullRebuild": True,
             "durationSeconds": report.get("durationSeconds"),
