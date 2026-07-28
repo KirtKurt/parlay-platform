@@ -58,6 +58,17 @@ jobs:
             tests/unit/test_mlb_v10_autonomous_signal_discovery_v1.py \
             tests/unit/test_resolve_mlb_historical_artifacts_bucket.py
 
+      - name: Preserve prior frozen registry and clear stale output
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          if test -s "$REPORT_PATH"; then
+            cp "$REPORT_PATH" /tmp/mlb-v10-previous.json
+          else
+            printf '{}\n' > /tmp/mlb-v10-previous.json
+          fi
+          rm -f "$REPORT_PATH"
+
       - name: Resolve historical artifacts bucket
         id: runtime
         continue-on-error: true
@@ -95,16 +106,19 @@ jobs:
           mkdir -p runtime_reports
           python scripts/run_mlb_v10_autonomous_signal_discovery.py \
             --output "$REPORT_PATH" \
-            --previous "$REPORT_PATH" \
+            --previous /tmp/mlb-v10-previous.json \
             2>&1 | tee /tmp/mlb-v10-discovery.log
           status=${PIPESTATUS[0]}
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
           exit "$status"
 
-      - name: Ensure durable V10 evidence exists
+      - name: Ensure fresh durable V10 evidence exists
         if: always()
         env:
           BUCKET_RESOLVED: ${{ steps.runtime.outputs.resolved }}
+          BUCKET_EXIT_CODE: ${{ steps.runtime.outputs.exit_code }}
+          BUCKET_OUTCOME: ${{ steps.runtime.outcome }}
+          DISCOVERY_EXIT_CODE: ${{ steps.discovery.outputs.exit_code }}
           DISCOVERY_OUTCOME: ${{ steps.discovery.outcome }}
         run: |
           set -euo pipefail
@@ -141,6 +155,17 @@ jobs:
               'runAttempt':os.environ.get('GITHUB_RUN_ATTEMPT'),
               'completedAtUtc':datetime.now(timezone.utc).isoformat(),
               'stalledStage':'V10_BUCKET_RESOLUTION' if not bucket_resolved else 'V10_DISCOVERY_BEFORE_REPORT_WRITE',
+              'workflowSteps':{
+                  'bucketResolution':{
+                      'outcome':os.environ.get('BUCKET_OUTCOME'),
+                      'exitCode':os.environ.get('BUCKET_EXIT_CODE'),
+                      'resolved':bucket_resolved,
+                  },
+                  'discovery':{
+                      'outcome':os.environ.get('DISCOVERY_OUTCOME'),
+                      'exitCode':os.environ.get('DISCOVERY_EXIT_CODE'),
+                  },
+              },
               'errorLogTail':log,
               'bucketResolution':resolution,
               'blockers':blockers,
@@ -149,6 +174,14 @@ jobs:
           PY
           fi
           python -m json.tool "$REPORT_PATH" >/dev/null
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json').read_text())
+          assert value.get('sourceSha'), value
+          assert value.get('runId'), value
+          assert value.get('completedAtUtc'), value
+          PY
 
       - uses: actions/upload-artifact@v4
         if: always()
@@ -156,6 +189,7 @@ jobs:
           name: mlb-v10-autonomous-discovery-${{ github.run_id }}
           path: |
             runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json
+            /tmp/mlb-v10-previous.json
             /tmp/mlb-v10-discovery.log
             /tmp/mlb-v10-bucket-resolution.json
           retention-days: 90
