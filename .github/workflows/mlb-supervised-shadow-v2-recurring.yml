@@ -117,10 +117,11 @@ jobs:
           import json, os
           from pathlib import Path
           value=json.loads(Path(os.environ['REPORT_PATH']).read_text())
+          model_digest=value.get('modelDigest') or ((value.get('model') or {}).get('modelDigest'))
           assert value.get('ok') is True, value
           assert value.get('sourceSha') == os.environ.get('GITHUB_SHA'), value
           assert value.get('runId') == os.environ.get('GITHUB_RUN_ID'), value
-          assert value.get('modelDigest'), value
+          assert model_digest, value
           assert int(value.get('recordCountLoaded') or 0) > 0, value
           assert value.get('authority') == 'SHADOW_ONLY', value
           assert value.get('productionAuthorityChanged') is False, value
@@ -167,9 +168,10 @@ jobs:
           import json, os
           from pathlib import Path
           value=json.loads(Path(os.environ['REPORT_PATH']).read_text())
+          model_digest=value.get('modelDigest') or ((value.get('model') or {}).get('modelDigest'))
           assert value.get('ok') is True, value
           assert value.get('sourceSha') == os.environ.get('GITHUB_SHA'), value
           assert value.get('runId') == os.environ.get('GITHUB_RUN_ID'), value
-          assert value.get('modelDigest'), value
+          assert model_digest, value
           assert int(value.get('recordCountLoaded') or 0) > 0, value
           PY
