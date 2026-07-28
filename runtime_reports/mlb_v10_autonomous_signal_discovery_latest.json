@@ -1,57 +1,21 @@
 {
   "blockers": [
-    "historical_artifacts_bucket_ambiguous"
+    "v10_discovery_execution_failed"
   ],
-  "bucketResolution": {
-    "attempts": [
-      {
-        "outputs": [],
-        "strategy": "cloudformation"
-      },
-      {
-        "skipped": "function_output_missing",
-        "strategy": "lambda_environment"
-      },
-      {
-        "matches": [
-          "parlay-platform-mlb-histo-historicalartifactsbucke-cwn7p8wybyuh",
-          "parlay-platform-mlb-histo-historicalartifactsbucke-pet9nt7k86fz",
-          "parlay-platform-mlb-histo-historicalartifactsbucke-zvmtw65xim6m",
-          "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5"
-        ],
-        "strategy": "s3_unique_prefix"
-      }
-    ],
-    "authority": null,
-    "blockers": [
-      "historical_artifacts_bucket_ambiguous"
-    ],
-    "bucketName": null,
-    "ok": false
-  },
-  "completedAtUtc": "2026-07-28T01:48:54.065366+00:00",
-  "errorLogTail": "",
+  "completedAtUtc": "2026-07-28T02:05:59.693769+00:00",
+  "durationSeconds": 39.891,
+  "error": "no canonical settled records: {'inputRecordCount': 3964, 'canonicalRecordCount': 0, 'duplicateRecordCount': 0, 'quarantinedGameCount': 0, 'exclusionCounts': {'training_eligibility_not_proven': 3964, 'canonical_lock_not_proven': 3964, 'duplicate_cleanliness_not_proven': 3964, 't45_cutoff_not_proven': 3964}}",
+  "errorType": "RuntimeError",
   "mayPublishPicks": false,
   "mayWriteChampion": false,
   "mode": "CHRONOLOGICAL_SIDE_APPLICABLE_DISCOVERY",
   "ok": false,
-  "outcomeUsedOnlyForTrainingLabels": true,
   "productionAuthority": false,
   "proofType": "MLB_V10_AUTONOMOUS_DISCOVERY_RUN",
   "runAttempt": "1",
-  "runId": "30321298974",
-  "sourceSha": "03a2f62a2eaa20e50ccb7bf0e142a74131bab4da",
-  "stalledStage": "V10_BUCKET_RESOLUTION",
-  "winnerKnownBeforeSignalConstruction": false,
-  "workflowSteps": {
-    "bucketResolution": {
-      "exitCode": "",
-      "outcome": "failure",
-      "resolved": false
-    },
-    "discovery": {
-      "exitCode": "",
-      "outcome": "skipped"
-    }
-  }
+  "runId": "30322089598",
+  "sourceSha": "5e7d6fdec2df2ad996e52e47e2d4e3f2d4976f94",
+  "stalledStage": "V10_CORPUS_LOAD_OR_DISCOVERY",
+  "startedAtUtc": "2026-07-28T02:05:19.802603+00:00",
+  "tracebackTail": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v10_autonomous_signal_discovery.py\", line 58, in main\n    raise RuntimeError(f\"no canonical settled records: {integrity}\")\nRuntimeError: no canonical settled records: {'inputRecordCount': 3964, 'canonicalRecordCount': 0, 'duplicateRecordCount': 0, 'quarantinedGameCount': 0, 'exclusionCounts': {'training_eligibility_not_proven': 3964, 'canonical_lock_not_proven': 3964, 'duplicate_cleanliness_not_proven': 3964, 't45_cutoff_not_proven': 3964}}\n"
 }
