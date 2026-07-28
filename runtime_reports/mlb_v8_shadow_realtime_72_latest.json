@@ -1,7 +1,7 @@
 {
   "authority": "SHADOW_ONLY",
   "automaticWagerAllowed": false,
-  "createdAtUtc": "2026-07-28T09:42:22.919511+00:00",
+  "createdAtUtc": "2026-07-28T12:04:18.658926+00:00",
   "errorLogTail": "",
   "evaluationExitCode": "0",
   "evaluationOutcome": "success",
@@ -14,8 +14,8 @@
   "proofType": "MLB_V8_REALTIME_SHADOW_72",
   "requireImmutablePregameLock": true,
   "requireSettledResultForGrading": true,
-  "runId": "30347608895",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30347608895",
+  "runId": "30357258712",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30357258712",
   "runtimeResolution": {
     "attempts": [
       {
@@ -45,7 +45,7 @@
     },
     "authority": "SHADOW_ONLY",
     "automaticWagerAllowed": false,
-    "createdAtUtc": "2026-07-28T09:41:17.625460+00:00",
+    "createdAtUtc": "2026-07-28T12:03:06.837020+00:00",
     "featureCoverage": {
       "exampleCount": 4005,
       "frozenFundamentals": 0.0,
@@ -65,8 +65,8 @@
       "featureRematerializedSlateCount": 324,
       "networkRequestCount": 25681,
       "optimizationRound": 10,
-      "phase": "BACKFILLING",
-      "quotaRemaining": 4610389
+      "phase": "DATA_RANGE_EXHAUSTED",
+      "quotaRemaining": 4609735
     },
     "metrics": {
       "marketBaseline": {
@@ -5603,8 +5603,8 @@
     "recordCountLoaded": 4005,
     "resultDigest": "8c2945e4cc794c84181dc07d639d0cb2fa63b477e2e1b31ab9cad0d6639d5c33",
     "retrospectiveArchitectureEvaluation": true,
-    "runId": "30347608895",
-    "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30347608895",
+    "runId": "30357258712",
+    "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30357258712",
     "runtimeIdentity": {
       "checks": {
         "featureMaterializationReady": true,
@@ -5640,8 +5640,8 @@
       "handler": "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler",
       "optimizerError": {
         "blocking": false,
-        "classification": "NONE",
-        "error": null
+        "classification": "STALE_PRE_EXTENSION_RANGE_EXHAUSTION",
+        "error": "configured historical range ended before the 1,000-train plus validation/audit evidence floor"
       },
       "stackName": "parlay-platform-mlb-historical-optimizer"
     },
@@ -21520,10 +21520,10 @@
       "untouchedAuditUsedForSelection": false,
       "version": "MLB-SUPERVISED-SHADOW-v2.1-daily-slate-objective-calibration-safe"
     },
-    "sourceSha": "d63a1b0448c3e6fff87b904a650e396f113c1307",
+    "sourceSha": "d24adb76964c202f67bb294335d7a28b87116553",
     "version": "MLB-SUPERVISED-SHADOW-v2.1-daily-slate-objective-calibration-safe"
   },
-  "sourceSha": "d63a1b0448c3e6fff87b904a650e396f113c1307",
+  "sourceSha": "d24adb76964c202f67bb294335d7a28b87116553",
   "targetAccuracy": 0.72,
   "targetAccuracyPct": 72.0,
   "version": "MLB-V8-SHADOW-REALTIME-POLICY-v1-72pct"
