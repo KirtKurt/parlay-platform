@@ -1,0 +1,56 @@
+name: Repair MLB V7 V9 Workflow Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v7-v9-concurrency-repair-once.yml'
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: mlb-v7-v9-concurrency-repair-once
+  cancel-in-progress: false
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Repair workflow cancellation and timeout
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path('.github/workflows/mlb-historical-supervised-v9-shadow.yml')
+          text = path.read_text(encoding='utf-8')
+          old_cancel = '  cancel-in-progress: true\n'
+          old_timeout = '    timeout-minutes: 55\n'
+          assert text.count(old_cancel) == 1, text.count(old_cancel)
+          assert text.count(old_timeout) == 1, text.count(old_timeout)
+          text = text.replace(old_cancel, '  cancel-in-progress: false\n', 1)
+          text = text.replace(old_timeout, '    timeout-minutes: 120\n', 1)
+          path.write_text(text, encoding='utf-8')
+          PY
+          git rm .github/workflows/mlb-v7-v9-concurrency-repair-once.yml
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add .github/workflows/mlb-historical-supervised-v9-shadow.yml
+          git commit -m 'Prevent V7 V9 evaluation cancellation and extend timeout'
+          git push origin HEAD:main
+
+      - name: Dispatch repaired V7 V9 evaluation
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh workflow run mlb-historical-supervised-v9-shadow.yml --ref main
