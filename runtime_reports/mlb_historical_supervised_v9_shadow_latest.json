@@ -1,8 +1,8 @@
 {
   "blockers": [
-    "v7_v9_validation_failed"
+    "v7_v9_evaluation_failed_before_report_write"
   ],
-  "createdAtUtc": "2026-07-28T03:16:32.912250+00:00",
+  "createdAtUtc": "2026-07-28T03:26:37.920969+00:00",
   "errorLogTail": "",
   "historicalChampionWritten": false,
   "ok": false,
@@ -15,16 +15,32 @@
   "providerCallsMade": 0,
   "readOnly": true,
   "retrospectiveShadowOnly": true,
-  "runId": "30325456646",
-  "runtimeResolution": {},
-  "sourceSha": "15c6e5dca63b7609dc9d3c558bd7139275ecebcc",
-  "stalledStage": "V7_V9_VALIDATION",
-  "validationEvidence": {
-    "blockers": [
-      "test_failed:tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py",
-      "test_failed:tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py"
+  "runId": "30325500129",
+  "runtimeResolution": {
+    "attempts": [
+      {
+        "outputKeys": [],
+        "strategy": "cloudformation_output"
+      },
+      {
+        "matches": [
+          "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv"
+        ],
+        "strategy": "lambda_handler_scan"
+      }
     ],
-    "checkedOutSha": "15c6e5dca63b7609dc9d3c558bd7139275ecebcc",
+    "blockers": [],
+    "bucketName": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
+    "bucketResolution": null,
+    "functionName": "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv",
+    "handler": "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler",
+    "ok": true
+  },
+  "sourceSha": "62f660dd4bb337fb1189a7c5184a5a2000a76b82",
+  "stalledStage": "V7_V9_EVALUATION_BEFORE_REPORT_WRITE",
+  "validationEvidence": {
+    "blockers": [],
+    "checkedOutSha": "62f660dd4bb337fb1189a7c5184a5a2000a76b82",
     "compile": [
       {
         "ok": true,
@@ -71,11 +87,11 @@
         "path": "scripts/validate_mlb_v9_shadow_workflow.py"
       }
     ],
-    "createdAtUtc": "2026-07-28T03:16:23.801544+00:00",
-    "ok": false,
+    "createdAtUtc": "2026-07-28T03:17:30.048534+00:00",
+    "ok": true,
     "proofType": "MLB_V9_WORKFLOW_VALIDATION",
     "sourceIdentityMatched": true,
-    "sourceSha": "15c6e5dca63b7609dc9d3c558bd7139275ecebcc",
+    "sourceSha": "62f660dd4bb337fb1189a7c5184a5a2000a76b82",
     "tests": [
       {
         "ok": true,
@@ -84,10 +100,10 @@
         "returnCode": 0
       },
       {
-        "ok": false,
-        "outputTail": "....F                                                                    [100%]\n=================================== FAILURES ===================================\n_____________ test_shadow_evaluator_requires_integrity_diagnostics _____________\ntests/unit/test_mlb_historical_supervised_v9_integrity_v2.py:77: in test_shadow_evaluator_requires_integrity_diagnostics\n    assert \"v8_expansion_fallback_not_enabled\" in source\nE   assert 'v8_expansion_fallback_not_enabled' in '#!/usr/bin/env python3\\n\"\"\"Read-only V7 odds-selective and V9 supervised evaluation against AWS evidence.\"\"\"\\nfrom __..._keys=True))\\n    return 0 if base_report[\"ok\"] else 1\\n\\n\\nif __name__ == \"__main__\":\\n    raise SystemExit(main())\\n'\n=========================== short test summary info ============================\nFAILED tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py::test_shadow_evaluator_requires_integrity_diagnostics - assert 'v8_expansion_fallback_not_enabled' in '#!/usr/bin/env python3\\n\"\"\"Read-only V7 odds-selective and V9 supervised evaluation against AWS evidence.\"\"\"\\nfrom __..._keys=True))\\n    return 0 if base_report[\"ok\"] else 1\\n\\n\\nif __name__ == \"__main__\":\\n    raise SystemExit(main())\\n'\n1 failed, 4 passed in 0.09s\n",
+        "ok": true,
+        "outputTail": ".....                                                                    [100%]\n5 passed in 0.06s\n",
         "path": "tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py",
-        "returnCode": 1
+        "returnCode": 0
       },
       {
         "ok": true,
@@ -132,26 +148,26 @@
         "returnCode": 0
       },
       {
-        "ok": false,
-        "outputTail": ".F...                                                                    [100%]\n=================================== FAILURES ===================================\n____ test_workflow_cannot_reuse_stale_checked_in_report_as_current_evidence ____\ntests/unit/test_mlb_v7_v9_workflow_recovery_contract.py:23: in test_workflow_cannot_reuse_stale_checked_in_report_as_current_evidence\n    assert \"v7_v9_report_missing_after_evaluation\" in text\nE   assert 'v7_v9_report_missing_after_evaluation' in 'name: MLB Historical V7 Selective and V9 Shadow Evaluation\\n\\n\"on\":\\n  workflow_dispatch:\\n  schedule:\\n    - cron: \\...) == handoff.get(\\'modelDigest\\'), (value, handoff)\\n          assert not value.get(\\'blockers\\'), value\\n          PY'\n=========================== short test summary info ============================\nFAILED tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py::test_workflow_cannot_reuse_stale_checked_in_report_as_current_evidence - assert 'v7_v9_report_missing_after_evaluation' in 'name: MLB Historical V7 Selective and V9 Shadow Evaluation\\n\\n\"on\":\\n  workflow_dispatch:\\n  schedule:\\n    - cron: \\...) == handoff.get(\\'modelDigest\\'), (value, handoff)\\n          assert not value.get(\\'blockers\\'), value\\n          PY'\n1 failed, 4 passed in 0.06s\n",
+        "ok": true,
+        "outputTail": ".....                                                                    [100%]\n5 passed in 0.03s\n",
         "path": "tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py",
-        "returnCode": 1
+        "returnCode": 0
       }
     ]
   },
   "workflowSteps": {
     "evaluation": {
       "exitCode": "",
-      "outcome": "skipped"
+      "outcome": "cancelled"
     },
     "runtime": {
-      "exitCode": "",
-      "outcome": "skipped",
-      "resolved": false
+      "exitCode": "0",
+      "outcome": "success",
+      "resolved": true
     },
     "validation": {
-      "exitCode": "",
-      "outcome": "failure"
+      "exitCode": "0",
+      "outcome": "success"
     }
   }
 }
