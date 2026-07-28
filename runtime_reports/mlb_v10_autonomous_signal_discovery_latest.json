@@ -1,17 +1,57 @@
 {
   "blockers": [
-    "v10_report_missing"
+    "historical_artifacts_bucket_ambiguous"
   ],
-  "completedAtUtc": "2026-07-27T22:50:13.870783+00:00",
+  "bucketResolution": {
+    "attempts": [
+      {
+        "outputs": [],
+        "strategy": "cloudformation"
+      },
+      {
+        "skipped": "function_output_missing",
+        "strategy": "lambda_environment"
+      },
+      {
+        "matches": [
+          "parlay-platform-mlb-histo-historicalartifactsbucke-cwn7p8wybyuh",
+          "parlay-platform-mlb-histo-historicalartifactsbucke-pet9nt7k86fz",
+          "parlay-platform-mlb-histo-historicalartifactsbucke-zvmtw65xim6m",
+          "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5"
+        ],
+        "strategy": "s3_unique_prefix"
+      }
+    ],
+    "authority": null,
+    "blockers": [
+      "historical_artifacts_bucket_ambiguous"
+    ],
+    "bucketName": null,
+    "ok": false
+  },
+  "completedAtUtc": "2026-07-28T01:48:54.065366+00:00",
   "errorLogTail": "",
   "mayPublishPicks": false,
   "mayWriteChampion": false,
-  "mode": "OUTCOME_ANCHORED_RETROSPECTIVE_DISCOVERY",
+  "mode": "CHRONOLOGICAL_SIDE_APPLICABLE_DISCOVERY",
   "ok": false,
+  "outcomeUsedOnlyForTrainingLabels": true,
   "productionAuthority": false,
   "proofType": "MLB_V10_AUTONOMOUS_DISCOVERY_RUN",
   "runAttempt": "1",
-  "runId": "30312091629",
-  "sourceSha": "0fef8628b722f85a9999d2f0c05989b303a00bfe",
-  "stalledStage": "V10_WORKFLOW_BEFORE_REPORT_WRITE"
+  "runId": "30321298974",
+  "sourceSha": "03a2f62a2eaa20e50ccb7bf0e142a74131bab4da",
+  "stalledStage": "V10_BUCKET_RESOLUTION",
+  "winnerKnownBeforeSignalConstruction": false,
+  "workflowSteps": {
+    "bucketResolution": {
+      "exitCode": "",
+      "outcome": "failure",
+      "resolved": false
+    },
+    "discovery": {
+      "exitCode": "",
+      "outcome": "skipped"
+    }
+  }
 }
