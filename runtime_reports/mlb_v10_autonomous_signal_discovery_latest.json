@@ -2,10 +2,10 @@
   "blockers": [
     "v10_discovery_execution_failed"
   ],
-  "completedAtUtc": "2026-07-28T02:05:59.693769+00:00",
-  "durationSeconds": 39.891,
-  "error": "no canonical settled records: {'inputRecordCount': 3964, 'canonicalRecordCount': 0, 'duplicateRecordCount': 0, 'quarantinedGameCount': 0, 'exclusionCounts': {'training_eligibility_not_proven': 3964, 'canonical_lock_not_proven': 3964, 'duplicate_cleanliness_not_proven': 3964, 't45_cutoff_not_proven': 3964}}",
-  "errorType": "RuntimeError",
+  "completedAtUtc": "2026-07-28T02:43:55.291039+00:00",
+  "durationSeconds": 48.224,
+  "error": "int too large to convert to float",
+  "errorType": "OverflowError",
   "mayPublishPicks": false,
   "mayWriteChampion": false,
   "mode": "CHRONOLOGICAL_SIDE_APPLICABLE_DISCOVERY",
@@ -13,9 +13,9 @@
   "productionAuthority": false,
   "proofType": "MLB_V10_AUTONOMOUS_DISCOVERY_RUN",
   "runAttempt": "1",
-  "runId": "30322089598",
-  "sourceSha": "5e7d6fdec2df2ad996e52e47e2d4e3f2d4976f94",
+  "runId": "30323863926",
+  "sourceSha": "6292b939358717cd0381e0780b5f3698ef3c52b7",
   "stalledStage": "V10_CORPUS_LOAD_OR_DISCOVERY",
-  "startedAtUtc": "2026-07-28T02:05:19.802603+00:00",
-  "tracebackTail": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v10_autonomous_signal_discovery.py\", line 58, in main\n    raise RuntimeError(f\"no canonical settled records: {integrity}\")\nRuntimeError: no canonical settled records: {'inputRecordCount': 3964, 'canonicalRecordCount': 0, 'duplicateRecordCount': 0, 'quarantinedGameCount': 0, 'exclusionCounts': {'training_eligibility_not_proven': 3964, 'canonical_lock_not_proven': 3964, 'duplicate_cleanliness_not_proven': 3964, 't45_cutoff_not_proven': 3964}}\n"
+  "startedAtUtc": "2026-07-28T02:43:07.067526+00:00",
+  "tracebackTail": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v10_autonomous_signal_discovery.py\", line 234, in main\n    report = v10.discover(clean, previous_report=previous if isinstance(previous, dict) and previous.get(\"ok\") is True else None)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/hello_world/mlb_v10_autonomous_signal_discovery_v1.py\", line 406, in discover\n    \"pValue\": _two_sided_binomial_pvalue(wins, count),\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/hello_world/mlb_v10_autonomous_signal_discovery_v1.py\", line 250, in _two_sided_binomial_pvalue\n    observed = _binomial_probability(correct, total, baseline)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/hello_world/mlb_v10_autonomous_signal_discovery_v1.py\", line 244, in _binomial_probability\n    return math.comb(n, k) * (p ** k) * ((1.0 - p) ** (n - k))\n           ~~~~~~~~~~~~~~~~^~~~~~~~~~\nOverflowError: int too large to convert to float\n"
 }
