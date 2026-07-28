@@ -2,7 +2,7 @@
   "blockers": [
     "v7_v9_validation_failed"
   ],
-  "createdAtUtc": "2026-07-28T03:06:04.526919+00:00",
+  "createdAtUtc": "2026-07-28T03:13:45.200897+00:00",
   "errorLogTail": "",
   "historicalChampionWritten": false,
   "ok": false,
@@ -15,10 +15,130 @@
   "providerCallsMade": 0,
   "readOnly": true,
   "retrospectiveShadowOnly": true,
-  "runId": "30324968890",
+  "runId": "30325329639",
   "runtimeResolution": {},
-  "sourceSha": "a5fdf4389ef61633d165d2d5eb80817ce6f527ec",
+  "sourceSha": "26735ac58937f820d8020b5e6506bb84af6fac8a",
   "stalledStage": "V7_V9_VALIDATION",
+  "validationEvidence": {
+    "blockers": [
+      "test_failed:tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py",
+      "test_failed:tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py"
+    ],
+    "checkedOutSha": "26735ac58937f820d8020b5e6506bb84af6fac8a",
+    "compile": [
+      {
+        "ok": true,
+        "path": "hello_world/mlb_historical_supervised_v9.py"
+      },
+      {
+        "ok": true,
+        "path": "hello_world/mlb_historical_supervised_v9_integrity_v2.py"
+      },
+      {
+        "ok": true,
+        "path": "hello_world/mlb_historical_v7_learning_cadence_v1.py"
+      },
+      {
+        "ok": true,
+        "path": "hello_world/mlb_historical_v7_priority_repairs_v1.py"
+      },
+      {
+        "ok": true,
+        "path": "hello_world/mlb_historical_v7_selective_objective_v1.py"
+      },
+      {
+        "ok": true,
+        "path": "hello_world/mlb_historical_v7_selective_search_v2.py"
+      },
+      {
+        "ok": true,
+        "path": "hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py"
+      },
+      {
+        "ok": true,
+        "path": "scripts/run_mlb_historical_supervised_v9_shadow.py"
+      },
+      {
+        "ok": true,
+        "path": "scripts/run_mlb_historical_supervised_v9_shadow_v2.py"
+      },
+      {
+        "ok": true,
+        "path": "scripts/resolve_mlb_historical_artifacts_bucket.py"
+      },
+      {
+        "ok": true,
+        "path": "scripts/validate_mlb_v9_shadow_workflow.py"
+      }
+    ],
+    "createdAtUtc": "2026-07-28T03:13:35.869786+00:00",
+    "ok": false,
+    "proofType": "MLB_V9_WORKFLOW_VALIDATION",
+    "sourceIdentityMatched": true,
+    "sourceSha": "26735ac58937f820d8020b5e6506bb84af6fac8a",
+    "tests": [
+      {
+        "ok": true,
+        "outputTail": "...                                                                      [100%]\n3 passed in 1.41s\n",
+        "path": "tests/unit/test_mlb_historical_supervised_v9.py",
+        "returnCode": 0
+      },
+      {
+        "ok": false,
+        "outputTail": "...FF                                                                    [100%]\n=================================== FAILURES ===================================\n___________ test_runtime_installs_integrity_before_supervised_search ___________\ntests/unit/test_mlb_historical_supervised_v9_integrity_v2.py:69: in test_runtime_installs_integrity_before_supervised_search\n    assert \"promotionRequiresEverySlateAtLeast80Pct\" in source\nE   assert 'promotionRequiresEverySlateAtLeast80Pct' in '\"\"\"Historical recovery entrypoint with independent V7 and V9 shadow learning.\\n\\nV7 owns immutable odds-only learning...      return _with_shadow_contract(migration)\\n    return _with_shadow_contract(base.lambda_handler(event, context))\\n'\n_____________ test_shadow_evaluator_requires_integrity_diagnostics _____________\ntests/unit/test_mlb_historical_supervised_v9_integrity_v2.py:77: in test_shadow_evaluator_requires_integrity_diagnostics\n    assert \"v8_expansion_fallback_not_enabled\" in source\nE   assert 'v8_expansion_fallback_not_enabled' in '#!/usr/bin/env python3\\n\"\"\"Read-only V7 odds-selective and V9 supervised evaluation against AWS evidence.\"\"\"\\nfrom __..._keys=True))\\n    return 0 if base_report[\"ok\"] else 1\\n\\n\\nif __name__ == \"__main__\":\\n    raise SystemExit(main())\\n'\n=========================== short test summary info ============================\nFAILED tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py::test_runtime_installs_integrity_before_supervised_search - assert 'promotionRequiresEverySlateAtLeast80Pct' in '\"\"\"Historical recovery entrypoint with independent V7 and V9 shadow learning.\\n\\nV7 owns immutable odds-only learning...      return _with_shadow_contract(migration)\\n    return _with_shadow_contract(base.lambda_handler(event, context))\\n'\nFAILED tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py::test_shadow_evaluator_requires_integrity_diagnostics - assert 'v8_expansion_fallback_not_enabled' in '#!/usr/bin/env python3\\n\"\"\"Read-only V7 odds-selective and V9 supervised evaluation against AWS evidence.\"\"\"\\nfrom __..._keys=True))\\n    return 0 if base_report[\"ok\"] else 1\\n\\n\\nif __name__ == \"__main__\":\\n    raise SystemExit(main())\\n'\n2 failed, 3 passed in 0.10s\n",
+        "path": "tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py",
+        "returnCode": 1
+      },
+      {
+        "ok": true,
+        "outputTail": "..                                                                       [100%]\n2 passed in 0.03s\n",
+        "path": "tests/unit/test_run_mlb_historical_supervised_v9_shadow.py",
+        "returnCode": 0
+      },
+      {
+        "ok": true,
+        "outputTail": "..                                                                       [100%]\n2 passed in 0.03s\n",
+        "path": "tests/unit/test_run_mlb_historical_supervised_v9_shadow_v2.py",
+        "returnCode": 0
+      },
+      {
+        "ok": true,
+        "outputTail": ".......                                                                  [100%]\n7 passed in 0.03s\n",
+        "path": "tests/unit/test_resolve_mlb_historical_artifacts_bucket.py",
+        "returnCode": 0
+      },
+      {
+        "ok": true,
+        "outputTail": "...                                                                      [100%]\n3 passed in 0.03s\n",
+        "path": "tests/unit/test_mlb_historical_v7_learning_cadence_v1.py",
+        "returnCode": 0
+      },
+      {
+        "ok": true,
+        "outputTail": ".....                                                                    [100%]\n5 passed in 0.03s\n",
+        "path": "tests/unit/test_mlb_historical_v7_priority_repairs_v1.py",
+        "returnCode": 0
+      },
+      {
+        "ok": true,
+        "outputTail": "..                                                                       [100%]\n2 passed in 0.03s\n",
+        "path": "tests/unit/test_mlb_historical_v7_selective_objective_v1.py",
+        "returnCode": 0
+      },
+      {
+        "ok": true,
+        "outputTail": "...                                                                      [100%]\n3 passed in 0.93s\n",
+        "path": "tests/unit/test_mlb_historical_v7_selective_search_v2.py",
+        "returnCode": 0
+      },
+      {
+        "ok": false,
+        "outputTail": ".F...                                                                    [100%]\n=================================== FAILURES ===================================\n____ test_workflow_cannot_reuse_stale_checked_in_report_as_current_evidence ____\ntests/unit/test_mlb_v7_v9_workflow_recovery_contract.py:23: in test_workflow_cannot_reuse_stale_checked_in_report_as_current_evidence\n    assert \"v7_v9_report_missing_after_evaluation\" in text\nE   assert 'v7_v9_report_missing_after_evaluation' in 'name: MLB Historical V7 Selective and V9 Shadow Evaluation\\n\\n\"on\":\\n  workflow_dispatch:\\n  schedule:\\n    - cron: \\...) == handoff.get(\\'modelDigest\\'), (value, handoff)\\n          assert not value.get(\\'blockers\\'), value\\n          PY'\n=========================== short test summary info ============================\nFAILED tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py::test_workflow_cannot_reuse_stale_checked_in_report_as_current_evidence - assert 'v7_v9_report_missing_after_evaluation' in 'name: MLB Historical V7 Selective and V9 Shadow Evaluation\\n\\n\"on\":\\n  workflow_dispatch:\\n  schedule:\\n    - cron: \\...) == handoff.get(\\'modelDigest\\'), (value, handoff)\\n          assert not value.get(\\'blockers\\'), value\\n          PY'\n1 failed, 4 passed in 0.06s\n",
+        "path": "tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py",
+        "returnCode": 1
+      }
+    ]
+  },
   "workflowSteps": {
     "evaluation": {
       "exitCode": "",
@@ -30,6 +150,7 @@
       "resolved": false
     },
     "validation": {
+      "exitCode": "",
       "outcome": "failure"
     }
   }
