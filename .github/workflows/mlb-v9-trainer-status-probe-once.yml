@@ -1,0 +1,125 @@
+name: MLB V9 Trainer Status Probe Once
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/mlb-v9-trainer-status-probe-once.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-v9-trainer-status-probe-once
+  cancel-in-progress: true
+
+env:
+  REPORT_PATH: runtime_reports/mlb_v9_trainer_status_probe_latest.json
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+      - name: Read persisted trainer status
+        env:
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          TRAINER_ARN=$(aws cloudformation describe-stacks \
+            --stack-name parlay-platform-dev \
+            --region "$AWS_REGION_VALUE" \
+            --query "Stacks[0].Outputs[?OutputKey=='MLBMLTrainingFunctionArn'].OutputValue" \
+            --output text)
+          test -n "$TRAINER_ARN"; test "$TRAINER_ARN" != None
+          aws lambda get-function-configuration --function-name "$TRAINER_ARN" --region "$AWS_REGION_VALUE" --output json > /tmp/mlb-v9-trainer-config.json
+          aws lambda invoke \
+            --function-name "$TRAINER_ARN" \
+            --region "$AWS_REGION_VALUE" \
+            --cli-binary-format raw-in-base64-out \
+            --payload '{"sport":"mlb","mode":"status"}' \
+            /tmp/mlb-v9-trainer-status.json >/tmp/mlb-v9-trainer-status-invocation.json
+          python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          config=json.load(open('/tmp/mlb-v9-trainer-config.json'))
+          status=json.load(open('/tmp/mlb-v9-trainer-status.json'))
+          invoke=json.load(open('/tmp/mlb-v9-trainer-status-invocation.json'))
+          env=((config.get('Environment') or {}).get('Variables') or {})
+          def compact_health(value):
+              value=value if isinstance(value,dict) else {}
+              latest=value.get('latestRun') if isinstance(value.get('latestRun'),dict) else {}
+              return {
+                  'ok':value.get('ok'),
+                  'errors':value.get('errors'),
+                  'executionMode':value.get('executionMode'),
+                  'deploymentIdentityMatches':value.get('deploymentIdentityMatches'),
+                  'latestRun':{k:latest.get(k) for k in (
+                      'ok','status','executionMode','runId','createdAtUtc','failure',
+                      'acceptedRowCount','rejectedRowCount','partitionCounts','modelTrained',
+                      'championChanged','automaticPromotionEnabled','liveInferenceAuthority',
+                      'canonicalSlateContinuity','milestones'
+                  )},
+              }
+          report={
+              'ok':invoke.get('StatusCode') == 200 and not invoke.get('FunctionError'),
+              'proofType':'MLB_V9_TRAINER_PERSISTED_STATUS_PROBE',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'runId':os.environ.get('GITHUB_RUN_ID'),
+              'deployedGitSha':env.get('INQSI_DEPLOY_GIT_SHA'),
+              'deployedTemplateSha256':env.get('INQSI_DEPLOY_TEMPLATE_SHA256'),
+              'invocation':invoke,
+              'statusOk':status.get('ok'),
+              'manifestPhase':(status.get('manifest') or {}).get('phase'),
+              'trainingHealth':compact_health(status.get('trainingHealth')),
+              'selectionCaptureHealth':compact_health(status.get('selectionCaptureHealth')),
+              'automaticPromotionEnabled':status.get('automaticPromotionEnabled'),
+              'firstPromotionRequiresManualReview':status.get('firstPromotionRequiresManualReview'),
+              'v2InferenceConsumerInstalled':status.get('v2InferenceConsumerInstalled'),
+              'runtimeAuthorityActivationAvailable':status.get('runtimeAuthorityActivationAvailable'),
+              'blockers':[],
+          }
+          if report['ok'] is not True:
+              report['blockers'].append('trainer_status_invocation_failed')
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: mlb-v9-trainer-status-probe-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_v9_trainer_status_probe_latest.json
+            /tmp/mlb-v9-trainer-status.json
+            /tmp/mlb-v9-trainer-status-invocation.json
+            /tmp/mlb-v9-trainer-config.json
+          retention-days: 90
+      - name: Publish status probe
+        run: |
+          set -euo pipefail
+          cp "$REPORT_PATH" /tmp/mlb-v9-trainer-status-probe.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v9-trainer-status-probe origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-v9-trainer-status-probe.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V9 trainer status probe'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
