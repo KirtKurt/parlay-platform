@@ -46,6 +46,7 @@ jobs:
             set -euo pipefail
             python - <<'PY'
           from pathlib import Path
+          import json
 
           old_id = 'mlb-v2-2026-07-24-future-prospective-r4'
           new_id = 'mlb-v2-2026-07-29-future-prospective-r5'
@@ -74,6 +75,32 @@ jobs:
               if updated != raw:
                   path.write_text(updated, encoding='utf-8')
                   changed.append(str(path))
+
+          # These tests model the active prospective boundary. Moving the production
+          # cutoff requires moving their synthetic post-cutoff slates as well; older
+          # historical fixtures and durable runtime evidence remain untouched.
+          boundary_fixtures = {
+              Path('tests/unit/test_mlb_ml_aws_training_v1.py'): (
+                  ('2026-07-24', '2026-07-29'),
+                  ('datetime(2026, 7, 24', 'datetime(2026, 7, 29'),
+                  ('datetime(2026, 7, 25, 4, 30', 'datetime(2026, 7, 30, 4, 30'),
+              ),
+              Path('tests/unit/test_run_mlb_ml_v3_audit_report.py'): (
+                  ('2026-07-24', '2026-07-29'),
+                  ('datetime(2026, 7, 24', 'datetime(2026, 7, 29'),
+                  ('SETTLEMENT_NOW = datetime(2026, 7, 25, 3, 0', 'SETTLEMENT_NOW = datetime(2026, 7, 30, 3, 0'),
+              ),
+          }
+          for path, replacements in boundary_fixtures.items():
+              raw = path.read_text(encoding='utf-8')
+              updated = raw
+              for old, new in replacements:
+                  updated = updated.replace(old, new)
+              if updated != raw:
+                  path.write_text(updated, encoding='utf-8')
+                  if str(path) not in changed:
+                      changed.append(str(path))
+
           old_test = Path('tests/unit/test_mlb_ml_r4_clean_cutover.py')
           new_test = Path('tests/unit/test_mlb_ml_r5_clean_cutover.py')
           if old_test.exists():
@@ -102,7 +129,7 @@ jobs:
                   stale.append(str(path))
           if stale:
               raise SystemExit('Active source still references expired R4 boundary: ' + ','.join(stale))
-          Path('/tmp/mlb-r5-changed-files.json').write_text(__import__('json').dumps(changed, indent=2) + '\n')
+          Path('/tmp/mlb-r5-changed-files.json').write_text(json.dumps(changed, indent=2) + '\n')
           print('\n'.join(changed))
           PY
           ) 2>&1 | tee /tmp/mlb-r5-migration.log
@@ -213,11 +240,7 @@ jobs:
               'newExperimentId':'mlb-v2-2026-07-29-future-prospective-r5',
               'oldCutoffUtc':'2026-07-24T04:00:00+00:00',
               'newCutoffUtc':'2026-07-29T04:00:00+00:00',
-              'stepOutcomes':{
-                  'migration':migration,
-                  'validation':validation,
-                  'sourcePublish':published,
-              },
+              'stepOutcomes':{'migration':migration,'validation':validation,'sourcePublish':published},
               'changedFiles':load_json('/tmp/mlb-r5-changed-files.json', []),
               'sourceRepairCommit':Path('/tmp/mlb-r5-source-commit.txt').read_text().strip() if Path('/tmp/mlb-r5-source-commit.txt').exists() else None,
               'predeployDecision':load_json('/tmp/mlb-r5-release-activation-predeploy.json', {}),
