@@ -2,7 +2,7 @@
   "blockers": [
     "v7_v9_evaluation_failed_before_report_write"
   ],
-  "createdAtUtc": "2026-07-28T03:26:37.920969+00:00",
+  "createdAtUtc": "2026-07-28T03:50:28.327946+00:00",
   "errorLogTail": "",
   "historicalChampionWritten": false,
   "ok": false,
@@ -15,7 +15,7 @@
   "providerCallsMade": 0,
   "readOnly": true,
   "retrospectiveShadowOnly": true,
-  "runId": "30325500129",
+  "runId": "30326645312",
   "runtimeResolution": {
     "attempts": [
       {
@@ -36,11 +36,11 @@
     "handler": "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler",
     "ok": true
   },
-  "sourceSha": "62f660dd4bb337fb1189a7c5184a5a2000a76b82",
+  "sourceSha": "cbddd836e23d628174171b089c2454d9014f5513",
   "stalledStage": "V7_V9_EVALUATION_BEFORE_REPORT_WRITE",
   "validationEvidence": {
     "blockers": [],
-    "checkedOutSha": "62f660dd4bb337fb1189a7c5184a5a2000a76b82",
+    "checkedOutSha": "cbddd836e23d628174171b089c2454d9014f5513",
     "compile": [
       {
         "ok": true,
@@ -87,21 +87,21 @@
         "path": "scripts/validate_mlb_v9_shadow_workflow.py"
       }
     ],
-    "createdAtUtc": "2026-07-28T03:17:30.048534+00:00",
+    "createdAtUtc": "2026-07-28T03:42:18.356894+00:00",
     "ok": true,
     "proofType": "MLB_V9_WORKFLOW_VALIDATION",
     "sourceIdentityMatched": true,
-    "sourceSha": "62f660dd4bb337fb1189a7c5184a5a2000a76b82",
+    "sourceSha": "cbddd836e23d628174171b089c2454d9014f5513",
     "tests": [
       {
         "ok": true,
-        "outputTail": "...                                                                      [100%]\n3 passed in 1.42s\n",
+        "outputTail": "...                                                                      [100%]\n3 passed in 1.45s\n",
         "path": "tests/unit/test_mlb_historical_supervised_v9.py",
         "returnCode": 0
       },
       {
         "ok": true,
-        "outputTail": ".....                                                                    [100%]\n5 passed in 0.06s\n",
+        "outputTail": ".....                                                                    [100%]\n5 passed in 0.07s\n",
         "path": "tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py",
         "returnCode": 0
       },
@@ -143,7 +143,7 @@
       },
       {
         "ok": true,
-        "outputTail": "...                                                                      [100%]\n3 passed in 0.93s\n",
+        "outputTail": "...                                                                      [100%]\n3 passed in 0.94s\n",
         "path": "tests/unit/test_mlb_historical_v7_selective_search_v2.py",
         "returnCode": 0
       },
