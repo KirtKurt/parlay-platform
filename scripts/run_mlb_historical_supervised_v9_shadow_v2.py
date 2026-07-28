@@ -15,7 +15,11 @@ from datetime import datetime, timezone
 from typing import Any, Dict, Mapping
 
 import mlb_historical_v7_priority_repairs_v1 as repairs
-import run_mlb_historical_supervised_v9_shadow as original
+
+try:
+    from scripts import run_mlb_historical_supervised_v9_shadow as original
+except ImportError:  # Direct execution from the scripts directory.
+    import run_mlb_historical_supervised_v9_shadow as original
 
 VERSION = "MLB-V9-SHADOW-MODEL-ARTIFACT-v1"
 
