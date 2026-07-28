@@ -77,6 +77,10 @@ def test_v9_search_fails_closed_on_empty_input():
         def __init__(self):
             self.search_called = False
 
+        @staticmethod
+        def _signal(game, observations, side, expected_slots):
+            return {}
+
         def search(self, records, config=None, *, untouched_holdout_dates=None):
             self.search_called = True
             return {"ok": True}
