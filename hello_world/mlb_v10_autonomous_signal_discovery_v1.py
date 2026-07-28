@@ -14,9 +14,10 @@ import math
 import random
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
+from functools import lru_cache
 from typing import Any, Dict, Iterable, Mapping, Sequence, Tuple
 
-VERSION = "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v2.1-integrity-statistical-portfolio"
+VERSION = "MLB-V10-AUTONOMOUS-SIGNAL-DISCOVERY-v2.2-overflow-safe-exact-binomial"
 MIN_PATTERN_OCCURRENCES = 20
 MIN_PATTERN_DAYS = 8
 MIN_WALK_FORWARD_PICKS = 40
@@ -240,19 +241,74 @@ def _evaluate(records: Sequence[Mapping[str, Any]], dates: Iterable[str], defini
     }
 
 
+def _log_binomial_probability(k: int, n: int, p: float) -> float:
+    if k < 0 or k > n or n < 0 or not 0.0 < p < 1.0:
+        return float("-inf")
+    return (
+        math.lgamma(n + 1)
+        - math.lgamma(k + 1)
+        - math.lgamma(n - k + 1)
+        + k * math.log(p)
+        + (n - k) * math.log1p(-p)
+    )
+
+
 def _binomial_probability(k: int, n: int, p: float) -> float:
-    return math.comb(n, k) * (p ** k) * ((1.0 - p) ** (n - k))
+    log_probability = _log_binomial_probability(k, n, p)
+    return math.exp(log_probability) if log_probability > -745.0 else 0.0
 
 
+def _sum_symmetric_binomial_range(n: int, start: int, end: int) -> float:
+    """Sum Binomial(n, .5) probabilities over an inclusive range without overflow."""
+    if start > end:
+        return 0.0
+    start = max(0, start)
+    end = min(n, end)
+    if start > end:
+        return 0.0
+    mode = min(max(n // 2, start), end)
+    term = _binomial_probability(mode, n, 0.5)
+    total = term
+    left_term = term
+    for k in range(mode, start, -1):
+        left_term *= k / (n - k + 1)
+        total += left_term
+    right_term = term
+    for k in range(mode, end):
+        right_term *= (n - k) / (k + 1)
+        total += right_term
+    return min(1.0, max(0.0, total))
+
+
+@lru_cache(maxsize=65536)
 def _two_sided_binomial_pvalue(correct: int, total: int, baseline: float = 0.5) -> float:
     if total <= 0 or not 0.0 < baseline < 1.0:
         return 1.0
-    observed = _binomial_probability(correct, total, baseline)
-    tolerance = observed * 1e-12 + 1e-18
-    return min(1.0, sum(
-        probability for k in range(total + 1)
-        if (probability := _binomial_probability(k, total, baseline)) <= observed + tolerance
-    ))
+    correct = max(0, min(total, int(correct)))
+    if abs(baseline - 0.5) <= 1e-15:
+        lower = min(correct, total - correct)
+        if lower == total // 2:
+            return 1.0
+        tail_width = lower + 1
+        central_width = max(0, total - 2 * lower - 1)
+        if tail_width <= central_width:
+            return min(1.0, 2.0 * _sum_symmetric_binomial_range(total, 0, lower))
+        central = _sum_symmetric_binomial_range(total, lower + 1, total - lower - 1)
+        return min(1.0, max(0.0, 1.0 - central))
+
+    observed_log = _log_binomial_probability(correct, total, baseline)
+    tolerance = 1e-12
+    logs = [
+        value
+        for k in range(total + 1)
+        if (value := _log_binomial_probability(k, total, baseline)) <= observed_log + tolerance
+    ]
+    if not logs:
+        return 0.0
+    maximum = max(logs)
+    if maximum <= -745.0:
+        return 0.0
+    return min(1.0, math.exp(maximum) * sum(math.exp(value - maximum) for value in logs))
 
 
 def _bh_qvalues(rows: list[dict]) -> None:
