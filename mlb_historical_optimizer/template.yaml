@@ -178,3 +178,11 @@ Resources:
           Properties:
             Schedule: rate(5 minutes)
             Description: Resume only after a fingerprinted paid-backfill authorization; otherwise no-op
+
+Outputs:
+  HistoricalOptimizerFunctionName:
+    Description: Deployed MLB historical optimizer Lambda name
+    Value: !Ref HistoricalOptimizerFunction
+  HistoricalArtifactsBucketName:
+    Description: Authoritative immutable MLB historical artifacts bucket
+    Value: !Ref HistoricalArtifactsBucket
