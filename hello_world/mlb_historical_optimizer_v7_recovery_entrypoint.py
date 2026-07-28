@@ -1,9 +1,9 @@
 """Historical recovery entrypoint with independent V7 and V9 shadow learning.
 
-V7 owns immutable odds-only learning and now searches a selective PICK/PASS
-objective. V8 remains the separate fundamentals ingestion path. V9 may consume both
-later, but neither shadow learner can change production authority without a fresh
-chronological audit and the canonical promotion write path.
+V7 owns immutable odds-only learning and searches a selective PICK/PASS
+objective. V8 remains the separate fundamentals ingestion path. V9 may consume
+both later, but neither shadow learner can change production authority without
+a fresh chronological audit and the canonical promotion write path.
 """
 from __future__ import annotations
 
@@ -15,6 +15,7 @@ import mlb_historical_optimizer_entrypoint as base
 import mlb_historical_round_extension_v1 as round_extension
 import mlb_historical_supervised_v9 as supervised_v9
 import mlb_historical_supervised_v9_integrity_v2 as supervised_integrity_v2
+import mlb_historical_v7_label_integrity_v1 as label_integrity
 import mlb_historical_v7_learning_cadence_v1 as learning_cadence
 import mlb_historical_v7_priority_repairs_v1 as priority_repairs
 import mlb_historical_v7_selective_objective_v1 as selective_objective
@@ -22,13 +23,14 @@ import mlb_historical_v7_selective_search_v2 as selective_search_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v15-range-before-rematerialization"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v16-strict-label-integrity"
 
 incremental_range_extension.install(base)
 round_extension.install(base.optimizer_handler)
 odds_market_v8.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
 supervised_v8_dataset.install(base.optimizer_handler.optimizer, rematerialization)
 priority_repairs.install_feature_repairs(supervised_v9)
+label_integrity.install(supervised_v9)
 supervised_integrity_v2.install(supervised_v9)
 supervised_v9.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
 selective_objective.install(base.optimizer_handler.optimizer)
@@ -65,6 +67,7 @@ def _with_shadow_contract(value: Any) -> Any:
                 "featureVersion": supervised_v9.FEATURE_VERSION,
                 "featureCount": len(supervised_v9.FEATURES),
                 "integrityPatchVersion": supervised_integrity_v2.VERSION,
+                "labelIntegrityVersion": label_integrity.VERSION,
                 "learningCadenceVersion": learning_cadence.VERSION,
                 "priorityRepairsVersion": priority_repairs.VERSION,
                 "selectiveObjectiveVersion": selective_objective.VERSION,
@@ -75,6 +78,7 @@ def _with_shadow_contract(value: Any) -> Any:
                 "canonicalFreshAuditIncrementGames": base.optimizer_handler.FRESH_AUDIT_INCREMENT_GAMES,
                 "shadowRefitsMayPromote": False,
                 "strictBinaryLabels": True,
+                "invalidOrMissingLabelsExcluded": True,
                 "missingLabelsCoercedToAwayWin": False,
                 "sameSlateOutcomeFeaturesProhibited": True,
                 "providerCallsRequiredForRematerialization": 0,
@@ -94,6 +98,7 @@ def _with_shadow_contract(value: Any) -> Any:
                 "thresholdFrozenBeforeUntouchedHoldout": True,
                 "freshProspectiveAuditRequiredBeforeProduction": True,
                 "candidateHandoffRequiresCanonicalReevaluation": True,
+                "candidateHandoffFailsClosed": True,
                 "separateFullSlateAndSelectiveAccuracy": True,
                 "incrementalRangeExtensionVersion": incremental_range_extension.VERSION,
                 "rangeExtensionRunsBeforeRematerialization": True,
@@ -107,9 +112,9 @@ def lambda_handler(event: Any, context: Any) -> Dict[str, Any]:
     if _request_mode(event) == "status":
         return _with_shadow_contract(base.optimizer_handler.lambda_handler(event, context))
 
-    # The settled-range ledger must advance before feature rematerialization. Otherwise
-    # a stale rematerialization completion/error marker can consume the invocation and
-    # leave an exhausted cursor outside the authorized plan for another full cycle.
+    # Advance the settled-range ledger before feature rematerialization. Otherwise
+    # a stale completion/error marker can consume the invocation and leave an
+    # exhausted cursor outside the authorized plan for another full cycle.
     base._repair_precompetitive_extension_state()
     base._append_authorized_range_extension()
 
