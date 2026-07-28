@@ -2,7 +2,7 @@
   "blockers": [
     "v7_v9_validation_failed"
   ],
-  "createdAtUtc": "2026-07-28T13:53:54.007877+00:00",
+  "createdAtUtc": "2026-07-28T13:55:35.103493+00:00",
   "errorLogTail": "",
   "historicalChampionWritten": false,
   "ok": false,
@@ -15,15 +15,15 @@
   "providerCallsMade": 0,
   "readOnly": true,
   "retrospectiveShadowOnly": true,
-  "runId": "30365639135",
+  "runId": "30365765249",
   "runtimeResolution": {},
-  "sourceSha": "bd40134fca937208cbe00d8f299e57054feab0e2",
+  "sourceSha": "735e244131aa964ae557c4824f8d4556ee5fd4fb",
   "stalledStage": "V7_V9_VALIDATION",
   "validationEvidence": {
     "blockers": [
       "test_failed:tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py"
     ],
-    "checkedOutSha": "bd40134fca937208cbe00d8f299e57054feab0e2",
+    "checkedOutSha": "735e244131aa964ae557c4824f8d4556ee5fd4fb",
     "compile": [
       {
         "ok": true,
@@ -70,33 +70,33 @@
         "path": "scripts/validate_mlb_v9_shadow_workflow.py"
       }
     ],
-    "createdAtUtc": "2026-07-28T13:53:45.320760+00:00",
+    "createdAtUtc": "2026-07-28T13:55:24.297094+00:00",
     "ok": false,
     "proofType": "MLB_V9_WORKFLOW_VALIDATION",
     "sourceIdentityMatched": true,
-    "sourceSha": "bd40134fca937208cbe00d8f299e57054feab0e2",
+    "sourceSha": "735e244131aa964ae557c4824f8d4556ee5fd4fb",
     "tests": [
       {
         "ok": true,
-        "outputTail": "...                                                                      [100%]\n3 passed in 1.26s\n",
+        "outputTail": "...                                                                      [100%]\n3 passed in 1.44s\n",
         "path": "tests/unit/test_mlb_historical_supervised_v9.py",
         "returnCode": 0
       },
       {
         "ok": false,
-        "outputTail": "....F..                                                                  [100%]\n=================================== FAILURES ===================================\n__________________ test_v9_search_fails_closed_on_empty_input __________________\ntests/unit/test_mlb_historical_supervised_v9_integrity_v2.py:85: in test_v9_search_fails_closed_on_empty_input\n    learner.install(optimizer, object())\nhello_world/mlb_historical_supervised_v9_integrity_v2.py:202: in install_optimizer\n    original_install(optimizer, policy_runtime)\nhello_world/mlb_historical_supervised_v9.py:326: in install\n    install_policy_runtime(policy_runtime)\nhello_world/mlb_historical_supervised_v9.py:310: in install_policy_runtime\n    policy_runtime.BASELINE_POLICY.update({k:policy_runtime.BASELINE_POLICY.get(k,v) for k,v in _defaults().items()}); policy_runtime._NUMERIC_BOUNDS.update(_bounds())\n    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nE   AttributeError: 'object' object has no attribute 'BASELINE_POLICY'\n=========================== short test summary info ============================\nFAILED tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py::test_v9_search_fails_closed_on_empty_input - AttributeError: 'object' object has no attribute 'BASELINE_POLICY'\n1 failed, 6 passed in 0.11s\n",
+        "outputTail": "....F..                                                                  [100%]\n=================================== FAILURES ===================================\n__________________ test_v9_search_fails_closed_on_empty_input __________________\ntests/unit/test_mlb_historical_supervised_v9_integrity_v2.py:86: in test_v9_search_fails_closed_on_empty_input\n    learner.install(optimizer, policy_runtime)\nhello_world/mlb_historical_supervised_v9_integrity_v2.py:202: in install_optimizer\n    original_install(optimizer, policy_runtime)\nhello_world/mlb_historical_supervised_v9.py:328: in install\n    _ORIGINAL_SIGNAL=optimizer._signal\n                     ^^^^^^^^^^^^^^^^^\nE   AttributeError: 'Optimizer' object has no attribute '_signal'\n=========================== short test summary info ============================\nFAILED tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py::test_v9_search_fails_closed_on_empty_input - AttributeError: 'Optimizer' object has no attribute '_signal'\n1 failed, 6 passed in 0.13s\n",
         "path": "tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py",
         "returnCode": 1
       },
       {
         "ok": true,
-        "outputTail": "..                                                                       [100%]\n2 passed in 0.02s\n",
+        "outputTail": "..                                                                       [100%]\n2 passed in 0.03s\n",
         "path": "tests/unit/test_run_mlb_historical_supervised_v9_shadow.py",
         "returnCode": 0
       },
       {
         "ok": true,
-        "outputTail": "..                                                                       [100%]\n2 passed in 0.02s\n",
+        "outputTail": "..                                                                       [100%]\n2 passed in 0.03s\n",
         "path": "tests/unit/test_run_mlb_historical_supervised_v9_shadow_v2.py",
         "returnCode": 0
       },
@@ -108,13 +108,13 @@
       },
       {
         "ok": true,
-        "outputTail": "...                                                                      [100%]\n3 passed in 0.02s\n",
+        "outputTail": "...                                                                      [100%]\n3 passed in 0.03s\n",
         "path": "tests/unit/test_mlb_historical_v7_learning_cadence_v1.py",
         "returnCode": 0
       },
       {
         "ok": true,
-        "outputTail": ".........                                                                [100%]\n9 passed in 0.06s\n",
+        "outputTail": ".........                                                                [100%]\n9 passed in 0.09s\n",
         "path": "tests/unit/test_mlb_historical_v7_priority_repairs_v1.py",
         "returnCode": 0
       },
@@ -126,7 +126,7 @@
       },
       {
         "ok": true,
-        "outputTail": "...                                                                      [100%]\n3 passed in 0.88s\n",
+        "outputTail": "...                                                                      [100%]\n3 passed in 0.95s\n",
         "path": "tests/unit/test_mlb_historical_v7_selective_search_v2.py",
         "returnCode": 0
       },
