@@ -9,11 +9,12 @@ Promotion remains controlled by the existing chronological every-slate 80% gate.
 from __future__ import annotations
 
 import copy
+import math
 from typing import Any, Dict, Mapping, Sequence
 
 import mlb_v7_integrity_pattern_v1 as integrity
 
-VERSION = "MLB-HISTORICAL-SUPERVISED-INTEGRITY-v2-strict-label-v8-fallback-pattern-complete"
+VERSION = "MLB-HISTORICAL-SUPERVISED-INTEGRITY-v2.1-finite-fallback-empty-input-guard"
 MODEL_VERSION = "MLB-HISTORICAL-SUPERVISED-v9.1-integrity-pattern-complete"
 FEATURE_VERSION = "MLB-SUPERVISED-PAIR-FEATURES-v2-integrity-pattern-complete"
 EXTRA_FEATURES = (
@@ -29,24 +30,33 @@ EXTRA_FEATURES = (
 )
 
 
-def _team_key(team: Any) -> str:
-    return str(team or "").replace(" ", "_")
+def _finite(value: Any):
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if math.isfinite(parsed) else None
+
+
+def _team_key(signal: Mapping[str, Any]) -> str:
+    team = (
+        signal.get("team")
+        or signal.get("teamName")
+        or signal.get("name")
+        or signal.get("marketTeam")
+        or ""
+    )
+    return str(team).strip().replace(" ", "_")
 
 
 def _expansion_value(signal: Mapping[str, Any], market: str, suffix: str):
     expansion = signal.get("oddsMarketExpansionFeatures")
     if not isinstance(expansion, Mapping):
         return None
-    team = _team_key(signal.get("team"))
+    team = _team_key(signal)
     if not team:
         return None
-    value = expansion.get(f"{market}_{team}{suffix}")
-    if value in (None, ""):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+    return _finite(expansion.get(f"{market}_{team}{suffix}"))
 
 
 def _fallback_v8(signal: Mapping[str, Any], name: str):
@@ -66,22 +76,15 @@ def _fallback_v8(signal: Mapping[str, Any], name: str):
     if not isinstance(expansion, Mapping):
         return None
     if name == "impliedLateInningRunEnvironment":
-        value = expansion.get("impliedLateInningRunEnvironment")
+        value = _finite(expansion.get("impliedLateInningRunEnvironment"))
     elif name == "starterBullpenSpreadDivergence":
-        value = expansion.get("homeStarterBullpenSpreadDivergence")
-        if str(signal.get("side") or "").lower() == "away" and value not in (None, ""):
-            try:
-                value = -float(value)
-            except (TypeError, ValueError):
-                return None
+        value = _finite(expansion.get("homeStarterBullpenSpreadDivergence"))
+        side = str(signal.get("side") or signal.get("marketSide") or "").lower()
+        if side == "away" and value is not None:
+            value = -value
     else:
         return None
-    if value in (None, ""):
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+    return value
 
 
 def _extra_pair_features(learner: Any, home: Mapping[str, Any], away: Mapping[str, Any]) -> Dict[str, float]:
@@ -130,6 +133,7 @@ def install(learner: Any) -> Any:
 
     def v8(signal: Mapping[str, Any], name: str):
         value = original_v8(signal, name)
+        value = _finite(value) if value is not None else None
         return value if value is not None else _fallback_v8(signal, name)
 
     learner._v8 = v8
@@ -175,6 +179,7 @@ def install(learner: Any) -> Any:
                 "integrityPatchVersion": VERSION,
                 "strictBinaryLabels": True,
                 "missingLabelsCoercedToAwayWin": False,
+                "finiteV8FallbackRequired": True,
                 "v8ExpansionFallbackEnabled": True,
                 "extraPatternFeatures": list(EXTRA_FEATURES),
                 "selectionObjective": [
@@ -214,17 +219,21 @@ def install(learner: Any) -> Any:
                 "postLockProofRequired": True,
                 "gameSpecificLockProofRequired": True,
             }
+            errors = []
+            if not source_records:
+                errors.append("training_data_empty")
             if rejected:
+                errors.append("training_data_integrity_rejected_rows")
+            if not accepted:
+                errors.append("no_integrity_eligible_training_rows")
+            if errors:
                 return {
                     "ok": False,
                     "version": getattr(optimizer, "VERSION", None),
                     "searchVersion": MODEL_VERSION,
                     "status": "DATA_INTEGRITY_BLOCKED",
                     "trainingIntegrity": evidence,
-                    "promotionGate": {
-                        "passed": False,
-                        "errors": ["training_data_integrity_rejected_rows"],
-                    },
+                    "promotionGate": {"passed": False, "errors": errors},
                 }
             result = original_search(
                 accepted,
@@ -238,6 +247,7 @@ def install(learner: Any) -> Any:
                     {
                         "integrityPatchVersion": VERSION,
                         "strictBinaryLabels": True,
+                        "finiteV8FallbackRequired": True,
                         "v8ExpansionFallbackEnabled": True,
                         "extraPatternFeatures": list(EXTRA_FEATURES),
                     }
