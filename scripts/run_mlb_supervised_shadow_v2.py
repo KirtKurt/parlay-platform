@@ -72,9 +72,36 @@ def _resolve_function_name(cf: Any, lam: Any, stack_name: str) -> tuple[str, Dic
     attempts.append({"strategy": "lambda_handler_scan", "matches": matches})
     if len(matches) == 1:
         return matches[0], {"strategy": "lambda_handler_scan", "attempts": attempts}
+
+    qualified: List[str] = []
+    for name in matches:
+        try:
+            config = lam.get_function_configuration(FunctionName=name)
+            env = ((config.get("Environment") or {}).get("Variables") or {})
+            if (
+                env.get("MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED") == "true"
+                and env.get("MLB_HISTORICAL_ARTIFACTS_BUCKET")
+            ):
+                qualified.append(name)
+        except Exception as exc:
+            attempts.append({
+                "strategy": "lambda_environment_filter",
+                "functionName": name,
+                "error": f"{type(exc).__name__}:{exc}",
+            })
+    qualified = sorted(set(qualified))
+    attempts.append({"strategy": "lambda_environment_filter", "matches": qualified})
+    if len(qualified) == 1:
+        return qualified[0], {"strategy": "lambda_environment_filter", "attempts": attempts}
     if not matches:
-        raise RuntimeError("historical optimizer Lambda could not be resolved:" + json.dumps(attempts, sort_keys=True))
-    raise RuntimeError("historical optimizer Lambda resolution is ambiguous:" + json.dumps(attempts, sort_keys=True))
+        raise RuntimeError(
+            "historical optimizer Lambda could not be resolved:"
+            + json.dumps(attempts, sort_keys=True)
+        )
+    raise RuntimeError(
+        "historical optimizer Lambda resolution is ambiguous:"
+        + json.dumps(attempts, sort_keys=True)
+    )
 
 
 def _parse_date(value: Any) -> date | None:
@@ -84,9 +111,39 @@ def _parse_date(value: Any) -> date | None:
         return None
 
 
+def _runtime_date_ready(*, configured_end: date | None, state_end: date | None, current_date: date | None) -> bool:
+    """Validate coverage without requiring a future configured end to equal state."""
+    if configured_end is None or state_end is None or current_date is None:
+        return False
+    # The Lambda may be configured to extend beyond the currently materialized
+    # immutable state.  Shadow evaluation is valid for the state corpus once the
+    # cursor has reached/passed that state's end date, provided configuration has
+    # not moved backwards.
+    return configured_end >= state_end and current_date >= state_end
+
+
+def _feature_materialization_ready(state: Mapping[str, Any]) -> tuple[bool, Dict[str, Any]]:
+    explicit = state.get("featureRematerializationComplete") is True
+    completed = int(state.get("featureRematerializedSlateCount") or 0)
+    total = int(state.get("featureRematerializationTotalSlateCount") or 0)
+    errors = list(state.get("featureRematerializationErrors") or [])
+    counts_complete = total > 0 and completed == total
+    ready = (explicit or counts_complete) and not errors
+    return ready, {
+        "explicitComplete": explicit,
+        "completedSlateCount": completed,
+        "totalSlateCount": total,
+        "countsComplete": counts_complete,
+        "errorCount": len(errors),
+    }
+
+
 def _load_records(state: Mapping[str, Any], s3: Any) -> List[Dict[str, Any]]:
     records: List[Dict[str, Any]] = []
-    for slate in state.get("completedSlates") or []:
+    completed_slates = state.get("completedSlates") or []
+    if not completed_slates:
+        raise RuntimeError("historical optimizer has no completed slate pointers")
+    for slate in completed_slates:
         if not isinstance(slate, Mapping):
             continue
         pointer = slate.get("artifact") or {}
@@ -110,6 +167,8 @@ def _load_records(state: Mapping[str, Any], s3: Any) -> List[Dict[str, Any]]:
         if len(rows) != int(dataset.get("officialGameCount") or 0):
             raise RuntimeError(f"completed slate record count mismatch:{key}")
         records.extend(_plain(rows))
+    if not records:
+        raise RuntimeError("historical training corpus is empty")
     return records
 
 
@@ -134,37 +193,35 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
     configured_end = _parse_date(environment.get("MLB_HISTORICAL_END_DATE"))
     state_end = _parse_date(state.get("endDate"))
     current_date = _parse_date(state.get("currentDate"))
-    end_date_consistent = bool(
-        configured_end
-        and (state_end is None or configured_end == state_end)
-        and (current_date is None or current_date >= configured_end)
-    )
+    materialization_ready, materialization_proof = _feature_materialization_ready(state)
     runtime_checks = {
         "handler": config.get("Handler") == EXPECTED_HANDLER,
         "rangeExtensionAuthorized": environment.get("MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED") == "true",
         "maximumRoundsAtLeast12": int(environment.get("MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS") or 0) >= MINIMUM_OPTIMIZATION_ROUNDS,
         "historicalEndDateConfigured": configured_end is not None,
-        "historicalEndDateConsistentWithState": end_date_consistent,
+        "historicalStateCoverageReady": _runtime_date_ready(
+            configured_end=configured_end,
+            state_end=state_end,
+            current_date=current_date,
+        ),
+        "featureMaterializationReady": materialization_ready,
+        "optimizerErrorFree": not bool(state.get("lastError")),
     }
     if not all(runtime_checks.values()):
         raise RuntimeError(
-            "canonical historical runtime identity failed:"
+            "canonical historical runtime readiness failed:"
             + json.dumps(
                 {
                     "checks": runtime_checks,
                     "configuredEndDate": environment.get("MLB_HISTORICAL_END_DATE"),
                     "stateEndDate": state.get("endDate"),
                     "stateCurrentDate": state.get("currentDate"),
+                    "featureMaterialization": materialization_proof,
+                    "lastError": state.get("lastError"),
                 },
                 sort_keys=True,
             )
         )
-    if state.get("featureRematerializationComplete") is not True:
-        raise RuntimeError("feature rematerialization is incomplete")
-    if state.get("featureRematerializationErrors"):
-        raise RuntimeError("feature rematerialization errors remain")
-    if state.get("lastError"):
-        raise RuntimeError("historical optimizer state has an unresolved error")
 
     records = _load_records(state, s3)
     result = supervised.train_and_evaluate(records)
@@ -176,8 +233,7 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
         "runUrl": (
             f"https://github.com/{os.environ.get('GITHUB_REPOSITORY')}/actions/runs/"
             f"{os.environ.get('GITHUB_RUN_ID')}"
-            if os.environ.get("GITHUB_RUN_ID")
-            else None
+            if os.environ.get("GITHUB_RUN_ID") else None
         ),
         "runtimeIdentity": {
             "stackName": stack_name,
@@ -187,6 +243,7 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
             "deployGitSha": environment.get("INQSI_DEPLOY_GIT_SHA"),
             "configuredHistoricalEndDate": environment.get("MLB_HISTORICAL_END_DATE"),
             "checks": runtime_checks,
+            "featureMaterialization": materialization_proof,
         },
         "selectionObjective": dict(supervised.SUPERVISED_SELECTION_OBJECTIVE),
         "historicalState": {
