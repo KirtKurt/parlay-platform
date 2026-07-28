@@ -14,8 +14,10 @@ name: MLB Historical V7 Selective and V9 Shadow Evaluation
       - 'hello_world/mlb_historical_v7_selective_search_v2.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'scripts/run_mlb_historical_supervised_v9_shadow.py'
+      - 'scripts/run_mlb_historical_supervised_v9_shadow_v2.py'
       - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
       - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow.py'
+      - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow_v2.py'
       - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
       - 'tests/unit/test_mlb_historical_v7_priority_repairs_v1.py'
       - 'tests/unit/test_mlb_historical_v7_selective_objective_v1.py'
@@ -34,8 +36,10 @@ name: MLB Historical V7 Selective and V9 Shadow Evaluation
       - 'hello_world/mlb_historical_v7_selective_search_v2.py'
       - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
       - 'scripts/run_mlb_historical_supervised_v9_shadow.py'
+      - 'scripts/run_mlb_historical_supervised_v9_shadow_v2.py'
       - 'scripts/resolve_mlb_historical_artifacts_bucket.py'
       - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow.py'
+      - 'tests/unit/test_run_mlb_historical_supervised_v9_shadow_v2.py'
       - 'tests/unit/test_resolve_mlb_historical_artifacts_bucket.py'
       - 'tests/unit/test_mlb_historical_v7_priority_repairs_v1.py'
       - 'tests/unit/test_mlb_historical_v7_selective_objective_v1.py'
@@ -92,11 +96,13 @@ jobs:
             hello_world/mlb_historical_v7_selective_search_v2.py \
             hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
             scripts/run_mlb_historical_supervised_v9_shadow.py \
+            scripts/run_mlb_historical_supervised_v9_shadow_v2.py \
             scripts/resolve_mlb_historical_artifacts_bucket.py
           PYTHONPATH=hello_world:. python -m pytest -q --tb=short \
             tests/unit/test_mlb_historical_supervised_v9.py \
             tests/unit/test_mlb_historical_supervised_v9_integrity_v2.py \
             tests/unit/test_run_mlb_historical_supervised_v9_shadow.py \
+            tests/unit/test_run_mlb_historical_supervised_v9_shadow_v2.py \
             tests/unit/test_resolve_mlb_historical_artifacts_bucket.py \
             tests/unit/test_mlb_historical_v7_learning_cadence_v1.py \
             tests/unit/test_mlb_historical_v7_priority_repairs_v1.py \
@@ -221,7 +227,7 @@ jobs:
         run: |
           set -uo pipefail
           mkdir -p runtime_reports
-          python scripts/run_mlb_historical_supervised_v9_shadow.py \
+          python scripts/run_mlb_historical_supervised_v9_shadow_v2.py \
             --output "$REPORT_PATH" \
             --previous-report /tmp/mlb-supervised-v9-previous.json \
             --handoff-output "$HANDOFF_PATH" 2>&1 | tee /tmp/mlb-supervised-v9-shadow.log
@@ -317,13 +323,14 @@ jobs:
           done
           exit 1
 
-      - name: Enforce safety and V9 diagnostic report contract
+      - name: Enforce safety, diagnostic bands, and model artifact contract
         if: always()
         run: |
           python - <<'PY'
           import json, os
           from pathlib import Path
-          value=json.loads(Path('runtime_reports/mlb_historical_supervised_v9_shadow_latest.json').read_text())
+          report_path=Path('runtime_reports/mlb_historical_supervised_v9_shadow_latest.json')
+          value=json.loads(report_path.read_text())
           assert str(value.get('runId')) == str(os.environ.get('GITHUB_RUN_ID')), value
           assert value.get('sourceSha') == os.environ.get('GITHUB_SHA'), value
           assert value.get('ok') is True, value
@@ -354,5 +361,20 @@ jobs:
                   assert game.get('selectedPickBand') in {'MLB_STRONG','MLB_LEAN','PASS'}, game
                   assert game.get('predictedWinner'), game
                   assert game.get('selectedProbabilityPct') is not None, game
+          if value.get('shadowRefitPerformed') is True:
+              handoff_path=Path('runtime_reports/mlb_historical_supervised_v9_candidate_handoff_latest.json')
+              assert handoff_path.exists(), value
+              handoff=json.loads(handoff_path.read_text())
+              assert handoff.get('artifactVersion') == 'MLB-V9-SHADOW-MODEL-ARTIFACT-v1', handoff
+              assert handoff.get('artifactType') == 'FROZEN_SHADOW_MODEL', handoff
+              assert handoff.get('policy'), handoff
+              assert handoff.get('modelDigest'), handoff
+              assert handoff.get('digest'), handoff
+              assert handoff.get('promotionAuthority') is False, handoff
+              assert handoff.get('productionAuthority') is False, handoff
+              assert handoff.get('frozenBeforeUntouchedHoldout') is True, handoff
+              assert handoff.get('holdoutLabelsUsedForFitOrSelection') is False, handoff
+              embedded=value.get('canonicalCandidateHandoff') or {}
+              assert embedded.get('modelDigest') == handoff.get('modelDigest'), (embedded, handoff)
           assert not value.get('blockers'), value
           PY
