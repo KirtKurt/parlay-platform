@@ -25,7 +25,7 @@ def _config(**overrides):
 
 def test_r4_cutoff_is_clean_future_boundary_after_unrecoverable_r3_slate():
     assert experiment.PRODUCTION_EXPERIMENT_ID == (
-        "mlb-v2-2026-07-24-future-prospective-r4"
+        "mlb-v2-2026-07-29-future-prospective-r5"
     )
     assert (
         experiment.PRODUCTION_RELEASE_CONTRACT_ID
@@ -33,7 +33,7 @@ def test_r4_cutoff_is_clean_future_boundary_after_unrecoverable_r3_slate():
     )
     assert (
         experiment.PRODUCTION_RELEASE_CUTOFF_UTC
-        == "2026-07-24T04:00:00+00:00"
+        == "2026-07-29T04:00:00+00:00"
     )
 
     activation = experiment.release_activation(
@@ -77,5 +77,5 @@ def test_r4_loader_does_not_request_or_backfill_july_22(monkeypatch):
 
 
 def test_r3_identity_is_rejected_by_r4_production_config():
-    with pytest.raises(training.TrainingContractError, match="r4 experiment ID"):
+    with pytest.raises(training.TrainingContractError, match="r5 experiment ID"):
         _config(experiment_id="mlb-v2-2026-07-22-future-prospective-r3")

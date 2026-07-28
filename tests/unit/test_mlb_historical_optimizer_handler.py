@@ -307,7 +307,7 @@ def _valid_champion_payload():
         "policyDigest": policy.policy_digest(policy.BASELINE_POLICY),
         "promotionGate": gate,
         "artifact": artifact,
-        "activatedAtUtc": "2026-07-24T04:00:00+00:00",
+        "activatedAtUtc": "2026-07-29T04:00:00+00:00",
     }
 
 

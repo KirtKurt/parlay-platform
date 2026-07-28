@@ -28,8 +28,8 @@ import mlb_official_prediction_semantics as semantics
 from mlb_ml_feature_test_fixtures import attach_lock_safe_features
 
 
-R4_EXPERIMENT_ID = "mlb-v2-2026-07-24-future-prospective-r4"
-R4_RELEASE_CUTOFF_UTC = "2026-07-24T04:00:00+00:00"
+R4_EXPERIMENT_ID = "mlb-v2-2026-07-29-future-prospective-r5"
+R4_RELEASE_CUTOFF_UTC = "2026-07-29T04:00:00+00:00"
 
 
 def _fingerprint(vector):
