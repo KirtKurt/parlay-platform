@@ -93,7 +93,9 @@ jobs:
         run: |
           set -uo pipefail
           mkdir -p runtime_reports
-          python scripts/run_mlb_v10_autonomous_signal_discovery.py --output "$REPORT_PATH" \
+          python scripts/run_mlb_v10_autonomous_signal_discovery.py \
+            --output "$REPORT_PATH" \
+            --previous "$REPORT_PATH" \
             2>&1 | tee /tmp/mlb-v10-discovery.log
           status=${PIPESTATUS[0]}
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
@@ -128,7 +130,9 @@ jobs:
           report={
               'ok':False,
               'proofType':'MLB_V10_AUTONOMOUS_DISCOVERY_RUN',
-              'mode':'OUTCOME_ANCHORED_RETROSPECTIVE_DISCOVERY',
+              'mode':'CHRONOLOGICAL_SIDE_APPLICABLE_DISCOVERY',
+              'winnerKnownBeforeSignalConstruction':False,
+              'outcomeUsedOnlyForTrainingLabels':True,
               'productionAuthority':False,
               'mayWriteChampion':False,
               'mayPublishPicks':False,
@@ -185,9 +189,19 @@ jobs:
           from pathlib import Path
           value=json.loads(Path('runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json').read_text())
           assert value.get('ok') is True, value
-          assert value.get('mode') == 'OUTCOME_ANCHORED_RETROSPECTIVE_DISCOVERY', value
+          assert value.get('mode') == 'CHRONOLOGICAL_SIDE_APPLICABLE_DISCOVERY', value
           assert value.get('autonomousFeatureGeneration') is True, value
-          assert value.get('winnerKnownBeforeSignalConstruction') is True, value
+          assert value.get('atomicAndInteractionDiscovery') is True, value
+          assert value.get('winnerKnownBeforeSignalConstruction') is False, value
+          assert value.get('outcomeUsedOnlyForTrainingLabels') is True, value
+          assert value.get('canonicalEligibilityFailClosed') is True, value
+          assert value.get('conflictingDuplicatesPermanentlyQuarantined') is True, value
+          assert value.get('exactSignificanceTest') == 'two-sided exact binomial', value
+          assert isinstance(value.get('negativeControl'), dict), value
+          assert set(value['negativeControl']) == {'development','walkForward','untouchedHoldout'}, value
+          assert isinstance(value.get('aggregateResearchPolicy'), dict), value
+          assert isinstance(value.get('registryFreeze'), dict), value
+          assert isinstance(value.get('prospectiveShadow'), dict), value
           assert value.get('productionAuthority') is False, value
           assert value.get('mayWriteChampion') is False, value
           assert value.get('mayPublishPicks') is False, value
