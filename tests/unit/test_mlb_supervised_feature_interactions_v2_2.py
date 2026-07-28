@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from hello_world import mlb_supervised_feature_interactions_v2_2 as interactions
 
 
@@ -19,11 +21,11 @@ def test_interaction_map_uses_only_supplied_pregame_features():
         "team_streak_diff": 0.50,
         "team_rest_diff": 0.40,
     })
-    assert values["ix_market_velocity60"] == 0.03
-    assert values["ix_reversal_velocity_gap"] == -0.20
-    assert values["ix_steam_followthrough"] == 0.25
-    assert values["ix_team_market_disagreement"] == 0.15
-    assert values["ix_streak_rest"] == 0.20
+    assert values["ix_market_velocity60"] == pytest.approx(0.03)
+    assert values["ix_reversal_velocity_gap"] == pytest.approx(-0.20)
+    assert values["ix_steam_followthrough"] == pytest.approx(0.25)
+    assert values["ix_team_market_disagreement"] == pytest.approx(0.15)
+    assert values["ix_streak_rest"] == pytest.approx(0.20)
 
 
 def test_install_adds_regime_groups_and_is_idempotent():
