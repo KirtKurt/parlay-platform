@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List
 
-VERSION = "MLB-SIGNAL-POLICY-v1.7-reversal-instability-gate"
+VERSION = "MLB-SIGNAL-POLICY-v1.8-book-agreement-requires-structural-confirmation"
 REQUIRED_MINUTES_BEFORE_GAME = 45
 DAILY_SLATE_DISPLAY_RULE = "show_one_required_winner_prediction_for_every_game_45_minutes_before_first_game_of_day"
 
@@ -57,8 +57,8 @@ def _signal_risk_gate_reasons(row: Dict[str, Any]) -> List[str]:
     prob = _f(sig.get("marketConsensusProbability"), _f(sig.get("probLatest"), 0.5))
     delta = _f(sig.get("delta"), 0.0)
     rev = _i(sig.get("reversalCount"), 0)
-    confirmations = {"BOOK_AGREEMENT", "STEAM", "RUN_LINE_CONFIRMATION"}
-    independently_confirmed = bool(tags & confirmations)
+    structural_confirmation = bool(tags & {"STEAM", "RUN_LINE_CONFIRMATION"})
+    independently_confirmed = "BOOK_AGREEMENT" in tags and structural_confirmation
 
     h15 = _temporal_horizon(sig, "15m")
     h60 = _temporal_horizon(sig, "60m")
@@ -127,7 +127,8 @@ def _components(row: Dict[str, Any]) -> List[Dict[str, Any]]:
     elif rev >= 6:
         add("six_plus_reversal_penalty", -11.0)
 
-    independent_confirmation = bool(tags & {"BOOK_AGREEMENT", "STEAM", "RUN_LINE_CONFIRMATION"})
+    structural_confirmation = bool(tags & {"STEAM", "RUN_LINE_CONFIRMATION"})
+    independent_confirmation = "BOOK_AGREEMENT" in tags and structural_confirmation
     if rev >= 2 and move_per_reversal >= 0.01 and not independent_confirmation:
         add("large_unconfirmed_reversal_move_penalty", -4.0)
 
