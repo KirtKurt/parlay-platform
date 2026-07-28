@@ -1,21 +1,57 @@
 {
   "blockers": [
-    "v10_discovery_execution_failed"
+    "v10_report_missing_after_discovery"
   ],
-  "completedAtUtc": "2026-07-28T02:43:55.291039+00:00",
-  "durationSeconds": 48.224,
-  "error": "int too large to convert to float",
-  "errorType": "OverflowError",
+  "bucketResolution": {
+    "attempts": [
+      {
+        "outputs": [],
+        "strategy": "cloudformation"
+      },
+      {
+        "skipped": "function_output_missing",
+        "strategy": "lambda_environment"
+      },
+      {
+        "matches": [
+          {
+            "bucketName": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
+            "functionName": "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv",
+            "handler": "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler",
+            "lastModified": "2026-07-27T19:12:36.000+0000",
+            "state": "Active"
+          }
+        ],
+        "strategy": "lambda_handler_scan"
+      }
+    ],
+    "authority": "ACTIVE_LAMBDA_HANDLER_SCAN",
+    "bucketName": "parlay-platform-mlb-histo-historicalartifactsbucke-zzah30lodfn5",
+    "ok": true
+  },
+  "completedAtUtc": "2026-07-28T02:53:47.699092+00:00",
+  "errorLogTail": "",
   "mayPublishPicks": false,
   "mayWriteChampion": false,
   "mode": "CHRONOLOGICAL_SIDE_APPLICABLE_DISCOVERY",
   "ok": false,
+  "outcomeUsedOnlyForTrainingLabels": true,
   "productionAuthority": false,
   "proofType": "MLB_V10_AUTONOMOUS_DISCOVERY_RUN",
   "runAttempt": "1",
-  "runId": "30323863926",
-  "sourceSha": "6292b939358717cd0381e0780b5f3698ef3c52b7",
-  "stalledStage": "V10_CORPUS_LOAD_OR_DISCOVERY",
-  "startedAtUtc": "2026-07-28T02:43:07.067526+00:00",
-  "tracebackTail": "Traceback (most recent call last):\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_v10_autonomous_signal_discovery.py\", line 234, in main\n    report = v10.discover(clean, previous_report=previous if isinstance(previous, dict) and previous.get(\"ok\") is True else None)\n             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/hello_world/mlb_v10_autonomous_signal_discovery_v1.py\", line 406, in discover\n    \"pValue\": _two_sided_binomial_pvalue(wins, count),\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/hello_world/mlb_v10_autonomous_signal_discovery_v1.py\", line 250, in _two_sided_binomial_pvalue\n    observed = _binomial_probability(correct, total, baseline)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/runner/work/parlay-platform/parlay-platform/hello_world/mlb_v10_autonomous_signal_discovery_v1.py\", line 244, in _binomial_probability\n    return math.comb(n, k) * (p ** k) * ((1.0 - p) ** (n - k))\n           ~~~~~~~~~~~~~~~~^~~~~~~~~~\nOverflowError: int too large to convert to float\n"
+  "runId": "30324097245",
+  "sourceSha": "255972637c5798b91883704ce973deba23dba9e8",
+  "stalledStage": "V10_DISCOVERY_BEFORE_REPORT_WRITE",
+  "winnerKnownBeforeSignalConstruction": false,
+  "workflowSteps": {
+    "bucketResolution": {
+      "exitCode": "0",
+      "outcome": "success",
+      "resolved": true
+    },
+    "discovery": {
+      "exitCode": "",
+      "outcome": "cancelled"
+    }
+  }
 }
