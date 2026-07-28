@@ -1,0 +1,46 @@
+name: Apply MLB book-agreement confirmation gate
+
+on:
+  push:
+    branches: ["agent/mlb-book-agreement-confirmation-gate"]
+    paths:
+      - "scripts/apply_mlb_book_agreement_confirmation_gate.py"
+      - ".github/workflows/mlb-book-agreement-confirmation-gate-once.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: mlb-book-agreement-confirmation-gate
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/mlb-book-agreement-confirmation-gate
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Apply gate migration
+        run: python scripts/apply_mlb_book_agreement_confirmation_gate.py
+
+      - name: Verify gate behavior
+        run: |
+          python tests/unit/test_mlb_book_agreement_confirmation_gate.py
+          python -m py_compile hello_world/mlb_signal_policy_v12.py
+          git diff --check
+
+      - name: Commit application changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add hello_world/mlb_signal_policy_v12.py tests/unit/test_mlb_book_agreement_confirmation_gate.py
+          git commit -m "Require structural confirmation for MLB instability gates"
+          git push origin HEAD:agent/mlb-book-agreement-confirmation-gate
