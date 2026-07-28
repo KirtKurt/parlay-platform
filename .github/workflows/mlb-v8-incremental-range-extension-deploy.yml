@@ -1,0 +1,308 @@
+name: MLB V8 Incremental Range Extension Deploy
+
+"on":
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'hello_world/mlb_historical_incremental_range_extension_v1.py'
+      - 'hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py'
+      - 'tests/unit/test_mlb_historical_incremental_range_extension_v1.py'
+      - 'mlb_historical_optimizer/template.yaml'
+      - '.github/workflows/mlb-v8-incremental-range-extension-deploy.yml'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: parlay-platform-mlb-historical-v7-selective-recovery
+  cancel-in-progress: false
+
+env:
+  STACK_NAME: parlay-platform-mlb-historical-optimizer
+  REPORT_PATH: runtime_reports/mlb_v8_incremental_range_extension_deploy_latest.json
+  HISTORICAL_START_DATE: '2025-04-01'
+  HISTORICAL_END_DATE: '2026-12-31'
+  HISTORICAL_TARGET_GAMES: '1600'
+  HISTORICAL_MAX_CREDITS: '300000'
+  HISTORICAL_MAX_CANDIDATES: '25000'
+  HISTORICAL_MAX_OPTIMIZATION_ROUNDS: '24'
+  PYTHONUNBUFFERED: '1'
+
+jobs:
+  deploy-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout exact source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - uses: aws-actions/setup-sam@v2
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Compile, test, and build exact source
+        run: |
+          set -euo pipefail
+          python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
+          PYTHONPATH=hello_world python -m py_compile \
+            hello_world/mlb_historical_incremental_range_extension_v1.py \
+            hello_world/mlb_historical_optimizer_v7_recovery_entrypoint.py \
+            hello_world/mlb_historical_optimizer_entrypoint.py \
+            hello_world/mlb_historical_optimizer_handler.py
+          PYTHONPATH=. python -m pytest -q --tb=short \
+            tests/unit/test_mlb_historical_incremental_range_extension_v1.py \
+            tests/unit/test_mlb_historical_competitive_schedule_filter.py \
+            tests/unit/test_mlb_historical_v7_status_bypass.py
+          sam validate --lint --template-file mlb_historical_optimizer/template.yaml
+          rm -rf .aws-sam-v8-incremental
+          sam build --no-cached --build-dir .aws-sam-v8-incremental --template-file mlb_historical_optimizer/template.yaml
+          test -f .aws-sam-v8-incremental/HistoricalOptimizerFunction/mlb_historical_incremental_range_extension_v1.py
+          test -f .aws-sam-v8-incremental/HistoricalOptimizerFunction/mlb_historical_optimizer_v7_recovery_entrypoint.py
+
+      - name: Deploy, invoke, and verify live optimizer
+        id: execution
+        continue-on-error: true
+        env:
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+          AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
+        run: |
+          set -uo pipefail
+          mkdir -p runtime_reports
+          rm -f "$REPORT_PATH"
+          (
+            set -euo pipefail
+            for attempt in $(seq 1 80); do
+              stack_status=$(aws cloudformation describe-stacks --stack-name "$STACK_NAME" --region "$AWS_REGION_VALUE" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo STACK_NOT_FOUND)
+              case "$stack_status" in
+                STACK_NOT_FOUND|CREATE_COMPLETE|UPDATE_COMPLETE|UPDATE_ROLLBACK_COMPLETE|IMPORT_COMPLETE|IMPORT_ROLLBACK_COMPLETE) break ;;
+                *_IN_PROGRESS) sleep 15 ;;
+                *) echo "CloudFormation is not updateable: $stack_status"; exit 1 ;;
+              esac
+              test "$attempt" != 80
+            done
+
+            sam deploy \
+              --template-file .aws-sam-v8-incremental/template.yaml \
+              --stack-name "$STACK_NAME" \
+              --region "$AWS_REGION_VALUE" \
+              --capabilities CAPABILITY_IAM \
+              --resolve-s3 \
+              --force-upload \
+              --no-confirm-changeset \
+              --no-fail-on-empty-changeset \
+              --parameter-overrides \
+                "OddsApiKey=${ODDS_API_KEY_VALUE}" \
+                'TargetSnapshotsTable=parlay_platform_snapshots' \
+                "HistoricalStartDate=${HISTORICAL_START_DATE}" \
+                "HistoricalEndDate=${HISTORICAL_END_DATE}" \
+                "HistoricalTargetGames=${HISTORICAL_TARGET_GAMES}" \
+                "HistoricalMaxCredits=${HISTORICAL_MAX_CREDITS}" \
+                'HistoricalRequestsPerRun=20' \
+                "HistoricalMaxCandidates=${HISTORICAL_MAX_CANDIDATES}" \
+                "HistoricalMaxOptimizationRounds=${HISTORICAL_MAX_OPTIMIZATION_ROUNDS}" \
+                'HistoricalFreshAuditIncrementGames=250' \
+                'HistoricalRangeExtensionAuthorized=true' \
+                "DeployGitSha=${GITHUB_SHA}"
+
+            AWS_REGION_VALUE="$AWS_REGION_VALUE" STACK_NAME="$STACK_NAME" python - <<'PY'
+          import json, os
+          from pathlib import Path
+          import boto3
+
+          region=os.environ['AWS_REGION_VALUE']
+          stack_name=os.environ['STACK_NAME']
+          expected_handler='mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler'
+          cf=boto3.client('cloudformation', region_name=region)
+          lam=boto3.client('lambda', region_name=region)
+          stacks=cf.describe_stacks(StackName=stack_name).get('Stacks') or []
+          outputs={str(row.get('OutputKey')):str(row.get('OutputValue')) for row in (stacks[0].get('Outputs') or [])} if stacks else {}
+          function_name=str(outputs.get('HistoricalOptimizerFunctionName') or '').strip()
+          authority='CLOUDFORMATION_OUTPUT'
+          attempts=[{'strategy':'cloudformation_output','outputs':sorted(outputs),'found':bool(function_name)}]
+          if not function_name:
+              matches=[]
+              for page in lam.get_paginator('list_functions').paginate():
+                  for row in page.get('Functions') or []:
+                      if row.get('Handler') == expected_handler and row.get('FunctionName'):
+                          matches.append(str(row['FunctionName']))
+              matches=sorted(set(matches))
+              attempts.append({'strategy':'lambda_handler_scan','matches':matches})
+              exact=[]
+              for name in matches:
+                  config=lam.get_function_configuration(FunctionName=name)
+                  env=((config.get('Environment') or {}).get('Variables') or {})
+                  if env.get('INQSI_DEPLOY_GIT_SHA') == os.environ['GITHUB_SHA']:
+                      exact.append(name)
+              attempts.append({'strategy':'deploy_sha_filter','matches':exact})
+              if len(exact) == 1:
+                  function_name=exact[0]
+                  authority='LAMBDA_DEPLOY_SHA'
+              elif len(matches) == 1:
+                  function_name=matches[0]
+                  authority='LAMBDA_HANDLER_UNIQUE'
+          if not function_name:
+              raise RuntimeError('historical optimizer Lambda could not be resolved uniquely')
+          Path('/tmp/mlb-v8-runtime-resolution.json').write_text(json.dumps({'functionName':function_name,'authority':authority,'attempts':attempts},indent=2,sort_keys=True)+'\n')
+          print(function_name)
+          PY
+            FUNCTION_NAME=$(python -c "import json; print(json.load(open('/tmp/mlb-v8-runtime-resolution.json'))['functionName'])")
+
+            aws lambda get-function-configuration --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --output json > /tmp/mlb-v8-lambda-config.json
+            aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"v8_incremental_pre_deploy_status"}' /tmp/mlb-v8-pre-status.json >/tmp/mlb-v8-pre-invoke-meta.json
+            aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"orchestrate","run":"v8_incremental_range_extension_deploy_verify"}' /tmp/mlb-v8-orchestrate.json >/tmp/mlb-v8-orchestrate-meta.json
+            aws lambda invoke --function-name "$FUNCTION_NAME" --region "$AWS_REGION_VALUE" --cli-read-timeout 900 --cli-binary-format raw-in-base64-out --payload '{"mode":"status","run":"v8_incremental_post_deploy_status"}' /tmp/mlb-v8-post-status.json >/tmp/mlb-v8-post-invoke-meta.json
+
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          config=json.loads(Path('/tmp/mlb-v8-lambda-config.json').read_text())
+          pre=json.loads(Path('/tmp/mlb-v8-pre-status.json').read_text())
+          execution=json.loads(Path('/tmp/mlb-v8-orchestrate.json').read_text())
+          post=json.loads(Path('/tmp/mlb-v8-post-status.json').read_text())
+          resolution=json.loads(Path('/tmp/mlb-v8-runtime-resolution.json').read_text())
+          env=((config.get('Environment') or {}).get('Variables') or {})
+          contract=post.get('supervisedShadow') or {}
+          pre_state=pre.get('state') or {}
+          post_state=post.get('state') or {}
+          checks={
+              'handler':config.get('Handler') == 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler',
+              'deploySha':env.get('INQSI_DEPLOY_GIT_SHA') == os.environ['GITHUB_SHA'],
+              'rangeExtensionAuthorized':env.get('MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED') == 'true',
+              'cloudFormationFunctionOutputPresent':resolution.get('authority') == 'CLOUDFORMATION_OUTPUT',
+              'statusOk':post.get('ok') is True,
+              'incrementalExtensionInstalled':contract.get('incrementalRangeExtensionVersion') == 'MLB-HISTORICAL-INCREMENTAL-RANGE-EXTENSION-v1-settled-horizon',
+              'featureDatasetPresent':bool(post_state.get('featureDatasetVersion')),
+              'completedCorpusPresent':int(post_state.get('eligibleGameCount') or 0) > 0 and int(post_state.get('completeSlateCount') or 0) > 0,
+          }
+          blockers=[]
+          if not all(checks.values()): blockers.append('live_incremental_range_extension_verification_failed')
+          report={
+              'proofType':'MLB_V8_INCREMENTAL_RANGE_EXTENSION_DEPLOYMENT',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ['GITHUB_SHA'],
+              'runId':os.environ['GITHUB_RUN_ID'],
+              'runUrl':f"https://github.com/{os.environ['GITHUB_REPOSITORY']}/actions/runs/{os.environ['GITHUB_RUN_ID']}",
+              'ok':not blockers,
+              'checks':checks,
+              'blockers':blockers,
+              'runtimeResolution':resolution,
+              'preState':{
+                  'phase':pre_state.get('phase'),'endDate':pre_state.get('endDate'),'currentDate':pre_state.get('currentDate'),
+                  'eligibleGameCount':pre_state.get('eligibleGameCount'),'completeSlateCount':pre_state.get('completeSlateCount'),
+                  'revision':pre_state.get('revision'),'networkRequestCount':pre_state.get('networkRequestCount'),'creditsConsumed':pre_state.get('creditsConsumed'),
+              },
+              'orchestrateResult':execution,
+              'postState':{
+                  'phase':post_state.get('phase'),'endDate':post_state.get('endDate'),'currentDate':post_state.get('currentDate'),
+                  'eligibleGameCount':post_state.get('eligibleGameCount'),'completeSlateCount':post_state.get('completeSlateCount'),
+                  'revision':post_state.get('revision'),'networkRequestCount':post_state.get('networkRequestCount'),'creditsConsumed':post_state.get('creditsConsumed'),
+                  'rangeExtension':post_state.get('rangeExtension'),'rangeExtensionNextRetryDate':post_state.get('rangeExtensionNextRetryDate'),
+                  'lastError':post_state.get('lastError'),'updatedAtUtc':post_state.get('updatedAtUtc'),
+              },
+              'productionAuthorityChanged':False,
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True,default=str)+'\n')
+          if blockers:
+              raise SystemExit(json.dumps(report,sort_keys=True,default=str))
+          PY
+          ) 2>&1 | tee /tmp/mlb-v8-incremental-deploy.log
+          status=${PIPESTATUS[0]}
+          echo "exit_code=$status" >> "$GITHUB_OUTPUT"
+          exit "$status"
+
+      - name: Ensure durable evidence exists
+        if: always()
+        env:
+          EXECUTION_OUTCOME: ${{ steps.execution.outcome }}
+          EXECUTION_EXIT_CODE: ${{ steps.execution.outputs.exit_code }}
+          ODDS_API_KEY_VALUE: ${{ secrets.ODDS_API_KEY }}
+        run: |
+          set -euo pipefail
+          mkdir -p runtime_reports
+          if test ! -s "$REPORT_PATH"; then
+            python - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          from pathlib import Path
+          log=Path('/tmp/mlb-v8-incremental-deploy.log').read_text(errors='replace')[-12000:] if Path('/tmp/mlb-v8-incremental-deploy.log').exists() else ''
+          secret=os.environ.get('ODDS_API_KEY_VALUE','')
+          if secret: log=log.replace(secret,'[REDACTED]')
+          report={
+              'proofType':'MLB_V8_INCREMENTAL_RANGE_EXTENSION_DEPLOYMENT',
+              'createdAtUtc':datetime.now(timezone.utc).isoformat(),
+              'sourceSha':os.environ.get('GITHUB_SHA'),
+              'runId':os.environ.get('GITHUB_RUN_ID'),
+              'ok':False,
+              'executionOutcome':os.environ.get('EXECUTION_OUTCOME'),
+              'executionExitCode':os.environ.get('EXECUTION_EXIT_CODE'),
+              'errorLogTail':log,
+              'blockers':['incremental_range_extension_deploy_or_execution_failed'],
+              'productionAuthorityChanged':False,
+          }
+          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          PY
+          fi
+          python -m json.tool "$REPORT_PATH" >/dev/null
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: mlb-v8-incremental-range-extension-${{ github.run_id }}
+          path: |
+            runtime_reports/mlb_v8_incremental_range_extension_deploy_latest.json
+            /tmp/mlb-v8-incremental-deploy.log
+            /tmp/mlb-v8-runtime-resolution.json
+            /tmp/mlb-v8-lambda-config.json
+            /tmp/mlb-v8-pre-status.json
+            /tmp/mlb-v8-orchestrate.json
+            /tmp/mlb-v8-post-status.json
+          retention-days: 90
+          if-no-files-found: warn
+
+      - name: Publish durable evidence
+        if: always()
+        run: |
+          set -euo pipefail
+          cp "$REPORT_PATH" /tmp/mlb-v8-incremental-proof.json
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          for attempt in 1 2 3 4 5; do
+            git fetch origin main
+            git checkout -B mlb-v8-incremental-proof origin/main
+            mkdir -p runtime_reports
+            cp /tmp/mlb-v8-incremental-proof.json "$REPORT_PATH"
+            git add "$REPORT_PATH"
+            git diff --cached --quiet && exit 0
+            git commit -m 'Publish MLB V8 incremental range extension evidence'
+            git push origin HEAD:main && exit 0
+            sleep $((attempt * 3))
+          done
+          exit 1
+
+      - name: Enforce successful deployment and execution
+        if: always()
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          value=json.loads(Path('runtime_reports/mlb_v8_incremental_range_extension_deploy_latest.json').read_text())
+          assert value.get('ok') is True, value
+          assert not value.get('blockers'), value
+          checks=value.get('checks') or {}
+          assert checks and all(checks.values()), value
+          assert value.get('productionAuthorityChanged') is False, value
+          PY
