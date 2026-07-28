@@ -1,0 +1,75 @@
+{
+  "automaticPromotionEnabled": false,
+  "blockers": [],
+  "createdAtUtc": "2026-07-28T13:58:58.754090+00:00",
+  "deployedGitSha": "94bf61b7d53221123d6475168e04c55de755744c",
+  "deployedTemplateSha256": "5e1101a22cc071a91cdb0040e53f17ded673f1d6554da56f7e2fa142b150e64c",
+  "firstPromotionRequiresManualReview": true,
+  "invocation": {
+    "ExecutedVersion": "$LATEST",
+    "StatusCode": 200
+  },
+  "manifestPhase": null,
+  "ok": true,
+  "proofType": "MLB_V9_TRAINER_PERSISTED_STATUS_PROBE",
+  "runId": "30366063532",
+  "runtimeAuthorityActivationAvailable": false,
+  "selectionCaptureHealth": {
+    "deploymentIdentityMatches": false,
+    "errors": [
+      "latest_status_deployment_identity_mismatch"
+    ],
+    "executionMode": "selection_capture",
+    "latestRun": {
+      "acceptedRowCount": null,
+      "automaticPromotionEnabled": false,
+      "canonicalSlateContinuity": null,
+      "championChanged": false,
+      "createdAtUtc": "2026-07-28T13:49:04.327966+00:00",
+      "executionMode": "selection_capture",
+      "failure": null,
+      "liveInferenceAuthority": false,
+      "milestones": null,
+      "modelTrained": false,
+      "ok": true,
+      "partitionCounts": null,
+      "rejectedRowCount": null,
+      "runId": "35a42de013dd6cfc1504a79b",
+      "status": "WAITING_FOR_EXPERIMENT_MANIFEST"
+    },
+    "ok": false
+  },
+  "sourceSha": "b523b0bca1e3216352ad470ba59e4b7ef1228a6b",
+  "statusOk": false,
+  "trainingHealth": {
+    "deploymentIdentityMatches": true,
+    "errors": [
+      "latest_status_not_ok"
+    ],
+    "executionMode": "training",
+    "latestRun": {
+      "acceptedRowCount": null,
+      "automaticPromotionEnabled": false,
+      "canonicalSlateContinuity": null,
+      "championChanged": false,
+      "createdAtUtc": "2026-07-28T13:57:13.028588+00:00",
+      "executionMode": "training",
+      "failure": {
+        "code": "TRAINING_CONTRACT_ERROR",
+        "message": "MLB ML training contract validation failed",
+        "redacted": "true",
+        "type": "TrainingContractError"
+      },
+      "liveInferenceAuthority": false,
+      "milestones": null,
+      "modelTrained": null,
+      "ok": false,
+      "partitionCounts": null,
+      "rejectedRowCount": null,
+      "runId": "ead30bfa-df19-4ab7-91b5-9af9ead68ded",
+      "status": "TRAINING_INVOCATION_FAILED"
+    },
+    "ok": false
+  },
+  "v2InferenceConsumerInstalled": false
+}
