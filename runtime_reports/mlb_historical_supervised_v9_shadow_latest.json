@@ -1,38 +1,38 @@
 {
   "accuracyViews": {
     "diagnosticOnly": true,
-    "fullSlateAccuracy": 0.5590312815338042,
-    "fullSlateGameCount": 3964,
+    "fullSlateAccuracy": 0.5590511860174782,
+    "fullSlateGameCount": 4005,
     "selectiveThresholds": {
       "0.55": {
-        "accuracy": 0.580602883355177,
-        "coverage": 0.57744702320888,
-        "dayCount": 314,
-        "pickCount": 2289
+        "accuracy": 0.5809110629067246,
+        "coverage": 0.5755305867665418,
+        "dayCount": 317,
+        "pickCount": 2305
       },
       "0.60": {
-        "accuracy": 0.6336336336336337,
-        "coverage": 0.2520181634712412,
-        "dayCount": 292,
-        "pickCount": 999
+        "accuracy": 0.6338308457711442,
+        "coverage": 0.250936329588015,
+        "dayCount": 295,
+        "pickCount": 1005
       },
       "0.65": {
-        "accuracy": 0.7154046997389034,
-        "coverage": 0.09661957618567103,
-        "dayCount": 217,
-        "pickCount": 383
+        "accuracy": 0.7176165803108808,
+        "coverage": 0.09637952559300873,
+        "dayCount": 219,
+        "pickCount": 386
       },
       "0.70": {
-        "accuracy": 0.75,
-        "coverage": 0.033299697275479316,
-        "dayCount": 111,
-        "pickCount": 132
+        "accuracy": 0.7518796992481203,
+        "coverage": 0.03320848938826467,
+        "dayCount": 112,
+        "pickCount": 133
       },
       "0.75": {
-        "accuracy": 0.8461538461538461,
-        "coverage": 0.003279515640766902,
-        "dayCount": 13,
-        "pickCount": 13
+        "accuracy": 0.8571428571428571,
+        "coverage": 0.003495630461922597,
+        "dayCount": 14,
+        "pickCount": 14
       },
       "0.80": {
         "accuracy": 0.0,
@@ -43,207 +43,9 @@
     }
   },
   "blockers": [],
-  "canonicalCandidateHandoff": {
-    "artifactType": "FROZEN_SHADOW_MODEL",
-    "artifactVersion": "MLB-V9-SHADOW-MODEL-ARTIFACT-v1",
-    "candidateKind": "BASELINE_FALLBACK",
-    "createdAtUtc": "2026-07-28T05:02:40.286824+00:00",
-    "datasetFingerprint": "d594f98ef8ed4ddb0c48a76d7ab583d4c2eb4260bb449f5b254594da052db003",
-    "digest": "83e280707cd85b6b5f0c93a8e1fd56e7ea1ed53e430564a9d9359863339e6600",
-    "eligibleForCanonicalSeed": false,
-    "frozenBeforeUntouchedHoldout": true,
-    "holdoutLabelsUsedForFitOrSelection": false,
-    "modelDigest": "638f74104d671aff3e3fbf50de1ecbcce4fe09af093e4d305a154b0d4eaabd91",
-    "policy": {
-      "acceleration180mWeight": 0.0,
-      "bookFollowThroughWeight": 0.0,
-      "bookLeadershipWeight": 0.0,
-      "coverageShortfallPenalty": 0.0,
-      "curveEfficiencyWeight": 0.0,
-      "curveShockPenalty": 0.0,
-      "derivedAccelerationInteractionWeight": 0.0,
-      "derivedAgreementMomentumWeight": 0.0,
-      "derivedInstabilityPenalty": 0.0,
-      "derivedMovementSqrtWeight": 0.0,
-      "derivedVelocityGapWeight": 0.0,
-      "derivedVelocityInteractionWeight": 0.0,
-      "divergenceCap": 0.012,
-      "divergenceStart": 0.035,
-      "divergenceWeight": 0.5,
-      "favoriteBias": 0.0,
-      "fingerprintConfidenceWeight": 0.0,
-      "fingerprintSimilarityWeight": 0.0,
-      "heavyFavoritePenalty": 0.004,
-      "heavyFavoritePrice": -185.0,
-      "homeBias": 0.0,
-      "lowPullDepthMinimum": 4,
-      "lowPullDepthMultiplier": 0.55,
-      "maximumBookDivergence": 0.075,
-      "maximumPromotedDogPrice": 180.0,
-      "minimumModelProbability": 0.35,
-      "minimumPromotionEdge": 0.0015,
-      "minimumPromotionEv": 0.0,
-      "movementClip": 0.03,
-      "movementWeight": 0.7,
-      "patternBookLeadershipWeight": 0.0,
-      "patternCompressionBreakoutWeight": 0.0,
-      "patternConsensusPersistenceWeight": 0.0,
-      "patternCurveWeight": 0.0,
-      "patternEntropyPenalty": 0.0,
-      "patternFingerprintWeight": 0.0,
-      "patternRegimeWeight": 0.0,
-      "patternShockPersistenceWeight": 0.0,
-      "regimeChaosPenalty": 0.0,
-      "regimeTrendWeight": 0.0,
-      "reversalCap": 0.018,
-      "reversalPenalty": 0.004,
-      "schemaVersion": "MLB-HISTORICAL-POLICY-SCHEMA-v1",
-      "scoreDeltaWeight": 260.0,
-      "scoreDivergencePenalty": 110.0,
-      "scoreEdgeWeight": 900.0,
-      "scoreEvWeight": 220.0,
-      "scoreHeavyFavoritePenalty": 4.0,
-      "scorePositiveValueBonus": 4.0,
-      "scoreReversalPenalty": 2.5,
-      "supervisedBlend": 0.0,
-      "supervisedCoefficientaccelerationDiff": 0.0,
-      "supervisedCoefficientbullpenAvailable": 0.0,
-      "supervisedCoefficientbullpenDiff": 0.0,
-      "supervisedCoefficientbullpenLateMarketInteraction": 0.0,
-      "supervisedCoefficientcoverageConsensusDiff": 0.0,
-      "supervisedCoefficientcoverageMin": 0.0,
-      "supervisedCoefficientdeltaDiff": 0.0,
-      "supervisedCoefficientderivedAgreementDiff": 0.0,
-      "supervisedCoefficientderivedMovementDiff": 0.0,
-      "supervisedCoefficientdivergenceMean": 0.0,
-      "supervisedCoefficientfavoriteDirection": 0.0,
-      "supervisedCoefficientfeatureAvailability": 0.0,
-      "supervisedCoefficientfirstFiveAvailable": 0.0,
-      "supervisedCoefficientfullHistoryAvailable": 0.0,
-      "supervisedCoefficientfundamentalsDiff": 0.0,
-      "supervisedCoefficientlateVelocityDiff": 0.0,
-      "supervisedCoefficientlineupAvailable": 0.0,
-      "supervisedCoefficientlineupDiff": 0.0,
-      "supervisedCoefficientmarketLogit": 0.0,
-      "supervisedCoefficientpatternBookLeadershipDiff": 0.0,
-      "supervisedCoefficientpatternCompressionBreakoutDiff": 0.0,
-      "supervisedCoefficientpatternConsensusPersistenceDiff": 0.0,
-      "supervisedCoefficientpatternCurveDiff": 0.0,
-      "supervisedCoefficientpatternEntropySum": 0.0,
-      "supervisedCoefficientpatternFingerprintDiff": 0.0,
-      "supervisedCoefficientpatternRegimeDiff": 0.0,
-      "supervisedCoefficientpatternShockPersistenceDiff": 0.0,
-      "supervisedCoefficientreversalInstabilityDiff": 0.0,
-      "supervisedCoefficientruleLogit": 0.0,
-      "supervisedCoefficientruleScoreDiff": 0.0,
-      "supervisedCoefficientspreadAvailable": 0.0,
-      "supervisedCoefficientstarterAvailable": 0.0,
-      "supervisedCoefficientstarterDiff": 0.0,
-      "supervisedCoefficientstarterFirstFiveInteraction": 0.0,
-      "supervisedCoefficientv8FirstFiveLogit": 0.0,
-      "supervisedCoefficientv8SpreadDirection": 0.0,
-      "supervisedCoefficientvelocityDiff": 0.0,
-      "supervisedCoefficientvolatilitySum": 0.0,
-      "supervisedEnabled": 0.0,
-      "supervisedIntercept": 0.0,
-      "supervisedMeanaccelerationDiff": 0.0,
-      "supervisedMeanbullpenAvailable": 0.0,
-      "supervisedMeanbullpenDiff": 0.0,
-      "supervisedMeanbullpenLateMarketInteraction": 0.0,
-      "supervisedMeancoverageConsensusDiff": 0.0,
-      "supervisedMeancoverageMin": 0.0,
-      "supervisedMeandeltaDiff": 0.0,
-      "supervisedMeanderivedAgreementDiff": 0.0,
-      "supervisedMeanderivedMovementDiff": 0.0,
-      "supervisedMeandivergenceMean": 0.0,
-      "supervisedMeanfavoriteDirection": 0.0,
-      "supervisedMeanfeatureAvailability": 0.0,
-      "supervisedMeanfirstFiveAvailable": 0.0,
-      "supervisedMeanfullHistoryAvailable": 0.0,
-      "supervisedMeanfundamentalsDiff": 0.0,
-      "supervisedMeanlateVelocityDiff": 0.0,
-      "supervisedMeanlineupAvailable": 0.0,
-      "supervisedMeanlineupDiff": 0.0,
-      "supervisedMeanmarketLogit": 0.0,
-      "supervisedMeanpatternBookLeadershipDiff": 0.0,
-      "supervisedMeanpatternCompressionBreakoutDiff": 0.0,
-      "supervisedMeanpatternConsensusPersistenceDiff": 0.0,
-      "supervisedMeanpatternCurveDiff": 0.0,
-      "supervisedMeanpatternEntropySum": 0.0,
-      "supervisedMeanpatternFingerprintDiff": 0.0,
-      "supervisedMeanpatternRegimeDiff": 0.0,
-      "supervisedMeanpatternShockPersistenceDiff": 0.0,
-      "supervisedMeanreversalInstabilityDiff": 0.0,
-      "supervisedMeanruleLogit": 0.0,
-      "supervisedMeanruleScoreDiff": 0.0,
-      "supervisedMeanspreadAvailable": 0.0,
-      "supervisedMeanstarterAvailable": 0.0,
-      "supervisedMeanstarterDiff": 0.0,
-      "supervisedMeanstarterFirstFiveInteraction": 0.0,
-      "supervisedMeanv8FirstFiveLogit": 0.0,
-      "supervisedMeanv8SpreadDirection": 0.0,
-      "supervisedMeanvelocityDiff": 0.0,
-      "supervisedMeanvolatilitySum": 0.0,
-      "supervisedScaleaccelerationDiff": 1.0,
-      "supervisedScalebullpenAvailable": 1.0,
-      "supervisedScalebullpenDiff": 1.0,
-      "supervisedScalebullpenLateMarketInteraction": 1.0,
-      "supervisedScalecoverageConsensusDiff": 1.0,
-      "supervisedScalecoverageMin": 1.0,
-      "supervisedScaledeltaDiff": 1.0,
-      "supervisedScalederivedAgreementDiff": 1.0,
-      "supervisedScalederivedMovementDiff": 1.0,
-      "supervisedScaledivergenceMean": 1.0,
-      "supervisedScalefavoriteDirection": 1.0,
-      "supervisedScalefeatureAvailability": 1.0,
-      "supervisedScalefirstFiveAvailable": 1.0,
-      "supervisedScalefullHistoryAvailable": 1.0,
-      "supervisedScalefundamentalsDiff": 1.0,
-      "supervisedScalelateVelocityDiff": 1.0,
-      "supervisedScalelineupAvailable": 1.0,
-      "supervisedScalelineupDiff": 1.0,
-      "supervisedScalemarketLogit": 1.0,
-      "supervisedScalepatternBookLeadershipDiff": 1.0,
-      "supervisedScalepatternCompressionBreakoutDiff": 1.0,
-      "supervisedScalepatternConsensusPersistenceDiff": 1.0,
-      "supervisedScalepatternCurveDiff": 1.0,
-      "supervisedScalepatternEntropySum": 1.0,
-      "supervisedScalepatternFingerprintDiff": 1.0,
-      "supervisedScalepatternRegimeDiff": 1.0,
-      "supervisedScalepatternShockPersistenceDiff": 1.0,
-      "supervisedScalereversalInstabilityDiff": 1.0,
-      "supervisedScaleruleLogit": 1.0,
-      "supervisedScaleruleScoreDiff": 1.0,
-      "supervisedScalespreadAvailable": 1.0,
-      "supervisedScalestarterAvailable": 1.0,
-      "supervisedScalestarterDiff": 1.0,
-      "supervisedScalestarterFirstFiveInteraction": 1.0,
-      "supervisedScalev8FirstFiveLogit": 1.0,
-      "supervisedScalev8SpreadDirection": 1.0,
-      "supervisedScalevelocityDiff": 1.0,
-      "supervisedScalevolatilitySum": 1.0,
-      "supervisedTemperature": 1.0,
-      "underdogBias": 0.0,
-      "underdogMovementCap": 0.008,
-      "underdogMovementWeight": 0.35,
-      "velocity60mWeight": 0.0,
-      "volatility180mPenalty": 0.0
-    },
-    "policyDigest": "bf93db76c44a79124df2f003e689dab1f7acc95dfe8e540c4522b5738bd71a8b",
-    "productionAuthority": false,
-    "promotionAuthority": false,
-    "promotionPassed": false,
-    "requiresCanonicalChronologicalReevaluation": true,
-    "requiresFresh200GameUntouchedAudit": true,
-    "schemaVersion": "MLB-V7-SHADOW-CANDIDATE-HANDOFF-v1",
-    "searchVersion": "MLB-HISTORICAL-SUPERVISED-v9.1-integrity-pattern-complete",
-    "trainingGameCount": 3502,
-    "untouchedHoldoutGameCount": 200,
-    "walkForwardGameCount": 262
-  },
   "canonicalFreshAuditIncrementGames": 250,
-  "createdAtUtc": "2026-07-28T04:52:59.068428+00:00",
-  "datasetFingerprint": "d594f98ef8ed4ddb0c48a76d7ab583d4c2eb4260bb449f5b254594da052db003",
+  "createdAtUtc": "2026-07-28T06:45:30.617389+00:00",
+  "datasetFingerprint": "6be4e9edd298ba51eda36ef62fadc15690b003acce62704ded75ac9c41bdac7f",
   "diagnosticSelectedPickBands": {
     "allCanonicalGames": {
       "bandCounts": {
@@ -181305,6 +181107,7 @@
       "version": "MLB-V9-DIAGNOSTIC-SELECTED-PICK-BANDS-v1"
     }
   },
+  "diagnosticSelectedPickBandsReusedFromPreviousReport": true,
   "featurePopulation": {
     "degenerateFeatures": [
       "bullpenAvailable",
@@ -181327,16 +181130,16 @@
     ],
     "features": {
       "accelerationDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.00343372417255297,
-        "nonzeroCount": 3964,
+        "mean": 0.004238194726591753,
+        "nonzeroCount": 4005,
         "nonzeroPct": 1.0,
-        "variance": 0.5844688971450949,
-        "winnerMinusLoserMean": 0.03863526923585041
+        "variance": 0.5832819067162853,
+        "winnerMinusLoserMean": 0.037567410898335506
       },
       "bullpenAvailable": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181345,7 +181148,7 @@
         "winnerMinusLoserMean": 0.0
       },
       "bullpenDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181354,7 +181157,7 @@
         "winnerMinusLoserMean": 0.0
       },
       "bullpenLateMarketInteraction": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181363,7 +181166,7 @@
         "winnerMinusLoserMean": 0.0
       },
       "coverageConsensusDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181372,61 +181175,61 @@
         "winnerMinusLoserMean": 0.0
       },
       "coverageMin": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.9928882499621589,
-        "nonzeroCount": 3964,
+        "mean": 0.9929610543945063,
+        "nonzeroCount": 4005,
         "nonzeroPct": 1.0,
-        "variance": 0.0023171279576624793,
-        "winnerMinusLoserMean": 0.0007652820216788037
+        "variance": 0.0022939195136736368,
+        "winnerMinusLoserMean": 0.0007583323171874712
       },
       "deltaDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.00507773846080539,
-        "nonzeroCount": 3964,
+        "mean": 0.004969301018728133,
+        "nonzeroCount": 4005,
         "nonzeroPct": 1.0,
-        "variance": 0.0016870096014222696,
-        "winnerMinusLoserMean": 0.0018804794590946694
+        "variance": 0.0016827706975916447,
+        "winnerMinusLoserMean": 0.002032797832552998
       },
       "derivedAgreementDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.0038461269799994896,
-        "nonzeroCount": 3964,
+        "mean": 0.003759310177511106,
+        "nonzeroCount": 4005,
         "nonzeroPct": 1.0,
-        "variance": 0.0009653505960145729,
-        "winnerMinusLoserMean": 0.0014681768415604137
+        "variance": 0.0009633243915818851,
+        "winnerMinusLoserMean": 0.0015824346960633465
       },
       "derivedMovementDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.030343587446686145,
-        "nonzeroCount": 3964,
+        "mean": 0.02965751367171583,
+        "nonzeroCount": 4005,
         "nonzeroPct": 1.0,
-        "variance": 0.06268519059890854,
-        "winnerMinusLoserMean": 0.00912428025242287
+        "variance": 0.06264013160424077,
+        "winnerMinusLoserMean": 0.010423231237902692
       },
       "divergenceMean": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.016793495940739697,
-        "nonzeroCount": 3964,
+        "mean": 0.016778415160018108,
+        "nonzeroCount": 4005,
         "nonzeroPct": 1.0,
-        "variance": 3.9688716761167797e-05,
-        "winnerMinusLoserMean": 0.0001829265967657652
+        "variance": 3.965859471944939e-05,
+        "winnerMinusLoserMean": 0.0001921819619013533
       },
       "favoriteDirection": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.29011099899091825,
-        "nonzeroCount": 3170,
-        "nonzeroPct": 0.799697,
-        "variance": 0.7155328837438052,
-        "winnerMinusLoserMean": 0.18997272821421585
+        "mean": 0.28963795255930086,
+        "nonzeroCount": 3198,
+        "nonzeroPct": 0.798502,
+        "variance": 0.7146117290964322,
+        "winnerMinusLoserMean": 0.1896633095485977
       },
       "featureAvailability": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181435,7 +181238,7 @@
         "winnerMinusLoserMean": 0.0
       },
       "firstFiveAvailable": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181444,16 +181247,16 @@
         "winnerMinusLoserMean": 0.0
       },
       "fullHistoryAvailable": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 1.0,
-        "nonzeroCount": 3964,
+        "nonzeroCount": 4005,
         "nonzeroPct": 1.0,
         "variance": 0.0,
         "winnerMinusLoserMean": 0.0
       },
       "fundamentalsDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181462,16 +181265,16 @@
         "winnerMinusLoserMean": 0.0
       },
       "lateVelocityDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.03460132997981843,
-        "nonzeroCount": 3286,
-        "nonzeroPct": 0.828961,
-        "variance": 2.4338723970163874,
-        "winnerMinusLoserMean": 0.10868215709654307
+        "mean": 0.03646856333083652,
+        "nonzeroCount": 3319,
+        "nonzeroPct": 0.828714,
+        "variance": 2.4364423078938735,
+        "winnerMinusLoserMean": 0.10454421073382295
       },
       "lineupAvailable": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181480,7 +181283,7 @@
         "winnerMinusLoserMean": 0.0
       },
       "lineupDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181489,88 +181292,88 @@
         "winnerMinusLoserMean": 0.0
       },
       "marketLogit": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.12740650473392987,
-        "nonzeroCount": 3964,
+        "mean": 0.12697640403782043,
+        "nonzeroCount": 4005,
         "nonzeroPct": 1.0,
-        "variance": 0.12078622187201005,
-        "winnerMinusLoserMean": 0.10286378345165886
+        "variance": 0.12053427760886017,
+        "winnerMinusLoserMean": 0.10288497363469451
       },
       "patternBookLeadershipDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.061145347820383514,
-        "nonzeroCount": 3782,
-        "nonzeroPct": 0.954087,
-        "variance": 1.91234393544667,
-        "winnerMinusLoserMean": 0.041651010754611494
+        "mean": 0.05595089472659181,
+        "nonzeroCount": 3821,
+        "nonzeroPct": 0.954057,
+        "variance": 1.9141522251455907,
+        "winnerMinusLoserMean": 0.04207197081880984
       },
       "patternCompressionBreakoutDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": -0.00018543655903128248,
-        "nonzeroCount": 495,
-        "nonzeroPct": 0.124874,
-        "variance": 0.00924005059689505,
-        "winnerMinusLoserMean": 0.0010767360868503457
+        "mean": -0.00013973307365792854,
+        "nonzeroCount": 499,
+        "nonzeroPct": 0.124594,
+        "variance": 0.009156493467058898,
+        "winnerMinusLoserMean": 0.00103430970168711
       },
       "patternConsensusPersistenceDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.0735942098637739,
-        "nonzeroCount": 3877,
-        "nonzeroPct": 0.978052,
-        "variance": 0.40418491697287284,
-        "winnerMinusLoserMean": 0.020231532133124203
+        "mean": 0.07176911501622961,
+        "nonzeroCount": 3916,
+        "nonzeroPct": 0.977778,
+        "variance": 0.40452867036078405,
+        "winnerMinusLoserMean": 0.02326890886925482
       },
       "patternCurveDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.01417759838546926,
-        "nonzeroCount": 2365,
-        "nonzeroPct": 0.59662,
-        "variance": 1.0232803276919111,
-        "winnerMinusLoserMean": -0.0003908828105921511
+        "mean": 0.014382022471910151,
+        "nonzeroCount": 2392,
+        "nonzeroPct": 0.597253,
+        "variance": 1.021396153684299,
+        "winnerMinusLoserMean": -0.00274334429882794
       },
       "patternEntropySum": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 1.8248843093541778,
-        "nonzeroCount": 3959,
-        "nonzeroPct": 0.998739,
-        "variance": 0.05796430133701769,
-        "winnerMinusLoserMean": -0.003999699546095581
+        "mean": 1.824895069303361,
+        "nonzeroCount": 4000,
+        "nonzeroPct": 0.998752,
+        "variance": 0.05803038225348489,
+        "winnerMinusLoserMean": -0.004941818769866435
       },
       "patternFingerprintDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.06200396813319898,
-        "nonzeroCount": 3964,
+        "mean": 0.06092915936828981,
+        "nonzeroCount": 4005,
         "nonzeroPct": 1.0,
-        "variance": 0.3712672630485524,
-        "winnerMinusLoserMean": 0.03356176970967636
+        "variance": 0.369965193023561,
+        "winnerMinusLoserMean": 0.03460052168011806
       },
       "patternRegimeDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.006760847628657911,
-        "nonzeroCount": 567,
-        "nonzeroPct": 0.143037,
-        "variance": 0.028324623936315144,
-        "winnerMinusLoserMean": 0.002636298197095859
+        "mean": 0.006317103620474397,
+        "nonzeroCount": 572,
+        "nonzeroPct": 0.142821,
+        "variance": 0.028382066736180593,
+        "winnerMinusLoserMean": 0.0021072337193467922
       },
       "patternShockPersistenceDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.06818027543895047,
-        "nonzeroCount": 3053,
-        "nonzeroPct": 0.770182,
-        "variance": 0.31661262127069717,
-        "winnerMinusLoserMean": 0.0060079796623512954
+        "mean": 0.0669221138227215,
+        "nonzeroCount": 3082,
+        "nonzeroPct": 0.769538,
+        "variance": 0.3155811591978541,
+        "winnerMinusLoserMean": 0.007289606535653345
       },
       "reversalInstabilityDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181579,25 +181382,25 @@
         "winnerMinusLoserMean": 0.0
       },
       "ruleLogit": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.03188170736201024,
-        "nonzeroCount": 915,
-        "nonzeroPct": 0.230827,
-        "variance": 0.3847314470113178,
-        "winnerMinusLoserMean": 0.0021922388675329613
+        "mean": 0.030505544304958127,
+        "nonzeroCount": 925,
+        "nonzeroPct": 0.230961,
+        "variance": 0.3866330046186592,
+        "winnerMinusLoserMean": 0.0014255576496211703
       },
       "ruleScoreDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.04469539656912213,
-        "nonzeroCount": 1806,
-        "nonzeroPct": 0.4556,
-        "variance": 0.40338072802403047,
-        "winnerMinusLoserMean": -0.001471955818939892
+        "mean": 0.04296447440699128,
+        "nonzeroCount": 1825,
+        "nonzeroPct": 0.45568,
+        "variance": 0.4048289460292171,
+        "winnerMinusLoserMean": -0.0015467027562704183
       },
       "spreadAvailable": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181606,7 +181409,7 @@
         "winnerMinusLoserMean": 0.0
       },
       "starterAvailable": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181615,7 +181418,7 @@
         "winnerMinusLoserMean": 0.0
       },
       "starterDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181624,7 +181427,7 @@
         "winnerMinusLoserMean": 0.0
       },
       "starterFirstFiveInteraction": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181633,7 +181436,7 @@
         "winnerMinusLoserMean": 0.0
       },
       "v8FirstFiveLogit": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181642,7 +181445,7 @@
         "winnerMinusLoserMean": 0.0
       },
       "v8SpreadDirection": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": true,
         "mean": 0.0,
         "nonzeroCount": 0,
@@ -181651,22 +181454,22 @@
         "winnerMinusLoserMean": 0.0
       },
       "velocityDiff": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.03724914132189709,
-        "nonzeroCount": 3902,
-        "nonzeroPct": 0.984359,
-        "variance": 1.017214718603765,
-        "winnerMinusLoserMean": 0.06805734080568504
+        "mean": 0.037224629278402026,
+        "nonzeroCount": 3943,
+        "nonzeroPct": 0.984519,
+        "variance": 1.0128544570700488,
+        "winnerMinusLoserMean": 0.06774975174404475
       },
       "volatilitySum": {
-        "count": 3964,
+        "count": 4005,
         "degenerate": false,
-        "mean": 0.3824998748335007,
-        "nonzeroCount": 3964,
+        "mean": 0.3820877293333324,
+        "nonzeroCount": 4005,
         "nonzeroPct": 1.0,
-        "variance": 0.11004489415480809,
-        "winnerMinusLoserMean": -0.0048487232211031905
+        "variance": 0.10968923714324016,
+        "winnerMinusLoserMean": -0.004431131461172522
       }
     },
     "nonzeroBySeason": {
@@ -181695,38 +181498,38 @@
         "volatilitySum": 2409
       },
       "2026": {
-        "accelerationDiff": 1555,
-        "coverageMin": 1555,
-        "deltaDiff": 1555,
-        "derivedAgreementDiff": 1555,
-        "derivedMovementDiff": 1555,
-        "divergenceMean": 1555,
-        "favoriteDirection": 1210,
-        "fullHistoryAvailable": 1555,
-        "lateVelocityDiff": 1240,
-        "marketLogit": 1555,
-        "patternBookLeadershipDiff": 1471,
-        "patternCompressionBreakoutDiff": 196,
-        "patternConsensusPersistenceDiff": 1517,
-        "patternCurveDiff": 908,
-        "patternEntropySum": 1553,
-        "patternFingerprintDiff": 1555,
-        "patternRegimeDiff": 244,
-        "patternShockPersistenceDiff": 1122,
-        "ruleLogit": 333,
-        "ruleScoreDiff": 676,
-        "velocityDiff": 1517,
-        "volatilitySum": 1555
+        "accelerationDiff": 1596,
+        "coverageMin": 1596,
+        "deltaDiff": 1596,
+        "derivedAgreementDiff": 1596,
+        "derivedMovementDiff": 1596,
+        "divergenceMean": 1596,
+        "favoriteDirection": 1238,
+        "fullHistoryAvailable": 1596,
+        "lateVelocityDiff": 1273,
+        "marketLogit": 1596,
+        "patternBookLeadershipDiff": 1510,
+        "patternCompressionBreakoutDiff": 200,
+        "patternConsensusPersistenceDiff": 1556,
+        "patternCurveDiff": 935,
+        "patternEntropySum": 1594,
+        "patternFingerprintDiff": 1596,
+        "patternRegimeDiff": 249,
+        "patternShockPersistenceDiff": 1151,
+        "ruleLogit": 343,
+        "ruleScoreDiff": 695,
+        "velocityDiff": 1558,
+        "volatilitySum": 1596
       }
     },
-    "recordCount": 3964,
+    "recordCount": 4005,
     "version": "MLB-HISTORICAL-V7-PRIORITY-REPAIRS-v1"
   },
   "historicalChampionWritten": false,
   "integrityEnforcedByWrapper": true,
   "lightweightSelectiveEvaluationIncrementGames": 25,
   "lightweightSelectiveEvaluationPerformed": true,
-  "newEligibleGamesSinceLastShadowFit": 0,
+  "newEligibleGamesSinceLastShadowFit": 41,
   "ok": true,
   "operationsDiagnostics": {
     "lastInvocationDurationMs": null,
@@ -181739,6 +181542,7 @@
     "skippedInvocationCount": 0,
     "staleLeaseRecoveryCount": 0
   },
+  "previousShadowDatasetFingerprint": "d594f98ef8ed4ddb0c48a76d7ab583d4c2eb4260bb449f5b254594da052db003",
   "productionAuthorityChanged": false,
   "productionCutoverWritten": false,
   "proofType": "MLB_HISTORICAL_V7_V9_SHADOW_EVALUATION",
@@ -181746,554 +181550,21 @@
   "providerCallsMade": 0,
   "readOnly": true,
   "retrospectiveShadowOnly": true,
-  "runId": "30329938982",
-  "runtimeInstall": {
-    "featureCount": 38,
-    "featureVersion": "MLB-SUPERVISED-PAIR-FEATURES-v2-integrity-pattern-complete",
-    "modelVersion": "MLB-HISTORICAL-SUPERVISED-v9.1-integrity-pattern-complete",
-    "priorityRepairsVersion": "MLB-HISTORICAL-V7-PRIORITY-REPAIRS-v1",
-    "v7SelectiveSearchVersion": "MLB-HISTORICAL-V7-SELECTIVE-SEARCH-v2"
-  },
+  "runId": "30335823478",
   "shadowRefitIncrementGames": 50,
-  "shadowRefitPerformed": true,
-  "sourceSha": "51a3847466722371905369c98201be8de39a1531",
+  "shadowRefitPerformed": false,
+  "sourceSha": "e381c31cfb2f24a0cb3c2f0c17cbbc5fc5cba827",
+  "stalledStage": "WAITING_FOR_50_NEW_ELIGIBLE_GAMES",
   "state": {
-    "completeSlateCount": 321,
-    "currentDate": "2026-07-25",
+    "completeSlateCount": 324,
+    "currentDate": "2026-07-28",
     "currentSlotIndex": 0,
-    "eligibleGameCount": 3964,
+    "eligibleGameCount": 4005,
     "featureDatasetVersion": "MLB-HISTORICAL-FEATURE-DATASET-v9-v8-event-id-trainable",
     "optimizationRound": 10,
     "phase": "DATA_RANGE_EXHAUSTED",
     "rematerializationComplete": true,
     "rematerializationErrors": []
-  },
-  "supervisedCandidate": {
-    "brierScore": null,
-    "diagnostics": {
-      "calibration": "nested temperature scaling plus logit-space market blend",
-      "extraPatternFeatures": [
-        "patternCurveDiff",
-        "patternBookLeadershipDiff",
-        "patternShockPersistenceDiff",
-        "patternCompressionBreakoutDiff",
-        "patternConsensusPersistenceDiff",
-        "patternEntropySum",
-        "lateVelocityDiff",
-        "reversalInstabilityDiff",
-        "coverageConsensusDiff"
-      ],
-      "featureCount": 38,
-      "featureVersion": "MLB-SUPERVISED-PAIR-FEATURES-v2-integrity-pattern-complete",
-      "features": [
-        "marketLogit",
-        "ruleLogit",
-        "ruleScoreDiff",
-        "deltaDiff",
-        "velocityDiff",
-        "accelerationDiff",
-        "volatilitySum",
-        "divergenceMean",
-        "coverageMin",
-        "favoriteDirection",
-        "derivedMovementDiff",
-        "derivedAgreementDiff",
-        "patternFingerprintDiff",
-        "patternRegimeDiff",
-        "v8FirstFiveLogit",
-        "v8SpreadDirection",
-        "fundamentalsDiff",
-        "featureAvailability",
-        "starterDiff",
-        "bullpenDiff",
-        "lineupDiff",
-        "starterAvailable",
-        "bullpenAvailable",
-        "lineupAvailable",
-        "firstFiveAvailable",
-        "spreadAvailable",
-        "fullHistoryAvailable",
-        "starterFirstFiveInteraction",
-        "bullpenLateMarketInteraction",
-        "patternCurveDiff",
-        "patternBookLeadershipDiff",
-        "patternShockPersistenceDiff",
-        "patternCompressionBreakoutDiff",
-        "patternConsensusPersistenceDiff",
-        "patternEntropySum",
-        "lateVelocityDiff",
-        "reversalInstabilityDiff",
-        "coverageConsensusDiff"
-      ],
-      "finalFit": {
-        "dayBalancedWeights": true,
-        "epochsCompleted": 160,
-        "l2": 0.01,
-        "trainingDayCount": 286,
-        "trainingExampleCount": 3502,
-        "trainingLoss": 0.6778432405
-      },
-      "holdoutEvaluatedAfterFreeze": true,
-      "holdoutLabelsUsedForFitOrSelection": false,
-      "hyperparameterCandidateCount": 48,
-      "innerFoldCount": 3,
-      "integrityPatchVersion": "MLB-HISTORICAL-SUPERVISED-INTEGRITY-v2-strict-label-v8-fallback-pattern-complete",
-      "missingLabelsCoercedToAwayWin": false,
-      "outerOverfitChecks": {
-        "brierDeltaVsBaseline": -0.00846624,
-        "logLossDeltaVsBaseline": -0.02931259,
-        "maximumAllowedAccuracyGap": 0.1,
-        "maximumAllowedBrierDegradation": 0.005,
-        "maximumAllowedLogLossDegradation": 0.01,
-        "passed": true,
-        "trainValidationMeanDailyAccuracyGap": 0.03031341
-      },
-      "outerWalkForwardAccepted": false,
-      "outerWalkForwardBaseline": {
-        "brierScore": 0.25697805239220617,
-        "correct": 147,
-        "daily": [
-          {
-            "accuracy": 0.57142857,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 14,
-            "predictionCount": 14,
-            "slateDateEt": "2026-06-17"
-          },
-          {
-            "accuracy": 0.5,
-            "correct": 4,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 8,
-            "predictionCount": 8,
-            "slateDateEt": "2026-06-18"
-          },
-          {
-            "accuracy": 0.71428571,
-            "correct": 10,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 14,
-            "predictionCount": 14,
-            "slateDateEt": "2026-06-19"
-          },
-          {
-            "accuracy": 0.28571429,
-            "correct": 4,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 14,
-            "predictionCount": 14,
-            "slateDateEt": "2026-06-20"
-          },
-          {
-            "accuracy": 0.57142857,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 14,
-            "predictionCount": 14,
-            "slateDateEt": "2026-06-21"
-          },
-          {
-            "accuracy": 0.58333333,
-            "correct": 7,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 12,
-            "predictionCount": 12,
-            "slateDateEt": "2026-06-22"
-          },
-          {
-            "accuracy": 0.53333333,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-06-23"
-          },
-          {
-            "accuracy": 0.5,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 16,
-            "predictionCount": 16,
-            "slateDateEt": "2026-06-24"
-          },
-          {
-            "accuracy": 0.375,
-            "correct": 3,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 8,
-            "predictionCount": 8,
-            "slateDateEt": "2026-06-25"
-          },
-          {
-            "accuracy": 0.73333333,
-            "correct": 11,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-06-26"
-          },
-          {
-            "accuracy": 0.46666667,
-            "correct": 7,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-06-27"
-          },
-          {
-            "accuracy": 0.66666667,
-            "correct": 10,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-06-28"
-          },
-          {
-            "accuracy": 0.61538462,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 13,
-            "predictionCount": 13,
-            "slateDateEt": "2026-06-29"
-          },
-          {
-            "accuracy": 0.66666667,
-            "correct": 10,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-06-30"
-          },
-          {
-            "accuracy": 0.57142857,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 14,
-            "predictionCount": 14,
-            "slateDateEt": "2026-07-01"
-          },
-          {
-            "accuracy": 0.44444444,
-            "correct": 4,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 9,
-            "predictionCount": 9,
-            "slateDateEt": "2026-07-02"
-          },
-          {
-            "accuracy": 0.61538462,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 13,
-            "predictionCount": 13,
-            "slateDateEt": "2026-07-03"
-          },
-          {
-            "accuracy": 0.66666667,
-            "correct": 10,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-07-04"
-          },
-          {
-            "accuracy": 0.46666667,
-            "correct": 7,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-07-05"
-          },
-          {
-            "accuracy": 0.5,
-            "correct": 4,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 8,
-            "predictionCount": 8,
-            "slateDateEt": "2026-07-06"
-          }
-        ],
-        "dailyPassRate": 0.0,
-        "dayCount": 20,
-        "gameCount": 262,
-        "logLoss": 0.7198790487166722,
-        "meanDailyAccuracy": 0.5523916365,
-        "meanSlateCoverage": 1.0,
-        "minimumDailyAccuracy": 0.28571429,
-        "minimumSlateCoverage": 1.0,
-        "overallAccuracy": 0.5610687,
-        "policyDigest": "bf93db76c44a79124df2f003e689dab1f7acc95dfe8e540c4522b5738bd71a8b"
-      },
-      "outerWalkForwardSupervised": {
-        "brierScore": 0.24851180897444755,
-        "correct": 145,
-        "daily": [
-          {
-            "accuracy": 0.57142857,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 14,
-            "predictionCount": 14,
-            "slateDateEt": "2026-06-17"
-          },
-          {
-            "accuracy": 0.375,
-            "correct": 3,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 8,
-            "predictionCount": 8,
-            "slateDateEt": "2026-06-18"
-          },
-          {
-            "accuracy": 0.64285714,
-            "correct": 9,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 14,
-            "predictionCount": 14,
-            "slateDateEt": "2026-06-19"
-          },
-          {
-            "accuracy": 0.42857143,
-            "correct": 6,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 14,
-            "predictionCount": 14,
-            "slateDateEt": "2026-06-20"
-          },
-          {
-            "accuracy": 0.71428571,
-            "correct": 10,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 14,
-            "predictionCount": 14,
-            "slateDateEt": "2026-06-21"
-          },
-          {
-            "accuracy": 0.66666667,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 12,
-            "predictionCount": 12,
-            "slateDateEt": "2026-06-22"
-          },
-          {
-            "accuracy": 0.6,
-            "correct": 9,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-06-23"
-          },
-          {
-            "accuracy": 0.5625,
-            "correct": 9,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 16,
-            "predictionCount": 16,
-            "slateDateEt": "2026-06-24"
-          },
-          {
-            "accuracy": 0.25,
-            "correct": 2,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 8,
-            "predictionCount": 8,
-            "slateDateEt": "2026-06-25"
-          },
-          {
-            "accuracy": 0.66666667,
-            "correct": 10,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-06-26"
-          },
-          {
-            "accuracy": 0.46666667,
-            "correct": 7,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-06-27"
-          },
-          {
-            "accuracy": 0.6,
-            "correct": 9,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-06-28"
-          },
-          {
-            "accuracy": 0.53846154,
-            "correct": 7,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 13,
-            "predictionCount": 13,
-            "slateDateEt": "2026-06-29"
-          },
-          {
-            "accuracy": 0.66666667,
-            "correct": 10,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-06-30"
-          },
-          {
-            "accuracy": 0.57142857,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 14,
-            "predictionCount": 14,
-            "slateDateEt": "2026-07-01"
-          },
-          {
-            "accuracy": 0.44444444,
-            "correct": 4,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 9,
-            "predictionCount": 9,
-            "slateDateEt": "2026-07-02"
-          },
-          {
-            "accuracy": 0.61538462,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 13,
-            "predictionCount": 13,
-            "slateDateEt": "2026-07-03"
-          },
-          {
-            "accuracy": 0.53333333,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-07-04"
-          },
-          {
-            "accuracy": 0.53333333,
-            "correct": 8,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 15,
-            "predictionCount": 15,
-            "slateDateEt": "2026-07-05"
-          },
-          {
-            "accuracy": 0.25,
-            "correct": 2,
-            "coverage": 1.0,
-            "dayPassed": false,
-            "officialGameCount": 8,
-            "predictionCount": 8,
-            "slateDateEt": "2026-07-06"
-          }
-        ],
-        "dailyPassRate": 0.0,
-        "dayCount": 20,
-        "gameCount": 262,
-        "logLoss": 0.6905664632927079,
-        "meanDailyAccuracy": 0.534884768,
-        "meanSlateCoverage": 1.0,
-        "minimumDailyAccuracy": 0.25,
-        "minimumSlateCoverage": 1.0,
-        "overallAccuracy": 0.55343511,
-        "policyDigest": "935d8d73bda971a4cbac524842dbd4d945e2e5f3c58947fa6178184337847000"
-      },
-      "probabilityModel": "day-balanced L2 logistic regression",
-      "randomPolicySearchDisabled": true,
-      "selectedBlend": 0.75,
-      "selectedInnerMetrics": {
-        "brierScore": 0.24668076297183883,
-        "dailyPassRate": 0.06666666666666667,
-        "logLoss": 0.6865949822430087,
-        "meanDailyAccuracy": 0.5649860786666667,
-        "minimumDailyAccuracy": 0.0,
-        "overallAccuracy": 0.5595117866666667
-      },
-      "selectedL2": 0.01,
-      "selectedTemperature": 1.0,
-      "selectionObjective": [
-        "dailyPassRate",
-        "minimumDailyAccuracy",
-        "meanDailyAccuracy",
-        "overallAccuracy",
-        "brierScore",
-        "logLoss"
-      ],
-      "strictBinaryLabels": true,
-      "v8ExpansionFallbackEnabled": true,
-      "version": "MLB-HISTORICAL-SUPERVISED-v9.1-integrity-pattern-complete"
-    },
-    "errors": [
-      "candidate_did_not_improve_walk_forward_daily_objective",
-      "untouched_holdout_contains_day_below_80_percent",
-      "untouched_holdout_mean_daily_accuracy_failed",
-      "untouched_holdout_minimum_daily_accuracy_failed",
-      "walk_forward_contains_day_below_80_percent",
-      "walk_forward_mean_daily_accuracy_failed",
-      "walk_forward_minimum_daily_accuracy_failed"
-    ],
-    "logLoss": null,
-    "promotionPassed": false,
-    "searchVersion": "MLB-HISTORICAL-SUPERVISED-v9.1-integrity-pattern-complete",
-    "settledGameCount": 3964,
-    "status": "CANDIDATE_REJECTED",
-    "untouchedHoldoutMeanDailyAccuracyPct": 52.9766,
-    "untouchedHoldoutMinimumDailyAccuracyPct": 0.0,
-    "walkForwardMeanDailyAccuracyPct": 55.2392,
-    "walkForwardMinimumDailyAccuracyPct": 28.5714
-  },
-  "trainingIntegrity": {
-    "acceptedCount": 3964,
-    "duplicateGamesRejected": true,
-    "gameSpecificLockProofRequired": true,
-    "inputCount": 3964,
-    "postLockProofRequired": true,
-    "rejected": {},
-    "strictBinaryLabels": true,
-    "version": "MLB-HISTORICAL-SUPERVISED-INTEGRITY-v2-strict-label-v8-fallback-pattern-complete"
   },
   "v7SelectiveSearch": {
     "cadence": {
@@ -182785,11 +182056,11 @@
         "2026-06-13",
         "2026-06-14",
         "2026-06-15",
-        "2026-06-16"
+        "2026-06-16",
+        "2026-06-17",
+        "2026-06-18"
       ],
       "untouchedHoldout": [
-        "2026-07-07",
-        "2026-07-08",
         "2026-07-09",
         "2026-07-10",
         "2026-07-11",
@@ -182802,11 +182073,12 @@
         "2026-07-21",
         "2026-07-22",
         "2026-07-23",
-        "2026-07-24"
+        "2026-07-24",
+        "2026-07-25",
+        "2026-07-26",
+        "2026-07-27"
       ],
       "walkForward": [
-        "2026-06-17",
-        "2026-06-18",
         "2026-06-19",
         "2026-06-20",
         "2026-06-21",
@@ -182824,7 +182096,9 @@
         "2026-07-03",
         "2026-07-04",
         "2026-07-05",
-        "2026-07-06"
+        "2026-07-06",
+        "2026-07-07",
+        "2026-07-08"
       ]
     },
     "productionGatePassed": false,
@@ -182872,18 +182146,18 @@
       "correct": 0,
       "coverage": 0.0,
       "daily": [],
-      "eligibleGameCount": 200,
+      "eligibleGameCount": 210,
       "meanDailyAccuracy": 0.0,
       "minimumDailyAccuracy": 0.0,
-      "passCount": 200,
+      "passCount": 210,
       "pickCount": 0,
       "regime": "all",
       "rejectionReasons": {
-        "confidence": 160,
+        "confidence": 169,
         "coverage": 1,
         "reversals": 30,
         "unstable_tag": 2,
-        "volatility": 39
+        "volatility": 40
       },
       "reliabilityProfile": "balanced",
       "selectionDayCount": 0,
@@ -182893,7 +182167,7 @@
     "walkForward": {
       "accuracy": 0.0,
       "correct": 0,
-      "coverage": 0.007633587786259542,
+      "coverage": 0.007380073800738007,
       "daily": [
         {
           "accuracy": 0.0,
@@ -182908,17 +182182,17 @@
           "slateDateEt": "2026-07-01"
         }
       ],
-      "eligibleGameCount": 262,
+      "eligibleGameCount": 271,
       "meanDailyAccuracy": 0.0,
       "minimumDailyAccuracy": 0.0,
-      "passCount": 260,
+      "passCount": 269,
       "pickCount": 2,
       "regime": "all",
       "rejectionReasons": {
-        "confidence": 238,
+        "confidence": 245,
         "coverage": 3,
-        "reversals": 17,
-        "volatility": 19
+        "reversals": 19,
+        "volatility": 21
       },
       "reliabilityProfile": "balanced",
       "selectionDayCount": 2,
