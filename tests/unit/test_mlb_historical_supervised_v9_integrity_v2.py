@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from hello_world import mlb_historical_policy_v1 as policy_runtime
 from hello_world import mlb_historical_supervised_v9 as learner
 from hello_world import mlb_historical_supervised_v9_integrity_v2 as patch
 from hello_world import mlb_v7_integrity_pattern_v1 as integrity
@@ -82,7 +83,7 @@ def test_v9_search_fails_closed_on_empty_input():
 
     optimizer = Optimizer()
     patch.install(learner)
-    learner.install(optimizer, object())
+    learner.install(optimizer, policy_runtime)
     result = optimizer.search([])
     assert result["ok"] is False
     assert result["status"] == "DATA_INTEGRITY_BLOCKED"
