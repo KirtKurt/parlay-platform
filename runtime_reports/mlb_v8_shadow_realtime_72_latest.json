@@ -1,8 +1,8 @@
 {
   "authority": "SHADOW_ONLY",
   "automaticWagerAllowed": false,
-  "createdAtUtc": "2026-07-28T00:09:11.444151+00:00",
-  "errorLogTail": "Traceback (most recent call last):\n  File \"<stdin>\", line 50, in <module>\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_supervised_shadow_v2.py\", line 101, in run\n    raise RuntimeError(\"canonical historical runtime identity failed:\" + json.dumps(runtime_checks, sort_keys=True))\nRuntimeError: canonical historical runtime identity failed:{\"handler\": true, \"historicalEndDate\": false, \"maximumRoundsAtLeast12\": true, \"rangeExtensionAuthorized\": true}\n",
+  "createdAtUtc": "2026-07-28T00:16:43.254134+00:00",
+  "errorLogTail": "Traceback (most recent call last):\n  File \"<stdin>\", line 50, in <module>\n  File \"/home/runner/work/parlay-platform/parlay-platform/scripts/run_mlb_supervised_shadow_v2.py\", line 150, in run\n    raise RuntimeError(\nRuntimeError: canonical historical runtime identity failed:{\"checks\": {\"handler\": true, \"historicalEndDateConfigured\": true, \"historicalEndDateConsistentWithState\": false, \"maximumRoundsAtLeast12\": true, \"rangeExtensionAuthorized\": true}, \"configuredEndDate\": \"2026-12-31\", \"stateCurrentDate\": \"2026-07-25\", \"stateEndDate\": \"2026-07-24\"}\n",
   "evaluationExitCode": "1",
   "evaluationOutcome": "failure",
   "evaluationSucceeded": false,
@@ -14,8 +14,8 @@
   "proofType": "MLB_V8_REALTIME_SHADOW_72",
   "requireImmutablePregameLock": true,
   "requireSettledResultForGrading": true,
-  "runId": "30316427426",
-  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30316427426",
+  "runId": "30316817986",
+  "runUrl": "https://github.com/KirtKurt/parlay-platform/actions/runs/30316817986",
   "runtimeResolution": {
     "attempts": [
       {
@@ -33,7 +33,7 @@
     "functionName": "parlay-platform-mlb-histo-HistoricalOptimizerFunct-8e5kYFR21rxv"
   },
   "sourceEvaluation": {},
-  "sourceSha": "80abd5ae98e6dd06395ddc6d9692bb6e6ee2ff7b",
+  "sourceSha": "4dce4020b723cfedf5462e8b008f8e220187d165",
   "targetAccuracy": 0.72,
   "targetAccuracyPct": 72.0,
   "version": "MLB-V8-SHADOW-REALTIME-POLICY-v1-72pct"
