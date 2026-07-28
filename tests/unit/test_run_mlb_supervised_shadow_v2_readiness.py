@@ -47,3 +47,33 @@ def test_materialization_errors_fail_closed():
     })
     assert ready is False
     assert proof["errorCount"] == 1
+
+
+def test_pre_extension_range_error_is_nonblocking_for_completed_shadow_corpus():
+    ready, proof = subject._optimizer_error_status(
+        {
+            "lastError": subject.STALE_RANGE_ERROR,
+            "eligibleGameCount": 3964,
+            "completeSlateCount": 321,
+        },
+        configured_end=date(2026, 12, 31),
+        state_end=date(2026, 7, 24),
+        materialization_ready=True,
+    )
+    assert ready is True
+    assert proof["classification"] == "STALE_PRE_EXTENSION_RANGE_EXHAUSTION"
+
+
+def test_unrelated_optimizer_error_remains_blocking():
+    ready, proof = subject._optimizer_error_status(
+        {
+            "lastError": "checksum mismatch",
+            "eligibleGameCount": 3964,
+            "completeSlateCount": 321,
+        },
+        configured_end=date(2026, 12, 31),
+        state_end=date(2026, 7, 24),
+        materialization_ready=True,
+    )
+    assert ready is False
+    assert proof["classification"] == "ACTIVE_OPTIMIZER_ERROR"
