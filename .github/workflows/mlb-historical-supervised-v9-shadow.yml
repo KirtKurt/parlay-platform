@@ -83,7 +83,17 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
+      - name: Preserve previous evidence and remove stale current outputs
+        run: |
+          set -euo pipefail
+          git fetch origin main
+          mkdir -p runtime_reports
+          git show origin/main:"$REPORT_PATH" > /tmp/mlb-supervised-v9-previous.json 2>/dev/null || printf '{}\n' > /tmp/mlb-supervised-v9-previous.json
+          rm -f "$REPORT_PATH" "$HANDOFF_PATH"
+
       - name: Validate V7 selective and V9 implementation
+        id: validation
+        continue-on-error: true
         run: |
           set -euo pipefail
           python -m pip install --quiet 'boto3>=1.34,<2' 'pytest>=8,<9'
@@ -111,22 +121,15 @@ jobs:
             tests/unit/test_mlb_v7_v9_workflow_recovery_contract.py
           test "$(git rev-parse HEAD)" = "${GITHUB_SHA}" || test "${{ github.event_name }}" = pull_request
 
-      - name: Preserve previous report as frozen comparison input
-        run: |
-          set -euo pipefail
-          git fetch origin main
-          git show origin/main:"$REPORT_PATH" > /tmp/mlb-supervised-v9-previous.json 2>/dev/null || printf '{}\n' > /tmp/mlb-supervised-v9-previous.json
-          rm -f "$REPORT_PATH" "$HANDOFF_PATH"
-
       - name: Resolve immutable historical evidence
         id: runtime
+        if: steps.validation.outcome == 'success'
         continue-on-error: true
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
           AWS_EC2_METADATA_DISABLED: 'true'
         run: |
           set -uo pipefail
-          mkdir -p runtime_reports
           python - <<'PY'
           import json, os
           from pathlib import Path
@@ -150,8 +153,7 @@ jobs:
           function_name=str(outputs.get('HistoricalOptimizerFunctionName') or '').strip()
           if not function_name:
               matches=[]
-              paginator=lam.get_paginator('list_functions')
-              for page in paginator.paginate():
+              for page in lam.get_paginator('list_functions').paginate():
                   for item in page.get('Functions') or []:
                       if item.get('Handler') == 'mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler' and item.get('FunctionName'):
                           matches.append(str(item['FunctionName']))
@@ -185,7 +187,6 @@ jobs:
               if not bucket_resolution.get('ok'):
                   raise RuntimeError('historical artifacts bucket unresolved:'+json.dumps(bucket_resolution,sort_keys=True))
               bucket_name=str(bucket_resolution['bucketName'])
-          s3.head_bucket(Bucket=bucket_name)
           proof={
               'ok':True,
               'functionName':function_name,
@@ -203,14 +204,12 @@ jobs:
           PY
           status=$?
           echo "exit_code=$status" >> "$GITHUB_OUTPUT"
-          if test "$status" -ne 0; then
-            echo "resolved=false" >> "$GITHUB_OUTPUT"
-          fi
+          if test "$status" -ne 0; then echo "resolved=false" >> "$GITHUB_OUTPUT"; fi
           exit "$status"
 
       - name: Run gated AWS-backed read-only evaluation
         id: evaluation
-        if: steps.runtime.outputs.resolved == 'true'
+        if: steps.validation.outcome == 'success' && steps.runtime.outputs.resolved == 'true'
         continue-on-error: true
         env:
           AWS_REGION_VALUE: ${{ secrets.AWS_REGION }}
@@ -226,7 +225,6 @@ jobs:
           MLB_V7_FORCE_SHADOW_REFIT: ${{ github.event_name == 'push' && 'true' || 'false' }}
         run: |
           set -uo pipefail
-          mkdir -p runtime_reports
           python scripts/run_mlb_historical_supervised_v9_shadow_v2.py \
             --output "$REPORT_PATH" \
             --previous-report /tmp/mlb-supervised-v9-previous.json \
@@ -238,6 +236,7 @@ jobs:
       - name: Ensure fresh durable V7 V9 evidence exists
         if: always()
         env:
+          VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
           RUNTIME_RESOLVED: ${{ steps.runtime.outputs.resolved }}
           RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
           RUNTIME_EXIT_CODE: ${{ steps.runtime.outputs.exit_code }}
@@ -245,20 +244,37 @@ jobs:
           EVALUATION_EXIT_CODE: ${{ steps.evaluation.outputs.exit_code }}
         run: |
           set -euo pipefail
-          mkdir -p runtime_reports
-          if test ! -s "$REPORT_PATH"; then
-            python - <<'PY'
+          python - <<'PY'
           import json, os
           from datetime import datetime, timezone
           from pathlib import Path
+
+          report_path=Path(os.environ['REPORT_PATH'])
+          current={}
+          if report_path.exists() and report_path.stat().st_size:
+              try: current=json.loads(report_path.read_text())
+              except Exception: current={}
+          fresh=(str(current.get('runId')) == str(os.environ.get('GITHUB_RUN_ID')) and current.get('sourceSha') == os.environ.get('GITHUB_SHA'))
+          if fresh:
+              raise SystemExit(0)
+
           resolution={}
           p=Path('/tmp/mlb-v7-v9-runtime-resolution.json')
           if p.exists():
               try: resolution=json.loads(p.read_text())
               except Exception as exc: resolution={'ok':False,'parseError':str(exc)}
           log=Path('/tmp/mlb-supervised-v9-shadow.log').read_text(errors='replace')[-12000:] if Path('/tmp/mlb-supervised-v9-shadow.log').exists() else ''
-          resolved=os.environ.get('RUNTIME_RESOLVED') == 'true'
-          blocker='v7_v9_runtime_resolution_failed' if not resolved else 'v7_v9_report_missing_after_evaluation'
+          validation_ok=os.environ.get('VALIDATION_OUTCOME') == 'success'
+          runtime_ok=os.environ.get('RUNTIME_RESOLVED') == 'true'
+          if not validation_ok:
+              blocker='v7_v9_validation_failed'
+              stage='V7_V9_VALIDATION'
+          elif not runtime_ok:
+              blocker='v7_v9_runtime_resolution_failed'
+              stage='V7_V9_RUNTIME_RESOLUTION'
+          else:
+              blocker='v7_v9_report_missing_after_evaluation'
+              stage='V7_V9_EVALUATION_BEFORE_REPORT_WRITE'
           report={
               'ok':False,
               'proofType':'MLB_HISTORICAL_V7_V9_SHADOW_EVALUATION',
@@ -274,18 +290,19 @@ jobs:
               'productionCutoverWritten':False,
               'promotionAuthority':False,
               'previousReportPreservedSeparately':True,
-              'stalledStage':'V7_V9_RUNTIME_RESOLUTION' if not resolved else 'V7_V9_EVALUATION_BEFORE_REPORT_WRITE',
+              'stalledStage':stage,
               'runtimeResolution':resolution,
               'workflowSteps':{
-                  'runtime':{'outcome':os.environ.get('RUNTIME_OUTCOME'),'exitCode':os.environ.get('RUNTIME_EXIT_CODE'),'resolved':resolved},
+                  'validation':{'outcome':os.environ.get('VALIDATION_OUTCOME')},
+                  'runtime':{'outcome':os.environ.get('RUNTIME_OUTCOME'),'exitCode':os.environ.get('RUNTIME_EXIT_CODE'),'resolved':runtime_ok},
                   'evaluation':{'outcome':os.environ.get('EVALUATION_OUTCOME'),'exitCode':os.environ.get('EVALUATION_EXIT_CODE')},
               },
               'errorLogTail':log,
               'blockers':[blocker],
           }
-          Path(os.environ['REPORT_PATH']).write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
+          report_path.parent.mkdir(parents=True,exist_ok=True)
+          report_path.write_text(json.dumps(report,indent=2,sort_keys=True)+'\n')
           PY
-          fi
           python -m json.tool "$REPORT_PATH" >/dev/null
 
       - uses: actions/upload-artifact@v4
@@ -329,8 +346,7 @@ jobs:
           python - <<'PY'
           import json, os
           from pathlib import Path
-          report_path=Path('runtime_reports/mlb_historical_supervised_v9_shadow_latest.json')
-          value=json.loads(report_path.read_text())
+          value=json.loads(Path(os.environ['REPORT_PATH']).read_text())
           assert str(value.get('runId')) == str(os.environ.get('GITHUB_RUN_ID')), value
           assert value.get('sourceSha') == os.environ.get('GITHUB_SHA'), value
           assert value.get('ok') is True, value
@@ -352,8 +368,7 @@ jobs:
               assert view.get('version') == 'MLB-V9-DIAGNOSTIC-SELECTED-PICK-BANDS-v1', (name, view)
               assert view.get('diagnosticOnly') is True, (name, view)
               assert view.get('productionAuthority') is False, (name, view)
-              thresholds=view.get('bandThresholds') or {}
-              assert set(thresholds) == {'MLB_STRONG','MLB_LEAN','PASS'}, (name, thresholds)
+              assert set(view.get('bandThresholds') or {}) == {'MLB_STRONG','MLB_LEAN','PASS'}, (name, view)
               assert set(view.get('byBand') or {}) == {'MLB_STRONG','MLB_LEAN','PASS'}, (name, view)
               assert isinstance(view.get('dailySelectedPickBands'), list), (name, view)
               assert isinstance(view.get('games'), list), (name, view)
@@ -362,7 +377,7 @@ jobs:
                   assert game.get('predictedWinner'), game
                   assert game.get('selectedProbabilityPct') is not None, game
           if value.get('shadowRefitPerformed') is True:
-              handoff_path=Path('runtime_reports/mlb_historical_supervised_v9_candidate_handoff_latest.json')
+              handoff_path=Path(os.environ['HANDOFF_PATH'])
               assert handoff_path.exists(), value
               handoff=json.loads(handoff_path.read_text())
               assert handoff.get('artifactVersion') == 'MLB-V9-SHADOW-MODEL-ARTIFACT-v1', handoff
@@ -374,7 +389,6 @@ jobs:
               assert handoff.get('productionAuthority') is False, handoff
               assert handoff.get('frozenBeforeUntouchedHoldout') is True, handoff
               assert handoff.get('holdoutLabelsUsedForFitOrSelection') is False, handoff
-              embedded=value.get('canonicalCandidateHandoff') or {}
-              assert embedded.get('modelDigest') == handoff.get('modelDigest'), (embedded, handoff)
+              assert (value.get('canonicalCandidateHandoff') or {}).get('modelDigest') == handoff.get('modelDigest'), (value, handoff)
           assert not value.get('blockers'), value
           PY
