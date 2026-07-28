@@ -1,0 +1,99 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Isolated MLB V8 baseball-fundamentals shadow collector
+
+Parameters:
+  BbsApiSecretArn:
+    Type: String
+  DeployGitSha:
+    Type: String
+    Default: unknown
+  FundamentalsScheduleEnabled:
+    Type: String
+    AllowedValues: ['true', 'false']
+    Default: 'false'
+  MatchLimit:
+    Type: Number
+    Default: 50
+
+Conditions:
+  EnableFundamentalsSchedule: !Equals [!Ref FundamentalsScheduleEnabled, 'true']
+
+Resources:
+  FundamentalsArtifactsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  FundamentalsCollectorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../hello_world/
+      Handler: mlb_v8_fundamentals_collector.lambda_handler
+      Runtime: python3.11
+      Architectures: [x86_64]
+      Timeout: 120
+      MemorySize: 1024
+      Tracing: Active
+      EventInvokeConfig:
+        MaximumEventAgeInSeconds: 300
+        MaximumRetryAttempts: 0
+      Environment:
+        Variables:
+          BBS_API_SECRET_ARN: !Ref BbsApiSecretArn
+          MLB_V8_FUNDAMENTALS_BUCKET: !Ref FundamentalsArtifactsBucket
+          MLB_V8_FUNDAMENTALS_MATCH_LIMIT: !Ref MatchLimit
+          MLB_V8_FUNDAMENTALS_HTTP_TIMEOUT_SECONDS: '8'
+          MLB_V8_FUNDAMENTALS_MAX_ATTEMPTS: '2'
+          INQSI_DEPLOY_GIT_SHA: !Ref DeployGitSha
+      Policies:
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action: secretsmanager:GetSecretValue
+              Resource: !Ref BbsApiSecretArn
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+                - s3:GetObject
+              Resource: !Sub '${FundamentalsArtifactsBucket.Arn}/*'
+            - Effect: Allow
+              Action:
+                - s3:GetBucketLocation
+                - s3:ListBucket
+              Resource: !GetAtt FundamentalsArtifactsBucket.Arn
+      Events:
+        FundamentalsEveryFifteenMinutes:
+          Type: Schedule
+          Properties:
+            Schedule: rate(15 minutes)
+            Description: V8 pitchers, bullpens, lineups, injuries, and team context capture
+            State: !If [EnableFundamentalsSchedule, ENABLED, DISABLED]
+            Input: '{"mode":"scheduled_fundamentals"}'
+            RetryPolicy:
+              MaximumEventAgeInSeconds: 300
+              MaximumRetryAttempts: 1
+
+Outputs:
+  FundamentalsCollectorFunctionName:
+    Value: !Ref FundamentalsCollectorFunction
+  FundamentalsArtifactsBucketName:
+    Value: !Ref FundamentalsArtifactsBucket
+  ScheduleStatus:
+    Value: !If [EnableFundamentalsSchedule, ENABLED_EVERY_15_MINUTES, DISABLED_MANUAL_CANARY_ONLY]
+  Authority:
+    Value: V8_FUNDAMENTALS_SHADOW_ONLY
+  V7AuthorityChanged:
+    Value: 'false'
