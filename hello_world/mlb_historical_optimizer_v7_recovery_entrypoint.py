@@ -21,7 +21,7 @@ import mlb_historical_v7_selective_search_v2 as selective_search_v2
 import mlb_odds_market_expansion_v8 as odds_market_v8
 import mlb_supervised_v8_dataset_patch_v1 as supervised_v8_dataset
 
-VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v12-selective-search-v2-active"
+VERSION = "MLB-HISTORICAL-V7-RECOVERY-ENTRYPOINT-v13-explicit-80pct-gate"
 
 round_extension.install(base.optimizer_handler)
 odds_market_v8.install(base.optimizer_handler.optimizer, base.optimizer_handler.policy_runtime)
@@ -55,6 +55,8 @@ def _with_shadow_contract(value: Any) -> Any:
                 "authority": "SHADOW_ONLY",
                 "authorityMayChangeOnlyAfterPromotionGate": True,
                 "productionAuthorityChanged": False,
+                "promotionRequiresEverySlateAtLeast80Pct": True,
+                "promotionDailyAccuracyRequirement": base.optimizer_handler.policy_runtime.MIN_DAILY_ACCURACY,
                 "datasetPatchVersion": supervised_v8_dataset.VERSION,
                 "featureDatasetVersion": supervised_v8_dataset.FEATURE_DATASET_VERSION,
                 "modelVersion": supervised_v9.VERSION,
