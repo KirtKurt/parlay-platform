@@ -6,7 +6,7 @@ import argparse
 import hashlib
 import json
 import os
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Dict, List, Mapping
@@ -19,11 +19,9 @@ import mlb_supervised_model_v2 as supervised
 STATE_PK = "MLB_HISTORICAL_OPTIMIZER#V1"
 STATE_SK = "STATE"
 EXPECTED_HANDLER = "mlb_historical_optimizer_v7_recovery_entrypoint.lambda_handler"
-EXPECTED_HISTORICAL_END_DATE = "2026-07-26"
 MINIMUM_OPTIMIZATION_ROUNDS = 12
 
-# Selection must optimize the actual 80%-per-slate gate rather than log loss
-# alone. The patch remains shadow-only and does not alter deployed authority.
+# Selection remains shadow-only and does not alter deployed authority.
 daily_objective.install(supervised)
 
 
@@ -42,12 +40,48 @@ def _sha(body: bytes) -> str:
 
 
 def _outputs(cf: Any, stack_name: str) -> Dict[str, str]:
-    stack = (cf.describe_stacks(StackName=stack_name).get("Stacks") or [])[0]
+    stacks = cf.describe_stacks(StackName=stack_name).get("Stacks") or []
+    if not stacks:
+        return {}
     return {
         str(row.get("OutputKey")): str(row.get("OutputValue"))
-        for row in stack.get("Outputs") or []
+        for row in stacks[0].get("Outputs") or []
         if row.get("OutputKey") and row.get("OutputValue")
     }
+
+
+def _resolve_function_name(cf: Any, lam: Any, stack_name: str) -> tuple[str, Dict[str, Any]]:
+    attempts: List[Dict[str, Any]] = []
+    outputs = _outputs(cf, stack_name)
+    function_name = str(outputs.get("HistoricalOptimizerFunctionName") or "").strip()
+    attempts.append({
+        "strategy": "cloudformation_output",
+        "found": bool(function_name),
+        "outputKeys": sorted(outputs),
+    })
+    if function_name:
+        return function_name, {"strategy": "cloudformation_output", "attempts": attempts}
+
+    matches: List[str] = []
+    paginator = lam.get_paginator("list_functions")
+    for page in paginator.paginate():
+        for row in page.get("Functions") or []:
+            if row.get("Handler") == EXPECTED_HANDLER and row.get("FunctionName"):
+                matches.append(str(row["FunctionName"]))
+    matches = sorted(set(matches))
+    attempts.append({"strategy": "lambda_handler_scan", "matches": matches})
+    if len(matches) == 1:
+        return matches[0], {"strategy": "lambda_handler_scan", "attempts": attempts}
+    if not matches:
+        raise RuntimeError("historical optimizer Lambda could not be resolved:" + json.dumps(attempts, sort_keys=True))
+    raise RuntimeError("historical optimizer Lambda resolution is ambiguous:" + json.dumps(attempts, sort_keys=True))
+
+
+def _parse_date(value: Any) -> date | None:
+    try:
+        return date.fromisoformat(str(value)) if value else None
+    except Exception:
+        return None
 
 
 def _load_records(state: Mapping[str, Any], s3: Any) -> List[Dict[str, Any]]:
@@ -85,32 +119,53 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
     lam = boto3.client("lambda", region_name=region)
     ddb = boto3.resource("dynamodb", region_name=region)
     s3 = boto3.client("s3", region_name=region)
-    outputs = _outputs(cf, stack_name)
-    function_name = outputs.get("HistoricalOptimizerFunctionName")
-    if not function_name:
-        raise RuntimeError("historical optimizer function output is missing")
+
+    function_name, resolution = _resolve_function_name(cf, lam, stack_name)
     config = lam.get_function_configuration(FunctionName=function_name)
     environment = (config.get("Environment") or {}).get("Variables") or {}
-    runtime_checks = {
-        "handler": config.get("Handler") == EXPECTED_HANDLER,
-        "rangeExtensionAuthorized": environment.get("MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED") == "true",
-        "maximumRoundsAtLeast12": int(environment.get("MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS") or 0) >= MINIMUM_OPTIMIZATION_ROUNDS,
-        "historicalEndDate": environment.get("MLB_HISTORICAL_END_DATE") == EXPECTED_HISTORICAL_END_DATE,
-    }
-    if not all(runtime_checks.values()):
-        raise RuntimeError("canonical historical runtime identity failed:" + json.dumps(runtime_checks, sort_keys=True))
+
     item = ddb.Table(table_name).get_item(
         Key={"PK": STATE_PK, "SK": STATE_SK}, ConsistentRead=True
     ).get("Item")
     if not item:
         raise RuntimeError("historical optimizer state is missing")
     state = _plain(item.get("data") or {})
+
+    configured_end = _parse_date(environment.get("MLB_HISTORICAL_END_DATE"))
+    state_end = _parse_date(state.get("endDate"))
+    current_date = _parse_date(state.get("currentDate"))
+    end_date_consistent = bool(
+        configured_end
+        and (state_end is None or configured_end == state_end)
+        and (current_date is None or current_date >= configured_end)
+    )
+    runtime_checks = {
+        "handler": config.get("Handler") == EXPECTED_HANDLER,
+        "rangeExtensionAuthorized": environment.get("MLB_HISTORICAL_RANGE_EXTENSION_AUTHORIZED") == "true",
+        "maximumRoundsAtLeast12": int(environment.get("MLB_HISTORICAL_MAX_OPTIMIZATION_ROUNDS") or 0) >= MINIMUM_OPTIMIZATION_ROUNDS,
+        "historicalEndDateConfigured": configured_end is not None,
+        "historicalEndDateConsistentWithState": end_date_consistent,
+    }
+    if not all(runtime_checks.values()):
+        raise RuntimeError(
+            "canonical historical runtime identity failed:"
+            + json.dumps(
+                {
+                    "checks": runtime_checks,
+                    "configuredEndDate": environment.get("MLB_HISTORICAL_END_DATE"),
+                    "stateEndDate": state.get("endDate"),
+                    "stateCurrentDate": state.get("currentDate"),
+                },
+                sort_keys=True,
+            )
+        )
     if state.get("featureRematerializationComplete") is not True:
         raise RuntimeError("feature rematerialization is incomplete")
     if state.get("featureRematerializationErrors"):
         raise RuntimeError("feature rematerialization errors remain")
     if state.get("lastError"):
         raise RuntimeError("historical optimizer state has an unresolved error")
+
     records = _load_records(state, s3)
     result = supervised.train_and_evaluate(records)
     result.update({
@@ -127,8 +182,10 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
         "runtimeIdentity": {
             "stackName": stack_name,
             "functionName": function_name,
+            "functionResolution": resolution,
             "handler": config.get("Handler"),
             "deployGitSha": environment.get("INQSI_DEPLOY_GIT_SHA"),
+            "configuredHistoricalEndDate": environment.get("MLB_HISTORICAL_END_DATE"),
             "checks": runtime_checks,
         },
         "selectionObjective": dict(supervised.SUPERVISED_SELECTION_OBJECTIVE),
@@ -136,6 +193,7 @@ def run(*, region: str, stack_name: str, table_name: str, output: Path) -> Dict[
             "phase": state.get("phase"),
             "optimizationRound": state.get("optimizationRound"),
             "currentDate": state.get("currentDate"),
+            "endDate": state.get("endDate"),
             "currentSlotIndex": state.get("currentSlotIndex"),
             "networkRequestCount": state.get("networkRequestCount"),
             "eligibleGameCount": state.get("eligibleGameCount"),
