@@ -1,0 +1,25 @@
+name: MLB V8 Model Runtime CI
+
+on:
+  pull_request:
+    paths:
+      - 'hello_world/mlb_v8_model_runtime.py'
+      - 'hello_world/mlb_v8_first_five_training.py'
+      - 'tests/unit/test_mlb_v8_model_runtime.py'
+      - '.github/workflows/mlb-v8-model-runtime-ci.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-v8-runtime-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install --quiet 'pytest>=8,<9'
+      - run: python -m py_compile hello_world/mlb_v8_model_runtime.py hello_world/mlb_v8_first_five_training.py
+      - run: PYTHONPATH=. python -m pytest -q tests/unit/test_mlb_v8_model_runtime.py
