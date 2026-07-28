@@ -8,7 +8,10 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Tuple
 
-import mlb_supervised_feature_interactions_v2_2 as feature_interactions
+try:
+    import mlb_supervised_feature_interactions_v2_2 as feature_interactions
+except ImportError:  # package import used by unit tests
+    from . import mlb_supervised_feature_interactions_v2_2 as feature_interactions
 
 VERSION = "MLB-SUPERVISED-SHADOW-v2.2-regime-interactions-market-uplift-calibration-safe"
 MAX_BRIER_DEGRADATION = 0.005
@@ -36,12 +39,7 @@ def calibration_eligible(metrics: Mapping[str, Any], market: Mapping[str, Any]) 
 def daily_objective_key(
     metrics: Mapping[str, Any], market: Mapping[str, Any]
 ) -> Tuple[float, ...]:
-    """Return a lower-is-better key aligned to repeatable predictive edge.
-
-    Daily pass rate remains important, but candidates must first demonstrate
-    calibration-safe accuracy improvement over the market baseline. This avoids
-    repeatedly selecting a model that merely reproduces the market direction.
-    """
+    """Return a lower-is-better key aligned to repeatable predictive edge."""
     eligible_penalty = 0.0 if calibration_eligible(metrics, market) else 1.0
     overall_uplift = _f(metrics.get("overallAccuracy"), 0.0) - _f(
         market.get("overallAccuracy"), 0.0
