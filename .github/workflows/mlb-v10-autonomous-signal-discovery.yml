@@ -22,7 +22,7 @@ permissions:
 
 concurrency:
   group: mlb-v10-autonomous-signal-discovery
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 env:
   REPORT_PATH: runtime_reports/mlb_v10_autonomous_signal_discovery_latest.json
@@ -32,7 +32,7 @@ env:
 jobs:
   discover:
     runs-on: ubuntu-latest
-    timeout-minutes: 55
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4
         with:
@@ -107,10 +107,11 @@ jobs:
           MLB_HISTORICAL_START_DATE: '2025-04-01'
           MLB_HISTORICAL_END_DATE: '2026-12-31'
           PYTHONPATH: hello_world
+          PYTHONUNBUFFERED: '1'
         run: |
           set -uo pipefail
           mkdir -p runtime_reports
-          python scripts/run_mlb_v10_autonomous_signal_discovery.py \
+          python -u scripts/run_mlb_v10_autonomous_signal_discovery.py \
             --output "$REPORT_PATH" \
             --previous /tmp/mlb-v10-previous.json \
             2>&1 | tee /tmp/mlb-v10-discovery.log
@@ -142,11 +143,12 @@ jobs:
               except Exception as exc:
                   resolution={'ok':False,'blockers':['bucket_resolution_evidence_invalid'],'error':str(exc)}
           bucket_resolved=os.environ.get('BUCKET_RESOLVED') == 'true'
+          discovery_outcome=str(os.environ.get('DISCOVERY_OUTCOME') or '')
           blockers=list(resolution.get('blockers') or [])
           if not bucket_resolved and not blockers:
               blockers=['historical_artifacts_bucket_unresolved']
           if bucket_resolved and not blockers:
-              blockers=['v10_report_missing_after_discovery']
+              blockers=['v10_discovery_cancelled'] if discovery_outcome == 'cancelled' else ['v10_report_missing_after_discovery']
           report={
               'ok':False,
               'proofType':'MLB_V10_AUTONOMOUS_DISCOVERY_RUN',
